@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<resources>
+  <string name="bing_desc">Bing 검색은 크롤러 기반으로, 불안정할 수 있어 권장되지 않습니다.</string>
+  <string name="click_to_get_api_key">API 키를 받으려면 클릭하세요.</string>
+  <string name="searxng_desc_1">settings.yml에서 JSON 형식 지원을 활성화해야 합니다:</string>
+  <string name="searxng_desc_2">search:\n  formats:\n    - html\n    - json</string>
+</resources>

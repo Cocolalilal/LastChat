@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="bing_desc">Bing検索は現在クローラーベースで、アクセス制限によりブロックされやすく、推奨されません</string>
+  <string name="click_to_get_api_key">クリックしてAPI Keyを取得</string>
+  <string name="searxng_desc_1">settings.yml内でjson formatサポートを有効にする必要があります:</string>
+  <string name="searxng_desc_2">search:\n  formats:\n    - html\n    - json</string>
+</resources>

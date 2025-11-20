@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@types/ink": "^2.0.3"
+  }
+}

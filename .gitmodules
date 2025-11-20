@@ -1,0 +1,3 @@
+[submodule "ai/src/main/cpp/mnn"]
+	path = ai/src/main/cpp/mnn
+	url = git@github.com:alibaba/MNN.git

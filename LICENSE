@@ -1,0 +1,75 @@
+# LICENSE
+
+本项目采用 **用户分段双重许可 (Segmented Dual Licensing)** 模式：
+
+---
+
+## 1. 开源许可证（GNU AGPL v3）
+
+本项目在以下条件下，可以免费使用，并遵循 **GNU Affero General Public License v3.0 (AGPL v3)**：
+- 使用场景为 **非商业用途**；
+- 或者用于 **个人/教育/研究** 目的；
+- 或者由 **用户总数不超过 10 人** 的个人或组织使用。
+
+AGPL v3 的全文请见：https://www.gnu.org/licenses/agpl-3.0.html
+
+> 注意：即便在 AGPL v3 下，您仍然需要遵守协议条款，例如公开源代码等义务。
+
+---
+
+## 2. 商业许可证（Commercial License）
+
+如果您的使用场景不符合上述条件，例如：
+- 用于 **商业用途**（直接或间接产生商业利益的服务或产品）；
+- 或者 **用户总数超过 10 人**；
+- 或者您希望避免 AGPL v3 的源代码开源义务；
+
+那么您必须事先与项目维护者签署 **商业许可证 (Commercial License)**。
+
+申请商业授权请联系：
+- 邮箱：re_dev@qq.com
+
+---
+
+## 3. 许可政策更新
+
+项目维护者保留更新许可政策的权利。更新将通过官方渠道（如代码仓库、官方网站）进行通知。
+
+---
+
+# LICENSE (English)
+
+This project adopts a **Segmented Dual Licensing** model:
+
+---
+
+## 1. Open Source License (GNU AGPL v3)
+
+You may use this project under the **GNU Affero General Public License v3.0 (AGPL v3)** if one of the following applies:
+- Your usage is strictly **non-commercial**;
+- Your usage is for **personal, educational, or research** purposes;
+- You are an individual or organization with **no more than 10 total users**.
+
+Full text of AGPL v3: https://www.gnu.org/licenses/agpl-3.0.html
+
+> Note: Even under AGPL v3, you must comply with its obligations, such as making your source code available.
+
+---
+
+## 2. Commercial License
+
+If your use does not meet the above criteria, for example:
+- **Commercial purposes** (services or products that directly or indirectly generate revenue);
+- Organizations with **more than 10 users**;
+- Or if you wish to avoid the obligations of AGPL v3;
+
+Then you must obtain a **Commercial License** from the project maintainer.
+
+For commercial licensing, please contact:
+- Email: re_dev@qq.com
+
+---
+
+## 3. License Policy Updates
+
+The project maintainer reserves the right to update this licensing policy. Updates will be announced through official project channels (such as the code repository or official website).

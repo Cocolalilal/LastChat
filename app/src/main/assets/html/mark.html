@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Markdown Preview</title>
+
+    <!-- KaTeX for LaTeX math rendering -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+
+    <!-- Highlight.js for syntax highlighting -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/atom-one-dark.min.css">
+
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+            line-height: 1.6;
+            color: {{ON_BACKGROUND_COLOR}};
+            max-width: 100%;
+            margin: 0;
+            padding: 16px;
+            background: {{BACKGROUND_COLOR}};
+        }
+
+        /* Responsive design */
+        @media (min-width: 768px) {
+            body {
+                max-width: 800px;
+                margin: 0 auto;
+                padding: 24px;
+            }
+        }
+
+        /* Typography */
+        h1, h2, h3, h4, h5, h6 {
+            margin-top: 24px;
+            margin-bottom: 16px;
+            font-weight: 600;
+            line-height: 1.25;
+        }
+
+        h1 { font-size: 2em; border-bottom: 1px solid {{OUTLINE_VARIANT_COLOR}}; padding-bottom: 8px; }
+        h2 { font-size: 1.5em; border-bottom: 1px solid {{OUTLINE_VARIANT_COLOR}}; padding-bottom: 8px; }
+        h3 { font-size: 1.25em; }
+        h4 { font-size: 1em; }
+        h5 { font-size: 0.875em; }
+        h6 { font-size: 0.85em; color: {{ON_SURFACE_VARIANT_COLOR}}; }
+
+        p {
+            margin-bottom: 16px;
+        }
+
+        /* Code styling */
+        code {
+            background: {{SURFACE_VARIANT_COLOR}};
+            border-radius: 3px;
+            font-size: 85%;
+            margin: 0;
+            padding: 0.2em 0.4em;
+            font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', monospace;
+        }
+
+        pre {
+            background: {{SURFACE_VARIANT_COLOR}};
+            border-radius: 6px;
+            font-size: 85%;
+            line-height: 1.45;
+            overflow: auto;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        pre code {
+            background: transparent;
+            border: 0;
+            display: inline;
+            line-height: inherit;
+            margin: 0;
+            overflow: visible;
+            padding: 0;
+            word-wrap: normal;
+        }
+
+        /* Tables */
+        table {
+            border-collapse: collapse;
+            border-spacing: 0;
+            width: 100%;
+            margin-bottom: 16px;
+        }
+
+        table th, table td {
+            border: 1px solid {{OUTLINE_VARIANT_COLOR}};
+            padding: 6px 13px;
+        }
+
+        table th {
+            background: {{SURFACE_VARIANT_COLOR}};
+            font-weight: 600;
+        }
+
+        table tr:nth-child(2n) {
+            background: {{SURFACE_VARIANT_COLOR}};
+        }
+
+        /* Lists */
+        ul, ol {
+            margin-bottom: 16px;
+            padding-left: 2em;
+        }
+
+        li {
+            margin-bottom: 4px;
+        }
+
+        /* Blockquotes */
+        blockquote {
+            border-left: 4px solid {{OUTLINE_VARIANT_COLOR}};
+            color: {{ON_SURFACE_VARIANT_COLOR}};
+            margin: 0 0 16px 0;
+            padding: 0 16px;
+        }
+
+        /* Links */
+        a {
+            color: {{PRIMARY_COLOR}};
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        /* Images */
+        img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 6px;
+            margin: 8px 0;
+        }
+
+        /* Horizontal rules */
+        hr {
+            background: {{OUTLINE_VARIANT_COLOR}};
+            border: 0;
+            height: 1px;
+            margin: 24px 0;
+        }
+
+        /* KaTeX math */
+        .katex {
+            font-size: 1.1em;
+        }
+
+        .katex-display {
+            margin: 16px 0;
+            overflow-x: auto;
+        }
+
+        /* Mermaid diagrams */
+        .mermaid {
+            text-align: center;
+            margin: 16px 0;
+        }
+
+        /* Task lists */
+        .task-list-item {
+            list-style-type: none;
+        }
+
+        .task-list-item input[type="checkbox"] {
+            margin-right: 8px;
+        }
+
+        /* Theme colors are dynamically replaced by the Android app */
+    </style>
+</head>
+<body>
+    <div id="content"></div>
+
+    <script type="module">
+        // Import markdown-it and plugins using esm.sh
+        import MarkdownIt from 'https://esm.sh/markdown-it@14.0.0';
+        import vscodemarkdownItKatex from 'https://esm.sh/@vscode/markdown-it-katex'
+        import markdownItTaskLists from 'https://esm.sh/markdown-it-task-lists@2.1.1';
+
+        import katex from 'https://esm.sh/katex@0.16.8';
+        import hljs from 'https://esm.sh/highlight.js@11.9.0';
+        import mermaid from 'https://esm.sh/mermaid@10.6.1';
+        import { Base64 } from 'https://esm.sh/js-base64@3.7.5';
+
+        // Configure markdown-it
+        const md = new MarkdownIt({
+            html: true,         // Enable HTML tags in source
+            xhtmlOut: false,    // Use '/' to close single tags (<br />)
+            breaks: false,      // Convert '\n' in paragraphs into <br>
+            langPrefix: 'language-',  // CSS language prefix for fenced blocks
+            linkify: true,      // Autoconvert URL-like text to links
+            typographer: true,  // Enable some language-neutral replacement + quotes beautification
+            quotes: '“”‘’',     // Quote chars
+            highlight: function (str, lang) {
+                if (lang && hljs.getLanguage(lang)) {
+                    try {
+                        return '<pre class="hljs"><code>' +
+                               hljs.highlight(str, { language: lang, ignoreIllegals: true }).value +
+                               '</code></pre>';
+                    } catch (__) {}
+                }
+                return '<pre class="hljs"><code>' + md.utils.escapeHtml(str) + '</code></pre>';
+            }
+        });
+
+        // Add plugins
+        md.use(vscodemarkdownItKatex);
+
+        md.use(markdownItTaskLists, {
+            enabled: true,
+            label: true,
+            labelAfter: true
+        });
+
+        // Add custom renderer for mermaid
+        const defaultFenceRenderer = md.renderer.rules.fence || function(tokens, idx, options, env, renderer) {
+            return renderer.renderToken(tokens, idx, options);
+        };
+
+        md.renderer.rules.fence = function(tokens, idx, options, env, renderer) {
+            const token = tokens[idx];
+            const info = token.info ? md.utils.unescapeAll(token.info).trim() : '';
+
+            if (info === 'mermaid') {
+                const id = 'mermaid-' + Math.random().toString(36).substr(2, 9);
+                return `<div class="mermaid" id="${id}">${token.content.trim()}</div>\n`;
+            }
+
+            return defaultFenceRenderer(tokens, idx, options, env, renderer);
+        };
+
+        // Configure mermaid
+        mermaid.initialize({
+            startOnLoad: false,
+            theme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'default',
+            securityLevel: 'loose',
+            fontFamily: 'inherit'
+        });
+
+        // The markdown content to render (base64 encoded)
+        const markdownBase64 = `{{MARKDOWN_BASE64}}`;
+        let markdownContent = Base64.decode(markdownBase64);
+
+        // Convert \[ ... \] to $$ ... $$ for LaTeX block math
+        markdownContent = markdownContent.replace(/\\\[([\s\S]*?)\\\]/g, (match, content) => {
+            return '\n$$\n' + content.trim() + '\n$$\n';
+        });
+        // Convert \( ... \) to $ ... $ for LaTeX inline math
+        markdownContent = markdownContent.replace(/\\\(([\s\S]*?)\\\)/g, '$$$1$$');
+
+        // Render markdown with markdown-it
+        async function renderMarkdown() {
+            try {
+                // Process with markdown-it
+                const html = md.render(markdownContent);
+                document.getElementById('content').innerHTML = html;
+
+                // Render mermaid diagrams
+                const mermaidElements = document.querySelectorAll('.mermaid');
+                if (mermaidElements.length > 0) {
+                    await mermaid.run({
+                        nodes: mermaidElements
+                    });
+                }
+
+                // Render KaTeX math
+                document.querySelectorAll('.math.inline').forEach(el => {
+                    try {
+                        katex.render(el.textContent, el, {
+                            throwOnError: false,
+                            errorColor: '#cc0000'
+                        });
+                    } catch (e) {
+                        console.warn('KaTeX inline render error:', e);
+                    }
+                });
+
+                document.querySelectorAll('.math.block').forEach(el => {
+                    try {
+                        katex.render(el.textContent, el, {
+                            displayMode: true,
+                            throwOnError: false,
+                            errorColor: '#cc0000'
+                        });
+                    } catch (e) {
+                        console.warn('KaTeX block render error:', e);
+                    }
+                });
+
+                // Handle external links
+                document.querySelectorAll('a[href^="http"]').forEach(link => {
+                    link.target = '_blank';
+                    link.rel = 'noopener noreferrer';
+                });
+            } catch (error) {
+                console.error('Error rendering markdown:', error);
+                document.getElementById('content').innerHTML = '<p>Error rendering markdown content: ' + error.message + '</p>';
+            }
+        }
+
+        // Call the render function
+        renderMarkdown();
+    </script>
+    <script nomodule>
+        alert('您的系统WebView不支持 ES Modules，请升级WebView或者系统!');
+    </script>
+</body>
+</html>

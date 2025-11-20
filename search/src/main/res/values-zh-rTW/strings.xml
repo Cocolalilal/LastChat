@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="bing_desc">注意Bing搜尋目前基於爬蟲，很容易被風控攔截，不推薦使用</string>
+  <string name="click_to_get_api_key">點擊獲取API Key</string>
+  <string name="searxng_desc_1">settings.yml內需要開啟json format支援:</string>
+  <string name="searxng_desc_2">search:\n  formats:\n    - html\n    - json</string>
+</resources>
