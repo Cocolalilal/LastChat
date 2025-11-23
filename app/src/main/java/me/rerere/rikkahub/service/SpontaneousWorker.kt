@@ -17,6 +17,8 @@ import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.repository.ConversationRepository
+import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.ai.core.MessageRole
 import me.rerere.rikkahub.utils.applyPlaceholders
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -29,6 +31,7 @@ class SpontaneousWorker(
 
     private val settingsStore: SettingsStore by inject()
     private val conversationRepository: ConversationRepository by inject()
+    private val memoryRepository: MemoryRepository by inject()
     private val providerManager: me.rerere.ai.provider.ProviderManager by inject()
 
     override suspend fun doWork(): Result {
@@ -65,16 +68,33 @@ class SpontaneousWorker(
             val provider = model.findProvider(settings.providers) ?: return Result.success()
             val providerHandler = providerManager.getProviderByType(provider)
 
-            val lastNotificationInfo = if (assistant.lastNotificationContent.isNotBlank()) {
+            val oneDayMs = 24 * 60 * 60 * 1000L
+            val lastNotificationInfo = if (
+                assistant.lastNotificationContent.isNotBlank() && 
+                (System.currentTimeMillis() - assistant.lastNotificationTime < oneDayMs)
+            ) {
                 "\n\nYou last sent a notification: \"${assistant.lastNotificationContent}\". Don't repeat yourself or be redundant."
             } else ""
+
+            // RAG Retrieval
+            val lastUserMessage = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: "User status"
+            val memories = memoryRepository.retrieveRelevantMemories(
+                assistantId = assistant.id.toString(),
+                query = lastUserMessage,
+                limit = 5
+            )
+            val memoryContext = memories.joinToString("\n") { "- ${it.content}" }
             
             val customPrompt = assistant.spontaneousPrompt.ifBlank {
                 """
                 You are ${assistant.name}. You are running in the background to check in on the user. Be casual and friendly.
                 
                 Recent chat history:
-                {{history}}$lastNotificationInfo
+                {{history}}
+                
+                Relevant Memories:
+                {{memories}}
+                $lastNotificationInfo
                 
                 Do you want to send a spontaneous notification to the user right now?
                 Consider the context. Only send if:
@@ -93,7 +113,9 @@ class SpontaneousWorker(
             }
 
             val history = conversation.currentMessages.takeLast(5).joinToString("\n") { "${it.role}: ${it.toText()}" }
-            val prompt = customPrompt.replace("{{history}}", history)
+            val prompt = customPrompt
+                .replace("{{history}}", history)
+                .replace("{{memories}}", memoryContext)
 
             val result = providerHandler.generateText(
                 providerSetting = provider,
@@ -124,7 +146,7 @@ class SpontaneousWorker(
                         if (content.isNotBlank()) {
                             sendNotification(title, content)
                             
-                            // Update assistant's last notification info
+                            // Update assistant's last notification info (Full Reset)
                             val updatedAssistant = assistant.copy(
                                 lastNotificationTime = System.currentTimeMillis(),
                                 lastNotificationContent = content
@@ -136,6 +158,19 @@ class SpontaneousWorker(
                             )
                             settingsStore.update(updatedSettings)
                         }
+                    } else {
+                        // AI declined to send. Apply "Half Delay" logic.
+                        // We set the last time to (Now - Interval/2), so we only wait half the interval from now.
+                        val halfIntervalMs = minIntervalMs / 2
+                        val updatedAssistant = assistant.copy(
+                            lastNotificationTime = System.currentTimeMillis() - halfIntervalMs
+                        )
+                        val updatedSettings = settings.copy(
+                            assistants = settings.assistants.map {
+                                if (it.id == assistant.id) updatedAssistant else it
+                            }
+                        )
+                        settingsStore.update(updatedSettings)
                     }
                 }
             } catch (e: Exception) {

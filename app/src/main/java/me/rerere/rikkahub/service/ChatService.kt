@@ -382,48 +382,33 @@ class ChatService(
                     val assistant = settings.getCurrentAssistant()
                     if (assistant.useRagMemoryRetrieval) {
                         // RAG mode: retrieve relevant memories based on context
-                        // Build query from recent conversation context (last 3 user messages)
-                        val recentUserMessages = conversation.currentMessages
-                            .filter { it.role == MessageRole.USER }
-                            .takeLast(3)
-                            .joinToString(" ") { it.toText() }
+                        val lastUserMessage = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: ""
                         
-                        val query = recentUserMessages.ifBlank { 
-                            // Fallback to last message of any role
-                            conversation.currentMessages.lastOrNull()?.toText() ?: ""
+                        if (assistant.enableRagLogging) {
+                            Log.d("RAG", "Query: $lastUserMessage")
                         }
-                        
-                        if (settings.enableMemoryLogging) {
-                            android.util.Log.d("ChatService", "RAG Query: '$query'")
-                        }
-                        
-                        val retrieved = if (query.isNotBlank()) {
-                            memoryRepository.retrieveRelevantMemories(
+
+                        if (lastUserMessage.isNotBlank()) {
+                            val results = memoryRepository.retrieveRelevantMemories(
                                 assistantId = settings.assistantId.toString(),
-                                query = query
+                                query = lastUserMessage,
+                                limit = assistant.ragLimit,
+                                similarityThreshold = assistant.ragSimilarityThreshold,
+                                includeCore = assistant.ragIncludeCore,
+                                includeEpisodes = assistant.ragIncludeEpisodes
                             )
-                        } else {
-                            if (settings.enableMemoryLogging) {
-                                android.util.Log.w("ChatService", "RAG: Empty query, using all memories")
+                            if (assistant.enableRagLogging) {
+                                Log.d("RAG", "Retrieved ${results.size} memories")
+                                results.forEach { Log.d("RAG", " - [${it.type}] ${it.content.take(50)}...") }
                             }
+                            results
+                        } else {
+                            if (assistant.enableRagLogging) Log.d("RAG", "Empty query, using all memories")
                             memoryRepository.getMemoriesOfAssistant(settings.assistantId.toString())
                         }
-                        
-                        if (settings.enableMemoryLogging) {
-                            android.util.Log.d("ChatService", "RAG Retrieved: ${retrieved.size} memories")
-                            retrieved.forEachIndexed { index, memory ->
-                                android.util.Log.d("ChatService", "  [$index] Memory ${memory.id} (${if(memory.type == 0) "CORE" else "EPISODIC"}): ${memory.content.take(100)}...")
-                            }
-                        }
-                        
-                        retrieved
                     } else {
                         // Simple mode: inject all memories
-                        val allMemories = memoryRepository.getMemoriesOfAssistant(settings.assistantId.toString())
-                        if (settings.enableMemoryLogging) {
-                            android.util.Log.d("ChatService", "Simple mode: Injecting ${allMemories.size} memories")
-                        }
-                        allMemories
+                        memoryRepository.getMemoriesOfAssistant(settings.assistantId.toString())
                     }
                 } else {
                     emptyList()
@@ -437,7 +422,11 @@ class ChatService(
                     if (settings.enableWebSearch) {
                         addAll(createSearchTool(settings))
                     }
-                    addAll(localTools.getTools(settings.getCurrentAssistant().localTools))
+                    addAll(localTools.getTools(
+                        options = settings.getCurrentAssistant().localTools,
+                        assistantId = settings.getCurrentAssistant().id,
+                        conversationId = conversation.id
+                    ))
                     mcpManager.getAllAvailableTools().forEach { tool ->
                         add(
                             Tool(

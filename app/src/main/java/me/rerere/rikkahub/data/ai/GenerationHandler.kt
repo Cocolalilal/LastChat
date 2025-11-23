@@ -406,6 +406,15 @@ class GenerationHandler(
 
     private fun buildMemoryPrompt(model: Model, memories: List<AssistantMemory>) =
         buildString {
+            Log.d(TAG, "buildMemoryPrompt: Injecting ${memories.size} memories into prompt")
+            if (memories.isEmpty()) {
+                Log.w(TAG, "buildMemoryPrompt: WARNING - No memories to inject! <memories> section will be empty.")
+            } else {
+                memories.forEachIndexed { index, memory ->
+                    Log.d(TAG, "buildMemoryPrompt: Memory[$index] ID=${memory.id} Type=${if(memory.type == 0) "CORE" else "EPISODIC"} Content=${memory.content.take(50)}...")
+                }
+            }
+            
             append("## Memories")
             append("These are memories that you can reference in the future conversations.")
             append("\n<memories>\n")

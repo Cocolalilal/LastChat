@@ -10,6 +10,7 @@
   <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
   <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
   <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
+  <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
   <uses-feature
     android:name="android.hardware.camera"
@@ -25,7 +26,7 @@
     android:dataExtractionRules="@xml/data_extraction_rules"
     android:enableOnBackInvokedCallback="true"
     android:fullBackupContent="@xml/backup_rules"
-    android:icon="@mipmap/ic_launcher"
+    android:icon="@mipmap/ic_launcher_lastchat"
     android:label="@string/app_name"
     android:supportsRtl="true"
     android:theme="@style/Theme.Rikkahub"
@@ -96,6 +97,9 @@
         android:value="androidx.startup"
         tools:node="remove" />
     </provider>
+    <receiver
+        android:name=".service.ScheduledMessageReceiver"
+        android:exported="false" />
   </application>
 
   <queries>

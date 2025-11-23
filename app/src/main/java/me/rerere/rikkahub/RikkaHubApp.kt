@@ -22,6 +22,9 @@ import me.rerere.rikkahub.utils.DatabaseUtil
 import org.koin.android.ext.android.get
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import me.rerere.rikkahub.data.datastore.SettingsStore
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
@@ -66,7 +69,7 @@ class RikkaHubApp : Application() {
         // Schedule Spontaneous Worker
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             "spontaneous_notification",
-            ExistingPeriodicWorkPolicy.KEEP,
+            ExistingPeriodicWorkPolicy.UPDATE,
             PeriodicWorkRequestBuilder<SpontaneousWorker>(30, TimeUnit.MINUTES)
                 .setConstraints(
                     Constraints.Builder()
@@ -76,18 +79,30 @@ class RikkaHubApp : Application() {
                 .build()
         )
 
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-            "memory_consolidation",
-            ExistingPeriodicWorkPolicy.KEEP,
-            PeriodicWorkRequestBuilder<MemoryConsolidationWorker>(24, TimeUnit.HOURS)
-                .setConstraints(
-                    Constraints.Builder()
+        // Schedule Memory Consolidation Worker dynamically
+        get<AppScope>().launch {
+            get<SettingsStore>().settingsFlow
+                .map { it.consolidationWorkerIntervalMinutes to it.consolidationRequiresDeviceIdle }
+                .distinctUntilChanged()
+                .collect { (interval, idle) ->
+                    val constraints = Constraints.Builder()
                         .setRequiredNetworkType(NetworkType.CONNECTED)
-                        .setRequiresDeviceIdle(true) // Run when device is idle (nightly-ish)
+                        .apply {
+                            if (idle) setRequiresDeviceIdle(true)
+                        }
                         .build()
-                )
-                .build()
-        )
+
+                    WorkManager.getInstance(this@RikkaHubApp).enqueueUniquePeriodicWork(
+                        "memory_consolidation",
+                        ExistingPeriodicWorkPolicy.UPDATE,
+                        PeriodicWorkRequestBuilder<MemoryConsolidationWorker>(
+                            interval.toLong().coerceAtLeast(15), TimeUnit.MINUTES
+                        )
+                            .setConstraints(constraints)
+                            .build()
+                    )
+                }
+        }
     }
 
     private fun deleteTempFiles() {

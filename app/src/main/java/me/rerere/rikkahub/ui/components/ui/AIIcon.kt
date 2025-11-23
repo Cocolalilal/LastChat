@@ -80,7 +80,7 @@ fun AutoAIIcon(
 @Composable
 private fun PreviewAutoAIIcon() {
     Column {
-        AutoAIIcon("测试")
+        AutoAIIcon("test")
     }
 }
 

@@ -1,6 +1,8 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
 import androidx.compose.animation.animateContentSize
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -180,10 +182,34 @@ fun AssistantPromptSubPage(
                         horizontalArrangement = Arrangement.spacedBy(2.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
+                        var pendingInsertion by remember { mutableStateOf<String?>(null) }
+                        val permissionLauncher = rememberLauncherForActivityResult(
+                            ActivityResultContracts.RequestMultiplePermissions()
+                        ) {
+                            pendingInsertion?.let { text ->
+                                systemPromptValue.insertAtCursor(text)
+                            }
+                            pendingInsertion = null
+                        }
+
                         DefaultPlaceholderProvider.placeholders.forEach { (k, info) ->
                             Tag(
                                 onClick = {
-                                    systemPromptValue.insertAtCursor("{{$k}}")
+                                    val textToInsert = "{{$k}}"
+                                    val permissions = mutableListOf<String>()
+                                    if (k == "location") {
+                                        permissions.add(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                                        permissions.add(android.Manifest.permission.ACCESS_COARSE_LOCATION)
+                                    } else if (k == "calendar") {
+                                        permissions.add(android.Manifest.permission.READ_CALENDAR)
+                                    }
+
+                                    if (permissions.isNotEmpty()) {
+                                        pendingInsertion = textToInsert
+                                        permissionLauncher.launch(permissions.toTypedArray())
+                                    } else {
+                                        systemPromptValue.insertAtCursor(textToInsert)
+                                    }
                                 }
                             ) {
                                 info.displayName()
@@ -265,8 +291,8 @@ fun AssistantPromptSubPage(
                     style = MaterialTheme.typography.titleSmall
                 )
                 val rawMessages = listOf(
-                    UIMessage.user("你好啊"),
-                    UIMessage.assistant("你好，有什么我可以帮你的吗？"),
+                    UIMessage.user("Hello"),
+                    UIMessage.assistant("Hello, how can I help you?"),
                 )
                 val preview by produceState<UiState<List<UIMessage>>>(
                     UiState.Success(rawMessages),

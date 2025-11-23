@@ -1,102 +1,69 @@
-<div align="center">
-  <img src="docs/icon.png" alt="App Icon" width="100" />
-  <h1>RikkaHub</h1>
-
-  [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/rikkahub/rikkahub)
-  [![Ask DeepWiki](https://img.shields.io/badge/zread.ai-blue?style=flat&logo=readthedocs)](https://zread.ai/rikkahub/rikkahub)
-
-A native Android LLM chat client that supports switching between different providers for
-conversations 🤖💬
-
-Click to join our Discord server 👉 [【RikkaHub】](https://discord.gg/9weBqxe5c4)
-
-[简体中文](README_ZH_CN.md) | [繁體中文](README_ZH_TW.md) | English
-</div>
+# LastChat
 
 <div align="center">
-  <img src="docs/img/chat.png" alt="Chat Interface" width="150" />
-  <img src="docs/img/models.png" alt="Models Picker" width="150" />
-  <img src="docs/img/providers.png" alt="Providers" width="150" />
-  <img src="docs/img/assistants.png" alt="Assistants" width="150" />
+  <img src="docs/app_icon.png" alt="LastChat Icon" width="128" height="128" />
 </div>
 
-## 🚀 Download
+**LastChat** is a powerful, feature-rich AI assistant application for Android. It is a fork of [RikkaHub](https://github.com/re-ovo/RikkaHub), significantly enhanced and refined using **Gemini 3 Pro** and **Claude 3.5 Sonnet**.
 
-🔗 [Download from Website](https://rikka-ai.com/download)
+This project aims to provide a premium, privacy-focused, and highly extensible AI chat experience on Android, leveraging the latest in LLM technology and Android development standards.
 
-🔗 [Download from Google Play](https://play.google.com/store/apps/details?id=me.rerere.rikkahub)
-
-## 💖 Sponsors
+## 📸 Gallery
 
 <div align="center">
-  <img src="app/src/main/assets/icons/aihubmix-color.svg" alt="Aihubmix" width="50" />
-  <p style="font-size: 16px; font-weight: bold;">Aihubmix</p>
-  <p style="font-size: 14px;">Thanks to <a href="https://aihubmix.com?aff=pG7r">aihubmix.com</a> for their financial support. We recommend using aihubmix as a one-stop shop for mainstream models worldwide. (OpenAI, Claude, Google Gemini, DeepSeek, Qwen, and hundreds more).</p>
-</div>
-<div align="center">
-  <img src="app/src/main/assets/icons/siliconflow.svg" alt="SiliconFlow" width="50" />
-  <p style="font-size: 16px; font-weight: bold;">SiliconFlow</p>
-  <p style="font-size: 14px;">Thanks to <a href="https://siliconflow.cn/">siliconflow.cn</a> providing free models in cooperation with us.</p>
+  <img src="docs/screenshot_1.jpg" alt="Chat Interface" width="200" />
+    &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="docs/screenshot_2.jpg" alt="Home Screen" width="200" />
 </div>
 
+## ✨ Key Features
 
-## ✨ Features
+### 🧠 Advanced AI Capabilities
+*   **Multi-Provider Support**: Seamlessly integrate with **OpenAI**, **Google Gemini**, **Anthropic Claude** and there's support for custom providers too.
+*   **Local RAG Memory**: Features a sophisticated **Vector-Based Long-Term Memory** system. Assistants can "remember" details from past conversations using embeddings.
+*   **Multi-Modal Inputs**: Interact using Text, Images, Video, and Audio.
 
-- 🎨 Material You Design and 🌙 Dark mode
-- 🔄 Multiple AI Provider Support: custom API / URL / models (all OpenAI, Google, Anthropic compatible api)
-- 🖼️ Multimodal input support (Image, Text Documentation, PDF, Docx)
-- 🛠️ MCP support
-- 📝 Markdown Rendering (with code highlighting, Latex formulas, tables, Mermaid)
-- 🪾 Message Branching
-- 🔍 Search capabilities (Exa, Tavily, Zhipu, LinkUp, Brave, Perplexity, etc.)
-- 🧩 Prompt variables (model name, time, etc.)
-- 🤳 QR code export and import for providers
-- 🤖 Agent customization
-- 🧠 ChatGPT-like memory feature
-- 📝 AI Translation
-- 🌐 Custom HTTP request headers and request bodies
-- 💌 Silly Tavern character card import
+### 🛠️ Powerful Tools & Integration
+*   **Local Device Control**: The AI can interact with your device if you want:
+    *   Send notifications
+    *   Adjust brightness and volume
+    *   Toggle flashlight/torch
+    *   Control music playback
+    *   Read clipboard
+    *   Launch apps
+*   **Code Execution**: Built-in **JavaScript Engine** (QuickJS) for performing calculations and logic.
+*   **Web Search**: Integrated web search capabilities to fetch real-time information.
 
-## ✨ Contributing
+### 🤖 Assistant Management
+*   **Multiple Personas**: Create, manage, and switch between unlimited custom assistants.
+*   **Tagging System**: Organize assistants with custom tags.
+*   **Import/Export**: Easily share or backup your assistant configurations.
+*   **Global Settings**: Centralized management for memory consolidation and background behaviors.
 
-This project is developed using [Android Studio](https://developer.android.com/studio). PRs are
-welcome!
+### 🎨 Modern & Fluid UI
+*   **Material You**: Fully embraces Material Design 3 with **Dynamic Color** support that adapts to your wallpaper.
+*   **Rich Rendering**: Markdown support with LaTeX for math, code highlighting, and tables.
 
-Technology stack documentation:
+### 🚀 Additional Modules
+*   **Image Generation**: Dedicated interface for generating images using supported models.
+*   **Translator**: A specialized mode for text translation.
+*   **Text-to-Speech (TTS)**: Supports system TTS or other providers.
 
-- [Kotlin](https://kotlinlang.org/) (Development language)
-- [Koin](https://insert-koin.io/) (Dependency Injection)
-- [Jetpack Compose](https://developer.android.com/jetpack/compose) (UI framework)
-- [DataStore](https://developer.android.com/topic/libraries/architecture/datastore) (Preference data
-  storage)
-- [Room](https://developer.android.com/training/data-storage/room) (Database)
-- [Coil](https://coil-kt.github.io/coil/) (Image loading)
-- [Material You](https://m3.material.io/) (UI design)
-- [Navigation Compose](https://developer.android.com/develop/ui/compose/navigation) (Navigation)
-- [Okhttp](https://square.github.io/okhttp/) (HTTP client)
-- [kotlinx.serialization](https://github.com/Kotlin/kotlinx.serialization) (JSON serialization)
-- [compose-icons/lucide](https://composeicons.com/icon-libraries/lucide) (Icon library)
+### 🔒 Privacy & Data
+*   **Local-First**: Chat history and vector memory are stored locally on your device.
+*   **WebDAV Backup**: Securely sync and backup your data to any WebDAV-compatible server.
 
-> [!TIP]
-> You need a `google-services.json` file at `app` folder to build the app.
+## 🏗️ Built With
+*   **Kotlin** & **Jetpack Compose**
+*   **Koin** for Dependency Injection
+*   **Room** & **DataStore** for persistence
+*   **WorkManager** & **AlarmManager** for reliable background tasks
 
-> [!IMPORTANT]  
-> The following PRs will be rejected: 
-> 1. Translation related changes, such as adding new languages or updating existing translations
-> 2. Adding new features, this project is opinionated and will not accept pull requests for new features
-> 3. Large-scale refactoring and changes generated by AI
+## 🤝 Credits
+*   Original Project: [RikkaHub](https://github.com/re-ovo/RikkaHub)
+*   Made with **AI Agents** based on:
+    *   **Gemini 3 Pro**
+    *   **Claude 3.5 Sonnet**
 
-## 💰 Donate
-
-* [Patreon](https://patreon.com/rikkahub)
-* [爱发电](https://afdian.com/a/reovo)
-
-## ⭐ Star History
-
-If you like this project, please give it a star ⭐
-
-[![Star History Chart](https://api.star-history.com/svg?repos=re-ovo/rikkahub&type=Date)](https://star-history.com/#re-ovo/rikkahub&Date)
-
-## 📄 License
-
-[License](LICENSE)
+---
+*Note: This project is a fork and may contain modifications or features not present in the original RikkaHub repository.*

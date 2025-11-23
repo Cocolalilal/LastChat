@@ -19,5 +19,7 @@ data class ChatEpisodeEntity(
     @ColumnInfo("end_time")
     val endTime: Long,
     @ColumnInfo("last_accessed_at")
-    val lastAccessedAt: Long = System.currentTimeMillis()
+    val lastAccessedAt: Long,
+    @ColumnInfo(name = "significance", defaultValue = "5")
+    val significance: Int = 5,
 )

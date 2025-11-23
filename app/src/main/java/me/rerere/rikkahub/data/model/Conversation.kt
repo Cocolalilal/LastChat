@@ -21,6 +21,7 @@ data class ConversationSummary(
     val isPinned: Boolean = false,
     val createAt: Instant,
     val updateAt: Instant,
+    val isConsolidated: Boolean = false,
 )
 
 @Serializable
@@ -36,6 +37,7 @@ data class Conversation(
     val createAt: Instant = Instant.now(),
     @Serializable(with = InstantSerializer::class)
     val updateAt: Instant = Instant.now(),
+    val isConsolidated: Boolean = false,
 ) {
     val files: List<Uri>
         get() {

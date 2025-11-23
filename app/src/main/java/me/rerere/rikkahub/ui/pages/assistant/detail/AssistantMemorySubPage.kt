@@ -20,11 +20,22 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
+import androidx.compose.material3.Slider
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,6 +48,9 @@ import com.composables.icons.lucide.Pencil
 import com.composables.icons.lucide.Plus
 import com.composables.icons.lucide.RefreshCw
 import com.composables.icons.lucide.Trash2
+import com.composables.icons.lucide.ChevronDown
+import com.composables.icons.lucide.ChevronUp
+import com.composables.icons.lucide.Settings
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantMemory
@@ -189,6 +203,92 @@ fun AssistantMemorySettings(
                     }
                 )
             }
+            
+            if (assistant.useRagMemoryRetrieval) {
+                // RAG Similarity Threshold
+                Card {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "RAG Similarity Threshold",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Text(
+                            text = "Minimum similarity score (0.0 = include all, 1.0 = only perfect matches). Lower values include more memories. Current: ${String.format("%.2f", assistant.ragSimilarityThreshold)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        var threshold by remember(assistant.ragSimilarityThreshold) {
+                            mutableFloatStateOf(assistant.ragSimilarityThreshold)
+                        }
+                        Slider(
+                            value = threshold,
+                            onValueChange = { newValue ->
+                                threshold = newValue
+                                onUpdateAssistant(
+                                    assistant.copy(ragSimilarityThreshold = newValue)
+                                )
+                            },
+                            valueRange = 0f..1f,
+                            steps = 19 // 0.05 increments
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("0.0 (All)", style = MaterialTheme.typography.labelSmall)
+                            Text("1.0 (Perfect)", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+                
+                // RAG Limit
+                Card {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "RAG Memory Limit",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Text(
+                            text = "Maximum number of memories to retrieve per query. Higher values include more context but use more tokens.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        var limit by remember(assistant.ragLimit) {
+                            mutableIntStateOf(if (assistant.ragLimit > 0) assistant.ragLimit else 5)
+                        }
+                        Slider(
+                            value = limit.toFloat(),
+                            onValueChange = { newValue ->
+                                val intValue = newValue.toInt()
+                                limit = intValue
+                                onUpdateAssistant(
+                                    assistant.copy(ragLimit = intValue)
+                                )
+                            },
+                            valueRange = 1f..20f,
+                            steps = 18 // 1 increment
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("1", style = MaterialTheme.typography.labelSmall)
+                            Text("20", style = MaterialTheme.typography.labelSmall)
+                        }
+                        Text(
+                            text = "Current: $limit memories",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
         }
 
         Card {
@@ -221,6 +321,14 @@ fun AssistantMemorySettings(
             MemoryDebugger(
                 onTestRetrieval = onTestRetrieval,
                 retrievalResults = retrievalResults
+            )
+            
+            // Advanced Settings Section
+            AdvancedMemorySettings(
+                assistant = assistant,
+                memories = memories,
+                onUpdateAssistant = onUpdateAssistant,
+                onRegenerateEmbeddings = onRegenerateEmbeddings
             )
         }
 
@@ -289,7 +397,7 @@ private fun MemoryItem(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(8.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
@@ -301,12 +409,28 @@ private fun MemoryItem(
                         else MaterialTheme.colorScheme.outlineVariant
                     )
             )
-            Text(
-                text = memory.content,
+            Column(
                 modifier = Modifier.weight(1f),
-                maxLines = 5,
-                overflow = TextOverflow.Ellipsis
-            )
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Surface(
+                    color = if (memory.type == 0) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer,
+                    shape = MaterialTheme.shapes.extraSmall
+                ) {
+                    Text(
+                        text = if (memory.type == 0) "CORE" else "EPISODIC",
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                        color = if (memory.type == 0) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
+                Text(
+                    text = memory.content,
+                    maxLines = 5,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
             IconButton(
                 onClick = { onEditMemory(memory) }
             ) {
@@ -340,6 +464,11 @@ private fun MemoryDebugger(
                 text = "Memory Retrieval Debugger",
                 style = MaterialTheme.typography.titleMedium
             )
+            Text(
+                text = "Test RAG retrieval with a query to see which memories are retrieved and their similarity scores.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -363,24 +492,259 @@ private fun MemoryDebugger(
 
             if (retrievalResults.isNotEmpty()) {
                 Text(
-                    text = "Results:",
+                    text = "Results (${retrievalResults.size}):",
                     style = MaterialTheme.typography.labelMedium,
                     modifier = Modifier.padding(top = 8.dp)
                 )
-                retrievalResults.forEach { (memory, score) ->
+                retrievalResults.forEachIndexed { index, (memory, score) ->
                     Card(
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                        )
+                        ),
+                        modifier = Modifier.padding(vertical = 4.dp)
                     ) {
-                        Column(modifier = Modifier.padding(8.dp)) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "#${index + 1}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = "Score: ${String.format("%.4f", score)}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = if (score >= 0.5f) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                             Text(
                                 text = memory.content,
-                                style = MaterialTheme.typography.bodyMedium
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "Type: ${if(memory.type == 0) "CORE" else "EPISODIC"}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "ID: ${memory.id}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            } else if (query.isNotBlank()) {
+                Text(
+                    text = "No memories retrieved. Try lowering the similarity threshold or check if embeddings are generated.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdvancedMemorySettings(
+    assistant: Assistant,
+    memories: List<AssistantMemory>,
+    onUpdateAssistant: (Assistant) -> Unit,
+    onRegenerateEmbeddings: (() -> Unit)?
+) {
+    var isExpanded by remember { mutableStateOf(false) }
+    
+    Card {
+        Column(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            // Header - clickable to expand/collapse
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { isExpanded = !isExpanded }
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Lucide.Settings,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "More about memories",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
+                Icon(
+                    imageVector = if (isExpanded) Lucide.ChevronUp else Lucide.ChevronDown,
+                    contentDescription = if (isExpanded) "Collapse" else "Expand",
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            
+            AnimatedVisibility(visible = isExpanded) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    HorizontalDivider()
+                    
+                    // Memory Statistics
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Memory Statistics",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        val coreMemories = memories.count { it.type == 0 }
+                        val episodicMemories = memories.count { it.type == 1 }
+                        val withEmbeddings = memories.count { it.hasEmbedding }
+                        val withoutEmbeddings = memories.size - withEmbeddings
+                        
+                        Text(
+                            text = "Total Memories: ${memories.size}",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = "  • Core Memories: $coreMemories",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "  • Episodic Memories: $episodicMemories",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "  • With Embeddings: $withEmbeddings",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (withoutEmbeddings > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (withoutEmbeddings > 0) {
+                            Text(
+                                text = "  • Without Embeddings: $withoutEmbeddings (use Regenerate Embeddings)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                    
+                    HorizontalDivider()
+                    
+                    // RAG Configuration Details
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "RAG Configuration",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Text(
+                            text = "RAG Enabled: ${if (assistant.useRagMemoryRetrieval) "Yes" else "No"}",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        if (assistant.useRagMemoryRetrieval) {
+                            Text(
+                                text = "Similarity Threshold: ${String.format("%.2f", assistant.ragSimilarityThreshold)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
-                                text = "Score: ${String.format("%.4f", score)} | Type: ${if(memory.type == 0) "CORE" else "EPISODIC"}",
-                                style = MaterialTheme.typography.labelSmall,
+                                text = "Memory Limit: ${assistant.ragLimit}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "Recent Chats Reference: ${if (assistant.enableRecentChatsReference) "Enabled" else "Disabled"}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            Text(
+                                text = "All memories are included in every request (no filtering)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    
+                    HorizontalDivider()
+                    
+                    // Memory Type Information
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Memory Types",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Text(
+                            text = "CORE: Permanent facts about the user (name, preferences, etc.). These don't decay over time.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "EPISODIC: Summaries of past conversations. These decay over time (7-day half-life) and are weighted by recency.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    
+                    HorizontalDivider()
+
+                    // How it works
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "How it works",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Text(
+                            text = "The memory system consists of two tracks: Episodic and Core.\n\n" +
+                                    "1. Episodic Memory: The AI automatically summarizes conversations into 'episodes'. These help the AI recall recent context but fade over time to keep the context window clean.\n\n" +
+                                    "2. Core Memory: The AI reflects on these episodes to extract permanent facts (Core Memories). These are deduplicated and never expire, forming the AI's long-term knowledge about you.\n\n" +
+                                    "When you chat, the AI retrieves the most relevant memories based on your current message using vector similarity (RAG).",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    
+                    HorizontalDivider()
+                    
+                    // Actions
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Actions",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        if (onRegenerateEmbeddings != null) {
+                            Text(
+                                text = "Regenerate Embeddings: Click the refresh icon above to regenerate embeddings for all memories. This is useful if the embedding model changed or embeddings are missing.",
+                                style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }

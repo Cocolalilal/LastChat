@@ -42,6 +42,7 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.ui.components.ai.AssistantPicker
@@ -180,32 +181,35 @@ fun ChatDrawerContent(
                 },
                 onPin = {
                     vm.updatePinnedStatus(it)
-                }
+                },
+                showUnconsolidatedDot = settings.getCurrentAssistant().enableMemory
             )
 
             // 助手选择器
-            AssistantPicker(
-                settings = settings,
-                onUpdateSettings = {
-                    vm.updateSettings(it)
-                    scope.launch {
-                        val id = if (context.readBooleanPreference("create_new_conversation_on_start", true)) {
-                            Uuid.random()
-                        } else {
-                            repo.getConversationsOfAssistant(it.assistantId)
-                                .first()
-                                .firstOrNull()
-                                ?.id ?: Uuid.random()
+            if (settings.assistants.size > 1) {
+                AssistantPicker(
+                    settings = settings,
+                    onUpdateSettings = {
+                        vm.updateSettings(it)
+                        scope.launch {
+                            val id = if (context.readBooleanPreference("create_new_conversation_on_start", true)) {
+                                Uuid.random()
+                            } else {
+                                repo.getConversationsOfAssistant(it.assistantId)
+                                    .first()
+                                    .firstOrNull()
+                                    ?.id ?: Uuid.random()
+                            }
+                            navigateToChatPage(navController = navController, chatId = id)
                         }
-                        navigateToChatPage(navController = navController, chatId = id)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    onClickSetting = {
+                        val currentAssistantId = settings.assistantId
+                        navController.navigate(Screen.AssistantDetail(id = currentAssistantId.toString()))
                     }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                onClickSetting = {
-                    val currentAssistantId = settings.assistantId
-                    navController.navigate(Screen.AssistantDetail(id = currentAssistantId.toString()))
-                }
-            )
+                )
+            }
 
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),

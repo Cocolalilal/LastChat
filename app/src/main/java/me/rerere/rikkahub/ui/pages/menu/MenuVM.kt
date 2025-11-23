@@ -35,11 +35,18 @@ class MenuVM(
             settings.assistants.find { it.id == id }?.name
         } ?: "None"
 
+        val totalPinnedConversations = conversations.count { it.isPinned }
+        val avgConversationsPerAssistant = if (settings.assistants.isNotEmpty()) {
+            totalConversations.toFloat() / settings.assistants.size
+        } else 0f
+
         MenuStats(
             totalConversations = totalConversations,
             monthlyConversations = monthlyConversations,
             mostActiveAssistantName = mostActiveAssistantName,
-            totalAssistants = settings.assistants.size
+            totalAssistants = settings.assistants.size,
+            totalPinnedConversations = totalPinnedConversations,
+            avgConversationsPerAssistant = avgConversationsPerAssistant
         )
     }.stateIn(
         scope = viewModelScope,
@@ -52,5 +59,7 @@ data class MenuStats(
     val totalConversations: Int = 0,
     val monthlyConversations: Int = 0,
     val mostActiveAssistantName: String = "None",
-    val totalAssistants: Int = 0
+    val totalAssistants: Int = 0,
+    val totalPinnedConversations: Int = 0,
+    val avgConversationsPerAssistant: Float = 0f
 )

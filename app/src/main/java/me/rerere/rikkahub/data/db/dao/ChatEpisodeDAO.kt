@@ -23,4 +23,7 @@ interface ChatEpisodeDAO {
 
     @Query("DELETE FROM ChatEpisodeEntity WHERE assistant_id = :assistantId")
     suspend fun deleteEpisodesOfAssistant(assistantId: String)
+
+    @Query("DELETE FROM ChatEpisodeEntity WHERE assistant_id = :assistantId AND start_time >= :startTime AND end_time <= :endTime")
+    suspend fun deleteEpisodeByTimeRange(assistantId: String, startTime: Long, endTime: Long)
 }

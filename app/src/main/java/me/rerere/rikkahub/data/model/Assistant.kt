@@ -22,10 +22,17 @@ data class Assistant(
     val temperature: Float? = null,
     val topP: Float? = null,
     val contextMessageSize: Int = 64,
+    val summarizerModelId: Uuid? = null, // Model used for memory summarization
     val streamOutput: Boolean = true,
     val enableMemory: Boolean = false,
     val useRagMemoryRetrieval: Boolean = true, // If true, use vector-based RAG. If false, inject all memories
+    val ragSimilarityThreshold: Float = 0.0f, // Similarity threshold for RAG (0.0 = include all, 1.0 = only perfect matches). Default 0.0 to include all memories
+    val ragLimit: Int = 5, // Maximum number of memories to retrieve via RAG
     val enableRecentChatsReference: Boolean = false, // Use chat episodes in memory
+    val ragIncludeEpisodes: Boolean = true, // Include episodic memories in RAG
+    val ragIncludeCore: Boolean = true, // Include core memories in RAG
+    val enableRagLogging: Boolean = false, // Enable detailed RAG logging
+    val enableHumanMemory: Boolean = false, // Enable human-like memory features (significance, reflection)
 
     // Spontaneous Notification Settings
     val notificationStartHour: Int = 7, // Hour when notifications can start (0-23)
@@ -47,6 +54,14 @@ data class Assistant(
     val learningMode: Boolean = false,
     val enableSpontaneous: Boolean = false, // 是否启用自发消息
     val spontaneousPrompt: String = "", // 自发消息的Prompt
+
+    // Memory System Configuration & Stats
+    val consolidationDelayMinutes: Int = 60, // Wait time before consolidating a chat
+    val lastConsolidationTime: Long = 0L,
+    val lastConsolidationResult: String = "",
+    val humanMemoryUpdateIntervalHours: Int = 24, // Interval for core memory reflection
+    val lastHumanMemoryUpdateTime: Long = 0L,
+    val lastHumanMemoryUpdateResult: String = "",
 )
 
 @Serializable

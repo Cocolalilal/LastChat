@@ -2,6 +2,8 @@ package me.rerere.rikkahub.ui.pages.assistant.detail
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -47,18 +49,37 @@ fun AssistantLocalToolSubPage(
             }
         )
 
+        val deviceControlPermissionLauncher = rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+        ) {
+            // We don't strictly block if denied, just proceed
+            val newLocalTools = assistant.localTools + LocalToolOption.DeviceControl
+            onUpdate(assistant.copy(localTools = newLocalTools))
+        }
+
         // Device Control
         LocalToolCard(
             title = "Device Control",
             description = "Allow assistant to control device settings (Brightness, Volume, Torch, etc.) and send notifications.",
             isEnabled = assistant.localTools.contains(LocalToolOption.DeviceControl),
             onToggle = { enabled ->
-                val newLocalTools = if (enabled) {
-                    assistant.localTools + LocalToolOption.DeviceControl
+                if (enabled) {
+                    val permissions = mutableListOf<String>()
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                        permissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                    permissions.add(android.Manifest.permission.CAMERA)
+                    
+                    if (permissions.isNotEmpty()) {
+                        deviceControlPermissionLauncher.launch(permissions.toTypedArray())
+                    } else {
+                        val newLocalTools = assistant.localTools + LocalToolOption.DeviceControl
+                        onUpdate(assistant.copy(localTools = newLocalTools))
+                    }
                 } else {
-                    assistant.localTools - LocalToolOption.DeviceControl
+                    val newLocalTools = assistant.localTools - LocalToolOption.DeviceControl
+                    onUpdate(assistant.copy(localTools = newLocalTools))
                 }
-                onUpdate(assistant.copy(localTools = newLocalTools))
             }
         )
     }

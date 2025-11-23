@@ -13,6 +13,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
+import kotlin.uuid.Uuid
 
 @Serializable
 sealed class LocalToolOption {
@@ -60,8 +61,8 @@ class LocalTools(private val context: Context) {
         )
     }
 
-    val deviceControlTools by lazy {
-        listOf(
+    fun getDeviceControlTools(assistantId: Uuid, conversationId: Uuid): List<Tool> {
+        return listOf(
             Tool(
                 name = "send_notification",
                 description = "Send a notification to the user",
@@ -109,6 +110,68 @@ class LocalTools(private val context: Context) {
                         buildJsonObject { put("status", "success") }
                     } else {
                         buildJsonObject { put("status", "error: permission denied") }
+                    }
+                }
+            ),
+            Tool(
+                name = "schedule_message",
+                description = "Schedule a message to be sent by the assistant after a certain delay.",
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject {
+                            put("reason", buildJsonObject {
+                                put("type", "string")
+                                put("description", "The reason for scheduling this message (e.g., 'Remind user to drink water')")
+                            })
+                            put("delay_minutes", buildJsonObject {
+                                put("type", "integer")
+                                put("description", "Delay in minutes before sending the message")
+                            })
+                        },
+                        required = listOf("reason", "delay_minutes")
+                    )
+                },
+                execute = {
+                    val reason = it.jsonObject["reason"]?.jsonPrimitive?.contentOrNull ?: ""
+                    val delayMinutes = it.jsonObject["delay_minutes"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 1L
+                    
+                    try {
+                        val currentTime = System.currentTimeMillis()
+                        val targetTime = currentTime + (delayMinutes * 60 * 1000)
+                        
+                        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+                        
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                            if (!alarmManager.canScheduleExactAlarms()) {
+                                    buildJsonObject { put("status", "error: permission SCHEDULE_EXACT_ALARM not granted") }
+                            }
+                        }
+
+                        val intent = android.content.Intent(context, me.rerere.rikkahub.service.ScheduledMessageReceiver::class.java).apply {
+                            putExtra("assistantId", assistantId.toString())
+                            putExtra("conversationId", conversationId.toString())
+                            putExtra("reason", reason)
+                        }
+                        
+                        val pendingIntent = android.app.PendingIntent.getBroadcast(
+                            context,
+                            (assistantId.hashCode() + conversationId.hashCode() + reason.hashCode()),
+                            intent,
+                            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+                        )
+                        
+                        alarmManager.setExactAndAllowWhileIdle(
+                            android.app.AlarmManager.RTC_WAKEUP,
+                            targetTime,
+                            pendingIntent
+                        )
+                        
+                        buildJsonObject { 
+                            put("status", "success")
+                            put("scheduled_at", java.time.Instant.ofEpochMilli(targetTime).toString())
+                        }
+                    } catch (e: Exception) {
+                        buildJsonObject { put("status", "error: ${e.message}") }
                     }
                 }
             ),
@@ -554,13 +617,13 @@ class LocalTools(private val context: Context) {
         )
     }
 
-    fun getTools(options: List<LocalToolOption>): List<Tool> {
+    fun getTools(options: List<LocalToolOption>, assistantId: Uuid, conversationId: Uuid): List<Tool> {
         val tools = mutableListOf<Tool>()
         if (options.contains(LocalToolOption.JavascriptEngine)) {
             tools.add(javascriptTool)
         }
         if (options.contains(LocalToolOption.DeviceControl)) {
-            tools.addAll(deviceControlTools)
+            tools.addAll(getDeviceControlTools(assistantId, conversationId))
         }
         if (options.contains(LocalToolOption.ShellCommand)) {
             tools.addAll(shellTools)

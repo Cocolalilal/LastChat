@@ -9,11 +9,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.db.dao.ChatEpisodeDAO
+import me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.model.Avatar
@@ -29,6 +32,7 @@ class AssistantDetailVM(
     private val settingsStore: SettingsStore,
     private val memoryRepository: MemoryRepository,
     private val context: Application,
+    private val chatEpisodeDAO: ChatEpisodeDAO,
 ) : ViewModel() {
     private val assistantId = Uuid.parse(id)
 
@@ -50,10 +54,39 @@ class AssistantDetailVM(
             scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = Assistant()
         )
 
-    val memories = memoryRepository.getMemoriesOfAssistantFlow(assistantId.toString())
+    val memories = combine(
+        memoryRepository.getMemoriesOfAssistantFlow(assistantId.toString()),
+        chatEpisodeDAO.getEpisodesOfAssistantFlow(assistantId.toString())
+    ) { coreMemories, episodes ->
+        val core = coreMemories
+        val episodic = episodes.map { 
+            AssistantMemory(
+                id = -it.id, // Negative ID to distinguish from core memories
+                content = it.content, 
+                type = 1, // EPISODIC
+                hasEmbedding = it.embedding != null
+            ) 
+        }
+        core + episodic
+    }.stateIn(
+        scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = emptyList()
+    )
+
+    val episodes = chatEpisodeDAO.getEpisodesOfAssistantFlow(assistantId.toString())
         .stateIn(
             scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = emptyList()
         )
+
+    val episodeStats = combine(episodes, memories) { episodeList, memoryList ->
+        val totalEpisodes = episodeList.size
+        val avgSig = if (totalEpisodes > 0) {
+            episodeList.sumOf { it.significance }.toDouble() / totalEpisodes
+        } else {
+            0.0
+        }
+        val coreCount = memoryList.count { it.type == 0 } // 0 is CORE
+        EpisodeStats(totalEpisodes, avgSig, coreCount)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, EpisodeStats(0, 0.0, 0))
 
     val providers = settingsStore
         .settingsFlow
@@ -184,19 +217,27 @@ class AssistantDetailVM(
     fun testRetrieval(query: String) {
         viewModelScope.launch {
             try {
-                val results = memoryRepository.retrieveRelevantMemories(
+                val currentAssistant = assistant.value
+                val threshold = if (currentAssistant.ragSimilarityThreshold > 0f) {
+                    currentAssistant.ragSimilarityThreshold
+                } else {
+                    0.0f // Show all for debugging
+                }
+                val limit = if (currentAssistant.ragLimit > 0) {
+                    currentAssistant.ragLimit
+                } else {
+                    10 // Default for debugging
+                }
+                
+                val results = memoryRepository.retrieveRelevantMemoriesWithScores(
                     assistantId = assistantId.toString(),
                     query = query,
-                    limit = 10,
-                    similarityThreshold = 0.0f // Show all for debugging
+                    limit = limit,
+                    similarityThreshold = threshold,
+                    includeCore = currentAssistant.ragIncludeCore,
+                    includeEpisodes = currentAssistant.ragIncludeEpisodes
                 )
-                // We need the scores, but retrieveRelevantMemories returns List<AssistantMemory>
-                // The repository logic calculates scores internally but only returns the items.
-                // For debugging, we might need to adjust the repository or just show the items returned.
-                // Wait, the repository returns List<AssistantMemory>.
-                // I should update the repository to return scores if I want to show them, or just show the order.
-                // For now, let's just show the returned items in order.
-                _retrievalResults.value = results.map { it to 0.0f } // Score not available in current API
+                _retrievalResults.value = results
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to test retrieval", e)
                 _snackbarMessage.value = "Retrieval failed: ${e.message}"
@@ -237,6 +278,16 @@ class AssistantDetailVM(
         }
     }
 
+    fun consolidateMemories(isFullScan: Boolean) {
+        val request = androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.MemoryConsolidationWorker>()
+            .setInputData(
+                androidx.work.workDataOf("FULL_SCAN" to isFullScan)
+            )
+            .build()
+        androidx.work.WorkManager.getInstance(context).enqueue(request)
+        _snackbarMessage.value = "Memory consolidation started (Full Scan: $isFullScan)"
+    }
+
     fun checkAvatarDelete(old: Assistant, new: Assistant) {
         if (old.avatar is Avatar.Image && old.avatar != new.avatar) {
             context.deleteChatFiles(listOf(old.avatar.url.toUri()))
@@ -264,4 +315,10 @@ data class EmbeddingProgress(
     val current: Int,
     val total: Int,
     val isRunning: Boolean
+)
+
+data class EpisodeStats(
+    val totalEpisodes: Int,
+    val averageSignificance: Double,
+    val coreMemoryCount: Int
 )

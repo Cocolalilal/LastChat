@@ -311,14 +311,12 @@ private fun SettingProviderConfigPage(
 
             Spacer(Modifier.weight(1f))
 
-            if (!internalProvider.builtIn) {
-                IconButton(
-                    onClick = {
-                        showDeleteDialog = true
-                    },
-                ) {
-                    Icon(Lucide.Trash2, "Delete")
-                }
+            IconButton(
+                onClick = {
+                    showDeleteDialog = true
+                },
+            ) {
+                Icon(Lucide.Trash2, "Delete")
             }
 
             Button(

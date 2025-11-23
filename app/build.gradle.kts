@@ -20,11 +20,11 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "me.rerere.rikkahub"
+        applicationId = "lastchat.rikkafork.cocolal"
         minSdk = 31
         targetSdk = 36
-        versionCode = 112
-        versionName = "1.6.13"
+        versionCode = 113
+        versionName = "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -89,7 +89,7 @@ android {
             buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
         }
         debug {
-            applicationIdSuffix = ".debug"
+
             buildConfigField("String", "VERSION_NAME", "\"${android.defaultConfig.versionName}\"")
             buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
         }
@@ -120,7 +120,7 @@ android {
             this as com.android.build.gradle.internal.api.ApkVariantOutputImpl
 
             val variantName = name
-            val apkName = "rikkahub_" + defaultConfig.versionName + "_" + variantName + ".apk"
+            val apkName = "lastchat_" + defaultConfig.versionName + "_" + variantName + ".apk"
 
             outputFileName = apkName
         }

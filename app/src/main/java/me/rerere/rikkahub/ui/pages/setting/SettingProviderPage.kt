@@ -118,22 +118,7 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
                     BackButton()
                 },
                 actions = {
-                    if(Locale.getDefault().language == "zh") {
-                        IconButton(
-                            onClick = {
-                                val aihubmixIndex = filteredProviders.indexOfFirst {
-                                    it.id.toString() == "1b1395ed-b702-4aeb-8bc1-b681c4456953"
-                                }
-                                if (aihubmixIndex != -1) {
-                                    scope.launch {
-                                        lazyListState.animateScrollToItem(aihubmixIndex)
-                                    }
-                                }
-                            }
-                        ) {
-                            AutoAIIcon("AiHubMix")
-                        }
-                    }
+
                     ImportProviderButton {
                         vm.updateSettings(
                             settings.copy(

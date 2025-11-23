@@ -90,9 +90,11 @@ fun AssistantDetailPage(id: String) {
         stringResource(R.string.assistant_page_tab_basic),
         stringResource(R.string.assistant_page_tab_prompt),
         stringResource(R.string.assistant_page_tab_memory),
+        "Consolidation",
         stringResource(R.string.assistant_page_tab_request),
         stringResource(R.string.assistant_page_tab_mcp),
-        stringResource(R.string.assistant_page_tab_local_tools)
+        stringResource(R.string.assistant_page_tab_local_tools),
+        "Advanced"
     )
     val pagerState = rememberPagerState { tabs.size }
     Scaffold(
@@ -178,12 +180,25 @@ fun AssistantDetailPage(id: String) {
                     }
 
                     3 -> {
+                        val allModels = remember(providers) {
+                            providers.flatMap { it.models }
+                        }
+                        AssistantMemoryConsolidationSubPage(
+                            vm = vm,
+                            assistant = assistant,
+                            onUpdate = { onUpdate(it) },
+                            allModels = allModels,
+                            onConsolidate = { vm.consolidateMemories(it) }
+                        )
+                    }
+
+                    4 -> {
                         AssistantCustomRequestSettings(assistant = assistant) {
                             onUpdate(it)
                         }
                     }
 
-                    4 -> {
+                    5 -> {
                         AssistantMcpSettings(
                             assistant = assistant,
                             onUpdate = {
@@ -193,10 +208,21 @@ fun AssistantDetailPage(id: String) {
                         )
                     }
 
-                    5 -> {
+                    6 -> {
                         AssistantLocalToolSubPage(
                             assistant = assistant,
                             onUpdate = { onUpdate(it) }
+                        )
+                    }
+                    7 -> {
+                        val allModels = remember(providers) {
+                            providers.flatMap { it.models }
+                        }
+                        AssistantAdvancedSettings(
+                            assistant = assistant,
+                            onUpdateAssistant = { onUpdate(it) },
+                            onConsolidate = { vm.consolidateMemories(it) },
+                            models = allModels
                         )
                     }
                 }

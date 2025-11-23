@@ -91,7 +91,8 @@ fun ColumnScope.ConversationList(
     onClick: (Conversation) -> Unit = {},
     onDelete: (Conversation) -> Unit = {},
     onRegenerateTitle: (Conversation) -> Unit = {},
-    onPin: (Conversation) -> Unit = {}
+    onPin: (Conversation) -> Unit = {},
+    showUnconsolidatedDot: Boolean = false
 ) {
     val navController = LocalNavController.current
 
@@ -203,6 +204,7 @@ fun ColumnScope.ConversationList(
                         onDelete = onDelete,
                         onRegenerateTitle = onRegenerateTitle,
                         onPin = onPin,
+                        showUnconsolidatedDot = showUnconsolidatedDot,
                         modifier = Modifier.animateItem()
                     )
                 }
@@ -272,6 +274,7 @@ private fun ConversationItem(
     onDelete: (Conversation) -> Unit = {},
     onRegenerateTitle: (Conversation) -> Unit = {},
     onPin: (Conversation) -> Unit = {},
+    showUnconsolidatedDot: Boolean = false,
     onClick: (Conversation) -> Unit
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -308,6 +311,17 @@ private fun ConversationItem(
                 overflow = TextOverflow.Ellipsis
             )
             Spacer(Modifier.weight(1f))
+            
+            // Unconsolidated Dot
+            AnimatedVisibility(showUnconsolidatedDot && !conversation.isConsolidated) {
+                Box(
+                    modifier = Modifier
+                        .padding(end = 4.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.error)
+                        .size(6.dp)
+                )
+            }
 
             // 置顶图标
             AnimatedVisibility(conversation.isPinned) {

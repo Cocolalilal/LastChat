@@ -20,6 +20,8 @@ import androidx.compose.material.icons.rounded.DateRange
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Translate
+import androidx.compose.material.icons.rounded.PushPin
+import androidx.compose.material.icons.rounded.Calculate
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -111,6 +113,28 @@ private fun StatsSection(stats: MenuStats) {
                 icon = Icons.Rounded.DateRange,
                 containerColor = MaterialTheme.colorScheme.secondaryContainer,
                 contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            StatCard(
+                title = "Pinned Chats",
+                value = stats.totalPinnedConversations.toString(),
+                icon = Icons.Rounded.PushPin,
+                containerColor = MaterialTheme.colorScheme.errorContainer,
+                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.weight(1f)
+            )
+            StatCard(
+                title = "Avg Chats/Asst",
+                value = String.format("%.1f", stats.avgConversationsPerAssistant),
+                icon = Icons.Rounded.Calculate,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                contentColor = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f)
             )
         }

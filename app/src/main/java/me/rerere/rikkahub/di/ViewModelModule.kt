@@ -38,6 +38,7 @@ val viewModelModule = module {
             settingsStore = get(),
             memoryRepository = get(),
             context = get(),
+            chatEpisodeDAO = get(),
         )
     }
     viewModelOf(::TranslatorVM)

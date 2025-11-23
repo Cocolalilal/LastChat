@@ -78,6 +78,13 @@ import sh.calvin.reorderable.rememberReorderableLazyStaggeredGridState
 import kotlin.uuid.Uuid
 import androidx.compose.foundation.lazy.items as lazyItems
 
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
+import androidx.compose.runtime.mutableFloatStateOf
+import com.composables.icons.lucide.Clock
+import com.composables.icons.lucide.Settings
+import com.composables.icons.lucide.ZapOff
+
 @Composable
 fun AssistantPage(vm: AssistantVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
@@ -88,6 +95,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
 
     // 标签过滤状态
     var selectedTagIds by remember { mutableStateOf(emptySet<Uuid>()) }
+    var showGlobalSettingsDialog by remember { mutableStateOf(false) }
 
     // 根据选中的标签过滤助手
     val filteredAssistants = remember(settings.assistants, selectedTagIds) {
@@ -107,6 +115,13 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
             }, navigationIcon = {
                 BackButton()
             }, actions = {
+                IconButton(
+                    onClick = {
+                        showGlobalSettingsDialog = true
+                    }
+                ) {
+                    Icon(Lucide.Settings, "Global Settings")
+                }
                 IconButton(
                     onClick = {
                         createState.open(Assistant())
@@ -199,6 +214,73 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
     }
 
     AssistantCreationSheet(createState)
+
+    if (showGlobalSettingsDialog) {
+        GlobalSettingsDialog(
+            settings = settings,
+            onUpdate = { vm.updateSettings(it) },
+            onDismiss = { showGlobalSettingsDialog = false }
+        )
+    }
+}
+
+@Composable
+private fun GlobalSettingsDialog(
+    settings: Settings,
+    onUpdate: (Settings) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Global Assistant Settings") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                var interval by remember { mutableFloatStateOf(settings.consolidationWorkerIntervalMinutes.toFloat()) }
+                
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Lucide.Clock, null, modifier = Modifier.size(20.dp))
+                        Text("Consolidation Interval", style = MaterialTheme.typography.labelLarge)
+                    }
+                    Text("${interval.toInt()} minutes", style = MaterialTheme.typography.bodySmall)
+                    Slider(
+                        value = interval,
+                        onValueChange = { interval = it },
+                        onValueChangeFinished = {
+                            onUpdate(settings.copy(consolidationWorkerIntervalMinutes = interval.toInt()))
+                        },
+                        valueRange = 15f..240f,
+                        steps = 14
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Lucide.ZapOff, null, modifier = Modifier.size(20.dp))
+                            Text("Require Device Idle", style = MaterialTheme.typography.labelLarge)
+                        }
+                        Text("Only run consolidation when device is not in use", style = MaterialTheme.typography.bodySmall)
+                    }
+                    Switch(
+                        checked = settings.consolidationRequiresDeviceIdle,
+                        onCheckedChange = {
+                            onUpdate(settings.copy(consolidationRequiresDeviceIdle = it))
+                        }
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
 }
 
 @Composable
@@ -410,7 +492,7 @@ private fun AssistantItem(
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (assistant.id !in DEFAULT_ASSISTANTS_IDS) {
+                if (settings.assistants.size > 1) {
                     Tooltip(tooltip = { Text(stringResource(R.string.assistant_page_delete)) }) {
                         Icon(
                             imageVector = Lucide.Trash2,
