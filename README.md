@@ -6,7 +6,7 @@
 
 **LastChat** is a powerful, feature-rich AI assistant application for Android. It is a fork of [RikkaHub](https://github.com/re-ovo/RikkaHub), modified using **Gemini 3 Pro** and **Claude 4.5 Sonnet**.
 
-This project aims to provide a premium, privacy-focused, and highly extensible AI chat experience on Android, leveraging the latest in LLM technology and Android development standards.
+This project aims to provide a privacy-focused and highly extensible AI chat experience on Android
 
 ## 📸 Gallery
 
@@ -19,11 +19,11 @@ This project aims to provide a premium, privacy-focused, and highly extensible A
 ## ✨ Key Features
 
 ### 🧠 Advanced AI Capabilities
-*   **Multi-Provider Support**: Seamlessly integrate with **OpenAI**, **Google Gemini**, **Anthropic Claude** and there's support for custom providers too.
+*   **Multi-Provider Support**: Works with **OpenAI**, **Google** and **OpenRouter** out of the box. There's support for custom providers too!
 *   **Local RAG Memory**: Features a sophisticated **Vector-Based Long-Term Memory** system. Assistants can "remember" details from past conversations using embeddings.
 *   **Multi-Modal Inputs**: Interact using Text, Images, Video, and Audio.
 
-### 🛠️ Powerful Tools & Integration
+### 🛠️ Tools & Integrations
 *   **Local Device Control**: The AI can interact with your device if you want:
     *   Send notifications
     *   Adjust brightness and volume
