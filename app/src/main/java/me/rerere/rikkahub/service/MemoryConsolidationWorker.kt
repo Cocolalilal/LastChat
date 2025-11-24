@@ -56,6 +56,7 @@ class MemoryConsolidationWorker(
     private suspend fun consolidateMemories() {
         val settings = settingsStore.settingsFlow.value
         val assistant = settings.getCurrentAssistant()
+        if (!assistant.enableMemory) return
         val summarizerModelId = assistant.summarizerModelId
         val backgroundModelId = summarizerModelId ?: assistant.backgroundModelId ?: settings.chatModelId
         val model = settings.findModelById(backgroundModelId) ?: return

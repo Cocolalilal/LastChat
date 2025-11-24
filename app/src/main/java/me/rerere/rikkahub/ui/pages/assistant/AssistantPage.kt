@@ -429,7 +429,12 @@ private fun AssistantItem(
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
     Card(
-        modifier = modifier.fillMaxWidth(), onClick = onEdit
+        modifier = modifier.fillMaxWidth(),
+        onClick = onEdit,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+        colors = androidx.compose.material3.CardDefaults.cardColors(
+            containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer
+        )
     ) {
         Column(
             modifier = Modifier.padding(16.dp),

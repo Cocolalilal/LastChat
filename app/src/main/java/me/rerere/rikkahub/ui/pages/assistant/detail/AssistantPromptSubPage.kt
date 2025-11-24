@@ -114,7 +114,12 @@ fun AssistantPromptSubPage(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Card {
+        Card(
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+            colors = androidx.compose.material3.CardDefaults.cardColors(
+                containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer
+            )
+        ) {
             FormItem(
                 modifier = Modifier.padding(8.dp),
                 label = {
@@ -221,7 +226,12 @@ fun AssistantPromptSubPage(
             }
         }
 
-        Card {
+        Card(
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+            colors = androidx.compose.material3.CardDefaults.cardColors(
+                containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer
+            )
+        ) {
             FormItem(
                 modifier = Modifier.padding(8.dp),
                 label = {
@@ -336,7 +346,12 @@ fun AssistantPromptSubPage(
             }
         }
 
-        Card {
+        Card(
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+            colors = androidx.compose.material3.CardDefaults.cardColors(
+                containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer
+            )
+        ) {
             FormItem(
                 modifier = Modifier.padding(8.dp),
                 label = {
@@ -436,7 +451,12 @@ fun AssistantPromptSubPage(
             }
         }
 
-        Card {
+        Card(
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+            colors = androidx.compose.material3.CardDefaults.cardColors(
+                containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer
+            )
+        ) {
             FormItem(
                 modifier = Modifier.padding(8.dp),
                 label = {
@@ -527,7 +547,12 @@ fun AssistantPromptSubPage(
             }
         }
 
-        Card {
+        Card(
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+            colors = androidx.compose.material3.CardDefaults.cardColors(
+                containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer
+            )
+        ) {
             FormItem(
                 modifier = Modifier.padding(8.dp),
                 label = {
@@ -566,49 +591,7 @@ fun AssistantPromptSubPage(
             }
         }
 
-        Card {
-            FormItem(
-                modifier = Modifier.padding(8.dp),
-                label = {
-                    Text("Spontaneous Notification")
-                },
-                description = {
-                    Text("Allow the assistant to send notifications spontaneously based on recent chat history.")
-                }
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "Enable Spontaneous Notification",
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Switch(
-                        checked = assistant.enableSpontaneous,
-                        onCheckedChange = {
-                            onUpdate(assistant.copy(enableSpontaneous = it))
-                        }
-                    )
-                }
-                
-                if (assistant.enableSpontaneous) {
-                    Spacer(modifier = Modifier.padding(4.dp))
-                    OutlinedTextField(
-                        value = assistant.spontaneousPrompt,
-                        onValueChange = {
-                            onUpdate(assistant.copy(spontaneousPrompt = it))
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Custom Prompt (Optional)") },
-                        placeholder = { Text("Leave empty to use default prompt. Use {{history}} for chat context.") },
-                        minLines = 3,
-                        maxLines = 10
-                    )
-                }
-            }
-        }
+
     }
 }
 
@@ -623,7 +606,11 @@ private fun AssistantRegexCard(
         mutableStateOf(false)
     }
     ElevatedCard(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+        colors = androidx.compose.material3.CardDefaults.elevatedCardColors(
+            containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer
+        )
     ) {
         Column(
             modifier = Modifier

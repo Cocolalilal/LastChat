@@ -313,6 +313,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
 private fun ProviderConfigWarningCard(navController: NavHostController) {
     Card(
         modifier = Modifier.padding(8.dp),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.errorContainer
         )

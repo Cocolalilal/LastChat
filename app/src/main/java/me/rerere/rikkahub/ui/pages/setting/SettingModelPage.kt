@@ -34,15 +34,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.composables.icons.lucide.Earth
-import com.composables.icons.lucide.Eye
-import com.composables.icons.lucide.GraduationCap
-import com.composables.icons.lucide.Lucide
-import com.composables.icons.lucide.MessageCircle
-import com.composables.icons.lucide.MessageSquareMore
-import com.composables.icons.lucide.NotebookTabs
-import com.composables.icons.lucide.Settings2
-import com.composables.icons.lucide.Brain
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Chat
+import androidx.compose.material.icons.rounded.DocumentScanner
+import androidx.compose.material.icons.rounded.Psychology
+import androidx.compose.material.icons.rounded.School
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.TipsAndUpdates
+import androidx.compose.material.icons.rounded.Title
+import androidx.compose.material.icons.rounded.Translate
 import me.rerere.ai.provider.ModelType
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
@@ -125,7 +125,7 @@ private fun DefaultTranslationModelSetting(
             Text(stringResource(R.string.setting_model_page_translate_model_desc))
         },
         icon = {
-            Icon(Lucide.Earth, null)
+            Icon(Icons.Rounded.Translate, null)
         },
         actions = {
             Box(modifier = Modifier.weight(1f)) {
@@ -148,7 +148,7 @@ private fun DefaultTranslationModelSetting(
                     showModal = true
                 }
             ) {
-                Icon(Lucide.Settings2, null)
+                Icon(Icons.Rounded.Settings, null)
             }
         }
     )
@@ -220,7 +220,7 @@ private fun DefaultSuggestionModelSetting(
             Text(stringResource(R.string.setting_model_page_suggestion_model_desc))
         },
         icon = {
-            Icon(Lucide.MessageSquareMore, null)
+            Icon(Icons.Rounded.TipsAndUpdates, null)
         },
         actions = {
             Box(modifier = Modifier.weight(1f)) {
@@ -244,7 +244,7 @@ private fun DefaultSuggestionModelSetting(
                     showModal = true
                 }
             ) {
-                Icon(Lucide.Settings2, null)
+                Icon(Icons.Rounded.Settings, null)
             }
         }
     )
@@ -313,7 +313,7 @@ private fun DefaultTitleModelSetting(
             Text(stringResource(R.string.setting_model_page_title_model_desc))
         },
         icon = {
-            Icon(Lucide.NotebookTabs, null)
+            Icon(Icons.Rounded.Title, null)
         },
         actions = {
             Box(modifier = Modifier.weight(1f)) {
@@ -336,7 +336,7 @@ private fun DefaultTitleModelSetting(
                     showModal = true
                 }
             ) {
-                Icon(Lucide.Settings2, null)
+                Icon(Icons.Rounded.Settings, null)
             }
         }
     )
@@ -398,7 +398,7 @@ private fun DefaultChatModelSetting(
 ) {
     ModelFeatureCard(
         icon = {
-            Icon(Lucide.MessageCircle, null)
+            Icon(Icons.Rounded.Chat, null)
         },
         title = {
             Text(stringResource(R.string.setting_model_page_chat_model), maxLines = 1)
@@ -440,7 +440,7 @@ private fun LearningModePromptSetting(
             Text(stringResource(R.string.setting_model_page_learning_mode_desc))
         },
         icon = {
-            Icon(Lucide.GraduationCap, null)
+            Icon(Icons.Rounded.School, null)
         },
         actions = {
             IconButton(
@@ -448,7 +448,7 @@ private fun LearningModePromptSetting(
                     showModal = true
                 }
             ) {
-                Icon(Lucide.Settings2, null)
+                Icon(Icons.Rounded.Settings, null)
             }
         }
     )
@@ -517,7 +517,7 @@ private fun DefaultOcrModelSetting(
             Text(stringResource(R.string.setting_model_page_ocr_model_desc))
         },
         icon = {
-            Icon(Lucide.Eye, null)
+            Icon(Icons.Rounded.DocumentScanner, null)
         },
         actions = {
             Box(modifier = Modifier.weight(1f)) {
@@ -540,7 +540,7 @@ private fun DefaultOcrModelSetting(
                     showModal = true
                 }
             ) {
-                Icon(Lucide.Settings2, null)
+                Icon(Icons.Rounded.Settings, null)
             }
         }
     )
@@ -611,7 +611,7 @@ private fun DefaultEmbeddingModelSetting(
             Text(stringResource(R.string.setting_model_page_embedding_model_desc))
         },
         icon = {
-            Icon(Lucide.Brain, null)
+            Icon(Icons.Rounded.Psychology, null)
         },
         actions = {
             Box(modifier = Modifier.weight(1f)) {
@@ -644,6 +644,10 @@ private fun ModelFeatureCard(
 ) {
     Card(
         modifier = modifier,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+        colors = androidx.compose.material3.CardDefaults.cardColors(
+            containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer
+        )
     ) {
         Column(
             verticalArrangement = Arrangement.spacedBy(16.dp),

@@ -1056,7 +1056,12 @@ private fun ModelPicker(
                     contentPadding = PaddingValues(8.dp),
                 ) {
                     items(filteredModels) {
-                        Card {
+                        Card(
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                            colors = androidx.compose.material3.CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainer
+                            )
+                        ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(
@@ -1430,7 +1435,9 @@ private fun ModelCard(
         gesturesEnabled = true,
         modifier = modifier
     ) {
-        OutlinedCard {
+        OutlinedCard(
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+        ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1525,7 +1532,11 @@ private fun BuiltInToolsSettings(
         availableTools.forEach { (tool, info) ->
             val (title, description) = info
             Card(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                colors = androidx.compose.material3.CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             ) {
                 Row(
                     modifier = Modifier
@@ -1589,7 +1600,8 @@ private fun ProviderOverrideSettings(
 
         if (providerOverride != null) {
             OutlinedCard(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
             ) {
                 Column(
                     modifier = Modifier

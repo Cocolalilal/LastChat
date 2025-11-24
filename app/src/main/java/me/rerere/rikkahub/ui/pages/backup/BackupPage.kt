@@ -177,7 +177,12 @@ private fun WebDavPage(
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Card {
+        Card(
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+            colors = androidx.compose.material3.CardDefaults.cardColors(
+                containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer
+            )
+        ) {
             Column(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -189,7 +194,7 @@ private fun WebDavPage(
                         modifier = Modifier.fillMaxWidth(),
                         value = webDavConfig.url,
                         onValueChange = { updateWebDavConfig(webDavConfig.copy(url = it.trim())) },
-                        placeholder = { Text("https://example.com/dav") },
+                       // Placeholder = { Text("https://example.com/dav") },
                         singleLine = true
                     )
                 }
@@ -243,7 +248,12 @@ private fun WebDavPage(
             }
         }
 
-        Card {
+        Card(
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+            colors = androidx.compose.material3.CardDefaults.cardColors(
+                containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer
+            )
+        ) {
             FormItem(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -468,7 +478,12 @@ private fun BackupItemCard(
     onDelete: (WebDavBackupItem) -> Unit = {},
     onRestore: (WebDavBackupItem) -> Unit = {},
 ) {
-    Card {
+    Card(
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+        colors = androidx.compose.material3.CardDefaults.cardColors(
+            containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer
+        )
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -636,6 +651,10 @@ private fun ImportExportPage(
 
         item {
             Card(
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                colors = androidx.compose.material3.CardDefaults.cardColors(
+                    containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer
+                ),
                 onClick = {
                     if (!isExporting) {
                         val timestamp = LocalDateTime.now()
@@ -671,6 +690,10 @@ private fun ImportExportPage(
 
         item {
             Card(
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                colors = androidx.compose.material3.CardDefaults.cardColors(
+                    containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer
+                ),
                 onClick = {
                     if (!isRestoring) {
                         importType = "local"

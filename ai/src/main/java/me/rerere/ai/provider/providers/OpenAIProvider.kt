@@ -67,9 +67,12 @@ class OpenAIProvider(
                 val modelObj = modelJson.jsonObject
                 val id = modelObj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
 
+                val isEmbedding = id.contains("embed", ignoreCase = true)
                 Model(
                     modelId = id,
                     displayName = id,
+                    type = if (isEmbedding) me.rerere.ai.provider.ModelType.EMBEDDING else me.rerere.ai.provider.ModelType.CHAT,
+                    outputModalities = listOf(me.rerere.ai.provider.Modality.TEXT)
                 )
             }
         }

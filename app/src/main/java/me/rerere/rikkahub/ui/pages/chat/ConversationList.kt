@@ -225,7 +225,7 @@ fun ColumnScope.ConversationList(
                     .background(
                         brush = androidx.compose.ui.graphics.Brush.verticalGradient(
                             colors = listOf(
-                                MaterialTheme.colorScheme.surfaceContainerLow,
+                                MaterialTheme.colorScheme.surfaceContainer,
                                 Color.Transparent
                             )
                         )
@@ -244,7 +244,7 @@ fun ColumnScope.ConversationList(
                         brush = androidx.compose.ui.graphics.Brush.verticalGradient(
                             colors = listOf(
                                 Color.Transparent,
-                                MaterialTheme.colorScheme.surfaceContainerLow
+                                MaterialTheme.colorScheme.surfaceContainer
                             )
                         )
                     )
@@ -261,7 +261,7 @@ private fun DateHeaderItem(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .background(Color.Transparent)
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -281,7 +281,7 @@ private fun PinnedHeader(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .background(Color.Transparent)
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

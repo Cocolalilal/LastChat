@@ -225,7 +225,11 @@ private fun SearchProviderCard(
     }
     var expand by remember { mutableStateOf(false) }
     Card(
-        modifier = modifier
+        modifier = modifier,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+        colors = androidx.compose.material3.CardDefaults.cardColors(
+            containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer
+        )
     ) {
         Column(
             modifier = Modifier
@@ -533,7 +537,12 @@ private fun CommonOptions(
     var commonOptions by remember(settings.searchCommonOptions) {
         mutableStateOf(settings.searchCommonOptions)
     }
-    Card {
+    Card(
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+        colors = androidx.compose.material3.CardDefaults.cardColors(
+            containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer
+        )
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()

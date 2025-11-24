@@ -704,7 +704,7 @@ private fun FilesPicker(
         FlowRow(
             modifier = Modifier
                 .fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalArrangement = Arrangement.Center,
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             TakePicButton {
@@ -762,40 +762,6 @@ private fun FilesPicker(
             },
         )
 
-        ListItem(
-            leadingContent = {
-                Icon(
-                    imageVector = Icons.Rounded.ClearAll,
-                    contentDescription = stringResource(R.string.chat_page_clear_context),
-                )
-            },
-            headlineContent = {
-                Text(stringResource(R.string.chat_page_clear_context))
-            },
-            trailingContent = {
-                // Context Size
-                val settings = LocalSettings.current
-                if (settings.displaySetting.showTokenUsage && conversation.messageNodes.isNotEmpty()) {
-                    val configuredContextSize = assistant.contextMessageSize
-                    val effectiveMessagesAfterTruncation =
-                        conversation.messageNodes.size - conversation.truncateIndex.coerceAtLeast(0)
-                    val actualContextMessageCount =
-                        minOf(effectiveMessagesAfterTruncation, configuredContextSize)
-                    Text(
-                        text = "$actualContextMessageCount/$configuredContextSize",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.outlineVariant,
-                    )
-                }
-            },
-            modifier = Modifier
-                .clip(MaterialTheme.shapes.large)
-                .clickable(
-                    onClick = {
-                        onClearContext()
-                    }
-                ),
-        )
     }
 }
 
@@ -1083,23 +1049,8 @@ fun FilePickButton(onAddFiles: (List<UIMessagePart.Document>) -> Unit = {}) {
     val pickMedia =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
             if (uris.isNotEmpty()) {
-                val allowedMimeTypes = setOf(
-                    "text/plain",
-                    "text/html",
-                    "text/css",
-                    "text/javascript",
-                    "text/csv",
-                    "text/xml",
-                    "application/json",
-                    "application/javascript",
-                    "application/pdf",
-                    "application/msword",
-                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    "application/vnd.ms-excel",
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    "application/vnd.ms-powerpoint",
-                    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-                )
+                // Allow all file types
+                val allowedMimeTypes = setOf("*/*")
 
                 val documents = uris.mapNotNull { uri ->
                     val fileName = context.getFileNameFromUri(uri) ?: "file"

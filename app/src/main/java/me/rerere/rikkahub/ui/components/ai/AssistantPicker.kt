@@ -10,6 +10,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -63,9 +66,7 @@ fun AssistantPicker(
     var showPicker by remember { mutableStateOf(false) }
 
     NavigationDrawerItem(
-        icon = {
-            Icon(Lucide.Drama, contentDescription = null)
-        },
+        icon = null,
         label = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -139,7 +140,7 @@ private fun AssistantPickerSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.8f)
+                .wrapContentHeight()
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -175,15 +176,16 @@ private fun AssistantPickerSheet(
 
             // 助手列表
             val navController = LocalNavController.current
-            LazyColumn(
-                modifier = Modifier.weight(1f),
+            Column(
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(filteredAssistants, key = { it.id }) { assistant ->
+                filteredAssistants.forEach { assistant ->
                     val checked = assistant.id == currentAssistant.id
                     Card(
                         onClick = { onAssistantSelected(assistant) },
-                        modifier = Modifier.animateItem(),
                         shape = MaterialTheme.shapes.large,
                         colors = CardDefaults.cardColors(
                             containerColor = if (checked) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,

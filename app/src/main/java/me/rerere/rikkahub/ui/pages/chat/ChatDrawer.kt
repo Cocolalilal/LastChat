@@ -91,7 +91,9 @@ fun ChatDrawerContent(
     }
 
     ModalDrawerSheet(
-        modifier = Modifier.width(300.dp)
+        modifier = Modifier.width(300.dp),
+        drawerShape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+        drawerContainerColor = MaterialTheme.colorScheme.surfaceContainer,
     ) {
         Column(
             modifier = Modifier.padding(8.dp),

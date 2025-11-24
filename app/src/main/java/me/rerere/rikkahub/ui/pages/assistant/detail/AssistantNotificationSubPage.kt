@@ -1,12 +1,13 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -14,120 +15,31 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ui.FormItem
-import me.rerere.rikkahub.ui.components.ui.Select
-import me.rerere.ai.provider.Model
-import androidx.compose.material3.Button
-import androidx.compose.material3.OutlinedTextField
 
 @Composable
-fun AssistantAdvancedSettings(
+fun AssistantNotificationSubPage(
     assistant: Assistant,
-    onUpdateAssistant: (Assistant) -> Unit,
-    onConsolidate: (Boolean) -> Unit,
-    models: List<Model>
+    onUpdateAssistant: (Assistant) -> Unit
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .padding(16.dp)
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .imePadding(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // RAG Configuration
-        Card(
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer
-            )
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(
-                    text = "RAG Configuration",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                HorizontalDivider()
-                
-                FormItem(
-                    label = { Text("Similarity Threshold") },
-                    description = { Text("Minimum similarity score (0.0 - 1.0). Lower = more results, Higher = more relevant.") }
-                ) {
-                    Column {
-                        Text(
-                            text = String.format("%.2f", assistant.ragSimilarityThreshold),
-                            style = MaterialTheme.typography.labelMedium
-                        )
-                        Slider(
-                            value = assistant.ragSimilarityThreshold,
-                            onValueChange = {
-                                onUpdateAssistant(assistant.copy(ragSimilarityThreshold = it))
-                            },
-                            valueRange = 0f..1f
-                        )
-                    }
-                }
-                
-                FormItem(
-                    label = { Text("Max Results") },
-                    description = { Text("Maximum number of memories to retrieve.") }
-                ) {
-                    Column {
-                        Text(
-                            text = "${assistant.ragLimit}",
-                            style = MaterialTheme.typography.labelMedium
-                        )
-                        Slider(
-                            value = assistant.ragLimit.toFloat(),
-                            onValueChange = {
-                                onUpdateAssistant(assistant.copy(ragLimit = it.toInt()))
-                            },
-                            valueRange = 1f..20f,
-                            steps = 19
-                        )
-                    }
-                }
-                
-                FormItem(
-                    label = { Text("Include Core Memories") },
-                    description = { Text("Include permanent facts in retrieval.") },
-                    tail = {
-                        Switch(
-                            checked = assistant.ragIncludeCore,
-                            onCheckedChange = {
-                                onUpdateAssistant(assistant.copy(ragIncludeCore = it))
-                            }
-                        )
-                    }
-                )
-                
-                FormItem(
-                    label = { Text("Include Episodic Memories") },
-                    description = { Text("Include conversation history in retrieval.") },
-                    tail = {
-                        Switch(
-                            checked = assistant.ragIncludeEpisodes,
-                            onCheckedChange = {
-                                onUpdateAssistant(assistant.copy(ragIncludeEpisodes = it))
-                            }
-                        )
-                    }
-                )
-            }
-        }
-        
         // Spontaneous Messaging
         Card(
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainer
             )
@@ -148,7 +60,7 @@ fun AssistantAdvancedSettings(
                     description = { Text("Allow assistant to send messages without user prompt.") },
                     tail = {
                         val permissionLauncher = rememberLauncherForActivityResult(
-                            androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+                            ActivityResultContracts.RequestPermission()
                         ) { isGranted ->
                             if (isGranted) {
                                 onUpdateAssistant(assistant.copy(enableSpontaneous = true))
@@ -236,39 +148,5 @@ fun AssistantAdvancedSettings(
                 }
             }
         }
-        
-        // Debugging
-        Card(
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer
-            )
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(
-                    text = "Debugging",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                HorizontalDivider()
-                
-                FormItem(
-                    label = { Text("Enable RAG Logging") },
-                    description = { Text("Log detailed retrieval info to Logcat (tag: RAG).") },
-                    tail = {
-                        Switch(
-                            checked = assistant.enableRagLogging,
-                            onCheckedChange = {
-                                onUpdateAssistant(assistant.copy(enableRagLogging = it))
-                            }
-                        )
-                    }
-                )
-            }
-        }
-
-
     }
 }

@@ -58,6 +58,7 @@ fun AssistantMemoryConsolidationSubPage(
         // Settings Card
         item {
             Card(
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainer
                 )
@@ -213,6 +214,7 @@ fun AssistantMemoryConsolidationSubPage(
             // Status Card
             item {
                 Card(
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainer
                     )

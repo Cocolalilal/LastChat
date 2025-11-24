@@ -151,7 +151,12 @@ fun AssistantMemorySettings(
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Card {
+        Card(
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+            colors = androidx.compose.material3.CardDefaults.cardColors(
+                containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer
+            )
+        ) {
             FormItem(
                 modifier = Modifier.padding(8.dp),
                 label = {
@@ -178,24 +183,29 @@ fun AssistantMemorySettings(
         }
 
         if (assistant.enableMemory) {
-            Card {
+            Card(
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                colors = androidx.compose.material3.CardDefaults.cardColors(
+                    containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer
+                )
+            ) {
                 FormItem(
                     modifier = Modifier.padding(8.dp),
                     label = {
-                        Text("Use RAG Memory Retrieval")
+                        Text(stringResource(R.string.assistant_page_recent_chats))
                     },
                     description = {
                         Text(
-                            text = "When enabled, only relevant memories are retrieved based on context. When disabled, all memories are included.",
+                            text = stringResource(R.string.assistant_page_recent_chats_desc),
                         )
                     },
                     tail = {
                         Switch(
-                            checked = assistant.useRagMemoryRetrieval,
+                            checked = assistant.enableRecentChatsReference,
                             onCheckedChange = {
                                 onUpdateAssistant(
                                     assistant.copy(
-                                        useRagMemoryRetrieval = it
+                                        enableRecentChatsReference = it
                                     )
                                 )
                             }
@@ -203,133 +213,6 @@ fun AssistantMemorySettings(
                     }
                 )
             }
-            
-            if (assistant.useRagMemoryRetrieval) {
-                // RAG Similarity Threshold
-                Card {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "RAG Similarity Threshold",
-                            style = MaterialTheme.typography.titleSmall
-                        )
-                        Text(
-                            text = "Minimum similarity score (0.0 = include all, 1.0 = only perfect matches). Lower values include more memories. Current: ${String.format("%.2f", assistant.ragSimilarityThreshold)}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        var threshold by remember(assistant.ragSimilarityThreshold) {
-                            mutableFloatStateOf(assistant.ragSimilarityThreshold)
-                        }
-                        Slider(
-                            value = threshold,
-                            onValueChange = { newValue ->
-                                threshold = newValue
-                                onUpdateAssistant(
-                                    assistant.copy(ragSimilarityThreshold = newValue)
-                                )
-                            },
-                            valueRange = 0f..1f,
-                            steps = 19 // 0.05 increments
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("0.0 (All)", style = MaterialTheme.typography.labelSmall)
-                            Text("1.0 (Perfect)", style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                }
-                
-                // RAG Limit
-                Card {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "RAG Memory Limit",
-                            style = MaterialTheme.typography.titleSmall
-                        )
-                        Text(
-                            text = "Maximum number of memories to retrieve per query. Higher values include more context but use more tokens.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        var limit by remember(assistant.ragLimit) {
-                            mutableIntStateOf(if (assistant.ragLimit > 0) assistant.ragLimit else 5)
-                        }
-                        Slider(
-                            value = limit.toFloat(),
-                            onValueChange = { newValue ->
-                                val intValue = newValue.toInt()
-                                limit = intValue
-                                onUpdateAssistant(
-                                    assistant.copy(ragLimit = intValue)
-                                )
-                            },
-                            valueRange = 1f..20f,
-                            steps = 18 // 1 increment
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("1", style = MaterialTheme.typography.labelSmall)
-                            Text("20", style = MaterialTheme.typography.labelSmall)
-                        }
-                        Text(
-                            text = "Current: $limit memories",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-            }
-        }
-
-        Card {
-            FormItem(
-                modifier = Modifier.padding(8.dp),
-                label = {
-                    Text(stringResource(R.string.assistant_page_recent_chats))
-                },
-                description = {
-                    Text(
-                        text = stringResource(R.string.assistant_page_recent_chats_desc),
-                    )
-                },
-                tail = {
-                    Switch(
-                        checked = assistant.enableRecentChatsReference,
-                        onCheckedChange = {
-                            onUpdateAssistant(
-                                assistant.copy(
-                                    enableRecentChatsReference = it
-                                )
-                            )
-                        }
-                    )
-                }
-            )
-        }
-
-        if (assistant.enableMemory && onTestRetrieval != null) {
-            MemoryDebugger(
-                onTestRetrieval = onTestRetrieval,
-                retrievalResults = retrievalResults
-            )
-            
-            // Advanced Settings Section
-            AdvancedMemorySettings(
-                assistant = assistant,
-                memories = memories,
-                onUpdateAssistant = onUpdateAssistant,
-                onRegenerateEmbeddings = onRegenerateEmbeddings
-            )
         }
 
         Box(
@@ -391,7 +274,11 @@ private fun MemoryItem(
     onDeleteMemory: (AssistantMemory) -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+        colors = androidx.compose.material3.CardDefaults.cardColors(
+            containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer
+        )
     ) {
         Row(
             modifier = Modifier
@@ -455,7 +342,12 @@ private fun MemoryDebugger(
 ) {
     val (query, setQuery) = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
 
-    Card {
+    Card(
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+        colors = androidx.compose.material3.CardDefaults.cardColors(
+            containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer
+        )
+    ) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -498,6 +390,7 @@ private fun MemoryDebugger(
                 )
                 retrievalResults.forEachIndexed { index, (memory, score) ->
                     Card(
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                         ),
@@ -564,7 +457,12 @@ private fun AdvancedMemorySettings(
 ) {
     var isExpanded by remember { mutableStateOf(false) }
     
-    Card {
+    Card(
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+        colors = androidx.compose.material3.CardDefaults.cardColors(
+            containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer
+        )
+    ) {
         Column(
             modifier = Modifier.fillMaxWidth()
         ) {

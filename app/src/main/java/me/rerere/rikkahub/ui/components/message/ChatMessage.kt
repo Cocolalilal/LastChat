@@ -309,9 +309,9 @@ private fun MessagePartsBlock(
                 Card(
                     modifier = Modifier
                         .animateContentSize(),
-                    shape = MaterialTheme.shapes.medium,
+                    shape = RoundedCornerShape(24.dp),
                 ) {
-                    Column(modifier = Modifier.padding(8.dp)) {
+                    Column(modifier = Modifier.padding(12.dp)) {
                         MarkdownBlock(
                             content = part.text.replaceRegexes(
                                 assistant = assistant,

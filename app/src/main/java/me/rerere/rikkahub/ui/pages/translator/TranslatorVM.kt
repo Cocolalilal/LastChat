@@ -36,7 +36,7 @@ class TranslatorVM(
     val translatedText: StateFlow<String> = _translatedText
 
     // 翻译目标语言
-    private val _targetLanguage = MutableStateFlow(Locale.SIMPLIFIED_CHINESE)
+    private val _targetLanguage = MutableStateFlow(Locale.ENGLISH)
     val targetLanguage: StateFlow<Locale> = _targetLanguage
 
     // 错误流

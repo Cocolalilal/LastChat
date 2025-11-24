@@ -93,7 +93,12 @@ private fun LocalToolCard(
     onToggle: (Boolean) -> Unit,
     content: @Composable (() -> Unit)? = null
 ) {
-    Card {
+    Card(
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+        colors = androidx.compose.material3.CardDefaults.cardColors(
+            containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer
+        )
+    ) {
         FormItem(
             modifier = Modifier.padding(8.dp),
             label = {

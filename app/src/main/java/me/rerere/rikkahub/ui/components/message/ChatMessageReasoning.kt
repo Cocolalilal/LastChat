@@ -136,7 +136,7 @@ fun ChatMessageReasoning(
 
     Surface(
         modifier = modifier,
-        shape = MaterialTheme.shapes.large,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
     ) {

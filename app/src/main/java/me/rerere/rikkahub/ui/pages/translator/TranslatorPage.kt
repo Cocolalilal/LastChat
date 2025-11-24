@@ -153,7 +153,7 @@ fun TranslatorPage(vm: TranslatorVM = koinViewModel()) {
                     }
                 ) {
                     Icon(Lucide.ClipboardPaste, null)
-                    Text("粘贴文本", modifier = Modifier.padding(start = 4.dp))
+                    Text("Paste Text", modifier = Modifier.padding(start = 4.dp))
                 }
             }
 

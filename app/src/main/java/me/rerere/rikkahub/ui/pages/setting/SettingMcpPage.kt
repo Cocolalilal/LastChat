@@ -225,7 +225,12 @@ private fun McpServerItem(
         enableDismissFromEndToStart = true,
         modifier = modifier
     ) {
-        Card {
+        Card(
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+            colors = androidx.compose.material3.CardDefaults.cardColors(
+                containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer
+            )
+        ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -704,7 +709,12 @@ private fun McpToolsConfigure(
             }
         }
         items(config.commonOptions.tools) { tool ->
-            Card {
+            Card(
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                colors = androidx.compose.material3.CardDefaults.cardColors(
+                    containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer
+                )
+            ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()

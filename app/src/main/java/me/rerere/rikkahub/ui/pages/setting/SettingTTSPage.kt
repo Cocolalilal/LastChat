@@ -322,11 +322,12 @@ private fun TTSProviderItem(
 
     Card(
         modifier = modifier,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (isSelected) {
                 MaterialTheme.colorScheme.primaryContainer
             } else {
-                MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
+                MaterialTheme.colorScheme.surfaceContainer
             }
         )
     ) {

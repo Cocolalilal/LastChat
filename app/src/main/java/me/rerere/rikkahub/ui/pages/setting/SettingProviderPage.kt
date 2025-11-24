@@ -484,9 +484,10 @@ private fun ProviderItem(
 ) {
     Card(
         modifier = modifier,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (provider.enabled) {
-                MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
+                MaterialTheme.colorScheme.surfaceContainer
             } else MaterialTheme.colorScheme.errorContainer,
         ),
         onClick = {
