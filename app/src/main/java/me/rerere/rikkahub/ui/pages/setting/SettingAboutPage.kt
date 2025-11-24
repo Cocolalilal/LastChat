@@ -32,12 +32,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
-import com.composables.icons.lucide.Code
-import com.composables.icons.lucide.Earth
-import com.composables.icons.lucide.FileText
-import com.composables.icons.lucide.Github
-import com.composables.icons.lucide.Lucide
-import com.composables.icons.lucide.Phone
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.Android
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
@@ -108,7 +105,7 @@ fun SettingAboutPage() {
                         )
                     },
                     leadingContent = {
-                        Icon(Lucide.Code, null)
+                        Icon(Icons.Rounded.Code, null)
                     },
                     modifier = Modifier.combinedClickable(
                         onClick = {},
@@ -132,7 +129,7 @@ fun SettingAboutPage() {
                         )
                     },
                     leadingContent = {
-                        Icon(Lucide.Phone, null)
+                        Icon(Icons.Rounded.Android, null)
                     }
                 )
             }

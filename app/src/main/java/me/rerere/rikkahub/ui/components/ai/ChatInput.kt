@@ -88,20 +88,22 @@ import androidx.core.content.FileProvider
 import androidx.core.net.toFile
 import androidx.core.net.toUri
 import coil3.compose.AsyncImage
-import com.composables.icons.lucide.ArrowUp
-import com.composables.icons.lucide.Camera
-import com.composables.icons.lucide.Eraser
-import com.composables.icons.lucide.FileAudio
-import com.composables.icons.lucide.Files
-import com.composables.icons.lucide.Fullscreen
-import com.composables.icons.lucide.GraduationCap
-import com.composables.icons.lucide.Image
-import com.composables.icons.lucide.Lucide
-import com.composables.icons.lucide.Music
-import com.composables.icons.lucide.Plus
-import com.composables.icons.lucide.Video
-import com.composables.icons.lucide.X
-import com.composables.icons.lucide.Zap
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.VideoLibrary
+import androidx.compose.material.icons.rounded.CameraAlt
+import androidx.compose.material.icons.rounded.Photo
+import androidx.compose.material.icons.rounded.AudioFile
+import androidx.compose.material.icons.rounded.School
+import androidx.compose.material.icons.rounded.ClearAll
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.FlashOn
+import androidx.compose.material.icons.rounded.Fullscreen
+import androidx.compose.ui.draw.rotate
 import com.dokar.sonner.ToastType
 import com.yalantis.ucrop.UCrop
 import com.yalantis.ucrop.UCropActivity
@@ -287,9 +289,14 @@ fun ChatInput(
                         expandToggle(ExpandState.Files)
                     }
                 ) {
+                    val rotation by animateFloatAsState(
+                        targetValue = if (expand == ExpandState.Files) 45f else 0f,
+                        label = "rotation"
+                    )
                     Icon(
-                        if (expand == ExpandState.Files) Lucide.X else Lucide.Plus,
-                        stringResource(R.string.more_options)
+                        imageVector = Icons.Rounded.Add,
+                        contentDescription = stringResource(R.string.more_options),
+                        modifier = Modifier.rotate(rotation)
                     )
                 }
 
@@ -329,9 +336,9 @@ fun ChatInput(
                     )
                     if (state.loading) {
                         KeepScreenOn()
-                        Icon(Lucide.X, stringResource(R.string.stop), tint = contentColor)
+                        Icon(Icons.Rounded.Stop, stringResource(R.string.stop), tint = contentColor)
                     } else {
-                        Icon(Lucide.ArrowUp, stringResource(R.string.send), tint = contentColor)
+                        Icon(Icons.Rounded.ArrowUpward, stringResource(R.string.send), tint = contentColor)
                     }
                 }
             }
@@ -401,7 +408,7 @@ private fun TextInputRow(
                             )
                             Spacer(Modifier.weight(1f))
                             Icon(
-                                Lucide.X, stringResource(R.string.cancel_edit),
+                                Icons.Rounded.Close, stringResource(R.string.cancel_edit),
                                 modifier = Modifier
                                     .clickable {
                                         state.clearInput()
@@ -454,17 +461,6 @@ private fun TextInputRow(
                         focusedContainerColor = Color.Transparent,
                         unfocusedContainerColor = Color.Transparent,
                     ),
-                    trailingIcon = {
-                        if (isFocused) {
-                            IconButton(
-                                onClick = {
-                                    isFullScreen = !isFullScreen
-                                }
-                            ) {
-                                Icon(Lucide.Fullscreen, null)
-                            }
-                        }
-                    },
                     leadingIcon = if (assistant.quickMessages.isNotEmpty()) {
                         {
                             QuickMessageButton(assistant = assistant, state = state)
@@ -492,7 +488,7 @@ private fun QuickMessageButton(
             expanded = !expanded
         }
     ) {
-        Icon(Lucide.Zap, null)
+        Icon(Icons.Rounded.FlashOn, null)
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
@@ -556,7 +552,7 @@ private fun MediaFileInputRow(
                     )
                 }
                 Icon(
-                    imageVector = Lucide.X,
+                    imageVector = Icons.Rounded.Close,
                     contentDescription = null,
                     modifier = Modifier
                         .clip(CircleShape)
@@ -585,11 +581,11 @@ private fun MediaFileInputRow(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(Lucide.Video, null)
+                        Icon(Icons.Rounded.VideoLibrary, null)
                     }
                 }
                 Icon(
-                    imageVector = Lucide.X,
+                    imageVector = Icons.Rounded.Close,
                     contentDescription = null,
                     modifier = Modifier
                         .clip(CircleShape)
@@ -618,11 +614,11 @@ private fun MediaFileInputRow(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(Lucide.FileAudio, null)
+                        Icon(Icons.Rounded.AudioFile, null)
                     }
                 }
                 Icon(
-                    imageVector = Lucide.X,
+                    imageVector = Icons.Rounded.Close,
                     contentDescription = null,
                     modifier = Modifier
                         .clip(CircleShape)
@@ -667,7 +663,7 @@ private fun MediaFileInputRow(
                         }
                     }
                     Icon(
-                        imageVector = Lucide.X,
+                        imageVector = Icons.Rounded.Close,
                         contentDescription = null,
                         modifier = Modifier
                             .clip(CircleShape)
@@ -746,7 +742,7 @@ private fun FilesPicker(
         ListItem(
             leadingContent = {
                 Icon(
-                    imageVector = Lucide.GraduationCap,
+                    imageVector = Icons.Rounded.School,
                     contentDescription = stringResource(R.string.chat_page_learning_mode),
                 )
             },
@@ -769,7 +765,7 @@ private fun FilesPicker(
         ListItem(
             leadingContent = {
                 Icon(
-                    imageVector = Lucide.Eraser,
+                    imageVector = Icons.Rounded.ClearAll,
                     contentDescription = stringResource(R.string.chat_page_clear_context),
                 )
             },
@@ -950,7 +946,7 @@ private fun ImagePickButton(onAddImages: (List<Uri>) -> Unit = {}) {
 
     BigIconTextButton(
         icon = {
-            Icon(Lucide.Image, null)
+            Icon(Icons.Rounded.Photo, null)
         },
         text = {
             Text(stringResource(R.string.photo))
@@ -1011,7 +1007,7 @@ fun TakePicButton(onAddImages: (List<Uri>) -> Unit = {}) {
     ) {
         BigIconTextButton(
             icon = {
-                Icon(Lucide.Camera, null)
+                Icon(Icons.Rounded.CameraAlt, null)
             },
             text = {
                 Text(stringResource(R.string.take_picture))
@@ -1047,7 +1043,7 @@ fun VideoPickButton(onAddVideos: (List<Uri>) -> Unit = {}) {
 
     BigIconTextButton(
         icon = {
-            Icon(Lucide.Video, null)
+            Icon(Icons.Rounded.VideoLibrary, null)
         },
         text = {
             Text(stringResource(R.string.video))
@@ -1070,7 +1066,7 @@ fun AudioPickButton(onAddAudios: (List<Uri>) -> Unit = {}) {
 
     BigIconTextButton(
         icon = {
-            Icon(Lucide.Music, null)
+            Icon(Icons.Rounded.AudioFile, null)
         },
         text = {
             Text(stringResource(R.string.audio))
@@ -1155,7 +1151,7 @@ fun FilePickButton(onAddFiles: (List<UIMessagePart.Document>) -> Unit = {}) {
         }
     BigIconTextButton(
         icon = {
-            Icon(Lucide.Files, null)
+            Icon(Icons.Rounded.FolderOpen, null)
         },
         text = {
             Text(stringResource(R.string.upload_file))
@@ -1214,7 +1210,7 @@ private fun BigIconTextButtonPreview() {
     ) {
         BigIconTextButton(
             icon = {
-                Icon(Lucide.Image, null)
+            Icon(Icons.Rounded.Photo, null)
             },
             text = {
                 Text(stringResource(R.string.photo))

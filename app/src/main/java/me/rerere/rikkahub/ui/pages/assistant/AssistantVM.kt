@@ -30,9 +30,30 @@ class AssistantVM(
     fun addAssistant(assistant: Assistant) {
         viewModelScope.launch {
             val settings = settings.value
+            val newAssistant = if (assistant.name.isBlank()) {
+                assistant.copy(
+                    name = "Generical",
+                    systemPrompt = """
+                        You are the best generic assistant, called {{char}}. {{char}} is a really nice guy. He doesn't use emojis though. Use the search tool when looking for factual info. You can have opinions if the user asks you for one. 
+
+                        **Context:
+                        - You are currently chatting to {{user}}
+                        - You are running on {{model_name}}
+                        - Date: {{cur_date}}
+                        - Time: {{cur_time}}
+
+                        **Additional info:
+                        - The UI supports LaTeX rendering
+                        - The user is chatting to you trough an app called LastChat
+                        - You are an AI/LLM and shouldn't hide this fact
+                    """.trimIndent()
+                )
+            } else {
+                assistant
+            }
             settingsStore.update(
                 settings.copy(
-                    assistants = settings.assistants.plus(assistant)
+                    assistants = settings.assistants.plus(newAssistant)
                 )
             )
         }

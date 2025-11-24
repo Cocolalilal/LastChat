@@ -355,7 +355,7 @@ data class DisplaySetting(
     val showTokenUsage: Boolean = true,
     val autoCloseThinking: Boolean = true,
     val showUpdates: Boolean = false,
-    val showMessageJumper: Boolean = true,
+    val showMessageJumper: Boolean = false,
     val messageJumperOnLeft: Boolean = false,
     val fontSizeRatio: Float = 1.0f,
     val enableMessageGenerationHapticEffect: Boolean = false,
@@ -442,30 +442,23 @@ internal val DEFAULT_ASSISTANT_ID = Uuid.parse("0950e2dc-9bd5-4801-afa3-aa887aa3
 internal val DEFAULT_ASSISTANTS = listOf(
     Assistant(
         id = DEFAULT_ASSISTANT_ID,
-        name = "",
-        temperature = 0.6f,
-        systemPrompt = ""
-    ),
-    Assistant(
-        id = Uuid.parse("3d47790c-c415-4b90-9388-751128adb0a0"),
-        name = "",
+        name = "Generical",
         temperature = 0.6f,
         systemPrompt = """
-            You are a helpful assistant, called {{char}}, based on model {{model_name}}.
+            You are the best generic assistant, called {{char}}. {{char}} is a really nice guy. He doesn't use emojis though. Use the search tool when looking for factual info. You can have opinions if the user asks you for one. 
 
-            ## Info
-            - Time: {{cur_datetime}}
-            - Locale: {{locale}}
-            - Timezone: {{timezone}}
-            - Device Info: {{device_info}}
-            - System Version: {{system_version}}
-            - User Nickname: {{user}}
+            **Context:
+            - You are currently chatting to {{user}}
+            - You are running on {{model_name}}
+            - Date: {{cur_date}}
+            - Time: {{cur_time}}
 
-            ## Hint
-            - If the user does not specify a language, reply in the user's primary language.
-            - Remember to use Markdown syntax for formatting, and use latex for mathematical expressions.
+            **Additional info:
+            - The UI supports LaTeX rendering
+            - The user is chatting to you trough an app called LastChat
+            - You are an AI/LLM and shouldn't hide this fact
         """.trimIndent()
-    ),
+    )
 )
 
 val DEFAULT_SYSTEM_TTS_ID = Uuid.parse("026a01a2-c3a0-4fd5-8075-80e03bdef200")

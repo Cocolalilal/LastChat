@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.FlowRow
@@ -17,11 +18,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.DragHandle
+import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -41,6 +46,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -351,52 +357,138 @@ private fun ColumnScope.ModelList(
         )
     }
 
-    LazyColumn(
-        state = lazyListState,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        contentPadding = PaddingValues(8.dp),
+
+    Box(
         modifier = Modifier
             .weight(1f)
-            .fillMaxWidth(),
+            .fillMaxWidth()
     ) {
-        if (providers.isEmpty()) {
-            item {
-                Text(
-                    text = stringResource(R.string.model_list_no_providers),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.extendColors.gray6,
-                    modifier = Modifier.padding(8.dp)
-                )
-            }
-        }
-
-        if (favoriteModels.isNotEmpty()) {
-            stickyHeader {
-                Text(
-                    text = stringResource(R.string.model_list_favorite),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .padding(bottom = 4.dp, top = 8.dp)
-                )
+        LazyColumn(
+            state = lazyListState,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(8.dp),
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            if (providers.isEmpty()) {
+                item {
+                    Text(
+                        text = stringResource(R.string.model_list_no_providers),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.extendColors.gray6,
+                        modifier = Modifier.padding(8.dp)
+                    )
+                }
             }
 
-            items(
-                items = favoriteModels,
-                key = { "favorite:" + it.first.id.toString() }
-            ) { (model, provider) ->
-                ReorderableItem(
-                    state = reorderableState,
-                    key = "favorite:" + model.id.toString()
-                ) { isDragging ->
+            if (favoriteModels.isNotEmpty()) {
+                stickyHeader {
+                    Text(
+                        text = stringResource(R.string.model_list_favorite),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .padding(bottom = 4.dp, top = 8.dp)
+                    )
+                }
+
+                items(
+                    items = favoriteModels,
+                    key = { "favorite:" + it.first.id.toString() }
+                ) { (model, provider) ->
+                    ReorderableItem(
+                        state = reorderableState,
+                        key = "favorite:" + model.id.toString()
+                    ) { isDragging ->
+                        ModelItem(
+                            model = model,
+                            onSelect = onSelect,
+                            modifier = Modifier
+                                .scale(if (isDragging) 0.95f else 1f)
+                                .animateItem(),
+                            providerSetting = provider,
+                            select = model.id == currentModel,
+                            onDismiss = {
+                                onDismiss()
+                            },
+                            tail = {
+                                IconButton(
+                                    onClick = {
+                                        coroutineScope.launch {
+                                            settingsStore.update { settings ->
+                                                settings.copy(
+                                                    favoriteModels = settings.favoriteModels.filter { it != model.id }
+                                                )
+                                            }
+                                        }
+                                    }
+                                ) {
+                                    Icon(
+                                        HeartIcon,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(20.dp),
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                            },
+                            dragHandle = {
+                                Icon(
+                                    imageVector = Icons.Rounded.DragHandle,
+                                    contentDescription = null,
+                                    modifier = Modifier.longPressDraggableHandle(
+                                        onDragStarted = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
+                                        },
+                                        onDragStopped = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.GestureEnd)
+                                        }
+                                    )
+                                )
+                            }
+                        )
+                    }
+                }
+            }
+
+            providers.fastForEach { providerSetting ->
+                stickyHeader(key = "header:${providerSetting.id}") {
+                    Row(
+                        modifier = Modifier
+                            .padding(horizontal = 8.dp)
+                            .padding(bottom = 4.dp, top = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = providerSetting.name,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+
+                        Spacer(modifier = Modifier.weight(1f))
+
+                        ProviderBalanceText(
+                            providerSetting = providerSetting,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+
+                items(
+                    items = providerSetting.models.fastFilter {
+                        it.type == modelType && it.displayName.contains(
+                            searchKeywords,
+                            true
+                        )
+                    },
+                    key = { it.id }
+                ) { model ->
+                    val favorite = settings.value.favoriteModels.contains(model.id)
                     ModelItem(
                         model = model,
                         onSelect = onSelect,
-                        modifier = Modifier
-                            .scale(if (isDragging) 0.95f else 1f)
-                            .animateItem(),
-                        providerSetting = provider,
-                        select = model.id == currentModel,
+                        modifier = Modifier.animateItem(),
+                        providerSetting = providerSetting,
+                        select = currentModel == model.id,
                         onDismiss = {
                             onDismiss()
                         },
@@ -405,119 +497,38 @@ private fun ColumnScope.ModelList(
                                 onClick = {
                                     coroutineScope.launch {
                                         settingsStore.update { settings ->
-                                            settings.copy(
-                                                favoriteModels = settings.favoriteModels.filter { it != model.id }
-                                            )
+                                            if (favorite) {
+                                                settings.copy(
+                                                    favoriteModels = settings.favoriteModels.filter { it != model.id }
+                                                )
+
+                                            } else {
+                                                settings.copy(
+                                                    favoriteModels = settings.favoriteModels + model.id
+                                                )
+                                            }
                                         }
                                     }
                                 }
                             ) {
-                                Icon(
-                                    HeartIcon,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(20.dp),
-                                    tint = MaterialTheme.colorScheme.primary,
-                                )
-                            }
-                        },
-                        dragHandle = {
-                            Icon(
-                                imageVector = Lucide.GripHorizontal,
-                                contentDescription = null,
-                                modifier = Modifier.longPressDraggableHandle(
-                                    onDragStarted = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
-                                    },
-                                    onDragStopped = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.GestureEnd)
-                                    }
-                                )
-                            )
-                        }
-                    )
-                }
-            }
-        }
-
-        providers.fastForEach { providerSetting ->
-            stickyHeader(key = "header:${providerSetting.id}") {
-                Row(
-                    modifier = Modifier
-                        .padding(horizontal = 8.dp)
-                        .padding(bottom = 4.dp, top = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = providerSetting.name,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-
-                    Spacer(modifier = Modifier.weight(1f))
-
-                    ProviderBalanceText(
-                        providerSetting = providerSetting,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-            }
-
-            items(
-                items = providerSetting.models.fastFilter {
-                    it.type == modelType && it.displayName.contains(
-                        searchKeywords,
-                        true
-                    )
-                },
-                key = { it.id }
-            ) { model ->
-                val favorite = settings.value.favoriteModels.contains(model.id)
-                ModelItem(
-                    model = model,
-                    onSelect = onSelect,
-                    modifier = Modifier.animateItem(),
-                    providerSetting = providerSetting,
-                    select = currentModel == model.id,
-                    onDismiss = {
-                        onDismiss()
-                    },
-                    tail = {
-                        IconButton(
-                            onClick = {
-                                coroutineScope.launch {
-                                    settingsStore.update { settings ->
-                                        if (favorite) {
-                                            settings.copy(
-                                                favoriteModels = settings.favoriteModels.filter { it != model.id }
-                                            )
-
-                                        } else {
-                                            settings.copy(
-                                                favoriteModels = settings.favoriteModels + model.id
-                                            )
-                                        }
-                                    }
+                                if (favorite) {
+                                    Icon(
+                                        HeartIcon,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(20.dp),
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                } else {
+                                    Icon(
+                                        Icons.Rounded.FavoriteBorder,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(20.dp)
+                                    )
                                 }
                             }
-                        ) {
-                            if (favorite) {
-                                Icon(
-                                    HeartIcon,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(20.dp),
-                                    tint = MaterialTheme.colorScheme.primary,
-                                )
-                            } else {
-                                Icon(
-                                    Lucide.Heart,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
                         }
-                    }
-                )
+                    )
+                }
             }
         }
     }

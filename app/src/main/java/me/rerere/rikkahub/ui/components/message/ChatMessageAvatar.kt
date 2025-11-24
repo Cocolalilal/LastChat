@@ -49,16 +49,16 @@ fun ChatMessageUserAvatar(
                 horizontalAlignment = Alignment.End,
             ) {
                 Text(
+                    text = message.createdAt.toJavaLocalDateTime().toLocalTime().toString().substring(0, 5), // HH:mm format
+                    style = MaterialTheme.typography.labelSmall,
+                    color = LocalContentColor.current.copy(alpha = 0.6f),
+                    maxLines = 1,
+                )
+                Text(
                     text = nickname.ifEmpty { stringResource(R.string.user_default_name) },
                     style = MaterialTheme.typography.titleSmall,
                     maxLines = 1,
                     color = LocalContentColor.current.copy(alpha = 0.85f),
-                )
-                Text(
-                    text = message.createdAt.toJavaLocalDateTime().toLocalString(),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = LocalContentColor.current.copy(alpha = 0.6f),
-                    maxLines = 1,
                 )
             }
             UIAvatar(
@@ -103,16 +103,11 @@ fun ChatMessageAssistantAvatar(
                     modifier = Modifier.weight(1f)
                 ) {
                     if(settings.displaySetting.showModelName) {
-                        Text(
-                            text = assistant.name.ifEmpty { stringResource(R.string.assistant_page_default_assistant) },
-                            style = MaterialTheme.typography.titleMedium,
-                            maxLines = 1,
-                        )
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             Text(
-                                text = message.createdAt.toJavaLocalDateTime().toLocalString(),
+                                text = message.createdAt.toJavaLocalDateTime().toLocalTime().toString().substring(0, 5), // HH:mm format
                                 style = MaterialTheme.typography.labelSmall,
                                 color = LocalContentColor.current.copy(alpha = 0.8f),
                                 maxLines = 1,
@@ -128,6 +123,11 @@ fun ChatMessageAssistantAvatar(
                                 }
                             }
                         }
+                        Text(
+                            text = assistant.name.ifEmpty { stringResource(R.string.assistant_page_default_assistant) },
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1,
+                        )
                     }
                 }
             } else {
@@ -142,15 +142,11 @@ fun ChatMessageAssistantAvatar(
                     modifier = Modifier.weight(1f)
                 ) {
                     if(settings.displaySetting.showModelName) {
-                        Text(
-                            text = model.displayName,
-                            style = MaterialTheme.typography.titleSmall,
-                        )
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             Text(
-                                text = message.createdAt.toJavaLocalDateTime().toLocalString(),
+                                text = message.createdAt.toJavaLocalDateTime().toLocalTime().toString().substring(0, 5), // HH:mm format
                                 style = MaterialTheme.typography.labelSmall,
                                 color = LocalContentColor.current.copy(alpha = 0.8f)
                             )
@@ -165,6 +161,10 @@ fun ChatMessageAssistantAvatar(
                                 }
                             }
                         }
+                        Text(
+                            text = model.displayName,
+                            style = MaterialTheme.typography.titleSmall,
+                        )
                     }
                 }
             }

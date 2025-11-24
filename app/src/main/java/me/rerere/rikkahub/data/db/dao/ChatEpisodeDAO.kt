@@ -26,4 +26,10 @@ interface ChatEpisodeDAO {
 
     @Query("DELETE FROM ChatEpisodeEntity WHERE assistant_id = :assistantId AND start_time >= :startTime AND end_time <= :endTime")
     suspend fun deleteEpisodeByTimeRange(assistantId: String, startTime: Long, endTime: Long)
+
+    @Query("SELECT COUNT(*) FROM ChatEpisodeEntity")
+    suspend fun getCount(): Int
+
+    @Query("SELECT COUNT(*) FROM ChatEpisodeEntity")
+    fun getCountFlow(): Flow<Int>
 }

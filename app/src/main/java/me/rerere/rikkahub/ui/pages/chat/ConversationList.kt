@@ -12,9 +12,12 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
@@ -31,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -48,13 +52,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.itemKey
-import com.composables.icons.lucide.History
-import com.composables.icons.lucide.Lucide
-import com.composables.icons.lucide.Pin
-import com.composables.icons.lucide.PinOff
-import com.composables.icons.lucide.RefreshCw
-import com.composables.icons.lucide.Trash2
-import com.composables.icons.lucide.X
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.PushPin
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Delete
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.model.Conversation
@@ -120,7 +122,7 @@ fun ColumnScope.ConversationList(
                             onSearchQueryChange("")
                         }
                     ) {
-                        Icon(Lucide.X, null)
+                        Icon(Icons.Rounded.Close, null)
                     }
                 }
             },
@@ -133,86 +135,120 @@ fun ColumnScope.ConversationList(
                 Text(stringResource(id = R.string.chat_page_search_placeholder))
             }
         )
-
-        Tooltip(
-            tooltip = { Text(stringResource(id = R.string.chat_page_search_placeholder)) },
-        ) {
-            IconButton(
-                onClick = { navController.navigate(Screen.History) }
-            ) {
-                Icon(
-                    imageVector = Lucide.History,
-                    contentDescription = stringResource(R.string.chat_page_history),
-                )
-            }
-        }
     }
 
-    LazyColumn(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        if (conversations.itemCount == 0) {
-            item {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerLow
-                ) {
-                    Text(
-                        text = stringResource(id = R.string.chat_page_no_conversations),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(16.dp)
-                    )
+    Box(modifier = modifier) {
+        val listState = rememberLazyListState()
+        val canScrollBackward by remember {
+            derivedStateOf { listState.canScrollBackward }
+        }
+        val canScrollForward by remember {
+            derivedStateOf { listState.canScrollForward }
+        }
+
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (conversations.itemCount == 0) {
+                item {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow
+                    ) {
+                        Text(
+                            text = stringResource(id = R.string.chat_page_no_conversations),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(16.dp)
+                        )
+                    }
+                }
+            }
+
+            items(
+                count = conversations.itemCount,
+                key = conversations.itemKey { item ->
+                    when (item) {
+                        is ConversationListItem.DateHeader -> "date_${item.date}"
+                        is ConversationListItem.PinnedHeader -> "pinned_header"
+                        is ConversationListItem.Item -> item.conversation.id.toString()
+                    }
+                }
+            ) { index ->
+                when (val item = conversations[index]) {
+                    is ConversationListItem.DateHeader -> {
+                        DateHeaderItem(
+                            label = item.label,
+                            modifier = Modifier.animateItem()
+                        )
+                    }
+
+                    is ConversationListItem.PinnedHeader -> {
+                        PinnedHeader(
+                            modifier = Modifier.animateItem()
+                        )
+                    }
+
+                    is ConversationListItem.Item -> {
+                        ConversationItem(
+                            conversation = item.conversation,
+                            selected = item.conversation.id == current.id,
+                            loading = item.conversation.id in conversationJobs,
+                            onClick = onClick,
+                            onDelete = onDelete,
+                            onRegenerateTitle = onRegenerateTitle,
+                            onPin = onPin,
+                            showUnconsolidatedDot = showUnconsolidatedDot,
+                            modifier = Modifier.animateItem()
+                        )
+                    }
+
+                    null -> {
+                        // Placeholder for loading state
+                    }
                 }
             }
         }
 
-        items(
-            count = conversations.itemCount,
-            key = conversations.itemKey { item ->
-                when (item) {
-                    is ConversationListItem.DateHeader -> "date_${item.date}"
-                    is ConversationListItem.PinnedHeader -> "pinned_header"
-                    is ConversationListItem.Item -> item.conversation.id.toString()
-                }
-            }
-        ) { index ->
-            when (val item = conversations[index]) {
-                is ConversationListItem.DateHeader -> {
-                    DateHeaderItem(
-                        label = item.label,
-                        modifier = Modifier.animateItem()
+        // Top Fade - only show when can scroll backward
+        if (canScrollBackward) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .size(32.dp)
+                    .background(
+                        brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                            colors = listOf(
+                                MaterialTheme.colorScheme.surfaceContainerLow,
+                                Color.Transparent
+                            )
+                        )
                     )
-                }
+            )
+        }
 
-                is ConversationListItem.PinnedHeader -> {
-                    PinnedHeader(
-                        modifier = Modifier.animateItem()
+        // Bottom Fade - only show when can scroll forward
+        if (canScrollForward) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .size(32.dp)
+                    .background(
+                        brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                MaterialTheme.colorScheme.surfaceContainerLow
+                            )
+                        )
                     )
-                }
-
-                is ConversationListItem.Item -> {
-                    ConversationItem(
-                        conversation = item.conversation,
-                        selected = item.conversation.id == current.id,
-                        loading = item.conversation.id in conversationJobs,
-                        onClick = onClick,
-                        onDelete = onDelete,
-                        onRegenerateTitle = onRegenerateTitle,
-                        onPin = onPin,
-                        showUnconsolidatedDot = showUnconsolidatedDot,
-                        modifier = Modifier.animateItem()
-                    )
-                }
-
-                null -> {
-                    // Placeholder for loading state
-                }
-            }
+            )
         }
     }
 }
@@ -250,7 +286,7 @@ private fun PinnedHeader(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            imageVector = Lucide.Pin,
+            imageVector = Icons.Rounded.PushPin,
             contentDescription = null,
             modifier = Modifier.size(16.dp),
             tint = MaterialTheme.colorScheme.primary
@@ -326,7 +362,7 @@ private fun ConversationItem(
             // 置顶图标
             AnimatedVisibility(conversation.isPinned) {
                 Icon(
-                    imageVector = Lucide.Pin,
+                    imageVector = Icons.Rounded.PushPin,
                     contentDescription = "Pinned",
                     modifier = Modifier.size(12.dp),
                     tint = MaterialTheme.colorScheme.primary
@@ -359,7 +395,7 @@ private fun ConversationItem(
                     },
                     leadingIcon = {
                         Icon(
-                            if (conversation.isPinned) Lucide.PinOff else Lucide.Pin,
+                            Icons.Rounded.PushPin,
                             null
                         )
                     }
@@ -374,7 +410,7 @@ private fun ConversationItem(
                         showDropdownMenu = false
                     },
                     leadingIcon = {
-                        Icon(Lucide.RefreshCw, null)
+                        Icon(Icons.Rounded.Refresh, null)
                     }
                 )
 
@@ -387,7 +423,7 @@ private fun ConversationItem(
                         showDropdownMenu = false
                     },
                     leadingIcon = {
-                        Icon(Lucide.Trash2, null)
+                        Icon(Icons.Rounded.Delete, null)
                     }
                 )
             }

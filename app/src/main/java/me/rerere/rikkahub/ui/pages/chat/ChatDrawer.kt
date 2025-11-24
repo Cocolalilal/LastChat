@@ -32,11 +32,11 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.paging.compose.collectAsLazyPagingItems
-import com.composables.icons.lucide.Drama
-import com.composables.icons.lucide.Lucide
-import com.composables.icons.lucide.Pencil
-import com.composables.icons.lucide.Settings
-import com.composables.icons.lucide.Sparkles
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Group
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Edit
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
@@ -140,17 +140,7 @@ fun ChatDrawerContent(
                             modifier = Modifier.clickable {
                                 nicknameEditState.open(settings.displaySetting.userNickname)
                             }
-                        )
-
-                        Icon(
-                            imageVector = Lucide.Pencil,
-                            contentDescription = "Edit",
-                            modifier = Modifier
-                                .onClick {
-                                    nicknameEditState.open(settings.displaySetting.userNickname)
-                                }
-                                .size(LocalTextStyle.current.fontSize.toDp())
-                        )
+                    )
                     }
                     Greeting(
                         style = MaterialTheme.typography.labelMedium,
@@ -218,7 +208,7 @@ fun ChatDrawerContent(
             ) {
                 DrawerAction(
                     icon = {
-                        Icon(imageVector = Lucide.Drama, contentDescription = stringResource(R.string.assistant_page_title))
+                        Icon(imageVector = Icons.Rounded.Group, contentDescription = stringResource(R.string.assistant_page_title))
                     },
                     label = {
                         Text(stringResource(R.string.assistant_page_title))
@@ -230,7 +220,7 @@ fun ChatDrawerContent(
 
                 DrawerAction(
                     icon = {
-                        Icon(Lucide.Sparkles, "Menu")
+                        Icon(Icons.Rounded.Home, "Menu")
                     },
                     label = {
                         Text(stringResource(R.string.menu))
@@ -244,7 +234,7 @@ fun ChatDrawerContent(
 
                 DrawerAction(
                     icon = {
-                        Icon(Lucide.Settings, null)
+                        Icon(Icons.Rounded.Settings, null)
                     },
                     label = { Text(stringResource(R.string.settings)) },
                     onClick = {

@@ -8,9 +8,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -22,6 +25,9 @@ import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Calculate
+import androidx.compose.material.icons.rounded.Psychology
+import androidx.compose.material.icons.rounded.LocalFireDepartment
+import androidx.compose.material.icons.rounded.Chat
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -95,8 +101,23 @@ private fun StatsSection(stats: MenuStats) {
             fontWeight = FontWeight.Bold
         )
 
+        // Daily Chat Streak (Full Width)
+        StatCard(
+            title = "Daily Chat Streak",
+            value = "${stats.dailyChatStreak} Days",
+            icon = Icons.Rounded.LocalFireDepartment,
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(IntrinsicSize.Min)
+        )
+
+        // Total Chats & Avg Messages (Row)
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(IntrinsicSize.Min),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             StatCard(
@@ -105,37 +126,19 @@ private fun StatsSection(stats: MenuStats) {
                 icon = Icons.Rounded.ChatBubble,
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
             )
             StatCard(
-                title = "Monthly Active",
-                value = stats.monthlyConversations.toString(),
-                icon = Icons.Rounded.DateRange,
-                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier.weight(1f)
-            )
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            StatCard(
-                title = "Pinned Chats",
-                value = stats.totalPinnedConversations.toString(),
-                icon = Icons.Rounded.PushPin,
-                containerColor = MaterialTheme.colorScheme.errorContainer,
-                contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                modifier = Modifier.weight(1f)
-            )
-            StatCard(
-                title = "Avg Chats/Asst",
-                value = String.format("%.1f", stats.avgConversationsPerAssistant),
-                icon = Icons.Rounded.Calculate,
+                title = "Avg. Messages/day",
+                value = "%.0f".format(stats.avgMessagesPerDay), // Format as integer
+                icon = Icons.Rounded.Chat,
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 contentColor = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
             )
         }
 
@@ -201,8 +204,10 @@ private fun StatCard(
         shape = RoundedCornerShape(24.dp)
     ) {
         Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier
+                .padding(20.dp)
+                .fillMaxHeight(),
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
             Surface(
                 color = contentColor.copy(alpha = 0.2f),

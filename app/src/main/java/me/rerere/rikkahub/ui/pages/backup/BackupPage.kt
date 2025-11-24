@@ -59,13 +59,14 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.composables.icons.lucide.DatabaseBackup
-import com.composables.icons.lucide.Eye
-import com.composables.icons.lucide.EyeOff
-import com.composables.icons.lucide.File
-import com.composables.icons.lucide.Import
-import com.composables.icons.lucide.Lucide
-import com.composables.icons.lucide.Upload
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CloudSync
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.FileUpload
+import androidx.compose.material.icons.rounded.CloudUpload
+import androidx.compose.material.icons.rounded.SystemUpdateAlt
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import com.dokar.sonner.ToastType
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
@@ -108,7 +109,7 @@ fun BackupPage(vm: BackupVM = koinViewModel()) {
                 NavigationBarItem(
                     selected = pagerState.currentPage == 0,
                     icon = {
-                        Icon(Lucide.DatabaseBackup, null)
+                        Icon(Icons.Rounded.CloudSync, null)
                     },
                     label = {
                         Text(stringResource(R.string.backup_page_webdav_backup))
@@ -120,7 +121,7 @@ fun BackupPage(vm: BackupVM = koinViewModel()) {
                 NavigationBarItem(
                     selected = pagerState.currentPage == 1,
                     icon = {
-                        Icon(Lucide.Import, null)
+                        Icon(Icons.Rounded.Folder, null)
                     },
                     label = {
                         Text(stringResource(R.string.backup_page_import_export))
@@ -219,9 +220,9 @@ private fun WebDavPage(
                         visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         trailingIcon = {
                             val image = if (passwordVisible)
-                                Lucide.EyeOff
+                                Icons.Rounded.VisibilityOff
                             else
-                                Lucide.Eye
+                                Icons.Rounded.Visibility
                             IconButton(onClick = { passwordVisible = !passwordVisible }) {
                                 Icon(imageVector = image, null)
                             }
@@ -345,7 +346,7 @@ private fun WebDavPage(
                         modifier = Modifier.size(18.dp)
                     )
                 } else {
-                    Icon(Lucide.Upload, null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Rounded.CloudUpload, null, modifier = Modifier.size(18.dp))
                 }
                 Spacer(Modifier.width(8.dp))
                 Text(if (isBackingUp) stringResource(R.string.backup_page_backing_up) else stringResource(R.string.backup_page_backup_now))
@@ -603,24 +604,6 @@ private fun ImportExportPage(
                             // 清理临时文件
                             tempFile.delete()
                         }
-
-                        "chatbox" -> {
-                            // Chatbox导入：处理json文件
-                            val tempFile =
-                                File(context.cacheDir, "temp_chatbox_${System.currentTimeMillis()}.json")
-
-                            context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
-                                FileOutputStream(tempFile).use { outputStream ->
-                                    inputStream.copyTo(outputStream)
-                                }
-                            }
-
-                            // 从Chatbox文件恢复
-                            vm.restoreFromChatBox(tempFile)
-
-                            // 清理临时文件
-                            tempFile.delete()
-                        }
                     }
 
                     toaster.show(
@@ -679,7 +662,7 @@ private fun ImportExportPage(
                                 modifier = Modifier.size(24.dp)
                             )
                         } else {
-                            Icon(Lucide.File, null)
+                            Icon(Icons.Rounded.FileUpload, null)
                         }
                     }
                 )
@@ -713,43 +696,7 @@ private fun ImportExportPage(
                                 modifier = Modifier.size(24.dp)
                             )
                         } else {
-                            Icon(Lucide.Import, null)
-                        }
-                    }
-                )
-            }
-        }
-
-        stickyHeader {
-            StickyHeader {
-                Text(stringResource(R.string.backup_page_import_from_other_app))
-            }
-        }
-
-        item {
-            Card(
-                onClick = {
-                    if (!isRestoring) {
-                        importType = "chatbox"
-                        openDocumentLauncher.launch(arrayOf("application/json"))
-                    }
-                }
-            ) {
-                ListItem(
-                    headlineContent = {
-                        Text(stringResource(R.string.backup_page_import_from_chatbox))
-                    },
-                    supportingContent = {
-                        Text(stringResource(R.string.backup_page_import_chatbox_desc))
-                    },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    leadingContent = {
-                        if (isRestoring && importType == "chatbox") {
-                            CircularWavyProgressIndicator(
-                                modifier = Modifier.size(24.dp)
-                            )
-                        } else {
-                            Icon(Lucide.Import, null)
+                            Icon(Icons.Rounded.SystemUpdateAlt, null)
                         }
                     }
                 )

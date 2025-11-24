@@ -437,7 +437,7 @@
     <string name="setting_page_about">About</string>
     <string name="setting_page_about_desc">About this App</string>
     <string name="setting_page_assistant">Assistant</string>
-    <string name="setting_page_assistant_desc">Configure personalized assistants (Agents)</string>
+    <string name="setting_page_assistant_desc">Configure personalized assistants</string>
     <string name="setting_page_basic_settings">Basic Settings</string>
     <string name="setting_page_built_in_tools">Built-in Tools</string>
     <string name="setting_page_built_in_tools_desc">Select built-in tools supported by model. Currently only for Gemini official API.</string>

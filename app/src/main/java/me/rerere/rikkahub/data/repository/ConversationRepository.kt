@@ -243,6 +243,21 @@ class ConversationRepository(
         )
     }
 
+    suspend fun getEpisodeCount(): Int {
+        return chatEpisodeDAO.getCount()
+    }
+
+    fun getEpisodeCountFlow(): Flow<Int> {
+        return chatEpisodeDAO.getCountFlow()
+    }
+
+    fun getAllConversations(): Flow<List<Conversation>> {
+        return conversationDAO.getAll()
+            .map { list ->
+                list.map { conversationEntityToConversation(it) }
+            }
+    }
+
     private fun conversationSummaryToConversation(entity: LightConversationEntity): Conversation {
         return Conversation(
             id = Uuid.parse(entity.id),

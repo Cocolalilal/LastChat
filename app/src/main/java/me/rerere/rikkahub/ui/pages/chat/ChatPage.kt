@@ -43,13 +43,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
-import com.composables.icons.lucide.List
-import com.composables.icons.lucide.ListTree
-import com.composables.icons.lucide.Lucide
-import com.composables.icons.lucide.MessageCirclePlus
-import com.composables.icons.lucide.Option
-import com.composables.icons.lucide.Sparkles
-import com.composables.icons.lucide.X
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.AddBox
+import androidx.compose.material.icons.rounded.Close
 import com.dokar.sonner.ToastType
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -420,7 +418,7 @@ private fun TopBar(
                         scope.launch { drawerState.open() }
                     }
                 ) {
-                    Icon(Lucide.ListTree, "Messages")
+                    Icon(Icons.Rounded.Menu, "Messages")
                 }
             }
         },
@@ -466,7 +464,7 @@ private fun TopBar(
                     onClickMenu()
                 }
             ) {
-                Icon(if (previewMode) Lucide.X else Lucide.List, "Chat Options")
+                Icon(if (previewMode) Icons.Rounded.Close else Icons.Rounded.Search, "Chat Options")
             }
 
             IconButton(
@@ -474,7 +472,7 @@ private fun TopBar(
                     onNewChat()
                 }
             ) {
-                Icon(Lucide.MessageCirclePlus, "New Message")
+                Icon(Icons.Rounded.AddBox, "New Message")
             }
         },
     )

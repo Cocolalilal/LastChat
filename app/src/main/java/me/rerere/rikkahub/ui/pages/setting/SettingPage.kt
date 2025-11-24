@@ -40,25 +40,21 @@ import androidx.navigation.NavHostController
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.material3.Slider
-import com.composables.icons.lucide.BadgeInfo
-import com.composables.icons.lucide.Boxes
-import com.composables.icons.lucide.Database
-import com.composables.icons.lucide.Drama
-import com.composables.icons.lucide.Earth
-import com.composables.icons.lucide.Hammer
-import com.composables.icons.lucide.HardDrive
-import com.composables.icons.lucide.Heart
-import com.composables.icons.lucide.Library
-import com.composables.icons.lucide.Lucide
-import com.composables.icons.lucide.MessageCircleWarning
-import com.composables.icons.lucide.Monitor
-import com.composables.icons.lucide.Palette
-import com.composables.icons.lucide.Share2
-import com.composables.icons.lucide.SunMoon
-import com.composables.icons.lucide.Terminal
-import com.composables.icons.lucide.Volume2
-import com.composables.icons.lucide.Clock
-import com.composables.icons.lucide.ZapOff
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.InvertColors
+import androidx.compose.material.icons.rounded.Group
+import androidx.compose.material.icons.rounded.AutoGraph
+import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.RecordVoiceOver
+import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.DesktopWindows
+import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material.icons.rounded.Build
+import androidx.compose.material.icons.rounded.AccountTree
+import androidx.compose.material.icons.rounded.CloudUpload
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.isNotConfigured
@@ -95,7 +91,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                                 navController.navigate(Screen.Developer)
                             }
                         ) {
-                            Icon(Lucide.Hammer, "Developer")
+                            Icon(Icons.Rounded.Build, "Developer")
                         }
                     }
                 }
@@ -129,7 +125,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         Text(stringResource(R.string.setting_page_color_mode))
                     },
                     leadingContent = {
-                        Icon(Lucide.SunMoon, null)
+                        Icon(Icons.Rounded.InvertColors, null)
                     },
                     trailingContent = {
                         Select(
@@ -163,7 +159,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     navController = navController,
                     title = { Text(stringResource(R.string.setting_page_display_setting)) },
                     description = { Text(stringResource(R.string.setting_page_display_setting_desc)) },
-                    icon = { Icon(Lucide.Monitor, "Display Setting") },
+                    icon = { Icon(Icons.Rounded.DesktopWindows, "Display Setting") },
                     link = Screen.SettingDisplay
                 )
             }
@@ -173,7 +169,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     navController = navController,
                     title = { Text(stringResource(R.string.setting_page_assistant)) },
                     description = { Text(stringResource(R.string.setting_page_assistant_desc)) },
-                    icon = { Icon(Lucide.Drama, "Assistant") },
+                    icon = { Icon(Icons.Rounded.Group, "Assistant") },
                     link = Screen.Assistant
                 )
             }
@@ -192,7 +188,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     navController = navController,
                     title = { Text(stringResource(R.string.setting_page_default_model)) },
                     description = { Text(stringResource(R.string.setting_page_default_model_desc)) },
-                    icon = { Icon(Lucide.Hammer, stringResource(R.string.setting_page_default_model)) },
+                    icon = { Icon(Icons.Rounded.AccountTree, stringResource(R.string.setting_page_default_model)) },
                     link = Screen.SettingModels
                 )
             }
@@ -202,7 +198,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     navController = navController,
                     title = { Text(stringResource(R.string.setting_page_providers)) },
                     description = { Text(stringResource(R.string.setting_page_providers_desc)) },
-                    icon = { Icon(Lucide.Boxes, "Models") },
+                    icon = { Icon(Icons.Rounded.Cloud, "Models") },
                     link = Screen.SettingProvider
                 )
             }
@@ -212,7 +208,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     navController = navController,
                     title = { Text(stringResource(R.string.setting_page_search_service)) },
                     description = { Text(stringResource(R.string.setting_page_search_service_desc)) },
-                    icon = { Icon(Lucide.Earth, "Search") },
+                    icon = { Icon(Icons.Rounded.Public, "Search") },
                     link = Screen.SettingSearch
                 )
             }
@@ -222,7 +218,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     navController = navController,
                     title = { Text(stringResource(R.string.setting_page_tts_service)) },
                     description = { Text(stringResource(R.string.setting_page_tts_service_desc)) },
-                    icon = { Icon(Lucide.Volume2, "TTS") },
+                    icon = { Icon(Icons.Rounded.RecordVoiceOver, "TTS") },
                     link = Screen.SettingTTS
                 )
             }
@@ -232,7 +228,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     navController = navController,
                     title = { Text(stringResource(R.string.setting_page_mcp)) },
                     description = { Text(stringResource(R.string.setting_page_mcp_desc)) },
-                    icon = { Icon(Lucide.Terminal, "MCP") },
+                    icon = { Icon(Icons.Rounded.Code, "MCP") },
                     link = Screen.SettingMcp
                 )
             }
@@ -253,7 +249,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     navController = navController,
                     title = { Text(stringResource(R.string.setting_page_data_backup)) },
                     description = { Text(stringResource(R.string.setting_page_data_backup_desc)) },
-                    icon = { Icon(Lucide.Database, "Backup") },
+                    icon = { Icon(Icons.Rounded.CloudUpload, "Backup") },
                     link = Screen.Backup
                 )
             }
@@ -280,7 +276,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         }
                     },
                     icon = {
-                        Icon(Lucide.HardDrive, "Storage")
+                        Icon(Icons.Rounded.Storage, "Storage")
                     },
                 )
             }
@@ -299,7 +295,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     navController = navController,
                     title = { Text(stringResource(R.string.setting_page_about)) },
                     description = { Text(stringResource(R.string.setting_page_about_desc)) },
-                    icon = { Icon(Lucide.BadgeInfo, "About") },
+                    icon = { Icon(Icons.Rounded.Info, "About") },
                     link = Screen.SettingAbout
                 )
             }
@@ -335,7 +331,7 @@ private fun ProviderConfigWarningCard(navController: NavHostController) {
                     Text(stringResource(R.string.setting_page_config_api_desc))
                 },
                 leadingContent = {
-                    Icon(Lucide.MessageCircleWarning, null)
+                    Icon(Icons.Rounded.Warning, null)
                 },
                 colors = ListItemDefaults.colors(
                     containerColor = Color.Transparent

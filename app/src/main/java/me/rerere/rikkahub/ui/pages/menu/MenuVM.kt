@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.stateIn
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 
 class MenuVM(
@@ -17,15 +19,47 @@ class MenuVM(
 ) : ViewModel() {
 
     val stats: StateFlow<MenuStats> = combine(
-        conversationRepository.getAllLightConversations(),
+        conversationRepository.getAllConversations(),
+        conversationRepository.getEpisodeCountFlow(),
         settingsStore.settingsFlow
-    ) { conversations, settings ->
-        val now = Instant.now()
-        val thirtyDaysAgo = now.minus(30, ChronoUnit.DAYS)
-
-        val totalConversations = conversations.size
-        val monthlyConversations = conversations.count { it.updateAt.isAfter(thirtyDaysAgo) }
+    ) { conversations, episodeCount, settings ->
         
+        // Daily Chat Streak
+        val dates = conversations
+            .map { it.updateAt.atZone(ZoneId.systemDefault()).toLocalDate() }
+            .distinct()
+            .sortedDescending()
+        
+        var streak = 0
+        var current: LocalDate? = LocalDate.now()
+        
+        // Check if chatted today or yesterday to maintain streak
+        if (dates.contains(current)) {
+            // Streak is active today
+        } else if (dates.contains(current!!.minusDays(1))) {
+            // Streak is active from yesterday
+            current = current!!.minusDays(1)
+        } else {
+            // Streak broken
+            current = null
+        }
+
+        if (current != null) {
+            while (dates.contains(current)) {
+                streak++
+                current = current!!.minusDays(1)
+            }
+        }
+
+        // Avg Messages/Day
+        val totalMessages = conversations.sumOf { it.messageNodes.sumOf { node -> node.messages.size } }
+        val firstDate = conversations.minOfOrNull { it.createAt }
+        val daysActive = if (firstDate != null) {
+             ChronoUnit.DAYS.between(firstDate, Instant.now()) + 1
+        } else 1
+        val avgMessagesPerDay = totalMessages.toFloat() / daysActive
+
+        // Most Active Assistant
         val mostActiveAssistantId = conversations
             .groupBy { it.assistantId }
             .maxByOrNull { it.value.size }
@@ -35,18 +69,13 @@ class MenuVM(
             settings.assistants.find { it.id == id }?.name
         } ?: "None"
 
-        val totalPinnedConversations = conversations.count { it.isPinned }
-        val avgConversationsPerAssistant = if (settings.assistants.isNotEmpty()) {
-            totalConversations.toFloat() / settings.assistants.size
-        } else 0f
-
         MenuStats(
-            totalConversations = totalConversations,
-            monthlyConversations = monthlyConversations,
+            totalConversations = conversations.size,
+            totalMemories = episodeCount,
             mostActiveAssistantName = mostActiveAssistantName,
             totalAssistants = settings.assistants.size,
-            totalPinnedConversations = totalPinnedConversations,
-            avgConversationsPerAssistant = avgConversationsPerAssistant
+            dailyChatStreak = streak,
+            avgMessagesPerDay = avgMessagesPerDay
         )
     }.stateIn(
         scope = viewModelScope,
@@ -57,9 +86,9 @@ class MenuVM(
 
 data class MenuStats(
     val totalConversations: Int = 0,
-    val monthlyConversations: Int = 0,
+    val totalMemories: Int = 0,
     val mostActiveAssistantName: String = "None",
     val totalAssistants: Int = 0,
-    val totalPinnedConversations: Int = 0,
-    val avgConversationsPerAssistant: Float = 0f
+    val dailyChatStreak: Int = 0,
+    val avgMessagesPerDay: Float = 0f
 )
