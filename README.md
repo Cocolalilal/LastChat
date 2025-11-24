@@ -11,7 +11,7 @@ This project aims to provide a privacy-focused and highly extensible AI chat exp
 ## 📸 Gallery
 
 <div align="center">
-  <img src="docs/screenshot_3.jpg" alt="Chat Interface" width="200" />
+  <img src="docs/lastchat_1.0.3_chat.jpg" alt="Chat Interface" width="200" />
     &nbsp;&nbsp;&nbsp;&nbsp;
   <img src="docs/screenshot_4.jpg" alt="Home Screen" width="200" />
 </div>
