@@ -52,12 +52,29 @@ class MenuVM(
         }
 
         // Avg Messages/Day
-        val totalMessages = conversations.sumOf { it.messageNodes.sumOf { node -> node.messages.size } }
+        val today = LocalDate.now()
+        val totalMessages = conversations.sumOf { conversation ->
+            conversation.messageNodes.sumOf { node ->
+                node.messages.count { message ->
+                    val msgDate = LocalDate.of(
+                        message.createdAt.year,
+                        message.createdAt.monthNumber,
+                        message.createdAt.dayOfMonth
+                    )
+                    msgDate.isBefore(today)
+                }
+            }
+        }
         val firstDate = conversations.minOfOrNull { it.createAt }
         val daysActive = if (firstDate != null) {
-             ChronoUnit.DAYS.between(firstDate, Instant.now()) + 1
-        } else 1
-        val avgMessagesPerDay = totalMessages.toFloat() / daysActive
+            val firstDateLocalDate = firstDate.atZone(ZoneId.systemDefault()).toLocalDate()
+            ChronoUnit.DAYS.between(firstDateLocalDate, today)
+        } else 0
+        val avgMessagesPerDay = if (daysActive > 0L) {
+            totalMessages.toFloat() / daysActive
+        } else {
+            0f
+        }
 
         // Most Active Assistant
         val mostActiveAssistantId = conversations
