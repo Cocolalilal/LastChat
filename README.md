@@ -14,6 +14,8 @@ This project aims to provide a privacy-focused and highly extensible AI chat exp
   <img src="docs/lastchat_1.0.3_chat.jpg" alt="Chat Interface" width="200" />
     &nbsp;&nbsp;&nbsp;&nbsp;
   <img src="docs/screenshot_4.jpg" alt="Home Screen" width="200" />
+    &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="docs/1.0.4_providers.jpg" alt="providers page" width="200" />
 </div>
 
 ## ✨ Key Features
