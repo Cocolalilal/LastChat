@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -35,19 +36,19 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.composables.icons.lucide.BookOpenText
-import com.composables.icons.lucide.CircleStop
-import com.composables.icons.lucide.Copy
-import com.composables.icons.lucide.Ellipsis
-import com.composables.icons.lucide.GitFork
-import com.composables.icons.lucide.Languages
-import com.composables.icons.lucide.Lucide
-import com.composables.icons.lucide.Pencil
-import com.composables.icons.lucide.RefreshCw
-import com.composables.icons.lucide.Share
-import com.composables.icons.lucide.TextSelect
-import com.composables.icons.lucide.Trash2
-import com.composables.icons.lucide.Volume2
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CallSplit
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.OpenInBrowser
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.SelectAll
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.StopCircle
+import androidx.compose.material.icons.rounded.Translate
+import androidx.compose.material.icons.rounded.VolumeUp
 import kotlinx.coroutines.delay
 import kotlinx.datetime.toJavaLocalDateTime
 import me.rerere.ai.core.MessageRole
@@ -87,7 +88,7 @@ fun ColumnScope.ChatMessageActionButtons(
         itemVerticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            Lucide.Copy, stringResource(R.string.copy), modifier = Modifier
+            Icons.Rounded.ContentCopy, stringResource(R.string.copy), modifier = Modifier
                 .clip(CircleShape)
                 .clickable { context.copyMessageToClipboard(message) }
                 .padding(8.dp)
@@ -95,7 +96,7 @@ fun ColumnScope.ChatMessageActionButtons(
         )
 
         Icon(
-            Lucide.RefreshCw, stringResource(R.string.regenerate), modifier = Modifier
+            Icons.Rounded.Refresh, stringResource(R.string.regenerate), modifier = Modifier
                 .clip(CircleShape)
                 .clickable { onRegenerate() }
                 .padding(8.dp)
@@ -107,7 +108,7 @@ fun ColumnScope.ChatMessageActionButtons(
             val isSpeaking by tts.isSpeaking.collectAsState()
             val isAvailable by tts.isAvailable.collectAsState()
             Icon(
-                imageVector = if (isSpeaking) Lucide.CircleStop else Lucide.Volume2,
+                imageVector = if (isSpeaking) Icons.Rounded.StopCircle else Icons.Rounded.VolumeUp,
                 contentDescription = stringResource(R.string.tts),
                 modifier = Modifier
                     .clip(CircleShape)
@@ -131,7 +132,7 @@ fun ColumnScope.ChatMessageActionButtons(
             // Translation button
             if (onTranslate != null) {
                 Icon(
-                    imageVector = Lucide.Languages,
+                    imageVector = Icons.Rounded.Translate,
                     contentDescription = stringResource(R.string.translate),
                     modifier = Modifier
                         .clip(CircleShape)
@@ -149,7 +150,7 @@ fun ColumnScope.ChatMessageActionButtons(
         }
 
         Icon(
-            imageVector = Lucide.Ellipsis,
+            imageVector = Icons.Rounded.MoreHoriz,
             contentDescription = "More Options",
             modifier = Modifier
                 .clip(CircleShape)
@@ -217,7 +218,11 @@ fun ChatMessageActionsSheet(
                     onDismissRequest()
                     onSelectAndCopy()
                 },
-                shape = MaterialTheme.shapes.medium
+
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = androidx.compose.ui.graphics.Color.Black
+                )
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -227,7 +232,7 @@ fun ChatMessageActionsSheet(
                         .fillMaxWidth()
                 ) {
                     Icon(
-                        imageVector = Lucide.TextSelect,
+                        imageVector = Icons.Rounded.SelectAll,
                         contentDescription = null,
                         modifier = Modifier.padding(4.dp)
                     )
@@ -248,7 +253,11 @@ fun ChatMessageActionsSheet(
                         onDismissRequest()
                         onWebViewPreview()
                     },
-                    shape = MaterialTheme.shapes.medium
+
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = androidx.compose.ui.graphics.Color.Black
+                    )
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -258,7 +267,7 @@ fun ChatMessageActionsSheet(
                             .fillMaxWidth()
                     ) {
                         Icon(
-                            imageVector = Lucide.BookOpenText,
+                            imageVector = Icons.Rounded.OpenInBrowser,
                             contentDescription = null,
                             modifier = Modifier.padding(4.dp)
                         )
@@ -276,7 +285,11 @@ fun ChatMessageActionsSheet(
                     onDismissRequest()
                     onEdit()
                 },
-                shape = MaterialTheme.shapes.medium
+
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = androidx.compose.ui.graphics.Color.Black
+                )
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -286,7 +299,7 @@ fun ChatMessageActionsSheet(
                         .fillMaxWidth()
                 ) {
                     Icon(
-                        imageVector = Lucide.Pencil,
+                        imageVector = Icons.Rounded.Edit,
                         contentDescription = null,
                         modifier = Modifier.padding(4.dp)
                     )
@@ -303,7 +316,10 @@ fun ChatMessageActionsSheet(
                     onDismissRequest()
                     onShare()
                 },
-                shape = MaterialTheme.shapes.medium,
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = androidx.compose.ui.graphics.Color.Black
+                )
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -313,7 +329,7 @@ fun ChatMessageActionsSheet(
                         .fillMaxWidth()
                 ) {
                     Icon(
-                        imageVector = Lucide.Share,
+                        imageVector = Icons.Rounded.Share,
                         contentDescription = null,
                         modifier = Modifier.padding(4.dp)
                     )
@@ -330,7 +346,10 @@ fun ChatMessageActionsSheet(
                     onDismissRequest()
                     onFork()
                 },
-                shape = MaterialTheme.shapes.medium,
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = androidx.compose.ui.graphics.Color.Black
+                )
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -340,7 +359,7 @@ fun ChatMessageActionsSheet(
                         .fillMaxWidth()
                 ) {
                     Icon(
-                        imageVector = Lucide.GitFork,
+                        imageVector = Icons.Rounded.CallSplit,
                         contentDescription = null,
                         modifier = Modifier.padding(4.dp)
                     )
@@ -357,7 +376,8 @@ fun ChatMessageActionsSheet(
                     onDismissRequest()
                     onDelete()
                 },
-                shape = MaterialTheme.shapes.medium,
+
+                shape = RoundedCornerShape(24.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.errorContainer
                 )
@@ -370,7 +390,7 @@ fun ChatMessageActionsSheet(
                         .fillMaxWidth()
                 ) {
                     Icon(
-                        imageVector = Lucide.Trash2,
+                        imageVector = Icons.Rounded.Delete,
                         contentDescription = null,
                         modifier = Modifier.padding(4.dp)
                     )

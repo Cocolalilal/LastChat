@@ -18,9 +18,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
-import com.composables.icons.lucide.ChevronLeft
-import com.composables.icons.lucide.ChevronRight
-import com.composables.icons.lucide.Lucide
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ChevronLeft
+import androidx.compose.material.icons.rounded.ChevronRight
 import me.rerere.rikkahub.data.model.MessageNode
 
 @Composable
@@ -36,7 +36,7 @@ fun ChatMessageBranchSelector(
     ) {
         if (node.messages.size > 1) {
             Icon(
-                imageVector = Lucide.ChevronLeft,
+                imageVector = Icons.Rounded.ChevronLeft,
                 contentDescription = "Prev",
                 modifier = Modifier
                     .clip(CircleShape)
@@ -64,7 +64,7 @@ fun ChatMessageBranchSelector(
             )
 
             Icon(
-                imageVector = Lucide.ChevronRight,
+                imageVector = Icons.Rounded.ChevronRight,
                 contentDescription = "Next",
                 modifier = Modifier
                     .clip(CircleShape)

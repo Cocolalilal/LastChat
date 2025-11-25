@@ -160,7 +160,8 @@ fun ModelSelector(
             if (model != null) {
                 AutoAIIcon(
                     modifier = Modifier.size(36.dp),
-                    name = model.modelId
+                    name = model.modelId,
+                    color = Color.Transparent,
                 )
             } else {
                 Icon(

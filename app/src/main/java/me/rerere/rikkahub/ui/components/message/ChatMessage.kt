@@ -56,10 +56,10 @@ import androidx.compose.ui.util.fastForEachIndexed
 import androidx.core.content.FileProvider
 import androidx.core.net.toFile
 import androidx.core.net.toUri
-import com.composables.icons.lucide.File
-import com.composables.icons.lucide.Lucide
-import com.composables.icons.lucide.Music
-import com.composables.icons.lucide.Video
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.InsertDriveFile
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Videocam
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.serialization.json.JsonObject
@@ -445,7 +445,7 @@ private fun MessagePartsBlock(
                     shape = RoundedCornerShape(8.dp),
                 ) {
                     Box(modifier = Modifier.size(72.dp), contentAlignment = Alignment.Center){
-                        Icon(Lucide.Video, null)
+                        Icon(Icons.Rounded.Videocam, null)
                     }
                 }
             }
@@ -483,7 +483,7 @@ private fun MessagePartsBlock(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Icon(
-                                imageVector = Lucide.Music,
+                                imageVector = Icons.Rounded.MusicNote,
                                 contentDescription = null,
                                 modifier = Modifier.size(20.dp)
                             )
@@ -562,7 +562,7 @@ private fun MessagePartsBlock(
 
                                 else -> {
                                     Icon(
-                                        imageVector = Lucide.File,
+                                        imageVector = Icons.Rounded.InsertDriveFile,
                                         contentDescription = null,
                                         modifier = Modifier.size(20.dp)
                                     )
