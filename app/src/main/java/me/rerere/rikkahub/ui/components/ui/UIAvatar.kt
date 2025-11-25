@@ -50,7 +50,8 @@ fun TextAvatar(
     text: String,
     modifier: Modifier = Modifier,
     loading: Boolean = false,
-    color: Color = MaterialTheme.colorScheme.secondaryContainer
+    color: Color = MaterialTheme.colorScheme.secondaryContainer,
+    contentColor: Color = MaterialTheme.colorScheme.onSecondary
 ) {
     Box(
         modifier = modifier
@@ -61,7 +62,7 @@ fun TextAvatar(
     ) {
         Text(
             text = text.take(1).uppercase(),
-            color = MaterialTheme.colorScheme.onSecondary,
+            color = contentColor,
             maxLines = 1,
             overflow = TextOverflow.Clip,
             autoSize = TextAutoSize.StepBased(

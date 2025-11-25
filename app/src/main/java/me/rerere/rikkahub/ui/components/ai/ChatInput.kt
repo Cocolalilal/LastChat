@@ -667,7 +667,8 @@ private fun MediaFileInputRow(
                         contentDescription = null,
                         modifier = Modifier
                             .clip(CircleShape)
-                            .size(20.dp)
+                            .padding(end = 4.dp)
+                            .size(24.dp)
                             .clickable {
                                 // Remove image
                                 state.messageContent =

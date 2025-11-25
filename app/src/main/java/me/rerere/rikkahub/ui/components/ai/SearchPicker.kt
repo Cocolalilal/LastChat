@@ -74,6 +74,7 @@ fun SearchPickerButton(
     ToggleSurface(
         modifier = modifier,
         checked = enableSearch || model?.tools?.contains(BuiltInTools.Search) == true,
+        shape = RoundedCornerShape(24.dp),
         onClick = {
             showSearchPicker = true
         }
@@ -111,7 +112,8 @@ fun SearchPickerButton(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .fillMaxHeight(0.7f)
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.5f)
                     .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -184,7 +186,13 @@ private fun AppSearchSettings(
     settings: Settings,
     onUpdateSearchService: (Int) -> Unit
 ) {
-    Card {
+    Card(
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.Black,
+            contentColor = Color.White
+        )
+    ) {
         Row(
             modifier = Modifier
                 .padding(horizontal = 16.dp, vertical = 12.dp)
@@ -255,7 +263,7 @@ private fun AppSearchSettings(
                 onClick = {
                     onUpdateSearchService(index)
                 },
-                shape = RoundedCornerShape(50),
+                shape = RoundedCornerShape(24.dp),
             ) {
                 Row(
                     modifier = Modifier
@@ -290,7 +298,13 @@ private fun AppSearchSettings(
 private fun BuiltInSearchSetting(model: Model) {
     val settingsStore = koinInject<SettingsStore>()
     val scope = rememberCoroutineScope()
-    Card {
+    Card(
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.Black,
+            contentColor = Color.White
+        )
+    ) {
         Row(
             modifier = Modifier
                 .padding(horizontal = 16.dp, vertical = 12.dp)

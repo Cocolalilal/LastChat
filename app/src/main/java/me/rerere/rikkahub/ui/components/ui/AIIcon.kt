@@ -13,6 +13,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.svg.css
@@ -28,6 +29,7 @@ private fun AIIcon(
     modifier: Modifier = Modifier,
     loading: Boolean = false,
     color: Color = MaterialTheme.colorScheme.secondaryContainer,
+    padding: Dp = 4.dp,
 ) {
     val contentColor = LocalContentColor.current
     val context = LocalContext.current
@@ -51,7 +53,7 @@ private fun AIIcon(
         AsyncImage(
             model = model,
             contentDescription = name,
-            modifier = Modifier.padding(4.dp)
+            modifier = Modifier.padding(padding)
         )
     }
 }
@@ -62,9 +64,11 @@ fun AutoAIIcon(
     modifier: Modifier = Modifier,
     loading: Boolean = false,
     color: Color = MaterialTheme.colorScheme.secondaryContainer,
+    contentColor: Color = LocalContentColor.current,
+    padding: Dp = 4.dp,
 ) {
     val path = remember(name) { computeAIIconByName(name) } ?: run {
-        TextAvatar(text = name, modifier = modifier, loading = loading, color = color)
+        TextAvatar(text = name, modifier = modifier, loading = loading, color = color, contentColor = contentColor)
         return
     }
     AIIcon(
@@ -73,6 +77,7 @@ fun AutoAIIcon(
         modifier = modifier,
         loading = loading,
         color = color,
+        padding = padding,
     )
 }
 

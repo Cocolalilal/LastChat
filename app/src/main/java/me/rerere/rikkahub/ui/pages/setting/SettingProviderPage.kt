@@ -89,7 +89,6 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
     val scope = rememberCoroutineScope()
-    var searchQuery by remember { mutableStateOf("") }
     val lazyListState = rememberLazyStaggeredGridState()
     val reorderableState = rememberReorderableLazyStaggeredGridState(lazyListState) { from, to ->
         val newProviders = settings.providers.toMutableList().apply {
@@ -98,15 +97,7 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
         vm.updateSettings(settings.copy(providers = newProviders))
     }
 
-    val filteredProviders = remember(settings.providers, searchQuery) {
-        if (searchQuery.isBlank()) {
-            settings.providers
-        } else {
-            settings.providers.filter { provider ->
-                provider.name.contains(searchQuery, ignoreCase = true)
-            }
-        }
-    }
+    val filteredProviders = settings.providers
 
     Scaffold(
         topBar = {
@@ -143,26 +134,7 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
                 .padding(innerPadding)
         ) {
             // Search bar
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                placeholder = { Text(stringResource(R.string.setting_provider_page_search_providers)) },
-                leadingIcon = {
-                    Icon(Lucide.Search, contentDescription = null)
-                },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }) {
-                            Icon(Lucide.X, contentDescription = "Clear")
-                        }
-                    }
-                },
-                singleLine = true,
-                shape = CircleShape,
-            )
+            // Search bar removed
 
 
             LazyVerticalStaggeredGrid(

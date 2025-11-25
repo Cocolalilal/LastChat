@@ -47,6 +47,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.composables.icons.lucide.GripHorizontal
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Plus
+import com.composables.icons.lucide.Settings2
 import com.composables.icons.lucide.SquarePen
 import com.composables.icons.lucide.Trash2
 import com.composables.icons.lucide.X
@@ -80,6 +81,48 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
                 },
                 navigationIcon = {
                     BackButton()
+                },
+                actions = {
+                    var showCommonOptions by remember { mutableStateOf(false) }
+                    IconButton(
+                        onClick = {
+                            showCommonOptions = true
+                        }
+                    ) {
+                        Icon(
+                            Lucide.Settings2,
+                            contentDescription = stringResource(R.string.setting_page_search_common_options)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = {
+                            vm.updateSettings(
+                                settings.copy(
+                                    searchServices = listOf(SearchServiceOptions.BingLocalOptions()) + settings.searchServices
+                                )
+                            )
+                        }
+                    ) {
+                        Icon(
+                            Lucide.Plus,
+                            contentDescription = stringResource(R.string.setting_page_search_add_provider)
+                        )
+                    }
+                    
+                    if (showCommonOptions) {
+                        CommonOptionsDialog(
+                            settings = settings,
+                            onDismissRequest = { showCommonOptions = false },
+                            onUpdate = { options ->
+                                vm.updateSettings(
+                                    settings.copy(
+                                        searchCommonOptions = options
+                                    )
+                                )
+                            }
+                        )
+                    }
                 }
             )
         }
@@ -113,34 +156,7 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
             state = lazyListState
         ) {
             // 搜索提供商标题和添加按钮
-            item("providers_header") {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = stringResource(R.string.setting_page_search_providers),
-                        style = MaterialTheme.typography.headlineMedium
-                    )
-                    OutlinedButton(
-                        onClick = {
-                            vm.updateSettings(
-                                settings.copy(
-                                    searchServices =  listOf(SearchServiceOptions.BingLocalOptions()) + settings.searchServices
-                                )
-                            )
-                        }
-                    ) {
-                        Icon(
-                            Lucide.Plus,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(stringResource(R.string.setting_page_search_add_provider))
-                    }
-                }
-            }
+            // Removed as per request
 
             // 搜索提供商列表
             items(settings.searchServices, key = { it.id }) { service ->
@@ -194,18 +210,7 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
             }
 
             // 通用选项
-            item("common_options") {
-                CommonOptions(
-                    settings = settings,
-                    onUpdate = { options ->
-                        vm.updateSettings(
-                            settings.copy(
-                                searchCommonOptions = options
-                            )
-                        )
-                    }
-                )
-            }
+            // Removed as per request
         }
     }
 }
@@ -530,48 +535,50 @@ fun ZhipuOptions(
 }
 
 @Composable
-private fun CommonOptions(
+private fun CommonOptionsDialog(
     settings: Settings,
+    onDismissRequest: () -> Unit,
     onUpdate: (SearchCommonOptions) -> Unit
 ) {
     var commonOptions by remember(settings.searchCommonOptions) {
         mutableStateOf(settings.searchCommonOptions)
     }
-    Card(
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
-        colors = androidx.compose.material3.CardDefaults.cardColors(
-            containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer
-        )
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.setting_page_search_common_options),
-                style = MaterialTheme.typography.titleMedium
-            )
-
-            FormItem(
-                label = {
-                    Text(stringResource(R.string.setting_page_search_result_size))
-                }
+    
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismissRequest,
+        title = {
+            Text(stringResource(R.string.setting_page_search_common_options))
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                OutlinedNumberInput(
-                    value = commonOptions.resultSize,
-                    onValueChange = {
-                        commonOptions = commonOptions.copy(
-                            resultSize = it
-                        )
-                        onUpdate(commonOptions)
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                )
+                FormItem(
+                    label = {
+                        Text(stringResource(R.string.setting_page_search_result_size))
+                    }
+                ) {
+                    OutlinedNumberInput(
+                        value = commonOptions.resultSize,
+                        onValueChange = {
+                            commonOptions = commonOptions.copy(
+                                resultSize = it
+                            )
+                            onUpdate(commonOptions)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(
+                onClick = onDismissRequest
+            ) {
+                Text(stringResource(android.R.string.ok))
             }
         }
-    }
+    )
 }
 
 @Composable

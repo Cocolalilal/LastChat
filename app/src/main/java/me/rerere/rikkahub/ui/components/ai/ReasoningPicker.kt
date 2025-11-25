@@ -38,6 +38,10 @@ import androidx.compose.material.icons.rounded.LightbulbCircle
 import androidx.compose.material.icons.rounded.AutoAwesome
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.rikkahub.R
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import me.rerere.rikkahub.ui.components.ui.ToggleSurface
 
 @Composable
@@ -59,6 +63,7 @@ fun ReasoningButton(
 
     ToggleSurface(
         checked = ReasoningLevel.fromBudgetTokens(reasoningTokens).isEnabled,
+        shape = RoundedCornerShape(24.dp),
         onClick = {
             showPicker = true
         },
@@ -134,73 +139,66 @@ fun ReasoningPicker(
                     onUpdateReasoningTokens(-1)
                 }
             )
-            ReasoningLevelCard(
-                selected = currentLevel == ReasoningLevel.LOW,
-                icon = {
-                    Icon(Icons.Rounded.Lightbulb, null)
-                },
-                title = {
-                    Text(stringResource(id = R.string.reasoning_light))
-                },
-                description = {
-                    Text(stringResource(id = R.string.reasoning_light_desc))
-                },
-                onClick = {
-                    onUpdateReasoningTokens(1024)
-                }
-            )
-            ReasoningLevelCard(
-                selected = currentLevel == ReasoningLevel.MEDIUM,
-                icon = {
-                    Icon(Icons.Rounded.Lightbulb, null)
-                },
-                title = {
-                    Text(stringResource(id = R.string.reasoning_medium))
-                },
-                description = {
-                    Text(stringResource(id = R.string.reasoning_medium_desc))
-                },
-                onClick = {
-                    onUpdateReasoningTokens(16_000)
-                }
-            )
-            ReasoningLevelCard(
-                selected = currentLevel == ReasoningLevel.HIGH,
-                icon = {
-                    Icon(Icons.Rounded.Lightbulb, null)
-                },
-                title = {
-                    Text(stringResource(id = R.string.reasoning_heavy))
-                },
-                description = {
-                    Text(stringResource(id = R.string.reasoning_heavy_desc))
-                },
-                onClick = {
-                    onUpdateReasoningTokens(32_000)
-                }
-            )
-
+            
             Card(
-                modifier = Modifier.imePadding(),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color.Black,
+                )
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                ) {
-                    Text(stringResource(id = R.string.reasoning_custom))
-                    var input by remember(reasoningTokens) {
-                        mutableStateOf(reasoningTokens.toString())
-                    }
-                    OutlinedTextField(
-                        value = input,
-                        onValueChange = { newValue ->
-                            input = newValue
-                            val newTokens = newValue.toIntOrNull()
-                            if (newTokens != null) {
-                                onUpdateReasoningTokens(newTokens)
-                            }
+                Column {
+                    ReasoningLevelCard(
+                        selected = currentLevel == ReasoningLevel.LOW,
+                        icon = {
+                            Icon(Icons.Rounded.Lightbulb, null)
                         },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
+                        title = {
+                            Text(stringResource(id = R.string.reasoning_light))
+                        },
+                        description = {
+                            Text(stringResource(id = R.string.reasoning_light_desc))
+                        },
+                        onClick = {
+                            onUpdateReasoningTokens(1024)
+                        },
+                        shape = RoundedCornerShape(0.dp),
+                        containerColor = Color.Black
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    ReasoningLevelCard(
+                        selected = currentLevel == ReasoningLevel.MEDIUM,
+                        icon = {
+                            Icon(Icons.Rounded.Lightbulb, null)
+                        },
+                        title = {
+                            Text(stringResource(id = R.string.reasoning_medium))
+                        },
+                        description = {
+                            Text(stringResource(id = R.string.reasoning_medium_desc))
+                        },
+                        onClick = {
+                            onUpdateReasoningTokens(16_000)
+                        },
+                        shape = RoundedCornerShape(0.dp),
+                        containerColor = Color.Black
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    ReasoningLevelCard(
+                        selected = currentLevel == ReasoningLevel.HIGH,
+                        icon = {
+                            Icon(Icons.Rounded.Lightbulb, null)
+                        },
+                        title = {
+                            Text(stringResource(id = R.string.reasoning_heavy))
+                        },
+                        description = {
+                            Text(stringResource(id = R.string.reasoning_heavy_desc))
+                        },
+                        onClick = {
+                            onUpdateReasoningTokens(32_000)
+                        },
+                        shape = RoundedCornerShape(0.dp),
+                        containerColor = Color.Black
                     )
                 }
             }
@@ -216,12 +214,14 @@ private fun ReasoningLevelCard(
     title: @Composable () -> Unit = {},
     description: @Composable () -> Unit = {},
     onClick: () -> Unit,
+    shape: Shape = RoundedCornerShape(24.dp),
+    containerColor: Color? = null
 ) {
-    val containerColor = animateColorAsState(
+    val animatedContainerColor = animateColorAsState(
         if (selected) {
             MaterialTheme.colorScheme.primaryContainer
         } else {
-            MaterialTheme.colorScheme.surface
+            containerColor ?: MaterialTheme.colorScheme.surface
         }
     )
     val textColor = animateColorAsState(
@@ -234,10 +234,11 @@ private fun ReasoningLevelCard(
     Card(
         onClick = onClick,
         colors = CardDefaults.cardColors(
-            containerColor = containerColor.value,
+            containerColor = animatedContainerColor.value,
             contentColor = textColor.value,
         ),
         modifier = modifier,
+        shape = shape
     ) {
         Row(
             modifier = Modifier

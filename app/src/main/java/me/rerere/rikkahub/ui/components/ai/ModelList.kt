@@ -30,6 +30,7 @@ import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
@@ -181,7 +182,6 @@ fun ModelSelector(
         ) {
             Column(
                 modifier = Modifier
-                    .padding(8.dp)
                     .fillMaxHeight(0.8f)
                     .imePadding(),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -328,34 +328,18 @@ private fun ColumnScope.ModelList(
         }.toMap()
     }
 
-    Surface(
-        shape = RoundedCornerShape(50),
+    OutlinedTextField(
+        value = searchKeywords,
+        onValueChange = { searchKeywords = it },
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp),
-    ) {
-        OutlinedTextField(
-            value = searchKeywords,
-            onValueChange = { searchKeywords = it },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = {
-                Text(
-                    text = stringResource(R.string.model_list_search_placeholder),
-                )
-            },
-            shape = RoundedCornerShape(50),
-            colors = TextFieldDefaults.colors(
-                unfocusedIndicatorColor = Color.Transparent,
-                focusedIndicatorColor = Color.Transparent,
-                focusedContainerColor = Color.Transparent,
-                unfocusedContainerColor = Color.Transparent,
-            ),
-            leadingIcon = {
-                Icon(Lucide.Search, null)
-            },
-            maxLines = 1,
-        )
-    }
+            .padding(start = 16.dp, end = 16.dp, top = 16.dp),
+        leadingIcon = {
+            Icon(Lucide.Search, null)
+        },
+        maxLines = 1,
+        shape = RoundedCornerShape(50)
+    )
 
 
     Box(
@@ -366,7 +350,7 @@ private fun ColumnScope.ModelList(
         LazyColumn(
             state = lazyListState,
             verticalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(8.dp),
+            contentPadding = PaddingValues(16.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
             if (providers.isEmpty()) {
@@ -449,11 +433,16 @@ private fun ColumnScope.ModelList(
                 }
             }
 
-            providers.fastForEach { providerSetting ->
-                stickyHeader(key = "header:${providerSetting.id}") {
+            items(
+                items = providers,
+                key = { "provider:${it.id}" }
+            ) { providerSetting ->
+                Column(
+                    modifier = Modifier,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     Row(
                         modifier = Modifier
-                            .padding(horizontal = 8.dp)
                             .padding(bottom = 4.dp, top = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -471,63 +460,86 @@ private fun ColumnScope.ModelList(
                             color = MaterialTheme.colorScheme.primary,
                         )
                     }
-                }
 
-                items(
-                    items = providerSetting.models.fastFilter {
-                        it.type == modelType && it.displayName.contains(
-                            searchKeywords,
-                            true
+                    Card(
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color.Black,
                         )
-                    },
-                    key = { it.id }
-                ) { model ->
-                    val favorite = settings.value.favoriteModels.contains(model.id)
-                    ModelItem(
-                        model = model,
-                        onSelect = onSelect,
-                        modifier = Modifier.animateItem(),
-                        providerSetting = providerSetting,
-                        select = currentModel == model.id,
-                        onDismiss = {
-                            onDismiss()
-                        },
-                        tail = {
-                            IconButton(
-                                onClick = {
-                                    coroutineScope.launch {
-                                        settingsStore.update { settings ->
-                                            if (favorite) {
-                                                settings.copy(
-                                                    favoriteModels = settings.favoriteModels.filter { it != model.id }
-                                                )
+                    ) {
+                        Column {
+                            val filteredModels = providerSetting.models.fastFilter {
+                                it.type == modelType && it.displayName.contains(
+                                    searchKeywords,
+                                    true
+                                )
+                            }
+                            
+                            if (filteredModels.isEmpty()) {
+                                Text(
+                                    text = stringResource(R.string.setting_provider_page_no_models),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.extendColors.gray6,
+                                    modifier = Modifier.padding(16.dp)
+                                )
+                            }
 
+                            filteredModels.forEachIndexed { index, model ->
+                                val favorite = settings.value.favoriteModels.contains(model.id)
+                                ModelItem(
+                                    model = model,
+                                    onSelect = onSelect,
+                                    modifier = Modifier.animateItem(),
+                                    providerSetting = providerSetting,
+                                    select = currentModel == model.id,
+                                    inGroup = true,
+                                    onDismiss = {
+                                        onDismiss()
+                                    },
+                                    tail = {
+                                        IconButton(
+                                            onClick = {
+                                                coroutineScope.launch {
+                                                    settingsStore.update { settings ->
+                                                        if (favorite) {
+                                                            settings.copy(
+                                                                favoriteModels = settings.favoriteModels.filter { it != model.id }
+                                                            )
+
+                                                        } else {
+                                                            settings.copy(
+                                                                favoriteModels = settings.favoriteModels + model.id
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        ) {
+                                            if (favorite) {
+                                                Icon(
+                                                    HeartIcon,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(20.dp),
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                )
                                             } else {
-                                                settings.copy(
-                                                    favoriteModels = settings.favoriteModels + model.id
+                                                Icon(
+                                                    Icons.Rounded.FavoriteBorder,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(20.dp)
                                                 )
                                             }
                                         }
                                     }
-                                }
-                            ) {
-                                if (favorite) {
-                                    Icon(
-                                        HeartIcon,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(20.dp),
-                                        tint = MaterialTheme.colorScheme.primary,
-                                    )
-                                } else {
-                                    Icon(
-                                        Icons.Rounded.FavoriteBorder,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(20.dp)
+                                )
+                                if (index < filteredModels.lastIndex) {
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(horizontal = 16.dp)
                                     )
                                 }
                             }
                         }
-                    )
+                    }
                 }
             }
         }
@@ -560,7 +572,7 @@ private fun ColumnScope.ModelList(
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 8.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp),
             state = providerBadgeListState
         ) {
             items(providers) { provider ->
@@ -592,22 +604,20 @@ private fun ModelItem(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     tail: @Composable RowScope.() -> Unit = {},
-    dragHandle: @Composable (RowScope.() -> Unit)? = null
+    dragHandle: @Composable (RowScope.() -> Unit)? = null,
+    inGroup: Boolean = false
 ) {
     val navController = LocalNavController.current
     val interactionSource = remember { MutableInteractionSource() }
-    Card(
-        modifier = modifier,
-        colors = CardDefaults.cardColors(
-            containerColor = if (select) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-            contentColor = if (select) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-        )
-    ) {
+    if(inGroup) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier
+            modifier = modifier
                 .fillMaxWidth()
+                .background(
+                    color = if (select) MaterialTheme.colorScheme.primaryContainer else Color.Black,
+                )
                 .padding(vertical = 12.dp, horizontal = 16.dp)
         ) {
             Row(
@@ -630,17 +640,13 @@ private fun ModelItem(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Surface(
-                    color = MaterialTheme.colorScheme.secondaryContainer,
-                    shape = MaterialTheme.shapes.small,
-                ) {
-                    AutoAIIcon(
-                        name = model.modelId,
-                        modifier = Modifier
-                            .padding(4.dp)
-                            .size(32.dp)
-                    )
-                }
+                AutoAIIcon(
+                    name = model.modelId,
+                    modifier = Modifier
+                        .size(32.dp),
+                    color = Color.Transparent,
+                    contentColor = if (select) MaterialTheme.colorScheme.onPrimaryContainer else Color.White
+                )
                 Column(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -650,6 +656,7 @@ private fun ModelItem(
                         style = MaterialTheme.typography.titleSmall,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                        color = if (select) MaterialTheme.colorScheme.onPrimaryContainer else Color.White
                     )
 
                     FlowRow(
@@ -668,6 +675,78 @@ private fun ModelItem(
                 tail()
             }
             dragHandle?.let { it() }
+        }
+    } else {
+        Card(
+            modifier = modifier,
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (select) MaterialTheme.colorScheme.primaryContainer else Color.Black,
+                contentColor = if (select) MaterialTheme.colorScheme.onPrimaryContainer else Color.White,
+            )
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp, horizontal = 16.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .combinedClickable(
+                            enabled = true,
+                            onLongClick = {
+                                onDismiss()
+                                navController.navigate(
+                                    Screen.SettingProviderDetail(
+                                        providerSetting.id.toString()
+                                    )
+                                )
+                            },
+                            onClick = { onSelect(model) },
+                            interactionSource = interactionSource,
+                            indication = LocalIndication.current
+                        ),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    AutoAIIcon(
+                        name = model.modelId,
+                        modifier = Modifier
+                            .size(32.dp),
+                        color = Color.Transparent,
+                        contentColor = Color.White
+                    )
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Text(
+                            text = model.displayName,
+                            style = MaterialTheme.typography.titleSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+
+                        FlowRow(
+                            modifier = Modifier
+                                .fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            ModelTypeTag(model = model)
+
+                            ModelModalityTag(model = model)
+
+                            ModelAbilityTag(model = model)
+                        }
+                    }
+                    tail()
+                }
+                dragHandle?.let { it() }
+            }
         }
     }
 }
