@@ -2,6 +2,7 @@
 
 <div align="center">
   <img src="docs/app_icon.png" alt="LastChat Icon" width="128" height="128" />
+  <img src="docs/1.0.4_providers.jpg" width="128" height="128" />
 </div>
 
 **LastChat** is a powerful, feature-rich AI assistant application for Android. It is a fork of [RikkaHub](https://github.com/re-ovo/RikkaHub), modified using **Gemini 3 Pro** and **Claude 4.5 Sonnet**.
