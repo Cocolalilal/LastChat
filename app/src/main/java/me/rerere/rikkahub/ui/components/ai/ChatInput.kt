@@ -704,7 +704,7 @@ private fun FilesPicker(
         FlowRow(
             modifier = Modifier
                 .fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             TakePicButton {

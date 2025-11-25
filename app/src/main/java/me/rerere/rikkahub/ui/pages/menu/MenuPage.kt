@@ -58,6 +58,7 @@ import org.koin.androidx.compose.koinViewModel
 fun MenuPage() {
     val vm: MenuVM = koinViewModel()
     val stats by vm.stats.collectAsStateWithLifecycle()
+    val currentAssistant by vm.currentAssistant.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -77,7 +78,8 @@ fun MenuPage() {
             item {
                 Greeting(
                     modifier = Modifier.padding(vertical = 16.dp),
-                    style = MaterialTheme.typography.displayMedium
+                    style = MaterialTheme.typography.displayMedium,
+                    assistant = currentAssistant
                 )
             }
 
@@ -113,7 +115,7 @@ private fun StatsSection(stats: MenuStats) {
                 .height(IntrinsicSize.Min)
         )
 
-        // Total Chats & Avg Messages (Row)
+        // Weekly Token Usage & Avg Messages (Row)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -121,8 +123,8 @@ private fun StatsSection(stats: MenuStats) {
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             StatCard(
-                title = "Total Chats",
-                value = stats.totalConversations.toString(),
+                title = "Total chats",
+                value = stats.totalChats.shortenNumber(decimals = 0),
                 icon = Icons.Rounded.ChatBubble,
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -303,5 +305,13 @@ private fun ToolButton(
                 fontWeight = FontWeight.SemiBold
             )
         }
+    }
+}
+
+private fun Int.shortenNumber(decimals: Int = 1): String {
+    return when {
+        this < 1000 -> this.toString()
+        this < 1_000_000 -> String.format("%.${decimals}fk", this / 1000.0)
+        else -> String.format("%.${decimals}fM", this / 1_000_000.0)
     }
 }

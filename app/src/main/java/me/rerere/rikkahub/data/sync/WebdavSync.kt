@@ -176,7 +176,7 @@ class WebdavSync(
         val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
         val backupFile = File(
             context.cacheDir,
-            "backup_$timestamp.zip"
+            "LastChat_backup_$timestamp.zip"
         )
         if (backupFile.exists()) {
             backupFile.delete()

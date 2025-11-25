@@ -108,14 +108,6 @@ fun AssistantDetailPage(id: String) {
             )
         })
 
-        // Notifications
-        add(TabItem("Notifications") {
-            AssistantNotificationSubPage(
-                assistant = assistant,
-                onUpdateAssistant = { onUpdate(it) }
-            )
-        })
-
         // Memory
         add(TabItem(stringResource(R.string.assistant_page_tab_memory)) {
             val embeddingProgress by vm.embeddingProgress.collectAsStateWithLifecycle()
@@ -156,6 +148,14 @@ fun AssistantDetailPage(id: String) {
                 )
             })
         }
+
+        // Notifications
+        add(TabItem("Notifications") {
+            AssistantNotificationSubPage(
+                assistant = assistant,
+                onUpdateAssistant = { onUpdate(it) }
+            )
+        })
 
         // Local Tools
         add(TabItem(stringResource(R.string.assistant_page_tab_local_tools)) {

@@ -62,6 +62,15 @@ data class Assistant(
     val humanMemoryUpdateIntervalHours: Int = 24, // Interval for core memory reflection
     val lastHumanMemoryUpdateTime: Long = 0L,
     val lastHumanMemoryUpdateResult: String = "",
+    
+    // Personalized Greetings
+    val enablePersonalizedGreetings: Boolean = false,
+    val personalizedGreetings: Map<String, List<String>> = emptyMap(), // Stored as "TimeOfDay|Greeting" or just a list and we pick based on index? 
+    // Requirement: "3 for each part of the day". 
+    // Let's store as a Map<String, List<String>> serialized or just a flat list with a convention?
+    // The requirement says "3 for each part of the day". Parts: Morning, Afternoon, Evening, Night (4 parts?).
+    // Let's use a Map for better structure if Serializable supports it, or a custom class.
+    // Simpler: List<GreetingData>
 )
 
 @Serializable

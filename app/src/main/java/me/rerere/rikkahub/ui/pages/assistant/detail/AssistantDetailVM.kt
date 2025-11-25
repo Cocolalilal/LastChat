@@ -33,6 +33,7 @@ class AssistantDetailVM(
     private val memoryRepository: MemoryRepository,
     private val context: Application,
     private val chatEpisodeDAO: ChatEpisodeDAO,
+    private val providerManager: me.rerere.ai.provider.ProviderManager,
 ) : ViewModel() {
     private val assistantId = Uuid.parse(id)
 
@@ -103,6 +104,64 @@ class AssistantDetailVM(
         }.stateIn(
             scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = emptyList()
         )
+
+    private val _isGeneratingGreetings = MutableStateFlow(false)
+    val isGeneratingGreetings = _isGeneratingGreetings.asStateFlow()
+
+    fun generateGreetings(assistantId: Uuid) {
+        viewModelScope.launch {
+            _isGeneratingGreetings.value = true
+            runCatching {
+                val assistant = assistant.value
+                val backgroundModelId = assistant.backgroundModelId ?: return@runCatching
+                val providerSetting = providers.value.find { it.models.any { m -> m.id == backgroundModelId } } ?: return@runCatching
+                val model = providerSetting.models.find { it.id == backgroundModelId } ?: return@runCatching
+                val provider = providerManager.getProviderByType(providerSetting)
+
+                val timeOfDay = listOf("Morning", "Afternoon", "Evening", "Night")
+                val newGreetings = mutableMapOf<String, List<String>>()
+
+                val userName = settings.value.displaySetting.userNickname
+                val systemPrompt = assistant.systemPrompt
+
+                timeOfDay.forEach { time ->
+                    val prompt = "How would you greet $userName at $time in 2 to 4 words? Just respond with the greeting and nothing else"
+
+                    val messages = mutableListOf<me.rerere.ai.ui.UIMessage>()
+                    if (systemPrompt.isNotBlank()) {
+                        messages.add(me.rerere.ai.ui.UIMessage.system(systemPrompt))
+                    }
+                    messages.add(me.rerere.ai.ui.UIMessage.user(prompt))
+
+                    val response = provider.generateText(
+                        providerSetting = providerSetting,
+                        messages = messages,
+                        params = me.rerere.ai.provider.TextGenerationParams(
+                            model = model,
+                            temperature = 0.7f
+                        )
+                    )
+                    
+                    val text = response.choices.firstOrNull()?.message?.toText() ?: ""
+                    val greetings = text.lines()
+                        .filter { it.isNotBlank() }
+                        .take(2)
+                        .map { it.trim() }
+                    
+                    newGreetings[time] = greetings
+                }
+
+                update(
+                    assistant.copy(personalizedGreetings = newGreetings)
+                )
+                android.widget.Toast.makeText(context, "Greetings generated successfully", android.widget.Toast.LENGTH_SHORT).show()
+            }.onFailure {
+                it.printStackTrace()
+                android.widget.Toast.makeText(context, "Failed to generate greetings: ${it.message}", android.widget.Toast.LENGTH_SHORT).show()
+            }
+            _isGeneratingGreetings.value = false
+        }
+    }
 
     fun updateTags(tagIds: List<Uuid>, tags: List<Tag>) {
         viewModelScope.launch {

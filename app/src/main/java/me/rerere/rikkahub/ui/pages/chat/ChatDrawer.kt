@@ -146,6 +146,7 @@ fun ChatDrawerContent(
                     }
                     Greeting(
                         style = MaterialTheme.typography.labelMedium,
+                        assistant = settings.getCurrentAssistant()
                     )
                 }
             }

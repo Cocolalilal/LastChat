@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -19,6 +20,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.data.model.Assistant
@@ -148,5 +151,73 @@ fun AssistantNotificationSubPage(
                 }
             }
         }
+
+
+        // Personalized Greetings
+        if (assistant.backgroundModelId != null) {
+            Card(
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Personalized Greetings",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    HorizontalDivider()
+
+                    FormItem(
+                        label = { Text("Enable Personalized Greetings") },
+                        description = { Text("Generate unique greetings based on assistant's persona.") },
+                        tail = {
+                            Switch(
+                                checked = assistant.enablePersonalizedGreetings,
+                                onCheckedChange = {
+                                    onUpdateAssistant(assistant.copy(enablePersonalizedGreetings = it))
+                                }
+                            )
+                        }
+                    )
+
+                    if (assistant.enablePersonalizedGreetings) {
+
+                    }
+
+                    if (assistant.enablePersonalizedGreetings) {
+                        val vm = org.koin.androidx.compose.koinViewModel<AssistantDetailVM>()
+                        val isGeneratingGreetings by vm.isGeneratingGreetings.collectAsStateWithLifecycle()
+
+                        Button(
+                            onClick = {
+                                vm.generateGreetings(assistant.id)
+                            },
+                            enabled = !isGeneratingGreetings,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            if (isGeneratingGreetings) {
+                                Text("Generating...")
+                            } else {
+                                Text("Regenerate Greetings")
+                            }
+                        }
+                        
+                        if (assistant.personalizedGreetings.isNotEmpty()) {
+                            Text(
+                                text = "Greetings generated: ${assistant.personalizedGreetings.values.sumOf { it.size }}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
+
 }

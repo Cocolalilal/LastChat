@@ -55,7 +55,12 @@ fun BackgroundPicker(
         }
     }
 
-    Card {
+    Card(
+        shape = RoundedCornerShape(24.dp),
+        colors = androidx.compose.material3.CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        )
+    ) {
         FormItem(
             modifier = Modifier.padding(16.dp),
             label = {

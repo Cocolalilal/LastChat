@@ -5,8 +5,10 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import java.time.Instant
 import java.time.LocalDate
@@ -17,6 +19,10 @@ class MenuVM(
     private val conversationRepository: ConversationRepository,
     private val settingsStore: SettingsStore
 ) : ViewModel() {
+
+    val currentAssistant = settingsStore.settingsFlow
+        .map { it.getCurrentAssistant() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val stats: StateFlow<MenuStats> = combine(
         conversationRepository.getAllConversations(),
@@ -51,30 +57,8 @@ class MenuVM(
             }
         }
 
-        // Avg Messages/Day
-        val today = LocalDate.now()
-        val totalMessages = conversations.sumOf { conversation ->
-            conversation.messageNodes.sumOf { node ->
-                node.messages.count { message ->
-                    val msgDate = LocalDate.of(
-                        message.createdAt.year,
-                        message.createdAt.monthNumber,
-                        message.createdAt.dayOfMonth
-                    )
-                    msgDate.isBefore(today)
-                }
-            }
-        }
-        val firstDate = conversations.minOfOrNull { it.createAt }
-        val daysActive = if (firstDate != null) {
-            val firstDateLocalDate = firstDate.atZone(ZoneId.systemDefault()).toLocalDate()
-            ChronoUnit.DAYS.between(firstDateLocalDate, today)
-        } else 0
-        val avgMessagesPerDay = if (daysActive > 0L) {
-            totalMessages.toFloat() / daysActive
-        } else {
-            0f
-        }
+        // Total Chats Count
+        val totalChats = conversations.size
 
         // Most Active Assistant
         val mostActiveAssistantId = conversations
@@ -86,8 +70,31 @@ class MenuVM(
             settings.assistants.find { it.id == id }?.name
         } ?: "None"
 
+        // Average Messages Per Day (Excluding Today)
+        val totalMessages = conversations.sumOf { it.messageNodes.sumOf { node -> node.messages.size } }
+        val firstMessageDate = conversations
+            .flatMap { it.messageNodes.flatMap { node -> node.messages.map { msg -> msg.createdAt } } }
+            .minOfOrNull { it }
+            ?.date
+
+        val daysActive = if (firstMessageDate != null) {
+            val days = java.time.temporal.ChronoUnit.DAYS.between(
+                java.time.LocalDate.of(firstMessageDate.year, firstMessageDate.monthNumber, firstMessageDate.dayOfMonth),
+                LocalDate.now()
+            )
+            days.coerceAtLeast(1)
+        } else {
+            1
+        }
+
+        val avgMessagesPerDay = if (daysActive > 0) {
+            totalMessages.toFloat() / daysActive
+        } else {
+            0f
+        }
+
         MenuStats(
-            totalConversations = conversations.size,
+            totalChats = totalChats,
             totalMemories = episodeCount,
             mostActiveAssistantName = mostActiveAssistantName,
             totalAssistants = settings.assistants.size,
@@ -102,7 +109,7 @@ class MenuVM(
 }
 
 data class MenuStats(
-    val totalConversations: Int = 0,
+    val totalChats: Int = 0,
     val totalMemories: Int = 0,
     val mostActiveAssistantName: String = "None",
     val totalAssistants: Int = 0,

@@ -659,7 +659,7 @@ private fun ImportExportPage(
                     if (!isExporting) {
                         val timestamp = LocalDateTime.now()
                             .format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
-                        createDocumentLauncher.launch("rikkahub_backup_$timestamp.zip")
+                        createDocumentLauncher.launch("LastChat_backup_$timestamp.zip")
                     }
                 }
             ) {
