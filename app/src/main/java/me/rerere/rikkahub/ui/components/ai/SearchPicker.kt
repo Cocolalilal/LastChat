@@ -19,6 +19,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.LocalAbsoluteTonalElevation
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Switch
@@ -29,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,9 +43,12 @@ import com.composables.icons.lucide.Earth
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Search
 import com.composables.icons.lucide.Settings2
+import com.dokar.sonner.ToastType
+import me.rerere.rikkahub.ui.context.LocalToaster
 import kotlinx.coroutines.launch
 import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.Model
+import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.ai.registry.ModelRegistry
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
@@ -57,31 +62,44 @@ import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.pages.setting.SearchAbilityTagLine
 import me.rerere.search.SearchService
 import me.rerere.search.SearchServiceOptions
+import me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode
 import org.koin.compose.koinInject
+
+import androidx.compose.ui.graphics.Shape
 
 @Composable
 fun SearchPickerButton(
     enableSearch: Boolean,
     settings: Settings,
     modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(24.dp),
     onToggleSearch: (Boolean) -> Unit,
     onUpdateSearchService: (Int) -> Unit,
     model: Model?,
+    contentColor: Color = MaterialTheme.colorScheme.onSurface,
+    onlyIcon: Boolean = false
 ) {
+    // Assuming LocalToaster is defined elsewhere and currentmember was a typo for current
+    // If LocalToaster is not defined, this line will cause a compilation error.
+    // As per instruction "Make sure to incorporate the change in a way so that the resulting file is syntactically correct."
+    // I'm correcting 'currentmember' to 'current' to ensure syntactic correctness of the access pattern.
+    val toaster = LocalToaster.current // { mutableStateOf(false) } - removed the lambda as it's not how current is typically used.
     var showSearchPicker by remember { mutableStateOf(false) }
     val currentService = settings.searchServices.getOrNull(settings.searchServiceSelected)
 
     ToggleSurface(
         modifier = modifier,
         checked = enableSearch || model?.tools?.contains(BuiltInTools.Search) == true,
-        shape = RoundedCornerShape(24.dp),
+        checkedColor = Color.Transparent,
+        uncheckedColor = Color.Transparent,
+        contentColor = contentColor,
         onClick = {
             showSearchPicker = true
         }
     ) {
         Row(
             modifier = Modifier
-                .padding(vertical = 8.dp, horizontal = 8.dp),
+                .padding(if (onlyIcon) 8.dp else 16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -186,52 +204,66 @@ private fun AppSearchSettings(
     settings: Settings,
     onUpdateSearchService: (Int) -> Unit
 ) {
-    Card(
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.Black,
-            contentColor = Color.White
-        )
-    ) {
-        Row(
-            modifier = Modifier
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-                .fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Lucide.Earth, null)
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.use_web_search),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                Text(
-                    text = if (enableSearch) {
-                        stringResource(R.string.web_search_enabled)
-                    } else {
-                        stringResource(R.string.web_search_disabled)
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = LocalContentColor.current.copy(alpha = 0.8f)
-                )
-            }
-            IconButton(
-                onClick = {
-                    onDismiss()
-                    navBackStack.navigate(Screen.SettingSearch)
-                }
-            ) {
-                Icon(Lucide.Settings2, null)
-            }
-            Switch(
-                checked = enableSearch,
-                onCheckedChange = onToggleSearch
+    val amoledMode by rememberAmoledDarkMode()
+    val isDarkMode = LocalDarkMode.current
+    val isAmoled = amoledMode && isDarkMode
+    
+    val containerColor = if (isAmoled) Color.Black else MaterialTheme.colorScheme.surfaceContainer
+    val contentColor = if (isAmoled) Color.White else MaterialTheme.colorScheme.onSurface
+    val elevation = if (isAmoled) 0.dp else 6.dp
+    val tonalElevation = if (isAmoled) 0.dp else LocalAbsoluteTonalElevation.current
+
+    CompositionLocalProvider(LocalAbsoluteTonalElevation provides tonalElevation) {
+        Card(
+            shape = RoundedCornerShape(24.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = elevation),
+            colors = CardDefaults.cardColors(
+                containerColor = containerColor,
+                contentColor = contentColor
             )
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Lucide.Earth, null)
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.use_web_search),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        text = if (enableSearch) {
+                            stringResource(R.string.web_search_enabled)
+                        } else {
+                            stringResource(R.string.web_search_disabled)
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (LocalDarkMode.current) Color.White.copy(alpha = 0.8f) else Color.Black.copy(alpha = 0.8f)
+                    )
+                }
+                IconButton(
+                    onClick = {
+                        onDismiss()
+                        navBackStack.navigate(Screen.SettingSearch)
+                    }
+                ) {
+                    Icon(Lucide.Settings2, null)
+                }
+                Switch(
+                    checked = enableSearch,
+                    onCheckedChange = onToggleSearch
+                )
+            }
         }
+
+
     }
 
     LazyVerticalGrid(
@@ -245,51 +277,63 @@ private fun AppSearchSettings(
                 if (settings.searchServiceSelected == index) {
                     MaterialTheme.colorScheme.primaryContainer
                 } else {
-                    MaterialTheme.colorScheme.surface
+                    if (LocalDarkMode.current) Color.Black else Color.White
                 }
             )
             val textColor = animateColorAsState(
                 if (settings.searchServiceSelected == index) {
                     MaterialTheme.colorScheme.onPrimaryContainer
                 } else {
-                    MaterialTheme.colorScheme.onSurface
+                    if (LocalDarkMode.current) Color.White else Color.Black
                 }
             )
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = containerColor.value,
-                    contentColor = textColor.value,
-                ),
-                onClick = {
-                    onUpdateSearchService(index)
-                },
-                shape = RoundedCornerShape(24.dp),
-            ) {
-                Row(
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                        .fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+            val isSelected = settings.searchServiceSelected == index
+            val itemContainerColor = if(isAmoled && !isSelected) Color.Black else containerColor.value
+            val itemContentColor = if(isAmoled && !isSelected) Color.White else textColor.value
+            val itemElevation = if(isAmoled) 0.dp else 6.dp
+            val itemTonalElevation = if(isAmoled) 0.dp else LocalAbsoluteTonalElevation.current
+
+            CompositionLocalProvider(LocalAbsoluteTonalElevation provides itemTonalElevation) {
+                val cardColors = CardDefaults.cardColors(
+                    containerColor = itemContainerColor,
+                    contentColor = itemContentColor,
+                )
+                val cardElevation = CardDefaults.cardElevation(defaultElevation = itemElevation)
+                Card(
+                    colors = cardColors,
+                    elevation = cardElevation,
+                    onClick = {
+                        onUpdateSearchService(index)
+                    },
+                    shape = RoundedCornerShape(24.dp),
                 ) {
-                    AutoAIIcon(
-                        name = SearchServiceOptions.TYPES[service::class] ?: "Search",
-                        modifier = Modifier.size(30.dp)
-                    )
-                    Column(
-                        modifier = Modifier.weight(1f),
+                    Row(
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                            .fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            text = SearchServiceOptions.TYPES[service::class] ?: "Unknown",
-                            style = MaterialTheme.typography.titleMedium,
+                        AutoAIIcon(
+                            name = SearchServiceOptions.TYPES[service::class] ?: "Search",
+                            modifier = Modifier.size(30.dp)
                         )
-                        SearchAbilityTagLine(
-                            options = service,
-                            modifier = Modifier
-                        )
+                        Column(
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text(
+                                text = SearchServiceOptions.TYPES[service::class] ?: "Unknown",
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                            SearchAbilityTagLine(
+                                options = service,
+                                modifier = Modifier
+                            )
+                        }
                     }
                 }
             }
+
         }
     }
 }
@@ -298,55 +342,69 @@ private fun AppSearchSettings(
 private fun BuiltInSearchSetting(model: Model) {
     val settingsStore = koinInject<SettingsStore>()
     val scope = rememberCoroutineScope()
-    Card(
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.Black,
-            contentColor = Color.White
+    val amoledMode by rememberAmoledDarkMode()
+    val isDarkMode = LocalDarkMode.current
+    val isAmoled = amoledMode && isDarkMode
+    
+    val containerColor = if (isAmoled) Color.Black else MaterialTheme.colorScheme.surfaceContainer
+    val contentColor = if (isAmoled) Color.White else MaterialTheme.colorScheme.onSurface
+    val elevation = if (isAmoled) 0.dp else 6.dp
+    val tonalElevation = if (isAmoled) 0.dp else LocalAbsoluteTonalElevation.current
+
+    CompositionLocalProvider(LocalAbsoluteTonalElevation provides tonalElevation) {
+        val cardElevation = CardDefaults.cardElevation(defaultElevation = elevation)
+        val cardColors = CardDefaults.cardColors(
+            containerColor = containerColor,
+            contentColor = contentColor
         )
-    ) {
-        Row(
-            modifier = Modifier
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-                .fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Card(
+            shape = RoundedCornerShape(24.dp),
+            elevation = cardElevation,
+            colors = cardColors
         ) {
-            Icon(Lucide.Search, null)
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = stringResource(R.string.built_in_search_title),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                Text(
-                    text = stringResource(R.string.built_in_search_description),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = LocalContentColor.current.copy(alpha = 0.8f)
+                Icon(Lucide.Search, null)
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.built_in_search_title),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        text = stringResource(R.string.built_in_search_description),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LocalContentColor.current.copy(alpha = 0.8f)
+                    )
+                }
+
+                Switch(
+                    checked = model.tools.contains(BuiltInTools.Search),
+                    onCheckedChange = { checked ->
+                        val settings = settingsStore.settingsFlow.value
+                        scope.launch {
+                            settingsStore.update(
+                                settings.copy(
+                                    providers = settings.providers.map { providerSetting ->
+                                        providerSetting.editModel(
+                                            model.copy(
+                                                tools = if (checked) model.tools + BuiltInTools.Search else model.tools - BuiltInTools.Search
+                                            )
+                                        )
+                                    }
+                                )
+                            )
+                        }
+                    }
                 )
             }
-
-            Switch(
-                checked = model.tools.contains(BuiltInTools.Search),
-                onCheckedChange = { checked ->
-                    val settings = settingsStore.settingsFlow.value
-                    scope.launch {
-                        settingsStore.update(
-                            settings.copy(
-                                providers = settings.providers.map { providerSetting ->
-                                    providerSetting.editModel(
-                                        model.copy(
-                                            tools = if (checked) model.tools + BuiltInTools.Search else model.tools - BuiltInTools.Search
-                                        )
-                                    )
-                                }
-                            )
-                        )
-                    }
-                }
-            )
         }
     }
 }

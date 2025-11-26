@@ -15,6 +15,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalAbsoluteTonalElevation
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ProvideTextStyle
@@ -25,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,40 +40,47 @@ import androidx.compose.material.icons.rounded.LightbulbCircle
 import androidx.compose.material.icons.rounded.AutoAwesome
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import me.rerere.rikkahub.ui.components.ui.ToggleSurface
+import me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode
 
 @Composable
 fun ReasoningButton(
     modifier: Modifier = Modifier,
     onlyIcon: Boolean = false,
     reasoningTokens: Int,
+    shape: Shape = RoundedCornerShape(24.dp),
     onUpdateReasoningTokens: (Int) -> Unit,
+    contentColor: Color = MaterialTheme.colorScheme.onSurface
 ) {
-    var showPicker by remember { mutableStateOf(false) }
+    var showReasoningPicker by remember { mutableStateOf(false) }
 
-    if (showPicker) {
+    if (showReasoningPicker) {
         ReasoningPicker(
             reasoningTokens = reasoningTokens,
-            onDismissRequest = { showPicker = false },
+            onDismissRequest = { showReasoningPicker = false },
             onUpdateReasoningTokens = onUpdateReasoningTokens
         )
     }
 
     ToggleSurface(
         checked = ReasoningLevel.fromBudgetTokens(reasoningTokens).isEnabled,
-        shape = RoundedCornerShape(24.dp),
+        checkedColor = Color.Transparent,
+        uncheckedColor = Color.Transparent,
+        contentColor = contentColor,
         onClick = {
-            showPicker = true
+            showReasoningPicker = true
         },
         modifier = modifier,
     ) {
         Row(
             modifier = Modifier
-                .padding(vertical = 8.dp, horizontal = 8.dp),
+                .padding(horizontal = if (onlyIcon) 8.dp else 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -122,7 +131,8 @@ fun ReasoningPicker(
                 },
                 onClick = {
                     onUpdateReasoningTokens(0)
-                }
+                },
+                containerColor = if (LocalDarkMode.current) Color.Black else Color.White
             )
             ReasoningLevelCard(
                 selected = currentLevel == ReasoningLevel.AUTO,
@@ -137,69 +147,85 @@ fun ReasoningPicker(
                 },
                 onClick = {
                     onUpdateReasoningTokens(-1)
-                }
+                },
+                containerColor = if (LocalDarkMode.current) Color.Black else Color.White
             )
             
-            Card(
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color.Black,
+            val amoledMode by rememberAmoledDarkMode()
+            val isDarkMode = LocalDarkMode.current
+            val isAmoled = amoledMode && isDarkMode
+            
+            val containerColor = if (isAmoled) Color.Black else MaterialTheme.colorScheme.surfaceContainer
+            val contentColor = if (isAmoled) Color.White else MaterialTheme.colorScheme.onSurface
+            val elevation = if (isAmoled) 0.dp else 6.dp
+            val tonalElevation = if (isAmoled) 0.dp else LocalAbsoluteTonalElevation.current
+            
+            CompositionLocalProvider(LocalAbsoluteTonalElevation provides tonalElevation) {
+                val cardElevation = CardDefaults.cardElevation(defaultElevation = elevation)
+                val cardColors = CardDefaults.cardColors(
+                    containerColor = containerColor,
+                    contentColor = contentColor
                 )
-            ) {
-                Column {
-                    ReasoningLevelCard(
-                        selected = currentLevel == ReasoningLevel.LOW,
-                        icon = {
-                            Icon(Icons.Rounded.Lightbulb, null)
-                        },
-                        title = {
-                            Text(stringResource(id = R.string.reasoning_light))
-                        },
-                        description = {
-                            Text(stringResource(id = R.string.reasoning_light_desc))
-                        },
-                        onClick = {
-                            onUpdateReasoningTokens(1024)
-                        },
-                        shape = RoundedCornerShape(0.dp),
-                        containerColor = Color.Black
-                    )
-                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                    ReasoningLevelCard(
-                        selected = currentLevel == ReasoningLevel.MEDIUM,
-                        icon = {
-                            Icon(Icons.Rounded.Lightbulb, null)
-                        },
-                        title = {
-                            Text(stringResource(id = R.string.reasoning_medium))
-                        },
-                        description = {
-                            Text(stringResource(id = R.string.reasoning_medium_desc))
-                        },
-                        onClick = {
-                            onUpdateReasoningTokens(16_000)
-                        },
-                        shape = RoundedCornerShape(0.dp),
-                        containerColor = Color.Black
-                    )
-                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                    ReasoningLevelCard(
-                        selected = currentLevel == ReasoningLevel.HIGH,
-                        icon = {
-                            Icon(Icons.Rounded.Lightbulb, null)
-                        },
-                        title = {
-                            Text(stringResource(id = R.string.reasoning_heavy))
-                        },
-                        description = {
-                            Text(stringResource(id = R.string.reasoning_heavy_desc))
-                        },
-                        onClick = {
-                            onUpdateReasoningTokens(32_000)
-                        },
-                        shape = RoundedCornerShape(0.dp),
-                        containerColor = Color.Black
-                    )
+                Card(
+                    shape = RoundedCornerShape(24.dp),
+                    elevation = cardElevation,
+                    colors = cardColors
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        ReasoningLevelCard(
+                            selected = currentLevel == ReasoningLevel.LOW,
+                            icon = {
+                                Icon(Icons.Rounded.Lightbulb, null)
+                            },
+                            title = {
+                                Text(stringResource(id = R.string.reasoning_light))
+                            },
+                            description = {
+                                Text(stringResource(id = R.string.reasoning_light_desc))
+                            },
+                            onClick = {
+                                onUpdateReasoningTokens(1024)
+                            },
+                            shape = RoundedCornerShape(0.dp),
+                            containerColor = containerColor
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                        ReasoningLevelCard(
+                            selected = currentLevel == ReasoningLevel.MEDIUM,
+                            icon = {
+                                Icon(Icons.Rounded.Lightbulb, null)
+                            },
+                            title = {
+                                Text(stringResource(id = R.string.reasoning_medium))
+                            },
+                            description = {
+                                Text(stringResource(id = R.string.reasoning_medium_desc))
+                            },
+                            onClick = {
+                                onUpdateReasoningTokens(16_000)
+                            },
+                            shape = RoundedCornerShape(0.dp),
+                            containerColor = containerColor
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                        ReasoningLevelCard(
+                            selected = currentLevel == ReasoningLevel.HIGH,
+                            icon = {
+                                Icon(Icons.Rounded.Lightbulb, null)
+                            },
+                            title = {
+                                Text(stringResource(id = R.string.reasoning_heavy))
+                            },
+                            description = {
+                                Text(stringResource(id = R.string.reasoning_heavy_desc))
+                            },
+                            onClick = {
+                                onUpdateReasoningTokens(32_000)
+                            },
+                            shape = RoundedCornerShape(0.dp),
+                            containerColor = containerColor
+                        )
+                    }
                 }
             }
         }
@@ -217,49 +243,54 @@ private fun ReasoningLevelCard(
     shape: Shape = RoundedCornerShape(24.dp),
     containerColor: Color? = null
 ) {
-    val animatedContainerColor = animateColorAsState(
-        if (selected) {
-            MaterialTheme.colorScheme.primaryContainer
-        } else {
-            containerColor ?: MaterialTheme.colorScheme.surface
-        }
-    )
-    val textColor = animateColorAsState(
-        if (selected) {
-            MaterialTheme.colorScheme.onPrimaryContainer
-        } else {
-            MaterialTheme.colorScheme.onSurface
-        }
-    )
-    Card(
-        onClick = onClick,
-        colors = CardDefaults.cardColors(
-            containerColor = animatedContainerColor.value,
-            contentColor = textColor.value,
-        ),
-        modifier = modifier,
-        shape = shape
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+    val amoledMode by rememberAmoledDarkMode()
+    val isDarkMode = LocalDarkMode.current
+    val isAmoled = amoledMode && isDarkMode
+    
+    val defaultContainerColor = if (isAmoled) Color.Black else MaterialTheme.colorScheme.surfaceContainer
+    val resolvedContainerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else (containerColor ?: defaultContainerColor)
+    
+    val defaultContentColor = if (isAmoled) Color.White else MaterialTheme.colorScheme.onSurface
+    val resolvedContentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else defaultContentColor
+    
+    val elevation = if (isAmoled) 0.dp else 6.dp
+    val tonalElevation = if (isAmoled) 0.dp else LocalAbsoluteTonalElevation.current
+
+    CompositionLocalProvider(LocalAbsoluteTonalElevation provides tonalElevation) {
+        val cardElevation = CardDefaults.cardElevation(defaultElevation = elevation)
+        val cardColors = CardDefaults.cardColors(
+            containerColor = resolvedContainerColor,
+            contentColor = resolvedContentColor
+        )
+        Card(
+            onClick = onClick,
+            modifier = modifier,
+            shape = shape,
+            elevation = cardElevation,
+            colors = cardColors
         ) {
-            icon()
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                ProvideTextStyle(MaterialTheme.typography.titleMedium) {
-                    title()
-                }
-                ProvideTextStyle(MaterialTheme.typography.bodySmall) {
-                    description()
+                icon()
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    ProvideTextStyle(MaterialTheme.typography.titleMedium) {
+                        title()
+                    }
+                    ProvideTextStyle(MaterialTheme.typography.bodySmall) {
+                        description()
+                    }
                 }
             }
         }
+
     }
 }
 

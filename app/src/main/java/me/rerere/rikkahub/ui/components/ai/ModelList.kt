@@ -93,6 +93,7 @@ import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.components.ui.icons.HeartIcon
 import me.rerere.rikkahub.ui.context.LocalNavController
+import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.theme.extendColors
 import me.rerere.rikkahub.utils.toDp
 import org.koin.compose.koinInject
@@ -465,7 +466,7 @@ private fun ColumnScope.ModelList(
                     Card(
                         shape = RoundedCornerShape(24.dp),
                         colors = CardDefaults.cardColors(
-                            containerColor = Color.Black,
+                            containerColor = if (LocalDarkMode.current) Color.Black else Color.White,
                         )
                     ) {
                         Column {
@@ -617,7 +618,7 @@ private fun ModelItem(
             modifier = modifier
                 .fillMaxWidth()
                 .background(
-                    color = if (select) MaterialTheme.colorScheme.primaryContainer else Color.Black,
+                    color = if (select) MaterialTheme.colorScheme.primaryContainer else if (LocalDarkMode.current) Color.Black else Color.White,
                 )
                 .padding(vertical = 12.dp, horizontal = 16.dp)
         ) {
@@ -646,7 +647,7 @@ private fun ModelItem(
                     modifier = Modifier
                         .size(32.dp),
                     color = Color.Transparent,
-                    contentColor = if (select) MaterialTheme.colorScheme.onPrimaryContainer else Color.White
+                    contentColor = if (select) MaterialTheme.colorScheme.onPrimaryContainer else if (LocalDarkMode.current) Color.White else Color.Black
                 )
                 Column(
                     modifier = Modifier.weight(1f),
@@ -657,7 +658,7 @@ private fun ModelItem(
                         style = MaterialTheme.typography.titleSmall,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        color = if (select) MaterialTheme.colorScheme.onPrimaryContainer else Color.White
+                        color = if (select) MaterialTheme.colorScheme.onPrimaryContainer else if (LocalDarkMode.current) Color.White else Color.Black
                     )
 
                     FlowRow(
@@ -682,8 +683,8 @@ private fun ModelItem(
             modifier = modifier,
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(
-                containerColor = if (select) MaterialTheme.colorScheme.primaryContainer else Color.Black,
-                contentColor = if (select) MaterialTheme.colorScheme.onPrimaryContainer else Color.White,
+                containerColor = if (select) MaterialTheme.colorScheme.primaryContainer else if (LocalDarkMode.current) Color.Black else Color.White,
+                contentColor = if (select) MaterialTheme.colorScheme.onPrimaryContainer else if (LocalDarkMode.current) Color.White else Color.Black,
             )
         ) {
             Row(

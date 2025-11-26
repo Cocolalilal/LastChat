@@ -90,6 +90,7 @@ class RouteActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
         disableNavigationBarContrast()
         super.onCreate(savedInstanceState)
         setContent {

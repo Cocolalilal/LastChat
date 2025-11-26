@@ -172,7 +172,7 @@
     <string name="calculating">Calculating...</string>
     <string name="cancel">Cancel</string>
     <string name="cancel_edit">Cancel Edit</string>
-    <string name="chat_input_placeholder">Type a message...</string>
+    <string name="chat_input_placeholder">Message</string>
     <string name="chat_message_tool_call_generic">Calling tool %1$s</string>
     <string name="chat_message_tool_call_label">Calling tool %1$s</string>
     <string name="chat_message_tool_call_result">Result</string>

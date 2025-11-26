@@ -2,9 +2,14 @@ package me.rerere.rikkahub.ui.pages.chat
 
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
@@ -33,11 +38,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,6 +70,7 @@ import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.ui.components.ai.ChatInput
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.rememberChatInputState
@@ -260,8 +268,78 @@ private fun ChatPageContent(
                     }
                 )
             },
-            bottomBar = {
+            // Removed bottomBar to allow floating input
+            containerColor = Color.Transparent,
+            contentWindowInsets = WindowInsets(0.dp)
+        ) { innerPadding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            ) {
+                ChatList(
+                    innerPadding = PaddingValues(bottom = 140.dp),
+                    conversation = conversation,
+                    state = chatListState,
+                    loading = loadingJob != null,
+                    previewMode = previewMode,
+                    settings = setting,
+                    onRegenerate = {
+                        vm.regenerateAtMessage(it)
+                    },
+                    onEdit = {
+                        inputState.editingMessage = it.id
+                        inputState.setContents(it.parts)
+                    },
+
+                    onDelete = {
+                        vm.deleteMessage(it)
+                    },
+                    onUpdateMessage = { newNode ->
+                        vm.updateConversation(
+                            conversation.copy(
+                                messageNodes = conversation.messageNodes.map { node ->
+                                    if (node.id == newNode.id) {
+                                        newNode
+                                    } else {
+                                        node
+                                    }
+                                }
+                            )
+                        )
+                        vm.saveConversationAsync()
+                    },
+                    onForkMessage = {
+                        scope.launch {
+                            vm.forkMessage(it)
+                        }
+                    },
+                    onTranslate = { message, locale ->
+                        vm.translateMessage(message, locale)
+                    },
+                    onClearTranslation = { message ->
+                        vm.clearTranslationField(message.id)
+                    }
+                )
+
+                // Gradient behind floating toolbar
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(200.dp)
+                        .background(
+                            brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    MaterialTheme.colorScheme.background.copy(alpha = 0.85f)
+                                )
+                            )
+                        )
+                )
+
                 ChatInput(
+                    modifier = Modifier.align(Alignment.BottomCenter),
                     state = inputState,
                     settings = setting,
                     conversation = conversation,
@@ -332,62 +410,7 @@ private fun ChatPageContent(
                         vm.handleMessageTruncate()
                     },
                 )
-            },
-            containerColor = Color.Transparent,
-        ) { innerPadding ->
-            ChatList(
-                innerPadding = innerPadding,
-                conversation = conversation,
-                state = chatListState,
-                loading = loadingJob != null,
-                previewMode = previewMode,
-                settings = setting,
-                onRegenerate = {
-                    vm.regenerateAtMessage(it)
-                },
-                onEdit = {
-                    inputState.editingMessage = it.id
-                    inputState.setContents(it.parts)
-                },
-                onForkMessage = {
-                    scope.launch {
-                        val fork = vm.forkMessage(message = it)
-                        navigateToChatPage(navController, chatId = fork.id)
-                    }
-                },
-                onDelete = {
-                    vm.deleteMessage(it)
-                },
-                onUpdateMessage = { newNode ->
-                    vm.updateConversation(
-                        conversation.copy(
-                            messageNodes = conversation.messageNodes.map { node ->
-                                if (node.id == newNode.id) {
-                                    newNode
-                                } else {
-                                    node
-                                }
-                            }
-                        ))
-                    vm.saveConversationAsync()
-                },
-                onClickSuggestion = { suggestion ->
-                    inputState.editingMessage = null
-                    inputState.setMessageText(suggestion)
-                },
-                onTranslate = { message, locale ->
-                    vm.translateMessage(message, locale)
-                },
-                onClearTranslation = { message ->
-                    vm.clearTranslationField(message.id)
-                },
-                onJumpToMessage = { index ->
-                    previewMode = false
-                    scope.launch {
-                        chatListState.animateScrollToItem(index)
-                    }
-                },
-            )
+            }
         }
     }
 }

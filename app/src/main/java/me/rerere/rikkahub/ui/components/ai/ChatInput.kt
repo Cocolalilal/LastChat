@@ -33,10 +33,12 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -52,7 +54,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.LocalAbsoluteTonalElevation
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Surface
@@ -74,7 +78,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import me.rerere.ai.core.ReasoningLevel
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -82,6 +88,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.util.fastForEach
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
@@ -93,6 +100,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material.icons.rounded.CameraAlt
@@ -127,7 +135,9 @@ import me.rerere.rikkahub.ui.components.ui.permission.PermissionManager
 import me.rerere.rikkahub.ui.components.ui.permission.rememberPermissionState
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.hooks.ChatInputState
+import me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode
 import me.rerere.rikkahub.utils.createChatFilesByContents
 import me.rerere.rikkahub.utils.deleteChatFiles
 import me.rerere.rikkahub.utils.getFileMimeType
@@ -135,6 +145,17 @@ import me.rerere.rikkahub.utils.getFileNameFromUri
 import java.io.File
 import kotlin.time.Duration.Companion.seconds
 import kotlin.uuid.Uuid
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.graphicsLayer
 
 enum class ExpandState {
     Collapsed,
@@ -189,161 +210,235 @@ fun ChatInput(
 
     // Collapse when ime is visible
     val imeVisile = WindowInsets.isImeVisible
+    val focusManager = LocalFocusManager.current
     LaunchedEffect(imeVisile) {
         if (imeVisile) {
             expand = ExpandState.Collapsed
+        } else if (state.textContent.text.isEmpty()) {
+            focusManager.clearFocus()
         }
     }
 
-    Surface(
-        color = Color.Transparent,
+    // Focus state for the text field
+    var isFocused by remember { mutableStateOf(false) }
+    
+    // Expanded state logic: Expanded if focused OR text is not empty
+    val isExpanded = isFocused || state.textContent.text.isNotEmpty()
+
+    Box(
+        modifier = modifier.fillMaxWidth(), // Apply passed modifier (alignment) here
+        contentAlignment = Alignment.BottomCenter
     ) {
+
+
+        val isPillShape = state.textContent.text.length < 60 && state.textContent.text.lines().size <= 2
+        val outerCornerSize by animateDpAsState(
+            targetValue = if (isPillShape) 100.dp else 32.dp,
+            label = "outer_corner_size"
+        )
+        val innerCornerSize by animateDpAsState(
+            targetValue = if (isPillShape) 100.dp else 24.dp,
+            label = "inner_corner_size"
+        )
+
         Column(
-            modifier = modifier
+            modifier = Modifier
                 .imePadding()
-                .navigationBarsPadding(),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+                .navigationBarsPadding()
+                .padding(bottom = 16.dp, start = 16.dp, end = 16.dp), // Raised toolbar
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // Medias
             MediaFileInputRow(state = state, context = context)
 
-            // Text Input Row
-            TextInputRow(state = state, context = context)
-
-            // Actions Row
-            Row(
-                modifier = Modifier.padding(horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            // Floating Input Bar
+            Surface(
+                shape = RoundedCornerShape(outerCornerSize), // Dynamic Outer Shape
+                color = MaterialTheme.colorScheme.surfaceContainerLow, // Material You Surface Color
+                tonalElevation = 8.dp,
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
-                    modifier = Modifier
-                        .weight(1f)
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    modifier = Modifier.padding(8.dp), // Increased padding
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp) // Tighter spacing
                 ) {
-                    // Model Picker
-                    ModelSelector(
-                        modelId = assistant.chatModelId ?: settings.chatModelId,
-                        providers = settings.providers,
-                        onSelect = {
-                            onUpdateChatModel(it)
-                            dismissExpand()
+                    IconButton(
+                        onClick = {
+                            expandToggle(ExpandState.Files)
                         },
-                        type = ModelType.CHAT,
-                        onlyIcon = true,
-                        modifier = Modifier,
-                    )
+                        modifier = Modifier
+                            .size(36.dp)
+                            .padding(start = 6.dp) // Move button more inside
+                    ) {
+                        val rotation by animateFloatAsState(
+                            targetValue = if (expand == ExpandState.Files) 45f else 0f,
+                            label = "rotation"
+                        )
+                        Icon(
+                            imageVector = Icons.Rounded.Add,
+                            contentDescription = stringResource(R.string.more_options),
+                            modifier = Modifier.rotate(rotation),
+                            tint = MaterialTheme.colorScheme.onSurface // Icon on Surface
+                        )
+                    }
 
-                    // Search
-                    val enableSearchMsg = stringResource(R.string.web_search_enabled)
-                    val disableSearchMsg = stringResource(R.string.web_search_disabled)
-                    val chatModel = settings.getCurrentChatModel()
-                    SearchPickerButton(
-                        enableSearch = enableSearch,
-                        settings = settings,
-                        onToggleSearch = { enabled ->
-                            onToggleSearch(enabled)
-                            toaster.show(
-                                message = if (enabled) enableSearchMsg else disableSearchMsg,
-                                duration = 1.seconds,
-                                type = if (enabled) {
-                                    ToastType.Success
-                                } else {
-                                    ToastType.Normal
-                                }
+                    // Search & Reasoning (Visible when NOT expanded)
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = !isExpanded,
+                        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandHorizontally(),
+                        exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkHorizontally()
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Search
+                            val enableSearchMsg = stringResource(R.string.web_search_enabled)
+                            val disableSearchMsg = stringResource(R.string.web_search_disabled)
+                            val chatModel = settings.getCurrentChatModel()
+                            
+                            SearchPickerButton(
+                                enableSearch = enableSearch,
+                                settings = settings,
+                                shape = CircleShape,
+                                onToggleSearch = { enabled ->
+                                    onToggleSearch(enabled)
+                                    toaster.show(
+                                        message = if (enabled) enableSearchMsg else disableSearchMsg,
+                                        duration = 1.seconds,
+                                        type = if (enabled) {
+                                            ToastType.Success
+                                        } else {
+                                            ToastType.Normal
+                                        }
+                                    )
+                                },
+                                onUpdateSearchService = onUpdateSearchService,
+                                model = chatModel,
+                                contentColor = if (enableSearch) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                onlyIcon = true
                             )
-                        },
-                        onUpdateSearchService = onUpdateSearchService,
-                        model = chatModel,
-                    )
 
-                    // Reasoning
-                    val model = settings.getCurrentChatModel()
-                    if (model?.abilities?.contains(ModelAbility.REASONING) == true) {
-                        ReasoningButton(
-                            reasoningTokens = assistant.thinkingBudget ?: 0,
-                            onUpdateReasoningTokens = {
-                                onUpdateAssistant(assistant.copy(thinkingBudget = it))
-                            },
-                            onlyIcon = true,
-                        )
-                    }
-
-                    // MCP
-                    if (settings.mcpServers.isNotEmpty()) {
-                        McpPickerButton(
-                            assistant = assistant,
-                            servers = settings.mcpServers,
-                            mcpManager = mcpManager,
-                            onUpdateAssistant = {
-                                onUpdateAssistant(it)
-                            },
-                        )
-                    }
-                }
-
-                // Insert files
-                IconButton(
-                    onClick = {
-                        expandToggle(ExpandState.Files)
-                    }
-                ) {
-                    val rotation by animateFloatAsState(
-                        targetValue = if (expand == ExpandState.Files) 45f else 0f,
-                        label = "rotation"
-                    )
-                    Icon(
-                        imageVector = Icons.Rounded.Add,
-                        contentDescription = stringResource(R.string.more_options),
-                        modifier = Modifier.rotate(rotation)
-                    )
-                }
-
-                // Send Button
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .combinedClickable(
-                            enabled = state.loading || !state.isEmpty(),
-                            onClick = {
-                                expand = ExpandState.Collapsed
-                                sendMessage()
-                            },
-                            onLongClick = {
-                                expand = ExpandState.Collapsed
-                                sendMessageWithoutAnswer()
+                            // Reasoning
+                            val hasReasoning = chatModel?.abilities?.contains(ModelAbility.REASONING) == true
+                            if (hasReasoning) {
+                                ReasoningButton(
+                                    reasoningTokens = assistant.thinkingBudget ?: 0,
+                                    shape = CircleShape,
+                                    onUpdateReasoningTokens = {
+                                        onUpdateAssistant(assistant.copy(thinkingBudget = it))
+                                    },
+                                    onlyIcon = true,
+                                    contentColor = if (ReasoningLevel.fromBudgetTokens(assistant.thinkingBudget ?: 0).isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                )
                             }
-                        )
-                ) {
-                    val containerColor = when {
-                        state.loading -> MaterialTheme.colorScheme.errorContainer // 加载时，红色
-                        state.isEmpty() -> MaterialTheme.colorScheme.surfaceContainerHigh // 禁用时(输入为空)，灰色
-                        else -> MaterialTheme.colorScheme.primary // 启用时(输入非空)，绿色/主题色
+                        }
                     }
-                    val contentColor = when {
-                        state.loading -> MaterialTheme.colorScheme.onErrorContainer
-                        state.isEmpty() -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f) // 禁用时，内容用带透明度的灰色
-                        else -> MaterialTheme.colorScheme.onPrimary
+
+                    // Inner Capsule (Text Input Field + Model Picker + Send Button)
+                    val amoledMode by rememberAmoledDarkMode()
+                    val containerColor = if (amoledMode && LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                    val elevation = if (amoledMode && LocalDarkMode.current) 0.dp else 6.dp
+                    
+                    CompositionLocalProvider(LocalAbsoluteTonalElevation provides if(amoledMode && LocalDarkMode.current) 0.dp else LocalAbsoluteTonalElevation.current) {
+                        Surface(
+                            shape = RoundedCornerShape(innerCornerSize), // Dynamic Inner Shape
+                            color = containerColor,
+                            tonalElevation = elevation,
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 40.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(start = 12.dp, end = 4.dp) // Increased start padding
+                            ) {
+                                Box(
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    TextInputRow(
+                                        state = state,
+                                        context = context,
+                                        isFocused = isFocused,
+                                        onFocusChange = { isFocused = it },
+                                        trailingIcon = {
+                                            // Crossfade between Model Picker and Send Button
+                                            androidx.compose.animation.AnimatedContent(
+                                                targetState = isExpanded,
+                                                transitionSpec = {
+                                                    androidx.compose.animation.fadeIn(
+                                                        animationSpec = androidx.compose.animation.core.tween(durationMillis = 300)
+                                                    ) togetherWith androidx.compose.animation.fadeOut(
+                                                        animationSpec = androidx.compose.animation.core.tween(durationMillis = 300)
+                                                    )
+                                                },
+                                                label = "button_crossfade"
+                                            ) { expanded ->
+                                                if (expanded) {
+                                                    // Send Button
+                                                    Box(
+                                                        contentAlignment = Alignment.Center,
+                                                        modifier = Modifier
+                                                            .size(36.dp)
+                                                            .clip(CircleShape)
+                                                            .combinedClickable(
+                                                                enabled = state.loading || !state.isEmpty(),
+                                                                onClick = {
+                                                                    expand = ExpandState.Collapsed
+                                                                    sendMessage()
+                                                                },
+                                                                onLongClick = {
+                                                                    expand = ExpandState.Collapsed
+                                                                    sendMessageWithoutAnswer()
+                                                                }
+                                                            )
+                                                            .background(
+                                                                color = when {
+                                                                    state.loading -> MaterialTheme.colorScheme.errorContainer
+                                                                    state.isEmpty() -> MaterialTheme.colorScheme.surfaceContainerHigh
+                                                                    else -> MaterialTheme.colorScheme.primary
+                                                                }
+                                                            )
+                                                    ) {
+                                                        val contentColor = when {
+                                                            state.loading -> MaterialTheme.colorScheme.onErrorContainer
+                                                            state.isEmpty() -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                                                            else -> MaterialTheme.colorScheme.onPrimary
+                                                        }
+                                                        if (state.loading) {
+                                                            KeepScreenOn()
+                                                            Icon(Icons.Rounded.Stop, stringResource(R.string.stop), tint = contentColor, modifier = Modifier.size(20.dp))
+                                                        } else {
+                                                            Icon(Icons.Rounded.ArrowUpward, stringResource(R.string.send), tint = contentColor, modifier = Modifier.size(20.dp))
+                                                        }
+                                                    }
+                                                } else {
+                                                    // Model Selector
+                                                    ModelSelector(
+                                                        modelId = assistant.chatModelId ?: settings.chatModelId,
+                                                        providers = settings.providers,
+                                                        onSelect = {
+                                                            onUpdateChatModel(it)
+                                                            dismissExpand()
+                                                        },
+                                                        type = ModelType.CHAT,
+                                                        onlyIcon = true,
+                                                        modifier = Modifier.size(28.dp),
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        }
                     }
-                    Surface(
-                        modifier = Modifier.fillMaxSize(),
-                        shape = CircleShape,
-                        color = containerColor,
-                        content = {}
-                    )
-                    if (state.loading) {
-                        KeepScreenOn()
-                        Icon(Icons.Rounded.Stop, stringResource(R.string.stop), tint = contentColor)
-                    } else {
-                        Icon(Icons.Rounded.ArrowUpward, stringResource(R.string.send), tint = contentColor)
-                    }
+
                 }
             }
 
-            // Expanded content
+            // Expanded content (Files Picker)
             Box(
                 modifier = Modifier
                     .animateContentSize()
@@ -356,8 +451,9 @@ fun ChatInput(
                 }
                 if (expand == ExpandState.Files) {
                     Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp),
+                        tonalElevation = 8.dp
                     ) {
                         FilesPicker(
                             conversation = conversation,
@@ -374,103 +470,110 @@ fun ChatInput(
     }
 }
 
+
+
 @Composable
 private fun TextInputRow(
     state: ChatInputState,
     context: Context,
+    isFocused: Boolean,
+    onFocusChange: (Boolean) -> Unit,
+    trailingIcon: @Composable (() -> Unit)? = null
 ) {
     val assistant = LocalSettings.current.getCurrentAssistant()
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp),
+        modifier = Modifier.fillMaxWidth(),
     ) {
         // TextField
-        Surface(
-            shape = RoundedCornerShape(32.dp),
-            tonalElevation = 4.dp,
-            modifier = Modifier.weight(1f)
-        ) {
-            Column {
-                if (state.isEditing()) {
-                    Surface(
-                        tonalElevation = 8.dp
+        // Removed Surface wrapper to blend with FloatingInputBar
+        Column {
+            if (state.isEditing()) {
+                Surface(
+                    tonalElevation = 8.dp,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.padding(bottom = 8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        Text(
+                            text = stringResource(R.string.editing),
+                            style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                        IconButton(
+                            onClick = {
+                                state.editingMessage = null
+                                state.clearInput()
+                            },
+                            modifier = Modifier.size(24.dp)
                         ) {
-                            Text(
-                                text = stringResource(R.string.editing),
-                            )
-                            Spacer(Modifier.weight(1f))
                             Icon(
-                                Icons.Rounded.Close, stringResource(R.string.cancel_edit),
-                                modifier = Modifier
-                                    .clickable {
-                                        state.clearInput()
-                                    }
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = stringResource(R.string.cancel),
+                                modifier = Modifier.size(16.dp)
                             )
                         }
                     }
                 }
-                var isFocused by remember { mutableStateOf(false) }
-                var isFullScreen by remember { mutableStateOf(false) }
-                val receiveContentListener = remember {
-                    ReceiveContentListener { transferableContent ->
-                        when {
-                            transferableContent.hasMediaType(MediaType.Image) -> {
-                                transferableContent.consume { item ->
-                                    val uri = item.uri
-                                    if (uri != null) {
-                                        state.addImages(
-                                            context.createChatFilesByContents(
-                                                listOf(
-                                                    uri
-                                                )
+            }
+            var isFullScreen by remember { mutableStateOf(false) }
+            val receiveContentListener = remember {
+                ReceiveContentListener { transferableContent ->
+                    when {
+                        transferableContent.hasMediaType(MediaType.Image) -> {
+                            transferableContent.consume { item ->
+                                val uri = item.uri
+                                if (uri != null) {
+                                    state.addImages(
+                                        context.createChatFilesByContents(
+                                            listOf(
+                                                uri
                                             )
                                         )
-                                    }
-                                    uri != null
+                                    )
                                 }
+                                uri != null
                             }
-
-                            else -> transferableContent
                         }
+
+                        else -> transferableContent
                     }
                 }
-                TextField(
-                    state = state.textContent,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .contentReceiver(receiveContentListener)
-                        .onFocusChanged {
-                            isFocused = it.isFocused
-                        },
-                    shape = RoundedCornerShape(32.dp),
-                    placeholder = {
-                        Text(stringResource(R.string.chat_input_placeholder))
+            }
+            TextField(
+                state = state.textContent,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .wrapContentHeight()
+                    .contentReceiver(receiveContentListener)
+                    .onFocusChanged {
+                        onFocusChange(it.isFocused)
                     },
-                    lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),
-                    colors = TextFieldDefaults.colors().copy(
-                        unfocusedIndicatorColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent,
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                    ),
-                    leadingIcon = if (assistant.quickMessages.isNotEmpty()) {
-                        {
-                            QuickMessageButton(assistant = assistant, state = state)
-                        }
-                    } else null,
-                )
-                if (isFullScreen) {
-                    FullScreenEditor(state = state) {
-                        isFullScreen = false
+                shape = RoundedCornerShape(20.dp),
+                placeholder = {
+                    Text(stringResource(R.string.chat_input_placeholder))
+                },
+                lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 16.dp), // Increased padding for centering
+                colors = TextFieldDefaults.colors().copy(
+                    unfocusedIndicatorColor = Color.Transparent,
+                    focusedIndicatorColor = Color.Transparent,
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                ),
+                leadingIcon = if (assistant.quickMessages.isNotEmpty()) {
+                    {
+                        QuickMessageButton(assistant = assistant, state = state)
                     }
+                } else null,
+                trailingIcon = trailingIcon
+            )
+            if (isFullScreen) {
+                FullScreenEditor(state = state) {
+                    isFullScreen = false
                 }
             }
         }
@@ -695,6 +798,7 @@ private fun FilesPicker(
     onDismiss: () -> Unit
 ) {
     val settings = LocalSettings.current
+    val amoledMode by rememberAmoledDarkMode()
     val provider = settings.getCurrentChatModel()?.findProvider(providers = settings.providers)
     Column(
         modifier = Modifier
@@ -736,32 +840,37 @@ private fun FilesPicker(
             }
         }
 
-        HorizontalDivider(
-            modifier = Modifier.fillMaxWidth()
-        )
+        if (!WindowInsets.isImeVisible) {
+            HorizontalDivider(
+                modifier = Modifier.fillMaxWidth()
+            )
 
-        ListItem(
-            leadingContent = {
-                Icon(
-                    imageVector = Icons.Rounded.School,
-                    contentDescription = stringResource(R.string.chat_page_learning_mode),
-                )
-            },
-            headlineContent = {
-                Text(stringResource(R.string.chat_page_learning_mode))
-            },
-            supportingContent = {
-                Text(stringResource(R.string.chat_page_learning_mode_desc))
-            },
-            trailingContent = {
-                Switch(
-                    checked = assistant.learningMode,
-                    onCheckedChange = {
-                        onUpdateAssistant(assistant.copy(learningMode = it))
-                    }
-                )
-            },
-        )
+            ListItem(
+                colors = ListItemDefaults.colors(
+                    containerColor = if (amoledMode && LocalDarkMode.current) Color.Black else Color.Transparent
+                ),
+                leadingContent = {
+                    Icon(
+                        imageVector = Icons.Rounded.School,
+                        contentDescription = stringResource(R.string.chat_page_learning_mode),
+                    )
+                },
+                headlineContent = {
+                    Text(stringResource(R.string.chat_page_learning_mode))
+                },
+                supportingContent = {
+                    Text(stringResource(R.string.chat_page_learning_mode_desc))
+                },
+                trailingContent = {
+                    Switch(
+                        checked = assistant.learningMode,
+                        onCheckedChange = {
+                            onUpdateAssistant(assistant.copy(learningMode = it))
+                        }
+                    )
+                },
+            )
+        }
 
     }
 }
@@ -1122,6 +1231,7 @@ private fun BigIconTextButton(
     onClick: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
+    val amoledMode by rememberAmoledDarkMode()
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
@@ -1137,15 +1247,18 @@ private fun BigIconTextButton(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
-        Surface(
-            tonalElevation = 2.dp,
-            shape = RoundedCornerShape(8.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .padding(horizontal = 32.dp, vertical = 16.dp)
+        CompositionLocalProvider(LocalAbsoluteTonalElevation provides if(amoledMode && LocalDarkMode.current) 0.dp else LocalAbsoluteTonalElevation.current) {
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = if (amoledMode && LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
+                tonalElevation = if (amoledMode && LocalDarkMode.current) 0.dp else 6.dp
             ) {
-                icon()
+                Box(
+                    modifier = Modifier
+                        .padding(horizontal = 32.dp, vertical = 16.dp)
+                ) {
+                    icon()
+                }
             }
         }
         ProvideTextStyle(MaterialTheme.typography.bodySmall) {
