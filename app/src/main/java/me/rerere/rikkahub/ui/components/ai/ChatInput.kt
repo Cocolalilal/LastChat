@@ -249,7 +249,7 @@ fun ChatInput(
             modifier = Modifier
                 .imePadding()
                 .navigationBarsPadding()
-                .padding(bottom = 16.dp, start = 16.dp, end = 16.dp), // Raised toolbar
+                .padding(bottom = 8.dp, start = 16.dp, end = 16.dp), // Raised toolbar
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // Medias
