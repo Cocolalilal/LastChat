@@ -51,10 +51,13 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AddBox
+import androidx.compose.material.icons.rounded.AddCircle
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.AddBox
-import androidx.compose.material.icons.rounded.Close
+
 import com.dokar.sonner.ToastType
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -495,7 +498,7 @@ private fun TopBar(
                     onNewChat()
                 }
             ) {
-                Icon(Icons.Rounded.AddBox, "New Message")
+                Icon(Icons.Rounded.AddCircle, "New Message")
             }
         },
     )

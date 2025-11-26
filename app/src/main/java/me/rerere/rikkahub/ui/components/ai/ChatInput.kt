@@ -10,6 +10,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -89,6 +91,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
+import me.rerere.ai.provider.BuiltInTools
 import androidx.compose.ui.util.fastForEach
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
@@ -97,6 +100,7 @@ import androidx.core.net.toUri
 import coil3.compose.AsyncImage
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AddCircle
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.animation.core.animateFloatAsState
@@ -231,13 +235,13 @@ fun ChatInput(
     ) {
 
 
-        val isPillShape = state.textContent.text.length < 60 && state.textContent.text.lines().size <= 2
+        val isPillShape = !state.isEditing() && state.textContent.text.length < 40 && state.textContent.text.lines().size <= 1
         val outerCornerSize by animateDpAsState(
-            targetValue = if (isPillShape) 100.dp else 32.dp,
+            targetValue = if (isPillShape) 100.dp else 48.dp,
             label = "outer_corner_size"
         )
         val innerCornerSize by animateDpAsState(
-            targetValue = if (isPillShape) 100.dp else 24.dp,
+            targetValue = if (isPillShape) 100.dp else 40.dp,
             label = "inner_corner_size"
         )
 
@@ -269,7 +273,7 @@ fun ChatInput(
                         },
                         modifier = Modifier
                             .size(36.dp)
-                            .padding(start = 6.dp) // Move button more inside
+                            .padding(start = 10.dp) // Move button more inside
                     ) {
                         val rotation by animateFloatAsState(
                             targetValue = if (expand == ExpandState.Files) 45f else 0f,
@@ -290,7 +294,7 @@ fun ChatInput(
                         exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkHorizontally()
                     ) {
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             // Search
@@ -316,7 +320,7 @@ fun ChatInput(
                                 },
                                 onUpdateSearchService = onUpdateSearchService,
                                 model = chatModel,
-                                contentColor = if (enableSearch) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                contentColor = if (enableSearch || chatModel?.tools?.contains(BuiltInTools.Search) == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                 onlyIcon = true
                             )
 
@@ -365,7 +369,7 @@ fun ChatInput(
                                         trailingIcon = {
                                             // Crossfade between Model Picker and Send Button
                                             androidx.compose.animation.AnimatedContent(
-                                                targetState = isExpanded,
+                                                targetState = isExpanded || state.loading,
                                                 transitionSpec = {
                                                     androidx.compose.animation.fadeIn(
                                                         animationSpec = androidx.compose.animation.core.tween(durationMillis = 300)
@@ -492,7 +496,7 @@ private fun TextInputRow(
                 Surface(
                     tonalElevation = 8.dp,
                     shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    modifier = Modifier.padding(bottom = 8.dp, start = 12.dp, top = 8.dp) // Added start and top padding
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -1234,7 +1238,7 @@ private fun BigIconTextButton(
     val amoledMode by rememberAmoledDarkMode()
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(24.dp))
             .clickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
@@ -1249,7 +1253,7 @@ private fun BigIconTextButton(
     ) {
         CompositionLocalProvider(LocalAbsoluteTonalElevation provides if(amoledMode && LocalDarkMode.current) 0.dp else LocalAbsoluteTonalElevation.current) {
             Surface(
-                shape = RoundedCornerShape(8.dp),
+                shape = RoundedCornerShape(24.dp),
                 color = if (amoledMode && LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
                 tonalElevation = if (amoledMode && LocalDarkMode.current) 0.dp else 6.dp
             ) {

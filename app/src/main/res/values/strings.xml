@@ -203,7 +203,7 @@
     <string name="chat_page_export_success">Exported as %1$s</string>
     <string name="chat_page_history">History</string>
     <string name="chat_page_learning_mode">Learning Mode</string>
-    <string name="chat_page_learning_mode_desc">Help you learn step by step</string>
+    <string name="chat_page_learning_mode_desc">Learn step by step</string>
     <string name="chat_page_new_chat">New Chat</string>
     <string name="chat_page_new_message">New Message</string>
     <string name="chat_page_nickname_placeholder">Enter nickname</string>
