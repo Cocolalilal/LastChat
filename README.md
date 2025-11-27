@@ -6,7 +6,7 @@
 
 **LastChat** is a powerful, feature-rich AI assistant application for Android. It is a fork of [RikkaHub](https://github.com/re-ovo/RikkaHub), modified using **Gemini 3 Pro** and **Claude 4.5 Sonnet**.
 
-This project aims to provide a privacy-focused and highly extensible AI chat experience on Android
+This project aims to provide a privacy-focused and highly personalized AI chat experience on Android
 
 ## 📸 Gallery
 
