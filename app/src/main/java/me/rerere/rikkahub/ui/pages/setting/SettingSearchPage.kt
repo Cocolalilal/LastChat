@@ -130,7 +130,7 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
         val lazyListState = rememberLazyListState()
         val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
             // 需要考虑标题和按钮以及通用选项可能占用的位置
-            val offset = 1 // 第一个item是标题和按钮
+            val offset = 0 // 第一个item是标题和按钮
             val fromIndex = from.index - offset
             val toIndex = to.index - offset
 

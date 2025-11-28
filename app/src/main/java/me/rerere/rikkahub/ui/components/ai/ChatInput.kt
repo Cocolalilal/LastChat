@@ -810,37 +810,78 @@ private fun FilesPicker(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        FlowRow(
-            modifier = Modifier
-                .fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            TakePicButton {
-                state.addImages(it)
-                onDismiss()
-            }
-
-            ImagePickButton {
-                state.addImages(it)
-                onDismiss()
-            }
-
-            if (provider != null && provider is ProviderSetting.Google) {
-                VideoPickButton {
-                    state.addVideos(it)
-                    onDismiss()
+        val supportVideo = provider != null && provider is ProviderSetting.Google
+        if(supportVideo) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        TakePicButton {
+                            state.addImages(it)
+                            onDismiss()
+                        }
+                    }
+                    Box(modifier = Modifier.weight(1f)) {
+                        ImagePickButton {
+                            state.addImages(it)
+                            onDismiss()
+                        }
+                    }
                 }
-
-                AudioPickButton {
-                    state.addAudios(it)
-                    onDismiss()
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        VideoPickButton {
+                            state.addVideos(it)
+                            onDismiss()
+                        }
+                    }
+                    Box(modifier = Modifier.weight(1f)) {
+                        FilePickButton {
+                            state.addFiles(it)
+                            onDismiss()
+                        }
+                    }
                 }
             }
-
-            FilePickButton {
-                state.addFiles(it)
-                onDismiss()
+        } else {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        TakePicButton {
+                            state.addImages(it)
+                            onDismiss()
+                        }
+                    }
+                    Box(modifier = Modifier.weight(1f)) {
+                        ImagePickButton {
+                            state.addImages(it)
+                            onDismiss()
+                        }
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        FilePickButton {
+                            state.addFiles(it)
+                            onDismiss()
+                        }
+                    }
+                }
             }
         }
 
@@ -1027,9 +1068,6 @@ private fun ImagePickButton(onAddImages: (List<Uri>) -> Unit = {}) {
     BigIconTextButton(
         icon = {
             Icon(Icons.Rounded.Photo, null)
-        },
-        text = {
-            Text(stringResource(R.string.photo))
         }
     ) {
         imagePickerLauncher.launch("image/*")
@@ -1088,9 +1126,6 @@ fun TakePicButton(onAddImages: (List<Uri>) -> Unit = {}) {
         BigIconTextButton(
             icon = {
                 Icon(Icons.Rounded.CameraAlt, null)
-            },
-            text = {
-                Text(stringResource(R.string.take_picture))
             }
         ) {
             if (cameraPermission.allRequiredPermissionsGranted) {
@@ -1124,37 +1159,13 @@ fun VideoPickButton(onAddVideos: (List<Uri>) -> Unit = {}) {
     BigIconTextButton(
         icon = {
             Icon(Icons.Rounded.VideoLibrary, null)
-        },
-        text = {
-            Text(stringResource(R.string.video))
         }
     ) {
         videoPickerLauncher.launch("video/*")
     }
 }
 
-@Composable
-fun AudioPickButton(onAddAudios: (List<Uri>) -> Unit = {}) {
-    val context = LocalContext.current
-    val audioPickerLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetMultipleContents()
-    ) { selectedUris ->
-        if (selectedUris.isNotEmpty()) {
-            onAddAudios(context.createChatFilesByContents(selectedUris))
-        }
-    }
 
-    BigIconTextButton(
-        icon = {
-            Icon(Icons.Rounded.AudioFile, null)
-        },
-        text = {
-            Text(stringResource(R.string.audio))
-        }
-    ) {
-        audioPickerLauncher.launch("audio/*")
-    }
-}
 
 @Composable
 fun FilePickButton(onAddFiles: (List<UIMessagePart.Document>) -> Unit = {}) {
@@ -1217,9 +1228,6 @@ fun FilePickButton(onAddFiles: (List<UIMessagePart.Document>) -> Unit = {}) {
     BigIconTextButton(
         icon = {
             Icon(Icons.Rounded.FolderOpen, null)
-        },
-        text = {
-            Text(stringResource(R.string.upload_file))
         }
     ) {
         pickMedia.launch(arrayOf("*/*"))
@@ -1231,7 +1239,6 @@ fun FilePickButton(onAddFiles: (List<UIMessagePart.Document>) -> Unit = {}) {
 private fun BigIconTextButton(
     modifier: Modifier = Modifier,
     icon: @Composable () -> Unit,
-    text: @Composable () -> Unit,
     onClick: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -1247,7 +1254,7 @@ private fun BigIconTextButton(
             .semantics {
                 role = Role.Button
             }
-            .wrapContentWidth(),
+            .fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
@@ -1255,18 +1262,17 @@ private fun BigIconTextButton(
             Surface(
                 shape = RoundedCornerShape(24.dp),
                 color = if (amoledMode && LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
-                tonalElevation = if (amoledMode && LocalDarkMode.current) 0.dp else 6.dp
+                tonalElevation = if (amoledMode && LocalDarkMode.current) 0.dp else 6.dp,
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Box(
                     modifier = Modifier
-                        .padding(horizontal = 32.dp, vertical = 16.dp)
+                        .padding(horizontal = 32.dp, vertical = 24.dp),
+                    contentAlignment = Alignment.Center
                 ) {
                     icon()
                 }
             }
-        }
-        ProvideTextStyle(MaterialTheme.typography.bodySmall) {
-            text()
         }
     }
 }
@@ -1280,9 +1286,6 @@ private fun BigIconTextButtonPreview() {
         BigIconTextButton(
             icon = {
             Icon(Icons.Rounded.Photo, null)
-            },
-            text = {
-                Text(stringResource(R.string.photo))
             }
         ) {}
     }
