@@ -55,6 +55,7 @@ fun ProviderConfigure(
                         is ProviderSetting.OpenAI -> provider.copy(enabled = enabled)
                         is ProviderSetting.Google -> provider.copy(enabled = enabled)
                         is ProviderSetting.Claude -> provider.copy(enabled = enabled)
+                        is ProviderSetting.NanoGPT -> provider.copy(enabled = enabled)
                     }
                     onEdit(updated)
                 }
@@ -92,6 +93,7 @@ fun ProviderConfigure(
                     is ProviderSetting.OpenAI -> provider.copy(name = newName.trim())
                     is ProviderSetting.Google -> provider.copy(name = newName.trim())
                     is ProviderSetting.Claude -> provider.copy(name = newName.trim())
+                    is ProviderSetting.NanoGPT -> provider.copy(name = newName.trim())
                 }
                 onEdit(updated)
             },
@@ -114,6 +116,10 @@ fun ProviderConfigure(
             is ProviderSetting.Claude -> {
                 ProviderConfigureClaude(provider, onEdit)
             }
+
+            is ProviderSetting.NanoGPT -> {
+                ProviderConfigureNanoGPT(provider, onEdit)
+            }
         }
     }
 }
@@ -130,6 +136,7 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
         is ProviderSetting.OpenAI -> this.apiKey
         is ProviderSetting.Google -> this.apiKey
         is ProviderSetting.Claude -> this.apiKey
+        is ProviderSetting.NanoGPT -> this.apiKey
     }
 
     // Convert to target type while preserving common properties
@@ -163,6 +170,16 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
             balanceOption = this.balanceOption,
             apiKey = apiKey,
             baseUrl = if (this is ProviderSetting.Claude) this.baseUrl else "https://api.anthropic.com/v1"
+        )
+        ProviderSetting.NanoGPT::class -> ProviderSetting.NanoGPT(
+            id = this.id,
+            enabled = this.enabled,
+            name = this.name,
+            models = this.models,
+            proxy = this.proxy,
+            balanceOption = this.balanceOption,
+            apiKey = apiKey,
+            baseUrl = if (this is ProviderSetting.NanoGPT) this.baseUrl else "https://nano-gpt.com/api"
         )
         else -> this // Return unchanged if unknown type
     }
@@ -359,4 +376,35 @@ private fun ColumnScope.ProviderConfigureGoogle(
             modifier = Modifier.fillMaxWidth()
         )
     }
+}
+
+@Composable
+private fun ColumnScope.ProviderConfigureNanoGPT(
+    provider: ProviderSetting.NanoGPT,
+    onEdit: (provider: ProviderSetting.NanoGPT) -> Unit
+) {
+    provider.description()
+
+    OutlinedTextField(
+        value = provider.apiKey,
+        onValueChange = {
+            onEdit(provider.copy(apiKey = it.trim()))
+        },
+        label = {
+            Text(stringResource(id = R.string.setting_provider_page_api_key))
+        },
+        modifier = Modifier.fillMaxWidth(),
+        maxLines = 3,
+    )
+
+    OutlinedTextField(
+        value = provider.baseUrl,
+        onValueChange = {
+            onEdit(provider.copy(baseUrl = it.trim()))
+        },
+        label = {
+            Text(stringResource(id = R.string.setting_provider_page_api_base_url))
+        },
+        modifier = Modifier.fillMaxWidth()
+    )
 }

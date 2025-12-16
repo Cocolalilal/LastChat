@@ -802,6 +802,7 @@ private fun ProviderItemContent(
                 is ProviderSetting.OpenAI -> provider.baseUrl
                 is ProviderSetting.Google -> provider.baseUrl
                 is ProviderSetting.Claude -> provider.baseUrl
+                is ProviderSetting.NanoGPT -> provider.baseUrl
             },
             modifier = Modifier.size(40.dp)
         )

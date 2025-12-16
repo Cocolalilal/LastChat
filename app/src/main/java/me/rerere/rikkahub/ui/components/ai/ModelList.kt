@@ -136,6 +136,7 @@ fun ModelSelector(
                             is ProviderSetting.OpenAI -> provider.baseUrl
                             is ProviderSetting.Google -> provider.baseUrl
                             is ProviderSetting.Claude -> provider.baseUrl
+                            is ProviderSetting.NanoGPT -> provider.baseUrl
                             null -> null
                         },
                         isGoogleProvider = provider is ProviderSetting.Google,
@@ -180,6 +181,7 @@ fun ModelSelector(
                         is ProviderSetting.OpenAI -> provider.baseUrl
                         is ProviderSetting.Google -> provider.baseUrl
                         is ProviderSetting.Claude -> provider.baseUrl
+                        is ProviderSetting.NanoGPT -> provider.baseUrl
                         null -> null
                     },
                     isGoogleProvider = provider is ProviderSetting.Google,
@@ -713,6 +715,7 @@ private fun ModelItem(
                         is ProviderSetting.OpenAI -> providerSetting.baseUrl
                         is ProviderSetting.Google -> providerSetting.baseUrl
                         is ProviderSetting.Claude -> providerSetting.baseUrl
+                        is ProviderSetting.NanoGPT -> providerSetting.baseUrl
                     },
                     isGoogleProvider = providerSetting is ProviderSetting.Google,
                     modifier = Modifier
@@ -793,6 +796,7 @@ private fun ModelItem(
                             is ProviderSetting.OpenAI -> providerSetting.baseUrl
                             is ProviderSetting.Google -> providerSetting.baseUrl
                             is ProviderSetting.Claude -> providerSetting.baseUrl
+                            is ProviderSetting.NanoGPT -> providerSetting.baseUrl
                         },
                         isGoogleProvider = providerSetting is ProviderSetting.Google,
                         modifier = Modifier

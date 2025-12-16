@@ -1203,6 +1203,7 @@ private fun ModelPicker(
                                         is ProviderSetting.OpenAI -> parentProvider.baseUrl
                                         is ProviderSetting.Google -> parentProvider.baseUrl
                                         is ProviderSetting.Claude -> parentProvider.baseUrl
+                                        is ProviderSetting.NanoGPT -> parentProvider.baseUrl
                                     },
                                     isGoogleProvider = parentProvider is ProviderSetting.Google,
                                     modifier = Modifier.size(32.dp)
@@ -1589,6 +1590,7 @@ private fun ModelCard(
                             is ProviderSetting.OpenAI -> parentProvider.baseUrl
                             is ProviderSetting.Google -> parentProvider.baseUrl
                             is ProviderSetting.Claude -> parentProvider.baseUrl
+                            is ProviderSetting.NanoGPT -> parentProvider.baseUrl
                         },
                         isGoogleProvider = parentProvider is ProviderSetting.Google,
                         modifier = Modifier.size(36.dp),

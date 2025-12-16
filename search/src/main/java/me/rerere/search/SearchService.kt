@@ -56,6 +56,7 @@ interface SearchService<T : SearchServiceOptions> {
                 is SearchServiceOptions.FirecrawlOptions -> FirecrawlSearchService
                 is SearchServiceOptions.JinaOptions -> JinaSearchService
                 is SearchServiceOptions.BochaOptions -> BochaSearchService
+                is SearchServiceOptions.NanoGPTOptions -> NanoGPTSearchService
             } as SearchService<T>
         }
 
@@ -135,6 +136,7 @@ sealed class SearchServiceOptions {
             FirecrawlOptions::class to "Firecrawl",
             JinaOptions::class to "Jina",
             BochaOptions::class to "博查",
+            NanoGPTOptions::class to "NanoGPT",
         )
     }
 
@@ -234,6 +236,14 @@ sealed class SearchServiceOptions {
         override val id: Uuid = Uuid.random(),
         val apiKey: String = "",
         val summary: Boolean = true,
+    ) : SearchServiceOptions()
+
+    @Serializable
+    @SerialName("nanogpt")
+    data class NanoGPTOptions(
+        override val id: Uuid = Uuid.random(),
+        val apiKey: String = "",
+        val depth: String = "standard",
     ) : SearchServiceOptions()
 }
 

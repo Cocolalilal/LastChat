@@ -531,6 +531,13 @@ private fun SearchProviderCardContent(
                             onUpdateService(options)
                         }
                     }
+
+                    is SearchServiceOptions.NanoGPTOptions -> {
+                        NanoGPTOptions(options as SearchServiceOptions.NanoGPTOptions) {
+                            options = it
+                            onUpdateService(options)
+                        }
+                    }
                 }
 
                 ProvideTextStyle(MaterialTheme.typography.labelMedium) {
@@ -1067,4 +1074,47 @@ private fun BochaOptions(
             )
         }
     )
+}
+
+@Composable
+private fun NanoGPTOptions(
+    options: SearchServiceOptions.NanoGPTOptions,
+    onUpdateOptions: (SearchServiceOptions.NanoGPTOptions) -> Unit
+) {
+    FormItem(
+        label = {
+            Text("API Key")
+        }
+    ) {
+        OutlinedTextField(
+            value = options.apiKey,
+            onValueChange = {
+                onUpdateOptions(
+                    options.copy(
+                        apiKey = it
+                    )
+                )
+            },
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+
+    FormItem(
+        label = {
+            Text("Depth")
+        }
+    ) {
+        OutlinedTextField(
+            value = options.depth,
+            onValueChange = {
+                onUpdateOptions(
+                    options.copy(
+                        depth = it
+                    )
+                )
+            },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("standard") }
+        )
+    }
 }
