@@ -268,7 +268,7 @@ class ChatService(
         // 取消现有的生成任务
         getGenerationJob(conversationId)?.cancel()
 
-        val job = appScope.launch(Dispatchers.IO) {
+        val job = appScope.launch {
             try {
                 val currentConversation = getConversationFlow(conversationId).value
 
@@ -311,7 +311,7 @@ class ChatService(
     ) {
         getGenerationJob(conversationId)?.cancel()
 
-        val job = appScope.launch(Dispatchers.IO) {
+        val job = appScope.launch {
             try {
                 val conversation = getConversationFlow(conversationId).value
 
@@ -826,7 +826,10 @@ class ChatService(
     // 更新对话
     private fun updateConversation(conversationId: Uuid, conversation: Conversation) {
         if (conversation.id != conversationId) return
-        checkFilesDelete(conversation, getConversationFlow(conversationId).value)
+        val oldConversation = getConversationFlow(conversationId).value
+        appScope.launch(Dispatchers.IO) {
+            checkFilesDelete(conversation, oldConversation)
+        }
         conversations.getOrPut(conversationId) { MutableStateFlow(conversation) }.value =
             conversation
     }
@@ -858,10 +861,12 @@ class ChatService(
         updateConversation(conversationId, updatedConversation)
 
         try {
-            if (conversationRepo.getConversationById(conversation.id) == null) {
-                conversationRepo.insertConversation(updatedConversation)
-            } else {
-                conversationRepo.updateConversation(updatedConversation)
+            withContext(Dispatchers.IO) {
+                if (conversationRepo.getConversationById(conversation.id) == null) {
+                    conversationRepo.insertConversation(updatedConversation)
+                } else {
+                    conversationRepo.updateConversation(updatedConversation)
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
