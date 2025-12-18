@@ -50,10 +50,13 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.collect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -70,6 +73,7 @@ import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.utils.navigateToChatPage
 import me.rerere.rikkahub.utils.plus
 import me.rerere.rikkahub.utils.toLocalDateTime
@@ -104,7 +108,11 @@ fun HistoryPage(vm: HistoryVM = koinViewModel()) {
         topBar = {
             TopAppBar(
                 title = {
-                    Text(stringResource(R.string.history_page_title))
+                    Text(
+                        text = stringResource(R.string.history_page_title),
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold
+                    )
                 },
                 navigationIcon = {
                     BackButton()
@@ -180,7 +188,7 @@ fun HistoryPage(vm: HistoryVM = koinViewModel()) {
         } else {
             LazyColumn(
                 contentPadding = contentPadding + PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(showConversations, key = { it.id }) { conversation ->
                     SwipeableConversationItem(
@@ -259,7 +267,7 @@ private fun SearchInput(
                 placeholder = {
                     Text(stringResource(R.string.history_page_search_placeholder))
                 },
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.SearchField,
+                shape = AppShapes.SearchField,
                 singleLine = true,
                 trailingIcon = {
                     IconButton(
@@ -291,6 +299,15 @@ private fun SwipeableConversationItem(
         )
     }
 
+    LaunchedEffect(dismissState) {
+        snapshotFlow { dismissState.targetValue }
+            .collect { target ->
+                if (target == SwipeToDismissBoxValue.EndToStart) {
+                    haptics.perform(HapticPattern.Selection)
+                }
+            }
+    }
+
     LaunchedEffect(dismissState.currentValue) {
         when (dismissState.currentValue) {
             SwipeToDismissBoxValue.EndToStart -> {
@@ -305,12 +322,13 @@ private fun SwipeableConversationItem(
     SwipeToDismissBox(
         state = dismissState,
         backgroundContent = {
+            val scale = 1f + (dismissState.progress * 0.5f)
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(
                         MaterialTheme.colorScheme.errorContainer,
-                        RoundedCornerShape(10.dp)
+                        AppShapes.CardMedium
                     )
                     .padding(horizontal = 20.dp),
                 contentAlignment = Alignment.CenterEnd
@@ -318,7 +336,11 @@ private fun SwipeableConversationItem(
                 Icon(
                     imageVector = Icons.Rounded.Delete,
                     contentDescription = stringResource(R.string.history_page_delete),
-                    tint = MaterialTheme.colorScheme.onErrorContainer
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                    }
                 )
             }
         },
@@ -356,7 +378,7 @@ private fun ConversationItem(
             onClick()
         },
         color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = RoundedCornerShape(10.dp),
+        shape = AppShapes.CardMedium,
         interactionSource = interactionSource,
         modifier = modifier.graphicsLayer {
             scaleX = scale
