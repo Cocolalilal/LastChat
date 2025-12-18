@@ -518,7 +518,7 @@ private fun SharedTransitionScope.ChatListPreview(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
-            placeholder = { Text(stringResource(R.string.history_page_search)) },
+            placeholder = { Text(stringResource(R.string.chat_page_search_placeholder)) },
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Rounded.Search,

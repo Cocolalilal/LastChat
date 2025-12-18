@@ -60,9 +60,7 @@ import me.rerere.rikkahub.ui.pages.assistant.AssistantPage
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantDetailPage
 import me.rerere.rikkahub.ui.pages.backup.BackupPage
 import me.rerere.rikkahub.ui.pages.chat.ChatPage
-import me.rerere.rikkahub.ui.pages.debug.DebugPage
 import me.rerere.rikkahub.ui.pages.developer.DeveloperPage
-import me.rerere.rikkahub.ui.pages.history.HistoryPage
 import me.rerere.rikkahub.ui.pages.imggen.ImageGenPage
 import me.rerere.rikkahub.ui.pages.menu.MenuPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAboutPage
@@ -240,9 +238,6 @@ class RouteActivity : ComponentActivity() {
                         )
                     }
 
-                    composable<Screen.History> {
-                        HistoryPage()
-                    }
 
                     composable<Screen.Assistant> {
                         AssistantPage()
@@ -320,9 +315,6 @@ class RouteActivity : ComponentActivity() {
                         DeveloperPage()
                     }
 
-                    composable<Screen.Debug> {
-                        DebugPage()
-                    }
                 }
             }
         }
@@ -336,8 +328,6 @@ sealed interface Screen {
     @Serializable
     data class ShareHandler(val text: String, val streamUri: String? = null) : Screen
 
-    @Serializable
-    data object History : Screen
 
     @Serializable
     data object Assistant : Screen
@@ -393,6 +383,4 @@ sealed interface Screen {
     @Serializable
     data object Developer : Screen
 
-    @Serializable
-    data object Debug : Screen
 }
