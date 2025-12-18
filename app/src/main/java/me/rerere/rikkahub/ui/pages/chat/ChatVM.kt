@@ -16,6 +16,7 @@ import androidx.paging.cachedIn
 import androidx.paging.insertSeparators
 import androidx.paging.map
 import com.google.firebase.analytics.FirebaseAnalytics
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -89,7 +90,9 @@ class ChatVM(
         }
 
         // 记住对话ID, 方便下次启动恢复
-        context.writeStringPreference("lastConversationId", _conversationId.toString())
+        viewModelScope.launch(Dispatchers.IO) {
+            context.writeStringPreference("lastConversationId", _conversationId.toString())
+        }
     }
 
     override fun onCleared() {
@@ -211,7 +214,7 @@ class ChatVM(
 
     // 更新设置
     fun updateSettings(newSettings: Settings) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             val oldSettings = settings.value
             // 检查用户头像是否有变化，如果有则删除旧头像
             checkUserAvatarDelete(oldSettings, newSettings)
@@ -342,7 +345,7 @@ class ChatVM(
         }
     }
 
-    suspend fun forkMessage(message: UIMessage): Conversation {
+    suspend fun forkMessage(message: UIMessage): Conversation = kotlinx.coroutines.withContext(Dispatchers.IO) {
         val node = conversation.value.getMessageNodeByMessage(message)
         val nodes = conversation.value.messageNodes.subList(
             0, conversation.value.messageNodes.indexOf(node) + 1
@@ -405,7 +408,7 @@ class ChatVM(
             messageNodes = nodes
         )
         chatService.saveConversation(newConversation.id, newConversation)
-        return newConversation
+        return@withContext newConversation
     }
 
     fun deleteMessage(message: UIMessage) {
@@ -494,7 +497,7 @@ class ChatVM(
     }
 
     fun deleteConversation(conversation: Conversation) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             val conversationFull = conversationRepo.getConversationById(conversation.id) ?: return@launch
             conversationRepo.deleteConversation(conversationFull)
         }

@@ -17,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -267,7 +268,7 @@ class ChatService(
         // 取消现有的生成任务
         getGenerationJob(conversationId)?.cancel()
 
-        val job = appScope.launch {
+        val job = appScope.launch(Dispatchers.IO) {
             try {
                 val currentConversation = getConversationFlow(conversationId).value
 
@@ -310,7 +311,7 @@ class ChatService(
     ) {
         getGenerationJob(conversationId)?.cancel()
 
-        val job = appScope.launch {
+        val job = appScope.launch(Dispatchers.IO) {
             try {
                 val conversation = getConversationFlow(conversationId).value
 

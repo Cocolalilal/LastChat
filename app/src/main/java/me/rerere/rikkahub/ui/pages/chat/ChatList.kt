@@ -87,6 +87,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import me.rerere.ai.ui.UIMessage
+import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.hooks.PremiumHaptics
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findModelById
@@ -172,6 +175,7 @@ private fun SharedTransitionScope.ChatListNormal(
     val loadingState by rememberUpdatedState(loading)
     var isRecentScroll by remember { mutableStateOf(false) }
     val conversationUpdated by rememberUpdatedState(conversation)
+    val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
 
     fun List<LazyListItemInfo>.isAtBottom(): Boolean {
         val lastItem = lastOrNull() ?: return false
@@ -240,6 +244,7 @@ private fun SharedTransitionScope.ChatListNormal(
                     ListSelectableItem(
                         key = node.id,
                         onSelectChange = {
+                            haptics.perform(HapticPattern.Selection)
                             if (!selectedItems.contains(node.id)) {
                                 selectedItems.add(node.id)
                             } else {
@@ -268,6 +273,7 @@ private fun SharedTransitionScope.ChatListNormal(
                                 onDelete(node.currentMessage)
                             },
                             onShare = {
+                                haptics.perform(HapticPattern.Pop)
                                 selecting = true  // 使用 CoroutineScope 延迟状态更新
                                 selectedItems.clear()
                                 selectedItems.addAll(conversation.messageNodes.map { it.id }
@@ -341,6 +347,7 @@ private fun SharedTransitionScope.ChatListNormal(
                     ) {
                         IconButton(
                             onClick = {
+                                haptics.perform(HapticPattern.Cancel)
                                 selecting = false
                                 selectedItems.clear()
                             }
@@ -355,6 +362,7 @@ private fun SharedTransitionScope.ChatListNormal(
                     ) {
                         IconButton(
                             onClick = {
+                                haptics.perform(HapticPattern.Tick)
                                 if (selectedItems.isNotEmpty()) {
                                     selectedItems.clear()
                                 } else {
@@ -372,6 +380,7 @@ private fun SharedTransitionScope.ChatListNormal(
                     ) {
                         FilledIconButton(
                             onClick = {
+                                haptics.perform(HapticPattern.Pop)
                                 selecting = false
                                 val messages = conversation.messageNodes.filter { it.id in selectedItems }
                                 if (messages.isNotEmpty()) {
@@ -404,7 +413,8 @@ private fun SharedTransitionScope.ChatListNormal(
                 show = isRecentScroll && !state.isScrollInProgress && settings.displaySetting.showMessageJumper && !captureProgress,
                 onLeft = settings.displaySetting.messageJumperOnLeft,
                 scope = scope,
-                state = state
+                state = state,
+                haptics = haptics
             )
         }
     }
@@ -604,7 +614,8 @@ private fun BoxScope.MessageJumper(
     show: Boolean,
     onLeft: Boolean,
     scope: CoroutineScope,
-    state: LazyListState
+    state: LazyListState,
+    haptics: PremiumHaptics
 ) {
     AnimatedVisibility(
         visible = show,
@@ -622,6 +633,7 @@ private fun BoxScope.MessageJumper(
         ) {
             Surface(
                 onClick = {
+                    haptics.perform(HapticPattern.Pop)
                     scope.launch {
                         state.animateScrollToItem(0)
                     }
@@ -641,6 +653,7 @@ private fun BoxScope.MessageJumper(
             }
             Surface(
                 onClick = {
+                    haptics.perform(HapticPattern.Tick)
                     scope.launch {
                         state.animateScrollToItem(
                             (state.firstVisibleItemIndex - 1).fastCoerceAtLeast(
@@ -664,6 +677,7 @@ private fun BoxScope.MessageJumper(
             }
             Surface(
                 onClick = {
+                    haptics.perform(HapticPattern.Tick)
                     scope.launch {
                         state.animateScrollToItem(state.firstVisibleItemIndex + 1)
                     }
@@ -682,6 +696,7 @@ private fun BoxScope.MessageJumper(
             }
             Surface(
                 onClick = {
+                    haptics.perform(HapticPattern.Pop)
                     scope.launch {
                         state.animateScrollToItem(state.layoutInfo.totalItemsCount - 1)
                     }
