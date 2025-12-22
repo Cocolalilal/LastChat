@@ -7,7 +7,8 @@ import androidx.room.PrimaryKey
 
 @Entity(
     indices = [
-        Index(value = ["assistant_id", "is_pinned", "update_at"])
+        Index(value = ["assistant_id", "is_pinned", "update_at"]),
+        Index(value = ["is_pinned", "update_at"])
     ]
 )
 data class ConversationEntity(
