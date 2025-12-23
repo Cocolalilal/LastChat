@@ -3,6 +3,9 @@ package me.rerere.rikkahub.ui.components.ai
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -390,6 +394,17 @@ private fun SearchProviderItem(
     totalCount: Int = 1
 ) {
     val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
+
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isPressed) 0.95f else 1f,
+        animationSpec = androidx.compose.animation.core.spring(
+            dampingRatio = 0.6f,
+            stiffness = 300f
+        ),
+        label = "scale"
+    )
     
     // Animated corner radius - selected items animate to fully round
     val topCorner by androidx.compose.animation.core.animateDpAsState(
@@ -443,13 +458,21 @@ private fun SearchProviderItem(
     
     Row(
         modifier = Modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .fillMaxWidth()
             .clip(animatedShape)
             .background(containerColor)
-            .clickable {
-                haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
-                onClick()
-            }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
+                onClick = {
+                    haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
+                    onClick()
+                }
+            )
             .padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,

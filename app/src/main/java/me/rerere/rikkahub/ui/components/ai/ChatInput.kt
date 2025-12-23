@@ -892,6 +892,7 @@ private fun ChatSuggestionsRow(
     suggestions: List<String>,
     onClickSuggestion: (String) -> Unit
 ) {
+    val haptics = rememberPremiumHaptics()
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
     
@@ -985,6 +986,7 @@ private fun ChatSuggestionsRow(
                                     pressedSuggestionIndex = null
                                 },
                                 onTap = {
+                                    haptics.perform(HapticPattern.Pop)
                                     selectedSuggestionIndex = index
                                 }
                             )
@@ -1469,6 +1471,7 @@ private fun BigIconTextButton(
     icon: @Composable () -> Unit,
     onClick: () -> Unit,
 ) {
+    val haptics = rememberPremiumHaptics()
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val amoledMode by rememberAmoledDarkMode()
@@ -1502,7 +1505,10 @@ private fun BigIconTextButton(
             .clickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
-                onClick = onClick
+                onClick = {
+                    haptics.perform(HapticPattern.Pop)
+                    onClick()
+                }
             )
             .semantics {
                 role = Role.Button
