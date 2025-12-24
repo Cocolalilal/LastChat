@@ -2,7 +2,10 @@ package me.rerere.rikkahub.ui.components.ui
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -24,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastForEach
 import me.rerere.rikkahub.ui.hooks.HapticPattern
@@ -55,41 +59,73 @@ fun <T> Select(
         label = "select_arrow_rotation"
     )
 
+    // Physics: Scale on press
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.95f else 1f,
+        animationSpec = spring(
+            dampingRatio = 0.6f, // Round/Clicky Standard
+            stiffness = 300f
+        ),
+        label = "select_scale"
+    )
+
     ExposedDropdownMenuBox(
         modifier = modifier,
         expanded = expanded,
         onExpandedChange = { newExpanded ->
-            haptics.perform(HapticPattern.Pop)
-            expanded = newExpanded 
+            // Only trigger haptics if the state actually changed via external dismissal
+            // (e.g. clicking outside). Anchor clicks are handled manually.
+            if (expanded != newExpanded) {
+                 expanded = newExpanded
+            }
         }
     ) {
-        Surface(
-            tonalElevation = 4.dp,
-            shape = AppShapes.ButtonPill,
+        // We wrap the anchor in a Box to apply the menuAnchor modifier.
+        // This allows the inner Surface to handle clicks and animations independently
+        // without conflict from the exposed dropdown logic.
+        Box(
             modifier = Modifier
                 .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
         ) {
-            Row(
+            Surface(
+                onClick = {
+                    haptics.perform(HapticPattern.Pop)
+                    expanded = !expanded
+                },
+                tonalElevation = 4.dp,
+                shape = AppShapes.ButtonPill,
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 12.dp, horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                    },
+                interactionSource = interactionSource
             ) {
-                leading()
-                Text(
-                    text = optionToString(selectedOption),
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.weight(1f)
-                )
-                trailing()
-                Icon(
-                    imageVector = Icons.Rounded.KeyboardArrowDown,
-                    contentDescription = "expand",
-                    modifier = Modifier.rotate(rotation)
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 12.dp, horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    leading()
+                    Text(
+                        text = optionToString(selectedOption),
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.weight(1f)
+                    )
+                    trailing()
+                    Icon(
+                        imageVector = Icons.Rounded.KeyboardArrowDown,
+                        contentDescription = "expand",
+                        modifier = Modifier.rotate(rotation)
+                    )
+                }
             }
         }
+
         ExposedDropdownMenu(
             expanded = expanded,
             onDismissRequest = {
