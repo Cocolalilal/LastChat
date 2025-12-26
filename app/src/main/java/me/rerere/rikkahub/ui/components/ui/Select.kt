@@ -2,6 +2,12 @@ package me.rerere.rikkahub.ui.components.ui
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,6 +30,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastForEach
 import me.rerere.rikkahub.ui.hooks.HapticPattern
@@ -55,6 +63,18 @@ fun <T> Select(
         label = "select_arrow_rotation"
     )
 
+    // Physics: Press animation for the anchor
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.95f else 1f,
+        animationSpec = spring(
+            dampingRatio = 0.5f,
+            stiffness = 400f
+        ),
+        label = "select_scale"
+    )
+
     ExposedDropdownMenuBox(
         modifier = modifier,
         expanded = expanded,
@@ -67,6 +87,19 @@ fun <T> Select(
             tonalElevation = 4.dp,
             shape = AppShapes.ButtonPill,
             modifier = Modifier
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val press = PressInteraction.Press(down.position)
+                        interactionSource.emit(press)
+                        waitForUpOrCancellation()
+                        interactionSource.emit(PressInteraction.Release(press))
+                    }
+                }
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                }
                 .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
         ) {
             Row(

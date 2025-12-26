@@ -3,8 +3,12 @@ package me.rerere.rikkahub.ui.components.ui
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -46,7 +51,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberAvatarShape
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.ImageUtils
 
@@ -104,12 +111,33 @@ fun ClickableIconPicker(
         modifier = modifier,
         contentAlignment = Alignment.Center
     ) {
+        val haptics = rememberPremiumHaptics()
+        val interactionSource = remember { MutableInteractionSource() }
+        val isPressed by interactionSource.collectIsPressedAsState()
+
+        val scale by animateFloatAsState(
+            targetValue = if (isPressed) 0.85f else 1f,
+            animationSpec = spring(
+                dampingRatio = 0.6f,
+                stiffness = 300f
+            ),
+            label = "icon_scale"
+        )
+
         // Main icon area - clickable
         Surface(
             modifier = Modifier
                 .size(iconSize)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                }
                 .clip(rememberAvatarShape(false))
-                .clickable {
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null // Physics scale replaces ripple
+                ) {
+                    haptics.perform(HapticPattern.Pop)
                     if (hasCustomIcon) {
                         // Clear the custom icon
                         onIconCleared()
@@ -318,9 +346,34 @@ private fun LobeHubIconItem(
     slug: String,
     onSelect: () -> Unit
 ) {
+    val haptics = rememberPremiumHaptics()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.9f else 1f,
+        animationSpec = spring(
+            dampingRatio = 0.6f,
+            stiffness = 300f
+        ),
+        label = "lobe_icon_scale"
+    )
+
     Surface(
-        onClick = onSelect,
-        modifier = Modifier.size(56.dp),
+        modifier = Modifier
+            .size(56.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null
+            ) {
+                haptics.perform(HapticPattern.Pop)
+                onSelect()
+            },
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh
     ) {
