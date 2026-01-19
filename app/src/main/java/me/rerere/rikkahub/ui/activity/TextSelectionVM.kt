@@ -136,8 +136,18 @@ class TextSelectionVM(
                 val assistant = assistantId?.let { settings.getAssistantById(it) }
                 val assistantPrompt = assistant?.systemPrompt ?: ""
 
+                // Find the user-defined action from settings
+                val actionId = when (action) {
+                    QuickAction.TRANSLATE -> "translate"
+                    QuickAction.EXPLAIN -> "explain"
+                    QuickAction.SUMMARIZE -> "summarize"
+                    QuickAction.CUSTOM -> "custom"
+                }
+                val textSelectionAction = settings.textSelectionConfig.actions.find { it.id == actionId }
+                val userDefinedPrompt = textSelectionAction?.prompt ?: ""
+
                 val translateLanguage = settings.textSelectionConfig.translateLanguage
-                val systemPrompt = buildSystemPrompt(action, customPrompt, assistantPrompt, translateLanguage)
+                val systemPrompt = buildSystemPrompt(action, customPrompt, assistantPrompt, translateLanguage, userDefinedPrompt)
                 val userMessage = UIMessage.user(selectedText)
                 
                 messages.add(UIMessage.system(systemPrompt))
@@ -192,33 +202,45 @@ class TextSelectionVM(
         )
     }
 
-    private fun buildSystemPrompt(action: QuickAction, customPrompt: String, assistantPrompt: String, translateLanguage: String): String {
-        // For Translate, use only the action prompt (no assistant personality)
-        if (action == QuickAction.TRANSLATE) {
-            return """
-                You are a translator. Translate the user's text to $translateLanguage.
-                Only output the translation, nothing else. Do not include any explanations or notes.
-            """.trimIndent()
+    private fun buildSystemPrompt(action: QuickAction, customPrompt: String, assistantPrompt: String, translateLanguage: String, userDefinedPrompt: String): String {
+        // Process template variables in the user-defined prompt (only for their respective actions)
+        val processedPrompt = when (action) {
+            QuickAction.TRANSLATE -> userDefinedPrompt.replace("{{language}}", translateLanguage)
+            QuickAction.CUSTOM -> userDefinedPrompt.replace("{{custom_prompt}}", customPrompt)
+            else -> userDefinedPrompt
         }
         
-        // For other actions, combine assistant prompt with action prompt
-        val actionPrompt = when (action) {
-            QuickAction.EXPLAIN -> """
-                Explain the following text in simple, easy-to-understand terms.
-                Be concise but thorough. Use examples if helpful.
-            """.trimIndent()
-            
-            QuickAction.SUMMARIZE -> """
-                Provide a clear, concise summary of the following text.
-                Capture the key points and main ideas. Be brief but complete.
-            """.trimIndent()
-            
-            QuickAction.CUSTOM -> """
-                Answer the user's question about the provided text.
-                User's question: $customPrompt
-            """.trimIndent()
-            
-            else -> ""
+        // For Translate, use only the action prompt (no assistant personality)
+        if (action == QuickAction.TRANSLATE) {
+            return processedPrompt.ifBlank {
+                // Fallback to default if no user-defined prompt
+                """
+                    You are a translator. Translate the user's text to $translateLanguage.
+                    Only output the translation, nothing else. Do not include any explanations or notes.
+                """.trimIndent()
+            }
+        }
+        
+        // For other actions, use the user-defined prompt or fallback to defaults
+        val actionPrompt = processedPrompt.ifBlank {
+            when (action) {
+                QuickAction.EXPLAIN -> """
+                    Explain the following text in simple, easy-to-understand terms.
+                    Be concise but thorough. Use examples if helpful.
+                """.trimIndent()
+                
+                QuickAction.SUMMARIZE -> """
+                    Provide a clear, concise summary of the following text.
+                    Capture the key points and main ideas. Be brief but complete.
+                """.trimIndent()
+                
+                QuickAction.CUSTOM -> """
+                    Answer the user's question about the provided text.
+                    User's question: $customPrompt
+                """.trimIndent()
+                
+                else -> ""
+            }
         }
         
         // Combine assistant prompt with action prompt

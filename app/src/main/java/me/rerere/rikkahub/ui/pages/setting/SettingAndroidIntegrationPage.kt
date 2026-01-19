@@ -192,7 +192,6 @@ fun SettingAndroidIntegrationPage(
                                     optionToString = { id ->
                                         settings.assistants.find { it.id == id }?.name ?: "Unknown"
                                     },
-                                    modifier = Modifier.width(150.dp)
                                 )
                             }
                         )
@@ -213,7 +212,6 @@ fun SettingAndroidIntegrationPage(
                                         }
                                     },
                                     optionToString = { it },
-                                    modifier = Modifier.width(130.dp)
                                 )
                             }
                         )
@@ -545,11 +543,19 @@ private fun EditActionDialog(
                         .heightIn(min = 150.dp),
                     minLines = 5
                 )
-                Text(
-                    text = "Variable: {{language}}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                // Show variable hint only for relevant actions
+                val variableHint = when (action.id) {
+                    "translate" -> "Variable: {{language}}"
+                    "custom" -> "Variable: {{custom_prompt}}"
+                    else -> null
+                }
+                if (variableHint != null) {
+                    Text(
+                        text = variableHint,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         },
         confirmButton = {

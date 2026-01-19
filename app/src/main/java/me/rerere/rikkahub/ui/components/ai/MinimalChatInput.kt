@@ -50,6 +50,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.content.contentReceiver
+import androidx.compose.foundation.content.MediaType
+import androidx.compose.foundation.content.ReceiveContentListener
+import androidx.compose.foundation.content.consume
+import androidx.compose.foundation.content.hasMediaType
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowUpward
@@ -115,6 +120,7 @@ import me.rerere.rikkahub.ui.components.ui.permission.PermissionCamera
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionManager
 import me.rerere.rikkahub.ui.components.ui.permission.rememberPermissionState
 import me.rerere.rikkahub.ui.context.LocalSettings
+import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.ui.hooks.HapticPattern
@@ -218,6 +224,27 @@ fun MinimalChatInput(
                 )
             }
             
+            // Content receiver for clipboard image paste (must be outside Surface lambda)
+            val receiveContentListener = remember {
+                ReceiveContentListener { transferableContent ->
+                    when {
+                        transferableContent.hasMediaType(MediaType.Image) -> {
+                            transferableContent.consume { item ->
+                                item.uri?.let { uri ->
+                                    state.addImages(
+                                        context.createChatFilesByContents(
+                                            listOf(uri)
+                                        )
+                                    )
+                                }
+                                item.uri != null
+                            }
+                        }
+                        else -> transferableContent
+                    }
+                }
+            }
+            
             // Minimal input bar - plus button + text field with embedded action button
             Row(
                 verticalAlignment = Alignment.Bottom,
@@ -253,119 +280,150 @@ fun MinimalChatInput(
                         .weight(1f)
                         .heightIn(min = 48.dp)  // Matches plus button, allows 4dp padding all around
                 ) {
-                    Box(
+                    Column(
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        // Text input
-                        TextField(
-                            state = state.textContent,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .defaultMinSize(minHeight = 1.dp)  // Override internal min height (56dp)
-                                .focusRequester(state.focusRequester)
-                                .onFocusChanged { isFocused = it.isFocused },
-                            placeholder = {
-                                Text(
-                                    text = "Ask ${assistant.name}",
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            },
-                            lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),  // MultiLine for proper Enter key
-                            colors = TextFieldDefaults.colors().copy(
-                                unfocusedIndicatorColor = Color.Transparent,
-                                focusedIndicatorColor = Color.Transparent,
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedContainerColor = Color.Transparent,
-                            ),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                                start = 16.dp,
-                                end = 48.dp,  // Space for 40dp button + 4dp padding
-                                top = 12.dp,  // (48dp height - 24dp text) / 2 = 12dp
-                                bottom = 12.dp
-                            )
-                        )
-                        
-                        // Action button - bottom-right, 4dp padding ("4dp all around")
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(4.dp)
-                        ) {
-                            val currentAction = when {
-                                state.loading -> "loading"
-                                !state.isEmpty() -> "send"
-                                showPicker -> "picker_open"  // New state when picker is visible
-                                else -> "picker"
-                            }
-                            
-                            val containerColor by animateColorAsState(
-                                targetValue = when (currentAction) {
-                                    "loading" -> MaterialTheme.colorScheme.errorContainer
-                                    "send" -> MaterialTheme.colorScheme.primary
-                                    else -> Color.Transparent
-                                },
-                                label = "ActionContainerColor"
-                            )
-                            
+                        // Editing indicator - shown when editing a message
+                        if (state.isEditing()) {
                             Surface(
-                                onClick = { 
-                                    if (currentAction == "send" || currentAction == "loading") sendMessage()
-                                    else showPicker = true
-                                },
-                                shape = CircleShape,
-                                color = containerColor,
-                                modifier = Modifier.size(40.dp)  // Same as plus button
+                                color = if (LocalDarkMode.current) 
+                                    MaterialTheme.colorScheme.surfaceContainerLowest  // Darker in dark mode
+                                else 
+                                    MaterialTheme.colorScheme.surfaceContainerHighest,  // Darker in light mode
+                                shape = RoundedCornerShape(16.dp),  // Optical roundness: 24dp outer - 8dp padding = 16dp
+                                modifier = Modifier.padding(start = 12.dp, top = 10.dp, end = 8.dp, bottom = 4.dp)  // Aligned with text
                             ) {
-                                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                                    AnimatedContent(
-                                        targetState = currentAction,
-                                        transitionSpec = { fadeIn() togetherWith fadeOut() },
-                                        label = "ActionContent"
-                                    ) { action ->
-                                        when (action) {
-                                            "loading" -> {
-                                                Icon(
-                                                    imageVector = Icons.Rounded.Stop,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(22.dp),
-                                                    tint = MaterialTheme.colorScheme.onErrorContainer
-                                                )
-                                            }
-                                            "send" -> {
-                                                Icon(
-                                                    imageVector = Icons.Rounded.ArrowUpward,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(22.dp),
-                                                    tint = MaterialTheme.colorScheme.onPrimary
-                                                )
-                                            }
-                                            "picker_open" -> {
-                                                // Show file folder icon when picker is open (like LastChat floating toolbar)
-                                                Icon(
-                                                    imageVector = Icons.Rounded.FolderOpen,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(22.dp),
-                                                    tint = MaterialTheme.colorScheme.primary
-                                                )
-                                            }
-                                            "picker" -> {
-                                                ModelSelector(
-                                                    modelId = assistant.chatModelId ?: settings.chatModelId,
-                                                    providers = settings.providers,
-                                                    onSelect = { onUpdateChatModel(it) },
-                                                    type = me.rerere.ai.provider.ModelType.CHAT,
-                                                    onlyIcon = true,
-                                                    modifier = Modifier.size(24.dp),
-                                                )
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.editing),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        modifier = Modifier.padding(end = 8.dp)
+                                    )
+                                    IconButton(
+                                        onClick = {
+                                            state.editingMessage = null
+                                            state.clearInput()
+                                        },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Close,
+                                            contentDescription = stringResource(R.string.cancel),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Text input with content receiver for paste + overlaid action button
+                        Box(
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            TextField(
+                                state = state.textContent,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .defaultMinSize(minHeight = 1.dp)  // Override internal min height (56dp)
+                                    .focusRequester(state.focusRequester)
+                                    .contentReceiver(receiveContentListener)
+                                    .onFocusChanged { isFocused = it.isFocused },
+                                placeholder = {
+                                    Text(
+                                        text = "Ask ${assistant.name}",
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                },
+                                lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),  // MultiLine for proper Enter key
+                                colors = TextFieldDefaults.colors().copy(
+                                    unfocusedIndicatorColor = Color.Transparent,
+                                    focusedIndicatorColor = Color.Transparent,
+                                    focusedContainerColor = Color.Transparent,
+                                    unfocusedContainerColor = Color.Transparent,
+                                ),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                    start = 16.dp,
+                                    end = 48.dp,  // Space for 40dp button + 4dp padding
+                                    top = 12.dp,  // (48dp height - 24dp text) / 2 = 12dp
+                                    bottom = 12.dp
+                                )
+                            )
+                            
+                            // Action button - bottom-right, 4dp padding ("4dp all around")
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(4.dp)
+                            ) {
+                                val currentAction = when {
+                                    state.loading -> "loading"
+                                    !state.isEmpty() -> "send"
+                                    else -> "picker"
+                                }
+                                
+                                val containerColor by animateColorAsState(
+                                    targetValue = when (currentAction) {
+                                        "loading" -> MaterialTheme.colorScheme.errorContainer
+                                        "send" -> MaterialTheme.colorScheme.primary
+                                        else -> Color.Transparent
+                                    },
+                                    label = "ActionContainerColor"
+                                )
+                                
+                                Surface(
+                                    onClick = { 
+                                        if (currentAction == "send" || currentAction == "loading") sendMessage()
+                                        else showPicker = true
+                                    },
+                                    shape = CircleShape,
+                                    color = containerColor,
+                                    modifier = Modifier.size(40.dp)  // Same as plus button
+                                ) {
+                                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                        AnimatedContent(
+                                            targetState = currentAction,
+                                            transitionSpec = { fadeIn() togetherWith fadeOut() },
+                                            label = "ActionContent"
+                                        ) { action ->
+                                            when (action) {
+                                                "loading" -> {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.Stop,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(22.dp),
+                                                        tint = MaterialTheme.colorScheme.onErrorContainer
+                                                    )
+                                                }
+                                                "send" -> {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.ArrowUpward,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(22.dp),
+                                                        tint = MaterialTheme.colorScheme.onPrimary
+                                                    )
+                                                }
+                                                "picker" -> {
+                                                    ModelSelector(
+                                                        modelId = assistant.chatModelId ?: settings.chatModelId,
+                                                        providers = settings.providers,
+                                                        onSelect = { onUpdateChatModel(it) },
+                                                        type = me.rerere.ai.provider.ModelType.CHAT,
+                                                        onlyIcon = true,
+                                                        modifier = Modifier.size(24.dp),
+                                                    )
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
-                        }
-                    }
-                }
+                        }  // Box for TextField + Action button ends
+                    }  // Column ends
+                }  // Surface ends
             }  // Row ends
         }  // Column ends
     }  // Box ends

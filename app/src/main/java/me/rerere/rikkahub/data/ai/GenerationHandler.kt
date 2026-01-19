@@ -108,9 +108,8 @@ class GenerationHandler(
 
             val toolsInternal = buildList {
                 Log.i(TAG, "generateInternal: build tools($assistant)")
-                // Only add memory tools if memory is enabled AND we have memories to work with
-                // (skip for temporary chats which pass null/empty memories)
-                if (assistant?.enableMemory == true && !memories.isNullOrEmpty()) {
+                // Add memory tools if memory is enabled for this assistant
+                if (assistant.enableMemory) {
                     buildMemoryTools(
                         onCreation = { content ->
                             memoryRepo.addMemory(assistant.id.toString(), content)

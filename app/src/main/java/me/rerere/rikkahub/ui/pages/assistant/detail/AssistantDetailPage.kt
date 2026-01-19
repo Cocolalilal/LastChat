@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -35,6 +36,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,9 +57,20 @@ import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.hooks.heroAnimation
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 import me.rerere.rikkahub.data.model.Tag as DataTag
+import me.rerere.rikkahub.ui.pages.chat.ExportDialog
+import me.rerere.rikkahub.ui.pages.chat.ExportOptionsDialog
+import me.rerere.rikkahub.utils.AssistantExportImport
+import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.components.ui.ToastAction
+import me.rerere.rikkahub.utils.shareTextFile
+
 
 // Sub-routes within assistant detail
 private object AssistantDetailRoutes {
@@ -87,6 +100,7 @@ fun AssistantDetailPage(
     )
 
     val navController = rememberNavController()
+    val toaster = LocalToaster.current
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
     val mcpServerConfigs by vm.mcpServerConfigs.collectAsStateWithLifecycle()
@@ -95,6 +109,11 @@ fun AssistantDetailPage(
     val providers by vm.providers.collectAsStateWithLifecycle()
     val tags by vm.tags.collectAsStateWithLifecycle()
     val snackbarMessage by vm.snackbarMessage.collectAsStateWithLifecycle()
+
+    val context = LocalContext.current
+
+    val scope = rememberCoroutineScope()
+    var showExportDialog by remember { androidx.compose.runtime.mutableStateOf(false) }
 
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(snackbarMessage) {
@@ -139,6 +158,20 @@ fun AssistantDetailPage(
                 navigationIcon = {
                     BackButton()
                 },
+                actions = {
+                    AnimatedVisibility(
+                        visible = currentRoute == AssistantDetailRoutes.HOME,
+                        enter = fadeIn(),
+                        exit = fadeOut()
+                    ) {
+                        IconButton(onClick = { showExportDialog = true }) {
+                            Icon(
+                                imageVector = Icons.Rounded.Upload,
+                                contentDescription = "Export"
+                            )
+                        }
+                    }
+                }
             )
         },
     ) { innerPadding ->
@@ -284,6 +317,78 @@ fun AssistantDetailPage(
                 )
             }
         }
+    }
+
+    val hasMemories by vm.hasMemories.collectAsStateWithLifecycle()
+    val hasLorebooks by vm.hasLorebooks.collectAsStateWithLifecycle()
+    
+    var showExportOptionsDialog by remember { androidx.compose.runtime.mutableStateOf(false) }
+    var selectedExportFormat by remember { androidx.compose.runtime.mutableStateOf("") }
+
+    if (showExportDialog) {
+        ExportDialog(
+            title = "Export Assistant",
+            onDismissRequest = { showExportDialog = false },
+            formats = listOf(
+                "lastchat" to "LastChat Bundle (.json)",
+                "card_v2" to "Character Card V2 (.json)"
+            ),
+            onExport = { format ->
+                selectedExportFormat = format
+                showExportDialog = false
+                
+                if (format == "lastchat" && (hasMemories || hasLorebooks)) {
+                     showExportOptionsDialog = true
+                } else {
+                     // Direct export
+                     scope.launch {
+                        try {
+                            val content = when(format) {
+                                "card_v2" -> AssistantExportImport.exportToCharacterCardV2(assistant, context)
+                                else -> AssistantExportImport.exportToLastChatBundle(
+                                    assistant = assistant, 
+                                    context = context,
+                                    includeMemories = false, // Or default true? Logic above implies skipping dialog only if NEITHER exist, which implies false is safe.
+                                    includeLorebooks = false
+                                )
+                            }
+                            val fileName = AssistantExportImport.getSuggestedFileName(assistant, format)
+                            shareTextFile(context, fileName, content)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                            toaster.show(message = "Export failed: ${e.message}")
+                        }
+                    }
+                }
+            }
+        )
+    }
+
+    if (showExportOptionsDialog) {
+        me.rerere.rikkahub.ui.pages.chat.ExportOptionsDialog(
+            title = "Export Options",
+            onDismissRequest = { showExportOptionsDialog = false },
+            showMemoriesOption = hasMemories,
+            showLorebooksOption = hasLorebooks,
+            onConfirm = { includeMemories, includeLorebooks ->
+                showExportOptionsDialog = false
+                scope.launch {
+                    try {
+                        val content = AssistantExportImport.exportToLastChatBundle(
+                            assistant = assistant, 
+                            context = context, 
+                            includeMemories = includeMemories, 
+                            includeLorebooks = includeLorebooks
+                        )
+                        val fileName = AssistantExportImport.getSuggestedFileName(assistant, "lastchat")
+                        shareTextFile(context, fileName, content)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                            toaster.show(message = "Export failed: ${e.message}")
+                    }
+                }
+            }
+        )
     }
 }
 

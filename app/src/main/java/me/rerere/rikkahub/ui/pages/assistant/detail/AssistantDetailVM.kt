@@ -435,6 +435,15 @@ class AssistantDetailVM(
             "Est. History: ~$estHistoryMsgs msgs or Memories: ~$estMemories"
         }
     }.stateIn(viewModelScope, SharingStarted.Lazily, "Calculating...")
+
+    // Validation for Export UI
+    val hasMemories = combine(memories, episodes) { m, e ->
+        m.isNotEmpty() || e.isNotEmpty()
+    }.stateIn(viewModelScope, SharingStarted.Lazily, false)
+
+    val hasLorebooks = assistant.map { 
+        it.enabledLorebookIds.isNotEmpty()
+    }.stateIn(viewModelScope, SharingStarted.Lazily, false)
 }
 
 data class EmbeddingProgress(

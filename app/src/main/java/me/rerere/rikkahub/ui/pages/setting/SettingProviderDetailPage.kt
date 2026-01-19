@@ -453,7 +453,11 @@ private fun SettingProviderConfigPage(
                 SettingProviderBalanceOption(
                     provider = internalProvider,
                     balanceOption = internalProvider.balanceOption,
-                    onEdit = { internalProvider = internalProvider.copyProvider(balanceOption = it) }
+                    onEdit = { 
+                        val updated = internalProvider.copyProvider(balanceOption = it)
+                        internalProvider = updated
+                        onEdit(updated)  // Auto-save like other config fields
+                    }
                 )
                 ProviderBalanceText(providerSetting = provider, style = MaterialTheme.typography.labelSmall)
             }
