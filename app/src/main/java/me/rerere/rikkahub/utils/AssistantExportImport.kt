@@ -16,6 +16,7 @@ import me.rerere.rikkahub.data.model.TavernCharacterBookEntry
 import me.rerere.rikkahub.data.model.toTavernCharacterBook
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.db.dao.ChatEpisodeDAO
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -139,6 +140,19 @@ object AssistantExportImport : KoinComponent {
      */
     suspend fun importFromLastChatBundle(jsonContent: String, context: Context): Assistant {
         val export = json.decodeFromString<AssistantExportV1>(jsonContent)
+        return finalizeLastChatImport(export, context, true, true)
+    }
+
+    /**
+     * Finalize the import from a parsed ExportV1 object.
+     * Restores files, memories, and lorebooks based on flags.
+     */
+    suspend fun finalizeLastChatImport(
+        export: AssistantExportV1, 
+        context: Context,
+        importMemories: Boolean,
+        importLorebooks: Boolean
+    ): Assistant {
         var assistant = export.assistant.copy(id = Uuid.random()) // New Import = New ID
 
         // 1. Restore Avatar
@@ -159,68 +173,74 @@ object AssistantExportImport : KoinComponent {
         val newLorebookIds = mutableSetOf<Uuid>()
         val importedLorebooks = mutableListOf<Lorebook>()
         
-        export.lorebooks.forEach { lbExport ->
-            var lorebook = lbExport.lorebook.copy(id = Uuid.random()) // New ID
-            val entryAttachments = lbExport.entryAttachments
-            
-            // Restore attachments for entries
-            val newEntries = lorebook.entries.map { entry ->
-                val attachments = entryAttachments[entry.id.toString()] ?: emptyList()
-                val restoredAttachments = attachments.map { att ->
-                    try {
-                        val fileName = "lb_${lorebook.id}_${System.currentTimeMillis()}_${att.fileName}"
-                        val file = File(context.filesDir, "lorebook_attachments/$fileName")
-                        file.parentFile?.mkdirs()
-                        file.writeBytes(Base64.decode(att.content, Base64.NO_WRAP))
-                        ModeAttachment(
-                            url = Uri.fromFile(file).toString(),
-                            type = att.type,
-                            fileName = att.fileName,
-                            mime = att.mime
-                        )
-                    } catch (e: Exception) {
-                        null
-                    }
-                }.filterNotNull()
-                entry.copy(attachments = restoredAttachments)
+        if (importLorebooks) {
+            export.lorebooks.forEach { lbExport ->
+                var lorebook = lbExport.lorebook.copy(id = Uuid.random()) // New ID
+                val entryAttachments = lbExport.entryAttachments
+                
+                // Restore attachments for entries
+                val newEntries = lorebook.entries.map { entry ->
+                    val attachments = entryAttachments[entry.id.toString()] ?: emptyList()
+                    val restoredAttachments = attachments.map { att ->
+                        try {
+                            val fileName = "lb_${lorebook.id}_${System.currentTimeMillis()}_${att.fileName}"
+                            val file = File(context.filesDir, "lorebook_attachments/$fileName")
+                            file.parentFile?.mkdirs()
+                            file.writeBytes(Base64.decode(att.content, Base64.NO_WRAP))
+                            ModeAttachment(
+                                url = Uri.fromFile(file).toString(),
+                                type = att.type,
+                                fileName = att.fileName,
+                                mime = att.mime
+                            )
+                        } catch (e: Exception) {
+                            null
+                        }
+                    }.filterNotNull()
+                    entry.copy(attachments = restoredAttachments)
+                }
+                lorebook = lorebook.copy(entries = newEntries)
+                
+                importedLorebooks.add(lorebook)
+                newLorebookIds.add(lorebook.id)
             }
-            lorebook = lorebook.copy(entries = newEntries)
             
-            importedLorebooks.add(lorebook)
-            newLorebookIds.add(lorebook.id)
-        }
-        
-        // Update Settings with new lorebooks
-        if (importedLorebooks.isNotEmpty()) {
-             settingsStore.update { current ->
-                 current.copy(lorebooks = current.lorebooks + importedLorebooks)
-             }
-        }
-        
-        if (newLorebookIds.isNotEmpty()) {
-             assistant = assistant.copy(enabledLorebookIds = newLorebookIds)
+            // Update Settings with new lorebooks
+            if (importedLorebooks.isNotEmpty()) {
+                 settingsStore.update { current ->
+                     current.copy(lorebooks = current.lorebooks + importedLorebooks)
+                 }
+            }
+            
+            if (newLorebookIds.isNotEmpty()) {
+                 assistant = assistant.copy(enabledLorebookIds = newLorebookIds)
+            }
+        } else {
+             assistant = assistant.copy(enabledLorebookIds = emptySet())
         }
 
         // 3. Restore Memories
-        export.memories.forEach { memory ->
-            if (memory.type == 0) { // Core
-                 memoryRepository.addMemory(
-                     assistantId = assistant.id.toString(),
-                     content = memory.content
-                 )
-            } else if (memory.type == 1) { // Episodic
-                 val entity = me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity(
-                     id = 0, // Auto-generate
-                     assistantId = assistant.id.toString(),
-                     startTime = memory.timestamp,
-                     endTime = memory.timestamp, // approximate
-                     content = memory.content,
-                     lastAccessedAt = System.currentTimeMillis(),
-                     significance = memory.significance ?: 5,
-                     embedding = null, // Needs regeneration
-                     embeddingModelId = null
-                 )
-                 chatEpisodeDAO.insertEpisode(entity)
+        if (importMemories) {
+            export.memories.forEach { memory ->
+                if (memory.type == 0) { // Core
+                     memoryRepository.addMemory(
+                         assistantId = assistant.id.toString(),
+                         content = memory.content
+                     )
+                } else if (memory.type == 1) { // Episodic
+                     val entity = me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity(
+                         id = 0, // Auto-generate
+                         assistantId = assistant.id.toString(),
+                         startTime = memory.timestamp,
+                         endTime = memory.timestamp, // approximate
+                         content = memory.content,
+                         lastAccessedAt = System.currentTimeMillis(),
+                         significance = memory.significance ?: 5,
+                         embedding = null, // Needs regeneration
+                         embeddingModelId = null
+                     )
+                     chatEpisodeDAO.insertEpisode(entity)
+                }
             }
         }
 
@@ -302,5 +322,223 @@ object AssistantExportImport : KoinComponent {
             "card_v2" -> "${baseName}_card_v2.json"
             else -> "${baseName}_bundle.json" // LastChat format
         }
+    }
+
+    // -- Import Logic with Config --
+
+    @Serializable
+    sealed class ImportResult {
+        data class Success(val assistant: Assistant) : ImportResult()
+        
+        data class Configurable(
+            val assistant: Assistant,
+            val exportV1: AssistantExportV1?, // Null if not LastChat Bundle
+            val hasMemories: Boolean,
+            val hasLorebooks: Boolean,
+            val missingModels: List<String> // List of missing model IDs (names for display)
+        ) : ImportResult()
+        
+        data class Error(val message: String) : ImportResult()
+    }
+
+    /**
+     * Smart Import: Parser for JSON (Bundle/Card) or PNG (Tavern).
+     * Returns a Configurable result if options are available, or Success/Error.
+     */
+    suspend fun parseImport(uri: Uri, context: Context): ImportResult {
+        return try {
+            val contentBytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                ?: return ImportResult.Error("Failed to read file")
+            
+            val mimeType = context.contentResolver.getType(uri) ?: "application/octet-stream"
+            val isPng = mimeType == "image/png" || contentBytes.take(8).toByteArray().contentEquals(PNG_HEADER)
+
+            var jsonContent: String? = null
+            var avatarBytes: ByteArray? = null
+
+            if (isPng) {
+                // Parse PNG chunks for tEXT/zTXt
+                val chunks = extractPngChunks(contentBytes)
+                // Look for 'chara' (Tavern) or 'ccv3' (V3 spec)
+                val characterData = chunks["chara"] ?: chunks["ccv3"]
+                if (characterData != null) {
+                     jsonContent = String(Base64.decode(characterData, Base64.NO_WRAP))
+                     avatarBytes = contentBytes // The whole PNG is the avatar
+                } else {
+                    return ImportResult.Error("No character data found in PNG")
+                }
+            } else {
+                // Assume JSON
+                jsonContent = String(contentBytes)
+            }
+
+            if (jsonContent == null) return ImportResult.Error("Unknown file format")
+
+            // Determine JSON format and deserialize
+            try {
+                if (jsonContent.contains("\"format\": \"lastchat_assistant\"") || jsonContent.contains("\"format\":\"lastchat_assistant\"")) {
+                    val export = json.decodeFromString<AssistantExportV1>(jsonContent)
+                    // LastChat Bundle
+                    return ImportResult.Configurable(
+                        assistant = export.assistant,
+                        exportV1 = export,
+                        hasMemories = export.memories.isNotEmpty(),
+                        hasLorebooks = export.lorebooks.isNotEmpty(),
+                        missingModels = checkMissingModels(export.assistant)
+                    )
+                } else if (jsonContent.contains("\"spec\": \"chara_card_v2\"") || jsonContent.contains("character_book")) {
+                    // Character Card V2
+                    val card = json.decodeFromString<CharacterCardV2>(jsonContent)
+                    val assistant = card.toAssistant().let {
+                        if (avatarBytes != null) {
+                            // Save avatar if imported from PNG
+                            val fileName = "avatar_${it.id}_${System.currentTimeMillis()}.png"
+                            val file = File(context.filesDir, "avatars/$fileName")
+                            file.parentFile?.mkdirs()
+                            file.writeBytes(avatarBytes)
+                            it.copy(avatar = Avatar.Image(url = Uri.fromFile(file).toString()))
+                        } else {
+                            it
+                        }
+                    }
+                    // Even for cards, we might want to check models if they have any mapped (usually not, but good practice)
+                    return ImportResult.Configurable(
+                        assistant = assistant,
+                        exportV1 = null,
+                        hasMemories = false,
+                        hasLorebooks = false, // Lorebooks are embedded in card, handled automatically usually
+                        missingModels = checkMissingModels(assistant)
+                    )
+                } else {
+                    return ImportResult.Error("Unsupported JSON format")
+                }
+            } catch (e: Exception) {
+                return ImportResult.Error("JSON Parse Error: ${e.message}")
+            }
+            
+        } catch (e: Exception) {
+            e.printStackTrace()
+            ImportResult.Error(e.message ?: "Unknown Parsing Error")
+        }
+    }
+    
+    // Revised Parse Logic Helper
+    private fun checkMissingModels(assistant: Assistant): List<String> {
+        val settings = settingsStore.settingsFlow.value
+        val missing = mutableListOf<String>()
+        
+        fun check(id: Uuid?, name: String) {
+            if (id != null) {
+                 val exists = settings.findModelById(id) != null
+                 if (!exists) {
+                     missing.add(name)
+                 }
+            }
+        }
+        
+        check(assistant.chatModelId, "Chat Model")
+        check(assistant.backgroundModelId, "Background Model")
+        check(assistant.embeddingModelId, "Embedding Model")
+        check(assistant.summarizerModelId, "Summarizer Model")
+        
+        return missing
+    }
+    
+    // Function to clear missing models from assistant
+    fun clearMissingModels(assistant: Assistant): Assistant {
+        val settings = settingsStore.settingsFlow.value
+        
+        fun checkAndClear(id: Uuid?): Uuid? {
+             if (id != null) {
+                 val exists = settings.findModelById(id) != null
+                 return if (exists) id else null
+             }
+             return null
+        }
+        
+        return assistant.copy(
+            chatModelId = checkAndClear(assistant.chatModelId),
+            backgroundModelId = checkAndClear(assistant.backgroundModelId),
+            embeddingModelId = checkAndClear(assistant.embeddingModelId),
+            summarizerModelId = checkAndClear(assistant.summarizerModelId)
+        )
+    }
+
+    // Helper for PNG Chunks
+    private val PNG_HEADER = byteArrayOf(0x89.toByte(), 0x50.toByte(), 0x4E.toByte(), 0x47.toByte(), 0x0D.toByte(), 0x0A.toByte(), 0x1A.toByte(), 0x0A.toByte())
+
+    private fun extractPngChunks(bytes: ByteArray): Map<String, String> {
+        val result = mutableMapOf<String, String>()
+        var offset = 8 // Skip header
+        
+        while (offset < bytes.size) {
+            if (offset + 8 > bytes.size) break
+            
+            // Read Length (4 bytes, big endian)
+            val length = ((bytes[offset].toInt() and 0xFF) shl 24) or
+                         ((bytes[offset + 1].toInt() and 0xFF) shl 16) or
+                         ((bytes[offset + 2].toInt() and 0xFF) shl 8) or
+                         (bytes[offset + 3].toInt() and 0xFF)
+            offset += 4
+            
+            // Read Type (4 bytes)
+            val type = String(bytes, offset, 4)
+            offset += 4
+            
+            // Read Data
+            if (offset + length > bytes.size) break
+            val data = bytes.copyOfRange(offset, offset + length)
+            offset += length
+            
+            // Skip CRC (4 bytes)
+            offset += 4
+            
+            if (type == "tEXT") {
+                 // Format: Keyword + Null + Text
+                 val separator = data.indexOf(0.toByte())
+                 if (separator > 0) {
+                     val keyword = String(data, 0, separator)
+                     val text = String(data, separator + 1, data.size - separator - 1)
+                     result[keyword] = text
+                 }
+            }
+        }
+        return result
+    }
+
+    private fun CharacterCardV2.toAssistant(): Assistant {
+        val data = this.data
+        val systemPromptBuilder = StringBuilder()
+        
+        if (data.description.isNotBlank()) {
+            systemPromptBuilder.append("Description:\n${data.description}\n\n")
+        }
+        if (data.personality.isNotBlank()) {
+            systemPromptBuilder.append("Personality:\n${data.personality}\n\n")
+        }
+        if (data.scenario.isNotBlank()) {
+            systemPromptBuilder.append("Scenario:\n${data.scenario}\n\n")
+        }
+        if (data.systemPrompt.isNotBlank()) {
+             systemPromptBuilder.append("System:\n${data.systemPrompt}\n\n")
+        }
+        if (data.mesExample.isNotBlank()) {
+            systemPromptBuilder.append("Examples:\n${data.mesExample}\n\n")
+        }
+        
+        val presetMessages = if (data.firstMes.isNotBlank()) {
+            listOf(me.rerere.ai.ui.UIMessage(
+                role = me.rerere.ai.core.MessageRole.ASSISTANT,
+                parts = listOf(me.rerere.ai.ui.UIMessagePart.Text(text = data.firstMes))
+            ))
+        } else {
+            emptyList()
+        }
+        
+        return Assistant(
+            name = data.name.ifBlank { "Imported Character" },
+            systemPrompt = systemPromptBuilder.toString().trim(),
+            presetMessages = presetMessages
+        )
     }
 }

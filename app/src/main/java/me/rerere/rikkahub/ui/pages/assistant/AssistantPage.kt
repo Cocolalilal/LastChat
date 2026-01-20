@@ -107,6 +107,9 @@ import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.heroAnimation
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.utils.AssistantExportImport
+import kotlinx.coroutines.launch
+import androidx.compose.material.icons.rounded.Upload
 
 
 @Composable
@@ -118,6 +121,30 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
     val navController = LocalNavController.current
     val toaster = me.rerere.rikkahub.ui.context.LocalToaster.current
     val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+
+    // Import state
+    var pendingImportResult by remember { mutableStateOf<AssistantExportImport.ImportResult.Configurable?>(null) }
+    
+    val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+             scope.launch {
+                 val res = AssistantExportImport.parseImport(uri, context)
+                 when (res) {
+                     is AssistantExportImport.ImportResult.Error -> toaster.show(res.message)
+                     is AssistantExportImport.ImportResult.Success -> {
+                         vm.addAssistant(res.assistant)
+                         toaster.show("Character Imported")
+                     }
+                     is AssistantExportImport.ImportResult.Configurable -> {
+                         pendingImportResult = res
+                     }
+                 }
+             }
+        }
+    }
 
     // Search query state
     var searchQuery by remember { mutableStateOf("") }
@@ -362,12 +389,44 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
         }
     }
 
-    AssistantCreationSheet(state = createState)
+    if (pendingImportResult != null) {
+        val res = pendingImportResult!!
+        ImportConfigDialog(
+            onDismissRequest = { pendingImportResult = null },
+            hasMemories = res.hasMemories,
+            hasLorebooks = res.hasLorebooks,
+            missingModels = res.missingModels,
+            onConfirm = { m, l ->
+                 scope.launch {
+                     val assistant = if (res.exportV1 != null) {
+                         AssistantExportImport.finalizeLastChatImport(res.exportV1, context, m, l)
+                     } else {
+                         res.assistant
+                     }
+                     // Clear missing models
+                     val finalAssistant = AssistantExportImport.clearMissingModels(assistant)
+                     
+                     vm.addAssistant(finalAssistant)
+                     toaster.show("Character Imported")
+                     pendingImportResult = null
+                 }
+            }
+        )
+    }
+
+    AssistantCreationSheet(
+        state = createState,
+        onImportClick = {
+            createState.dismiss()
+            importLauncher.launch(arrayOf("*/*"))
+        }
+    )
 }
 
 @Composable
 fun AssistantCreationSheet(
     state: EditState<Assistant>,
+    onImportClick: () -> Unit,
 ) {
     state.EditStateContent { assistant, update ->
         ModalBottomSheet(
@@ -405,13 +464,12 @@ fun AssistantCreationSheet(
                         )
                     }
 
-                    AssistantImporter(
-                        onUpdate = {
-                            update(it)
-                            state.confirm()
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    TextButton(
+                        onClick = onImportClick,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.assistant_importer_import_tavern_json))
+                    }
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),

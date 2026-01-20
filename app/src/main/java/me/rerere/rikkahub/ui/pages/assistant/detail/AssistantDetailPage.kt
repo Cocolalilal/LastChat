@@ -38,6 +38,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -64,12 +68,10 @@ import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 import me.rerere.rikkahub.data.model.Tag as DataTag
-import me.rerere.rikkahub.ui.pages.chat.ExportDialog
 import me.rerere.rikkahub.ui.pages.chat.ExportOptionsDialog
 import me.rerere.rikkahub.utils.AssistantExportImport
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.components.ui.ToastAction
-import me.rerere.rikkahub.utils.shareTextFile
 
 
 // Sub-routes within assistant detail
@@ -110,12 +112,40 @@ fun AssistantDetailPage(
     val tags by vm.tags.collectAsStateWithLifecycle()
     val snackbarMessage by vm.snackbarMessage.collectAsStateWithLifecycle()
 
+    val hasMemories by vm.hasMemories.collectAsStateWithLifecycle()
+    val hasLorebooks by vm.hasLorebooks.collectAsStateWithLifecycle()
+
     val context = LocalContext.current
 
     val scope = rememberCoroutineScope()
-    var showExportDialog by remember { androidx.compose.runtime.mutableStateOf(false) }
+
+    // Export state
+    var showExportMenu by remember { androidx.compose.runtime.mutableStateOf(false) }
+    var showExportOptionsDialog by remember { androidx.compose.runtime.mutableStateOf(false) }
+    var pendingExportContent by remember { androidx.compose.runtime.mutableStateOf("") }
+    
+    // Export file launcher
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null && pendingExportContent.isNotEmpty()) {
+            scope.launch {
+                try {
+                    context.contentResolver.openOutputStream(uri)?.use { 
+                        it.write(pendingExportContent.toByteArray())
+                    }
+                    toaster.show(context.getString(R.string.export_success))
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    toaster.show("Export failed: ${e.message}")
+                }
+                pendingExportContent = ""
+            }
+        }
+    }
 
     val snackbarHostState = remember { SnackbarHostState() }
+
     LaunchedEffect(snackbarMessage) {
         snackbarMessage?.let {
             snackbarHostState.showSnackbar(it)
@@ -164,11 +194,62 @@ fun AssistantDetailPage(
                         enter = fadeIn(),
                         exit = fadeOut()
                     ) {
-                        IconButton(onClick = { showExportDialog = true }) {
-                            Icon(
-                                imageVector = Icons.Rounded.Upload,
-                                contentDescription = "Export"
-                            )
+                        Box {
+                            IconButton(onClick = { showExportMenu = true }) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Upload,
+                                    contentDescription = "Export"
+                                )
+                            }
+                            
+                            DropdownMenu(
+                                expanded = showExportMenu,
+                                onDismissRequest = { showExportMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("LastChat Bundle (.json)") },
+                                    onClick = {
+                                        showExportMenu = false
+                                        if (hasMemories || hasLorebooks) {
+                                            showExportOptionsDialog = true
+                                        } else {
+                                            scope.launch {
+                                                try {
+                                                    val content = AssistantExportImport.exportToLastChatBundle(
+                                                        assistant = assistant,
+                                                        context = context,
+                                                        includeMemories = false,
+                                                        includeLorebooks = false
+                                                    )
+                                                    pendingExportContent = content
+                                                    val fileName = AssistantExportImport.getSuggestedFileName(assistant, "lastchat")
+                                                    exportLauncher.launch(fileName)
+                                                } catch (e: Exception) {
+                                                    e.printStackTrace()
+                                                    toaster.show("Export failed: ${e.message}")
+                                                }
+                                            }
+                                        }
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Character Card V2 (.json)") },
+                                    onClick = {
+                                        showExportMenu = false
+                                        scope.launch {
+                                            try {
+                                                val content = AssistantExportImport.exportToCharacterCardV2(assistant, context)
+                                                pendingExportContent = content
+                                                val fileName = AssistantExportImport.getSuggestedFileName(assistant, "card_v2")
+                                                exportLauncher.launch(fileName)
+                                            } catch (e: Exception) {
+                                                e.printStackTrace()
+                                                toaster.show("Export failed: ${e.message}")
+                                            }
+                                        }
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -319,51 +400,8 @@ fun AssistantDetailPage(
         }
     }
 
-    val hasMemories by vm.hasMemories.collectAsStateWithLifecycle()
-    val hasLorebooks by vm.hasLorebooks.collectAsStateWithLifecycle()
+
     
-    var showExportOptionsDialog by remember { androidx.compose.runtime.mutableStateOf(false) }
-    var selectedExportFormat by remember { androidx.compose.runtime.mutableStateOf("") }
-
-    if (showExportDialog) {
-        ExportDialog(
-            title = "Export Assistant",
-            onDismissRequest = { showExportDialog = false },
-            formats = listOf(
-                "lastchat" to "LastChat Bundle (.json)",
-                "card_v2" to "Character Card V2 (.json)"
-            ),
-            onExport = { format ->
-                selectedExportFormat = format
-                showExportDialog = false
-                
-                if (format == "lastchat" && (hasMemories || hasLorebooks)) {
-                     showExportOptionsDialog = true
-                } else {
-                     // Direct export
-                     scope.launch {
-                        try {
-                            val content = when(format) {
-                                "card_v2" -> AssistantExportImport.exportToCharacterCardV2(assistant, context)
-                                else -> AssistantExportImport.exportToLastChatBundle(
-                                    assistant = assistant, 
-                                    context = context,
-                                    includeMemories = false, // Or default true? Logic above implies skipping dialog only if NEITHER exist, which implies false is safe.
-                                    includeLorebooks = false
-                                )
-                            }
-                            val fileName = AssistantExportImport.getSuggestedFileName(assistant, format)
-                            shareTextFile(context, fileName, content)
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                            toaster.show(message = "Export failed: ${e.message}")
-                        }
-                    }
-                }
-            }
-        )
-    }
-
     if (showExportOptionsDialog) {
         me.rerere.rikkahub.ui.pages.chat.ExportOptionsDialog(
             title = "Export Options",
@@ -380,8 +418,9 @@ fun AssistantDetailPage(
                             includeMemories = includeMemories, 
                             includeLorebooks = includeLorebooks
                         )
+                        pendingExportContent = content
                         val fileName = AssistantExportImport.getSuggestedFileName(assistant, "lastchat")
-                        shareTextFile(context, fileName, content)
+                        exportLauncher.launch(fileName)
                     } catch (e: Exception) {
                         e.printStackTrace()
                             toaster.show(message = "Export failed: ${e.message}")

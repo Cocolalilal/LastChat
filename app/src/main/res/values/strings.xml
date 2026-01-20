@@ -30,9 +30,9 @@
     <string name="assistant_page_change_background">Change Background</string>
     <string name="assistant_page_chaotic">Chaotic (Dangerous)</string>
     <string name="assistant_page_chat_background">Chat Background</string>
-    <string name="assistant_page_chat_background_desc">Set background image for assistant chat page</string>
+    <string name="assistant_page_chat_background_desc">Set background image for character chat page</string>
     <string name="assistant_page_chat_model">Chat Model</string>
-    <string name="assistant_page_chat_model_desc">Set default chat model for assistant. If not set, global default will be used.</string>
+    <string name="assistant_page_chat_model_desc">Set default chat model for character. If not set, global default will be used.</string>
     <string name="assistant_page_clone">Clone</string>
     <string name="assistant_page_confirm">Confirm</string>
     <string name="assistant_page_context_message_count">Context Messages: %d</string>
@@ -41,11 +41,11 @@
     <string name="assistant_page_creative">Creative</string>
     <string name="assistant_page_custom_bodies">Custom Body</string>
     <string name="assistant_page_custom_headers">Custom Headers</string>
-    <string name="assistant_page_default_assistant">Default Assistant</string>
-    <string name="assistant_deleted">Assistant %s deleted</string>
+    <string name="assistant_page_default_assistant">Default Character</string>
+    <string name="assistant_deleted">Character %s deleted</string>
     <string name="assistant_page_delete">Delete</string>
     <string name="assistant_page_delete_body">Delete Body</string>
-    <string name="assistant_page_delete_dialog_text">Are you sure you want to delete this assistant? This cannot be undone.</string>
+    <string name="assistant_page_delete_dialog_text">Are you sure you want to delete this character? This cannot be undone.</string>
     <string name="assistant_page_delete_header">Delete Header</string>
     <string name="assistant_page_enter_image_url">Enter Image URL</string>
     <string name="assistant_page_header_name">Header Name</string>
@@ -66,7 +66,7 @@
     <string name="assistant_page_memory_desc">When enabled, the model will try to remember information from your conversation for future use. Requires tool support.</string>
     <string name="assistant_page_message_template">Message Template</string>
     <string name="assistant_page_message_template_desc">Controls message format sent to LLM. Usually doesn\'t need modification.</string>
-    <string name="assistant_page_name">Assistant Name</string>
+    <string name="assistant_page_name">Character Name</string>
     <string name="assistant_page_no_system_prompt">No System Prompt</string>
     <string name="assistant_page_preset_messages">Preset Messages</string>
     <string name="assistant_page_preset_messages_desc">Set initial conversation messages</string>
@@ -75,7 +75,7 @@
     <string name="assistant_page_quick_messages">Quick Messages</string>
     <string name="assistant_page_quick_messages_desc">Configure quick message shortcuts</string>
     <string name="assistant_page_recent_chats">Reference Recent Chats</string>
-    <string name="assistant_page_recent_chats_desc">When enabled, assistant will reference recent chat history for better context</string>
+    <string name="assistant_page_recent_chats_desc">When enabled, character will reference recent chat history for better context</string>
     <string name="assistant_page_regex_affecting_scopes">Affected Scopes:</string>
     <string name="assistant_page_regex_desc">Define regex patterns to transform messages before sending/receiving</string>
     <string name="assistant_page_regex_find_regex">Find Regex</string>
@@ -109,13 +109,13 @@
     <string name="assistant_page_template_variables_label">Variables:</string>
     <string name="assistant_page_thinking_budget">Thinking Budget</string>
     <string name="assistant_page_thinking_budget_default">Default</string>
-    <string name="assistant_page_title">Assistants</string>
-    <string name="assistant_page_search_placeholder">Search assistants...</string>
+    <string name="assistant_page_title">Characters</string>
+    <string name="assistant_page_search_placeholder">Search characters...</string>
     <string name="assistant_page_top_p">Top P</string>
     <string name="assistant_page_top_p_value">Top P: %s</string>
     <string name="assistant_page_top_p_warning">Don\'t modify this unless you know what you are doing</string>
-    <string name="assistant_page_use_assistant_avatar">Use Assistant Avatar</string>
-    <string name="assistant_page_use_assistant_avatar_desc">Use assistant avatar and name in chat instead of model\'s</string>
+    <string name="assistant_page_use_assistant_avatar">Use Character Avatar</string>
+    <string name="assistant_page_use_assistant_avatar_desc">Use character avatar and name in chat instead of model\'s</string>
     <string name="assistant_picker_expand">Expand</string>
     <string name="assistant_picker_selected">Selected</string>
     <string name="audio">Audio</string>
@@ -314,7 +314,7 @@
     <string name="pin_chat">Pin Chat</string>
     <string name="pinned_chats">Pinned Chats</string>
     <string name="placeholder_battery_level">Battery Level</string>
-    <string name="placeholder_char">Assistant Name</string>
+    <string name="placeholder_char">Character Name</string>
     <string name="placeholder_current_date">Date</string>
     <string name="placeholder_current_datetime">Date &amp; Time</string>
     <string name="placeholder_current_time">Time</string>
@@ -428,8 +428,8 @@
     <string name="setting_model_page_translate_prompt_vars">Vars: Source: {source_text}, Target Lang: {target_lang}</string>
     <string name="setting_page_about">About</string>
     <string name="setting_page_about_desc">About this App</string>
-    <string name="setting_page_assistant">Assistants</string>
-    <string name="setting_page_assistant_desc">Configure your assistants</string>
+    <string name="setting_page_assistant">Characters</string>
+    <string name="setting_page_assistant_desc">Configure your characters</string>
     <string name="setting_page_basic_settings">Basic Settings</string>
     <string name="setting_page_built_in_tools">Built-in Tools</string>
     <string name="setting_page_built_in_tools_desc">Select built-in tools supported by model. Currently only for Gemini official API.</string>
@@ -633,9 +633,9 @@
     <string name="share_handler_page_title">Share to LastChat</string>
     <string name="shortcut_take_picture">Take Picture</string>
     <string name="shortcut_chat_with">Chat with %s</string>
-    <string name="widget_assistant_name">Assistant Shortcut</string>
-    <string name="widget_assistant_description">Quick access to chat with an assistant</string>
-    <string name="widget_config_title">Select Assistant</string>
+    <string name="widget_assistant_name">Character Shortcut</string>
+    <string name="widget_assistant_description">Quick access to chat with a character</string>
+    <string name="widget_config_title">Select Character</string>
     <string name="silicon_flow_built_in_models">* SiliconFlow free models built-in. No API Key needed. For more powerful models, please use your own API Key.</string>
     <string name="silicon_flow_description">**Leading AI Provider, Accelerating AGI.**</string>
     <string name="silicon_flow_website">Website: [https://cloud.siliconflow.cn/](https://cloud.siliconflow.cn/i/u1Ia4Ycf)</string>
@@ -684,7 +684,7 @@
     <string name="select_all">Select All</string>
     <string name="deselect_all">Deselect All</string>
     <string name="temporary_chat_title">Temporary Chat</string>
-    <string name="temporary_chat_description">Your assistant won\'t remember this chat and you won\'t be able to access it once you close it.</string>
+    <string name="temporary_chat_description">Your character won\'t remember this chat and you won\'t be able to access it once you close it.</string>
     <string name="delete_memory_confirmation">Are you sure you want to delete this memory? This cannot be undone.</string>
     <string name="done">Done</string>
     <string name="loading">Loading...</string>
@@ -788,12 +788,13 @@
     <string name="lorebooks_picker_title">Lorebooks</string>
     <string name="lorebooks_picker_none">No lorebooks</string>
     <string name="lorebooks_section_available">Available Lorebooks</string>
-    <string name="lorebook_toggle_assistants">Toggle Assistants</string>
+    <string name="export_success">Export successful</string>
+    <string name="lorebook_toggle_assistants">Toggle Characters</string>
     <string name="lorebook_select_to_toggle">Select a lorebook to toggle</string>
     
-    <!-- Assistant Lorebooks Selection -->
+    <!-- Character Lorebooks Selection -->
     <string name="assistant_lorebooks_title">Lorebooks</string>
-    <string name="assistant_lorebooks_desc">Select which lorebooks to use with this assistant</string>
+    <string name="assistant_lorebooks_desc">Select which lorebooks to use with this character</string>
     <string name="assistant_lorebooks_empty">No lorebooks configured</string>
     <string name="assistant_lorebooks_empty_hint">Create lorebooks in Settings → Prompt Injections → Lorebooks</string>
     <string name="assistant_lorebooks_enabled">%d enabled</string>
