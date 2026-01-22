@@ -790,8 +790,8 @@ private fun MinimalPickerContent(
             }
         )
         
-        // Summarize button - only show when context refresh is enabled
-        if (assistant.enableContextRefresh) {
+        // Summarize button - only show when context refresh is enabled and more than 2 messages
+        if (assistant.enableContextRefresh && conversation.currentMessages.size > 2) {
             MinimalPickerItem(
                 icon = {
                     Icon(

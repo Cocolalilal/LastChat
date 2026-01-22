@@ -1165,7 +1165,7 @@ internal fun FilesPicker(
     
     val isDarkMode = LocalDarkMode.current
     val isKeyboardVisible = WindowInsets.isImeVisible
-    val showContextRefresh = assistant.enableContextRefresh && !isKeyboardVisible
+    val showContextRefresh = assistant.enableContextRefresh && !isKeyboardVisible && conversation.currentMessages.size > 2
     
     // Shapes for 3-button row - different based on keyboard visibility
     val topLeftShape = if (isKeyboardVisible) {
