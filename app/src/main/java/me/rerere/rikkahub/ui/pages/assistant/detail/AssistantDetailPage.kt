@@ -376,7 +376,8 @@ fun AssistantDetailPage(
                 AssistantContextManagementSubPage(
                     assistant = assistant,
                     onUpdate = { onUpdate(it) },
-                    onNavigateToLorebooks = { navController.navigate(AssistantDetailRoutes.LOREBOOKS) }
+                    onNavigateToLorebooks = { navController.navigate(AssistantDetailRoutes.LOREBOOKS) },
+                    onNavigateToModels = { navController.navigate(AssistantDetailRoutes.MODEL) }
                 )
             }
 
@@ -420,7 +421,8 @@ fun AssistantDetailPage(
                     estimatedMemoryCapacity = estimatedMemoryCapacity,
                     needsEmbeddingRegeneration = needsEmbeddingRegeneration,
                     initialMemoryTab = initialMemoryTab,
-                    scrollToMemoryId = scrollToMemoryId
+                    scrollToMemoryId = scrollToMemoryId,
+                    onNavigateToModels = { navController.navigate(AssistantDetailRoutes.MODEL) }
                 )
             }
 
@@ -562,8 +564,8 @@ private fun AssistantDetailHome(
 
             NavigationCard(
                 icon = Icons.Rounded.Psychology,
-                title = "Model",
-                description = "Chat model, parameters, reasoning",
+                title = "Models",
+                description = "Chat model, summarizer, generation settings",
                 onClick = onNavigateToModel
             )
         }

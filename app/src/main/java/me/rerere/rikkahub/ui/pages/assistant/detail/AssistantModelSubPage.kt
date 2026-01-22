@@ -145,7 +145,7 @@ fun AssistantModelSubPage(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "For memory consolidation and context refresh",
+                        text = "For memory summarization and context refresh",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

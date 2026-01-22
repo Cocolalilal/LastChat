@@ -42,6 +42,7 @@ import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Sort
+import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -136,7 +137,8 @@ fun AssistantMemorySettings(
     estimatedMemoryCapacity: Int,
     needsEmbeddingRegeneration: Boolean = false,
     initialMemoryTab: Int? = null,  // 0 = Core, 1 = Episodic
-    scrollToMemoryId: Int? = null
+    scrollToMemoryId: Int? = null,
+    onNavigateToModels: () -> Unit = {}
 ) {
     val memoryDialogState = useEditState<AssistantMemory> {
         if (it.id == 0) {
@@ -353,12 +355,13 @@ fun AssistantMemorySettings(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 SettingsGroupHeader(title = "Advanced Memory Settings")
+                
                 ConsolidationSettingsCard(
                     assistant = assistant,
                     onUpdateAssistant = onUpdateAssistant,
-                    modelOptions = modelOptions,
-                    selectedModel = selectedModel,
-                    onConsolidate = { assistantDetailVM.consolidateMemories(true) }
+                    onConsolidate = { assistantDetailVM.consolidateMemories(true) },
+                    showSummarizerWarning = assistant.summarizerModelId == null,
+                    onNavigateToModels = onNavigateToModels
                 )
             }
         }
@@ -637,44 +640,87 @@ private fun RagSettingsCard(
 }
 
 @Composable
+private fun SummarizerWarningBanner(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        onClick = onClick,
+        color = MaterialTheme.colorScheme.errorContainer,
+        shape = RoundedCornerShape(10.dp),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.size(20.dp)
+            )
+            Text(
+                text = "Select a summarizer model in the Models tab",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+        }
+    }
+}
+
+@Composable
 private fun ConsolidationSettingsCard(
     assistant: Assistant,
     onUpdateAssistant: (Assistant) -> Unit,
-    modelOptions: List<Model>,
-    selectedModel: Model,
-    onConsolidate: () -> Unit
+    onConsolidate: () -> Unit,
+    showSummarizerWarning: Boolean = false,
+    onNavigateToModels: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier.clip(RoundedCornerShape(24.dp)),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        // Summarizer Model
-        Surface(
-            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
+        // Warning banner as first item when no summarizer model is set
+        AnimatedVisibility(
+            visible = showSummarizerWarning,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()
         ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Summarizer Model", style = MaterialTheme.typography.titleMedium)
-                Select(
-                    options = modelOptions,
-                    selectedOption = selectedModel,
-                    onOptionSelected = { model ->
-                        if (model.id.toString() == "default") {
-                            onUpdateAssistant(assistant.copy(summarizerModelId = null))
-                        } else {
-                            onUpdateAssistant(assistant.copy(summarizerModelId = model.id))
-                        }
-                    },
-                    optionToString = { it.displayName },
-                    modifier = Modifier.fillMaxWidth()
-                )
+            Surface(
+                onClick = onNavigateToModels,
+                color = MaterialTheme.colorScheme.errorContainer,
+                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = "Select a summarizer model in the Models tab",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
             }
         }
-
-        // Consolidation Delay
+        
+        // Consolidation Delay - corners depend on whether warning banner is shown
         Surface(
             color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-            shape = RoundedCornerShape(10.dp)
+            shape = if (showSummarizerWarning) {
+                RoundedCornerShape(10.dp)
+            } else {
+                RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
+            }
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(
