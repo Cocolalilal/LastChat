@@ -314,7 +314,7 @@ private fun AppSearchSettings(
             )
             // Providers at positions 1-2
             settings.searchServices.forEachIndexed { index, service ->
-                val isSelected = selectedProviderIndex == index
+                val isSelected = enableSearch && selectedProviderIndex == index
                 SearchProviderItem(
                     service = service,
                     isSelected = isSelected,
@@ -341,7 +341,7 @@ private fun AppSearchSettings(
             )
             // All providers
             settings.searchServices.forEachIndexed { index, service ->
-                val isSelected = selectedProviderIndex == index
+                val isSelected = enableSearch && selectedProviderIndex == index
                 SearchProviderItem(
                     service = service,
                     isSelected = isSelected,

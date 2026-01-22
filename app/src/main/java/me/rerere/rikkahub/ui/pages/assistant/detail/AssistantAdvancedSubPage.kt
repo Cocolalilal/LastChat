@@ -63,7 +63,7 @@ fun AssistantAdvancedSubPage(
             // Enable toggle
             SettingGroupItem(
                 title = "Enable Spontaneous Messages",
-                subtitle = "Assistant can message you without prompting",
+                subtitle = "Character can message you without prompting",
                 trailing = {
                     HapticSwitch(
                         checked = assistant.enableSpontaneous,

@@ -86,7 +86,7 @@ fun AssistantMemoryConsolidationSubPage(
                                 fontWeight = FontWeight.Medium
                             )
                             Text(
-                                text = "Allow assistant to form long-term memories",
+                                text = "Allow character to form long-term memories",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

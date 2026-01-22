@@ -215,6 +215,7 @@ fun AutoProviderIcon(
     val lobeHubUrls = getLobeHubIconUrls(providerSlug, darkMode)
     RemoteIcon(
         url = lobeHubUrls.coloredUrl,
+        iconKey = me.rerere.rikkahub.utils.IconStorageManager.generateIconKey(providerSlug, null, darkMode),
         fallbackUrl = lobeHubUrls.monochromeUrl,
         name = name,
         modifier = modifier,
@@ -257,6 +258,7 @@ private fun ProviderFaviconFallback(
     if (faviconUrl != null) {
         RemoteIcon(
             url = faviconUrl,
+            iconKey = "favicon_${baseUrl?.hashCode()}",
             name = name,
             modifier = modifier,
             loading = loading,
@@ -381,6 +383,7 @@ fun AutoAIIconWithUrl(
     if (!iconUrl.isNullOrBlank()) {
         RemoteIcon(
             url = iconUrl,
+            iconKey = me.rerere.rikkahub.utils.IconStorageManager.generateIconKey(providerSlug, name, darkMode),
             name = name,
             modifier = modifier,
             loading = loading,
@@ -396,6 +399,7 @@ fun AutoAIIconWithUrl(
         val lobeHubUrls = getLobeHubIconUrls(providerSlug, darkMode)
         RemoteIcon(
             url = lobeHubUrls.coloredUrl,
+            iconKey = me.rerere.rikkahub.utils.IconStorageManager.generateIconKey(providerSlug, name, darkMode),
             fallbackUrl = lobeHubUrls.monochromeUrl,
             name = name,
             modifier = modifier,
@@ -532,31 +536,78 @@ private fun getLobeHubIconUrls(providerSlug: String, darkMode: Boolean): IconUrl
 }
 
 /**
- * Composable that loads a remote icon with optional fallback URL and final fallback composable.
- * Fallback chain: url -> fallbackUrl -> fallback composable
+ * Composable that loads a remote icon with persistent local storage.
+ * 
+ * Flow:
+ * 1. Check if icon exists in local storage (instant load)
+ * 2. If not, show loading placeholder while downloading
+ * 3. Download and save to local storage
+ * 4. Display from local storage
+ * 
+ * Fallback chain: localIcon -> url -> fallbackUrl -> fallback composable
  */
 @Composable
 private fun RemoteIcon(
     url: String,
     name: String,
     modifier: Modifier = Modifier,
+    iconKey: String? = null,
     fallbackUrl: String? = null,
     loading: Boolean = false,
     color: Color = MaterialTheme.colorScheme.secondaryContainer,
     padding: Dp = 4.dp,
     fallback: @Composable (() -> Unit)? = null
 ) {
-    var primaryFailed by remember(url) { mutableStateOf(false) }
+    val context = LocalContext.current
+    val okHttpClient = remember { org.koin.java.KoinJavaComponent.get<okhttp3.OkHttpClient>(okhttp3.OkHttpClient::class.java) }
+    val iconManager = remember(context) { 
+        me.rerere.rikkahub.utils.IconStorageManager.getInstance(context, okHttpClient)
+    }
+    val darkMode = LocalDarkMode.current
+    
+    // Generate icon key if not provided
+    val effectiveKey = iconKey ?: remember(url, darkMode) {
+        // Use URL hash as key if no specific key provided
+        "url_${url.hashCode()}_${if (darkMode) "dark" else "light"}"
+    }
+    
+    // Check local storage first
+    var localUri by remember(effectiveKey) { 
+        mutableStateOf(iconManager.getLocalIconUri(effectiveKey)) 
+    }
+    var isDownloading by remember(effectiveKey) { mutableStateOf(false) }
+    var downloadFailed by remember(effectiveKey) { mutableStateOf(false) }
     var fallbackFailed by remember(url, fallbackUrl) { mutableStateOf(false) }
     
-    // If both primary and fallback URLs failed, use the fallback composable
-    if (primaryFailed && (fallbackUrl == null || fallbackFailed) && fallback != null) {
-        fallback()
+    // If we have a local icon, use it directly (instant!)
+    if (localUri != null) {
+        Surface(
+            modifier = modifier.size(24.dp),
+            shape = rememberAvatarShape(loading),
+            color = Color.Transparent,
+        ) {
+            AsyncImage(
+                model = localUri,
+                contentDescription = name,
+                modifier = Modifier.padding(padding)
+            )
+        }
         return
     }
     
-    // If primary failed but we have a fallback URL, try it
-    if (primaryFailed && fallbackUrl != null && !fallbackFailed) {
+    // If download failed and we have a fallback URL, try it
+    if (downloadFailed && fallbackUrl != null && !fallbackFailed) {
+        // Try fallback URL and also try to save it
+        androidx.compose.runtime.LaunchedEffect(fallbackUrl) {
+            val savedUri = iconManager.downloadAndSaveIcon(effectiveKey, fallbackUrl)
+            if (savedUri != null) {
+                localUri = savedUri
+            } else {
+                fallbackFailed = true
+            }
+        }
+        
+        // Show fallback URL while downloading
         Surface(
             modifier = modifier.size(24.dp),
             shape = rememberAvatarShape(loading),
@@ -572,7 +623,27 @@ private fun RemoteIcon(
         return
     }
     
-    // Try primary URL first
+    // If both primary and fallback failed, use the fallback composable
+    if (downloadFailed && (fallbackUrl == null || fallbackFailed) && fallback != null) {
+        fallback()
+        return
+    }
+    
+    // Start download if not already downloading
+    if (!isDownloading && !downloadFailed) {
+        androidx.compose.runtime.LaunchedEffect(url) {
+            isDownloading = true
+            val savedUri = iconManager.downloadAndSaveIcon(effectiveKey, url)
+            if (savedUri != null) {
+                localUri = savedUri
+            } else {
+                downloadFailed = true
+            }
+            isDownloading = false
+        }
+    }
+    
+    // Show loading state while downloading (use remote URL with Coil cache as temporary display)
     Surface(
         modifier = modifier.size(24.dp),
         shape = rememberAvatarShape(loading),
@@ -582,7 +653,7 @@ private fun RemoteIcon(
             model = url,
             contentDescription = name,
             modifier = Modifier.padding(padding),
-            onError = { primaryFailed = true }
+            onError = { downloadFailed = true }
         )
     }
 }

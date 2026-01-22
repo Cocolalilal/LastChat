@@ -67,7 +67,7 @@ fun ExportOptionsDialog(
                 }
                 
                 Text(
-                    "Assistant settings and profile are always included.",
+                    "Character settings and profile are always included.",
                     style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 8.dp, start = 4.dp)
                 )

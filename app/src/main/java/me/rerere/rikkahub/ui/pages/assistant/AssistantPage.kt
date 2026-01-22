@@ -69,10 +69,12 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DragIndicator
+import androidx.compose.material.icons.rounded.FileOpen
 import androidx.compose.material.icons.rounded.PowerOff
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.OutlinedButton
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.DEFAULT_ASSISTANTS_IDS
@@ -464,11 +466,16 @@ fun AssistantCreationSheet(
                         )
                     }
 
-                    TextButton(
+                    OutlinedButton(
                         onClick = onImportClick,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(stringResource(R.string.assistant_importer_import_tavern_json))
+                        Icon(
+                            imageVector = Icons.Rounded.FileOpen,
+                            contentDescription = null,
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                        Text(stringResource(R.string.assistant_importer_import_character))
                     }
                 }
                 Row(

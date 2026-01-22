@@ -89,7 +89,7 @@ fun ToolCallItem(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier
-                .padding(vertical = 4.dp, horizontal = 12.dp)
+                .padding(vertical = 8.dp, horizontal = 12.dp)
                 .height(IntrinsicSize.Min)
         ) {
             if (loading) {
@@ -135,10 +135,10 @@ fun ToolCallItem(
                     modifier = Modifier.shimmer(isLoading = loading),
                 )
                 if (toolName == "create_memory" || toolName == "edit_memory") {
-                    val content = (content as? JsonObject)?.get("content")?.jsonPrimitiveOrNull?.contentOrNull
-                    if (content != null) {
+                    val memoryContent = (content as? JsonObject)?.get("content")?.jsonPrimitiveOrNull?.contentOrNull
+                    if (memoryContent != null) {
                         Text(
-                            text = content,
+                            text = memoryContent,
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.shimmer(isLoading = loading),
@@ -228,7 +228,7 @@ private fun ToolCallPreviewSheet(
                     .fillMaxHeight(0.8f)
                     .padding(16.dp)
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 when (toolName) {
                     "search_web" -> {
@@ -400,32 +400,58 @@ private fun ToolCallPreviewSheet(
                                 }
                             }
                         }
-                        FormItem(
-                            label = {
-                                Text(
-                                    stringResource(
-                                        R.string.chat_message_tool_call_label,
-                                        toolName
-                                    )
+                        
+                        // Arguments section
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = stringResource(
+                                    R.string.chat_message_tool_call_label,
+                                    toolName
+                                ),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                HighlightText(
+                                    code = JsonInstantPretty.encodeToString(arguments),
+                                    language = "json",
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(12.dp)
                                 )
                             }
-                        ) {
-                            HighlightCodeBlock(
-                                code = JsonInstantPretty.encodeToString(arguments),
-                                language = "json",
-                                style = TextStyle(fontSize = 10.sp, lineHeight = 12.sp)
-                            )
                         }
-                        FormItem(
-                            label = {
-                                Text(stringResource(R.string.chat_message_tool_call_result))
-                            }
+                        
+                        // Result section
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            HighlightCodeBlock(
-                                code = JsonInstantPretty.encodeToString(content),
-                                language = "json",
-                                style = TextStyle(fontSize = 10.sp, lineHeight = 12.sp)
+                            Text(
+                                text = stringResource(R.string.chat_message_tool_call_result),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary
                             )
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                HighlightText(
+                                    code = JsonInstantPretty.encodeToString(content),
+                                    language = "json",
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(12.dp)
+                                )
+                            }
                         }
                     }
                 }

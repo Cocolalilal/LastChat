@@ -170,8 +170,8 @@ fun SettingUICustomizationPage(vm: SettingVM = koinViewModel()) {
                         }
                     )
                     SettingGroupItem(
-                        title = "Show Assistant Avatar",
-                        subtitle = "Show the assistant's avatar before messages",
+                        title = "Show Character Avatar",
+                        subtitle = "Show the character's avatar before messages",
                         trailing = {
                             HapticSwitch(
                                 checked = displaySetting.showModelIcon,

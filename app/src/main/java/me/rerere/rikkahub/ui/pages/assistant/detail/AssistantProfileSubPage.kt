@@ -78,7 +78,7 @@ fun AssistantProfileSubPage(
             // Name
             SettingGroupItem(
                 title = stringResource(R.string.assistant_page_name),
-                subtitle = "Display name for this assistant",
+                subtitle = "Display name for this character",
                 trailing = {
                     DebouncedTextField(
                         value = assistant.name,

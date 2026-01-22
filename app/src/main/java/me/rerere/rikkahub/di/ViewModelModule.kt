@@ -28,7 +28,14 @@ val viewModelModule = module {
             appScope = get()
         )
     }
-    viewModelOf(::SettingVM)
+    viewModel<SettingVM> {
+        SettingVM(
+            settingsStore = get(),
+            mcpManager = get(),
+            context = get(),
+            okHttpClient = get()
+        )
+    }
     viewModelOf(::AssistantVM)
     viewModel<AssistantDetailVM> {
         AssistantDetailVM(

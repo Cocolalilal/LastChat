@@ -113,7 +113,7 @@ fun AssistantUISubPage(
                 // Changed to use TriStateSettingItem for consistent look with other settings
                 TriStateSettingItem(
                     title = "Show Avatar in Header",
-                    subtitle = "Display assistant avatar in the new chat header",
+                    subtitle = "Display character avatar in the new chat header",
                     value = uiSettings.newChatShowAvatar,
                     globalValue = settings.displaySetting.newChatShowAvatar,
                     onValueChange = { updateUI(uiSettings.copy(newChatShowAvatar = it)) }
@@ -178,8 +178,8 @@ fun AssistantUISubPage(
             )
 
             TriStateSettingItem(
-                title = "Show Assistant Avatar",
-                subtitle = "Show the assistant's avatar before messages",
+                title = "Show Character Avatar",
+                subtitle = "Show the character's avatar before messages",
                 value = uiSettings.showAssistantAvatar,
                 globalValue = settings.displaySetting.showModelIcon,
                 onValueChange = { updateUI(uiSettings.copy(showAssistantAvatar = it)) }

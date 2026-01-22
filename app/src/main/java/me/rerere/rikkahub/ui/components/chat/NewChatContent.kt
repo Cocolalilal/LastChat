@@ -121,13 +121,13 @@ fun NewChatContent(
                 ) {
                     if (showAvatarInHeader) {
                         UIAvatar(
-                            name = assistant.name.ifBlank { "Assistant" },
+                            name = assistant.name.ifBlank { "Character" },
                             value = assistant.avatar,
                             modifier = Modifier.size(80.dp)
                         )
                     }
                     Text(
-                        text = assistant.name.ifBlank { "Assistant" },
+                        text = assistant.name.ifBlank { "Character" },
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Medium
                     )
@@ -141,7 +141,7 @@ fun NewChatContent(
                         modifier = if (onAvatarClick != null) Modifier.clickable { onAvatarClick() } else Modifier
                     ) {
                         UIAvatar(
-                            name = assistant.name.ifBlank { "Assistant" },
+                            name = assistant.name.ifBlank { "Character" },
                             value = assistant.avatar,
                             modifier = Modifier.size(44.dp)
                         )

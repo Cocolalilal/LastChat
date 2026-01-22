@@ -188,7 +188,7 @@ private fun StatsSection(stats: MenuStats) {
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
-                        text = "Most Active Assistant",
+                        text = "Most Active Character",
                         style = MaterialTheme.typography.labelMedium
                     )
                     Text(
@@ -197,7 +197,7 @@ private fun StatsSection(stats: MenuStats) {
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "${stats.totalAssistants} assistants available",
+                        text = "${stats.totalAssistants} characters available",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f)
                     )

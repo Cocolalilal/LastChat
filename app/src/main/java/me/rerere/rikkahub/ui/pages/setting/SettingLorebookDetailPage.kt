@@ -1304,7 +1304,7 @@ private fun AssistantLorebookToggleSheet(
                         )
 
                         Text(
-                            text = assistant.name.ifEmpty { "Assistant" },
+                            text = assistant.name.ifEmpty { "Character" },
                             style = MaterialTheme.typography.titleMedium,
                             modifier = Modifier.weight(1f),
                             maxLines = 1,

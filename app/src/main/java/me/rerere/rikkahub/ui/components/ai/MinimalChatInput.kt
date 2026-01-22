@@ -504,17 +504,21 @@ private fun MinimalPickerContent(
     var showSearchPicker by remember { mutableStateOf(false) }
     
     // Track the last valid search provider index so selection persists when search is disabled
-    var lastValidProviderIndex by rememberSaveable { mutableStateOf(settings.searchServiceSelected.coerceAtLeast(0)) }
+    // Initialize from assistant's searchMode if available, otherwise use global setting
+    val initialProviderIndex = when (val mode = assistant.searchMode) {
+        is me.rerere.rikkahub.data.model.AssistantSearchMode.Provider -> mode.index
+        else -> settings.searchServiceSelected.coerceAtLeast(0)
+    }
+    var lastValidProviderIndex by rememberSaveable(initialProviderIndex) { mutableStateOf(initialProviderIndex) }
     
     // Update lastValidProviderIndex when a valid external index is set
     val currentProviderIndex = when (val mode = assistant.searchMode) {
         is me.rerere.rikkahub.data.model.AssistantSearchMode.Provider -> mode.index
         else -> -1
     }
-    LaunchedEffect(currentProviderIndex) {
-        if (currentProviderIndex >= 0 && currentProviderIndex < settings.searchServices.size) {
-            lastValidProviderIndex = currentProviderIndex
-        }
+    // Sync immediately when currentProviderIndex changes (no LaunchedEffect delay to prevent flickering)
+    if (currentProviderIndex >= 0 && currentProviderIndex < settings.searchServices.size && currentProviderIndex != lastValidProviderIndex) {
+        lastValidProviderIndex = currentProviderIndex
     }
     
     // Calculate effective provider index (use tracked value when current is invalid)
@@ -695,8 +699,8 @@ private fun MinimalPickerContent(
             }
         )
         
-        // Reasoning picker - show if model is selected
-        if (currentModel != null) {
+        // Reasoning picker - only show if model has reasoning ability (same as floating toolbar)
+        if (currentModel?.abilities?.contains(me.rerere.ai.provider.ModelAbility.REASONING) == true) {
             MinimalPickerItem(
                 icon = {
                     Icon(

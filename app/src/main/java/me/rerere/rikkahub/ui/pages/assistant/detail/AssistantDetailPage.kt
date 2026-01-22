@@ -123,8 +123,9 @@ fun AssistantDetailPage(
     var showExportMenu by remember { androidx.compose.runtime.mutableStateOf(false) }
     var showExportOptionsDialog by remember { androidx.compose.runtime.mutableStateOf(false) }
     var pendingExportContent by remember { androidx.compose.runtime.mutableStateOf("") }
+    var pendingExportBytes by remember { androidx.compose.runtime.mutableStateOf<ByteArray?>(null) }
     
-    // Export file launcher
+    // Export file launcher (JSON)
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
@@ -140,6 +141,26 @@ fun AssistantDetailPage(
                     toaster.show("Export failed: ${e.message}")
                 }
                 pendingExportContent = ""
+            }
+        }
+    }
+    
+    // Export file launcher (PNG)
+    val pngExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("image/png")
+    ) { uri ->
+        if (uri != null && pendingExportBytes != null) {
+            scope.launch {
+                try {
+                    context.contentResolver.openOutputStream(uri)?.use { 
+                        it.write(pendingExportBytes!!)
+                    }
+                    toaster.show(context.getString(R.string.export_success))
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    toaster.show("Export failed: ${e.message}")
+                }
+                pendingExportBytes = null
             }
         }
     }
@@ -242,6 +263,27 @@ fun AssistantDetailPage(
                                                 pendingExportContent = content
                                                 val fileName = AssistantExportImport.getSuggestedFileName(assistant, "card_v2")
                                                 exportLauncher.launch(fileName)
+                                            } catch (e: Exception) {
+                                                e.printStackTrace()
+                                                toaster.show("Export failed: ${e.message}")
+                                            }
+                                        }
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Character Card V2 (.png)") },
+                                    onClick = {
+                                        showExportMenu = false
+                                        scope.launch {
+                                            try {
+                                                val bytes = AssistantExportImport.exportToCharacterCardPng(assistant, context)
+                                                if (bytes != null) {
+                                                    pendingExportBytes = bytes
+                                                    val fileName = AssistantExportImport.getSuggestedFileName(assistant, "card_v2_png")
+                                                    pngExportLauncher.launch(fileName)
+                                                } else {
+                                                    toaster.show("Export failed: Could not create PNG")
+                                                }
                                             } catch (e: Exception) {
                                                 e.printStackTrace()
                                                 toaster.show("Export failed: ${e.message}")
@@ -546,7 +588,7 @@ private fun AssistantDetailHome(
             NavigationCard(
                 icon = Icons.Rounded.Palette,
                 title = "UI Customization",
-                description = "Per-assistant display settings",
+                description = "Per-character display settings",
                 onClick = onNavigateToUI
             )
 

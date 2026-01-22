@@ -389,7 +389,7 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                         onClick = {
                             scope.launch {
                                 tts.speak(
-                                    text = "Hello user, this is what your assistants will sound like if you use this setup!",
+                                    text = "Hello user, this is what your characters will sound like if you use this setup!",
                                     overrideSetting = currentProvider
                                 )
                             }

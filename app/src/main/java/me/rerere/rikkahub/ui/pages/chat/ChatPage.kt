@@ -859,7 +859,7 @@ private fun TopBar(
                                     contentAlignment = Alignment.Center
                                 ) {
                                     me.rerere.rikkahub.ui.components.ui.UIAvatar(
-                                        name = currentAssistant.name.ifBlank { "Assistant" },
+                                        name = currentAssistant.name.ifBlank { "Character" },
                                         value = currentAssistant.avatar,
                                         modifier = Modifier.size(32.dp),
                                         onClick = { showAssistantPicker = true }
@@ -879,7 +879,7 @@ private fun TopBar(
                                 contentAlignment = Alignment.Center
                             ) {
                                 me.rerere.rikkahub.ui.components.ui.UIAvatar(
-                                    name = currentAssistant.name.ifBlank { "Assistant" },
+                                    name = currentAssistant.name.ifBlank { "Character" },
                                     value = currentAssistant.avatar,
                                     modifier = Modifier.size(32.dp),
                                     onClick = { showAssistantPicker = true }

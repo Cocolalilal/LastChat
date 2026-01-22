@@ -60,7 +60,7 @@ fun AssistantNotificationSubPage(
 
                 FormItem(
                     label = { Text("Enable Spontaneous Messages") },
-                    description = { Text("Allow assistant to send messages without user prompt.") },
+                    description = { Text("Allow character to send messages without user prompt.") },
                     tail = {
                         val permissionLauncher = rememberLauncherForActivityResult(
                             ActivityResultContracts.RequestPermission()
