@@ -72,8 +72,8 @@ class BackupVM(
         webdavSync.backupToWebDav(settings.value.webDavConfig)
     }
 
-    suspend fun restore(item: WebDavBackupItem) {
-        webdavSync.restoreFromWebDav(webDavConfig = settings.value.webDavConfig, item = item)
+    suspend fun restore(item: WebDavBackupItem): WebdavSync.RestoreResult {
+        return webdavSync.restoreFromWebDav(webDavConfig = settings.value.webDavConfig, item = item)
     }
 
     suspend fun deleteWebDavBackupFile(item: WebDavBackupItem) {
@@ -84,8 +84,17 @@ class BackupVM(
         return webdavSync.prepareBackupFile(settings.value.webDavConfig.copy())
     }
 
-    suspend fun restoreFromLocalFile(file: File) {
-        webdavSync.restoreFromLocalFile(file, settings.value.webDavConfig)
+    suspend fun restoreFromLocalFile(file: File): WebdavSync.RestoreResult {
+        return webdavSync.restoreFromLocalFile(file, settings.value.webDavConfig)
+    }
+    
+    fun restartApp(context: android.content.Context) {
+        val packageManager = context.packageManager
+        val intent = packageManager.getLaunchIntentForPackage(context.packageName)
+        val componentName = intent?.component
+        val mainIntent = android.content.Intent.makeRestartActivityTask(componentName)
+        context.startActivity(mainIntent)
+        kotlin.system.exitProcess(0)
     }
 
     fun restoreFromChatBox(file: File) {

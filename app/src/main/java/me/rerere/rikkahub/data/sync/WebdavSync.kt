@@ -92,7 +92,7 @@ class WebdavSync(
             files
         }
 
-    suspend fun restoreFromWebDav(webDavConfig: WebDavConfig, item: WebDavBackupItem): Nothing =
+    suspend fun restoreFromWebDav(webDavConfig: WebDavConfig, item: WebDavBackupItem): RestoreResult =
         withContext(Dispatchers.IO) {
             val collection = DavCollection(
                 httpClient = webDavConfig.requireClient(),
@@ -152,7 +152,7 @@ class WebdavSync(
             }
         }
 
-    suspend fun restoreFromLocalFile(file: File, webDavConfig: WebDavConfig): Nothing =
+    suspend fun restoreFromLocalFile(file: File, webDavConfig: WebDavConfig): RestoreResult =
         withContext(Dispatchers.IO) {
             Log.i(TAG, "restoreFromLocalFile: Starting restore from ${file.absolutePath}")
 
@@ -165,7 +165,7 @@ class WebdavSync(
             }
 
             try {
-                restoreFromBackupFile(file, webDavConfig) // Never returns - exits process
+                restoreFromBackupFile(file, webDavConfig)
             } catch (e: Exception) {
                 Log.e(TAG, "restoreFromLocalFile: Failed to restore from local file", e)
                 throw Exception("Restore failed: ${e.message}")
@@ -236,165 +236,180 @@ class WebdavSync(
         backupFile
     }
 
-    private suspend fun restoreFromBackupFile(backupFile: File, webDavConfig: WebDavConfig): Nothing =
+
+
+    data class RestoreResult(
+        val sanitization: DatabaseSanitizer.SanitizationResult,
+        val settingsCleanup: BackupCleanupResult
+    )
+
+    private suspend fun restoreFromBackupFile(backupFile: File, webDavConfig: WebDavConfig): RestoreResult =
         withContext(Dispatchers.IO) {
             Log.i(TAG, "restoreFromBackupFile: Starting restore from ${backupFile.absolutePath}")
             
             var unsupportedZipEntriesBytes: Long = 0
             var settingsCleanupResult = BackupCleanupResult()
+            // Temp directory for extraction
+            val restoreTempDir = File(context.cacheDir, "restore_temp_${System.currentTimeMillis()}")
+            if (!restoreTempDir.exists()) restoreTempDir.mkdirs()
 
-            ZipInputStream(FileInputStream(backupFile)).use { zipIn ->
-                var entry: ZipEntry?
-                while (zipIn.nextEntry.also { entry = it } != null) {
-                    entry?.let { zipEntry ->
-                        Log.i(TAG, "restoreFromBackupFile: Processing entry ${zipEntry.name}")
+            var sanitizationResult = DatabaseSanitizer.SanitizationResult()
 
-                        when (zipEntry.name) {
-                            "settings.json" -> {
-                                // 恢复设置
-                                val settingsJson = zipIn.readBytes().toString(Charsets.UTF_8)
-                                Log.i(TAG, "restoreFromBackupFile: Restoring settings")
-                                try {
-                                    val settings = json.decodeFromString<Settings>(settingsJson)
-                                    // Sanitize settings to clean up deprecated/invalid data
-                                    val (cleanedSettings, cleanupResult) = settings.sanitize()
-                                    settingsCleanupResult = cleanupResult
-                                    settingsStore.update(cleanedSettings)
-                                    Log.i(
-                                        TAG,
-                                        "restoreFromBackupFile: Settings restored and sanitized (issues fixed: ${cleanupResult.totalIssuesFixed})"
-                                    )
-                                } catch (e: Exception) {
-                                    Log.e(
-                                        TAG,
-                                        "restoreFromBackupFile: Failed to restore settings",
-                                        e
-                                    )
-                                    throw Exception("Failed to restore settings: ${e.message}")
-                                }
-                            }
+            try {
+                ZipInputStream(FileInputStream(backupFile)).use { zipIn ->
+                    var entry: ZipEntry?
+                    while (zipIn.nextEntry.also { entry = it } != null) {
+                        entry?.let { zipEntry ->
+                            Log.i(TAG, "restoreFromBackupFile: Processing entry ${zipEntry.name}")
 
-                            "rikka_hub.db", "rikka_hub-wal", "rikka_hub-shm" -> {
-                                if (webDavConfig.items.contains(WebDavConfig.BackupItem.DATABASE)) {
-                                    // 恢复数据库文件
-                                    val dbFile = when (zipEntry.name) {
-                                        "rikka_hub.db" -> context.getDatabasePath("rikka_hub")
-                                        "rikka_hub-wal" -> File(
-                                            context.getDatabasePath("rikka_hub").parentFile,
-                                            "rikka_hub-wal"
-                                        )
-
-                                        "rikka_hub-shm" -> File(
-                                            context.getDatabasePath("rikka_hub").parentFile,
-                                            "rikka_hub-shm"
-                                        )
-
-                                        else -> null
-                                    }
-
-                                    dbFile?.let { targetFile ->
+                            when (zipEntry.name) {
+                                "settings.json" -> {
+                                    // 恢复设置
+                                    val settingsJson = zipIn.readBytes().toString(Charsets.UTF_8)
+                                    Log.i(TAG, "restoreFromBackupFile: Restoring settings")
+                                    try {
+                                        val settings = json.decodeFromString<Settings>(settingsJson)
+                                        // Sanitize settings to clean up deprecated/invalid data
+                                        val (cleanedSettings, cleanupResult) = settings.sanitize()
+                                        settingsCleanupResult = cleanupResult
+                                        settingsStore.update(cleanedSettings)
                                         Log.i(
                                             TAG,
-                                            "restoreFromBackupFile: Restoring ${zipEntry.name} to ${targetFile.absolutePath}"
+                                            "restoreFromBackupFile: Settings restored and sanitized (issues fixed: ${cleanupResult.totalIssuesFixed})"
                                         )
+                                    } catch (e: Exception) {
+                                        Log.e(
+                                            TAG,
+                                            "restoreFromBackupFile: Failed to restore settings",
+                                            e
+                                        )
+                                        throw Exception("Failed to restore settings: ${e.message}")
+                                    }
+                                }
 
-                                        // 确保父目录存在
-                                        targetFile.parentFile?.mkdirs()
-
-                                        // 写入文件
-                                        FileOutputStream(targetFile).use { outputStream ->
+                                "rikka_hub.db", "rikka_hub-wal", "rikka_hub-shm" -> {
+                                    if (webDavConfig.items.contains(WebDavConfig.BackupItem.DATABASE)) {
+                                        // Extract to temp dir first
+                                        val tempDbFile = File(restoreTempDir, zipEntry.name)
+                                        FileOutputStream(tempDbFile).use { outputStream ->
                                             zipIn.copyTo(outputStream)
                                         }
-
-                                        Log.i(
-                                            TAG,
-                                            "restoreFromBackupFile: Restored ${zipEntry.name} (${targetFile.length()} bytes)"
-                                        )
+                                        Log.i(TAG, "Extracted ${zipEntry.name} to temp")
                                     }
                                 }
-                            }
 
-                            else -> {
-                                // 处理聊天文件
-                                if (webDavConfig.items.contains(WebDavConfig.BackupItem.FILES) && zipEntry.name.startsWith(
-                                        "upload/"
-                                    )
-                                ) {
-                                    val fileName = zipEntry.name.substringAfter("upload/")
-                                    if (fileName.isNotEmpty()) {
-                                        val uploadFolder = File(context.filesDir, "upload")
-                                        // 确保upload文件夹存在
-                                        if (!uploadFolder.exists()) {
-                                            uploadFolder.mkdirs()
-                                            Log.i(
-                                                TAG,
-                                                "restoreFromBackupFile: Created upload directory"
-                                            )
-                                        }
-
-                                        val targetFile = File(uploadFolder, fileName)
-                                        Log.i(
-                                            TAG,
-                                            "restoreFromBackupFile: Restoring file ${zipEntry.name} to ${targetFile.absolutePath}"
+                                else -> {
+                                    // 处理聊天文件
+                                    if (webDavConfig.items.contains(WebDavConfig.BackupItem.FILES) && zipEntry.name.startsWith(
+                                            "upload/"
                                         )
-
-                                        try {
-                                            FileOutputStream(targetFile).use { outputStream ->
-                                                zipIn.copyTo(outputStream)
+                                    ) {
+                                        val fileName = zipEntry.name.substringAfter("upload/")
+                                        if (fileName.isNotEmpty()) {
+                                            val uploadFolder = File(context.filesDir, "upload")
+                                            // 确保upload文件夹存在
+                                            if (!uploadFolder.exists()) {
+                                                uploadFolder.mkdirs()
+                                                Log.i(
+                                                    TAG,
+                                                    "restoreFromBackupFile: Created upload directory"
+                                                )
                                             }
+
+                                            val targetFile = File(uploadFolder, fileName)
                                             Log.i(
                                                 TAG,
-                                                "restoreFromBackupFile: Restored ${zipEntry.name} (${targetFile.length()} bytes)"
+                                                "restoreFromBackupFile: Restoring file ${zipEntry.name} to ${targetFile.absolutePath}"
                                             )
-                                        } catch (e: Exception) {
-                                            Log.e(
-                                                TAG,
-                                                "restoreFromBackupFile: Failed to restore file ${zipEntry.name}",
-                                                e
-                                            )
-                                            throw Exception("Failed to restore file ${zipEntry.name}: ${e.message}")
+
+                                            try {
+                                                FileOutputStream(targetFile).use { outputStream ->
+                                                    zipIn.copyTo(outputStream)
+                                                }
+                                                Log.i(
+                                                    TAG,
+                                                    "restoreFromBackupFile: Restored ${zipEntry.name} (${targetFile.length()} bytes)"
+                                                )
+                                            } catch (e: Exception) {
+                                                Log.e(
+                                                    TAG,
+                                                    "restoreFromBackupFile: Failed to restore file ${zipEntry.name}",
+                                                    e
+                                                )
+                                                throw Exception("Failed to restore file ${zipEntry.name}: ${e.message}")
+                                            }
                                         }
+                                    } else {
+                                        Log.i(
+                                            TAG,
+                                            "restoreFromBackupFile: Skipping unsupported entry ${zipEntry.name} (${zipEntry.size} bytes)"
+                                        )
+                                        unsupportedZipEntriesBytes += zipEntry.size
                                     }
-                                } else {
-                                    Log.i(
-                                        TAG,
-                                        "restoreFromBackupFile: Skipping unsupported entry ${zipEntry.name} (${zipEntry.size} bytes)"
-                                    )
-                                    unsupportedZipEntriesBytes += zipEntry.size
                                 }
                             }
-                        }
 
-                        zipIn.closeEntry()
+                            zipIn.closeEntry()
+                        }
                     }
                 }
-            }
 
-            Log.i(TAG, "restoreFromBackupFile: Restore completed successfully")
-            
-            // Combine cleanup results
-            val totalResult = settingsCleanupResult.copy(
-                unsupportedZipEntriesBytes = unsupportedZipEntriesBytes
-            )
-            
-            Log.i(TAG, "restoreFromBackupFile: Cleanup summary - skipped ${unsupportedZipEntriesBytes} bytes, fixed ${totalResult.totalIssuesFixed} issues")
-            
-            // Restart the app to apply changes and reload database
-            val packageManager = context.packageManager
-            val intent = packageManager.getLaunchIntentForPackage(context.packageName)
-            val componentName = intent?.component
-            val mainIntent = android.content.Intent.makeRestartActivityTask(componentName)
-            
-            // Store cleanup result in SharedPreferences so we can show toast after restart
-            context.getSharedPreferences("backup_cleanup", android.content.Context.MODE_PRIVATE)
-                .edit()
-                .putLong("unsupported_bytes", totalResult.unsupportedZipEntriesBytes)
-                .putInt("issues_fixed", totalResult.totalIssuesFixed)
-                .apply()
-            
-            context.startActivity(mainIntent)
-            kotlin.system.exitProcess(0)
+                // Sanitize and Restore Database
+                val tempDbFile = File(restoreTempDir, "rikka_hub.db")
+                
+                if (tempDbFile.exists()) {
+                    Log.i(TAG, "Starting database sanitization...")
+                    try {
+                         val (cleanDb, result) = DatabaseSanitizer.sanitize(context, tempDbFile)
+                         sanitizationResult = result
+                         
+                         // Move clean DB to final location
+                         val finalDbFile = context.getDatabasePath("rikka_hub")
+                         if(finalDbFile.exists()) finalDbFile.delete()
+                         
+                         cleanDb.copyTo(finalDbFile, overwrite = true)
+                         
+                         val cleanWal = File(cleanDb.path + "-wal")
+                         val cleanShm = File(cleanDb.path + "-shm")
+                         
+                         if(cleanWal.exists()) {
+                             cleanWal.copyTo(File(finalDbFile.path + "-wal"), overwrite = true)
+                         } else {
+                             File(finalDbFile.path + "-wal").delete()
+                         }
+                         
+                         if(cleanShm.exists()) {
+                             cleanShm.copyTo(File(finalDbFile.path + "-shm"), overwrite = true)
+                         } else {
+                             File(finalDbFile.path + "-shm").delete()
+                         }
+                         
+                         Log.i(TAG, "Database restored and sanitized: $sanitizationResult")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to sanitize database", e)
+                        throw Exception("Database sanitization failed: ${e.message}")
+                    }
+                }
+
+                Log.i(TAG, "restoreFromBackupFile: Restore completed successfully")
+                
+                // Combine cleanup results
+                val totalCleanupResult = settingsCleanupResult.copy(
+                    unsupportedZipEntriesBytes = unsupportedZipEntriesBytes
+                )
+                
+                Log.i(TAG, "restoreFromBackupFile: Cleanup summary - skipped ${unsupportedZipEntriesBytes} bytes, fixed ${totalCleanupResult.totalIssuesFixed} issues")
+                
+                RestoreResult(
+                    sanitization = sanitizationResult,
+                    settingsCleanup = totalCleanupResult
+                )
+            } finally {
+                // Cleanup temp dir
+                restoreTempDir.deleteRecursively()
+            }
         }
+
 }
 
 private fun addFileToZip(zipOut: ZipOutputStream, file: File, entryName: String) {

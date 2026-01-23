@@ -164,6 +164,7 @@ private fun WebDavPage(
     val scope = rememberCoroutineScope()
     var showBackupFiles by remember { mutableStateOf(false) }
     var showRestartDialog by remember { mutableStateOf(false) }
+    var restoreResult by remember { mutableStateOf<me.rerere.rikkahub.data.sync.WebdavSync.RestoreResult?>(null) }
     var restoringItemId by remember { mutableStateOf<String?>(null) }
     var isBackingUp by remember { mutableStateOf(false) }
 
@@ -423,7 +424,8 @@ private fun WebDavPage(
                                     scope.launch {
                                         restoringItemId = item.displayName
                                         runCatching {
-                                            vm.restore(item = item)
+                                            val result = vm.restore(item = item)
+                                            restoreResult = result
                                             toaster.show(
                                                 context.getString(R.string.backup_page_restore_success),
                                                 type = ToastType.Success
@@ -469,7 +471,13 @@ private fun WebDavPage(
     }
 
     if (showRestartDialog) {
-        BackupDialog()
+        val result = restoreResult // Capture immutable for checking
+        BackupDialog(
+             result = result,
+             onConfirm = {
+                 vm.restartApp(context)
+             }
+        )
     }
 }
 
@@ -555,6 +563,8 @@ private fun ImportExportPage(
     var isRestoring by remember { mutableStateOf(false) }
     var showRestartDialog by remember { mutableStateOf(false) }
 
+    var restoreResult by remember { mutableStateOf<me.rerere.rikkahub.data.sync.WebdavSync.RestoreResult?>(null) }
+
     // 导入类型：local 为本地备份，chatbox 为 Chatbox 导入
     var importType by remember { mutableStateOf("local") }
 
@@ -616,7 +626,8 @@ private fun ImportExportPage(
                             }
 
                             // 从临时文件恢复
-                            vm.restoreFromLocalFile(tempFile)
+                            val result = vm.restoreFromLocalFile(tempFile)
+                            restoreResult = result
 
                             // 清理临时文件
                             tempFile.delete()
@@ -731,21 +742,59 @@ private fun ImportExportPage(
 
     // 重启对话框
     if (showRestartDialog) {
-        BackupDialog()
+        val result = restoreResult // Capture immutable for checking
+        BackupDialog(
+             result = result,
+             onConfirm = {
+                 vm.restartApp(context)
+             }
+        )
     }
 }
 
 @Composable
-private fun BackupDialog() {
+private fun BackupDialog(
+    result: me.rerere.rikkahub.data.sync.WebdavSync.RestoreResult?,
+    onConfirm: () -> Unit
+) {
     AlertDialog(
-        onDismissRequest = {},
+        onDismissRequest = {}, // Disallow dismissing by clicking outside
         title = { Text(stringResource(R.string.backup_page_restart_app)) },
-        text = { Text(stringResource(R.string.backup_page_restart_desc)) },
+        text = { 
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(R.string.backup_page_restart_desc))
+                
+                result?.let {
+                    if (it.sanitization.skippedRows > 0 || it.settingsCleanup.totalIssuesFixed > 0 || it.settingsCleanup.unsupportedZipEntriesBytes > 0) {
+                        Card(
+                            colors = androidx.compose.material3.CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Text(
+                                    text = "Restore Report:",
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                                if (it.sanitization.skippedRows > 0) {
+                                    Text("• Removed ${it.sanitization.skippedRows} corrupt/invalid items")
+                                }
+                                if (it.settingsCleanup.totalIssuesFixed > 0) {
+                                    Text("• Fixed ${it.settingsCleanup.totalIssuesFixed} setting issues")
+                                }
+                                if (it.settingsCleanup.unsupportedZipEntriesBytes > 0) {
+                                    Text("• Cleaned ${it.settingsCleanup.unsupportedZipEntriesBytes.fileSizeToString()} of junk data")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         confirmButton = {
             Button(
-                onClick = {
-                    exitProcess(0)
-                }
+                onClick = onConfirm
             ) {
                 Text(stringResource(R.string.backup_page_restart_app))
             }
