@@ -50,7 +50,7 @@ internal class SseClientTransport(
         URLBuilder()
             .takeFrom(urlString)
             .apply {
-                path() // set path to empty
+                pathSegments = emptyList() // set path to empty
                 parameters.clear() //  clear parameters
             }
             .build()

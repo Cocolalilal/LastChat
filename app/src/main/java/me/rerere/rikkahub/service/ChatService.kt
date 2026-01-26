@@ -473,7 +473,7 @@ class ChatService(
                                 description = tool.description ?: "",
                                 parameters = { tool.inputSchema },
                                 execute = {
-                                    mcpManager.callTool(tool.name, it.jsonObject)
+                                    mcpManager.callTool(tool.name, it.jsonObject).truncateLargeJsonText()
                                 },
                             )
                         )
@@ -1282,5 +1282,25 @@ class ChatService(
             TAG,
             "cleanupConversation: removed $conversationId (current references: ${conversationReferences.size}, generation jobs: ${_generationJobs.value.size})"
         )
+    }
+}
+
+private fun kotlinx.serialization.json.JsonElement.truncateLargeJsonText(maxLength: Int = 32000): kotlinx.serialization.json.JsonElement {
+    return when (this) {
+        is kotlinx.serialization.json.JsonPrimitive -> {
+            if (this.isString) {
+                val content = this.content
+                if (content.length > maxLength) {
+                    kotlinx.serialization.json.JsonPrimitive(content.take(maxLength) + "... (truncated ${content.length - maxLength} chars)")
+                } else {
+                    this
+                }
+            } else {
+                this
+            }
+        }
+        is kotlinx.serialization.json.JsonObject -> kotlinx.serialization.json.JsonObject(this.mapValues { it.value.truncateLargeJsonText(maxLength) })
+        is kotlinx.serialization.json.JsonArray -> kotlinx.serialization.json.JsonArray(this.map { it.truncateLargeJsonText(maxLength) })
+        else -> this
     }
 }

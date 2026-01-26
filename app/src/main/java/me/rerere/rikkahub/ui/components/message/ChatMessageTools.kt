@@ -227,7 +227,8 @@ private fun ToolCallPreviewSheet(
                 modifier = Modifier
                     .fillMaxHeight(0.8f)
                     .padding(16.dp)
-                    .verticalScroll(rememberScrollState()),
+                    .padding(16.dp),
+                    //.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 when (toolName) {
@@ -403,7 +404,7 @@ private fun ToolCallPreviewSheet(
                         
                         // Arguments section
                         Column(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
