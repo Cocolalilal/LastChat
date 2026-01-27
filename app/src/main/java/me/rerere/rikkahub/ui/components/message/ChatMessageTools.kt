@@ -43,8 +43,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.BookmarkRemove
 import androidx.compose.material.icons.rounded.Build
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Public
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -403,18 +406,42 @@ private fun ToolCallPreviewSheet(
                         }
                         
                         // Arguments section
+                        val clipboardManager = LocalClipboardManager.current
                         Column(
-                            modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Text(
-                                text = stringResource(
-                                    R.string.chat_message_tool_call_label,
-                                    toolName
-                                ),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
+                            val argumentsJson = remember(arguments) {
+                                JsonInstantPretty.encodeToString(arguments)
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = stringResource(
+                                        R.string.chat_message_tool_call_label,
+                                        toolName
+                                    ),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                IconButton(
+                                    modifier = Modifier.size(24.dp),
+                                    onClick = {
+                                        clipboardManager.setText(AnnotatedString(argumentsJson))
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.ContentCopy,
+                                        contentDescription = "Copy arguments",
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
                             Card(
                                 colors = CardDefaults.cardColors(
                                     containerColor = MaterialTheme.colorScheme.surfaceContainerLow
@@ -422,24 +449,45 @@ private fun ToolCallPreviewSheet(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 HighlightText(
-                                    code = JsonInstantPretty.encodeToString(arguments),
+                                    code = argumentsJson,
                                     language = "json",
                                     fontSize = 11.sp,
                                     modifier = Modifier.padding(12.dp)
                                 )
                             }
                         }
-                        
+
                         // Result section
                         Column(
                             modifier = Modifier.fillMaxWidth(),
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Text(
-                                text = stringResource(R.string.chat_message_tool_call_result),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
+                            val contentJson = remember(content) {
+                                JsonInstantPretty.encodeToString(content)
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.chat_message_tool_call_result),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                IconButton(
+                                    modifier = Modifier.size(24.dp),
+                                    onClick = {
+                                        clipboardManager.setText(AnnotatedString(contentJson))
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.ContentCopy,
+                                        contentDescription = "Copy result",
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
                             Card(
                                 colors = CardDefaults.cardColors(
                                     containerColor = MaterialTheme.colorScheme.surfaceContainerLow
@@ -447,7 +495,7 @@ private fun ToolCallPreviewSheet(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 HighlightText(
-                                    code = JsonInstantPretty.encodeToString(content),
+                                    code = contentJson,
                                     language = "json",
                                     fontSize = 11.sp,
                                     modifier = Modifier.padding(12.dp)
