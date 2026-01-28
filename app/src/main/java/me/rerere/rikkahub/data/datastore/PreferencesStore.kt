@@ -479,6 +479,90 @@ enum class TtsFilterMode {
     ONLY_READ   // Only read text inside this pattern (skip everything else)
 }
 
+/**
+ * Source of font for text rendering
+ */
+@Serializable
+enum class FontSource {
+    System,       // Default Google Sans Flex (with roundness control)
+    SystemCode,   // Google Sans Code (monospace for code blocks)
+    Custom        // User-uploaded font file
+}
+
+/**
+ * Variable font axis with its metadata
+ */
+@Serializable
+data class FontAxis(
+    val tag: String,         // e.g., "wght", "wdth", "ROND"
+    val name: String,        // Human-readable name
+    val minValue: Float,
+    val maxValue: Float,
+    val defaultValue: Float,
+    val currentValue: Float = defaultValue
+)
+
+/**
+ * OpenType feature toggle
+ */
+@Serializable
+data class FontFeature(
+    val tag: String,         // e.g., "liga", "kern", "smcp"
+    val name: String,        // Human-readable name
+    val enabled: Boolean = true
+)
+
+/**
+ * Font configuration for a specific text element (headers, content, or code)
+ */
+@Serializable
+data class FontConfig(
+    val fontSource: FontSource = FontSource.System,
+    val customFontPath: String? = null,  // Internal path to custom font file
+    val customFontName: String? = null,  // Display name of custom font
+    // Common variable font axes (applied when supported)
+    val weight: Float = 400f,       // 100-900
+    val width: Float = 100f,        // 75-125
+    val roundness: Float = 100f,    // 0-100 (Google Sans Flex specific, default expressive)
+    val grade: Float = 0f,          // -50 to 150
+    val slant: Float = 0f,          // -10 to 0
+    // Typography adjustments
+    val fontSize: Float = 1.0f,     // Multiplier (0.5-2.0)
+    val lineHeight: Float = 1.0f,   // Multiplier (0.8-2.0)
+    val letterSpacing: Float = 0f,  // -0.05 to 0.1 em
+    // Custom axes detected from font (for custom fonts)
+    val customAxes: List<FontAxis> = emptyList(),
+    // OpenType features (detected from font)
+    val features: List<FontFeature> = emptyList()
+) {
+    companion object {
+        val DEFAULT_EXPRESSIVE = FontConfig(
+            fontSource = FontSource.System,
+            roundness = 100f
+        )
+        val DEFAULT_NORMAL = FontConfig(
+            fontSource = FontSource.System,
+            roundness = 0f
+        )
+        val DEFAULT_CODE = FontConfig(
+            fontSource = FontSource.SystemCode,
+            roundness = 0f,
+            weight = 400f
+        )
+    }
+}
+
+/**
+ * Complete font customization settings for the app
+ */
+@Serializable
+data class FontSettings(
+    val useSameFontForHeadersAndContent: Boolean = false,
+    val headerFont: FontConfig = FontConfig.DEFAULT_EXPRESSIVE,
+    val contentFont: FontConfig = FontConfig.DEFAULT_EXPRESSIVE,
+    val codeFont: FontConfig = FontConfig.DEFAULT_CODE
+)
+
 @Serializable
 data class DisplaySetting(
     val userAvatar: Avatar = Avatar.Dummy,
@@ -494,7 +578,9 @@ data class DisplaySetting(
     val showMessageJumper: Boolean = false,
     val messageJumperOnLeft: Boolean = false,
     val fontSizeRatio: Float = 1.0f,
-    val useExpressiveFont: Boolean = true, // M3 Expressive font (rounded, wider) vs Normal
+    @Deprecated("Use fontSettings instead")
+    val useExpressiveFont: Boolean = true, // Kept for migration, use fontSettings
+    val fontSettings: FontSettings = FontSettings(), // Comprehensive font customization
     val enableMessageGenerationHapticEffect: Boolean = false,
     val enableUIHaptics: Boolean = true,
     val skipCropImage: Boolean = false,

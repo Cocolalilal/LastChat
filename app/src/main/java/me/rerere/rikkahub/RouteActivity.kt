@@ -89,6 +89,7 @@ import me.rerere.rikkahub.ui.pages.translator.TranslatorPage
 import me.rerere.rikkahub.ui.pages.webview.WebViewPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAndroidIntegrationPage
 import me.rerere.rikkahub.ui.pages.setting.SettingUICustomizationPage
+import me.rerere.rikkahub.ui.pages.setting.SettingFontsPage
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.theme.RikkahubTheme
 import okhttp3.OkHttpClient
@@ -567,6 +568,10 @@ class RouteActivity : ComponentActivity() {
                         SettingUICustomizationPage()
                     }
 
+                    composable<Screen.SettingFonts> {
+                        SettingFontsPage()
+                    }
+
                 }
                 // Toast host must be last so it renders on top of all content
                 AppToasterHost(state = toastState)
@@ -660,5 +665,8 @@ sealed interface Screen {
 
     @Serializable
     data object SettingUICustomization : Screen
+
+    @Serializable
+    data object SettingFonts : Screen
 
 }

@@ -308,3 +308,323 @@ val Typography = createTypography(GoogleSansFlexExpressive)
 
 // Normal Typography (non-expressive)
 val TypographyNormal = createTypography(GoogleSansFlexNormal)
+
+/**
+ * Create a FontFamily from FontConfig with proper variation settings.
+ */
+@Composable
+fun rememberFontFamilyFromConfig(config: me.rerere.rikkahub.data.datastore.FontConfig): FontFamily {
+    return remember(
+        config.fontSource,
+        config.customFontPath,
+        config.weight,
+        config.width,
+        config.roundness,
+        config.grade,
+        config.customAxes
+    ) {
+        when (config.fontSource) {
+            me.rerere.rikkahub.data.datastore.FontSource.System -> {
+                // Use Google Sans Flex with roundness control
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    createDynamicFontFamily(
+                        resourceId = R.font.google_sans_flex,
+                        weight = config.weight,
+                        width = config.width,
+                        roundness = config.roundness,
+                        grade = config.grade
+                    )
+                } else {
+                    GoogleSansFlexExpressive
+                }
+            }
+            me.rerere.rikkahub.data.datastore.FontSource.SystemCode -> {
+                // Use Google Sans Code (monospace)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    FontFamily(
+                        Font(
+                            R.font.google_sans_code,
+                            weight = FontWeight.Light,
+                            variationSettings = FontVariation.Settings(
+                                FontVariation.weight(300)
+                            )
+                        ),
+                        Font(
+                            R.font.google_sans_code,
+                            weight = FontWeight.Normal,
+                            variationSettings = FontVariation.Settings(
+                                FontVariation.weight(400)
+                            )
+                        ),
+                        Font(
+                            R.font.google_sans_code,
+                            weight = FontWeight.Medium,
+                            variationSettings = FontVariation.Settings(
+                                FontVariation.weight(500)
+                            )
+                        ),
+                        Font(
+                            R.font.google_sans_code,
+                            weight = FontWeight.SemiBold,
+                            variationSettings = FontVariation.Settings(
+                                FontVariation.weight(600)
+                            )
+                        ),
+                        Font(
+                            R.font.google_sans_code,
+                            weight = FontWeight.Bold,
+                            variationSettings = FontVariation.Settings(
+                                FontVariation.weight(700)
+                            )
+                        )
+                    )
+                } else {
+                    FontFamily(Font(R.font.google_sans_code))
+                }
+            }
+            me.rerere.rikkahub.data.datastore.FontSource.Custom -> {
+                // Custom font from file
+                config.customFontPath?.let { path ->
+                    try {
+                        val fontFile = java.io.File(path)
+                        if (fontFile.exists()) {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && config.customAxes.isNotEmpty()) {
+                                val settings = mutableListOf<FontVariation.Setting>()
+                                config.customAxes.forEach { axis ->
+                                    settings.add(FontVariation.Setting(axis.tag, axis.currentValue))
+                                }
+                                FontFamily(
+                                    Font(fontFile, weight = FontWeight.Light, variationSettings = FontVariation.Settings(*settings.toTypedArray())),
+                                    Font(fontFile, weight = FontWeight.Normal, variationSettings = FontVariation.Settings(*settings.toTypedArray())),
+                                    Font(fontFile, weight = FontWeight.Medium, variationSettings = FontVariation.Settings(*settings.toTypedArray())),
+                                    Font(fontFile, weight = FontWeight.SemiBold, variationSettings = FontVariation.Settings(*settings.toTypedArray())),
+                                    Font(fontFile, weight = FontWeight.Bold, variationSettings = FontVariation.Settings(*settings.toTypedArray()))
+                                )
+                            } else if (fontFile.exists()) {
+                                FontFamily(
+                                    Font(fontFile, weight = FontWeight.Light),
+                                    Font(fontFile, weight = FontWeight.Normal),
+                                    Font(fontFile, weight = FontWeight.Medium),
+                                    Font(fontFile, weight = FontWeight.SemiBold),
+                                    Font(fontFile, weight = FontWeight.Bold)
+                                )
+                            } else {
+                                GoogleSansFlexExpressive
+                            }
+                        } else {
+                            GoogleSansFlexExpressive
+                        }
+                    } catch (e: Exception) {
+                        GoogleSansFlexExpressive
+                    }
+                } ?: GoogleSansFlexExpressive
+            }
+        }
+    }
+}
+
+/**
+ * Create a dynamic font family with variable font settings.
+ * Creates multiple weight variants for proper font styling.
+ */
+private fun createDynamicFontFamily(
+    resourceId: Int,
+    weight: Float,
+    width: Float,
+    roundness: Float,
+    grade: Float
+): FontFamily {
+    return FontFamily(
+        Font(
+            resourceId,
+            weight = FontWeight.Light,
+            variationSettings = FontVariation.Settings(
+                FontVariation.weight(300),
+                FontVariation.width(width),
+                FontVariation.Setting("ROND", roundness),
+                FontVariation.Setting("GRAD", grade)
+            )
+        ),
+        Font(
+            resourceId,
+            weight = FontWeight.Normal,
+            variationSettings = FontVariation.Settings(
+                FontVariation.weight(400),
+                FontVariation.width(width),
+                FontVariation.Setting("ROND", roundness),
+                FontVariation.Setting("GRAD", grade)
+            )
+        ),
+        Font(
+            resourceId,
+            weight = FontWeight.Medium,
+            variationSettings = FontVariation.Settings(
+                FontVariation.weight(500),
+                FontVariation.width(width),
+                FontVariation.Setting("ROND", roundness),
+                FontVariation.Setting("GRAD", grade)
+            )
+        ),
+        Font(
+            resourceId,
+            weight = FontWeight.SemiBold,
+            variationSettings = FontVariation.Settings(
+                FontVariation.weight(600),
+                FontVariation.width(width),
+                FontVariation.Setting("ROND", roundness),
+                FontVariation.Setting("GRAD", grade)
+            )
+        ),
+        Font(
+            resourceId,
+            weight = FontWeight.Bold,
+            variationSettings = FontVariation.Settings(
+                FontVariation.weight(700),
+                FontVariation.width(width),
+                FontVariation.Setting("ROND", roundness),
+                FontVariation.Setting("GRAD", grade)
+            )
+        ),
+        Font(
+            resourceId,
+            weight = FontWeight.ExtraBold,
+            variationSettings = FontVariation.Settings(
+                FontVariation.weight(800),
+                FontVariation.width(width),
+                FontVariation.Setting("ROND", roundness),
+                FontVariation.Setting("GRAD", grade)
+            )
+        )
+    )
+}
+
+/**
+ * Create Typography from FontSettings.
+ * Uses header font for display/headline/title styles, content font for body/label styles.
+ */
+@Composable
+fun rememberTypographyFromFontSettings(fontSettings: me.rerere.rikkahub.data.datastore.FontSettings): Typography {
+    val headerFont = rememberFontFamilyFromConfig(fontSettings.headerFont)
+    val contentFont = rememberFontFamilyFromConfig(
+        if (fontSettings.useSameFontForHeadersAndContent) fontSettings.headerFont else fontSettings.contentFont
+    )
+    
+    return remember(headerFont, contentFont, fontSettings) {
+        Typography(
+            // Display styles - use header font
+            displayLarge = TextStyle(
+                fontFamily = headerFont,
+                fontWeight = FontWeight.Bold,
+                fontSize = (57 * fontSettings.headerFont.fontSize).sp,
+                lineHeight = (64 * fontSettings.headerFont.lineHeight).sp,
+                letterSpacing = (-0.25 + fontSettings.headerFont.letterSpacing).sp
+            ),
+            displayMedium = TextStyle(
+                fontFamily = headerFont,
+                fontWeight = FontWeight.Bold,
+                fontSize = (45 * fontSettings.headerFont.fontSize).sp,
+                lineHeight = (52 * fontSettings.headerFont.lineHeight).sp,
+                letterSpacing = (0 + fontSettings.headerFont.letterSpacing).sp
+            ),
+            displaySmall = TextStyle(
+                fontFamily = headerFont,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = (36 * fontSettings.headerFont.fontSize).sp,
+                lineHeight = (44 * fontSettings.headerFont.lineHeight).sp,
+                letterSpacing = (0 + fontSettings.headerFont.letterSpacing).sp
+            ),
+            
+            // Headline styles - use header font
+            headlineLarge = TextStyle(
+                fontFamily = headerFont,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = (32 * fontSettings.headerFont.fontSize).sp,
+                lineHeight = (40 * fontSettings.headerFont.lineHeight).sp,
+                letterSpacing = (0 + fontSettings.headerFont.letterSpacing).sp
+            ),
+            headlineMedium = TextStyle(
+                fontFamily = headerFont,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = (28 * fontSettings.headerFont.fontSize).sp,
+                lineHeight = (36 * fontSettings.headerFont.lineHeight).sp,
+                letterSpacing = (0 + fontSettings.headerFont.letterSpacing).sp
+            ),
+            headlineSmall = TextStyle(
+                fontFamily = headerFont,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = (24 * fontSettings.headerFont.fontSize).sp,
+                lineHeight = (32 * fontSettings.headerFont.lineHeight).sp,
+                letterSpacing = (0 + fontSettings.headerFont.letterSpacing).sp
+            ),
+            
+            // Title styles - use header font
+            titleLarge = TextStyle(
+                fontFamily = headerFont,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = (22 * fontSettings.headerFont.fontSize).sp,
+                lineHeight = (28 * fontSettings.headerFont.lineHeight).sp,
+                letterSpacing = (0 + fontSettings.headerFont.letterSpacing).sp
+            ),
+            titleMedium = TextStyle(
+                fontFamily = headerFont,
+                fontWeight = FontWeight.Medium,
+                fontSize = (16 * fontSettings.headerFont.fontSize).sp,
+                lineHeight = (24 * fontSettings.headerFont.lineHeight).sp,
+                letterSpacing = (0.15 + fontSettings.headerFont.letterSpacing).sp
+            ),
+            titleSmall = TextStyle(
+                fontFamily = headerFont,
+                fontWeight = FontWeight.Medium,
+                fontSize = (14 * fontSettings.headerFont.fontSize).sp,
+                lineHeight = (20 * fontSettings.headerFont.lineHeight).sp,
+                letterSpacing = (0.1 + fontSettings.headerFont.letterSpacing).sp
+            ),
+            
+            // Body styles - use content font
+            bodyLarge = TextStyle(
+                fontFamily = contentFont,
+                fontWeight = FontWeight.Medium,
+                fontSize = (16 * fontSettings.contentFont.fontSize).sp,
+                lineHeight = (24 * fontSettings.contentFont.lineHeight).sp,
+                letterSpacing = (0.5 + fontSettings.contentFont.letterSpacing).sp
+            ),
+            bodyMedium = TextStyle(
+                fontFamily = contentFont,
+                fontWeight = FontWeight.Medium,
+                fontSize = (14 * fontSettings.contentFont.fontSize).sp,
+                lineHeight = (20 * fontSettings.contentFont.lineHeight).sp,
+                letterSpacing = (0.25 + fontSettings.contentFont.letterSpacing).sp
+            ),
+            bodySmall = TextStyle(
+                fontFamily = contentFont,
+                fontWeight = FontWeight.Medium,
+                fontSize = (12 * fontSettings.contentFont.fontSize).sp,
+                lineHeight = (16 * fontSettings.contentFont.lineHeight).sp,
+                letterSpacing = (0.4 + fontSettings.contentFont.letterSpacing).sp
+            ),
+            
+            // Label styles - use content font
+            labelLarge = TextStyle(
+                fontFamily = contentFont,
+                fontWeight = FontWeight.Medium,
+                fontSize = (14 * fontSettings.contentFont.fontSize).sp,
+                lineHeight = (20 * fontSettings.contentFont.lineHeight).sp,
+                letterSpacing = (0.1 + fontSettings.contentFont.letterSpacing).sp
+            ),
+            labelMedium = TextStyle(
+                fontFamily = contentFont,
+                fontWeight = FontWeight.Medium,
+                fontSize = (12 * fontSettings.contentFont.fontSize).sp,
+                lineHeight = (16 * fontSettings.contentFont.lineHeight).sp,
+                letterSpacing = (0.5 + fontSettings.contentFont.letterSpacing).sp
+            ),
+            labelSmall = TextStyle(
+                fontFamily = contentFont,
+                fontWeight = FontWeight.Medium,
+                fontSize = (11 * fontSettings.contentFont.fontSize).sp,
+                lineHeight = (16 * fontSettings.contentFont.lineHeight).sp,
+                letterSpacing = (0.5 + fontSettings.contentFont.letterSpacing).sp
+            )
+        )
+    }
+}

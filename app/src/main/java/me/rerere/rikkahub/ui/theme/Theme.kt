@@ -91,9 +91,9 @@ fun RikkahubTheme(
         LocalDarkMode provides darkTheme,
         LocalExtendColors provides extendColors
     ) {
-        // Select typography based on font preference
-        val useExpressiveFont by me.rerere.rikkahub.ui.hooks.rememberExpressiveFont()
-        val typography = if (useExpressiveFont) Typography else TypographyNormal
+        // Create typography from font settings
+        val fontSettings = me.rerere.rikkahub.ui.hooks.rememberFontSettings()
+        val typography = rememberTypographyFromFontSettings(fontSettings)
         
         MaterialTheme(
             colorScheme = colorSchemeConverted,

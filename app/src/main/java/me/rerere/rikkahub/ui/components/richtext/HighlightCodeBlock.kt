@@ -128,6 +128,9 @@ fun HighlightCodeBlock(
     val context = LocalContext.current
     val settings = LocalSettings.current
     val effectiveDisplay = settings.getEffectiveDisplaySetting()
+    
+    // Get code font from settings
+    val codeFontFamily = me.rerere.rikkahub.ui.theme.rememberFontFamilyFromConfig(effectiveDisplay.fontSettings.codeFont)
 
     // Determine initial state based on generation status
     // When generating (!completeCodeBlock): Preview (show code with fade)
@@ -378,7 +381,7 @@ fun HighlightCodeBlock(
                             colors = colorPalette,
                             overflow = TextOverflow.Visible,
                             softWrap = autoWrap,
-                            fontFamily = FontFamily.Monospace
+                            fontFamily = codeFontFamily
                         )
                     }
                 }

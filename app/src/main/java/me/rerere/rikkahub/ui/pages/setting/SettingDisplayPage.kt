@@ -136,14 +136,9 @@ fun SettingDisplayPage(vm: SettingVM = koinViewModel()) {
                     }
                     
                     SettingGroupItem(
-                        title = "Font Style",
-                        subtitle = if (useExpressiveFont) "M3 Expressive (Rounded)" else "Normal",
-                        trailing = {
-                            HapticSwitch(
-                                checked = useExpressiveFont,
-                                onCheckedChange = { useExpressiveFont = it }
-                            )
-                        }
+                        title = "Fonts",
+                        subtitle = "Customize fonts for headers, content, and code",
+                        onClick = { navController.navigate(me.rerere.rikkahub.Screen.SettingFonts) }
                     )
                     
                     SettingGroupItem(

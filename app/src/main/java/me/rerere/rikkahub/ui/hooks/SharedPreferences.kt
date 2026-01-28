@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
@@ -13,6 +14,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
+
 
 @Composable
 fun rememberSharedPreferenceString(
@@ -131,4 +133,15 @@ fun SharedPreferences.getBooleanFlowForKey(keyForBoolean: String, defaultValue: 
 fun rememberExpressiveFont(): MutableState<Boolean> {
     return rememberSharedPreferenceBoolean("use_expressive_font", true)
 }
+
+/**
+ * Font settings hook - retrieves font settings from display settings
+ */
+@Composable
+fun rememberFontSettings(): me.rerere.rikkahub.data.datastore.FontSettings {
+    val settingsStore: me.rerere.rikkahub.data.datastore.SettingsStore = org.koin.compose.koinInject()
+    val settings by settingsStore.settingsFlow.collectAsState(initial = me.rerere.rikkahub.data.datastore.Settings.dummy())
+    return settings.displaySetting.fontSettings
+}
+
 
