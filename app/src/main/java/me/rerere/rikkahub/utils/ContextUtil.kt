@@ -23,6 +23,8 @@ import androidx.core.net.toUri
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 private const val TAG = "ContextUtil"
 
@@ -236,5 +238,90 @@ fun shareTextFile(context: Context, fileName: String, content: String) {
     } catch (e: Exception) {
         e.printStackTrace()
         Toast.makeText(context, "Export failed: ${e.message}", Toast.LENGTH_SHORT).show()
+    }
+}
+
+suspend fun Context.saveToDownloads(uri: Uri, fileName: String) {
+    // Check permissions for legacy Android
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            val activity = this.getActivity()
+            if (activity != null) {
+                withContext(Dispatchers.Main) {
+                    ActivityCompat.requestPermissions(
+                        activity,
+                        arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE),
+                        112 // Request code for downloads
+                    )
+                }
+            } else {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@saveToDownloads, "Permission required to save file", Toast.LENGTH_SHORT).show()
+                }
+            }
+            return
+        }
+    }
+
+    withContext(Dispatchers.IO) {
+        var outputStream: OutputStream? = null
+        var inputStream: java.io.InputStream? = null
+        try {
+            inputStream = contentResolver.openInputStream(uri)
+            if (inputStream == null) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@saveToDownloads, "Failed to read source file", Toast.LENGTH_SHORT).show()
+                }
+                return@withContext
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                }
+                val dstUri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                if (dstUri != null) {
+                    outputStream = contentResolver.openOutputStream(dstUri)
+                    inputStream.copyTo(outputStream!!)
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@saveToDownloads, "Saved to Downloads: $fileName", Toast.LENGTH_LONG).show()
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@saveToDownloads, "Failed to create download entry", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } else {
+                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                val destFile = File(downloadsDir, fileName)
+                outputStream = FileOutputStream(destFile)
+                inputStream.copyTo(outputStream!!)
+                
+                // Notify media scanner
+                @Suppress("DEPRECATION")
+                val mediaScanIntent = Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE)
+                mediaScanIntent.data = Uri.fromFile(destFile)
+                sendBroadcast(mediaScanIntent)
+                
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@saveToDownloads, "Saved to Downloads: $fileName", Toast.LENGTH_LONG).show()
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save file to downloads", e)
+            withContext(Dispatchers.Main) {
+                Toast.makeText(this@saveToDownloads, "Failed to save: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        } finally {
+            try {
+                outputStream?.close()
+                inputStream?.close()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 }

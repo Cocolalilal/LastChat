@@ -35,6 +35,8 @@ import me.rerere.rikkahub.service.SpontaneousWorker
 import java.util.concurrent.TimeUnit
 import org.koin.androidx.workmanager.koin.workManagerFactory
 import org.koin.core.context.startKoin
+import com.chaquo.python.Python
+import com.chaquo.python.android.AndroidPlatform
 
 private const val TAG = "LastChatApp"
 
@@ -50,6 +52,11 @@ class LastChatApp : Application() {
             modules(appModule, viewModelModule, dataSourceModule, repositoryModule)
         }
         this.createNotificationChannel()
+
+        // Initialize Python runtime (Chaquopy)
+        if (!Python.isStarted()) {
+            Python.start(AndroidPlatform(this))
+        }
 
         // set cursor window size
         DatabaseUtil.setCursorWindowSize(16 * 1024 * 1024)

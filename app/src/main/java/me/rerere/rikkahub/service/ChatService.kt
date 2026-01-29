@@ -86,6 +86,7 @@ private const val TAG = "ChatService"
 private val inputTransformers by lazy {
     listOf(
         PlaceholderTransformer,
+        me.rerere.rikkahub.data.ai.transformers.UnsupportedFileTransformer,
         DocumentAsPromptTransformer,
         OcrTransformer,
     )

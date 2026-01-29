@@ -55,6 +55,10 @@
     <string name="assistant_page_invalid_json">Invalid JSON: %s</string>
     <string name="assistant_page_local_tools_javascript_engine_desc">Use QuickJS engine to execute JavaScript code for calculations and scripting</string>
     <string name="assistant_page_local_tools_javascript_engine_title">JavaScript Engine</string>
+    <string name="assistant_page_local_tools_python_engine_title">Python Engine</string>
+    <string name="assistant_page_local_tools_python_engine_desc">Execute Python code with pip packages and file I/O. Supports numpy and Pillow.</string>
+    <string name="assistant_page_local_tools_python_internet_title">Allow Internet Access</string>
+    <string name="assistant_page_local_tools_python_internet_desc">Allow Python code to make network requests</string>
     <string name="assistant_page_manage_memory">Manage Memory (%d)</string>
     <string name="assistant_page_manage_memory_title">Manage Memory</string>
     <string name="assistant_page_max_tokens">Max Tokens</string>

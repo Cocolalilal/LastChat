@@ -7,6 +7,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -24,6 +25,12 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("device_control")
     data object DeviceControl : LocalToolOption()
+
+    @Serializable
+    @SerialName("python_engine")
+    data class PythonEngine(
+        val allowInternet: Boolean = false
+    ) : LocalToolOption()
 }
 
 class LocalTools(private val context: Context) {
@@ -54,6 +61,212 @@ class LocalTools(private val context: Context) {
                     )
                 }
             }
+        )
+    }
+
+    private val pythonSandbox by lazy { PythonSandbox(context) }
+
+    fun getPythonTools(conversationId: Uuid, allowInternet: Boolean): List<Tool> {
+        val workingDir = pythonSandbox.getConversationDir(conversationId).absolutePath
+        
+        return listOf(
+            Tool(
+                name = "eval_python",
+                description = "Execute Python code. Has access to numpy and Pillow. Returns result or stdout. Use for calculations, data processing, and file manipulation.",
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject {
+                            put("code", buildJsonObject {
+                                put("type", "string")
+                                put("description", "The Python code to execute")
+                            })
+                        },
+                        required = listOf("code")
+                    )
+                },
+                execute = {
+                    val code = it.jsonObject["code"]?.jsonPrimitive?.contentOrNull ?: ""
+                    try {
+                        val python = com.chaquo.python.Python.getInstance()
+                        val executor = python.getModule("executor")
+                        val resultJson = executor.callAttr("execute", code, workingDir).toString()
+                        val resultObj = kotlinx.serialization.json.Json.parseToJsonElement(resultJson).jsonObject
+                        
+                        // Truncate output if too long
+                        val output = resultObj.toString()
+                        if (output.length > 2000) {
+                            buildJsonObject {
+                                put("output", output.take(2000) + "... (truncated)")
+                                put("note", "Output truncated to save context window. Use print() sparingly or save to file.")
+                            }
+                        } else {
+                            resultObj
+                        }
+                    } catch (e: Exception) {
+                        buildJsonObject { put("error", e.message ?: "Unknown error") }
+                    }
+                }
+            ),
+            Tool(
+                name = "pip_install",
+                description = "Install a Python package using pip. Packages persist across chats.",
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject {
+                            put("package", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Package name to install (e.g. 'requests', 'pandas')")
+                            })
+                        },
+                        required = listOf("package")
+                    )
+                },
+                execute = {
+                    val packageName = it.jsonObject["package"]?.jsonPrimitive?.contentOrNull ?: ""
+                    try {
+                        val python = com.chaquo.python.Python.getInstance()
+                        val executor = python.getModule("executor")
+                        val resultJson = executor.callAttr("pip_install", packageName).toString()
+                        kotlinx.serialization.json.Json.parseToJsonElement(resultJson).jsonObject
+                    } catch (e: Exception) {
+                        buildJsonObject { put("error", e.message ?: "Failed to install package") }
+                    }
+                }
+            ),
+            Tool(
+                name = "list_sandbox_files",
+                description = "List all files in the Python sandbox for this conversation.",
+                parameters = { null },
+                execute = {
+                    try {
+                        val files = pythonSandbox.listFiles(conversationId)
+                        buildJsonObject {
+                            put("files", kotlinx.serialization.json.JsonArray(
+                                files.map { file ->
+                                    buildJsonObject {
+                                        put("name", file.name)
+                                        put("size", file.size)
+                                        put("is_image", file.isImage)
+                                    }
+                                }
+                            ))
+                        }
+                    } catch (e: Exception) {
+                        buildJsonObject { put("error", e.message ?: "Failed to list files") }
+                    }
+                }
+            ),
+            Tool(
+                name = "read_sandbox_file",
+                description = "Read a text file from the Python sandbox.",
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject {
+                            put("path", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Relative path to the file in the sandbox")
+                            })
+                        },
+                        required = listOf("path")
+                    )
+                },
+                execute = {
+                    val path = it.jsonObject["path"]?.jsonPrimitive?.contentOrNull ?: ""
+                    try {
+                        val python = com.chaquo.python.Python.getInstance()
+                        val executor = python.getModule("executor")
+                        val resultJson = executor.callAttr("read_file", path, workingDir).toString()
+                        kotlinx.serialization.json.Json.parseToJsonElement(resultJson).jsonObject
+                    } catch (e: Exception) {
+                        buildJsonObject { put("error", e.message ?: "Failed to read file") }
+                    }
+                }
+            ),
+            Tool(
+                name = "write_sandbox_file",
+                description = "Write content to a file in the Python sandbox. Returns the file path and link.",
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject {
+                            put("path", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Relative path for the file (e.g. 'output.txt', 'images/result.png')")
+                            })
+                            put("content", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Content to write to the file")
+                            })
+                        },
+                        required = listOf("path", "content")
+                    )
+                },
+                execute = {
+                    val path = it.jsonObject["path"]?.jsonPrimitive?.contentOrNull ?: ""
+                    val content = it.jsonObject["content"]?.jsonPrimitive?.contentOrNull ?: ""
+                    try {
+                        val python = com.chaquo.python.Python.getInstance()
+                        val executor = python.getModule("executor")
+                        val resultJson = executor.callAttr("write_file", path, content, workingDir).toString()
+                        val resultObj = kotlinx.serialization.json.Json.parseToJsonElement(resultJson).jsonObject
+                        
+                        if (resultObj["success"]?.jsonPrimitive?.booleanOrNull == true) {
+                            val savedPath = resultObj["path"]?.jsonPrimitive?.contentOrNull ?: path
+                            // Inject URI for file access
+                            val uri = pythonSandbox.getFileUri(conversationId, savedPath)
+                            kotlinx.serialization.json.buildJsonObject {
+                                resultObj.forEach { (k, v) -> put(k, v) }
+                                put("uri", uri.toString())
+                                put("markdown_link", "[$savedPath]($uri)")
+                            }
+                        } else {
+                            resultObj
+                        }
+                    } catch (e: Exception) {
+                        buildJsonObject { put("error", e.message ?: "Failed to write file") }
+                    }
+                }
+            ),
+            Tool(
+                name = "import_attachment",
+                description = "Import an attached file from the user's message into the Python sandbox. Use the file URL from image/document attachments in the conversation. Returns the path where the file was saved.",
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject {
+                            put("url", buildJsonObject {
+                                put("type", "string")
+                                put("description", "The file URL from the message attachment (e.g. 'file:///...' or 'content://...')")
+                            })
+                            put("filename", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Filename to save as in the sandbox (e.g. 'input.jpg', 'data.csv')")
+                            })
+                        },
+                        required = listOf("url", "filename")
+                    )
+                },
+                execute = {
+                    val url = it.jsonObject["url"]?.jsonPrimitive?.contentOrNull ?: ""
+                    val filename = it.jsonObject["filename"]?.jsonPrimitive?.contentOrNull ?: ""
+                    try {
+                        val uriArg = android.net.Uri.parse(url)
+                        val savedPath = pythonSandbox.importFile(conversationId, uriArg, filename)
+                         // Inject URI for file access
+                        val fileUri = pythonSandbox.getFileUri(conversationId, filename)
+                        buildJsonObject {
+                            put("success", true)
+                            put("path", savedPath)
+                            put("filename", filename)
+                            put("uri", fileUri.toString())
+                            put("markdown_link", "[$filename]($fileUri)")
+                        }
+                    } catch (e: Exception) {
+                        buildJsonObject {
+                            put("success", false)
+                            put("error", e.message ?: "Failed to import file")
+                        }
+                    }
+                }
+            )
         )
     }
 
@@ -345,6 +558,11 @@ class LocalTools(private val context: Context) {
         }
         if (options.contains(LocalToolOption.DeviceControl)) {
             tools.addAll(getDeviceControlTools(assistantId, conversationId))
+        }
+        // Find Python engine option if present
+        val pythonOption = options.filterIsInstance<LocalToolOption.PythonEngine>().firstOrNull()
+        if (pythonOption != null) {
+            tools.addAll(getPythonTools(conversationId, pythonOption.allowInternet))
         }
         return tools
     }

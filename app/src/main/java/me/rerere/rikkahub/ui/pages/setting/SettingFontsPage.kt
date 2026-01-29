@@ -340,8 +340,7 @@ private fun FontConfigSection(
                     MaterialTheme.colorScheme.surfaceContainerHigh
             ),
             shape = AppShapes.CardLarge,
-            onClick = { expanded = !expanded },
-            modifier = Modifier.animateContentSize()
+            onClick = { expanded = !expanded }
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),

@@ -126,6 +126,9 @@ import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.utils.createChatFilesByContents
+import me.rerere.rikkahub.utils.getFileNameFromUri
+import me.rerere.rikkahub.utils.deleteChatFiles
+import me.rerere.rikkahub.data.ai.tools.LocalToolOption
 import java.io.File
 import kotlin.uuid.Uuid
 
@@ -596,12 +599,54 @@ private fun MinimalPickerContent(
         }
     }
     
-    // File picker launcher
+    // File picker launcher - categorizes files by type
     val filePickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetMultipleContents()
     ) { selectedUris ->
         if (selectedUris.isNotEmpty()) {
-            state.addImages(context.createChatFilesByContents(selectedUris))
+            val isPythonEnabled = assistant.localTools.any { it is LocalToolOption.PythonEngine }
+            val images = mutableListOf<android.net.Uri>()
+            val documents = mutableListOf<me.rerere.ai.ui.UIMessagePart.Document>()
+            
+            selectedUris.forEach { uri ->
+                val mimeType = context.contentResolver.getType(uri) ?: ""
+                val fileName = context.getFileNameFromUri(uri) ?: "file"
+                
+                // Allow if Python is enabled OR it's a generally supported type (Images/Text/PDF)
+                // Strict check for "Native" support usually implies Images, but app allows Text/PDF too.
+                val isSupported = mimeType.startsWith("image/") || 
+                                  mimeType.startsWith("text/") || 
+                                  mimeType == "application/pdf"
+                                  
+                if (!isPythonEnabled && !isSupported) {
+                     toaster.show("Unsupported file type: $fileName (Enable Python tool to use this file)")
+                     return@forEach
+                }
+
+                when {
+                    mimeType.startsWith("image/") -> {
+                        images.add(uri)
+                    }
+                    else -> {
+                        // Non-image files become Documents
+                        val localUri = context.createChatFilesByContents(listOf(uri))[0]
+                        documents.add(
+                            me.rerere.ai.ui.UIMessagePart.Document(
+                                url = localUri.toString(),
+                                fileName = fileName,
+                                mime = mimeType.ifEmpty { "application/octet-stream" }
+                            )
+                        )
+                    }
+                }
+            }
+            
+            if (images.isNotEmpty()) {
+                state.addImages(context.createChatFilesByContents(images))
+            }
+            if (documents.isNotEmpty()) {
+                state.addFiles(documents)
+            }
             onDismiss()
         }
     }
@@ -1256,46 +1301,14 @@ private fun MediaFileInputRow(
             }
         }
         state.messageContent.filterIsInstance<UIMessagePart.Document>().fastForEach { document ->
-            Box {
-                Surface(
-                    modifier = Modifier
-                        .height(48.dp)
-                        .defaultMinSize(minWidth = 48.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    tonalElevation = 4.dp
-                ) {
-                        androidx.compose.runtime.CompositionLocalProvider(
-                        androidx.compose.material3.LocalContentColor provides MaterialTheme.colorScheme.onSurface.copy(0.8f)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(4.dp)
-                        ) {
-                            Text(
-                                text = document.fileName,
-                                maxLines = 1,
-                                style = MaterialTheme.typography.labelSmall,
-                                modifier = Modifier.padding(horizontal = 4.dp)
-                            )
-                        }
-                    }
+            me.rerere.rikkahub.ui.components.ui.DocumentChip(
+                fileName = document.fileName,
+                mimeType = document.mime,
+                onRemove = {
+                    state.messageContent = state.messageContent.filterNot { it == document }
+                    context.deleteChatFiles(listOf(document.url.toUri()))
                 }
-                Icon(
-                    imageVector = Icons.Rounded.Close,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .padding(end = 4.dp)
-                        .size(24.dp)
-                        .clickable {
-                            state.messageContent = state.messageContent.filterNot { it == document }
-                            context.deleteChatFiles(listOf(document.url.toUri()))
-                        }
-                        .align(Alignment.TopEnd)
-                        .background(MaterialTheme.colorScheme.secondary),
-                    tint = MaterialTheme.colorScheme.onSecondary
-                )
-            }
+            )
         }
     }
 }

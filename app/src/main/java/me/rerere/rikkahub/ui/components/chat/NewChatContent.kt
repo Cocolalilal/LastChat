@@ -56,6 +56,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.clipToBounds
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.NewChatContentStyle
 import me.rerere.rikkahub.data.datastore.NewChatHeaderStyle
@@ -260,8 +261,19 @@ fun NewChatContent(
                     // Expanded templates
                     AnimatedVisibility(
                         visible = showMore,
-                        enter = expandVertically(),
-                        exit = shrinkVertically()
+                        enter = expandVertically(
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = 0.8f,
+                                stiffness = 300f
+                            )
+                        ),
+                        exit = shrinkVertically(
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = 0.8f,
+                                stiffness = 300f
+                            )
+                        ),
+                        modifier = Modifier.clipToBounds()
                     ) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,

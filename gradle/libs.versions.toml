@@ -59,6 +59,7 @@ baselineprofile = "1.4.1"
 profileinstaller = "1.4.1"
 ktor = "3.3.2"
 glance = "1.1.1"
+chaquopy = "15.0.1"
 
 [libraries]
 androidx-camera-core = { module = "androidx.camera:camera-core", version.ref = "cameraCore" }
@@ -161,3 +162,4 @@ google-services = { id = "com.google.gms.google-services", version.ref = "google
 firebase-crashlytics = { id = "com.google.firebase.crashlytics", version.ref = "firebase-crashlytics" }
 android-test = { id = "com.android.test", version.ref = "agp" }
 baselineprofile = { id = "androidx.baselineprofile", version.ref = "baselineprofile" }
+chaquopy = { id = "com.chaquo.python", version.ref = "chaquopy" }

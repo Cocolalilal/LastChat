@@ -173,6 +173,7 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.service.ChatService
+import me.rerere.rikkahub.data.ai.tools.LocalToolOption
 import me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.HapticPattern
@@ -979,49 +980,14 @@ private fun MediaFileInputRow(
         }
         state.messageContent.filterIsInstance<UIMessagePart.Document>()
             .fastForEach { document ->
-                Box {
-                    Surface(
-                        modifier = Modifier
-                            .height(48.dp)
-                            .widthIn(max = 128.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        tonalElevation = 4.dp
-                    ) {
-                        CompositionLocalProvider(
-                            LocalContentColor provides MaterialTheme.colorScheme.onSurface.copy(
-                                0.8f
-                            )
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(4.dp)
-                            ) {
-                                Text(
-                                    text = document.fileName,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
+                me.rerere.rikkahub.ui.components.ui.DocumentChip(
+                    fileName = document.fileName,
+                    mimeType = document.mime,
+                    onRemove = {
+                        state.messageContent = state.messageContent.filterNot { it == document }
+                        context.deleteChatFiles(listOf(document.url.toUri()))
                     }
-                    Icon(
-                        imageVector = Icons.Rounded.Close,
-                        contentDescription = null,
-                        modifier = Modifier
-                            .clip(CircleShape)
-                            .padding(end = 4.dp)
-                            .size(24.dp)
-                            .clickable {
-                                // Remove image
-                                state.messageContent =
-                                    state.messageContent.filterNot { it == document }
-                                // Delete image
-                                context.deleteChatFiles(listOf(document.url.toUri()))
-                            }
-                            .align(Alignment.TopEnd)
-                            .background(MaterialTheme.colorScheme.secondary),
-                        tint = MaterialTheme.colorScheme.onSecondary
-                    )
-                }
+                )
             }
     }
 }
@@ -1214,7 +1180,12 @@ internal fun FilesPicker(
                 }
             }
             Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                FilePickButton(shape = topRightShape) {
+                // Check if Python is enabled for this assistant
+                val isPythonEnabled = assistant.localTools.any { it is LocalToolOption.PythonEngine }
+                FilePickButton(
+                    shape = topRightShape,
+                    allowAllTypes = isPythonEnabled
+                ) {
                     state.addFiles(it)
                     onDismiss()
                 }
@@ -1663,6 +1634,7 @@ fun VideoPickButton(
 @Composable
 fun FilePickButton(
     shape: Shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
+    allowAllTypes: Boolean = false,
     onAddFiles: (List<UIMessagePart.Document>) -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -1670,15 +1642,12 @@ fun FilePickButton(
     val pickMedia =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
             if (uris.isNotEmpty()) {
-                // Allow all file types
-                val allowedMimeTypes = setOf("*/*")
-
                 val documents = uris.mapNotNull { uri ->
                     val fileName = context.getFileNameFromUri(uri) ?: "file"
-                    val mime = context.getFileMimeType(uri) ?: "text/plain"
+                    val mime = context.getFileMimeType(uri) ?: "application/octet-stream"
 
-                    // Filter by MIME type or file extension
-                    val isAllowed = allowedMimeTypes.contains(mime) ||
+                    // When allowAllTypes is true (Python enabled), accept all files
+                    val isAllowed = allowAllTypes ||
                         mime.startsWith("text/") ||
                         mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
                         mime == "application/pdf" ||
@@ -1695,7 +1664,6 @@ fun FilePickButton(
                         fileName.endsWith(".kt", ignoreCase = true) ||
                         fileName.endsWith(".ts", ignoreCase = true) ||
                         fileName.endsWith(".tsx", ignoreCase = true) ||
-                        fileName.endsWith(".md", ignoreCase = true) ||
                         fileName.endsWith(".markdown", ignoreCase = true) ||
                         fileName.endsWith(".mdx", ignoreCase = true) ||
                         fileName.endsWith(".yml", ignoreCase = true) ||

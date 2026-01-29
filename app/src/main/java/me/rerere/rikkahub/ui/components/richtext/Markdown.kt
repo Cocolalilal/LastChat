@@ -79,6 +79,9 @@ import me.rerere.rikkahub.data.datastore.RpStyleRule
 import me.rerere.rikkahub.ui.components.table.DataTable
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.utils.toDp
+import me.rerere.rikkahub.utils.saveToDownloads
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import org.intellij.markdown.IElementType
 import org.intellij.markdown.MarkdownElementTypes
 import org.intellij.markdown.MarkdownTokenTypes
@@ -525,13 +528,22 @@ private fun MarkdownNode(
             val linkDest =
                 node.findChildOfTypeRecursive(MarkdownElementTypes.LINK_DESTINATION)?.getTextInNode(content) ?: ""
             val context = LocalContext.current
+            val scope = rememberCoroutineScope()
             Text(
                 text = linkText,
                 color = MaterialTheme.colorScheme.primary,
                 textDecoration = TextDecoration.Underline,
                 modifier = modifier.clickable {
-                    val intent = Intent(Intent.ACTION_VIEW, linkDest.toUri())
-                    context.startActivity(intent)
+                    val uri = linkDest.toUri()
+                    if (uri.scheme == "content" && uri.authority == "${context.packageName}.fileprovider") {
+                        val fileName = if (linkText.isNotEmpty() && !linkText.contains("/")) linkText else uri.lastPathSegment ?: "downloaded_file"
+                        scope.launch {
+                            context.saveToDownloads(uri, fileName)
+                        }
+                    } else {
+                        val intent = Intent(Intent.ACTION_VIEW, uri)
+                        context.startActivity(intent)
+                    }
                 })
         }
 
