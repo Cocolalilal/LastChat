@@ -46,6 +46,7 @@ import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import kotlinx.coroutines.launch
@@ -69,6 +70,7 @@ import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.modifier.shimmer
 import me.rerere.rikkahub.utils.JsonInstantPretty
 import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
+import me.rerere.rikkahub.utils.saveToDownloads
 import org.koin.compose.koinInject
 
 @Composable
@@ -107,6 +109,8 @@ fun ToolCallItem(
                         "delete_memory" -> Icons.Rounded.BookmarkRemove
                         "search_web" -> Icons.Rounded.Public
                         "scrape_web" -> Icons.Rounded.Public
+                        "eval_python", "pip_install", "write_sandbox_file", "read_sandbox_file",
+                        "list_sandbox_files", "delete_sandbox_file", "import_attachment" -> Icons.Rounded.Terminal
                         else -> Icons.Rounded.Build
                     },
                     contentDescription = null,
@@ -128,6 +132,22 @@ fun ToolCallItem(
                                 ?: ""
                         )
                         "scrape_web" -> stringResource(R.string.chat_message_tool_scrape_web)
+                        "eval_python" -> stringResource(R.string.chat_message_tool_python_eval)
+                        "pip_install" -> stringResource(R.string.chat_message_tool_python_pip)
+                        "write_sandbox_file" -> stringResource(
+                            R.string.chat_message_tool_python_write_file,
+                            (arguments as? JsonObject)?.get("path")?.jsonPrimitiveOrNull?.contentOrNull ?: ""
+                        )
+                        "read_sandbox_file" -> stringResource(
+                            R.string.chat_message_tool_python_read_file,
+                            (arguments as? JsonObject)?.get("path")?.jsonPrimitiveOrNull?.contentOrNull ?: ""
+                        )
+                        "list_sandbox_files" -> stringResource(R.string.chat_message_tool_python_list_files)
+                        "delete_sandbox_file" -> stringResource(
+                            R.string.chat_message_tool_python_delete_file,
+                            (arguments as? JsonObject)?.get("path")?.jsonPrimitiveOrNull?.contentOrNull ?: ""
+                        )
+                        "import_attachment" -> stringResource(R.string.chat_message_tool_python_import)
                         else -> stringResource(
                             R.string.chat_message_tool_call_generic,
                             toolName
@@ -189,6 +209,46 @@ fun ToolCallItem(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
                     )
+                }
+                // Python tool output preview
+                if (toolName == "eval_python" && content != null && !loading) {
+                    val contentObj = content as? JsonObject
+                    val result = contentObj?.get("result")?.jsonPrimitiveOrNull?.contentOrNull
+                    val stdout = contentObj?.get("stdout")?.jsonPrimitiveOrNull?.contentOrNull
+                    val error = contentObj?.get("error")?.jsonPrimitiveOrNull?.contentOrNull
+                    val previewText = error ?: result ?: stdout
+                    if (!previewText.isNullOrBlank()) {
+                        Text(
+                            text = previewText.take(100) + if (previewText.length > 100) "…" else "",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (error != null) MaterialTheme.colorScheme.error 
+                                   else MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                // File operation result preview
+                if (toolName in listOf("write_sandbox_file", "read_sandbox_file", "list_sandbox_files") && content != null && !loading) {
+                    val contentObj = content as? JsonObject
+                    val uri = contentObj?.get("uri")?.jsonPrimitiveOrNull?.contentOrNull
+                    val files = contentObj?.get("files")?.jsonArray
+                    val success = contentObj?.get("success")?.jsonPrimitiveOrNull?.contentOrNull
+                    val previewText = when {
+                        uri != null -> uri.substringAfterLast("/")
+                        files != null -> "${files.size} files"
+                        success != null -> if (success == "true") "✓" else "✗"
+                        else -> null
+                    }
+                    if (previewText != null) {
+                        Text(
+                            text = previewText,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
         }
@@ -365,6 +425,192 @@ private fun ToolCallPreviewSheet(
                                                     8.dp
                                                 )
                                         )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Python tools - show code with syntax highlighting and formatted output
+                    "eval_python" -> {
+                        val code = (arguments as? JsonObject)?.get("code")?.jsonPrimitiveOrNull?.contentOrNull ?: ""
+                        val contentObj = content as? JsonObject
+                        val result = contentObj?.get("result")?.jsonPrimitiveOrNull?.contentOrNull
+                        val stdout = contentObj?.get("stdout")?.jsonPrimitiveOrNull?.contentOrNull
+                        val stderr = contentObj?.get("stderr")?.jsonPrimitiveOrNull?.contentOrNull
+                        val error = contentObj?.get("error")?.jsonPrimitiveOrNull?.contentOrNull
+                        
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            // Code section
+                            Text(
+                                text = stringResource(R.string.chat_message_tool_python_code),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                HighlightText(
+                                    code = code,
+                                    language = "python",
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(12.dp)
+                                )
+                            }
+                            
+                            // Output section
+                            Text(
+                                text = stringResource(R.string.chat_message_tool_python_output),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (error != null) 
+                                        MaterialTheme.colorScheme.errorContainer 
+                                    else MaterialTheme.colorScheme.surfaceContainerLow
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    if (error != null) {
+                                        Text(
+                                            text = error,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onErrorContainer
+                                        )
+                                    } else {
+                                        if (!stdout.isNullOrBlank()) {
+                                            Text(
+                                                text = stdout,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                            )
+                                        }
+                                        if (!result.isNullOrBlank() && result != "null") {
+                                            Text(
+                                                text = "→ $result",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                            )
+                                        }
+                                        if (!stderr.isNullOrBlank()) {
+                                            Text(
+                                                text = stderr,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.error
+                                            )
+                                        }
+                                        if (stdout.isNullOrBlank() && (result.isNullOrBlank() || result == "null") && stderr.isNullOrBlank()) {
+                                            Text(
+                                                text = "(no output)",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // File write tool - show file info with download button
+                    "write_sandbox_file" -> {
+                        val path = (arguments as? JsonObject)?.get("path")?.jsonPrimitiveOrNull?.contentOrNull ?: ""
+                        val contentObj = content as? JsonObject
+                        val success = contentObj?.get("success")?.jsonPrimitive?.content?.toBooleanStrictOrNull() == true
+                        val uri = contentObj?.get("uri")?.jsonPrimitiveOrNull?.contentOrNull
+                        val error = contentObj?.get("error")?.jsonPrimitiveOrNull?.contentOrNull
+                        val context = androidx.compose.ui.platform.LocalContext.current
+                        val scope = rememberCoroutineScope()
+                        
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.chat_message_tool_file_created),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (success) 
+                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                                    else MaterialTheme.colorScheme.errorContainer
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    // File path
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = if (success) Icons.Rounded.Build
+                                                else Icons.Rounded.Delete,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(24.dp),
+                                            tint = if (success) MaterialTheme.colorScheme.primary
+                                                else MaterialTheme.colorScheme.error
+                                        )
+                                        Text(
+                                            text = path,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                    
+                                    if (error != null) {
+                                        Text(
+                                            text = error,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.error
+                                        )
+                                    }
+                                    
+                                    // Download button
+                                    if (success && uri != null) {
+                                        androidx.compose.material3.FilledTonalButton(
+                                            onClick = {
+                                                val uriParsed = android.net.Uri.parse(uri)
+                                                scope.launch {
+                                                    context.saveToDownloads(uriParsed, path.substringAfterLast("/"))
+                                                }
+                                            },
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.ContentCopy,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            androidx.compose.foundation.layout.Spacer(
+                                                modifier = Modifier.size(8.dp)
+                                            )
+                                            Text(stringResource(R.string.chat_message_tool_download_file))
+                                        }
                                     }
                                 }
                             }

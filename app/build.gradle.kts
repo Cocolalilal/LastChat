@@ -158,6 +158,7 @@ kotlin {
 chaquopy {
     defaultConfig {
         version = "3.11"
+        buildPython("C:/Users/julia/AppData/Local/Programs/Python/Python311/python.exe")
         pip {
             install("Pillow")
             install("numpy")

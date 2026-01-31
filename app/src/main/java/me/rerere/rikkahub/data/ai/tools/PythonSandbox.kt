@@ -91,6 +91,28 @@ class PythonSandbox(private val context: Context) {
     }
 
     /**
+     * Delete a specific file from the sandbox.
+     * Returns true if the file was deleted, false if it didn't exist.
+     */
+    fun deleteFile(conversationId: Uuid, relativePath: String): Boolean {
+        val dir = getConversationDir(conversationId)
+        val file = File(dir, relativePath)
+        
+        // Security: ensure file is within sandbox directory
+        val realPath = file.canonicalPath
+        val realDir = dir.canonicalPath
+        if (!realPath.startsWith(realDir)) {
+            throw SecurityException("Access denied: path outside sandbox")
+        }
+        
+        return if (file.exists() && file.isFile) {
+            file.delete()
+        } else {
+            false
+        }
+    }
+
+    /**
      * Clean up a conversation's sandbox when the chat is deleted.
      */
     fun cleanupConversation(conversationId: Uuid) {

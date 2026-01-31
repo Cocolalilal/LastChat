@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.ui.components.richtext
 
 import android.content.Intent
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,6 +22,7 @@ import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
@@ -534,15 +536,28 @@ private fun MarkdownNode(
                 color = MaterialTheme.colorScheme.primary,
                 textDecoration = TextDecoration.Underline,
                 modifier = modifier.clickable {
+                    Log.d("Markdown", "Link clicked: text='$linkText', dest='$linkDest'")
                     val uri = linkDest.toUri()
-                    if (uri.scheme == "content" && uri.authority == "${context.packageName}.fileprovider") {
+                    Log.d("Markdown", "Parsed URI: scheme=${uri.scheme}, authority=${uri.authority}, packageName=${context.packageName}")
+                    // Handle content:// URIs as downloads (files from sandbox/fileprovider)
+                    if (uri.scheme == "content") {
                         val fileName = if (linkText.isNotEmpty() && !linkText.contains("/")) linkText else uri.lastPathSegment ?: "downloaded_file"
+                        Log.d("Markdown", "Content URI detected, saving to downloads: $fileName")
                         scope.launch {
                             context.saveToDownloads(uri, fileName)
                         }
-                    } else {
+                    } else if (uri.scheme in listOf("http", "https", "mailto")) {
                         val intent = Intent(Intent.ACTION_VIEW, uri)
                         context.startActivity(intent)
+                    } else {
+                        // Try to open with ACTION_VIEW for other schemes (file://, etc)
+                        Log.d("Markdown", "Non-content scheme '${uri.scheme}', trying ACTION_VIEW")
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, uri)
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            Log.e("Markdown", "Failed to open link: $linkDest", e)
+                        }
                     }
                 })
         }
@@ -1077,6 +1092,38 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                     )
                     appendInlineContent("citation:$linkDest")
                 }
+            } else if (linkDest.startsWith("content://")) {
+                // Handle content:// URIs as downloadable files - looks like regular link
+                val displayName = if (linkText.isNotEmpty() && !linkText.contains("/")) linkText else linkDest.substringAfterLast("/")
+                val inlineKey = "download:$linkDest"
+                inlineContents.putIfAbsent(
+                    inlineKey, InlineTextContent(
+                        placeholder = Placeholder(
+                            width = (displayName.length * 8).sp,
+                            height = style.fontSize,
+                            placeholderVerticalAlign = PlaceholderVerticalAlign.AboveBaseline,
+                        ), children = {
+                            val context = LocalContext.current
+                            val scope = rememberCoroutineScope()
+                            Text(
+                                text = displayName,
+                                modifier = Modifier
+                                    .clickable {
+                                        Log.d("Markdown", "Download clicked: $displayName from $linkDest")
+                                        val uri = linkDest.toUri()
+                                        scope.launch {
+                                            context.saveToDownloads(uri, displayName)
+                                        }
+                                    },
+                                style = TextStyle(
+                                    fontSize = style.fontSize,
+                                    color = colorScheme.primary,
+                                    textDecoration = TextDecoration.Underline
+                                ),
+                            )
+                        })
+                )
+                appendInlineContent(inlineKey)
             } else {
                 withLink(LinkAnnotation.Url(linkDest)) {
                     withStyle(

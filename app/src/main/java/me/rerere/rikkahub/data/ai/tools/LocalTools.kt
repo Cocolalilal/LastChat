@@ -135,8 +135,13 @@ class LocalTools(private val context: Context) {
             ),
             Tool(
                 name = "list_sandbox_files",
-                description = "List all files in the Python sandbox for this conversation.",
-                parameters = { null },
+                description = "List all files in the Python sandbox for this conversation. Returns file names, sizes, and whether they are images.",
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject { },
+                        required = emptyList()
+                    )
+                },
                 execute = {
                     try {
                         val files = pythonSandbox.listFiles(conversationId)
@@ -184,7 +189,7 @@ class LocalTools(private val context: Context) {
             ),
             Tool(
                 name = "write_sandbox_file",
-                description = "Write content to a file in the Python sandbox. Returns the file path and link.",
+                description = "Write content to a file in the Python sandbox. Returns `markdown_link` which you MUST include in your response to let the user download the file. Example: 'Here is your file: [output.txt](content://...)'",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
@@ -210,19 +215,45 @@ class LocalTools(private val context: Context) {
                         val resultObj = kotlinx.serialization.json.Json.parseToJsonElement(resultJson).jsonObject
                         
                         if (resultObj["success"]?.jsonPrimitive?.booleanOrNull == true) {
-                            val savedPath = resultObj["path"]?.jsonPrimitive?.contentOrNull ?: path
-                            // Inject URI for file access
-                            val uri = pythonSandbox.getFileUri(conversationId, savedPath)
+                            // Use original relative path since getFileUri constructs full path
+                            val uri = pythonSandbox.getFileUri(conversationId, path)
                             kotlinx.serialization.json.buildJsonObject {
                                 resultObj.forEach { (k, v) -> put(k, v) }
                                 put("uri", uri.toString())
-                                put("markdown_link", "[$savedPath]($uri)")
+                                put("markdown_link", "[$path]($uri)")
                             }
                         } else {
                             resultObj
                         }
                     } catch (e: Exception) {
                         buildJsonObject { put("error", e.message ?: "Failed to write file") }
+                    }
+                }
+            ),
+            Tool(
+                name = "delete_sandbox_file",
+                description = "Delete a file from the Python sandbox.",
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject {
+                            put("path", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Relative path to the file to delete")
+                            })
+                        },
+                        required = listOf("path")
+                    )
+                },
+                execute = {
+                    val path = it.jsonObject["path"]?.jsonPrimitive?.contentOrNull ?: ""
+                    try {
+                        val deleted = pythonSandbox.deleteFile(conversationId, path)
+                        buildJsonObject {
+                            put("success", deleted)
+                            put("path", path)
+                        }
+                    } catch (e: Exception) {
+                        buildJsonObject { put("error", e.message ?: "Failed to delete file") }
                     }
                 }
             ),
