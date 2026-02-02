@@ -273,6 +273,10 @@ private fun ChatPageContent(
     val context = LocalContext.current
     var previewMode by rememberSaveable { mutableStateOf(false) }
     var isTemporaryChat by rememberSaveable { mutableStateOf(false) }
+
+    // State for regeneration confirmation dialog
+    var showRegenerateConfirmDialog by rememberSaveable { mutableStateOf(false) }
+    var pendingRegenerateMessage by rememberSaveable { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
     
     // Auto-scroll to first matching message when opened from search
     LaunchedEffect(initialSearchQuery, conversation.messageNodes) {
@@ -363,8 +367,17 @@ private fun ChatPageContent(
                             chatListState.animateScrollToItem(index)
                         }
                     },
-                    onRegenerate = {
-                        vm.regenerateAtMessage(it)
+                    onRegenerate = { message ->
+                        // Check if this is a simple message (can preserve version history)
+                        // or complex message (will wipe old version)
+                        if (vm.canPreserveVersionHistory(message)) {
+                            // Simple message - regenerate with version history
+                            vm.regenerateAtMessage(message, forceWipe = false)
+                        } else {
+                            // Complex message - show confirmation dialog
+                            pendingRegenerateMessage = message
+                            showRegenerateConfirmDialog = true
+                        }
                     },
                     onEdit = {
                         inputState.editingMessage = it.id
@@ -390,18 +403,83 @@ private fun ChatPageContent(
                         )
                     },
                     onUpdateMessage = { newNode ->
-                        vm.updateConversation(
-                            conversation.copy(
-                                messageNodes = conversation.messageNodes.map { node ->
-                                    if (node.id == newNode.id) {
-                                        newNode
-                                    } else {
-                                        node
+                        // Turn-based version switching using versionTag
+                        // When switching versions, find the versionTag of the target message
+                        // and synchronize all nodes in the turn to show messages with that tag
+                        val oldNode = conversation.messageNodes.find { it.id == newNode.id }
+                        val isVersionSwitch = oldNode != null && 
+                            oldNode.selectIndex != newNode.selectIndex &&
+                            oldNode.role != me.rerere.ai.core.MessageRole.USER
+                        
+                        if (isVersionSwitch && oldNode != null) {
+                            val nodeIndex = conversation.messageNodes.indexOf(oldNode)
+                            
+                            // Get the versionTag of the newly selected message
+                            val targetVersionTag = newNode.messages.getOrNull(newNode.selectIndex)?.versionTag
+                            
+                            // Find the turn boundaries
+                            val turnStartIndex = conversation.messageNodes
+                                .subList(0, nodeIndex + 1)
+                                .indexOfLast { it.role == me.rerere.ai.core.MessageRole.USER } + 1
+                            
+                            val turnEndIndex = conversation.messageNodes
+                                .subList(nodeIndex, conversation.messageNodes.size)
+                                .indexOfFirst { it.role == me.rerere.ai.core.MessageRole.USER }
+                                .let { if (it == -1) conversation.messageNodes.size else nodeIndex + it }
+                            
+                            // Update all nodes in the turn
+                            val updatedNodes = conversation.messageNodes.mapIndexed { index, node ->
+                                when {
+                                    // This is the node we're switching, use the new selectIndex directly
+                                    node.id == newNode.id -> newNode
+                                    
+                                    // This node is in the same turn, try to find matching versionTag
+                                    index in turnStartIndex until turnEndIndex && 
+                                    node.role != me.rerere.ai.core.MessageRole.USER &&
+                                    node.messages.size > 1 -> {
+                                        if (targetVersionTag != null) {
+                                            // Find message with matching versionTag
+                                            val matchingIndex = node.messages.indexOfFirst { 
+                                                it.versionTag == targetVersionTag 
+                                            }
+                                            if (matchingIndex >= 0) {
+                                                node.copy(selectIndex = matchingIndex)
+                                            } else {
+                                                // Fallback: use index-based switching
+                                                val versionDelta = newNode.selectIndex - oldNode.selectIndex
+                                                val newSelectIndex = (node.selectIndex + versionDelta)
+                                                    .coerceIn(0, node.messages.lastIndex)
+                                                node.copy(selectIndex = newSelectIndex)
+                                            }
+                                        } else {
+                                            // No versionTag (old conversation), use index-based switching
+                                            val versionDelta = newNode.selectIndex - oldNode.selectIndex
+                                            val newSelectIndex = (node.selectIndex + versionDelta)
+                                                .coerceIn(0, node.messages.lastIndex)
+                                            node.copy(selectIndex = newSelectIndex)
+                                        }
                                     }
+                                    
+                                    // Not in this turn, keep unchanged
+                                    else -> node
                                 }
+                            }
+                            
+                            vm.updateConversation(conversation.copy(messageNodes = updatedNodes))
+                        } else {
+                            // Normal update (not version switching)
+                            vm.updateConversation(
+                                conversation.copy(
+                                    messageNodes = conversation.messageNodes.map { node ->
+                                        if (node.id == newNode.id) {
+                                            newNode
+                                        } else {
+                                            node
+                                        }
+                                    }
+                                )
                             )
-                        )
-                        vm.saveConversationAsync()
+                        }
                     },
                     onForkMessage = {
                         scope.launch {
@@ -501,6 +579,47 @@ private fun ChatPageContent(
                             showHeaderAssistantPicker = false
                         },
                         onDismiss = { showHeaderAssistantPicker = false }
+                    )
+                }
+
+                // Regeneration confirmation dialog for complex messages
+                if (showRegenerateConfirmDialog && pendingRegenerateMessage != null) {
+                    AlertDialog(
+                        onDismissRequest = {
+                            showRegenerateConfirmDialog = false
+                            pendingRegenerateMessage = null
+                        },
+                        title = { Text("Regenerate Message") },
+                        text = {
+                            Text(
+                                "This message contains tool calls or multiple steps. " +
+                                "Regenerating will replace the entire response and you won't be able to go back to the previous version. " +
+                                "Are you sure you want to continue?"
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    pendingRegenerateMessage?.let { message ->
+                                        vm.regenerateAtMessage(message, forceWipe = true)
+                                    }
+                                    showRegenerateConfirmDialog = false
+                                    pendingRegenerateMessage = null
+                                }
+                            ) {
+                                Text("Regenerate")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(
+                                onClick = {
+                                    showRegenerateConfirmDialog = false
+                                    pendingRegenerateMessage = null
+                                }
+                            ) {
+                                Text("Cancel")
+                            }
+                        }
                     )
                 }
 

@@ -63,41 +63,6 @@ def execute(code: str, working_dir: str) -> str:
     return json.dumps(response)
 
 
-def pip_install(package: str) -> str:
-    """
-    Install a pip package.
-    
-    Args:
-        package: Package name to install
-    
-    Returns:
-        JSON string with success status and output
-    """
-    import subprocess
-    
-    try:
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", package],
-            capture_output=True,
-            text=True,
-            timeout=120
-        )
-        return json.dumps({
-            "success": result.returncode == 0,
-            "output": (result.stdout + result.stderr).strip()
-        })
-    except subprocess.TimeoutExpired:
-        return json.dumps({
-            "success": False,
-            "error": "Installation timed out after 120 seconds"
-        })
-    except Exception as e:
-        return json.dumps({
-            "success": False,
-            "error": str(e)
-        })
-
-
 def read_file(filepath: str, working_dir: str) -> str:
     """
     Read a file from the sandbox.

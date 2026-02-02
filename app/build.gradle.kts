@@ -160,9 +160,22 @@ chaquopy {
         version = "3.11"
         buildPython("C:/Users/julia/AppData/Local/Programs/Python/Python311/python.exe")
         pip {
-            install("Pillow")
+            // Core data science  
             install("numpy")
-            install("pip")
+            install("pandas")
+            
+            // Visualization  
+            install("matplotlib")
+            install("Pillow")
+            
+            // Documents & Office files
+            install("openpyxl")      // Excel files
+            install("python-pptx")   // PowerPoint presentations
+            install("pypdf")         // PDF manipulation
+            install("python-docx")   // Word documents
+            
+            // Utilities
+            install("requests")
         }
     }
 }

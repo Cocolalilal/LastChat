@@ -30,7 +30,8 @@ data class UIMessage(
     val generationDurationMs: Long? = null, // Duration of AI generation in milliseconds
     val usedLorebookEntries: List<UsedLorebookEntry>? = null, // Lorebook entries used in this message
     val usedModes: List<UsedMode>? = null, // Modes used in this message
-    val usedMemories: List<UsedMemory>? = null // Memories used in this message
+    val usedMemories: List<UsedMemory>? = null, // Memories used in this message
+    val versionTag: String? = null // Links messages from same generation for multi-node turn versioning
 ) {
     private fun appendChunk(chunk: MessageChunk): UIMessage {
         val choice = chunk.choices.getOrNull(0)

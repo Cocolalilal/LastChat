@@ -92,17 +92,34 @@ data class Conversation(
 
     fun updateCurrentMessages(messages: List<UIMessage>): Conversation {
         val newNodes = this.messageNodes.toMutableList()
+        
+        // Get the versionTag from the last assistant node's current message (if it exists)
+        // This is the version tag we'll propagate to new messages during streaming
+        // We use lastOrNull instead of firstOrNull to get the most recent assistant message
+        // (the one currently being generated)
+        val activeVersionTag = this.messageNodes
+            .lastOrNull { it.role == MessageRole.ASSISTANT }
+            ?.currentMessage?.versionTag
 
         messages.forEachIndexed { index, message ->
+            // Propagate versionTag to new messages that don't have one
+            // This ensures tool results and subsequent messages inherit the versionTag
+            // from the assistant message they're associated with
+            val messageWithTag = if (activeVersionTag != null && message.versionTag == null) {
+                message.copy(versionTag = activeVersionTag)
+            } else {
+                message
+            }
+            
             val node = newNodes
-                .getOrElse(index) { message.toMessageNode() }
+                .getOrElse(index) { messageWithTag.toMessageNode() }
 
             val newMessages = node.messages.toMutableList()
             var newMessageIndex = node.selectIndex
-            if (newMessages.any { it.id == message.id }) {
-                newMessages[newMessages.indexOfFirst { it.id == message.id }] = message
+            if (newMessages.any { it.id == messageWithTag.id }) {
+                newMessages[newMessages.indexOfFirst { it.id == messageWithTag.id }] = messageWithTag
             } else {
-                newMessages.add(message)
+                newMessages.add(messageWithTag)
                 newMessageIndex = newMessages.lastIndex
             }
 

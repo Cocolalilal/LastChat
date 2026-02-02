@@ -28,9 +28,7 @@ sealed class LocalToolOption {
 
     @Serializable
     @SerialName("python_engine")
-    data class PythonEngine(
-        val allowInternet: Boolean = false
-    ) : LocalToolOption()
+    data object PythonEngine : LocalToolOption()
 }
 
 class LocalTools(private val context: Context) {
@@ -66,7 +64,7 @@ class LocalTools(private val context: Context) {
 
     private val pythonSandbox by lazy { PythonSandbox(context) }
 
-    fun getPythonTools(conversationId: Uuid, allowInternet: Boolean): List<Tool> {
+    fun getPythonTools(conversationId: Uuid): List<Tool> {
         val workingDir = pythonSandbox.getConversationDir(conversationId).absolutePath
         
         return listOf(
@@ -104,32 +102,6 @@ class LocalTools(private val context: Context) {
                         }
                     } catch (e: Exception) {
                         buildJsonObject { put("error", e.message ?: "Unknown error") }
-                    }
-                }
-            ),
-            Tool(
-                name = "pip_install",
-                description = "Install a Python package using pip. Packages persist across chats.",
-                parameters = {
-                    InputSchema.Obj(
-                        properties = buildJsonObject {
-                            put("package", buildJsonObject {
-                                put("type", "string")
-                                put("description", "Package name to install (e.g. 'requests', 'pandas')")
-                            })
-                        },
-                        required = listOf("package")
-                    )
-                },
-                execute = {
-                    val packageName = it.jsonObject["package"]?.jsonPrimitive?.contentOrNull ?: ""
-                    try {
-                        val python = com.chaquo.python.Python.getInstance()
-                        val executor = python.getModule("executor")
-                        val resultJson = executor.callAttr("pip_install", packageName).toString()
-                        kotlinx.serialization.json.Json.parseToJsonElement(resultJson).jsonObject
-                    } catch (e: Exception) {
-                        buildJsonObject { put("error", e.message ?: "Failed to install package") }
                     }
                 }
             ),
@@ -591,9 +563,8 @@ class LocalTools(private val context: Context) {
             tools.addAll(getDeviceControlTools(assistantId, conversationId))
         }
         // Find Python engine option if present
-        val pythonOption = options.filterIsInstance<LocalToolOption.PythonEngine>().firstOrNull()
-        if (pythonOption != null) {
-            tools.addAll(getPythonTools(conversationId, pythonOption.allowInternet))
+        if (options.contains(LocalToolOption.PythonEngine)) {
+            tools.addAll(getPythonTools(conversationId))
         }
         return tools
     }

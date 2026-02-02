@@ -175,7 +175,7 @@ fun AssistantToolsSubPage(
                         checked = pythonOption != null,
                         onCheckedChange = { enabled ->
                             val newLocalTools = if (enabled) {
-                                assistant.localTools + LocalToolOption.PythonEngine()
+                                assistant.localTools + LocalToolOption.PythonEngine
                             } else {
                                 assistant.localTools.filterNot { it is LocalToolOption.PythonEngine }
                             }
@@ -184,27 +184,6 @@ fun AssistantToolsSubPage(
                     )
                 }
             )
-            
-            // Python Internet Access (only when Python enabled)
-            if (pythonOption != null) {
-                SettingGroupItem(
-                    title = stringResource(R.string.assistant_page_local_tools_python_internet_title),
-                    subtitle = stringResource(R.string.assistant_page_local_tools_python_internet_desc),
-                    trailing = {
-                        HapticSwitch(
-                            checked = pythonOption.allowInternet,
-                            onCheckedChange = { allowed ->
-                                val updatedTools = assistant.localTools.map {
-                                    if (it is LocalToolOption.PythonEngine) {
-                                        it.copy(allowInternet = allowed)
-                                    } else it
-                                }
-                                onUpdate(assistant.copy(localTools = updatedTools))
-                            }
-                        )
-                    }
-                )
-            }
         }
 
         // ═══════════════════════════════════════════════════════════════════

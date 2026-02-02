@@ -566,14 +566,27 @@ class ChatVM(
         val node = conversation.getMessageNodeByMessageId(message.id) ?: return
         val nodeIndex = conversation.messageNodes.indexOf(node)
         if (nodeIndex == -1) return
-        val newConversation = if (node.messages.size == 1) {
+        
+        // Get the versionTag from the message being deleted - we'll delete all matching versions
+        val deleteVersionTag = message.versionTag
+        
+        val newConversation = if (node.messages.size == 1 && deleteVersionTag == null) {
+            // Single message node without versionTag - just remove the node
             conversation.copy(
                 messageNodes = conversation.messageNodes.filterIndexed { index, _ -> index != nodeIndex })
         } else {
+            // Delete message(s) by ID or versionTag
             val updatedNodes = conversation.messageNodes.mapNotNull { n ->
-                val newMessages = n.messages.filter { it.id != message.id }
+                val newMessages = n.messages.filter { msg ->
+                    // Keep messages that don't match the delete criteria
+                    if (deleteVersionTag != null && msg.versionTag == deleteVersionTag) {
+                        false // Delete all messages with this versionTag
+                    } else {
+                        msg.id != message.id // Also delete the original message by ID
+                    }
+                }
                 if (newMessages.isEmpty()) {
-                    null
+                    null // Remove node entirely if no messages left
                 } else {
                     val newSelectIndex = if (n.selectIndex >= newMessages.size) {
                         newMessages.lastIndex
@@ -617,12 +630,55 @@ class ChatVM(
         return relatedMessages.toList()
     }
 
+    /**
+     * Checks if regenerating this message will preserve version history (simple message)
+     * or wipe the old version (complex message with tool calls).
+     *
+     * A message is considered "simple" if the turn contains only:
+     * - Text/Thinking/Reasoning parts (no tool calls)
+     *
+     * A message is "complex" if the turn contains:
+     * - Any tool calls or tool results
+     *
+     * @return true if the turn is simple (can go back), false if complex (will wipe)
+     */
+    fun canPreserveVersionHistory(message: UIMessage): Boolean {
+        val currentMessages = conversation.value.messageNodes.map { it.currentMessage }
+
+        // Find the index of the message
+        val messageIndex = currentMessages.indexOfFirst { it.id == message.id }
+        if (messageIndex == -1) return false
+
+        // Find the start of the turn (last user message before this assistant message)
+        val lastUserIndex = currentMessages
+            .subList(0, messageIndex + 1)
+            .indexOfLast { it.role == me.rerere.ai.core.MessageRole.USER }
+
+        // Get all messages in this turn (from user to end of turn or next user)
+        val turnStart = if (lastUserIndex >= 0) lastUserIndex else 0
+        val turnEnd = currentMessages
+            .subList(messageIndex, currentMessages.size)
+            .indexOfFirst { it.role == me.rerere.ai.core.MessageRole.USER }
+            .let { if (it == -1) currentMessages.size else messageIndex + it }
+
+        // Check if any message in the turn has tool calls or tool results
+        for (i in turnStart until turnEnd) {
+            val msg = currentMessages[i]
+            if (msg.parts.any { it is UIMessagePart.ToolCall || it is UIMessagePart.ToolResult }) {
+                return false // Complex turn - cannot preserve version history
+            }
+        }
+
+        return true // Simple turn - can preserve version history
+    }
+
     fun regenerateAtMessage(
         message: UIMessage,
-        regenerateAssistantMsg: Boolean = true
+        regenerateAssistantMsg: Boolean = true,
+        forceWipe: Boolean = false
     ) {
         analytics.logEvent("ai_regenerate_at_message", null)
-        chatService.regenerateAtMessage(_conversationId, message, regenerateAssistantMsg)
+        chatService.regenerateAtMessage(_conversationId, message, regenerateAssistantMsg, forceWipe)
     }
 
     fun saveConversationAsync() {

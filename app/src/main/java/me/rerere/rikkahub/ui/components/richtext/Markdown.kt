@@ -1099,9 +1099,9 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                 inlineContents.putIfAbsent(
                     inlineKey, InlineTextContent(
                         placeholder = Placeholder(
-                            width = (displayName.length * 8).sp,
-                            height = style.fontSize,
-                            placeholderVerticalAlign = PlaceholderVerticalAlign.AboveBaseline,
+                            width = (displayName.length * 8 + 8).sp, // Width for link text
+                            height = (style.fontSize.value * 1.3f).sp, // Extra height for descenders (p, g, y)
+                            placeholderVerticalAlign = PlaceholderVerticalAlign.TextBottom,
                         ), children = {
                             val context = LocalContext.current
                             val scope = rememberCoroutineScope()
