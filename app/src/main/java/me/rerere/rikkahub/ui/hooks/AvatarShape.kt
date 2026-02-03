@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
@@ -32,15 +33,19 @@ fun rememberAvatarShape(loading: Boolean): Shape {
     val rotation = remember { Animatable(0f) }
     LaunchedEffect(loading) {
         if (loading) {
-            // Smooth continuous rotation at the pace the user liked (360° per 3 seconds)
+            // Smooth continuous rotation at a steady pace (one full rotation every 3s)
+            val degreesPerSecond = 120f
+            var lastFrameTimeNanos = 0L
             while (isActive) {
-                rotation.animateTo(
-                    targetValue = rotation.value + 120f,
-                    animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f)
-                )
-                if (rotation.value >= 360f) {
-                    rotation.snapTo(rotation.value % 360f)
+                val frameTime = withFrameNanos { it }
+                if (lastFrameTimeNanos == 0L) {
+                    lastFrameTimeNanos = frameTime
+                    continue
                 }
+                val deltaSeconds = (frameTime - lastFrameTimeNanos) / 1_000_000_000f
+                lastFrameTimeNanos = frameTime
+                val next = (rotation.value + degreesPerSecond * deltaSeconds) % 360f
+                rotation.snapTo(next)
             }
         } else {
             // Reset to 0 when not loading
