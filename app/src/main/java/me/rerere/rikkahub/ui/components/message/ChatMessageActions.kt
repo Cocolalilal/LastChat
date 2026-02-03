@@ -69,6 +69,7 @@ fun ColumnScope.ChatMessageActionButtons(
     node: MessageNode,
     onUpdate: (MessageNode) -> Unit,
     onRegenerate: () -> Unit,
+    showRegenerate: Boolean = true,
     onOpenActionSheet: () -> Unit,
     onEditLorebookEntry: ((UsedLorebookEntry) -> Unit)? = null,
     onModeClick: ((me.rerere.ai.ui.UsedMode) -> Unit)? = null,
@@ -138,13 +139,15 @@ fun ColumnScope.ChatMessageActionButtons(
                 .size(16.dp)
         )
 
-        Icon(
-            Icons.Rounded.Refresh, stringResource(R.string.regenerate), modifier = Modifier
-                .clip(CircleShape)
-                .clickable { onRegenerate() }
-                .padding(8.dp)
-                .size(16.dp)
-        )
+        if (showRegenerate) {
+            Icon(
+                Icons.Rounded.Refresh, stringResource(R.string.regenerate), modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable { onRegenerate() }
+                    .padding(8.dp)
+                    .size(16.dp)
+            )
+        }
 
         if (message.role == MessageRole.ASSISTANT) {
             val tts = LocalTTSState.current

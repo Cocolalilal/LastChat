@@ -268,12 +268,32 @@ private fun SharedTransitionScope.ChatListNormal(
         // Group consecutive messages by role into turns
         // Computed fresh on each recomposition to ensure up-to-date data
         val turnGroups = conversation.messageNodes.groupIntoTurns()
+
+        // Index helpers for regen visibility
+        val lastUserIndex = remember(conversation.messageNodes) {
+            conversation.messageNodes.indexOfLast { it.currentMessage.role == me.rerere.ai.core.MessageRole.USER }
+        }
+        val nodeIndexById = remember(conversation.messageNodes) {
+            conversation.messageNodes.mapIndexed { index, node -> node.id to index }.toMap()
+        }
         
         // Check if we need a phantom loading turn (loading but no assistant response yet)
         val needsPhantomLoadingTurn = loading && (
             turnGroups.isEmpty() || 
             turnGroups.lastOrNull()?.role == me.rerere.ai.core.MessageRole.USER
         )
+
+        val pendingAssistantGroup = remember(conversation.id) {
+            MessageTurnGroup(
+                nodes = listOf(MessageNode.of(UIMessage.assistant(""))),
+                role = me.rerere.ai.core.MessageRole.ASSISTANT
+            )
+        }
+        val displayGroups = if (needsPhantomLoadingTurn) {
+            turnGroups + pendingAssistantGroup
+        } else {
+            turnGroups
+        }
         
         LazyColumn(
             state = state,
@@ -288,8 +308,14 @@ private fun SharedTransitionScope.ChatListNormal(
                 .fillMaxSize(),
         ) {
             itemsIndexed(
-                items = turnGroups,
-                key = { index, group -> group.firstNode.id },
+                items = displayGroups,
+                key = { index, group ->
+                    if (group.role == me.rerere.ai.core.MessageRole.ASSISTANT && index == displayGroups.lastIndex) {
+                        "pending_assistant"
+                    } else {
+                        group.firstNode.id
+                    }
+                },
             ) { index, group ->
                 Column {
                     // Check if any node in group is selected
@@ -307,7 +333,13 @@ private fun SharedTransitionScope.ChatListNormal(
                         },
                         enabled = selecting,
                     ) {
-                        val isLastTurn = index == turnGroups.lastIndex
+                        val isLastTurn = index == displayGroups.lastIndex
+                        val showRegenerate by remember(lastUserIndex, nodeIndexById, group.nodes) {
+                            derivedStateOf {
+                                val groupLastIndex = group.nodes.maxOfOrNull { nodeIndexById[it.id] ?: -1 } ?: -1
+                                lastUserIndex == -1 || groupLastIndex >= lastUserIndex
+                            }
+                        }
                         ChatMessageTurn(
                             group = group,
                             isLastTurn = isLastTurn,
@@ -356,6 +388,7 @@ private fun SharedTransitionScope.ChatListNormal(
                                     )
                                 )
                             },
+                            showRegenerate = showRegenerate,
                         )
                     }
                     // Show truncate indicator if any node in this group is at the truncate point
@@ -381,15 +414,7 @@ private fun SharedTransitionScope.ChatListNormal(
                 }
             }
 
-            // Phantom loading turn - shows assistant avatar + waiting pill before any tokens arrive
-            if (needsPhantomLoadingTurn) {
-                item(key = "phantom_loading_turn") {
-                    PhantomLoadingTurn(
-                        assistant = settings.getAssistantById(conversation.assistantId),
-                        settings = settings,
-                    )
-                }
-            }
+            // Phantom loading turn now handled as a synthetic assistant group for morphing.
 
             // 为了能正确滚动到这
             item(ScrollBottomKey) {

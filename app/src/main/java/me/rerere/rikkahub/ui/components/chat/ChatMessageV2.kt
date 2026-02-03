@@ -393,6 +393,7 @@ fun ChatMessageTurn(
     onShare: (MessageNode) -> Unit = {},
     onDelete: (MessageNode) -> Unit = {},
     onUpdate: (MessageNode) -> Unit = {},
+    showRegenerate: Boolean,
     onEditLorebookEntry: ((me.rerere.ai.ui.UsedLorebookEntry) -> Unit)? = null,
     onModeClick: ((me.rerere.ai.ui.UsedMode) -> Unit)? = null,
     onMemoryClick: ((me.rerere.ai.ui.UsedMemory) -> Unit)? = null,
@@ -435,6 +436,7 @@ fun ChatMessageTurn(
                     onCopy = { context.copyMessageToClipboard(group.lastNode.currentMessage) },
                     onRegenerate = { onRegenerate(group.lastNode) },
                     onOpenMenu = { showActionsSheet = true },
+                    showRegenerate = showRegenerate,
                     modifier = modifier
                 )
             }
@@ -466,6 +468,7 @@ fun ChatMessageTurn(
                     onRegenerate = { onRegenerate(group.lastNode) },
                     onUpdate = onUpdate,
                     onOpenActionSheet = { showActionsSheet = true },
+                    showRegenerate = showRegenerate,
                     onEditLorebookEntry = onEditLorebookEntry,
                     onModeClick = onModeClick,
                     onMemoryClick = onMemoryClick,
@@ -523,6 +526,7 @@ private fun UserMessageTurn(
     onCopy: () -> Unit,
     onRegenerate: () -> Unit,
     onOpenMenu: () -> Unit,
+    showRegenerate: Boolean,
     modifier: Modifier = Modifier
 ) {
     val haptics = rememberPremiumHaptics()
@@ -604,21 +608,23 @@ private fun UserMessageTurn(
                 }
                 
                 // Regenerate button
-                Box(
-                    modifier = Modifier
-                        .clip(androidx.compose.foundation.shape.CircleShape)
-                        .clickable {
-                            haptics.perform(HapticPattern.Pop)
-                            onRegenerate()
-                        }
-                        .padding(8.dp)
-                ) {
-                    Icon(
-                        imageVector = androidx.compose.material.icons.Icons.Rounded.Refresh,
-                        contentDescription = "Regenerate",
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                if (showRegenerate) {
+                    Box(
+                        modifier = Modifier
+                            .clip(androidx.compose.foundation.shape.CircleShape)
+                            .clickable {
+                                haptics.perform(HapticPattern.Pop)
+                                onRegenerate()
+                            }
+                            .padding(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = androidx.compose.material.icons.Icons.Rounded.Refresh,
+                            contentDescription = "Regenerate",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 
                 // More options button
@@ -664,6 +670,7 @@ private fun AssistantMessageTurn(
     onRegenerate: () -> Unit,
     onUpdate: (MessageNode) -> Unit,
     onOpenActionSheet: () -> Unit,
+    showRegenerate: Boolean,
     onEditLorebookEntry: ((me.rerere.ai.ui.UsedLorebookEntry) -> Unit)?,
     onModeClick: ((me.rerere.ai.ui.UsedMode) -> Unit)?,
     onMemoryClick: ((me.rerere.ai.ui.UsedMemory) -> Unit)?,
@@ -680,6 +687,10 @@ private fun AssistantMessageTurn(
         animationSpec = spring(dampingRatio = 0.8f, stiffness = 350f),
         label = "assistant_name_alpha"
     )
+    val handleBubbleClick = {
+        haptics.perform(HapticPattern.Pop)
+        onBubbleClick()
+    }
     
     // Get avatar info
     val avatarName = assistant?.name?.ifEmpty { null } ?: model?.displayName ?: "Assistant"
@@ -796,7 +807,7 @@ private fun AssistantMessageTurn(
                     position = position,
                     role = BubbleRole.ASSISTANT,
                     modifier = Modifier.widthIn(max = maxWidth),
-                    onClick = onBubbleClick
+                    onClick = handleBubbleClick
                 ) {
                     MarkdownBlock(
                         content = part.text.replaceRegexes(
@@ -857,7 +868,8 @@ private fun AssistantMessageTurn(
                         scope = AssistantAffectScope.ASSISTANT,
                         visual = true,
                     ),
-                    onClickCitation = { id -> onCitationClick(id) }
+                    onClickCitation = { id -> onCitationClick(id) },
+                    modifier = Modifier.clickable { handleBubbleClick() }
                 )
             }
         }
@@ -888,6 +900,7 @@ private fun AssistantMessageTurn(
                 onRegenerate = onRegenerate,
                 node = group.nodeWithMostVersions,
                 onUpdate = onUpdate,
+                showRegenerate = showRegenerate,
                 onOpenActionSheet = onOpenActionSheet,
                 onEditLorebookEntry = onEditLorebookEntry,
                 onModeClick = onModeClick,

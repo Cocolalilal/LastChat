@@ -47,7 +47,7 @@ fun navigateToChatPage(
 }
 
 fun Context.copyMessageToClipboard(message: UIMessage) {
-    this.writeClipboardText(message.toText())
+    this.writeClipboardText(message.toContentText())
 }
 
 @OptIn(ExperimentalEncodingApi::class)
