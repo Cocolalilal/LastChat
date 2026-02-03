@@ -3,46 +3,69 @@ package me.rerere.rikkahub.ui.pages.assistant.detail
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.ui.components.ui.FormItem
+import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.createChatFilesByContents
+import kotlin.math.roundToInt
 
 @Composable
 fun BackgroundPicker(
     background: String?,
-    onUpdate: (String?) -> Unit
+    backgroundDim: Float,
+    onUpdate: (String?) -> Unit,
+    onDimChange: (Float) -> Unit
 ) {
     val context = LocalContext.current
+    val isDarkMode = LocalDarkMode.current
     var showPickOption by remember { mutableStateOf(false) }
     var showUrlInput by remember { mutableStateOf(false) }
     var urlInput by remember { mutableStateOf("") }
+    
+    // Local state for smooth slider movement
+    var localDim by remember { mutableFloatStateOf(backgroundDim.coerceIn(0f, 0.85f)) }
+    var isDragging by remember { mutableStateOf(false) }
+    
+    // Sync local dim with prop when not dragging
+    LaunchedEffect(backgroundDim, isDragging) {
+        if (!isDragging) {
+            localDim = backgroundDim.coerceIn(0f, 0.85f)
+        }
+    }
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -57,7 +80,7 @@ fun BackgroundPicker(
 
     // Use Surface with 10dp corners to match SettingsGroup pattern
     androidx.compose.material3.Surface(
-        color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
+        color = if (isDarkMode) 
             MaterialTheme.colorScheme.surfaceContainerLow 
         else 
             MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -115,15 +138,77 @@ fun BackgroundPicker(
                     }
                 }
 
-                AsyncImage(
-                    model = background,
-                    contentDescription = null,
+                // Background preview with dimming
+                val scrimAlpha = localDim.coerceIn(0f, 0.85f)
+                val scrimColor = if (isDarkMode) {
+                    Color.Black.copy(alpha = scrimAlpha)
+                } else {
+                    Color.White.copy(alpha = scrimAlpha)
+                }
+                
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(9f / 16f)
-                        .clip(RoundedCornerShape(10.dp)),
-                    contentScale = ContentScale.Crop
-                )
+                        .clip(RoundedCornerShape(10.dp))
+                ) {
+                    AsyncImage(
+                        model = background,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(scrimColor)
+                    )
+                }
+                
+                // Intensity slider
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = stringResource(R.string.assistant_page_background_intensity),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "${(scrimAlpha * 100).roundToInt()}%",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    
+                    Slider(
+                        value = localDim,
+                        onValueChange = { 
+                            isDragging = true
+                            localDim = it
+                        },
+                        onValueChangeFinished = {
+                            isDragging = false
+                            onDimChange(localDim)
+                        },
+                        valueRange = 0f..0.85f,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    
+                    Text(
+                        text = stringResource(R.string.assistant_page_background_intensity_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }

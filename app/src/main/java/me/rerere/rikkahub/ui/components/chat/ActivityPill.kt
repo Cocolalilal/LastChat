@@ -214,7 +214,7 @@ enum class PillPosition {
 @Composable
 fun ActivityPillRow(
     state: ActivityState,
-    onClick: () -> Unit,
+    onClick: (ActivityType?) -> Unit,
     modifier: Modifier = Modifier,
     connectsToBubbleBelow: Boolean = true,
 ) {
@@ -268,7 +268,7 @@ fun ActivityPillRow(
                             
                             CompactActivityPill(
                                 item = item,
-                                onClick = onClick,
+                                onClick = { onClick(item.type) },
                                 position = position,
                                 connectsToBubbleBelow = connectsToBubbleBelow
                             )
@@ -292,7 +292,7 @@ fun ActivityPillRow(
                             ) {
                                 CompactActivityPill(
                                     item = item,
-                                    onClick = onClick,
+                                    onClick = { onClick(item.type) },
                                     position = position,
                                     connectsToBubbleBelow = connectsToBubbleBelow
                                 )
@@ -303,9 +303,15 @@ fun ActivityPillRow(
                 
                 else -> {
                     // Single pill for all other states (Waiting, Reasoning, ToolUse, Replying, CompletedSingle)
+                    val clickType = when (state) {
+                        is ActivityState.Reasoning -> ActivityType.REASONING
+                        is ActivityState.ToolUse -> categorizeToolName(state.toolName)
+                        is ActivityState.CompletedSingle -> state.type
+                        else -> null
+                    }
                     AnimatedSinglePill(
                         state = state,
-                        onClick = onClick,
+                        onClick = { onClick(clickType) },
                         connectsToBubbleBelow = connectsToBubbleBelow
                     )
                 }
@@ -798,7 +804,7 @@ fun ActivityPill(
 ) {
     ActivityPillRow(
         state = state,
-        onClick = onClick,
+        onClick = { onClick() },
         modifier = modifier,
         connectsToBubbleBelow = true
     )

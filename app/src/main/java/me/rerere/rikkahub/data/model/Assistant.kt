@@ -19,6 +19,7 @@ import me.rerere.rikkahub.data.datastore.ChatInputStyle
 data class AssistantUISettings(
     val showUserAvatar: Boolean? = null,
     val showAssistantAvatar: Boolean? = null,
+    val showAssistantBubbles: Boolean? = null,
     val showTokenUsage: Boolean? = null,
     val autoCloseThinking: Boolean? = null,
     val showMessageJumper: Boolean? = null,
@@ -81,6 +82,7 @@ data class Assistant(
     val mcpServers: Set<Uuid> = emptySet(),
     val localTools: List<LocalToolOption> = emptyList(),
     val background: String? = null,
+    val backgroundDim: Float = 0.35f,
     val learningMode: Boolean = false,
     val enableSpontaneous: Boolean = false, // 是否启用自发消息
     val spontaneousPrompt: String = "", // 自发消息的Prompt

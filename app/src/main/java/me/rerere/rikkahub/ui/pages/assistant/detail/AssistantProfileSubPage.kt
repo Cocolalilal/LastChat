@@ -131,8 +131,12 @@ fun AssistantProfileSubPage(
             // Background Picker
             BackgroundPicker(
                 background = assistant.background,
+                backgroundDim = assistant.backgroundDim,
                 onUpdate = { background ->
                     onUpdate(assistant.copy(background = background))
+                },
+                onDimChange = { dim ->
+                    onUpdate(assistant.copy(backgroundDim = dim))
                 }
             )
         }

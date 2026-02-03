@@ -32,6 +32,8 @@
     <string name="assistant_page_chaotic">Chaotic (Dangerous)</string>
     <string name="assistant_page_chat_background">Chat Background</string>
     <string name="assistant_page_chat_background_desc">Set background image for character chat page</string>
+    <string name="assistant_page_background_intensity">Background Intensity</string>
+    <string name="assistant_page_background_intensity_desc">Darken in dark mode, lighten in light mode</string>
     <string name="assistant_page_chat_model">Chat Model</string>
     <string name="assistant_page_chat_model_desc">Set default chat model for character. If not set, global default will be used.</string>
     <string name="assistant_page_clone">Clone</string>
@@ -394,6 +396,8 @@
     <string name="setting_display_page_show_updates_title">Show Updates</string>
     <string name="setting_display_page_show_user_avatar_desc">Show user avatar in chat messages</string>
     <string name="setting_display_page_show_user_avatar_title">Show User Avatar</string>
+    <string name="setting_display_page_show_assistant_bubbles_title">Message Bubbles for Characters</string>
+    <string name="setting_display_page_show_assistant_bubbles_desc">Show chat bubbles around character messages</string>
     <string name="setting_display_page_skip_crop_image_desc">Skip crop screen after picking image</string>
     <string name="setting_display_page_skip_crop_image_title">Skip Image Crop</string>
     <string name="setting_display_page_title">Display Settings</string>

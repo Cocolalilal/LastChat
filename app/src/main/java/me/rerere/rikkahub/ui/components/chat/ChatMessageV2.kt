@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.ui.components.chat
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
@@ -47,6 +48,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastForEach
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.Model
@@ -58,6 +65,8 @@ import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.replaceRegexes
 import me.rerere.rikkahub.ui.components.message.ChatMessageActionButtons
 import me.rerere.rikkahub.ui.components.message.ChatMessageActionsSheet
+import me.rerere.rikkahub.utils.JsonInstant
+import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
 import me.rerere.rikkahub.ui.components.message.ChatMessageCopySheet
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
@@ -67,6 +76,7 @@ import me.rerere.rikkahub.utils.formatNumber
 import me.rerere.rikkahub.utils.copyMessageToClipboard
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.ai.core.MessageRole as AIMessageRole
 
 /**
@@ -179,7 +189,7 @@ fun List<MessageNode>.groupIntoTurns(): List<MessageTurnGroup> {
  */
 private fun buildTimelineEntries(parts: List<UIMessagePart>): List<TimelineEntry> {
     val entries = mutableListOf<TimelineEntry>()
-    var replyIndex = 0
+    val memoryTools = setOf("create_memory", "edit_memory", "delete_memory")
     
     // Find tool results to match with tool calls
     val toolResults = parts.filterIsInstance<UIMessagePart.ToolResult>()
@@ -201,14 +211,22 @@ private fun buildTimelineEntries(parts: List<UIMessagePart>): List<TimelineEntry
             }
             is UIMessagePart.ToolCall -> {
                 val result = toolResults[part.toolCallId]
-                entries.add(TimelineEntry.ToolCall(
-                    id = "tool_${part.toolCallId}",
-                    toolName = part.toolName,
-                    displayName = getToolDisplayName(part.toolName),
-                    arguments = part.arguments.take(200),
-                    result = result?.content?.toString()?.take(500),
-                    isLoading = result == null
-                ))
+                if (part.toolName in memoryTools) {
+                    entries.add(buildMemoryTimelineEntry(part, result))
+                } else {
+                    val argumentsJson = result?.arguments ?: parseJsonObjectOrNull(part.arguments)
+                    val resultJson = result?.content
+                    entries.add(TimelineEntry.ToolCall(
+                        id = "tool_${part.toolCallId}",
+                        toolName = part.toolName,
+                        displayName = getToolDisplayName(part.toolName),
+                        argumentsText = part.arguments.take(200),
+                        resultText = result?.content?.toString()?.take(500),
+                        argumentsJson = argumentsJson,
+                        resultJson = resultJson,
+                        isLoading = result == null
+                    ))
+                }
             }
             // Don't add Reply entries to timeline - they're shown as bubbles
             else -> {}
@@ -216,6 +234,44 @@ private fun buildTimelineEntries(parts: List<UIMessagePart>): List<TimelineEntry
     }
     
     return entries
+}
+
+private fun buildMemoryTimelineEntry(
+    call: UIMessagePart.ToolCall,
+    result: UIMessagePart.ToolResult?
+): TimelineEntry.MemoryAction {
+    val operation = when (call.toolName) {
+        "create_memory" -> MemoryOperation.CREATE
+        "edit_memory" -> MemoryOperation.EDIT
+        "delete_memory" -> MemoryOperation.DELETE
+        else -> MemoryOperation.CREATE
+    }
+    val resultObj = result?.content as? JsonObject
+    val argsObj = (result?.arguments as? JsonObject) ?: parseJsonObjectOrNull(call.arguments)
+
+    val memoryId = resultObj?.get("id")?.jsonPrimitiveOrNull?.intOrNull
+        ?: argsObj?.get("id")?.jsonPrimitiveOrNull?.intOrNull
+    val content = resultObj?.get("content")?.jsonPrimitiveOrNull?.contentOrNull
+        ?: argsObj?.get("content")?.jsonPrimitiveOrNull?.contentOrNull
+    val previousContent = resultObj?.get("before_content")?.jsonPrimitiveOrNull?.contentOrNull
+    val memoryType = resultObj?.get("type")?.jsonPrimitiveOrNull?.intOrNull
+    val timestamp = resultObj?.get("timestamp")?.jsonPrimitiveOrNull?.longOrNull
+
+    return TimelineEntry.MemoryAction(
+        id = "memory_${call.toolCallId}",
+        toolName = call.toolName,
+        operation = operation,
+        memoryId = memoryId,
+        content = content,
+        previousContent = previousContent,
+        memoryType = memoryType,
+        timestamp = timestamp,
+        isLoading = result == null
+    )
+}
+
+private fun parseJsonObjectOrNull(raw: String): JsonObject? {
+    return runCatching { JsonInstant.parseToJsonElement(raw).jsonObject }.getOrNull()
 }
 
 /**
@@ -341,10 +397,11 @@ fun ChatMessageTurn(
     onModeClick: ((me.rerere.ai.ui.UsedMode) -> Unit)? = null,
     onMemoryClick: ((me.rerere.ai.ui.UsedMemory) -> Unit)? = null,
 ) {
-    val settings = LocalSettings.current.displaySetting
+    val settings = LocalSettings.current
+    val effectiveDisplay = settings.getEffectiveDisplaySetting(assistant)
     val textStyle = LocalTextStyle.current.copy(
-        fontSize = LocalTextStyle.current.fontSize * settings.fontSizeRatio,
-        lineHeight = LocalTextStyle.current.lineHeight * settings.fontSizeRatio
+        fontSize = LocalTextStyle.current.fontSize * effectiveDisplay.fontSizeRatio,
+        lineHeight = LocalTextStyle.current.lineHeight * effectiveDisplay.fontSizeRatio
     )
     val configuration = LocalConfiguration.current
     val maxBubbleWidth = (configuration.screenWidthDp * 0.85f).dp
@@ -353,6 +410,7 @@ fun ChatMessageTurn(
     var showActionsSheet by remember { mutableStateOf(false) }
     var showSelectCopySheet by remember { mutableStateOf(false) }
     var showTimelineSheet by remember { mutableStateOf(false) }
+    var initialTimelineExpandedType by remember { mutableStateOf<ActivityType?>(null) }
     var showUserDropdown by remember { mutableStateOf(false) }
     var actionsExpanded by remember { mutableStateOf(false) }
     var showUserToolbar by remember { mutableStateOf(false) }  // User message toolbar visibility
@@ -391,9 +449,13 @@ fun ChatMessageTurn(
                     isLastTurn = isLastTurn,
                     actionsExpanded = actionsExpanded,
                     maxWidth = maxBubbleWidth,
-                    showTokenUsage = settings.showTokenUsage,
+                    showTokenUsage = effectiveDisplay.showTokenUsage,
+                    showAssistantBubbles = effectiveDisplay.showAssistantBubbles,
                     onCitationClick = onCitationClick,
-                    onActivityPillClick = { showTimelineSheet = true },
+                    onActivityPillClick = { type ->
+                        initialTimelineExpandedType = type
+                        showTimelineSheet = true
+                    },
                     onBubbleClick = {
                         if (isLastTurn) {
                             showActionsSheet = true
@@ -419,7 +481,9 @@ fun ChatMessageTurn(
     if (showTimelineSheet) {
         ActivityTimelineSheet(
             entries = timelineEntries,
-            onDismissRequest = { showTimelineSheet = false }
+            onDismissRequest = { showTimelineSheet = false },
+            initialExpandedType = initialTimelineExpandedType,
+            assistantId = assistant?.id?.toString()
         )
     }
     
@@ -593,8 +657,9 @@ private fun AssistantMessageTurn(
     actionsExpanded: Boolean,
     maxWidth: androidx.compose.ui.unit.Dp,
     showTokenUsage: Boolean,
+    showAssistantBubbles: Boolean,
     onCitationClick: (String) -> Unit,
-    onActivityPillClick: () -> Unit,
+    onActivityPillClick: (ActivityType?) -> Unit,
     onBubbleClick: () -> Unit,
     onRegenerate: () -> Unit,
     onUpdate: (MessageNode) -> Unit,
@@ -604,18 +669,24 @@ private fun AssistantMessageTurn(
     onMemoryClick: ((me.rerere.ai.ui.UsedMemory) -> Unit)?,
     modifier: Modifier = Modifier
 ) {
-    val settings = LocalSettings.current.displaySetting
-    val showIcon = settings.showModelIcon
-    val showModelName = settings.showModelName
+    val settings = LocalSettings.current
+    val effectiveDisplay = settings.getEffectiveDisplaySetting(assistant)
+    val showIcon = effectiveDisplay.showModelIcon
+    val showModelName = effectiveDisplay.showModelName
+    val haptics = rememberPremiumHaptics()
+    val showName = showModelName && (!isLastTurn || !loading)
+    val nameAlpha by animateFloatAsState(
+        targetValue = if (showName) 1f else 0f,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = 350f),
+        label = "assistant_name_alpha"
+    )
     
     // Get avatar info
     val avatarName = assistant?.name?.ifEmpty { null } ?: model?.displayName ?: "Assistant"
     val avatarValue = assistant?.avatar ?: Avatar.Dummy
     
     // Check if there's interesting activity (reasoning or tools)
-    val hasInterestingActivity = group.allParts.any { part ->
-        part is UIMessagePart.Reasoning || part is UIMessagePart.ToolCall
-    } || loading
+    val hasInterestingActivity = activityState !is ActivityState.Hidden
     
     // Collect all text parts from filtered nodes (only nodes matching active versionTag)
     val allTextBubbles = mutableListOf<Pair<MessageNode, UIMessagePart.Text>>()
@@ -631,50 +702,117 @@ private fun AssistantMessageTurn(
     val elementSpacing = 4.dp
     
     Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(elementSpacing)
+        modifier = modifier
+            .fillMaxWidth()
+            .animateContentSize(
+                animationSpec = spring(dampingRatio = 0.7f, stiffness = 320f)
+            ),
+        verticalArrangement = Arrangement.spacedBy(
+            if (showAssistantBubbles) elementSpacing else 3.dp
+        )
     ) {
-        // Layout varies based on whether there's an activity bar
-        if (hasInterestingActivity) {
-            // WITH ACTIVITIES:
-            // [Name] (if enabled)
-            // [Avatar] [Pills row]
-            // [Full-width bubble]
-            
-            // Name above pills (only if enabled)
-            if (showModelName) {
-                Text(
-                    text = avatarName,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            
-            // Avatar + Pills row
-            Row(
-                verticalAlignment = Alignment.Top,
-                horizontalArrangement = Arrangement.spacedBy(elementSpacing)
-            ) {
-                if (showIcon) {
-                    UIAvatar(
-                        name = avatarName,
-                        modifier = Modifier.size(36.dp),
-                        value = avatarValue,
-                        loading = loading,
+        if (showAssistantBubbles) {
+            // Layout varies based on whether there's an activity bar
+            if (hasInterestingActivity) {
+                // WITH ACTIVITIES:
+                // [Name] (if enabled)
+                // [Avatar] [Pills row]
+                // [Full-width bubble]
+                
+                // Name above pills (only if enabled)
+                if (showModelName) {
+                    Text(
+                        text = avatarName,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.graphicsLayer { alpha = nameAlpha }
                     )
                 }
+                
+                // Avatar + Pills row
+                Row(
+                    verticalAlignment = Alignment.Top,
+                    horizontalArrangement = Arrangement.spacedBy(elementSpacing)
+                ) {
+                    if (showIcon) {
+                        UIAvatar(
+                            name = avatarName,
+                            modifier = Modifier.size(36.dp),
+                            value = avatarValue,
+                            loading = loading,
+                        )
+                    }
 
-                ActivityPillRow(
-                    state = activityState,
-                    onClick = onActivityPillClick,
-                    connectsToBubbleBelow = false,  // Bubbles are separate - fully rounded
-                    modifier = Modifier.height(36.dp)
-                )
+                    ActivityPillRow(
+                        state = activityState,
+                        onClick = { type ->
+                            haptics.perform(HapticPattern.Pop)
+                            onActivityPillClick(type)
+                        },
+                        connectsToBubbleBelow = false,  // Bubbles are separate - fully rounded
+                        modifier = Modifier.height(36.dp)
+                    )
+                }
+            } else {
+                // WITHOUT ACTIVITIES:
+                // [Avatar] [Name] (side by side)
+                // [Full-width bubble]
+
+                if (showIcon || showModelName) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (showIcon) {
+                            UIAvatar(
+                                name = avatarName,
+                                modifier = Modifier.size(36.dp),
+                                value = avatarValue,
+                                loading = loading,
+                            )
+                        }
+                        if (showModelName) {
+                            Text(
+                                text = avatarName,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.graphicsLayer { alpha = nameAlpha }
+                            )
+                        }
+                    }
+                }
+            }
+            
+            // Message bubbles - full width, standard bubble positions (no connection to pills)
+            allTextBubbles.forEachIndexed { index, (node, part) ->
+                val position = when {
+                    allTextBubbles.size == 1 -> BubblePosition.SINGLE
+                    index == 0 -> BubblePosition.FIRST
+                    index == allTextBubbles.lastIndex -> BubblePosition.LAST
+                    else -> BubblePosition.MIDDLE
+                }
+                
+                GroupedMessageBubble(
+                    position = position,
+                    role = BubbleRole.ASSISTANT,
+                    modifier = Modifier.widthIn(max = maxWidth),
+                    onClick = onBubbleClick
+                ) {
+                    MarkdownBlock(
+                        content = part.text.replaceRegexes(
+                            assistant = assistant,
+                            scope = AssistantAffectScope.ASSISTANT,
+                            visual = true,
+                        ),
+                        onClickCitation = { id -> onCitationClick(id) }
+                    )
+                }
             }
         } else {
-            // WITHOUT ACTIVITIES:
+            // No bubbles for characters:
             // [Avatar] [Name] (side by side)
-            // [Full-width bubble]
+            // [Activity pills] below avatar row
+            // [Full-width text]
 
             if (showIcon || showModelName) {
                 Row(
@@ -693,28 +831,26 @@ private fun AssistantMessageTurn(
                         Text(
                             text = avatarName,
                             style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.graphicsLayer { alpha = nameAlpha }
                         )
                     }
                 }
             }
-        }
-        
-        // Message bubbles - full width, standard bubble positions (no connection to pills)
-        allTextBubbles.forEachIndexed { index, (node, part) ->
-            val position = when {
-                allTextBubbles.size == 1 -> BubblePosition.SINGLE
-                index == 0 -> BubblePosition.FIRST
-                index == allTextBubbles.lastIndex -> BubblePosition.LAST
-                else -> BubblePosition.MIDDLE
+
+            if (activityState !is ActivityState.Hidden) {
+                ActivityPillRow(
+                    state = activityState,
+                    onClick = { type ->
+                        haptics.perform(HapticPattern.Pop)
+                        onActivityPillClick(type)
+                    },
+                    connectsToBubbleBelow = false,
+                    modifier = Modifier.height(36.dp)
+                )
             }
-            
-            GroupedMessageBubble(
-                position = position,
-                role = BubbleRole.ASSISTANT,
-                modifier = Modifier.widthIn(max = maxWidth),
-                onClick = onBubbleClick
-            ) {
+
+            allTextBubbles.forEach { (_, part) ->
                 MarkdownBlock(
                     content = part.text.replaceRegexes(
                         assistant = assistant,

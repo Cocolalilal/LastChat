@@ -57,6 +57,18 @@ class MemoryRepository(
             .map { AssistantMemory(it.id, it.content, it.type, it.embedding != null, it.embeddingModelId, it.createdAt) }
     }
 
+    suspend fun getMemoryById(id: Int): AssistantMemory? {
+        val memory = memoryDAO.getMemoryById(id) ?: return null
+        return AssistantMemory(
+            id = memory.id,
+            content = memory.content,
+            type = memory.type,
+            hasEmbedding = memory.embedding != null,
+            embeddingModelId = memory.embeddingModelId,
+            timestamp = memory.createdAt
+        )
+    }
+
     suspend fun getMemoryEntitiesOfAssistant(assistantId: String): List<MemoryEntity> {
         return memoryDAO.getMemoriesOfAssistant(assistantId)
     }

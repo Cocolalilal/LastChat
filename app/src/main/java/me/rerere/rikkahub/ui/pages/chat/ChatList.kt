@@ -64,6 +64,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalScrollCaptureInProgress
@@ -801,41 +802,79 @@ private fun PhantomLoadingTurn(
     settings: Settings,
     modifier: Modifier = Modifier
 ) {
-    val showIcon = settings.displaySetting.showModelIcon
-    val showModelName = settings.displaySetting.showModelName
+    val effectiveDisplay = settings.getEffectiveDisplaySetting(assistant)
+    val showIcon = effectiveDisplay.showModelIcon
+    val showModelName = effectiveDisplay.showModelName
+    val showAssistantBubbles = effectiveDisplay.showAssistantBubbles
     val avatarName = assistant?.name?.ifEmpty { null } ?: "Assistant"
     val avatarValue = assistant?.avatar ?: me.rerere.rikkahub.data.model.Avatar.Dummy
+    val elementSpacing = if (showAssistantBubbles) 4.dp else 3.dp
     
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalArrangement = Arrangement.spacedBy(elementSpacing)
     ) {
-        // Name above pills (only if enabled)
-        if (showModelName) {
-            Text(
-                text = avatarName,
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        
-        // Avatar + Waiting pill row
-        Row(
-            verticalAlignment = Alignment.Top,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            if (showIcon) {
-                me.rerere.rikkahub.ui.components.ui.UIAvatar(
-                    name = avatarName,
-                    modifier = Modifier.size(36.dp),
-                    value = avatarValue,
-                    loading = true,
+        if (showAssistantBubbles) {
+            // Name above pills (only if enabled)
+            if (showModelName) {
+                Text(
+                    text = avatarName,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.alpha(0f)
                 )
             }
-            
+
+            // Avatar + Waiting pill row
+            Row(
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(elementSpacing)
+            ) {
+                if (showIcon) {
+                    me.rerere.rikkahub.ui.components.ui.UIAvatar(
+                        name = avatarName,
+                        modifier = Modifier.size(36.dp),
+                        value = avatarValue,
+                        loading = true,
+                    )
+                }
+
+                me.rerere.rikkahub.ui.components.chat.ActivityPillRow(
+                    state = me.rerere.rikkahub.ui.components.chat.ActivityState.Waiting,
+                    onClick = { _ -> },
+                    connectsToBubbleBelow = false,
+                    modifier = Modifier.height(36.dp)
+                )
+            }
+        } else {
+            // No assistant bubbles layout
+            if (showIcon || showModelName) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (showIcon) {
+                        me.rerere.rikkahub.ui.components.ui.UIAvatar(
+                            name = avatarName,
+                            modifier = Modifier.size(36.dp),
+                            value = avatarValue,
+                            loading = true,
+                        )
+                    }
+                    if (showModelName) {
+                        Text(
+                            text = avatarName,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.alpha(0f)
+                        )
+                    }
+                }
+            }
+
             me.rerere.rikkahub.ui.components.chat.ActivityPillRow(
                 state = me.rerere.rikkahub.ui.components.chat.ActivityState.Waiting,
-                onClick = { },
+                onClick = { _ -> },
                 connectsToBubbleBelow = false,
                 modifier = Modifier.height(36.dp)
             )

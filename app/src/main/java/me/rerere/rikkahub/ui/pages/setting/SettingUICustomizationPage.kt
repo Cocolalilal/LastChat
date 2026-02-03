@@ -158,18 +158,6 @@ fun SettingUICustomizationPage(vm: SettingVM = koinViewModel()) {
                         }
                     )
                     SettingGroupItem(
-                        title = stringResource(R.string.setting_display_page_show_user_avatar_title),
-                        subtitle = stringResource(R.string.setting_display_page_show_user_avatar_desc),
-                        trailing = {
-                            HapticSwitch(
-                                checked = displaySetting.showUserAvatar,
-                                onCheckedChange = {
-                                    updateDisplaySetting(displaySetting.copy(showUserAvatar = it))
-                                }
-                            )
-                        }
-                    )
-                    SettingGroupItem(
                         title = "Show Character Avatar",
                         subtitle = "Show the character's avatar before messages",
                         trailing = {
@@ -177,6 +165,18 @@ fun SettingUICustomizationPage(vm: SettingVM = koinViewModel()) {
                                 checked = displaySetting.showModelIcon,
                                 onCheckedChange = {
                                     updateDisplaySetting(displaySetting.copy(showModelIcon = it))
+                                }
+                            )
+                        }
+                    )
+                    SettingGroupItem(
+                        title = "Message Bubbles for Characters",
+                        subtitle = "Show rounded chat bubbles for assistant messages",
+                        trailing = {
+                            HapticSwitch(
+                                checked = displaySetting.showAssistantBubbles,
+                                onCheckedChange = {
+                                    updateDisplaySetting(displaySetting.copy(showAssistantBubbles = it))
                                 }
                             )
                         }

@@ -892,9 +892,21 @@ class GenerationHandler(
                 val id = params["id"]?.jsonPrimitive?.intOrNull ?: error("id is required")
                 val content =
                     params["content"]?.jsonPrimitive?.contentOrNull ?: error("content is required")
-                json.encodeToJsonElement(
-                    AssistantMemory.serializer(), onUpdate(id, content)
-                )
+                val before = memoryRepo.getMemoryById(id)
+                val updated = onUpdate(id, content)
+                buildJsonObject {
+                    put("id", JsonPrimitive(updated.id))
+                    put("content", JsonPrimitive(updated.content))
+                    put("type", JsonPrimitive(updated.type))
+                    put("hasEmbedding", JsonPrimitive(updated.hasEmbedding))
+                    updated.embeddingModelId?.let { put("embeddingModelId", JsonPrimitive(it)) }
+                    put("timestamp", JsonPrimitive(updated.timestamp))
+                    updated.significance?.let { put("significance", JsonPrimitive(it)) }
+                    before?.let { previous ->
+                        put("before_content", JsonPrimitive(previous.content))
+                        put("before_timestamp", JsonPrimitive(previous.timestamp))
+                    }
+                }
             }
         ),
         Tool(
@@ -914,8 +926,20 @@ class GenerationHandler(
             execute = {
                 val params = it.jsonObject
                 val id = params["id"]?.jsonPrimitive?.intOrNull ?: error("id is required")
+                val before = memoryRepo.getMemoryById(id)
                 onDelete(id)
-                JsonPrimitive(true)
+                buildJsonObject {
+                    put("deleted", JsonPrimitive(true))
+                    before?.let { memory ->
+                        put("id", JsonPrimitive(memory.id))
+                        put("content", JsonPrimitive(memory.content))
+                        put("type", JsonPrimitive(memory.type))
+                        put("hasEmbedding", JsonPrimitive(memory.hasEmbedding))
+                        memory.embeddingModelId?.let { put("embeddingModelId", JsonPrimitive(it)) }
+                        put("timestamp", JsonPrimitive(memory.timestamp))
+                        memory.significance?.let { put("significance", JsonPrimitive(it)) }
+                    }
+                }
             }
         )
     )

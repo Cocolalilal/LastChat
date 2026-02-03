@@ -170,19 +170,19 @@ fun AssistantUISubPage(
             )
             
             TriStateSettingItem(
-                title = stringResource(R.string.setting_display_page_show_user_avatar_title),
-                subtitle = stringResource(R.string.setting_display_page_show_user_avatar_desc),
-                value = uiSettings.showUserAvatar,
-                globalValue = settings.displaySetting.showUserAvatar,
-                onValueChange = { updateUI(uiSettings.copy(showUserAvatar = it)) }
-            )
-
-            TriStateSettingItem(
                 title = "Show Character Avatar",
                 subtitle = "Show the character's avatar before messages",
                 value = uiSettings.showAssistantAvatar,
                 globalValue = settings.displaySetting.showModelIcon,
                 onValueChange = { updateUI(uiSettings.copy(showAssistantAvatar = it)) }
+            )
+
+            TriStateSettingItem(
+                title = "Message Bubbles for Characters",
+                subtitle = "Show rounded chat bubbles for assistant messages",
+                value = uiSettings.showAssistantBubbles,
+                globalValue = settings.displaySetting.showAssistantBubbles,
+                onValueChange = { updateUI(uiSettings.copy(showAssistantBubbles = it)) }
             )
 
             TriStateSettingItem(
