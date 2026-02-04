@@ -20,6 +20,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import me.rerere.rikkahub.ui.components.ui.TagsInput
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
@@ -128,6 +129,25 @@ fun AssistantProfileSubPage(
         // APPEARANCE GROUP
         // ═══════════════════════════════════════════════════════════════════
         SettingsGroup(title = "Appearance") {
+            val hasImageSource = assistant.background != null ||
+                assistant.avatar is Avatar.Image ||
+                assistant.avatar is Avatar.Resource
+
+            if (hasImageSource) {
+                SettingGroupItem(
+                    title = stringResource(R.string.assistant_page_material_you_from_character),
+                    subtitle = stringResource(R.string.assistant_page_material_you_from_character_desc),
+                    trailing = {
+                        HapticSwitch(
+                            checked = assistant.useAssistantMaterialYouColors,
+                            onCheckedChange = { enabled ->
+                                onUpdate(assistant.copy(useAssistantMaterialYouColors = enabled))
+                            }
+                        )
+                    }
+                )
+            }
+
             // Background Picker
             BackgroundPicker(
                 background = assistant.background,

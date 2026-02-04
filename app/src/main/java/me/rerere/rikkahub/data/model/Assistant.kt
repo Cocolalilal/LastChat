@@ -83,6 +83,7 @@ data class Assistant(
     val localTools: List<LocalToolOption> = emptyList(),
     val background: String? = null,
     val backgroundDim: Float = 0.35f,
+    val useAssistantMaterialYouColors: Boolean = false,
     val learningMode: Boolean = false,
     val enableSpontaneous: Boolean = false, // 是否启用自发消息
     val spontaneousPrompt: String = "", // 自发消息的Prompt
