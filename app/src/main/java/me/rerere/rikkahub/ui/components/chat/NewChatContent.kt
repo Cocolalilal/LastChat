@@ -92,6 +92,7 @@ fun NewChatContent(
     contentStyle: NewChatContentStyle,
     showAvatarInHeader: Boolean = true,
     stats: NewChatStats,
+    hasBackgroundImage: Boolean = false,
     onTemplateClick: (String) -> Unit,
     onNavigateToImageGen: (() -> Unit)? = null,
     onNavigateToTranslator: (() -> Unit)? = null,
@@ -226,6 +227,7 @@ fun NewChatContent(
                                 icon = Icons.Rounded.Image,
                                 text = stringResource(R.string.new_chat_action_create_image),
                                 iconColor = primaryColor,
+                                hasBackgroundImage = hasBackgroundImage,
                                 onClick = onNavigateToImageGen
                             )
                         }
@@ -234,6 +236,7 @@ fun NewChatContent(
                                 icon = Icons.Rounded.Translate,
                                 text = stringResource(R.string.new_chat_action_translate),
                                 iconColor = tertiaryColor,
+                                hasBackgroundImage = hasBackgroundImage,
                                 onClick = onNavigateToTranslator
                             )
                         }
@@ -248,12 +251,14 @@ fun NewChatContent(
                             icon = Icons.Rounded.Code,
                             text = stringResource(R.string.new_chat_template_code),
                             iconColor = secondaryColor,
+                            hasBackgroundImage = hasBackgroundImage,
                             onClick = { onTemplateClick(codePrompt) }
                         )
                         ActionPill(
                             icon = Icons.Rounded.MoreHoriz,
                             text = stringResource(R.string.new_chat_action_more),
                             iconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            hasBackgroundImage = hasBackgroundImage,
                             onClick = { showMore = !showMore }
                         )
                     }
@@ -288,12 +293,14 @@ fun NewChatContent(
                                     icon = Icons.Rounded.Edit,
                                     text = stringResource(R.string.new_chat_template_write),
                                     iconColor = Color(0xFF9C7CF4), // Purple
+                                    hasBackgroundImage = hasBackgroundImage,
                                     onClick = { onTemplateClick(writePrompt) }
                                 )
                                 ActionPill(
                                     icon = Icons.Rounded.Lightbulb,
                                     text = stringResource(R.string.new_chat_template_brainstorm),
                                     iconColor = Color(0xFFFFC107), // Amber
+                                    hasBackgroundImage = hasBackgroundImage,
                                     onClick = { onTemplateClick(brainstormPrompt) }
                                 )
                             }
@@ -305,6 +312,7 @@ fun NewChatContent(
                                     icon = Icons.AutoMirrored.Rounded.MenuBook,
                                     text = stringResource(R.string.new_chat_template_learn),
                                     iconColor = Color(0xFF4CAF50), // Green
+                                    hasBackgroundImage = hasBackgroundImage,
                                     onClick = { onTemplateClick(learnPrompt) }
                                 )
                             }
@@ -363,6 +371,8 @@ private fun TemplateCard(
 
 /**
  * ChatGPT-style action pill button with colored icon
+ * When hasBackgroundImage is true, uses surfaceContainer color with background-colored outline
+ * to match the minimal input bar appearance
  */
 @Composable
 private fun ActionPill(
@@ -370,14 +380,28 @@ private fun ActionPill(
     text: String,
     iconColor: Color,
     onClick: () -> Unit,
+    hasBackgroundImage: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    // Use surfaceContainer color with background outline when there's a background image
+    // to match the minimal input bar appearance
+    val backgroundColor = if (hasBackgroundImage) {
+        MaterialTheme.colorScheme.surfaceContainer
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+    val borderColor = if (hasBackgroundImage) {
+        MaterialTheme.colorScheme.background
+    } else {
+        MaterialTheme.colorScheme.outlineVariant
+    }
+    
     Surface(
         onClick = onClick,
         modifier = modifier,
         shape = RoundedCornerShape(24.dp),
-        color = Color.Transparent,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        color = backgroundColor,
+        border = BorderStroke(1.dp, borderColor)
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),

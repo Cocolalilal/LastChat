@@ -263,6 +263,7 @@ fun MinimalChatInput(
                     },
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.surfaceContainer,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
                     modifier = Modifier.size(48.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
@@ -279,6 +280,7 @@ fun MinimalChatInput(
                 Surface(
                     shape = RoundedCornerShape(24.dp),  // Fixed radius - correct per user
                     color = MaterialTheme.colorScheme.surfaceContainer,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp)  // Matches plus button, allows 4dp padding all around

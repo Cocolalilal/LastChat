@@ -550,6 +550,7 @@ private fun ChatPageContent(
                         contentStyle = contentStyle,
                         showAvatarInHeader = effectiveDisplaySetting.newChatShowAvatar,
                         stats = newChatStats,
+                        hasBackgroundImage = currentAssistant.background != null,
                         onTemplateClick = { prompt ->
                             // Set text and focus the input field to show keyboard
                             inputState.setMessageTextAndFocus(prompt, scope)

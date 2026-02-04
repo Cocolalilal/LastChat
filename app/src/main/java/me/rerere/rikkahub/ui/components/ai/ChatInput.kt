@@ -316,6 +316,7 @@ fun ChatInput(
                 shape = RoundedCornerShape(cornerRadius),
                 color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerLow, // Material You Surface Color
                 tonalElevation = 8.dp,
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
