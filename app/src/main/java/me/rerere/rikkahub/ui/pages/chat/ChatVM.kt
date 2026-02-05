@@ -365,7 +365,7 @@ class ChatVM(
     }
 
     // 检查用户头像删除
-    private fun checkUserAvatarDelete(oldSettings: Settings, newSettings: Settings) {
+    private suspend fun checkUserAvatarDelete(oldSettings: Settings, newSettings: Settings) {
         val oldAvatar = oldSettings.displaySetting.userAvatar
         val newAvatar = newSettings.displaySetting.userAvatar
 
@@ -741,6 +741,12 @@ class ChatVM(
     fun updateConversation(newConversation: Conversation) {
         viewModelScope.launch {
             chatService.saveConversation(_conversationId, newConversation)
+        }
+    }
+
+    fun deleteFile(uri: Uri) {
+        appScope.launch {
+            context.deleteChatFiles(listOf(uri))
         }
     }
 

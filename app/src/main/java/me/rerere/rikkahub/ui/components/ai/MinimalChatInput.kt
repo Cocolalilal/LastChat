@@ -159,6 +159,7 @@ fun MinimalChatInput(
     onLongSendClick: () -> Unit,
     onNavigateToLorebook: (String) -> Unit = {},
     onRefreshContext: suspend () -> ChatService.ContextRefreshResult = { ChatService.ContextRefreshResult(false, errorMessage = "Not configured") },
+    onDeleteFile: (Uri) -> Unit = {},
 ) {
     val context = LocalContext.current
     val toaster = LocalToaster.current
@@ -166,7 +167,8 @@ fun MinimalChatInput(
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
     val keyboardController = LocalSoftwareKeyboardController.current
     val localSettings = LocalSettings.current
-    
+    val scope = rememberCoroutineScope()
+
     // OLED dark mode handling for picker sheet
     val amoledMode by me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode()
     val isDarkMode = me.rerere.rikkahub.ui.theme.LocalDarkMode.current
@@ -212,7 +214,10 @@ fun MinimalChatInput(
         ) {
             // Media preview row
             if (state.messageContent.isNotEmpty()) {
-                MediaFileInputRow(state = state, context = context)
+                MediaFileInputRow(
+                    state = state,
+                    onDelete = onDeleteFile
+                )
             }
             
             // Suggestions row
@@ -1204,7 +1209,7 @@ private fun MinimalPickerItem(
 @Composable
 private fun MediaFileInputRow(
     state: ChatInputState,
-    context: android.content.Context
+    onDelete: (Uri) -> Unit
 ) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1234,7 +1239,7 @@ private fun MediaFileInputRow(
                         .size(20.dp)
                         .clickable {
                             state.messageContent = state.messageContent.filterNot { it == image }
-                            context.deleteChatFiles(listOf(image.url.toUri()))
+                            onDelete(image.url.toUri())
                         }
                         .align(Alignment.TopEnd)
                         .background(MaterialTheme.colorScheme.secondary),
@@ -1264,7 +1269,7 @@ private fun MediaFileInputRow(
                         .size(20.dp)
                         .clickable {
                             state.messageContent = state.messageContent.filterNot { it == video }
-                            context.deleteChatFiles(listOf(video.url.toUri()))
+                            onDelete(video.url.toUri())
                         }
                         .align(Alignment.TopEnd)
                         .background(MaterialTheme.colorScheme.secondary),
@@ -1294,7 +1299,7 @@ private fun MediaFileInputRow(
                         .size(20.dp)
                         .clickable {
                             state.messageContent = state.messageContent.filterNot { it == audio }
-                            context.deleteChatFiles(listOf(audio.url.toUri()))
+                            onDelete(audio.url.toUri())
                         }
                         .align(Alignment.TopEnd)
                         .background(MaterialTheme.colorScheme.secondary),
@@ -1308,7 +1313,7 @@ private fun MediaFileInputRow(
                 mimeType = document.mime,
                 onRemove = {
                     state.messageContent = state.messageContent.filterNot { it == document }
-                    context.deleteChatFiles(listOf(document.url.toUri()))
+                    onDelete(document.url.toUri())
                 }
             )
         }

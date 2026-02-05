@@ -220,11 +220,13 @@ fun ChatInput(
     onLongSendClick: () -> Unit,
     onNavigateToLorebook: (String) -> Unit = {},
     onRefreshContext: suspend () -> ChatService.ContextRefreshResult = { ChatService.ContextRefreshResult(false, errorMessage = "Not configured") },
+    onDeleteFile: (Uri) -> Unit = {},
 ) {
     val context = LocalContext.current
     val toaster = LocalToaster.current
     val assistant = settings.getCurrentAssistant()
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
+    val scope = rememberCoroutineScope()
 
     val keyboardController = LocalSoftwareKeyboardController.current
 
@@ -292,7 +294,10 @@ fun ChatInput(
         ) {
             // Medias (shown above suggestions when both exist)
             if (state.messageContent.isNotEmpty()) {
-                MediaFileInputRow(state = state, context = context)
+                MediaFileInputRow(
+                    state = state,
+                    onDelete = onDeleteFile
+                )
             }
 
             // Suggestions row (shown above toolbar, below images)
@@ -864,7 +869,7 @@ private fun TextInputRow(
 @Composable
 private fun MediaFileInputRow(
     state: ChatInputState,
-    context: Context
+    onDelete: (Uri) -> Unit
 ) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -897,7 +902,7 @@ private fun MediaFileInputRow(
                             state.messageContent =
                                 state.messageContent.filterNot { it == image }
                             // Delete image
-                            context.deleteChatFiles(listOf(image.url.toUri()))
+                            onDelete(image.url.toUri())
                         }
                         .align(Alignment.TopEnd)
                         .background(MaterialTheme.colorScheme.secondary),
@@ -930,7 +935,7 @@ private fun MediaFileInputRow(
                             state.messageContent =
                                 state.messageContent.filterNot { it == video }
                             // Delete image
-                            context.deleteChatFiles(listOf(video.url.toUri()))
+                            onDelete(video.url.toUri())
                         }
                         .align(Alignment.TopEnd)
                         .background(MaterialTheme.colorScheme.secondary),
@@ -963,7 +968,7 @@ private fun MediaFileInputRow(
                             state.messageContent =
                                 state.messageContent.filterNot { it == audio }
                             // Delete image
-                            context.deleteChatFiles(listOf(audio.url.toUri()))
+                            onDelete(audio.url.toUri())
                         }
                         .align(Alignment.TopEnd)
                         .background(MaterialTheme.colorScheme.secondary),
@@ -978,7 +983,7 @@ private fun MediaFileInputRow(
                     mimeType = document.mime,
                     onRemove = {
                         state.messageContent = state.messageContent.filterNot { it == document }
-                        context.deleteChatFiles(listOf(document.url.toUri()))
+                        onDelete(document.url.toUri())
                     }
                 )
             }
