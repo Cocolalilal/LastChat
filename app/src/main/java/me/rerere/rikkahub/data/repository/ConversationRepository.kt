@@ -15,12 +15,9 @@ import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MessageNode
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.deleteChatFiles
 import java.time.Instant
@@ -202,7 +199,7 @@ class ConversationRepository(
 
     fun conversationEntityToConversation(conversationEntity: ConversationEntity): Conversation {
         val messageNodes = JsonInstant
-            .decodeFromString<List<MessageNode>>(migrateLegacyNodesJson(conversationEntity.nodes))
+            .decodeFromString<List<MessageNode>>(conversationEntity.nodes)
             .filter { it.messages.isNotEmpty() }
         val enabledModeIds = try {
             JsonInstant.decodeFromString<List<String>>(conversationEntity.enabledModeIds)
@@ -395,7 +392,7 @@ class ConversationRepository(
 
                 recent.forEach { entity ->
                     try {
-                        val nodes = JsonInstant.decodeFromString<List<MessageNode>>(migrateLegacyNodesJson(entity.nodes))
+                        val nodes = JsonInstant.decodeFromString<List<MessageNode>>(entity.nodes)
                         nodes.forEach { node ->
                             node.messages.forEach { msg ->
                                 totalLength += msg.toText().length
@@ -415,72 +412,6 @@ class ConversationRepository(
             }
     }
 
-    private fun migrateLegacyNodesJson(json: String): String {
-        try {
-            val element = JsonInstant.parseToJsonElement(json)
-            if (element !is JsonArray) return json
-
-            val newArray = buildJsonArray {
-                element.jsonArray.forEach { node ->
-                    if (node !is JsonObject) {
-                        add(node)
-                        return@forEach
-                    }
-                    add(buildJsonObject {
-                        node.entries.forEach { (key, value) ->
-                            if (key == "messages" && value is JsonArray) {
-                                put("messages", buildJsonArray {
-                                    value.jsonArray.forEach { message ->
-                                        if (message !is JsonObject) {
-                                            add(message)
-                                            return@forEach
-                                        }
-                                        add(buildJsonObject {
-                                            message.entries.forEach { (msgKey, msgValue) ->
-                                                if (msgKey == "parts" && msgValue is JsonArray) {
-                                                    put("parts", buildJsonArray {
-                                                        msgValue.jsonArray.forEach { part ->
-                                                            if (part !is JsonObject) {
-                                                                add(part)
-                                                                return@forEach
-                                                            }
-                                                            val type = part["type"]?.jsonPrimitive?.content
-                                                            if (type == "me.rerere.ai.ui.UIMessagePart.Thinking") {
-                                                                add(buildJsonObject {
-                                                                    put("type", "me.rerere.ai.ui.UIMessagePart.Reasoning")
-                                                                    part.entries.forEach { (partKey, partValue) ->
-                                                                        when (partKey) {
-                                                                            "type" -> { /* skip, already added */ }
-                                                                            "thinking" -> put("reasoning", partValue)
-                                                                            else -> put(partKey, partValue)
-                                                                        }
-                                                                    }
-                                                                })
-                                                            } else {
-                                                                add(part)
-                                                            }
-                                                        }
-                                                    })
-                                                } else {
-                                                    put(msgKey, msgValue)
-                                                }
-                                            }
-                                        })
-                                    }
-                                })
-                            } else {
-                                put(key, value)
-                            }
-                        }
-                    })
-                }
-            }
-            return newArray.toString()
-        } catch (e: Exception) {
-            e.printStackTrace()
-            return json
-        }
-    }
 }
 
 /**

@@ -26,10 +26,18 @@ import me.rerere.rikkahub.data.db.entity.GenMediaEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEntity
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.utils.JsonInstant
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 
 @Database(
     entities = [ConversationEntity::class, MemoryEntity::class, GenMediaEntity::class, ChatEpisodeEntity::class, EmbeddingCacheEntity::class, DailyActivityEntity::class],
-    version = 22,
+    version = 23,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -195,6 +203,103 @@ abstract class AppDatabase : RoomDatabase() {
                 }
                 if (!memoryColumns.contains("created_at")) {
                     db.execSQL("ALTER TABLE MemoryEntity ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0")
+                }
+            }
+        }
+
+        val MIGRATION_22_23 = object : Migration(22, 23) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "migrate: start migrate from 22 to 23")
+                val cursor = db.query("SELECT id, nodes FROM ConversationEntity")
+
+                var updateCount = 0
+                db.beginTransaction()
+                try {
+                    val statement = db.compileStatement("UPDATE ConversationEntity SET nodes = ? WHERE id = ?")
+                    while (cursor.moveToNext()) {
+                        val id = cursor.getString(0)
+                        val nodes = cursor.getString(1)
+                        val newNodes = migrateLegacyNodesJson(nodes)
+                        if (newNodes != nodes) {
+                            statement.bindString(1, newNodes)
+                            statement.bindString(2, id)
+                            statement.execute()
+                            statement.clearBindings()
+                            updateCount++
+                        }
+                    }
+                    db.setTransactionSuccessful()
+                } finally {
+                    db.endTransaction()
+                    cursor.close()
+                }
+                Log.i(TAG, "migrate: migrate from 22 to 23 success ($updateCount conversations updated)")
+            }
+
+            private fun migrateLegacyNodesJson(json: String): String {
+                try {
+                    val element = JsonInstant.parseToJsonElement(json)
+                    if (element !is JsonArray) return json
+
+                    val newArray = buildJsonArray {
+                        element.jsonArray.forEach { node ->
+                            if (node !is JsonObject) {
+                                add(node)
+                                return@forEach
+                            }
+                            add(buildJsonObject {
+                                node.entries.forEach { (key, value) ->
+                                    if (key == "messages" && value is JsonArray) {
+                                        put("messages", buildJsonArray {
+                                            value.jsonArray.forEach { message ->
+                                                if (message !is JsonObject) {
+                                                    add(message)
+                                                    return@forEach
+                                                }
+                                                add(buildJsonObject {
+                                                    message.entries.forEach { (msgKey, msgValue) ->
+                                                        if (msgKey == "parts" && msgValue is JsonArray) {
+                                                            put("parts", buildJsonArray {
+                                                                msgValue.jsonArray.forEach { part ->
+                                                                    if (part !is JsonObject) {
+                                                                        add(part)
+                                                                        return@forEach
+                                                                    }
+                                                                    val type = part["type"]?.jsonPrimitive?.content
+                                                                    if (type == "me.rerere.ai.ui.UIMessagePart.Thinking") {
+                                                                        add(buildJsonObject {
+                                                                            put("type", "me.rerere.ai.ui.UIMessagePart.Reasoning")
+                                                                            part.entries.forEach { (partKey, partValue) ->
+                                                                                when (partKey) {
+                                                                                    "type" -> { /* skip, already added */ }
+                                                                                    "thinking" -> put("reasoning", partValue)
+                                                                                    else -> put(partKey, partValue)
+                                                                                }
+                                                                            }
+                                                                        })
+                                                                    } else {
+                                                                        add(part)
+                                                                    }
+                                                                }
+                                                            })
+                                                        } else {
+                                                            put(msgKey, msgValue)
+                                                        }
+                                                    }
+                                                })
+                                            }
+                                        })
+                                    } else {
+                                        put(key, value)
+                                    }
+                                }
+                            })
+                        }
+                    }
+                    return newArray.toString()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    return json
                 }
             }
         }
