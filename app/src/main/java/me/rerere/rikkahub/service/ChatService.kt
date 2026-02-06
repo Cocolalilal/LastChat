@@ -801,7 +801,7 @@ class ChatService(
     }
 
     // 检查无效消息
-    private fun checkInvalidMessages(conversationId: Uuid) {
+    private suspend fun checkInvalidMessages(conversationId: Uuid) {
         val conversation = getConversationFlow(conversationId).value
         var messagesNodes = conversation.messageNodes
 
@@ -1045,7 +1045,7 @@ class ChatService(
     }
 
     // 更新对话
-    private fun updateConversation(conversationId: Uuid, conversation: Conversation) {
+    private suspend fun updateConversation(conversationId: Uuid, conversation: Conversation) {
         if (conversation.id != conversationId) return
         checkFilesDelete(conversation, getConversationFlow(conversationId).value)
         conversations.getOrPut(conversationId) { MutableStateFlow(conversation) }.value =
@@ -1053,7 +1053,7 @@ class ChatService(
     }
 
     // 检查文件删除
-    private fun checkFilesDelete(newConversation: Conversation, oldConversation: Conversation) {
+    private suspend fun checkFilesDelete(newConversation: Conversation, oldConversation: Conversation) {
         val newFiles = newConversation.files
         val oldFiles = oldConversation.files
         val deletedFiles = oldFiles.filter { file ->
@@ -1326,7 +1326,7 @@ class ChatService(
         }
     }
 
-    private fun updateTranslationField(
+    private suspend fun updateTranslationField(
         conversationId: Uuid,
         messageId: Uuid,
         translationText: String
@@ -1350,7 +1350,7 @@ class ChatService(
         updateConversation(conversationId, currentConversation.copy(messageNodes = updatedNodes))
     }
 
-    fun clearTranslationField(conversationId: Uuid, messageId: Uuid) {
+    suspend fun clearTranslationField(conversationId: Uuid, messageId: Uuid) {
         val currentConversation = getConversationFlow(conversationId).value
         val updatedNodes = currentConversation.messageNodes.map { node ->
             if (node.messages.any { it.id == messageId }) {

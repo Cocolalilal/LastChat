@@ -206,7 +206,7 @@ fun Bitmap.compress(): ByteArray = ByteArrayOutputStream().use {
     it.toByteArray()
 }
 
-fun Context.deleteChatFiles(uris: List<Uri>) {
+suspend fun Context.deleteChatFiles(uris: List<Uri>) = withContext(Dispatchers.IO) {
     uris.filter { it.toString().startsWith("file:") }.forEach { uri ->
         val file = uri.toFile()
         if (file.exists()) {

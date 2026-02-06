@@ -748,6 +748,7 @@ private fun ChatPageContent(
                                 navController.navigate(Screen.SettingLorebookDetail(lorebookId))
                             },
                             onRefreshContext = { vm.refreshContext() },
+                            onDeleteFile = { vm.deleteFile(it) },
                         )
                     }
                     ChatInputStyle.FLOATING -> {
@@ -848,6 +849,7 @@ private fun ChatPageContent(
                                 navController.navigate(Screen.SettingLorebookDetail(lorebookId))
                             },
                             onRefreshContext = { vm.refreshContext() },
+                            onDeleteFile = { vm.deleteFile(it) },
                         )
                     }
                 }

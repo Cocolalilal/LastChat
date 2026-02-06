@@ -209,12 +209,15 @@ class AssistantDetailVM(
     fun update(assistant: Assistant) {
         viewModelScope.launch {
             val currentSettings = settingsStore.settingsFlow.value
+            val oldAssistant = currentSettings.assistants.find { it.id == assistant.id }
+            if (oldAssistant != null) {
+                checkAvatarDelete(old = oldAssistant, new = assistant) // 删除旧头像
+                checkBackgroundDelete(old = oldAssistant, new = assistant) // 删除旧背景
+            }
             settingsStore.update(
                 settings = currentSettings.copy(
                     assistants = currentSettings.assistants.map {
                         if (it.id == assistant.id) {
-                            checkAvatarDelete(old = it, new = assistant) // 删除旧头像
-                            checkBackgroundDelete(old = it, new = assistant) // 删除旧背景
                             assistant
                         } else {
                             it
@@ -347,13 +350,13 @@ class AssistantDetailVM(
         _snackbarMessage.value = "Memory consolidation started (Full Scan: $isFullScan)"
     }
 
-    fun checkAvatarDelete(old: Assistant, new: Assistant) {
+    suspend fun checkAvatarDelete(old: Assistant, new: Assistant) {
         if (old.avatar is Avatar.Image && old.avatar != new.avatar) {
             context.deleteChatFiles(listOf(old.avatar.url.toUri()))
         }
     }
 
-    fun checkBackgroundDelete(old: Assistant, new: Assistant) {
+    suspend fun checkBackgroundDelete(old: Assistant, new: Assistant) {
         val oldBackground = old.background
         val newBackground = new.background
 
