@@ -218,9 +218,8 @@ dependencies {
 //    implementation(libs.androidx.lifecycle.viewmodel.navigation3)
 //    implementation(libs.androidx.material3.adaptive.navigation3)
 
-    // Firebase
+    // Firebase (Analytics removed for privacy - only crash reporting and remote config)
     implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.analytics)
     implementation(libs.firebase.crashlytics)
     implementation(libs.firebase.config)
 
