@@ -56,6 +56,23 @@ set JAVA_EXE=%JAVA_HOME%/bin/java.exe
 
 if exist "%JAVA_EXE%" goto execute
 
+@rem Gradle/Kotlin in this repository currently fails on JDK 25+ during script evaluation.
+@rem If JAVA_HOME points to 25+, try a local JDK 21 fallback.
+for /f "tokens=3" %%v in ('"%JAVA_EXE%" -version 2^>^&1 ^| findstr /i "version"') do set JAVA_VERSION_RAW=%%~v
+set JAVA_VERSION_RAW=%JAVA_VERSION_RAW:"=%
+for /f "tokens=1 delims=." %%m in ("%JAVA_VERSION_RAW%") do set JAVA_VERSION_MAJOR=%%m
+if "%JAVA_VERSION_MAJOR%"=="25" (
+    if defined JAVA21_HOME if exist "%JAVA21_HOME%\bin\java.exe" (
+        set JAVA_HOME=%JAVA21_HOME%
+        set JAVA_EXE=%JAVA_HOME%/bin/java.exe
+    ) else if exist "%USERPROFILE%\.local\share\mise\installs\java\21.0.2\bin\java.exe" (
+        set JAVA_HOME=%USERPROFILE%\.local\share\mise\installs\java\21.0.2
+        set JAVA_EXE=%JAVA_HOME%/bin/java.exe
+    )
+)
+
+if exist "%JAVA_EXE%" goto execute
+
 echo.
 echo ERROR: JAVA_HOME is set to an invalid directory: %JAVA_HOME%
 echo.

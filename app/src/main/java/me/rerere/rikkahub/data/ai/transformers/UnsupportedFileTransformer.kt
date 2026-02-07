@@ -38,7 +38,7 @@ object UnsupportedFileTransformer : InputMessageTransformer {
                                          part.mime == "application/pdf"
                             
                             if (!isNative) {
-                                 UIMessagePart.Text("\n[Attachment: ${part.fileName} (${part.mime}) - Available for Python import via import_attachment tool. URL: ${part.url}]\n")
+                                 UIMessagePart.Text("\n[Attachment: ${part.fileName} (${part.mime}) - Available for Python via eval_python.attachments (auto-import) or import_attachment tool. After running, use list_sandbox_files to verify files. URL: ${part.url}]\n")
                             } else {
                                 part
                             }
@@ -48,7 +48,7 @@ object UnsupportedFileTransformer : InputMessageTransformer {
                             // convert to text annotation so model can import via Python
                             if (!modelSupportsImages) {
                                 val filename = part.url.substringAfterLast("/").substringBefore("?").ifEmpty { "image.jpg" }
-                                UIMessagePart.Text("\n[Image attachment: $filename - Available for Python import via import_attachment tool. URL: ${part.url}]\n")
+                                UIMessagePart.Text("\n[Image attachment: $filename - Available for Python via eval_python.attachments (auto-import) or import_attachment tool. After running, use list_sandbox_files to verify files. URL: ${part.url}]\n")
                             } else {
                                 part
                             }

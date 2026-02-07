@@ -158,7 +158,17 @@ kotlin {
 chaquopy {
     defaultConfig {
         version = "3.11"
-        buildPython("C:/Users/julia/AppData/Local/Programs/Python/Python311/python.exe")
+
+        // Allow local/CI environments to override Python discovery instead of relying
+        // on a machine-specific Windows path.
+        val configuredBuildPython = providers.gradleProperty("chaquopy.buildPython").orNull
+            ?: System.getenv("CHAQUOPY_BUILD_PYTHON")
+            ?: System.getenv("PYTHON")
+            ?: System.getenv("PYTHON3")
+        if (!configuredBuildPython.isNullOrBlank()) {
+            buildPython(configuredBuildPython)
+        }
+
         pip {
             // Core data science  
             install("numpy")

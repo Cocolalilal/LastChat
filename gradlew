@@ -105,6 +105,33 @@ Please set the JAVA_HOME variable in your environment to match the
 location of your Java installation."
 fi
 
+# Gradle/Kotlin in this repository currently fails on JDK 25+ during script evaluation
+# (IllegalArgumentException while parsing Java version). If we detect 25+, auto-fallback
+# to a local JDK 21 installation when available.
+JAVA_VERSION_OUTPUT=`"$JAVACMD" -version 2>&1 | sed -n '1p'`
+JAVA_VERSION_RAW=`echo "$JAVA_VERSION_OUTPUT" | sed -n 's/.*version "\([^"]*\)".*/\1/p'`
+JAVA_VERSION_MAJOR=`echo "$JAVA_VERSION_RAW" | cut -d. -f1`
+if [ "$JAVA_VERSION_MAJOR" = "1" ] ; then
+    JAVA_VERSION_MAJOR=`echo "$JAVA_VERSION_RAW" | cut -d. -f2`
+fi
+
+if [ -n "$JAVA_VERSION_MAJOR" ] && [ "$JAVA_VERSION_MAJOR" -ge 25 ] 2>/dev/null ; then
+    for CANDIDATE_HOME in \
+        "$JAVA21_HOME" \
+        "$HOME/.local/share/mise/installs/java/21.0.2" \
+        "$HOME/.local/share/mise/installs/java/21" \
+        "/usr/lib/jvm/java-21-openjdk-amd64" \
+        "/usr/lib/jvm/temurin-21-jdk"
+    do
+        if [ -n "$CANDIDATE_HOME" ] && [ -x "$CANDIDATE_HOME/bin/java" ] ; then
+            JAVA_HOME="$CANDIDATE_HOME"
+            JAVACMD="$JAVA_HOME/bin/java"
+            warn "Detected JDK $JAVA_VERSION_RAW; falling back to JDK at $JAVA_HOME for Gradle compatibility."
+            break
+        fi
+    done
+fi
+
 # Increase the maximum file descriptors if we can.
 if [ "$cygwin" = "false" -a "$darwin" = "false" -a "$nonstop" = "false" ] ; then
     MAX_FD_LIMIT=`ulimit -H -n`
