@@ -30,6 +30,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.R
@@ -256,11 +258,27 @@ private fun ColumnScope.ProviderConfigureOpenAI(
         }
     )
 
+    // Local state for URL fields with debouncing to prevent lag
+    var localBaseUrl by remember(provider.id) { mutableStateOf(provider.baseUrl) }
+    
+    // Sync from external changes (e.g., preset selection)
+    LaunchedEffect(provider.baseUrl) {
+        if (provider.baseUrl != localBaseUrl) {
+            localBaseUrl = provider.baseUrl
+        }
+    }
+    
+    // Debounce commits to parent
+    LaunchedEffect(localBaseUrl) {
+        delay(300)
+        if (localBaseUrl != provider.baseUrl) {
+            onEdit(provider.copy(baseUrl = localBaseUrl.trim()))
+        }
+    }
+
     OutlinedTextField(
-        value = provider.baseUrl,
-        onValueChange = {
-            onEdit(provider.copy(baseUrl = it.trim()))
-        },
+        value = localBaseUrl,
+        onValueChange = { localBaseUrl = it },
         label = {
             Text(stringResource(id = R.string.setting_provider_page_api_base_url))
         },
@@ -268,11 +286,24 @@ private fun ColumnScope.ProviderConfigureOpenAI(
     )
 
     if (!provider.useResponseApi) {
+        var localPath by remember(provider.id) { mutableStateOf(provider.chatCompletionsPath) }
+        
+        LaunchedEffect(provider.chatCompletionsPath) {
+            if (provider.chatCompletionsPath != localPath) {
+                localPath = provider.chatCompletionsPath
+            }
+        }
+        
+        LaunchedEffect(localPath) {
+            delay(300)
+            if (localPath != provider.chatCompletionsPath) {
+                onEdit(provider.copy(chatCompletionsPath = localPath.trim()))
+            }
+        }
+
         OutlinedTextField(
-            value = provider.chatCompletionsPath,
-            onValueChange = {
-                onEdit(provider.copy(chatCompletionsPath = it.trim()))
-            },
+            value = localPath,
+            onValueChange = { localPath = it },
             label = {
                 Text(stringResource(id = R.string.setting_provider_page_api_path))
             },
@@ -333,11 +364,25 @@ private fun ColumnScope.ProviderConfigureClaude(
         }
     )
 
+    // Local state for URL field with debouncing to prevent lag
+    var localBaseUrl by remember(provider.id) { mutableStateOf(provider.baseUrl) }
+    
+    LaunchedEffect(provider.baseUrl) {
+        if (provider.baseUrl != localBaseUrl) {
+            localBaseUrl = provider.baseUrl
+        }
+    }
+    
+    LaunchedEffect(localBaseUrl) {
+        delay(300)
+        if (localBaseUrl != provider.baseUrl) {
+            onEdit(provider.copy(baseUrl = localBaseUrl.trim()))
+        }
+    }
+
     OutlinedTextField(
-        value = provider.baseUrl,
-        onValueChange = {
-            onEdit(provider.copy(baseUrl = it.trim()))
-        },
+        value = localBaseUrl,
+        onValueChange = { localBaseUrl = it },
         label = {
             Text(stringResource(id = R.string.setting_provider_page_api_base_url))
         },
@@ -389,38 +434,86 @@ private fun ColumnScope.ProviderConfigureGoogle(
             }
         )
 
+        // Local state for URL field with debouncing
+        var localBaseUrl by remember(provider.id) { mutableStateOf(provider.baseUrl) }
+        
+        LaunchedEffect(provider.baseUrl) {
+            if (provider.baseUrl != localBaseUrl) {
+                localBaseUrl = provider.baseUrl
+            }
+        }
+        
+        LaunchedEffect(localBaseUrl) {
+            delay(300)
+            if (localBaseUrl != provider.baseUrl) {
+                onEdit(provider.copy(baseUrl = localBaseUrl.trim()))
+            }
+        }
+
         OutlinedTextField(
-            value = provider.baseUrl,
-            onValueChange = {
-                onEdit(provider.copy(baseUrl = it.trim()))
-            },
+            value = localBaseUrl,
+            onValueChange = { localBaseUrl = it },
             label = {
                 Text(stringResource(id = R.string.setting_provider_page_api_base_url))
             },
             modifier = Modifier.fillMaxWidth(),
-            isError = !provider.baseUrl.endsWith("/v1beta"),
-            supportingText = if (!provider.baseUrl.endsWith("/v1beta")) {
+            isError = !localBaseUrl.endsWith("/v1beta"),
+            supportingText = if (!localBaseUrl.endsWith("/v1beta")) {
                 {
                     Text("The base URL usually ends with `/v1beta`")
                 }
             } else null
         )
     } else {
+        // Local state for all Vertex AI text fields with debouncing
+        var localEmail by remember(provider.id) { mutableStateOf(provider.serviceAccountEmail) }
+        var localPrivateKey by remember(provider.id) { mutableStateOf(provider.privateKey) }
+        var localLocation by remember(provider.id) { mutableStateOf(provider.location) }
+        var localProjectId by remember(provider.id) { mutableStateOf(provider.projectId) }
+        
+        // Sync from external changes
+        LaunchedEffect(provider.serviceAccountEmail) {
+            if (provider.serviceAccountEmail != localEmail) localEmail = provider.serviceAccountEmail
+        }
+        LaunchedEffect(provider.privateKey) {
+            if (provider.privateKey != localPrivateKey) localPrivateKey = provider.privateKey
+        }
+        LaunchedEffect(provider.location) {
+            if (provider.location != localLocation) localLocation = provider.location
+        }
+        LaunchedEffect(provider.projectId) {
+            if (provider.projectId != localProjectId) localProjectId = provider.projectId
+        }
+        
+        // Debounce commits
+        LaunchedEffect(localEmail) {
+            delay(300)
+            if (localEmail != provider.serviceAccountEmail) onEdit(provider.copy(serviceAccountEmail = localEmail.trim()))
+        }
+        LaunchedEffect(localPrivateKey) {
+            delay(300)
+            if (localPrivateKey != provider.privateKey) onEdit(provider.copy(privateKey = localPrivateKey.trim()))
+        }
+        LaunchedEffect(localLocation) {
+            delay(300)
+            if (localLocation != provider.location) onEdit(provider.copy(location = localLocation.trim()))
+        }
+        LaunchedEffect(localProjectId) {
+            delay(300)
+            if (localProjectId != provider.projectId) onEdit(provider.copy(projectId = localProjectId.trim()))
+        }
+
         OutlinedTextField(
-            value = provider.serviceAccountEmail,
-            onValueChange = {
-                onEdit(provider.copy(serviceAccountEmail = it.trim()))
-            },
+            value = localEmail,
+            onValueChange = { localEmail = it },
             label = {
                 Text(stringResource(id = R.string.setting_provider_page_service_account_email))
             },
             modifier = Modifier.fillMaxWidth()
         )
         OutlinedTextField(
-            value = provider.privateKey,
-            onValueChange = {
-                onEdit(provider.copy(privateKey = it.trim()))
-            },
+            value = localPrivateKey,
+            onValueChange = { localPrivateKey = it },
             label = {
                 Text(stringResource(id = R.string.setting_provider_page_private_key))
             },
@@ -430,10 +523,8 @@ private fun ColumnScope.ProviderConfigureGoogle(
             textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
         )
         OutlinedTextField(
-            value = provider.location,
-            onValueChange = {
-                onEdit(provider.copy(location = it.trim()))
-            },
+            value = localLocation,
+            onValueChange = { localLocation = it },
             label = {
                 // https://cloud.google.com/vertex-ai/generative-ai/docs/learn/locations#available-regions
                 Text(stringResource(id = R.string.setting_provider_page_location))
@@ -441,10 +532,8 @@ private fun ColumnScope.ProviderConfigureGoogle(
             modifier = Modifier.fillMaxWidth()
         )
         OutlinedTextField(
-            value = provider.projectId,
-            onValueChange = {
-                onEdit(provider.copy(projectId = it.trim()))
-            },
+            value = localProjectId,
+            onValueChange = { localProjectId = it },
             label = {
                 Text(stringResource(id = R.string.setting_provider_page_project_id))
             },

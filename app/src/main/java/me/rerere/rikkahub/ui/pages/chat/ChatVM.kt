@@ -466,9 +466,8 @@ class ChatVM(
                 )
             },
         )
-        viewModelScope.launch {
-            chatService.saveConversation(_conversationId, newConversation)
-        }
+        // Use updateConversation to immediately update UI state, then save async
+        updateConversation(newConversation)
     }
 
     fun handleMessageTruncate() {

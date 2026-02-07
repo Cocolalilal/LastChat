@@ -154,6 +154,72 @@ class SecretKeyManager(
     }
 
     /**
+     * Handle explicit secret deletions.
+     * When a user clears a secret field (changes from non-empty to empty),
+     * we need to remove it from SecureStore so it doesn't get re-populated.
+     * 
+     * This should be called BEFORE migrateSecretsFromSettings() in the update flow.
+     */
+    fun handleExplicitSecretDeletions(oldSettings: Settings, newSettings: Settings) {
+        // Handle provider secrets (API keys and private keys)
+        for (newProvider in newSettings.providers) {
+            val oldProvider = oldSettings.providers.find { it.id == newProvider.id } ?: continue
+            
+            when {
+                oldProvider is ProviderSetting.OpenAI && newProvider is ProviderSetting.OpenAI -> {
+                    // Check if API key was explicitly cleared
+                    if (oldProvider.apiKey.isNotBlank() && newProvider.apiKey.isBlank()) {
+                        setApiKey(newProvider.id, "")
+                    }
+                }
+                oldProvider is ProviderSetting.Google && newProvider is ProviderSetting.Google -> {
+                    if (oldProvider.apiKey.isNotBlank() && newProvider.apiKey.isBlank()) {
+                        setApiKey(newProvider.id, "")
+                    }
+                    if (oldProvider.privateKey.isNotBlank() && newProvider.privateKey.isBlank()) {
+                        setPrivateKey(newProvider.id, "")
+                    }
+                }
+                oldProvider is ProviderSetting.Claude && newProvider is ProviderSetting.Claude -> {
+                    if (oldProvider.apiKey.isNotBlank() && newProvider.apiKey.isBlank()) {
+                        setApiKey(newProvider.id, "")
+                    }
+                }
+            }
+        }
+
+        // Handle TTS provider secrets
+        for (newTtsProvider in newSettings.ttsProviders) {
+            val oldTtsProvider = oldSettings.ttsProviders.find { it.id == newTtsProvider.id } ?: continue
+            
+            val oldKey = when (oldTtsProvider) {
+                is TTSProviderSetting.OpenAI -> oldTtsProvider.apiKey
+                is TTSProviderSetting.Gemini -> oldTtsProvider.apiKey
+                is TTSProviderSetting.MiniMax -> oldTtsProvider.apiKey
+                is TTSProviderSetting.ElevenLabs -> oldTtsProvider.apiKey
+                is TTSProviderSetting.SystemTTS -> ""
+            }
+            val newKey = when (newTtsProvider) {
+                is TTSProviderSetting.OpenAI -> newTtsProvider.apiKey
+                is TTSProviderSetting.Gemini -> newTtsProvider.apiKey
+                is TTSProviderSetting.MiniMax -> newTtsProvider.apiKey
+                is TTSProviderSetting.ElevenLabs -> newTtsProvider.apiKey
+                is TTSProviderSetting.SystemTTS -> ""
+            }
+            
+            if (oldKey.isNotBlank() && newKey.isBlank()) {
+                setTtsApiKey(newTtsProvider.id, "")
+            }
+        }
+
+        // Handle WebDAV password
+        if (oldSettings.webDavConfig.password.isNotBlank() && 
+            newSettings.webDavConfig.password.isBlank()) {
+            setWebDavPassword("")
+        }
+    }
+
+    /**
      * Migrate a single provider's secrets to SecureStore.
      * Returns provider with credentials cleared if migration occurred.
      */

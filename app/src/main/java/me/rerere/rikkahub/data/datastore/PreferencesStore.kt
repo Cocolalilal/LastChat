@@ -336,6 +336,10 @@ class SettingsStore(
             settings
         }
         
+        // Handle explicit secret deletions (user cleared a field that had a value)
+        // This must be called BEFORE migration to remove deleted secrets from SecureStore
+        secretKeyManager.handleExplicitSecretDeletions(settingsFlow.value, settingsToSave)
+        
         // Migrate secrets from plaintext to SecureStore if needed
         val migratedSettings = secretKeyManager.migrateSecretsFromSettings(settingsToSave)
         
