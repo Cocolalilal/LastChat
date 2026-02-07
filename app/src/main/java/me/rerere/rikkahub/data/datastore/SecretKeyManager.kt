@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.datastore
 
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.tts.provider.TTSProviderSetting
 import kotlin.uuid.Uuid
 
 /**
@@ -18,6 +19,7 @@ class SecretKeyManager(
     companion object {
         private const val PROVIDER_APIKEY_PREFIX = "provider_apikey_"
         private const val PROVIDER_PRIVATEKEY_PREFIX = "provider_privatekey_"
+        private const val TTS_PROVIDER_APIKEY_PREFIX = "tts_provider_apikey_"
         private const val WEBDAV_PASSWORD_KEY = "webdav_password"
     }
 
@@ -72,6 +74,26 @@ class SecretKeyManager(
         secureStore.removeSecret("$PROVIDER_PRIVATEKEY_PREFIX$providerId")
     }
 
+    // ========== TTS API Key Management ==========
+
+    fun getTtsApiKey(providerId: Uuid, plaintextFallback: String): String {
+        val key = "$TTS_PROVIDER_APIKEY_PREFIX$providerId"
+        return secureStore.getSecret(key) ?: plaintextFallback
+    }
+
+    fun setTtsApiKey(providerId: Uuid, apiKey: String) {
+        val key = "$TTS_PROVIDER_APIKEY_PREFIX$providerId"
+        if (apiKey.isNotBlank()) {
+            secureStore.putSecret(key, apiKey)
+        } else {
+            secureStore.removeSecret(key)
+        }
+    }
+
+    fun removeTtsProviderSecrets(providerId: Uuid) {
+        secureStore.removeSecret("$TTS_PROVIDER_APIKEY_PREFIX$providerId")
+    }
+
     // ========== WebDAV Password Management ==========
 
     fun getWebDavPassword(plaintextFallback: String): String {
@@ -113,10 +135,18 @@ class SecretKeyManager(
             settings.webDavConfig
         }
 
+        // Migrate TTS provider API keys
+        val migratedTtsProviders = settings.ttsProviders.map { provider ->
+            migrateTtsProviderSecrets(provider).also {
+                if (it != provider) migrated = true
+            }
+        }
+
         return if (migrated) {
             settings.copy(
                 providers = migratedProviders,
-                webDavConfig = migratedWebDav
+                webDavConfig = migratedWebDav,
+                ttsProviders = migratedTtsProviders
             )
         } else {
             settings
@@ -156,6 +186,40 @@ class SecretKeyManager(
         }
     }
 
+    private fun migrateTtsProviderSecrets(provider: TTSProviderSetting): TTSProviderSetting {
+        return when (provider) {
+            is TTSProviderSetting.OpenAI -> {
+                if (provider.apiKey.isNotBlank()) {
+                    setTtsApiKey(provider.id, provider.apiKey)
+                    provider.copy(apiKey = "")
+                } else provider
+            }
+
+            is TTSProviderSetting.Gemini -> {
+                if (provider.apiKey.isNotBlank()) {
+                    setTtsApiKey(provider.id, provider.apiKey)
+                    provider.copy(apiKey = "")
+                } else provider
+            }
+
+            is TTSProviderSetting.MiniMax -> {
+                if (provider.apiKey.isNotBlank()) {
+                    setTtsApiKey(provider.id, provider.apiKey)
+                    provider.copy(apiKey = "")
+                } else provider
+            }
+
+            is TTSProviderSetting.ElevenLabs -> {
+                if (provider.apiKey.isNotBlank()) {
+                    setTtsApiKey(provider.id, provider.apiKey)
+                    provider.copy(apiKey = "")
+                } else provider
+            }
+
+            is TTSProviderSetting.SystemTTS -> provider
+        }
+    }
+
     // ========== Backup/Export Support ==========
 
     /**
@@ -171,9 +235,14 @@ class SecretKeyManager(
             password = getWebDavPassword(settings.webDavConfig.password)
         )
 
+        val ttsProvidersWithSecrets = settings.ttsProviders.map { provider ->
+            populateTtsProviderSecrets(provider)
+        }
+
         return settings.copy(
             providers = providersWithSecrets,
-            webDavConfig = webDavWithPassword
+            webDavConfig = webDavWithPassword,
+            ttsProviders = ttsProvidersWithSecrets
         )
     }
 
@@ -194,6 +263,28 @@ class SecretKeyManager(
             is ProviderSetting.Claude -> {
                 provider.copy(apiKey = getApiKey(provider.id, provider.apiKey))
             }
+        }
+    }
+
+    private fun populateTtsProviderSecrets(provider: TTSProviderSetting): TTSProviderSetting {
+        return when (provider) {
+            is TTSProviderSetting.OpenAI -> {
+                provider.copy(apiKey = getTtsApiKey(provider.id, provider.apiKey))
+            }
+
+            is TTSProviderSetting.Gemini -> {
+                provider.copy(apiKey = getTtsApiKey(provider.id, provider.apiKey))
+            }
+
+            is TTSProviderSetting.MiniMax -> {
+                provider.copy(apiKey = getTtsApiKey(provider.id, provider.apiKey))
+            }
+
+            is TTSProviderSetting.ElevenLabs -> {
+                provider.copy(apiKey = getTtsApiKey(provider.id, provider.apiKey))
+            }
+
+            is TTSProviderSetting.SystemTTS -> provider
         }
     }
 
