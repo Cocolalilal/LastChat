@@ -5,6 +5,7 @@ import com.whl.quickjs.wrapper.QuickJSContext
 import com.whl.quickjs.wrapper.QuickJSObject
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.booleanOrNull
@@ -70,13 +71,31 @@ class LocalTools(private val context: Context) {
         return listOf(
             Tool(
                 name = "eval_python",
-                description = "Execute Python code. Has access to numpy and Pillow. Returns result or stdout. Use for calculations, data processing, and file manipulation.",
+                description = "Execute Python code. Has access to numpy, pandas, matplotlib and Pillow. Use for calculations, data processing and chart/image generation. If attachments are present in the latest user message, pass them via `attachments` to auto-import before execution. After execution, check `generated_files` and include any `markdown_link` in your reply (for images prefer Markdown image syntax like `![chart](content://...)`).",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
                             put("code", buildJsonObject {
                                 put("type", "string")
                                 put("description", "The Python code to execute")
+                            })
+                            put("attachments", buildJsonObject {
+                                put("type", "array")
+                                put("description", "Optional attachments to auto-import into sandbox before running code")
+                                put("items", buildJsonObject {
+                                    put("type", "object")
+                                    put("properties", buildJsonObject {
+                                        put("url", buildJsonObject {
+                                            put("type", "string")
+                                            put("description", "Attachment URL from chat message")
+                                        })
+                                        put("filename", buildJsonObject {
+                                            put("type", "string")
+                                            put("description", "Target filename in sandbox")
+                                        })
+                                    })
+                                    put("required", JsonArray(listOf(JsonPrimitive("url"), JsonPrimitive("filename"))))
+                                })
                             })
                         },
                         required = listOf("code")
@@ -85,20 +104,80 @@ class LocalTools(private val context: Context) {
                 execute = {
                     val code = it.jsonObject["code"]?.jsonPrimitive?.contentOrNull ?: ""
                     try {
+                        val filesBefore = pythonSandbox.listFiles(conversationId)
+                        val beforeNames = filesBefore.map { file -> file.name }.toSet()
+
+                        val importedAttachments = mutableListOf<kotlinx.serialization.json.JsonObject>()
+                        val attachmentsElement = it.jsonObject["attachments"]
+                        if (attachmentsElement is JsonArray) {
+                            attachmentsElement.forEach { item ->
+                                val itemObj = item as? kotlinx.serialization.json.JsonObject ?: return@forEach
+                                val url = itemObj["url"]?.jsonPrimitive?.contentOrNull
+                                val filename = itemObj["filename"]?.jsonPrimitive?.contentOrNull
+                                if (!url.isNullOrBlank() && !filename.isNullOrBlank()) {
+                                    runCatching {
+                                        val savedPath = pythonSandbox.importFile(conversationId, android.net.Uri.parse(url), filename)
+                                        buildJsonObject {
+                                            put("url", url)
+                                            put("filename", filename)
+                                            put("path", savedPath)
+                                            put("success", true)
+                                        }
+                                    }.onSuccess { importedAttachments.add(it) }
+                                        .onFailure { error ->
+                                            importedAttachments.add(
+                                                buildJsonObject {
+                                                    put("url", url)
+                                                    put("filename", filename)
+                                                    put("success", false)
+                                                    put("error", error.message ?: "Failed to import attachment")
+                                                }
+                                            )
+                                        }
+                                }
+                            }
+                        }
+
                         val python = com.chaquo.python.Python.getInstance()
                         val executor = python.getModule("executor")
                         val resultJson = executor.callAttr("execute", code, workingDir).toString()
-                        val resultObj = kotlinx.serialization.json.Json.parseToJsonElement(resultJson).jsonObject
-                        
+                        val baseResultObj = kotlinx.serialization.json.Json.parseToJsonElement(resultJson).jsonObject
+
+                        val filesAfter = pythonSandbox.listFiles(conversationId)
+                        val generatedFiles = filesAfter
+                            .filter { file -> !beforeNames.contains(file.name) }
+                            .map { file ->
+                                val uri = pythonSandbox.getFileUri(conversationId, file.name)
+                                buildJsonObject {
+                                    put("name", file.name)
+                                    put("size", file.size)
+                                    put("is_image", file.isImage)
+                                    put("mime", file.mimeType)
+                                    put("uri", uri.toString())
+                                    put("markdown_link", if (file.isImage) "![${file.name}]($uri)" else "[${file.name}]($uri)")
+                                }
+                            }
+
+                        val finalResultObj = buildJsonObject {
+                            baseResultObj.forEach { (k, v) -> put(k, v) }
+                            if (importedAttachments.isNotEmpty()) {
+                                put("imported_attachments", JsonArray(importedAttachments))
+                            }
+                            if (generatedFiles.isNotEmpty()) {
+                                put("generated_files", JsonArray(generatedFiles))
+                                put("note", "Use generated_files[].markdown_link in your reply so users can open/download outputs directly in chat.")
+                            }
+                        }
+
                         // Truncate output if too long
-                        val output = resultObj.toString()
+                        val output = finalResultObj.toString()
                         if (output.length > 2000) {
                             buildJsonObject {
                                 put("output", output.take(2000) + "... (truncated)")
-                                put("note", "Output truncated to save context window. Use print() sparingly or save to file.")
+                                put("note", "Output truncated to save context window. Use print() sparingly or save to file, and use list_sandbox_files to inspect files.")
                             }
                         } else {
-                            resultObj
+                            finalResultObj
                         }
                     } catch (e: Exception) {
                         buildJsonObject { put("error", e.message ?: "Unknown error") }
@@ -107,7 +186,7 @@ class LocalTools(private val context: Context) {
             ),
             Tool(
                 name = "list_sandbox_files",
-                description = "List all files in the Python sandbox for this conversation. Returns file names, sizes, and whether they are images.",
+                description = "List all files in the Python sandbox for this conversation. Returns file names, sizes, whether they are images, and direct markdown links you can include in your response.",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject { },
@@ -121,9 +200,13 @@ class LocalTools(private val context: Context) {
                             put("files", kotlinx.serialization.json.JsonArray(
                                 files.map { file ->
                                     buildJsonObject {
+                                        val uri = pythonSandbox.getFileUri(conversationId, file.name)
                                         put("name", file.name)
                                         put("size", file.size)
                                         put("is_image", file.isImage)
+                                        put("mime", file.mimeType)
+                                        put("uri", uri.toString())
+                                        put("markdown_link", if (file.isImage) "![${file.name}]($uri)" else "[${file.name}]($uri)")
                                     }
                                 }
                             ))
@@ -231,7 +314,7 @@ class LocalTools(private val context: Context) {
             ),
             Tool(
                 name = "import_attachment",
-                description = "Import an attached file from the user's message into the Python sandbox. Use the file URL from image/document attachments in the conversation. Returns the path where the file was saved.",
+                description = "Import an attached file from the user's message into the Python sandbox. Use the file URL from image/document attachments in the conversation. Tip: you can also pass multiple attachments directly in eval_python.attachments for automatic import.",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {

@@ -1099,7 +1099,7 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                 inlineContents.putIfAbsent(
                     inlineKey, InlineTextContent(
                         placeholder = Placeholder(
-                            width = (displayName.length * 8 + 8).sp, // Width for link text
+                            width = (displayName.length * 12 + 32).sp, // Extra width to avoid clipping long download link text
                             height = (style.fontSize.value * 1.3f).sp, // Extra height for descenders (p, g, y)
                             placeholderVerticalAlign = PlaceholderVerticalAlign.TextBottom,
                         ), children = {
