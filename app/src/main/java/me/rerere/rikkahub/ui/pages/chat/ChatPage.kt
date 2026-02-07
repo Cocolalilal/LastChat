@@ -687,16 +687,16 @@ private fun ChatPageContent(
                                 }
                             },
                             onSendClick = {
-                                if (currentChatModel == null) {
-                                    toaster.show("Please select a model first", type = ToastType.Error)
-                                    return@MinimalChatInput
-                                }
                                 if (inputState.isEditing()) {
                                     vm.handleMessageEdit(
                                         parts = inputState.getContents(),
                                         messageId = inputState.editingMessage!!,
                                     )
                                 } else {
+                                    if (currentChatModel == null) {
+                                        toaster.show("Please select a model first", type = ToastType.Error)
+                                        return@MinimalChatInput
+                                    }
                                     vm.handleMessageSend(inputState.getContents(), isTemporaryChat = isTemporaryChat)
                                     scope.launch {
                                         chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
@@ -711,6 +711,10 @@ private fun ChatPageContent(
                                         messageId = inputState.editingMessage!!,
                                     )
                                 } else {
+                                    if (currentChatModel == null) {
+                                        toaster.show("Please select a model first", type = ToastType.Error)
+                                        return@MinimalChatInput
+                                    }
                                     vm.handleMessageSend(content = inputState.getContents(), answer = false, isTemporaryChat = isTemporaryChat)
                                     scope.launch {
                                         chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
@@ -788,16 +792,16 @@ private fun ChatPageContent(
                                 }
                             },
                             onSendClick = {
-                                if (currentChatModel == null) {
-                                    toaster.show("Please select a model first", type = ToastType.Error)
-                                    return@ChatInput
-                                }
                                 if (inputState.isEditing()) {
                                     vm.handleMessageEdit(
                                         parts = inputState.getContents(),
                                         messageId = inputState.editingMessage!!,
                                     )
                                 } else {
+                                    if (currentChatModel == null) {
+                                        toaster.show("Please select a model first", type = ToastType.Error)
+                                        return@ChatInput
+                                    }
                                     vm.handleMessageSend(inputState.getContents(), isTemporaryChat = isTemporaryChat)
                                     scope.launch {
                                         chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
@@ -812,6 +816,10 @@ private fun ChatPageContent(
                                         messageId = inputState.editingMessage!!,
                                     )
                                 } else {
+                                    if (currentChatModel == null) {
+                                        toaster.show("Please select a model first", type = ToastType.Error)
+                                        return@ChatInput
+                                    }
                                     vm.handleMessageSend(content = inputState.getContents(), answer = false, isTemporaryChat = isTemporaryChat)
                                     scope.launch {
                                         chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
