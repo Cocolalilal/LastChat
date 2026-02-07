@@ -16,6 +16,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -69,6 +70,7 @@ import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
 import me.rerere.rikkahub.ui.components.message.ChatMessageCopySheet
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
+import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.ui.context.LocalSettings
@@ -539,6 +541,29 @@ private fun UserMessageTurn(
         horizontalAlignment = Alignment.End,
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
+        // Collect all images from all nodes
+        val allImages = group.nodes.flatMap { node ->
+            node.currentMessage.parts.filterIsInstance<UIMessagePart.Image>()
+        }
+        
+        // Display images above the text bubbles
+        if (allImages.isNotEmpty()) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                allImages.fastForEach { image ->
+                    ZoomableAsyncImage(
+                        model = image.url,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .clip(MaterialTheme.shapes.medium)
+                            .height(72.dp)
+                    )
+                }
+            }
+        }
+        
         // Message bubbles
         group.nodes.forEachIndexed { nodeIndex, node ->
             val textParts = node.currentMessage.parts.filterIsInstance<UIMessagePart.Text>()

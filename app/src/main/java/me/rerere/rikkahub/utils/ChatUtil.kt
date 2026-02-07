@@ -64,6 +64,22 @@ suspend fun Context.saveMessageImage(image: String) = withContext(Dispatchers.IO
             exportImageFile(this@saveMessageImage.getActivity()!!, file)
         }
 
+        image.startsWith("content:") -> {
+            // Handle content:// URIs (used by FileProvider for Python sandbox files)
+            kotlin.runCatching {
+                val uri = image.toUri()
+                contentResolver.openInputStream(uri)?.use { inputStream ->
+                    val bitmap = BitmapFactory.decodeStream(inputStream)
+                    if (bitmap != null) {
+                        exportImage(this@saveMessageImage.getActivity()!!, bitmap)
+                    } else {
+                        Log.e(TAG, "saveMessageImage: Failed to decode bitmap from content URI: $image")
+                        null
+                    }
+                }
+            }.getOrNull()
+        }
+
         image.startsWith("http") -> {
             kotlin.runCatching { // Use runCatching to handle potential network exceptions
                 val url = java.net.URL(image)

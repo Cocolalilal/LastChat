@@ -21,6 +21,16 @@ def execute(code: str, working_dir: str) -> str:
         JSON string with result/stdout/error
     """
     os.chdir(working_dir)
+    
+    # Configure matplotlib for non-GUI environment before any imports
+    # This prevents black/empty images
+    import matplotlib
+    matplotlib.use('Agg')  # Use non-interactive backend
+    import matplotlib.pyplot as plt
+    plt.rcParams['figure.facecolor'] = 'white'  # White background instead of transparent
+    plt.rcParams['axes.facecolor'] = 'white'
+    plt.rcParams['savefig.facecolor'] = 'white'
+    
     old_stdout = sys.stdout
     old_stderr = sys.stderr
     sys.stdout = StringIO()
@@ -29,13 +39,27 @@ def execute(code: str, working_dir: str) -> str:
     result = None
     error = None
     
+    # Pre-populate globals with useful imports and matplotlib configured
+    exec_globals = {
+        '__name__': '__main__',
+        '__builtins__': __builtins__,
+        'plt': plt,
+        'matplotlib': matplotlib,
+    }
+    
     try:
         # Try to evaluate as expression first (returns value)
-        result = eval(code)
+        result = eval(code, exec_globals)
     except SyntaxError:
         # Not an expression, execute as statements
         try:
-            exec(code, {'__name__': '__main__', '__builtins__': __builtins__})
+            exec(code, exec_globals)
+            # Auto-save any open matplotlib figures
+            for i, fig_num in enumerate(plt.get_fignums()):
+                fig = plt.figure(fig_num)
+                filename = f"figure_{i + 1}.png" if len(plt.get_fignums()) > 1 else "figure.png"
+                fig.savefig(filename, dpi=150, bbox_inches='tight', facecolor='white', edgecolor='none')
+                plt.close(fig)
         except Exception as e:
             error = f"{type(e).__name__}: {str(e)}"
     except Exception as e:
@@ -45,6 +69,8 @@ def execute(code: str, working_dir: str) -> str:
         stderr_output = sys.stderr.getvalue()
         sys.stdout = old_stdout
         sys.stderr = old_stderr
+        # Clean up any remaining figures
+        plt.close('all')
     
     response = {}
     if error:
