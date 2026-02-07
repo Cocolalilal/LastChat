@@ -111,7 +111,7 @@ internal class SseClientTransport(
                     type: String?,
                     data: String
                 ) {
-                    Log.i(TAG, "onEvent($baseUrl):  #$id($type) - $data")
+                    Log.i(TAG, "onEvent($baseUrl): id=$id type=$type payloadSize=${data.length}")
                     when (type) {
                         "error" -> {
                             val e = IllegalStateException("SSE error: $data")
@@ -161,7 +161,10 @@ internal class SseClientTransport(
             error("Not connected")
         }
 
-        Log.i(TAG, "send: POSTing to endpoint ${endpoint.getCompleted()} - $message")
+        Log.i(
+            TAG,
+            "send: POSTing to endpoint ${endpoint.getCompleted()} messageType=${message::class.simpleName}"
+        )
 
         try {
             val request = Request.Builder()
@@ -180,7 +183,10 @@ internal class SseClientTransport(
             val response = client.newCall(request).await()
             if (!response.isSuccessful) {
                 val text = response.body.string()
-                error("Error POSTing to endpoint ${endpoint.getCompleted()} (HTTP ${response.code}): $text")
+                error(
+                    "Error POSTing to endpoint ${endpoint.getCompleted()} " +
+                        "(HTTP ${response.code}, bodySize=${text.length})"
+                )
             } else {
                 Log.i(TAG, "send: POST to endpoint ${endpoint.getCompleted()} successful")
             }
