@@ -88,7 +88,7 @@ class StreamableHttpClientTransport(
     ) {
         Log.d(
             TAG,
-            "send: Client sending message via POST to $url: ${McpJson.encodeToString(message)}"
+            "send: Client sending message via POST to $url type=${message::class.simpleName}"
         )
 
         // If we have a resumption token, reconnect the SSE stream with it
@@ -276,7 +276,7 @@ class StreamableHttpClientTransport(
                         }
                         Log.d(
                             TAG,
-                            "collectSse: Client received SSE event: event=${event.type}, data=${event.data}, id=${event.id}"
+                            "collectSse: Client received SSE event: event=${event.type}, id=${event.id}, payloadSize=${event.data.length}"
                         )
 
                         when (event.type) {
