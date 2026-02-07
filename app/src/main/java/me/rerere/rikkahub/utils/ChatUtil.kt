@@ -1,10 +1,14 @@
 package me.rerere.rikkahub.utils
 
+import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
 import android.provider.DocumentsContract
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.util.Log
 import androidx.core.net.toFile
@@ -66,18 +70,41 @@ suspend fun Context.saveMessageImage(image: String) = withContext(Dispatchers.IO
 
         image.startsWith("content:") -> {
             // Handle content:// URIs (used by FileProvider for Python sandbox files)
-            kotlin.runCatching {
-                val uri = image.toUri()
-                contentResolver.openInputStream(uri)?.use { inputStream ->
-                    val bitmap = BitmapFactory.decodeStream(inputStream)
-                    if (bitmap != null) {
-                        exportImage(this@saveMessageImage.getActivity()!!, bitmap)
-                    } else {
-                        Log.e(TAG, "saveMessageImage: Failed to decode bitmap from content URI: $image")
-                        null
+            // Copy bytes directly to gallery to preserve original format
+            val uri = image.toUri()
+            contentResolver.openInputStream(uri)?.use { inputStream ->
+                val fileName = "LastChat_${System.currentTimeMillis()}.png"
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    // Android 10+ use MediaStore API
+                    val contentValues = ContentValues().apply {
+                        put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                        put(MediaStore.MediaColumns.MIME_TYPE, "image/png")
+                        put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES)
                     }
+                    val destUri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+                    if (destUri != null) {
+                        contentResolver.openOutputStream(destUri)?.use { outputStream ->
+                            inputStream.copyTo(outputStream)
+                        } ?: throw IllegalStateException("Failed to open output stream for MediaStore")
+                    } else {
+                        throw IllegalStateException("Failed to create MediaStore entry")
+                    }
+                } else {
+                    // Android 9 and below: write to Pictures directory
+                    @Suppress("DEPRECATION")
+                    val imagesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+                    val destFile = java.io.File(imagesDir, fileName)
+                    java.io.FileOutputStream(destFile).use { outputStream ->
+                        inputStream.copyTo(outputStream)
+                    }
+                    // Notify media scanner
+                    @Suppress("DEPRECATION")
+                    val mediaScanIntent = android.content.Intent(android.content.Intent.ACTION_MEDIA_SCANNER_SCAN_FILE)
+                    mediaScanIntent.data = android.net.Uri.fromFile(destFile)
+                    sendBroadcast(mediaScanIntent)
                 }
-            }.getOrNull()
+                Log.i(TAG, "saveMessageImage: Saved content:// image to gallery: $fileName")
+            } ?: throw IllegalStateException("Failed to open input stream from content URI: $image")
         }
 
         image.startsWith("http") -> {

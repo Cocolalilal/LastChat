@@ -562,7 +562,14 @@ class ChatService(
                     addAll(localTools.getTools(
                         options = settings.getCurrentAssistant().localTools,
                         assistantId = settings.getCurrentAssistant().id,
-                        conversationId = conversation.id
+                        conversationId = conversation.id,
+                        // Extract image URLs from last user message for Python auto-import
+                        userImageUrls = conversation.currentMessages
+                            .lastOrNull { it.role == MessageRole.USER }
+                            ?.parts
+                            ?.filterIsInstance<me.rerere.ai.ui.UIMessagePart.Image>()
+                            ?.map { it.url }
+                            ?: emptyList()
                     ))
                     mcpManager.getAllAvailableTools().forEach { tool ->
                         add(

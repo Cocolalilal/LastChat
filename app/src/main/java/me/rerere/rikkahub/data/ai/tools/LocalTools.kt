@@ -65,37 +65,41 @@ class LocalTools(private val context: Context) {
 
     private val pythonSandbox by lazy { PythonSandbox(context) }
 
-    fun getPythonTools(conversationId: Uuid): List<Tool> {
+    /**
+     * Get Python tools for the conversation.
+     * @param conversationId The conversation UUID
+     * @param userImageUrls Image URLs from the most recent user message - will be auto-imported
+     */
+    fun getPythonTools(conversationId: Uuid, userImageUrls: List<String> = emptyList()): List<Tool> {
         val workingDir = pythonSandbox.getConversationDir(conversationId).absolutePath
+        
+        // Auto-import user attachments to sandbox
+        val preloadedFiles = mutableListOf<String>()
+        userImageUrls.forEachIndexed { index, url ->
+            runCatching {
+                val filename = "attachment_$index.png"
+                pythonSandbox.importFile(conversationId, android.net.Uri.parse(url), filename)
+                preloadedFiles.add(filename)
+            }.onFailure { e ->
+                android.util.Log.w("LocalTools", "Failed to auto-import attachment $index: ${e.message}")
+            }
+        }
+        
+        // Build description with info about pre-loaded files
+        val preloadedInfo = if (preloadedFiles.isNotEmpty()) {
+            " User attachments are pre-loaded in sandbox as: ${preloadedFiles.joinToString { it }}. Access them with Image.open(\"${'$'}{filename}\")."
+        } else ""
         
         return listOf(
             Tool(
                 name = "eval_python",
-                description = "Execute Python code. Has access to numpy, pandas, matplotlib and Pillow. Use for calculations, data processing and chart/image generation. If attachments are present in the latest user message, pass them via `attachments` to auto-import before execution. After execution, check `generated_files` and include any `markdown_link` in your reply (for images prefer Markdown image syntax like `![chart](content://...)`).",
+                description = "Execute Python code. Has access to numpy, pandas, matplotlib and Pillow. Use for calculations, data processing and chart/image generation.$preloadedInfo After execution, check `generated_files` and include any `markdown_link` in your reply (for images prefer Markdown image syntax like `![chart](content://...)`).",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
                             put("code", buildJsonObject {
                                 put("type", "string")
                                 put("description", "The Python code to execute")
-                            })
-                            put("attachments", buildJsonObject {
-                                put("type", "array")
-                                put("description", "Optional attachments to auto-import into sandbox before running code")
-                                put("items", buildJsonObject {
-                                    put("type", "object")
-                                    put("properties", buildJsonObject {
-                                        put("url", buildJsonObject {
-                                            put("type", "string")
-                                            put("description", "Attachment URL from chat message")
-                                        })
-                                        put("filename", buildJsonObject {
-                                            put("type", "string")
-                                            put("description", "Target filename in sandbox")
-                                        })
-                                    })
-                                    put("required", JsonArray(listOf(JsonPrimitive("url"), JsonPrimitive("filename"))))
-                                })
                             })
                         },
                         required = listOf("code")
@@ -106,37 +110,6 @@ class LocalTools(private val context: Context) {
                     try {
                         val filesBefore = pythonSandbox.listFiles(conversationId)
                         val beforeNames = filesBefore.map { file -> file.name }.toSet()
-
-                        val importedAttachments = mutableListOf<kotlinx.serialization.json.JsonObject>()
-                        val attachmentsElement = it.jsonObject["attachments"]
-                        if (attachmentsElement is JsonArray) {
-                            attachmentsElement.forEach { item ->
-                                val itemObj = item as? kotlinx.serialization.json.JsonObject ?: return@forEach
-                                val url = itemObj["url"]?.jsonPrimitive?.contentOrNull
-                                val filename = itemObj["filename"]?.jsonPrimitive?.contentOrNull
-                                if (!url.isNullOrBlank() && !filename.isNullOrBlank()) {
-                                    runCatching {
-                                        val savedPath = pythonSandbox.importFile(conversationId, android.net.Uri.parse(url), filename)
-                                        buildJsonObject {
-                                            put("url", url)
-                                            put("filename", filename)
-                                            put("path", savedPath)
-                                            put("success", true)
-                                        }
-                                    }.onSuccess { importedAttachments.add(it) }
-                                        .onFailure { error ->
-                                            importedAttachments.add(
-                                                buildJsonObject {
-                                                    put("url", url)
-                                                    put("filename", filename)
-                                                    put("success", false)
-                                                    put("error", error.message ?: "Failed to import attachment")
-                                                }
-                                            )
-                                        }
-                                }
-                            }
-                        }
 
                         val python = com.chaquo.python.Python.getInstance()
                         val executor = python.getModule("executor")
@@ -160,8 +133,8 @@ class LocalTools(private val context: Context) {
 
                         val finalResultObj = buildJsonObject {
                             baseResultObj.forEach { (k, v) -> put(k, v) }
-                            if (importedAttachments.isNotEmpty()) {
-                                put("imported_attachments", JsonArray(importedAttachments))
+                            if (preloadedFiles.isNotEmpty()) {
+                                put("preloaded_attachments", JsonArray(preloadedFiles.map { JsonPrimitive(it) }))
                             }
                             if (generatedFiles.isNotEmpty()) {
                                 put("generated_files", JsonArray(generatedFiles))
@@ -637,7 +610,12 @@ class LocalTools(private val context: Context) {
             )
         )
     }
-    fun getTools(options: List<LocalToolOption>, assistantId: Uuid, conversationId: Uuid): List<Tool> {
+    
+    /**
+     * Get all enabled local tools for the conversation.
+     * @param userImageUrls Image URLs from the most recent user message (for Python auto-import)
+     */
+    fun getTools(options: List<LocalToolOption>, assistantId: Uuid, conversationId: Uuid, userImageUrls: List<String> = emptyList()): List<Tool> {
         val tools = mutableListOf<Tool>()
         if (options.contains(LocalToolOption.JavascriptEngine)) {
             tools.add(javascriptTool)
@@ -645,9 +623,9 @@ class LocalTools(private val context: Context) {
         if (options.contains(LocalToolOption.DeviceControl)) {
             tools.addAll(getDeviceControlTools(assistantId, conversationId))
         }
-        // Find Python engine option if present
+        // Find Python engine option if present - pass user images for auto-import
         if (options.contains(LocalToolOption.PythonEngine)) {
-            tools.addAll(getPythonTools(conversationId))
+            tools.addAll(getPythonTools(conversationId, userImageUrls))
         }
         return tools
     }
