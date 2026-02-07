@@ -1313,7 +1313,9 @@ class ChatService(
                     targetLanguage = targetLanguage
                 ) { translatedText ->
                     // Update translation field in real-time
-                    updateTranslationField(conversationId, message.id, translatedText)
+                    appScope.launch {
+                        updateTranslationField(conversationId, message.id, translatedText)
+                    }
                 }.collect { /* Final translation already handled in onStreamUpdate */ }
 
                 // Save the conversation after translation is complete

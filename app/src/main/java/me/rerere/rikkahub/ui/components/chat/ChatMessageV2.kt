@@ -316,13 +316,15 @@ private fun deriveActivityState(
                 (r.finishedAt!! - r.createdAt).inWholeMilliseconds
             } else 0L
         }
-        val completedToolNames = toolCalls.map { it.toolName }.distinct()
+        
+        // Group tools by CATEGORY (Python, Search, etc.) not individual tool names
+        val toolCategories = toolCalls.map { categorizeToolName(it.toolName) }.distinct()
         
         val hasReasoning = totalReasoningMs > 0
-        val hasTools = completedToolNames.isNotEmpty()
+        val hasTools = toolCategories.isNotEmpty()
         
-        // Count distinct activities
-        val activityCount = (if (hasReasoning) 1 else 0) + completedToolNames.size
+        // Count distinct activity categories (not individual tools)
+        val activityCount = (if (hasReasoning) 1 else 0) + toolCategories.size
         
         return when {
             activityCount == 0 -> ActivityState.Hidden  // No activities, hide pill
@@ -331,13 +333,14 @@ private fun deriveActivityState(
                 durationMs = totalReasoningMs
             )
             activityCount == 1 && hasTools -> ActivityState.CompletedSingle(
-                type = categorizeToolName(completedToolNames.first()),
-                toolName = completedToolNames.first(),
-                displayName = getToolDisplayName(completedToolNames.first())
+                type = toolCategories.first(),
+                toolName = toolCalls.first().toolName,
+                displayName = getToolDisplayName(toolCalls.first().toolName),
+                count = toolCalls.size  // Pass total count of tool calls
             )
             else -> ActivityState.CompletedMultiple(
                 reasoningDurationMs = if (hasReasoning) totalReasoningMs else null,
-                toolsUsed = completedToolNames
+                toolsUsed = toolCalls.map { it.toolName }.distinct()
             )
         }
     }

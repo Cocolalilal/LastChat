@@ -84,7 +84,8 @@ sealed interface ActivityState {
         val type: ActivityType,
         val durationMs: Long? = null,
         val toolName: String? = null,
-        val displayName: String? = null
+        val displayName: String? = null,
+        val count: Int = 1  // Number of times this activity occurred
     ) : ActivityState
     
     /** Multiple activities completed - show compact pills */
@@ -422,6 +423,7 @@ private fun AnimatedSinglePill(
                         val item = ActivityItem(
                             type = targetState.type,
                             durationMs = targetState.durationMs,
+                            count = targetState.count,
                             displayName = targetState.displayName
                         )
                         ExpandedActivityContent(item = item)
