@@ -427,6 +427,20 @@ fun ChatMessageTurn(
     
     // Timeline entries from all parts - computed fresh to avoid stale data
     val timelineEntries = buildTimelineEntries(group.allParts)
+
+    // Actions should target the visible assistant content node instead of blindly using lastNode,
+    // because the last node in a turn can be a tool node.
+    val actionTargetNode = remember(group) {
+        group.filteredNodes
+            .asReversed()
+            .firstOrNull { node ->
+                node.currentMessage.parts.any { part ->
+                    part is UIMessagePart.Text || part is UIMessagePart.Reasoning || part is UIMessagePart.Thinking
+                }
+            }
+            ?: group.filteredNodes.lastOrNull()
+            ?: group.lastNode
+    }
     
     ProvideTextStyle(textStyle) {
         when (group.role) {
@@ -497,11 +511,11 @@ fun ChatMessageTurn(
     
     if (showActionsSheet) {
         ChatMessageActionsSheet(
-            message = group.lastNode.currentMessage,
-            onEdit = { onEdit(group.lastNode) },
-            onDelete = { onDelete(group.lastNode) },
-            onShare = { onShare(group.lastNode) },
-            onFork = { onFork(group.lastNode) },
+            message = actionTargetNode.currentMessage,
+            onEdit = { onEdit(actionTargetNode) },
+            onDelete = { onDelete(actionTargetNode) },
+            onShare = { onShare(actionTargetNode) },
+            onFork = { onFork(actionTargetNode) },
             model = model,
             onSelectAndCopy = { showSelectCopySheet = true },
             onWebViewPreview = { },
@@ -511,7 +525,7 @@ fun ChatMessageTurn(
     
     if (showSelectCopySheet) {
         ChatMessageCopySheet(
-            message = group.lastNode.currentMessage,
+            message = actionTargetNode.currentMessage,
             onDismissRequest = { showSelectCopySheet = false }
         )
     }
