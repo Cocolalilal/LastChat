@@ -3,7 +3,7 @@ package me.rerere.rikkahub.widget
 import android.appwidget.AppWidgetManager
 import android.content.Intent
 import android.os.Bundle
-import android.util.Log
+import me.rerere.rikkahub.utils.LogUtil
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -70,10 +70,10 @@ class WidgetConfigActivity : ComponentActivity() {
             AppWidgetManager.INVALID_APPWIDGET_ID
         ) ?: AppWidgetManager.INVALID_APPWIDGET_ID
         
-        Log.d(TAG, "Widget config started for widgetId: $appWidgetId")
+        LogUtil.d(TAG, "Widget config started for widgetId: $appWidgetId")
         
         if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) {
-            Log.e(TAG, "Invalid widget ID, finishing")
+            LogUtil.e(TAG, "Invalid widget ID, finishing")
             finish()
             return
         }
@@ -84,7 +84,7 @@ class WidgetConfigActivity : ComponentActivity() {
                 val assistants = settings.assistants
                 val defaultName = stringResource(R.string.assistant_page_default_assistant)
                 
-                Log.d(TAG, "Rendering with ${assistants.size} assistants")
+                LogUtil.d(TAG, "Rendering with ${assistants.size} assistants")
                 
                 Scaffold(
                     topBar = {
@@ -114,7 +114,7 @@ class WidgetConfigActivity : ComponentActivity() {
     }
     
     private fun onAssistantSelected(assistant: Assistant) {
-        Log.d(TAG, "Assistant selected: ${assistant.name}, avatar: ${assistant.avatar}")
+        LogUtil.d(TAG, "Assistant selected: ${assistant.name}, avatar: ${assistant.avatar}")
         
         // Convert avatar to type and data strings
         val (avatarType, avatarData) = when (val avatar = assistant.avatar) {
@@ -124,7 +124,7 @@ class WidgetConfigActivity : ComponentActivity() {
             is Avatar.Resource -> "resource" to avatar.id.toString()
         }
         
-        Log.d(TAG, "Saving config: widgetId=$appWidgetId, avatarType=$avatarType, avatarData=$avatarData")
+        LogUtil.d(TAG, "Saving config: widgetId=$appWidgetId, avatarType=$avatarType, avatarData=$avatarData")
         
         // Update widget state using Glance's state management - this will trigger an update
         lifecycleScope.launch {
@@ -132,7 +132,7 @@ class WidgetConfigActivity : ComponentActivity() {
                 val glanceManager = GlanceAppWidgetManager(this@WidgetConfigActivity)
                 val glanceId = glanceManager.getGlanceIdBy(appWidgetId)
                 
-                Log.d(TAG, "Updating widget state for glanceId=$glanceId")
+                LogUtil.d(TAG, "Updating widget state for glanceId=$glanceId")
                 
                 // Use the static helper on AssistantWidget to update state and refresh
                 AssistantWidget.updateWidgetState(
@@ -144,10 +144,10 @@ class WidgetConfigActivity : ComponentActivity() {
                     avatarData = avatarData
                 )
                 
-                Log.d(TAG, "Widget state updated successfully")
+                LogUtil.d(TAG, "Widget state updated successfully")
                 
             } catch (e: Exception) {
-                Log.e(TAG, "Error updating widget state", e)
+                LogUtil.e(TAG, "Error updating widget state", e)
             }
             
             // Set result and finish
@@ -155,7 +155,7 @@ class WidgetConfigActivity : ComponentActivity() {
                 putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
             }
             setResult(RESULT_OK, resultValue)
-            Log.d(TAG, "Finishing activity")
+            LogUtil.d(TAG, "Finishing activity")
             finish()
         }
     }

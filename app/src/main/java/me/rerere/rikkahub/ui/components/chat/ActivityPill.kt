@@ -255,6 +255,7 @@ fun ActivityPillRow(
                     
                     activityItems.forEachIndexed { index, item ->
                         val position = when {
+                            activityItems.size == 1 -> PillPosition.SINGLE
                             index == 0 -> PillPosition.FIRST
                             index == activityItems.lastIndex -> PillPosition.LAST
                             else -> PillPosition.MIDDLE
@@ -267,12 +268,22 @@ fun ActivityPillRow(
                                 othersCanAppear = true
                             }
                             
-                            CompactActivityPill(
-                                item = item,
-                                onClick = { onClick(item.type) },
-                                position = position,
-                                connectsToBubbleBelow = connectsToBubbleBelow
-                            )
+                            // Use expanded pill when there's only one activity, compact otherwise
+                            if (activityItems.size == 1) {
+                                ExpandedActivityPill(
+                                    item = item,
+                                    onClick = { onClick(item.type) },
+                                    position = position,
+                                    connectsToBubbleBelow = connectsToBubbleBelow
+                                )
+                            } else {
+                                CompactActivityPill(
+                                    item = item,
+                                    onClick = { onClick(item.type) },
+                                    position = position,
+                                    connectsToBubbleBelow = connectsToBubbleBelow
+                                )
+                            }
                         } else {
                             // Other pills - staggered fly-out
                             var visible by remember { mutableStateOf(false) }
@@ -514,18 +525,10 @@ private fun ExpandedActivityContent(item: ActivityItem) {
                 "Reasoned"
             }
         }
-        ActivityType.SEARCH -> {
-            if (item.count > 1) "Searched ×${item.count}" else "Searched the Web"
-        }
-        ActivityType.PYTHON -> {
-            if (item.count > 1) "Ran Python ×${item.count}" else "Ran Python"
-        }
-        ActivityType.MCP -> {
-            if (item.count > 1) "MCP calls ×${item.count}" else "MCP"
-        }
-        ActivityType.TOOL_OTHER -> {
-            if (item.count > 1) "Used tools ×${item.count}" else "Used tool"
-        }
+        ActivityType.SEARCH -> "Searched the Web"
+        ActivityType.PYTHON -> "Ran Python"
+        ActivityType.MCP -> "MCP"
+        ActivityType.TOOL_OTHER -> "Used tool"
     }
     
     Text(

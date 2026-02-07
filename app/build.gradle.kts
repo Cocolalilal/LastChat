@@ -227,6 +227,9 @@ dependencies {
     // DataStore
     implementation(libs.androidx.datastore.preferences)
 
+    // Security - EncryptedSharedPreferences for API keys
+    implementation(libs.androidx.security.crypto)
+
     // Image metadata extractor
     // https://github.com/drewnoakes/metadata-extractor
     implementation(libs.metadata.extractor)

@@ -189,7 +189,7 @@ fun HighlightCodeBlock(
 
     Surface(
         modifier = modifier,
-        shape = AppShapes.CardLarge,
+        shape = AppShapes.MessageBubbleInner, // Optical roundness inside message bubbles (20dp - 12dp = 8dp)
         color = MaterialTheme.colorScheme.surfaceContainer,
         contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
@@ -234,7 +234,7 @@ fun HighlightCodeBlock(
                         scaleY = headerScale
                         alpha = headerAlpha
                     }
-                    .clip(MaterialTheme.shapes.small)
+                    // No clip needed - outer shape is already small (8dp)
                     .clickable(
                         onClick = { toggle() },
                         indication = LocalIndication.current,

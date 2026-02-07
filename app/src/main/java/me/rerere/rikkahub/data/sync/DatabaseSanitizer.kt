@@ -4,7 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
-import android.util.Log
+import me.rerere.rikkahub.utils.LogUtil
 import androidx.room.Room
 import me.rerere.rikkahub.data.db.AppDatabase
 import java.io.File
@@ -70,7 +70,7 @@ object DatabaseSanitizer {
                 "GenMediaEntity",
                 "ChatEpisodeEntity",
                 "EmbeddingCacheEntity",
-                "DailyActivityEntity"
+                "daily_activity"
             )
 
             for (table in tables) {
@@ -83,17 +83,17 @@ object DatabaseSanitizer {
                     if (exists) {
                         val result = copyTable(db, targetDbInfo, table)
                         totalResult += result
-                        Log.i(TAG, "Sanitized table $table: $result")
+                        LogUtil.i(TAG, "Sanitized table $table: $result")
                     } else {
-                        Log.w(TAG, "Table $table not found in source database, skipping")
+                        LogUtil.w(TAG, "Table $table not found in source database, skipping")
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to check/process table $table", e)
+                    LogUtil.e(TAG, "Failed to check/process table $table", e)
                 }
             }
 
         } catch (e: Exception) {
-            Log.e(TAG, "Critical error during sanitization", e)
+            LogUtil.e(TAG, "Critical error during sanitization", e)
             throw e
         } finally {
             sourceDb?.close()
@@ -147,7 +147,7 @@ object DatabaseSanitizer {
                     target.insert(tableName, android.database.sqlite.SQLiteDatabase.CONFLICT_REPLACE, values)
                     
                 } catch (e: Exception) {
-                    Log.w(TAG, "Error copying row in $tableName", e)
+                    LogUtil.w(TAG, "Error copying row in $tableName", e)
                     skipped++
                     // We can't easily estimate bytes of a row specifically if we failed to read it, 
                     // but we can try to guess or just leave it.
@@ -155,7 +155,7 @@ object DatabaseSanitizer {
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to query table $tableName", e)
+            LogUtil.e(TAG, "Failed to query table $tableName", e)
             return SanitizationResult(totalRows = rows, skippedRows = rows, details = "Failed to read table $tableName: ${e.message}")
         } finally {
             cursor?.close()

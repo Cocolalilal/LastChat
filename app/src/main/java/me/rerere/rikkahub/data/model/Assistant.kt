@@ -82,7 +82,7 @@ data class Assistant(
     val mcpServers: Set<Uuid> = emptySet(),
     val localTools: List<LocalToolOption> = emptyList(),
     val background: String? = null,
-    val backgroundDim: Float = 0.35f,
+    val backgroundDim: Float = 0.6f,
     val useAssistantMaterialYouColors: Boolean = false,
     val learningMode: Boolean = false,
     val enableSpontaneous: Boolean = false, // 是否启用自发消息

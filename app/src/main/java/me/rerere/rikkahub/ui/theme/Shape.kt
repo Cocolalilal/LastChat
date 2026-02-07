@@ -43,6 +43,20 @@ object AppShapes {
     val ListItemFirst = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
     val ListItemLast = RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp)
     
+    // Optical roundness for nested elements inside cards
+    // Formula: outer radius - padding = inner radius
+    // CardLarge (28dp) with 12dp padding -> 16dp inner
+    // CardLarge (28dp) with 8dp padding -> 20dp inner
+    val CardLargeInner12 = RoundedCornerShape(16.dp)  // For 12dp padding inside CardLarge
+    val CardLargeInner8 = RoundedCornerShape(20.dp)   // For 8dp padding inside CardLarge
+    val CardMediumInner12 = RoundedCornerShape(12.dp) // For 12dp padding inside CardMedium
+    val CardSmallInner8 = RoundedCornerShape(8.dp)    // For 8dp padding inside CardSmall
+    
+    // Optical roundness for elements INSIDE message bubbles
+    // Message bubbles use 20dp outer radius with 12dp padding
+    // Formula: 20dp - 12dp = 8dp inner radius
+    val MessageBubbleInner = RoundedCornerShape(8.dp)  // For code blocks, reasoning cards inside bubbles
+    
     // Message bubbles
     val MessageOutgoing = RoundedCornerShape(
         topStart = 20.dp,

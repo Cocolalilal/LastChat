@@ -1,7 +1,7 @@
 package me.rerere.rikkahub.data.sync
 
 import android.content.Context
-import android.util.Log
+import me.rerere.rikkahub.utils.LogUtil
 import at.bitfire.dav4jvm.okhttp.BasicDigestAuthHandler
 import at.bitfire.dav4jvm.okhttp.DavCollection
 import at.bitfire.dav4jvm.okhttp.Response
@@ -14,6 +14,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.SecureStore
+import me.rerere.rikkahub.data.datastore.SecretKeyManager
 import me.rerere.rikkahub.data.datastore.WebDavConfig
 import me.rerere.rikkahub.data.datastore.sanitize
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -36,6 +38,8 @@ class WebdavSync(
     private val settingsStore: SettingsStore,
     private val json: Json,
     private val context: Context,
+    private val secureStore: SecureStore,
+    private val secretKeyManager: SecretKeyManager,
 ) {
     suspend fun testWebdav(webDavConfig: WebDavConfig) {
         val davCollection = DavCollection(
@@ -47,7 +51,7 @@ class WebdavSync(
             davCollection.propfind(
                 depth = 1,
             ) { response, relation ->
-                Log.i(TAG, "testWebdav: $response | $relation")
+                LogUtil.i(TAG, "testWebdav: $response | $relation")
             }
         }
     }
@@ -60,7 +64,7 @@ class WebdavSync(
         target.put(
             body = file.asRequestBody(),
         ) { response ->
-            Log.i(TAG, "backupToWebDav: $response")
+            LogUtil.i(TAG, "backupToWebDav: $response")
         }
     }
 
@@ -71,7 +75,7 @@ class WebdavSync(
             collection.propfind(
                 depth = 1,
             ) { response, relation ->
-                Log.i(TAG, "listBackupFiles: ${response.properties} ${response.href}")
+                LogUtil.i(TAG, "listBackupFiles: ${response.properties} ${response.href}")
                 if (relation == Response.HrefRelation.MEMBER) {
                     val displayName = response.properties.filterIsInstance<DisplayName>()
                         .firstOrNull()?.displayName ?: "Unknown"
@@ -109,7 +113,7 @@ class WebdavSync(
                 headers = null
             ) { response ->
                 if (response.isSuccessful) {
-                    Log.i(
+                    LogUtil.i(
                         TAG,
                         "restoreFromWebDav: Downloading ${item.displayName} to ${backupFile.absolutePath}"
                     )
@@ -119,7 +123,7 @@ class WebdavSync(
                         }
                     }
                 } else {
-                    Log.e(
+                    LogUtil.e(
                         TAG,
                         "restoreFromWebDav: Failed to download ${item.displayName}, response: $response"
                     )
@@ -127,7 +131,7 @@ class WebdavSync(
                 }
             }
 
-            Log.i(TAG, "restoreFromWebDav: Downloaded ${backupFile.length()} bytes")
+            LogUtil.i(TAG, "restoreFromWebDav: Downloaded ${backupFile.length()} bytes")
 
             try {
                 // 解压并恢复备份文件
@@ -136,7 +140,7 @@ class WebdavSync(
                 // 清理临时文件
                 if (backupFile.exists()) {
                     backupFile.delete()
-                    Log.i(TAG, "restoreFromWebDav: Cleaned up temporary backup file")
+                    LogUtil.i(TAG, "restoreFromWebDav: Cleaned up temporary backup file")
                 }
             }
         }
@@ -148,13 +152,13 @@ class WebdavSync(
                 location = item.href.toHttpUrl()
             )
             collection.delete { response ->
-                Log.i(TAG, "deleteWebDavBackupFile: $response")
+                LogUtil.i(TAG, "deleteWebDavBackupFile: $response")
             }
         }
 
     suspend fun restoreFromLocalFile(file: File, webDavConfig: WebDavConfig): RestoreResult =
         withContext(Dispatchers.IO) {
-            Log.i(TAG, "restoreFromLocalFile: Starting restore from ${file.absolutePath}")
+            LogUtil.i(TAG, "restoreFromLocalFile: Starting restore from ${file.absolutePath}")
 
             if (!file.exists()) {
                 throw Exception("Backup file does not exist")
@@ -167,7 +171,7 @@ class WebdavSync(
             try {
                 restoreFromBackupFile(file, webDavConfig)
             } catch (e: Exception) {
-                Log.e(TAG, "restoreFromLocalFile: Failed to restore from local file", e)
+                LogUtil.e(TAG, "restoreFromLocalFile: Failed to restore from local file", e)
                 throw Exception("Restore failed: ${e.message}")
             }
         }
@@ -184,10 +188,12 @@ class WebdavSync(
 
         // 创建zip文件并备份数据库
         ZipOutputStream(FileOutputStream(backupFile)).use { zipOut ->
+            // Populate decrypted secrets for portable backup export
+            val settingsForExport = secretKeyManager.populateSecretsForExport(settingsStore.settingsFlow.value)
             addVirtualFileToZip(
                 zipOut = zipOut,
                 name = "settings.json",
-                content = json.encodeToString(settingsStore.settingsFlow.value)
+                content = json.encodeToString(settingsForExport)
             )
 
             // 备份数据库
@@ -215,7 +221,7 @@ class WebdavSync(
             if (webDavConfig.items.contains(WebDavConfig.BackupItem.FILES)) {
                 val uploadFolder = File(context.filesDir, "upload")
                 if (uploadFolder.exists() && uploadFolder.isDirectory) {
-                    Log.i(
+                    LogUtil.i(
                         TAG,
                         "prepareBackupFile: Backing up files from ${uploadFolder.absolutePath}"
                     )
@@ -225,7 +231,7 @@ class WebdavSync(
                         }
                     }
                 } else {
-                    Log.w(
+                    LogUtil.w(
                         TAG,
                         "prepareBackupFile: Upload folder does not exist or is not a directory"
                     )
@@ -245,7 +251,7 @@ class WebdavSync(
 
     private suspend fun restoreFromBackupFile(backupFile: File, webDavConfig: WebDavConfig): RestoreResult =
         withContext(Dispatchers.IO) {
-            Log.i(TAG, "restoreFromBackupFile: Starting restore from ${backupFile.absolutePath}")
+            LogUtil.i(TAG, "restoreFromBackupFile: Starting restore from ${backupFile.absolutePath}")
             
             var unsupportedZipEntriesBytes: Long = 0
             var settingsCleanupResult = BackupCleanupResult()
@@ -260,25 +266,25 @@ class WebdavSync(
                     var entry: ZipEntry?
                     while (zipIn.nextEntry.also { entry = it } != null) {
                         entry?.let { zipEntry ->
-                            Log.i(TAG, "restoreFromBackupFile: Processing entry ${zipEntry.name}")
+                            LogUtil.i(TAG, "restoreFromBackupFile: Processing entry ${zipEntry.name}")
 
                             when (zipEntry.name) {
                                 "settings.json" -> {
                                     // 恢复设置
                                     val settingsJson = zipIn.readBytes().toString(Charsets.UTF_8)
-                                    Log.i(TAG, "restoreFromBackupFile: Restoring settings")
+                                    LogUtil.i(TAG, "restoreFromBackupFile: Restoring settings")
                                     try {
                                         val settings = json.decodeFromString<Settings>(settingsJson)
                                         // Sanitize settings to clean up deprecated/invalid data
                                         val (cleanedSettings, cleanupResult) = settings.sanitize()
                                         settingsCleanupResult = cleanupResult
                                         settingsStore.update(cleanedSettings)
-                                        Log.i(
+                                        LogUtil.i(
                                             TAG,
                                             "restoreFromBackupFile: Settings restored and sanitized (issues fixed: ${cleanupResult.totalIssuesFixed})"
                                         )
                                     } catch (e: Exception) {
-                                        Log.e(
+                                        LogUtil.e(
                                             TAG,
                                             "restoreFromBackupFile: Failed to restore settings",
                                             e
@@ -294,7 +300,7 @@ class WebdavSync(
                                         FileOutputStream(tempDbFile).use { outputStream ->
                                             zipIn.copyTo(outputStream)
                                         }
-                                        Log.i(TAG, "Extracted ${zipEntry.name} to temp")
+                                        LogUtil.i(TAG, "Extracted ${zipEntry.name} to temp")
                                     }
                                 }
 
@@ -310,14 +316,14 @@ class WebdavSync(
                                             // 确保upload文件夹存在
                                             if (!uploadFolder.exists()) {
                                                 uploadFolder.mkdirs()
-                                                Log.i(
+                                                LogUtil.i(
                                                     TAG,
                                                     "restoreFromBackupFile: Created upload directory"
                                                 )
                                             }
 
                                             val targetFile = File(uploadFolder, fileName)
-                                            Log.i(
+                                            LogUtil.i(
                                                 TAG,
                                                 "restoreFromBackupFile: Restoring file ${zipEntry.name} to ${targetFile.absolutePath}"
                                             )
@@ -326,12 +332,12 @@ class WebdavSync(
                                                 FileOutputStream(targetFile).use { outputStream ->
                                                     zipIn.copyTo(outputStream)
                                                 }
-                                                Log.i(
+                                                LogUtil.i(
                                                     TAG,
                                                     "restoreFromBackupFile: Restored ${zipEntry.name} (${targetFile.length()} bytes)"
                                                 )
                                             } catch (e: Exception) {
-                                                Log.e(
+                                                LogUtil.e(
                                                     TAG,
                                                     "restoreFromBackupFile: Failed to restore file ${zipEntry.name}",
                                                     e
@@ -340,7 +346,7 @@ class WebdavSync(
                                             }
                                         }
                                     } else {
-                                        Log.i(
+                                        LogUtil.i(
                                             TAG,
                                             "restoreFromBackupFile: Skipping unsupported entry ${zipEntry.name} (${zipEntry.size} bytes)"
                                         )
@@ -358,7 +364,7 @@ class WebdavSync(
                 val tempDbFile = File(restoreTempDir, "rikka_hub.db")
                 
                 if (tempDbFile.exists()) {
-                    Log.i(TAG, "Starting database sanitization...")
+                    LogUtil.i(TAG, "Starting database sanitization...")
                     try {
                          val (cleanDb, result) = DatabaseSanitizer.sanitize(context, tempDbFile)
                          sanitizationResult = result
@@ -384,21 +390,21 @@ class WebdavSync(
                              File(finalDbFile.path + "-shm").delete()
                          }
                          
-                         Log.i(TAG, "Database restored and sanitized: $sanitizationResult")
+                         LogUtil.i(TAG, "Database restored and sanitized: $sanitizationResult")
                     } catch (e: Exception) {
-                        Log.e(TAG, "Failed to sanitize database", e)
+                        LogUtil.e(TAG, "Failed to sanitize database", e)
                         throw Exception("Database sanitization failed: ${e.message}")
                     }
                 }
 
-                Log.i(TAG, "restoreFromBackupFile: Restore completed successfully")
+                LogUtil.i(TAG, "restoreFromBackupFile: Restore completed successfully")
                 
                 // Combine cleanup results
                 val totalCleanupResult = settingsCleanupResult.copy(
                     unsupportedZipEntriesBytes = unsupportedZipEntriesBytes
                 )
                 
-                Log.i(TAG, "restoreFromBackupFile: Cleanup summary - skipped ${unsupportedZipEntriesBytes} bytes, fixed ${totalCleanupResult.totalIssuesFixed} issues")
+                LogUtil.i(TAG, "restoreFromBackupFile: Cleanup summary - skipped ${unsupportedZipEntriesBytes} bytes, fixed ${totalCleanupResult.totalIssuesFixed} issues")
                 
                 RestoreResult(
                     sanitization = sanitizationResult,
@@ -418,7 +424,7 @@ private fun addFileToZip(zipOut: ZipOutputStream, file: File, entryName: String)
         zipOut.putNextEntry(zipEntry)
         fis.copyTo(zipOut)
         zipOut.closeEntry()
-        Log.d(TAG, "addFileToZip: Added $entryName (${file.length()} bytes) to zip")
+        LogUtil.d(TAG, "addFileToZip: Added $entryName (${file.length()} bytes) to zip")
     }
 }
 
@@ -427,7 +433,7 @@ private fun addVirtualFileToZip(zipOut: ZipOutputStream, name: String, content: 
     zipOut.putNextEntry(zipEntry)
     zipOut.write(content.toByteArray())
     zipOut.closeEntry()
-    Log.i(TAG, "addVirtualFileToZip: $name （${content.length} bytes）")
+    LogUtil.i(TAG, "addVirtualFileToZip: $name （${content.length} bytes）")
 }
 
 private fun WebDavConfig.requireClient(): OkHttpClient {
@@ -467,13 +473,13 @@ private fun WebDavConfig.requireCollection(path: String? = null): DavCollection 
 private suspend fun DavCollection.ensureCollectionExists() = withContext(Dispatchers.IO) {
     try {
         propfind(depth = 0) { response, relation ->
-            Log.i(TAG, "ensureCollectionExists: $response $relation")
+            LogUtil.i(TAG, "ensureCollectionExists: $response $relation")
         }
     } catch (e: NotFoundException) {
         e.printStackTrace()
-        Log.i(TAG, "ensureCollectionExists: ${this@ensureCollectionExists.location}")
+        LogUtil.i(TAG, "ensureCollectionExists: ${this@ensureCollectionExists.location}")
         mkCol(null) { res ->
-            Log.i(TAG, "ensureCollectionExists: $res")
+            LogUtil.i(TAG, "ensureCollectionExists: $res")
         }
     }
 }

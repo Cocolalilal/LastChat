@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.util.Log
+import me.rerere.rikkahub.utils.LogUtil
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -160,7 +161,7 @@ class ChatService(
     // 添加引用
     fun addConversationReference(conversationId: Uuid) {
         conversationReferences[conversationId] = conversationReferences.getOrDefault(conversationId, 0) + 1
-        Log.d(
+        LogUtil.d(
             TAG,
             "Added reference for $conversationId (current references: ${conversationReferences[conversationId] ?: 0})"
         )
@@ -175,7 +176,7 @@ class ChatService(
                 conversationReferences.remove(conversationId)
             }
         }
-        Log.d(
+        LogUtil.d(
             TAG,
             "Removed reference for $conversationId (current references: ${conversationReferences[conversationId] ?: 0})"
         )
@@ -863,10 +864,10 @@ class ChatService(
             else -> false
         }
         if (!shouldGenerate) {
-            Log.d(TAG, "generateTitle: skipped (title='${conversation.title.take(20)}', force=$force)")
+            LogUtil.d(TAG, "generateTitle: skipped (title='${conversation.title.take(20)}', force=$force)")
             return
         }
-        Log.d(TAG, "generateTitle: starting for conversation ${conversation.id}, messages=${conversation.messageNodes.size}")
+        LogUtil.d(TAG, "generateTitle: starting for conversation ${conversation.id}, messages=${conversation.messageNodes.size}")
 
         runCatching {
             val settings = settingsStore.settingsFlow.first()

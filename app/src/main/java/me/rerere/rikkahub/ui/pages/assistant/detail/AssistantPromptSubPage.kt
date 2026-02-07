@@ -88,7 +88,7 @@ import me.rerere.rikkahub.data.model.AssistantRegex
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.QuickMessage
 import me.rerere.rikkahub.data.model.toMessageNode
-import me.rerere.rikkahub.ui.components.message.ChatMessage
+import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.components.ui.Tag
@@ -397,21 +397,25 @@ fun AssistantPromptSubPage(
                             )
                         }
                         preview.onSuccess {
-                            it.fastForEachIndexed { index, message ->
-                                val previousRole = if (index > 0) it[index - 1].role else null
-                                val isLast = index == it.lastIndex
-                                ChatMessage(
-                                    node = message.toMessageNode(),
-                                    previousRole = previousRole,
-                                    isLast = isLast,
-                                    onCitationClick = {},
-                                    onFork = {},
-                                    onRegenerate = {},
-                                    onEdit = {},
-                                    onShare = {},
-                                    onDelete = {},
-                                    onUpdate = {},
-                                )
+                            it.fastForEach { message ->
+                                val roleLabel = when (message.role) {
+                                    MessageRole.USER -> "User"
+                                    MessageRole.ASSISTANT -> "Assistant"
+                                    else -> message.role.name
+                                }
+                                val textContent = message.parts
+                                    .filterIsInstance<UIMessagePart.Text>()
+                                    .joinToString("\n") { it.text }
+                                Column(
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = "$roleLabel:",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    MarkdownBlock(content = textContent)
+                                }
                             }
                         }
                     }
@@ -820,16 +824,50 @@ private fun AssistantRegexCard(
     }
 }
 
+@OptIn(FlowPreview::class)
 @Composable
 private fun FullScreenSystemPromptEditor(
     systemPrompt: String,
     onUpdate: (String) -> Unit,
     onDone: () -> Unit
 ) {
-    var editingText by remember(systemPrompt) { mutableStateOf(systemPrompt) }
+    // Use TextFieldState for stable, reliable text editing
+    // Initialize once with the current value - do NOT re-sync from parent
+    val textFieldState = rememberTextFieldState(initialText = systemPrompt)
+    val scope = rememberCoroutineScope()
+    
+    // Track if we've made any changes
+    var hasUnsavedChanges by remember { mutableStateOf(false) }
+    
+    // Debounced auto-save while typing (500ms debounce)
+    LaunchedEffect(Unit) {
+        snapshotFlow { textFieldState.text.toString() }
+            .drop(1) // Skip initial emission
+            .debounce(500L)
+            .collect { newText ->
+                if (newText != systemPrompt) {
+                    onUpdate(newText)
+                    hasUnsavedChanges = false
+                }
+            }
+    }
+    
+    // Track changes for unsaved indicator
+    LaunchedEffect(Unit) {
+        snapshotFlow { textFieldState.text.toString() }
+            .drop(1)
+            .collect {
+                hasUnsavedChanges = it != systemPrompt
+            }
+    }
 
     BasicAlertDialog(
         onDismissRequest = {
+            // Save on dismiss if there are unsaved changes
+            val currentText = textFieldState.text.toString()
+            if (currentText != systemPrompt) {
+                onUpdate(currentText)
+            }
             onDone()
         },
         properties = DialogProperties(
@@ -854,19 +892,30 @@ private fun FullScreenSystemPromptEditor(
                     horizontalAlignment = Alignment.End,
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Row {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Auto-save indicator
+                        if (hasUnsavedChanges) {
+                            Text(
+                                text = "Saving...",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
                         TextButton(
                             onClick = {
-                                onUpdate(editingText)
+                                // Force save and close
+                                onUpdate(textFieldState.text.toString())
                                 onDone()
                             }
                         ) {
                             Text(stringResource(R.string.assistant_page_save))
                         }
                     }
-                    TextField(
-                        value = editingText,
-                        onValueChange = { editingText = it },
+                    OutlinedTextField(
+                        state = textFieldState,
                         modifier = Modifier
                             .imePadding()
                             .fillMaxSize(),
@@ -874,11 +923,9 @@ private fun FullScreenSystemPromptEditor(
                         placeholder = {
                             Text(stringResource(R.string.assistant_page_system_prompt))
                         },
-                        colors = TextFieldDefaults.colors().copy(
-                            unfocusedIndicatorColor = Color.Transparent,
-                            focusedIndicatorColor = Color.Transparent,
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent,
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(
+                            fontFamily = FontFamily.Monospace,
+                            lineHeight = 20.sp
                         ),
                     )
                 }
@@ -886,3 +933,4 @@ private fun FullScreenSystemPromptEditor(
         }
     }
 }
+

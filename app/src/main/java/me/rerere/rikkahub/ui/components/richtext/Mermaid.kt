@@ -198,7 +198,7 @@ fun Mermaid(
 
     Surface(
         modifier = modifier,
-        shape = AppShapes.CardLarge,
+        shape = AppShapes.MessageBubbleInner, // Optical roundness inside message bubbles (20dp - 12dp = 8dp)
         color = MaterialTheme.colorScheme.surfaceContainer,
         contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
@@ -223,7 +223,7 @@ fun Mermaid(
                         scaleY = headerScale
                         alpha = headerAlpha
                     }
-                    .clip(MaterialTheme.shapes.small)
+                    // No clip needed - outer shape is already small (8dp)
                     .clickable(
                         onClick = { isExpanded = !isExpanded },
                         indication = LocalIndication.current,
@@ -304,7 +304,7 @@ fun Mermaid(
                     state = webViewState,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(MaterialTheme.shapes.medium)
+                        // No clip needed - outer shape is already small (8dp)
                         .height(height),
                     onUpdated = {
                         it.evaluateJavascript("calculateAndSendHeight();", null)

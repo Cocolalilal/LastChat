@@ -12,6 +12,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import io.pebbletemplates.pebble.PebbleEngine
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
@@ -59,6 +60,7 @@ class SettingsStore(
     context: Context,
     scope: AppScope,
     private val quickCache: QuickSettingsCache,
+    private val secretKeyManager: SecretKeyManager,
 ) : KoinComponent {
     companion object {
         // 版本号
@@ -272,10 +274,45 @@ class SettingsStore(
         }
         .flowOn(Dispatchers.Default)
 
+    // Track if we've done the one-time migration
+    private var hasMigratedSecrets = false
+
     val settingsFlow = settingsFlowRaw
         .distinctUntilChanged()
+        .map { settings ->
+            // Perform one-time migration on first settings load
+            if (!hasMigratedSecrets && !settings.init) {
+                hasMigratedSecrets = true
+                val migratedSettings = secretKeyManager.migrateSecretsFromSettings(settings)
+                if (migratedSettings != settings) {
+                    // Secrets were migrated - persist the cleared plaintext back to DataStore
+                    // We do this synchronously to ensure consistency
+                    scope.launch {
+                        persistMigratedSettings(migratedSettings)
+                    }
+                }
+                migratedSettings
+            } else {
+                settings
+            }
+        }
+        // Hydrate secrets (populate API keys from SecureStore) so they are available in memory/UI
+        .map { settings ->
+            secretKeyManager.populateSecretsForExport(settings)
+        }
         .onEach { settings -> quickCache.updateCache(settings) }
         .toMutableStateFlow(scope, quickCache.createCachedSettings())
+
+    /**
+     * Persist settings after migration (to clear plaintext secrets from DataStore).
+     */
+    private suspend fun persistMigratedSettings(settings: Settings) {
+        dataStore.edit { preferences ->
+            preferences[PROVIDERS] = JsonInstant.encodeToString(settings.providers)
+            preferences[WEBDAV_CONFIG] = JsonInstant.encodeToString(settings.webDavConfig)
+        }
+    }
+
 
     suspend fun update(settings: Settings) {
         if(settings.init) {
@@ -299,7 +336,10 @@ class SettingsStore(
             settings
         }
         
-        settingsFlow.value = settingsToSave
+        // Migrate secrets from plaintext to SecureStore if needed
+        val migratedSettings = secretKeyManager.migrateSecretsFromSettings(settingsToSave)
+        
+        settingsFlow.value = migratedSettings
         dataStore.edit { preferences ->
             preferences[DYNAMIC_COLOR] = settingsToSave.dynamicColor
             preferences[THEME_ID] = settingsToSave.themeId
@@ -322,7 +362,7 @@ class SettingsStore(
             preferences[OCR_PROMPT] = settingsToSave.ocrPrompt
             preferences[EMBEDDING_MODEL] = settingsToSave.embeddingModelId.toString()
 
-            preferences[PROVIDERS] = JsonInstant.encodeToString(settingsToSave.providers)
+            preferences[PROVIDERS] = JsonInstant.encodeToString(migratedSettings.providers)
 
             preferences[ASSISTANTS] = JsonInstant.encodeToString(settingsToSave.assistants)
             preferences[SELECT_ASSISTANT] = settingsToSave.assistantId.toString()
@@ -335,7 +375,7 @@ class SettingsStore(
             preferences[SEARCH_SELECTED] = settingsToSave.searchServiceSelected.coerceIn(0, settingsToSave.searchServices.size - 1)
 
             preferences[MCP_SERVERS] = JsonInstant.encodeToString(settingsToSave.mcpServers)
-            preferences[WEBDAV_CONFIG] = JsonInstant.encodeToString(settingsToSave.webDavConfig)
+            preferences[WEBDAV_CONFIG] = JsonInstant.encodeToString(migratedSettings.webDavConfig)
             preferences[TTS_PROVIDERS] = JsonInstant.encodeToString(settingsToSave.ttsProviders)
             settingsToSave.selectedTTSProviderId?.let {
                 preferences[SELECTED_TTS_PROVIDER] = it.toString()
@@ -567,7 +607,7 @@ data class FontSettings(
 data class DisplaySetting(
     val userAvatar: Avatar = Avatar.Dummy,
     val userNickname: String = "",
-    val chatInputStyle: ChatInputStyle = ChatInputStyle.FLOATING, // Input bar style (floating toolbar or minimal)
+    val chatInputStyle: ChatInputStyle = ChatInputStyle.MINIMAL, // Input bar style (floating toolbar or minimal)
     val showUserAvatar: Boolean = true,
     val showModelIcon: Boolean = true,
     val showModelName: Boolean = true,
