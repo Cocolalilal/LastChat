@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.ui.pages.backup
 
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.utils.PermissionChecker
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -167,6 +168,17 @@ private fun WebDavPage(
     var restoreResult by remember { mutableStateOf<me.rerere.rikkahub.data.sync.WebdavSync.RestoreResult?>(null) }
     var restoringItemId by remember { mutableStateOf<String?>(null) }
     var isBackingUp by remember { mutableStateOf(false) }
+    
+    // Permission handling after restore
+    var pendingPermissions by remember { mutableStateOf<List<String>>(emptyList()) }
+    var showPermissionDialog by remember { mutableStateOf(false) }
+    
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { _ ->
+        // Permissions requested, now show restart dialog
+        showRestartDialog = true
+    }
 
     fun updateWebDavConfig(newConfig: WebDavConfig) {
         vm.updateSettings(settings.copy(webDavConfig = newConfig))
@@ -431,7 +443,16 @@ private fun WebDavPage(
                                                 type = ToastType.Success
                                             )
                                             showBackupFiles = false
-                                            showRestartDialog = true
+                                            
+                                            // Check for missing permissions after restore
+                                            val assistants = vm.settings.value.assistants
+                                            val missing = PermissionChecker.getMissingPermissions(context, assistants)
+                                            if (missing.isNotEmpty()) {
+                                                pendingPermissions = missing
+                                                showPermissionDialog = true
+                                            } else {
+                                                showRestartDialog = true
+                                            }
                                         }.onFailure { err ->
                                             err.printStackTrace()
                                             toaster.show(
@@ -470,6 +491,48 @@ private fun WebDavPage(
         }
     }
 
+    // Permission explanation dialog
+    if (showPermissionDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                // User dismissed - proceed without permissions
+                showPermissionDialog = false
+                showRestartDialog = true
+            },
+            title = { Text("Permissions Required") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Your restored backup includes features that require additional permissions:")
+                    pendingPermissions.forEach { permission ->
+                        val desc = PermissionChecker.getPermissionDescriptions(listOf(permission)).firstOrNull() ?: permission
+                        Text("• $desc", style = MaterialTheme.typography.bodySmall)
+                    }
+                    Text("Grant these permissions for full functionality.", style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showPermissionDialog = false
+                        permissionLauncher.launch(pendingPermissions.toTypedArray())
+                    }
+                ) {
+                    Text("Grant Permissions")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showPermissionDialog = false
+                        showRestartDialog = true
+                    }
+                ) {
+                    Text("Skip")
+                }
+            }
+        )
+    }
+    
     if (showRestartDialog) {
         val result = restoreResult // Capture immutable for checking
         BackupDialog(
@@ -564,6 +627,17 @@ private fun ImportExportPage(
     var showRestartDialog by remember { mutableStateOf(false) }
 
     var restoreResult by remember { mutableStateOf<me.rerere.rikkahub.data.sync.WebdavSync.RestoreResult?>(null) }
+    
+    // Permission handling after restore
+    var pendingPermissions by remember { mutableStateOf<List<String>>(emptyList()) }
+    var showPermissionDialog by remember { mutableStateOf(false) }
+    
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { _ ->
+        // Permissions requested, now show restart dialog
+        showRestartDialog = true
+    }
 
     // 导入类型：local 为本地备份，chatbox 为 Chatbox 导入
     var importType by remember { mutableStateOf("local") }
@@ -638,7 +712,16 @@ private fun ImportExportPage(
                         context.getString(R.string.backup_page_restore_success),
                         type = ToastType.Success
                     )
-                    showRestartDialog = true
+                    
+                    // Check for missing permissions after restore
+                    val assistants = vm.settings.value.assistants
+                    val missing = PermissionChecker.getMissingPermissions(context, assistants)
+                    if (missing.isNotEmpty()) {
+                        pendingPermissions = missing
+                        showPermissionDialog = true
+                    } else {
+                        showRestartDialog = true
+                    }
                 }.onFailure { e ->
                     e.printStackTrace()
                     toaster.show(
@@ -740,6 +823,48 @@ private fun ImportExportPage(
         }
     }
 
+    // Permission explanation dialog
+    if (showPermissionDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                // User dismissed - proceed without permissions
+                showPermissionDialog = false
+                showRestartDialog = true
+            },
+            title = { Text("Permissions Required") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Your restored backup includes features that require additional permissions:")
+                    pendingPermissions.forEach { permission ->
+                        val desc = PermissionChecker.getPermissionDescriptions(listOf(permission)).firstOrNull() ?: permission
+                        Text("• $desc", style = MaterialTheme.typography.bodySmall)
+                    }
+                    Text("Grant these permissions for full functionality.", style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showPermissionDialog = false
+                        permissionLauncher.launch(pendingPermissions.toTypedArray())
+                    }
+                ) {
+                    Text("Grant Permissions")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showPermissionDialog = false
+                        showRestartDialog = true
+                    }
+                ) {
+                    Text("Skip")
+                }
+            }
+        )
+    }
+    
     // 重启对话框
     if (showRestartDialog) {
         val result = restoreResult // Capture immutable for checking

@@ -1,7 +1,6 @@
 package me.rerere.rikkahub.di
 
 import com.google.firebase.Firebase
-import com.google.firebase.analytics.analytics
 import com.google.firebase.crashlytics.crashlytics
 import com.google.firebase.remoteconfig.remoteConfig
 import kotlinx.serialization.json.Json
@@ -50,10 +49,6 @@ val appModule = module {
 
     single {
         Firebase.remoteConfig
-    }
-
-    single {
-        Firebase.analytics
     }
 
     single {

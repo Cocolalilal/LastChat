@@ -54,7 +54,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.ui.components.ui.ToastType
-import com.google.common.cache.CacheBuilder
+import android.util.LruCache
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.webview.WebView
 import me.rerere.rikkahub.ui.components.webview.rememberWebViewState
@@ -64,9 +64,8 @@ import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.exportImage
 import me.rerere.rikkahub.utils.toCssHex
 
-private val mermaidHeightCache = CacheBuilder.newBuilder()
-    .maximumSize(100)
-    .build<String, Int>()
+// Simple LRU cache for mermaid heights (max 100 entries)
+private val mermaidHeightCache = LruCache<String, Int>(100)
 
 /**
  * Normalize mermaid code by replacing problematic Unicode characters
@@ -109,7 +108,7 @@ fun Mermaid(
     val toaster = LocalToaster.current
 
     var isExpanded by remember { mutableStateOf(true) }
-    var contentHeight by remember { mutableIntStateOf(mermaidHeightCache.getIfPresent(code) ?: 150) }
+    var contentHeight by remember { mutableIntStateOf(mermaidHeightCache.get(code) ?: 150) }
     val height = with(density) {
         contentHeight.toDp()
     }

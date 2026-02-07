@@ -18,16 +18,30 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.MonetizationOn
-import com.google.common.cache.CacheBuilder
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.utils.toDp
 import org.koin.compose.koinInject
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.ConcurrentHashMap
 
-private val cache = CacheBuilder.newBuilder()
-    .expireAfterWrite(2, TimeUnit.MINUTES)
-    .build<String, String>()
+// Simple time-evicting cache (2 minutes expiry)
+private data class CacheEntry(val value: String, val timestamp: Long)
+private val cache = ConcurrentHashMap<String, CacheEntry>()
+private const val CACHE_EXPIRY_MS = 2 * 60 * 1000L // 2 minutes
+
+private fun getCached(key: String): String? {
+    val entry = cache[key] ?: return null
+    return if (System.currentTimeMillis() - entry.timestamp < CACHE_EXPIRY_MS) {
+        entry.value
+    } else {
+        cache.remove(key)
+        null
+    }
+}
+
+private fun putCache(key: String, value: String) {
+    cache[key] = CacheEntry(value, System.currentTimeMillis())
+}
 
 @Composable
 fun ProviderBalanceText(
@@ -45,7 +59,8 @@ fun ProviderBalanceText(
 
     val value = produceState(initialValue = "~", key1 = providerSetting.id, key2 = providerSetting.balanceOption) {
         // Check cache first
-        val cachedBalance = cache.getIfPresent("${providerSetting.id},${providerSetting.balanceOption.hashCode()}")
+        val cacheKey = "${providerSetting.id},${providerSetting.balanceOption.hashCode()}"
+        val cachedBalance = getCached(cacheKey)
         if (cachedBalance != null) {
             value = cachedBalance
         } else {
@@ -53,7 +68,7 @@ fun ProviderBalanceText(
             runCatching {
                 val balance = providerManager.getProviderByType(providerSetting).getBalance(providerSetting)
                 // Cache the result
-                cache.put("${providerSetting.id},${providerSetting.balanceOption.hashCode()}", balance)
+                putCache(cacheKey, balance)
                 value = balance
             }.onFailure {
                 // Handle error

@@ -156,7 +156,7 @@ object DefaultPlaceholderProvider : PlaceholderProvider {
                     }
                 } ?: "unknown"
             } else {
-                "permission_denied"
+                "[Location unavailable - grant location permission in Settings > Apps > LastChat]"
             }
         }
 
