@@ -1063,7 +1063,7 @@ private fun LorebooksPageContent(
             } else {
                 itemsIndexed(
                     items = settings.lorebooks,
-                    key = { _, lorebook -> "lorebook_${lorebook.id}" }
+                    key = { index, lorebook -> "lorebook_${lorebook.id}_$index" }
                 ) { index, lorebook ->
                     val position = when {
                         settings.lorebooks.size == 1 -> ItemPosition.ONLY
