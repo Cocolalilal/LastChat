@@ -4,7 +4,7 @@
   <img src="docs/LastChat_icon.png" alt="LastChat Icon" width="128" height="128" />
 </div>
 
-**LastChat** is a feature-rich AI assistant application for Android. It is a fork of [RikkaHub](https://github.com/re-ovo/RikkaHub), modified using **Claude 4.5 Opus** and **Gemini 3 Pro**
+**LastChat** is a feature-rich AI assistant application for Android. It is a fork of [RikkaHub](https://github.com/re-ovo/RikkaHub), modified using **Claude 4.5 Opus**, **GPT Codex** and **Gemini 3 Pro**
 
 This project aims to provide a privacy-focused and highly personalized AI chat experience on Android
 
@@ -76,6 +76,7 @@ This project aims to provide a privacy-focused and highly personalized AI chat e
 *   Image cropper is an edited version of the image editor found in [LavenderPhotos](https://github.com/kaii-lb/LavenderPhotos)
 *   Made with **AI Agents** based on:
     *   **Claude 4.5 Opus**
+    *   **GPT Codex**
     *   **Gemini 3 Pro**
 
 ---
