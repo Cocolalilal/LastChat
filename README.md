@@ -45,7 +45,7 @@ This project aims to provide a privacy-focused and highly personalized AI chat e
     *   Read notifications
     *   Set alarms/reminders
 *   **Web Search**: Integrated web search capabilities to fetch real-time information.
-*   **MCP**: Support for **MCP** servers.
+*   **MCP**: Support for MCP servers.
 
 ### Assistant Management
 *   **Multiple Personas**: Create, manage, and switch between unlimited custom assistants.
