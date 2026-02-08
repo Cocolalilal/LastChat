@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
@@ -94,7 +95,7 @@ fun PhysicsSwipeToDelete(
     neighborOffset: Float = 0f,
     onDragProgress: ((offset: Float, isUnlocked: Boolean) -> Unit)? = null,
     onDragEnd: (() -> Unit)? = null,
-    content: @Composable () -> Unit
+    content: @Composable (shape: Shape) -> Unit
 ) {
     val density = LocalDensity.current
     val haptics = rememberPremiumHaptics()
@@ -369,7 +370,7 @@ fun PhysicsSwipeToDelete(
                     )
                 }
         ) {
-            content()
+            content(shape)
         }
     }
 }

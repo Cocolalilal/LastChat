@@ -2188,7 +2188,7 @@ private fun ModelCard(
         onDragEnd = onDragEnd,
         onDelete = onDelete,
         modifier = modifier.fillMaxWidth()
-    ) {
+    ) { _ ->
         Row(
             modifier = Modifier
                 .fillMaxWidth()

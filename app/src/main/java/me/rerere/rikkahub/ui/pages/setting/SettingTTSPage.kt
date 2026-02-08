@@ -266,7 +266,7 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                             modifier = Modifier
                                 .scale(if (isDragging) 0.95f else 1f)
                                 .fillMaxWidth()
-                        ) {
+                        ) { _ ->
                         TTSProviderItemContent(
                             provider = provider,
                             isSelected = isSelected,

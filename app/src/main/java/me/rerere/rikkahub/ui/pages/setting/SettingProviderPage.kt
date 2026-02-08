@@ -16,6 +16,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -55,6 +56,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.material.icons.Icons
@@ -109,7 +112,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -542,9 +548,10 @@ private fun ProviderListView(
                             modifier = Modifier
                                 .scale(if (isDragging) 0.95f else 1f)
                                 .fillMaxWidth()
-                        ) {
+                        ) { animatedShape ->
                             ProviderItemContent(
                                 provider = provider,
+                                animatedShape = animatedShape,
                                 providerTags = settings.providerTags,
                                 haptics = haptics,
                                 dragHandle = {
@@ -1055,20 +1062,35 @@ private fun AddButton(
 @Composable
 private fun ProviderItemContent(
     provider: ProviderSetting,
+    animatedShape: Shape,
     providerTags: List<DataTag>,
     haptics: me.rerere.rikkahub.ui.hooks.PremiumHaptics,
     dragHandle: @Composable () -> Unit,
     onClick: () -> Unit
 ) {
+    // Define the normal card color (used for both enabled background and disabled border)
+    val normalCardColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
+        MaterialTheme.colorScheme.surfaceContainerLow 
+    else 
+        MaterialTheme.colorScheme.surfaceContainerHigh
+    
+    // Disabled cards: transparent background (black in dark mode) with outline
+    val disabledBackground = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
+        Color.Black 
+    else 
+        MaterialTheme.colorScheme.surface
+    
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(0.dp))
-            .background(
-                if (provider.enabled) {
-                    if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+            .clip(animatedShape)
+            .then(
+                if (!provider.enabled) {
+                    Modifier
+                        .background(disabledBackground, animatedShape)
+                        .border(3.dp, normalCardColor, animatedShape)
                 } else {
-                    MaterialTheme.colorScheme.errorContainer
+                    Modifier.background(normalCardColor)
                 }
             )
             .clickable {
@@ -1079,9 +1101,39 @@ private fun ProviderItemContent(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Desaturation for disabled providers - use Paint with ColorFilter for grayscale
+        // IMPORTANT: remember must be called unconditionally (outside of if/else)
+        val saturationMatrix = remember { 
+            android.graphics.ColorMatrix().apply { setSaturation(0f) } 
+        }
+        val colorFilter = remember(saturationMatrix) {
+            android.graphics.ColorMatrixColorFilter(saturationMatrix)
+        }
+        val grayscalePaint = remember { 
+            android.graphics.Paint().apply {
+                this.colorFilter = colorFilter
+            }
+        }
+        
+        val grayscaleModifier = if (!provider.enabled) {
+            Modifier
+                .graphicsLayer { alpha = 0.99f } // Force offscreen buffer
+                .drawWithContent {
+                    drawIntoCanvas { canvas ->
+                        canvas.nativeCanvas.saveLayer(null, grayscalePaint)
+                        drawContent()
+                        canvas.nativeCanvas.restore()
+                    }
+                }
+        } else {
+            Modifier
+        }
+        
         ProviderIcon(
             provider = provider,
-            modifier = Modifier.size(40.dp)
+            modifier = Modifier
+                .size(40.dp)
+                .then(grayscaleModifier)
         )
         Column(
             modifier = Modifier.weight(1f),
@@ -1105,9 +1157,9 @@ private fun ProviderItemContent(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.wrapContentWidth(align = Alignment.Start, unbounded = true)
                 ) {
-                    // Show disabled tag only for disabled providers
+                    // Show disabled tag only for disabled providers (gray styling)
                     if (!provider.enabled) {
-                        Tag(type = TagType.WARNING) {
+                        Tag(type = TagType.DEFAULT) {
                             Text(stringResource(R.string.setting_provider_page_disabled))
                         }
                     }
@@ -1143,9 +1195,9 @@ private fun ProviderItemContent(
                                 colors = listOf(
                                     Color.Transparent,
                                     if (provider.enabled) {
-                                        if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                                        normalCardColor
                                     } else {
-                                        MaterialTheme.colorScheme.errorContainer
+                                        disabledBackground
                                     }
                                 )
                             )

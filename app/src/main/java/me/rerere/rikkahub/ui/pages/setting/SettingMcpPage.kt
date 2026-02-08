@@ -3,6 +3,8 @@ package me.rerere.rikkahub.ui.pages.setting
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,6 +28,11 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -93,6 +100,9 @@ import me.rerere.rikkahub.ui.hooks.EditState
 import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.ui.theme.extendColors
+import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 
@@ -321,6 +331,7 @@ private fun McpServerItem(
 ) {
     val mcpManager = koinInject<McpManager>()
     val status by mcpManager.getStatus(item).collectAsStateWithLifecycle(McpStatus.Idle)
+    val haptics = rememberPremiumHaptics()
     
     PhysicsSwipeToDelete(
         onDelete = onDelete,
@@ -329,80 +340,116 @@ private fun McpServerItem(
         onDragProgress = onDragProgress,
         onDragEnd = onDragEnd,
         modifier = modifier
-    ) {
-        Card(
-            shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
-            colors = androidx.compose.material3.CardDefaults.cardColors(
-                containerColor = if (LocalDarkMode.current) androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow else androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh
-            )
+    ) { animatedShape ->
+        // Define the normal card color (used for both enabled background and disabled border)
+        val normalCardColor = if (LocalDarkMode.current) 
+            MaterialTheme.colorScheme.surfaceContainerLow 
+        else 
+            MaterialTheme.colorScheme.surfaceContainerHigh
+        
+        // Disabled cards: transparent background (black in dark mode) with outline
+        val disabledBackground = if (LocalDarkMode.current) 
+            Color.Black 
+        else 
+            MaterialTheme.colorScheme.surface
+        
+        // Grayscale modifier for disabled items
+        val saturationMatrix = remember { 
+            android.graphics.ColorMatrix().apply { setSaturation(0f) } 
+        }
+        val colorFilter = remember(saturationMatrix) {
+            android.graphics.ColorMatrixColorFilter(saturationMatrix)
+        }
+        val grayscalePaint = remember { 
+            android.graphics.Paint().apply {
+                this.colorFilter = colorFilter
+            }
+        }
+        
+        val grayscaleModifier = if (!item.commonOptions.enable) {
+            Modifier
+                .graphicsLayer { alpha = 0.99f }
+                .drawWithContent {
+                    drawIntoCanvas { canvas ->
+                        canvas.nativeCanvas.saveLayer(null, grayscalePaint)
+                        drawContent()
+                        canvas.nativeCanvas.restore()
+                    }
+                }
+        } else {
+            Modifier
+        }
+        
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(animatedShape)
+                .then(
+                    if (!item.commonOptions.enable) {
+                        Modifier
+                            .background(disabledBackground, animatedShape)
+                            .border(3.dp, normalCardColor, animatedShape)
+                    } else {
+                        Modifier.background(normalCardColor)
+                    }
+                )
+                .clickable {
+                    haptics.perform(HapticPattern.Pop)
+                    onEdit(item)
+                }
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            Box(modifier = grayscaleModifier) {
                 when (status) {
                     McpStatus.Idle -> Icon(Icons.Rounded.CommentsDisabled, null)
                     McpStatus.Connecting -> CircularProgressIndicator(
-                        modifier = Modifier.size(
-                            24.dp
-                        )
+                        modifier = Modifier.size(24.dp)
                     )
-
                     McpStatus.Connected -> Icon(Icons.Rounded.Terminal, null)
                     is McpStatus.Error -> Icon(Icons.Rounded.ErrorOutline, null)
                 }
+            }
 
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = item.commonOptions.name,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = item.commonOptions.name,
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                        val dotColor =
-                            if (item.commonOptions.enable) MaterialTheme.extendColors.green6 else MaterialTheme.extendColors.red6
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .drawWithContent {
-                                    drawCircle(
-                                        color = dotColor
-                                    )
-                                }
-                        )
+                    // Show disabled tag only for disabled items (with gray styling)
+                    if (!item.commonOptions.enable) {
+                        Tag(type = TagType.DEFAULT) {
+                            Text(stringResource(R.string.setting_provider_page_disabled))
+                        }
                     }
-
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Tag(type = TagType.SUCCESS) {
-                            when (item) {
-                                is McpServerConfig.SseTransportServer -> Text("SSE")
-                                is McpServerConfig.StreamableHTTPServer -> Text("Streamable HTTP")
-                            }
+                    Tag(type = TagType.SUCCESS) {
+                        when (item) {
+                            is McpServerConfig.SseTransportServer -> Text("SSE")
+                            is McpServerConfig.StreamableHTTPServer -> Text("Streamable HTTP")
                         }
                     }
                 }
+            }
 
-                IconButton(
-                    onClick = {
-                        onEdit(item)
-                    }
-                ) {
-                    Icon(Icons.Rounded.Settings, null)
+            IconButton(
+                onClick = {
+                    onEdit(item)
                 }
+            ) {
+                Icon(Icons.Rounded.Settings, null)
             }
         }
     }
 }
+
 
 @Composable
 private fun McpServerConfigModal(state: EditState<McpServerConfig>) {

@@ -435,7 +435,7 @@ fun SettingModesPage(
                             modifier = Modifier
                                 .scale(if (isDragging) 0.95f else 1f)
                                 .fillMaxWidth()
-                        ) {
+                        ) { _ ->
                             ModeCard(
                                 mode = mode,
                                 priority = index + 1,
@@ -1114,7 +1114,7 @@ private fun LorebooksPageContent(
                             )
                         },
                         modifier = Modifier.fillMaxWidth()
-                    ) {
+                    ) { _ ->
                         LorebookListCard(
                             lorebook = lorebook,
                             position = position,

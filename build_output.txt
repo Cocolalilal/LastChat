@@ -1,0 +1,177 @@
+﻿
+> Configure project :app
+Warning: Python version 3.11 may have fewer packages available. If you experience problems, try switching to version 3.8.
+
+> Task :ai:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :ai:preBuild UP-TO-DATE
+> Task :ai:preReleaseBuild UP-TO-DATE
+> Task :ai:generateReleaseResValues UP-TO-DATE
+> Task :ai:generateReleaseResources UP-TO-DATE
+> Task :ai:packageReleaseResources UP-TO-DATE
+> Task :ai:processReleaseNavigationResources UP-TO-DATE
+> Task :ai:parseReleaseLocalResources UP-TO-DATE
+> Task :ai:generateReleaseRFile UP-TO-DATE
+> Task :common:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :common:preBuild UP-TO-DATE
+> Task :common:preReleaseBuild UP-TO-DATE
+> Task :common:generateReleaseResValues UP-TO-DATE
+> Task :common:generateReleaseResources UP-TO-DATE
+> Task :common:packageReleaseResources UP-TO-DATE
+> Task :common:processReleaseNavigationResources UP-TO-DATE
+> Task :common:parseReleaseLocalResources UP-TO-DATE
+> Task :common:generateReleaseRFile UP-TO-DATE
+> Task :common:compileReleaseKotlin UP-TO-DATE
+> Task :common:javaPreCompileRelease UP-TO-DATE
+> Task :common:compileReleaseJavaWithJavac NO-SOURCE
+> Task :common:bundleLibCompileToJarRelease UP-TO-DATE
+> Task :ai:compileReleaseKotlin UP-TO-DATE
+> Task :ai:javaPreCompileRelease UP-TO-DATE
+> Task :ai:compileReleaseJavaWithJavac NO-SOURCE
+> Task :ai:bundleLibCompileToJarRelease UP-TO-DATE
+> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preReleaseBuild UP-TO-DATE
+> Task :app:generateReleaseBuildConfig UP-TO-DATE
+> Task :app:extractReleasePythonBuildPackages UP-TO-DATE
+> Task :app:generateReleasePythonRequirements UP-TO-DATE
+> Task :app:mergeReleasePythonSources UP-TO-DATE
+> Task :app:generateReleasePythonProxies UP-TO-DATE
+> Task :ai:writeReleaseAarMetadata UP-TO-DATE
+> Task :common:writeReleaseAarMetadata UP-TO-DATE
+> Task :document:preBuild UP-TO-DATE
+> Task :document:preReleaseBuild UP-TO-DATE
+> Task :document:writeReleaseAarMetadata UP-TO-DATE
+> Task :highlight:preBuild UP-TO-DATE
+> Task :highlight:preReleaseBuild UP-TO-DATE
+> Task :highlight:writeReleaseAarMetadata UP-TO-DATE
+> Task :search:preBuild UP-TO-DATE
+> Task :search:preReleaseBuild UP-TO-DATE
+> Task :search:writeReleaseAarMetadata UP-TO-DATE
+> Task :tts:preBuild UP-TO-DATE
+> Task :tts:preReleaseBuild UP-TO-DATE
+> Task :tts:writeReleaseAarMetadata UP-TO-DATE
+> Task :app:checkReleaseAarMetadata UP-TO-DATE
+> Task :document:processReleaseNavigationResources UP-TO-DATE
+> Task :highlight:processReleaseNavigationResources UP-TO-DATE
+> Task :search:processReleaseNavigationResources UP-TO-DATE
+> Task :tts:processReleaseNavigationResources UP-TO-DATE
+> Task :app:processReleaseNavigationResources UP-TO-DATE
+> Task :app:compileReleaseNavigationResources UP-TO-DATE
+> Task :app:generateReleaseResValues UP-TO-DATE
+> Task :app:injectCrashlyticsMappingFileIdRelease
+> Task :app:extractReleaseVersionControlInfo UP-TO-DATE
+> Task :app:injectCrashlyticsVersionControlInfoRelease UP-TO-DATE
+> Task :app:processReleaseGoogleServices UP-TO-DATE
+> Task :document:generateReleaseResValues UP-TO-DATE
+> Task :document:generateReleaseResources UP-TO-DATE
+> Task :document:packageReleaseResources UP-TO-DATE
+> Task :highlight:generateReleaseResValues UP-TO-DATE
+> Task :highlight:generateReleaseResources UP-TO-DATE
+> Task :highlight:packageReleaseResources UP-TO-DATE
+> Task :search:generateReleaseResValues UP-TO-DATE
+> Task :search:generateReleaseResources UP-TO-DATE
+> Task :search:packageReleaseResources UP-TO-DATE
+> Task :tts:generateReleaseResValues UP-TO-DATE
+> Task :tts:generateReleaseResources UP-TO-DATE
+> Task :tts:packageReleaseResources UP-TO-DATE
+> Task :app:mapReleaseSourceSetPaths UP-TO-DATE
+> Task :ai:extractReleaseSupportedLocales UP-TO-DATE
+> Task :app:extractReleaseSupportedLocales
+> Task :common:extractReleaseSupportedLocales UP-TO-DATE
+> Task :document:extractReleaseSupportedLocales UP-TO-DATE
+> Task :highlight:extractReleaseSupportedLocales UP-TO-DATE
+> Task :search:extractReleaseSupportedLocales UP-TO-DATE
+> Task :tts:extractReleaseSupportedLocales UP-TO-DATE
+> Task :app:generateReleaseLocaleConfig UP-TO-DATE
+> Task :app:generateReleaseResources UP-TO-DATE
+> Task :app:packageReleaseResources
+> Task :app:createReleaseCompatibleScreenManifests UP-TO-DATE
+> Task :ai:extractDeepLinksRelease UP-TO-DATE
+> Task :ai:processReleaseManifest UP-TO-DATE
+> Task :app:extractDeepLinksRelease UP-TO-DATE
+> Task :common:extractDeepLinksRelease UP-TO-DATE
+> Task :common:processReleaseManifest UP-TO-DATE
+> Task :document:extractDeepLinksRelease UP-TO-DATE
+> Task :document:processReleaseManifest UP-TO-DATE
+> Task :highlight:extractDeepLinksRelease UP-TO-DATE
+> Task :highlight:processReleaseManifest UP-TO-DATE
+> Task :search:extractDeepLinksRelease UP-TO-DATE
+> Task :search:processReleaseManifest UP-TO-DATE
+> Task :tts:extractDeepLinksRelease UP-TO-DATE
+> Task :tts:processReleaseManifest UP-TO-DATE
+> Task :app:processReleaseMainManifest UP-TO-DATE
+> Task :app:parseReleaseLocalResources
+> Task :app:processReleaseManifest UP-TO-DATE
+> Task :app:processReleaseManifestForPackage UP-TO-DATE
+> Task :document:parseReleaseLocalResources UP-TO-DATE
+> Task :document:generateReleaseRFile UP-TO-DATE
+> Task :highlight:parseReleaseLocalResources UP-TO-DATE
+> Task :highlight:generateReleaseRFile UP-TO-DATE
+> Task :search:parseReleaseLocalResources UP-TO-DATE
+> Task :search:generateReleaseRFile UP-TO-DATE
+> Task :tts:parseReleaseLocalResources UP-TO-DATE
+> Task :tts:generateReleaseRFile UP-TO-DATE
+> Task :document:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :document:compileReleaseKotlin UP-TO-DATE
+> Task :document:javaPreCompileRelease UP-TO-DATE
+> Task :document:compileReleaseJavaWithJavac UP-TO-DATE
+> Task :document:bundleLibCompileToJarRelease UP-TO-DATE
+> Task :highlight:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :highlight:compileReleaseKotlin UP-TO-DATE
+> Task :highlight:javaPreCompileRelease UP-TO-DATE
+> Task :highlight:compileReleaseJavaWithJavac NO-SOURCE
+> Task :highlight:bundleLibCompileToJarRelease UP-TO-DATE
+> Task :search:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :search:compileReleaseKotlin UP-TO-DATE
+> Task :search:javaPreCompileRelease UP-TO-DATE
+> Task :search:compileReleaseJavaWithJavac NO-SOURCE
+> Task :search:bundleLibCompileToJarRelease UP-TO-DATE
+> Task :tts:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :tts:compileReleaseKotlin UP-TO-DATE
+> Task :tts:javaPreCompileRelease UP-TO-DATE
+> Task :tts:compileReleaseJavaWithJavac NO-SOURCE
+> Task :tts:bundleLibCompileToJarRelease UP-TO-DATE
+> Task :app:mergeReleaseResources
+> Task :app:processReleaseResources
+> Task :app:kspReleaseKotlin UP-TO-DATE
+
+> Task :app:compileReleaseKotlin FAILED
+./gradlew : e: file:///C:/Users/julia/Documents/LastChat/app/src/main/j
+ava/me/rerere/rikkahub/ui/pages/setting/SettingProviderPage.kt:1123:32 
+Unresolved reference 'nativeCanvas'.
+At line:1 char:1
++ ./gradlew compileReleaseKotlin 2>&1 | Out-File -FilePath 
+build_output ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (e: file:///C:/U...'native 
+   Canvas'.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+e: file:///C:/Users/julia/Documents/LastChat/app/src/main/java/me/rerer
+e/rikkahub/ui/pages/setting/SettingProviderPage.kt:1125:32 Unresolved 
+reference 'nativeCanvas'.
+
+[Incubating] Problems report is available at: file:///C:/Users/julia/Documents/LastChat/build/reports/problems/problems-report.html
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:compileReleaseKotlin'.
+> A failure occurred while executing org.jetbrains.kotlin.compilerRunne
+r.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
+   > Compilation error. See log for more details
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/8.14/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD FAILED in 14s
+107 actionable tasks: 7 executed, 100 up-to-date

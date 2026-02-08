@@ -470,7 +470,7 @@ fun SettingLorebookDetailPage(
                             modifier = Modifier
                                 .scale(if (isDragging) 0.95f else 1f)
                                 .fillMaxWidth()
-                        ) {
+                        ) { _ ->
                             EntryCard(
                                 entry = entry,
                                 priority = (lorebook.entries.indexOf(entry) + 1),

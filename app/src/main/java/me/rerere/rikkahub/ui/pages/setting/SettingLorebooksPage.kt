@@ -352,7 +352,7 @@ fun SettingLorebooksPage(vm: SettingVM = koinViewModel()) {
                             )
                         },
                         modifier = Modifier.fillMaxWidth()
-                    ) {
+                    ) { _ ->
                         LorebookCard(
                             lorebook = lorebook,
                             position = position,

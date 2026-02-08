@@ -375,7 +375,7 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
                             modifier = Modifier
                                 .scale(if (isDragging) 0.95f else 1f)
                                 .fillMaxWidth()
-                        ) {
+                        ) { _ ->
                             SearchServiceItemContent(
                                 service = service,
                                 haptics = haptics,
