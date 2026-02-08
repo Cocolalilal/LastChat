@@ -37,13 +37,15 @@ This project aims to provide a privacy-focused and highly personalized AI chat e
 *   **Multi-Modal Inputs**: Interact using Text, Images, Video, and Audio.
 
 ### Tools & Integrations
+*   **Python**: Built-in **Python Engine** (Chaquopy)
+*   **JavaScript**: Built-in **JavaScript Engine** (QuickJS)
 *   **Local Device Control**: The AI can interact with your device if you want:
     *   Send notifications
     *   Launch apps
     *   Read notifications
     *   Set alarms/reminders
-*   **Code Execution**: Built-in **JavaScript Engine** (QuickJS) for performing calculations and logic.
 *   **Web Search**: Integrated web search capabilities to fetch real-time information.
+*   **MCP**: Support for **MCP** servers.
 
 ### Assistant Management
 *   **Multiple Personas**: Create, manage, and switch between unlimited custom assistants.
@@ -52,7 +54,7 @@ This project aims to provide a privacy-focused and highly personalized AI chat e
 *   **Global Settings**: Centralized management for memory consolidation and background behaviors.
 
 ### Modern & Fluid UI
-*   **Material You**: Fully embraces Material Design 3 with **Dynamic Color** support that adapts to your wallpaper.
+*   **Material You**: The app was designed with Material You 3 Expressive in mind.
 *   **Rich Rendering**: Markdown support with LaTeX for math, code highlighting, and tables.
 
 ### Additional Modules
@@ -69,6 +71,8 @@ This project aims to provide a privacy-focused and highly personalized AI chat e
 *   **Koin** for Dependency Injection
 *   **Room** & **DataStore** for persistence
 *   **WorkManager** & **AlarmManager** for reliable background tasks
+*   **Chaquopy** for Python integration
+*   **QuickJS** for JavaScript integration
 
 ## Credits
 *   Original Project: [RikkaHub](https://github.com/re-ovo/RikkaHub)
