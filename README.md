@@ -13,7 +13,7 @@ This project aims to provide a privacy-focused and highly personalized AI chat e
 <table align="center" style="border: none;">
   <tr>
     <td align="center" style="border: none; width: 50%;">
-      <img src="docs/1.3.3_chat.jpg" alt="Chat Interface" width="100%" />
+      <img src="docs/1.3.4_chat.jpg" alt="Chat Interface" width="100%" />
     </td>
     <td align="center" style="border: none; width: 50%;">
       <img src="docs/1.1.3_menu.jpg" alt="Home Screen" width="100%" />
@@ -24,7 +24,7 @@ This project aims to provide a privacy-focused and highly personalized AI chat e
       <img src="docs/1.3.4_providers_use.gif" alt="providers page" width="100%" />
     </td>
     <td align="center" style="border: none; width: 50%;">
-      <img src="docs/1.2.4_memory.jpg" alt="Memory Settings" width="100%" />
+      <img src="docs/1.3.4_memory.jpg" alt="Memory Settings" width="100%" />
     </td>
   </tr>
 </table>
