@@ -564,20 +564,38 @@ class ChatVM(
         val node = conversation.getMessageNodeByMessageId(message.id) ?: return
         val nodeIndex = conversation.messageNodes.indexOf(node)
         if (nodeIndex == -1) return
-        
+
         // Get the versionTag from the message being deleted - we'll delete all matching versions
         val deleteVersionTag = message.versionTag
-        
+
+        // Limit version-tag deletion to the current turn only.
+        // A versionTag can be propagated during streaming, so deleting globally can wipe
+        // later turns and even collapse the whole conversation unexpectedly.
+        val turnStartIndex = conversation.messageNodes
+            .subList(0, nodeIndex + 1)
+            .indexOfLast { it.role == me.rerere.ai.core.MessageRole.USER } + 1
+        val turnEndIndex = conversation.messageNodes
+            .subList(nodeIndex, conversation.messageNodes.size)
+            .indexOfFirst { it.role == me.rerere.ai.core.MessageRole.USER }
+            .let { if (it == -1) conversation.messageNodes.size else nodeIndex + it }
+
         val newConversation = if (node.messages.size == 1 && deleteVersionTag == null) {
             // Single message node without versionTag - just remove the node
             conversation.copy(
                 messageNodes = conversation.messageNodes.filterIndexed { index, _ -> index != nodeIndex })
         } else {
             // Delete message(s) by ID or versionTag
-            val updatedNodes = conversation.messageNodes.mapNotNull { n ->
+            val updatedNodes = conversation.messageNodes.mapIndexedNotNull { index, n ->
+                // Only delete by versionTag inside the current turn. Outside the turn,
+                // preserve all versions and only match by explicit message ID.
+                val canDeleteByVersionTag =
+                    deleteVersionTag != null &&
+                        index in turnStartIndex until turnEndIndex &&
+                        n.role != me.rerere.ai.core.MessageRole.USER
+
                 val newMessages = n.messages.filter { msg ->
                     // Keep messages that don't match the delete criteria
-                    if (deleteVersionTag != null && msg.versionTag == deleteVersionTag) {
+                    if (canDeleteByVersionTag && msg.versionTag == deleteVersionTag) {
                         false // Delete all messages with this versionTag
                     } else {
                         msg.id != message.id // Also delete the original message by ID
