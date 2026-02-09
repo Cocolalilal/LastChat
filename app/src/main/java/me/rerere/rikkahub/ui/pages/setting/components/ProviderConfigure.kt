@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,6 +50,7 @@ import kotlin.reflect.KClass
 fun ProviderConfigure(
     provider: ProviderSetting,
     modifier: Modifier = Modifier,
+    showSavingIndicator: Boolean = false,
     onEdit: (provider: ProviderSetting) -> Unit
 ) {
     Column(
@@ -67,6 +69,13 @@ fun ProviderConfigure(
                 },
                 modifier = Modifier.weight(1f)
             )
+            if (showSavingIndicator) {
+                Text(
+                    text = "Saving...",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+            }
             HapticSwitch(
                 checked = provider.enabled,
                 onCheckedChange = { enabled ->
@@ -230,16 +239,28 @@ private fun ColumnScope.ProviderConfigureOpenAI(
     provider: ProviderSetting.OpenAI,
     onEdit: (provider: ProviderSetting.OpenAI) -> Unit
 ) {
+    val latestProvider by rememberUpdatedState(provider)
     val toaster = LocalToaster.current
 
     provider.description()
 
     var apiKeyVisible by remember { mutableStateOf(false) }
+    var localApiKey by remember(provider.id) { mutableStateOf(provider.apiKey) }
+    LaunchedEffect(provider.apiKey) {
+        if (provider.apiKey != localApiKey) {
+            localApiKey = provider.apiKey
+        }
+    }
+    LaunchedEffect(localApiKey) {
+        delay(300)
+        val latest = latestProvider
+        if (localApiKey != latest.apiKey) {
+            onEdit(latest.copy(apiKey = localApiKey.trim()))
+        }
+    }
     OutlinedTextField(
-        value = provider.apiKey,
-        onValueChange = {
-            onEdit(provider.copy(apiKey = it.trim()))
-        },
+        value = localApiKey,
+        onValueChange = { localApiKey = it },
         label = {
             Text(stringResource(id = R.string.setting_provider_page_api_key))
         },
@@ -271,8 +292,9 @@ private fun ColumnScope.ProviderConfigureOpenAI(
     // Debounce commits to parent
     LaunchedEffect(localBaseUrl) {
         delay(300)
-        if (localBaseUrl != provider.baseUrl) {
-            onEdit(provider.copy(baseUrl = localBaseUrl.trim()))
+        val latest = latestProvider
+        if (localBaseUrl != latest.baseUrl) {
+            onEdit(latest.copy(baseUrl = localBaseUrl.trim()))
         }
     }
 
@@ -296,8 +318,9 @@ private fun ColumnScope.ProviderConfigureOpenAI(
         
         LaunchedEffect(localPath) {
             delay(300)
-            if (localPath != provider.chatCompletionsPath) {
-                onEdit(provider.copy(chatCompletionsPath = localPath.trim()))
+            val latest = latestProvider
+            if (localPath != latest.chatCompletionsPath) {
+                onEdit(latest.copy(chatCompletionsPath = localPath.trim()))
             }
         }
 
@@ -338,14 +361,26 @@ private fun ColumnScope.ProviderConfigureClaude(
     provider: ProviderSetting.Claude,
     onEdit: (provider: ProviderSetting.Claude) -> Unit
 ) {
+    val latestProvider by rememberUpdatedState(provider)
     provider.description()
 
     var apiKeyVisible by remember { mutableStateOf(false) }
+    var localApiKey by remember(provider.id) { mutableStateOf(provider.apiKey) }
+    LaunchedEffect(provider.apiKey) {
+        if (provider.apiKey != localApiKey) {
+            localApiKey = provider.apiKey
+        }
+    }
+    LaunchedEffect(localApiKey) {
+        delay(300)
+        val latest = latestProvider
+        if (localApiKey != latest.apiKey) {
+            onEdit(latest.copy(apiKey = localApiKey.trim()))
+        }
+    }
     OutlinedTextField(
-        value = provider.apiKey,
-        onValueChange = {
-            onEdit(provider.copy(apiKey = it.trim()))
-        },
+        value = localApiKey,
+        onValueChange = { localApiKey = it },
         label = {
             Text(stringResource(id = R.string.setting_provider_page_api_key))
         },
@@ -375,8 +410,9 @@ private fun ColumnScope.ProviderConfigureClaude(
     
     LaunchedEffect(localBaseUrl) {
         delay(300)
-        if (localBaseUrl != provider.baseUrl) {
-            onEdit(provider.copy(baseUrl = localBaseUrl.trim()))
+        val latest = latestProvider
+        if (localBaseUrl != latest.baseUrl) {
+            onEdit(latest.copy(baseUrl = localBaseUrl.trim()))
         }
     }
 
@@ -395,6 +431,7 @@ private fun ColumnScope.ProviderConfigureGoogle(
     provider: ProviderSetting.Google,
     onEdit: (provider: ProviderSetting.Google) -> Unit
 ) {
+    val latestProvider by rememberUpdatedState(provider)
     provider.description()
 
     Row(
@@ -411,11 +448,22 @@ private fun ColumnScope.ProviderConfigureGoogle(
 
     if (!provider.vertexAI) {
         var apiKeyVisible by remember { mutableStateOf(false) }
+        var localApiKey by remember(provider.id) { mutableStateOf(provider.apiKey) }
+        LaunchedEffect(provider.apiKey) {
+            if (provider.apiKey != localApiKey) {
+                localApiKey = provider.apiKey
+            }
+        }
+        LaunchedEffect(localApiKey) {
+            delay(300)
+            val latest = latestProvider
+            if (localApiKey != latest.apiKey) {
+                onEdit(latest.copy(apiKey = localApiKey.trim()))
+            }
+        }
         OutlinedTextField(
-            value = provider.apiKey,
-            onValueChange = {
-                onEdit(provider.copy(apiKey = it.trim()))
-            },
+            value = localApiKey,
+            onValueChange = { localApiKey = it },
             label = {
                 Text(stringResource(id = R.string.setting_provider_page_api_key))
             },
@@ -445,8 +493,9 @@ private fun ColumnScope.ProviderConfigureGoogle(
         
         LaunchedEffect(localBaseUrl) {
             delay(300)
-            if (localBaseUrl != provider.baseUrl) {
-                onEdit(provider.copy(baseUrl = localBaseUrl.trim()))
+            val latest = latestProvider
+            if (localBaseUrl != latest.baseUrl) {
+                onEdit(latest.copy(baseUrl = localBaseUrl.trim()))
             }
         }
 
@@ -488,19 +537,23 @@ private fun ColumnScope.ProviderConfigureGoogle(
         // Debounce commits
         LaunchedEffect(localEmail) {
             delay(300)
-            if (localEmail != provider.serviceAccountEmail) onEdit(provider.copy(serviceAccountEmail = localEmail.trim()))
+            val latest = latestProvider
+            if (localEmail != latest.serviceAccountEmail) onEdit(latest.copy(serviceAccountEmail = localEmail.trim()))
         }
         LaunchedEffect(localPrivateKey) {
             delay(300)
-            if (localPrivateKey != provider.privateKey) onEdit(provider.copy(privateKey = localPrivateKey.trim()))
+            val latest = latestProvider
+            if (localPrivateKey != latest.privateKey) onEdit(latest.copy(privateKey = localPrivateKey.trim()))
         }
         LaunchedEffect(localLocation) {
             delay(300)
-            if (localLocation != provider.location) onEdit(provider.copy(location = localLocation.trim()))
+            val latest = latestProvider
+            if (localLocation != latest.location) onEdit(latest.copy(location = localLocation.trim()))
         }
         LaunchedEffect(localProjectId) {
             delay(300)
-            if (localProjectId != provider.projectId) onEdit(provider.copy(projectId = localProjectId.trim()))
+            val latest = latestProvider
+            if (localProjectId != latest.projectId) onEdit(latest.copy(projectId = localProjectId.trim()))
         }
 
         OutlinedTextField(
