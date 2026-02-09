@@ -190,6 +190,7 @@ private fun SharedTransitionScope.ChatListNormal(
     val scope = rememberCoroutineScope()
     val loadingState by rememberUpdatedState(loading)
     var isRecentScroll by remember { mutableStateOf(false) }
+    var userScrolledUp by remember { mutableStateOf(false) }
     val conversationUpdated by rememberUpdatedState(conversation)
     val context = LocalContext.current
     val navController = LocalNavController.current
@@ -223,7 +224,11 @@ private fun SharedTransitionScope.ChatListNormal(
         if (lastItem.key == LoadingIndicatorKey || lastItem.key == ScrollBottomKey) {
             return true
         }
-        return lastItem.key == conversation.messageNodes.lastOrNull()?.id && (lastItem.offset + lastItem.size <= state.layoutInfo.viewportEndOffset + lastItem.size * 0.15 + 32)
+        // Check if we can see the bottom spacer or the last real item
+        val hasScrollBottom = any { it.key == ScrollBottomKey }
+        if (hasScrollBottom) return true
+        // Fallback: check if the last visible item is near the end
+        return !state.canScrollForward || (lastItem.offset + lastItem.size <= state.layoutInfo.viewportEndOffset + lastItem.size * 0.15 + 32)
     }
 
     // 聊天选择
@@ -240,14 +245,45 @@ private fun SharedTransitionScope.ChatListNormal(
     ) {
         // Empty chat state removed - assistant icon now shown in TopBar
 
-        // 自动滚动到底部
+        // Detect user scrolling up to suppress auto-scroll
+        LaunchedEffect(state) {
+            var previousFirstIndex = state.firstVisibleItemIndex
+            var previousFirstOffset = state.firstVisibleItemScrollOffset
+            snapshotFlow {
+                Triple(state.isScrollInProgress, state.firstVisibleItemIndex, state.firstVisibleItemScrollOffset)
+            }.collect { (isScrolling, firstIndex, firstOffset) ->
+                if (isScrolling && loadingState) {
+                    // User is actively scrolling during generation
+                    val scrolledUp = firstIndex < previousFirstIndex ||
+                        (firstIndex == previousFirstIndex && firstOffset < previousFirstOffset)
+                    if (scrolledUp) {
+                        userScrolledUp = true
+                    }
+                    // If user scrolls back to bottom, resume auto-scroll
+                    if (state.layoutInfo.visibleItemsInfo.isAtBottom()) {
+                        userScrolledUp = false
+                    }
+                }
+                previousFirstIndex = firstIndex
+                previousFirstOffset = firstOffset
+            }
+        }
+
+        // Reset userScrolledUp when loading stops
+        LaunchedEffect(loading) {
+            if (!loading) {
+                userScrolledUp = false
+            }
+        }
+
+        // Auto-scroll to bottom during generation
         LaunchedEffect(state) {
             snapshotFlow { state.layoutInfo.visibleItemsInfo }.collect { visibleItemsInfo ->
-                // println("is bottom = ${visibleItemsInfo.isAtBottom()}, scroll = ${state.isScrollInProgress}, can_scroll = ${state.canScrollForward}, loading = $loading")
-                if (!state.isScrollInProgress && loadingState) {
-                    if (visibleItemsInfo.isAtBottom()) {
-                        state.requestScrollToItem(conversationUpdated.messageNodes.lastIndex + 10)
-                        // Log.i(TAG, "ChatList: scroll to ${conversationUpdated.messageNodes.lastIndex}")
+                if (!state.isScrollInProgress && loadingState && !userScrolledUp) {
+                    // Scroll to the very last item in the list (ScrollBottomKey spacer)
+                    val targetIndex = state.layoutInfo.totalItemsCount - 1
+                    if (targetIndex >= 0) {
+                        state.animateScrollToItem(targetIndex)
                     }
                 }
             }

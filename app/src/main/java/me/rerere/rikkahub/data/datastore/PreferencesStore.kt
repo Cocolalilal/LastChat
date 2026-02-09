@@ -310,6 +310,7 @@ class SettingsStore(
         dataStore.edit { preferences ->
             preferences[PROVIDERS] = JsonInstant.encodeToString(settings.providers)
             preferences[WEBDAV_CONFIG] = JsonInstant.encodeToString(settings.webDavConfig)
+            preferences[TTS_PROVIDERS] = JsonInstant.encodeToString(settings.ttsProviders)
         }
     }
 
@@ -343,7 +344,7 @@ class SettingsStore(
         // Migrate secrets from plaintext to SecureStore if needed
         val migratedSettings = secretKeyManager.migrateSecretsFromSettings(settingsToSave)
         
-        settingsFlow.value = migratedSettings
+        settingsFlow.value = secretKeyManager.populateSecretsForExport(migratedSettings)
         dataStore.edit { preferences ->
             preferences[DYNAMIC_COLOR] = settingsToSave.dynamicColor
             preferences[THEME_ID] = settingsToSave.themeId
@@ -380,7 +381,7 @@ class SettingsStore(
 
             preferences[MCP_SERVERS] = JsonInstant.encodeToString(settingsToSave.mcpServers)
             preferences[WEBDAV_CONFIG] = JsonInstant.encodeToString(migratedSettings.webDavConfig)
-            preferences[TTS_PROVIDERS] = JsonInstant.encodeToString(settingsToSave.ttsProviders)
+            preferences[TTS_PROVIDERS] = JsonInstant.encodeToString(migratedSettings.ttsProviders)
             settingsToSave.selectedTTSProviderId?.let {
                 preferences[SELECTED_TTS_PROVIDER] = it.toString()
             } ?: preferences.remove(SELECTED_TTS_PROVIDER)
@@ -767,6 +768,7 @@ private fun Model.findModelProviderFromList(providers: List<ProviderSetting>): P
     return null
 }
 
+internal val GEMINI_2_5_FLASH_ID = Uuid.parse("cd2cba9a-3f92-4148-b4c6-4d7a86f7b9c2")
 internal val DEFAULT_ASSISTANT_ID = Uuid.parse("0950e2dc-9bd5-4801-afa3-aa887aa36b4e")
 internal val DEFAULT_ASSISTANTS = listOf(
     Assistant(

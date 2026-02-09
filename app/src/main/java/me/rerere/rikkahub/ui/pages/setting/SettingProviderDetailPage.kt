@@ -81,6 +81,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -168,6 +170,8 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val context = LocalContext.current
+    var savingResetJob by remember { mutableStateOf<Job?>(null) }
+    var isSaving by remember { mutableStateOf(false) }
 
     val onEdit = { newProvider: ProviderSetting ->
         val newSettings = settings.copy(
@@ -179,7 +183,13 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                 }
             }
         )
+        isSaving = true
+        savingResetJob?.cancel()
         vm.updateSettings(newSettings)
+        savingResetJob = scope.launch {
+            delay(600)
+            isSaving = false
+        }
     }
     val onDelete = {
         val newSettings = settings.copy(
@@ -355,7 +365,8 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                                 )
                                 vm.updateSettings(newSettings)
                             },
-                            contentPadding = contentPadding
+                            contentPadding = contentPadding,
+                            isSaving = isSaving
                         )
                     }
 
@@ -386,7 +397,8 @@ private fun SettingProviderConfigPage(
     providerTags: List<DataTag>,
     onEdit: (ProviderSetting) -> Unit,
     onUpdateTags: (ProviderSetting, List<DataTag>) -> Unit,
-    contentPadding: PaddingValues = PaddingValues(0.dp)
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+    isSaving: Boolean
 ) {
     var internalProvider by remember(provider) { mutableStateOf(provider) }
     val scope = rememberCoroutineScope()
@@ -410,6 +422,7 @@ private fun SettingProviderConfigPage(
                 ProviderConfigure(
                     provider = internalProvider,
                     modifier = Modifier.padding(16.dp),
+                    showSavingIndicator = isSaving,
                     onEdit = {
                         internalProvider = it
                         // Auto-save immediately

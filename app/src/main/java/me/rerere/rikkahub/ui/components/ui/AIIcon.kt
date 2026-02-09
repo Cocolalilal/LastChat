@@ -58,6 +58,12 @@ fun ProviderIcon(
     val providerSlug = remember(provider.name) {
         getProviderSlugFromName(provider.name) ?: provider.name.lowercase().replace(" ", "-").replace("_", "-")
     }
+
+    val effectiveContentColor = if (provider.enabled) {
+        contentColor
+    } else {
+        contentColor.copy(alpha = 0.38f)
+    }
     
     AutoAIIconWithUrl(
         name = provider.name,
@@ -68,7 +74,7 @@ fun ProviderIcon(
         modifier = modifier,
         loading = loading,
         color = color,
-        contentColor = contentColor,
+        contentColor = effectiveContentColor,
         padding = padding
     )
 }
@@ -123,9 +129,9 @@ private fun AIIcon(
     modifier: Modifier = Modifier,
     loading: Boolean = false,
     color: Color = MaterialTheme.colorScheme.secondaryContainer,
+    contentColor: Color = LocalContentColor.current,
     padding: Dp = 4.dp,
 ) {
-    val contentColor = LocalContentColor.current
     val context = LocalContext.current
     val model = remember(path, contentColor, context) {
         ImageRequest.Builder(context)
@@ -171,6 +177,7 @@ fun AutoAIIcon(
         modifier = modifier,
         loading = loading,
         color = color,
+        contentColor = contentColor,
         padding = padding,
     )
 }
@@ -360,13 +367,24 @@ fun AutoAIIconWithUrl(
     
     // Priority 0: User-selected custom icon (highest priority)
     if (!customIconUri.isNullOrBlank()) {
+        // Handle LobeHub icons theme switching if relevant
+        val effectiveUri = if (customIconUri.contains("registry.npmmirror.com/@lobehub/icons-static-png")) {
+            if (darkMode) {
+                customIconUri.replace("/light/", "/dark/")
+            } else {
+                customIconUri.replace("/dark/", "/light/")
+            }
+        } else {
+            customIconUri
+        }
+
         Surface(
             modifier = modifier,
             shape = rememberAvatarShape(loading),
             color = Color.Transparent,
         ) {
             AsyncImage(
-                model = android.net.Uri.parse(customIconUri),
+                model = android.net.Uri.parse(effectiveUri),
                 contentDescription = name,
                 modifier = Modifier.padding(padding),
                 contentScale = androidx.compose.ui.layout.ContentScale.Fit
@@ -445,6 +463,7 @@ fun AutoAIIconWithUrl(
                 modifier = modifier,
                 loading = loading,
                 color = color,
+                contentColor = contentColor,
                 padding = padding,
             )
         }
@@ -456,6 +475,7 @@ fun AutoAIIconWithUrl(
                 modifier = modifier,
                 loading = loading,
                 color = color,
+                contentColor = contentColor, // This might tint the colored icon if it's not protected, but user said it's fine
                 padding = padding,
             )
         }
