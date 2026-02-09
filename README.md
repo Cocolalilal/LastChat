@@ -32,7 +32,7 @@ This project aims to provide a privacy-focused and highly personalized AI chat e
 ## ✨ Key Features
 
 ### Advanced AI Capabilities
-*   **Multi-Provider Support**: Works with **OpenAI**, **Google** and **OpenRouter** out of the box. There's support for custom providers too!
+*   **Multi-Provider Support**: Provider presets make it easier to get up and running. There's support for custom providers too!
 *   **RAG Memory**: Features a sophisticated **Vector-Based Long-Term Memory** system. Assistants can "remember" details from past conversations using embeddings.
 *   **Multi-Modal Inputs**: Interact using Text, Images, Video, and Audio.
 
