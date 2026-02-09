@@ -75,6 +75,7 @@ fun ProviderConfigure(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.outline
                 )
+                androidx.compose.foundation.layout.Spacer(modifier = Modifier.size(12.dp))
             }
             HapticSwitch(
                 checked = provider.enabled,
