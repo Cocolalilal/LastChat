@@ -309,7 +309,14 @@ private fun deriveActivityState(
     
     val reasoningParts = parts.filterIsInstance<UIMessagePart.Reasoning>()
     val toolCalls = parts.filterIsInstance<UIMessagePart.ToolCall>()
-    val hasText = parts.filterIsInstance<UIMessagePart.Text>().any { it.text.isNotBlank() }
+    
+    // Only count text AFTER the last tool-related part as "currently replying"
+    // This prevents text from before tool calls (e.g. "Let me run that for you") 
+    // from causing a "Replying" state during/between tool calls
+    val lastToolIndex = parts.indexOfLast { it is UIMessagePart.ToolCall || it is UIMessagePart.ToolResult }
+    val hasRecentText = parts.drop(lastToolIndex + 1)
+        .filterIsInstance<UIMessagePart.Text>()
+        .any { it.text.isNotBlank() }
         
     if (!loading) {
         // Generation complete - determine what to show based on activities
@@ -363,9 +370,9 @@ private fun deriveActivityState(
         )
     }
     
-    // Check if we have any text yet
-    if (hasText) {
-        // Text is being generated - show "Replying" state
+    // Check if we have any text AFTER the last tool activity
+    if (hasRecentText) {
+        // Text is being generated after all tools completed - show "Replying" state
         return ActivityState.Replying
     }
     
