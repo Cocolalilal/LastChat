@@ -66,6 +66,10 @@ This project aims to provide a privacy-focused and highly personalized AI chat e
 *   **Local-First**: Chat history and vector memory are stored locally on your device.
 *   **WebDAV Backup**: Securely sync and backup your data to any WebDAV-compatible server.
 
+## iOS Porting Roadmap
+
+A detailed AI-agent-oriented unification plan is available at [`docs/ios-unification-agent-plan.md`](docs/ios-unification-agent-plan.md), with an execution checklist in [`docs/ios-unification-agent-checklist.yaml`](docs/ios-unification-agent-checklist.yaml).
+
 ## Built With
 *   **Kotlin** & **Jetpack Compose**
 *   **Koin** for Dependency Injection

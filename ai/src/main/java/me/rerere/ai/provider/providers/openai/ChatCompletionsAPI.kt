@@ -1,6 +1,6 @@
 package me.rerere.ai.provider.providers.openai
 
-import android.util.Log
+import me.rerere.ai.util.AppLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -86,7 +86,7 @@ class ChatCompletionsAPI(
             .configureReferHeaders(providerSetting.baseUrl)
             .build()
 
-        Log.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
+        AppLogger.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
 
         val response = proxyClient.newCall(request).await()
         if (!response.isSuccessful) {
@@ -146,7 +146,7 @@ class ChatCompletionsAPI(
             .configureReferHeaders(providerSetting.baseUrl)
             .build()
 
-        Log.i(TAG, "streamText: ${json.encodeToString(requestBody)}")
+        AppLogger.i(TAG, "streamText: ${json.encodeToString(requestBody)}")
 
         // just for debugging response body
         // println(client.newCall(request).await().body?.string())
@@ -163,7 +163,7 @@ class ChatCompletionsAPI(
                     close()
                     return
                 }
-                Log.d(TAG, "onEvent: $data")
+                AppLogger.d(TAG, "onEvent: $data")
                 data
                     .trim()
                     .split("\n")
@@ -221,10 +221,10 @@ class ChatCompletionsAPI(
                         val bodyElement = Json.parseToJsonElement(bodyRaw)
                         println(bodyElement)
                         exception = bodyElement.parseErrorDetail()
-                        Log.i(TAG, "onFailure: $exception")
+                        AppLogger.i(TAG, "onFailure: $exception")
                     }
                 } catch (e: Throwable) {
-                    Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
+                    AppLogger.w(TAG, "onFailure: failed to parse from $bodyRaw")
                     e.printStackTrace()
                     exception = e
                 } finally {
@@ -433,7 +433,7 @@ class ChatCompletionsAPI(
                                     }
 
                                     else -> {
-                                        Log.w(
+                                        AppLogger.w(
                                             TAG,
                                             "buildMessages: message part not supported: $part"
                                         )

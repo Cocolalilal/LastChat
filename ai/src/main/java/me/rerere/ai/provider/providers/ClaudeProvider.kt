@@ -1,6 +1,6 @@
 package me.rerere.ai.provider.providers
 
-import android.util.Log
+import me.rerere.ai.util.AppLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -110,7 +110,7 @@ class ClaudeProvider(private val client: OkHttpClient) : Provider<ProviderSettin
             .configureReferHeaders(providerSetting.baseUrl)
             .build()
 
-        Log.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
+        AppLogger.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
 
         val response = client.configureClientWithProxy(providerSetting.proxy).newCall(request).await()
         if (!response.isSuccessful) {
@@ -158,10 +158,10 @@ class ClaudeProvider(private val client: OkHttpClient) : Provider<ProviderSettin
             .configureReferHeaders(providerSetting.baseUrl)
             .build()
 
-        Log.i(TAG, "streamText: ${json.encodeToString(requestBody)}")
+        AppLogger.i(TAG, "streamText: ${json.encodeToString(requestBody)}")
 
         requestBody["messages"]!!.jsonArray.forEach {
-            Log.i(TAG, "streamText: $it")
+            AppLogger.i(TAG, "streamText: $it")
         }
 
         val listener = object : EventSourceListener() {
@@ -171,7 +171,7 @@ class ClaudeProvider(private val client: OkHttpClient) : Provider<ProviderSettin
                 type: String?,
                 data: String
             ) {
-                Log.d(TAG, "onEvent: type=$type, data=$data")
+                AppLogger.d(TAG, "onEvent: type=$type, data=$data")
 
                 val dataJson = json.parseToJsonElement(data).jsonObject
                 val deltaMessage = parseMessage(buildJsonArray {
@@ -203,7 +203,7 @@ class ClaudeProvider(private val client: OkHttpClient) : Provider<ProviderSettin
 
                 when (type) {
                     "message_stop" -> {
-                        Log.d(TAG, "Stream ended")
+                        AppLogger.d(TAG, "Stream ended")
                         close()
                     }
 
@@ -221,17 +221,17 @@ class ClaudeProvider(private val client: OkHttpClient) : Provider<ProviderSettin
                 var exception = t
 
                 t?.printStackTrace()
-                Log.e(TAG, "onFailure: ${t?.javaClass?.name} ${t?.message} / $response")
+                AppLogger.e(TAG, "onFailure: ${t?.javaClass?.name} ${t?.message} / $response")
 
                 val bodyRaw = response?.body?.stringSafe()
                 try {
                     if (!bodyRaw.isNullOrBlank()) {
                         val bodyElement = Json.parseToJsonElement(bodyRaw)
-                        Log.i(TAG, "Error response: $bodyElement")
+                        AppLogger.i(TAG, "Error response: $bodyElement")
                         exception = bodyElement.parseErrorDetail()
                     }
                 } catch (e: Throwable) {
-                    Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
+                    AppLogger.w(TAG, "onFailure: failed to parse from $bodyRaw")
                     e.printStackTrace()
                 } finally {
                     close(exception)
@@ -248,7 +248,7 @@ class ClaudeProvider(private val client: OkHttpClient) : Provider<ProviderSettin
                 .newEventSource(request, listener)
 
         awaitClose {
-            Log.d(TAG, "Closing eventSource")
+            AppLogger.d(TAG, "Closing eventSource")
             eventSource.cancel()
         }
     }
@@ -364,7 +364,7 @@ class ClaudeProvider(private val client: OkHttpClient) : Provider<ProviderSettin
                                             })
                                         }.onFailure {
                                             it.printStackTrace()
-                                            Log.w(TAG, "encode image failed: ${part.url}")
+                                            AppLogger.w(TAG, "encode image failed: ${part.url}")
                                             // 如果图片编码失败，添加一个空文本块
                                             put("type", "text")
                                             put("text", "")
@@ -394,7 +394,7 @@ class ClaudeProvider(private val client: OkHttpClient) : Provider<ProviderSettin
                                 }
 
                                 else -> {
-                                    Log.w(TAG, "buildMessages: message part not supported: $part")
+                                    AppLogger.w(TAG, "buildMessages: message part not supported: $part")
                                     // DO NOTHING
                                 }
                             }

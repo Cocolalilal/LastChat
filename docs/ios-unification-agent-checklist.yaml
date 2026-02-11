@@ -1,0 +1,90 @@
+meta:
+  objective: "Port LastChat to iOS while keeping one mono-repo and one shared product core"
+  strategy: "KMP shared core + native UI per platform"
+  difficulty: 8.5
+  confidence: 0.74
+
+phases:
+  - id: P0
+    name: Inventory and safety net
+    tasks:
+      - id: P0-T1
+        title: Generate Android dependency inventory by package
+      - id: P0-T2
+        title: Add golden fixtures for SSE and provider JSON parsing
+      - id: P0-T3
+        title: Classify modules into portable / adapter / platform-only
+    done_when:
+      - "Inventory report committed"
+      - "Golden tests pass"
+
+  - id: P1
+    name: Shared core skeleton
+    tasks:
+      - id: P1-T1
+        title: Create shared-core KMP module with common/android/ios source sets
+      - id: P1-T2
+        title: Add platform interfaces (logger, clock, secure store, kv store)
+      - id: P1-T3
+        title: Move serialization/request builder logic
+    done_when:
+      - "shared-core compiles on Android and iOS targets"
+
+  - id: P2
+    name: Network and streaming portability
+    tasks:
+      - id: P2-T1
+        title: Move provider protocol/parsers into shared-core
+      - id: P2-T2
+        title: Implement Android and iOS HTTP adapters
+      - id: P2-T3
+        title: Lock streaming behavior with contract snapshots
+
+  - id: P3
+    name: Memory and persistence split
+    tasks:
+      - id: P3-T1
+        title: Extract memory domain use-cases to shared-core
+      - id: P3-T2
+        title: Keep Room implementation on Android
+      - id: P3-T3
+        title: Implement iOS persistence adapter with schema parity
+      - id: P3-T4
+        title: Verify embedding sync invariants (entity + cache)
+
+  - id: P4
+    name: Capability gating
+    tasks:
+      - id: P4-T1
+        title: Add runtime capability flags for platform-only tools
+      - id: P4-T2
+        title: Degrade unsupported actions gracefully on iOS
+
+  - id: P5
+    name: iOS app shell and UX parity
+    tasks:
+      - id: P5-T1
+        title: Build SwiftUI shell integrating Kotlin framework
+      - id: P5-T2
+        title: Map haptic patterns Pop/Thud/Success to iOS generators
+      - id: P5-T3
+        title: Match press scale and spring behavior with Android feel
+
+  - id: P6
+    name: CI and release
+    tasks:
+      - id: P6-T1
+        title: Add Android + shared + iOS compile matrix
+      - id: P6-T2
+        title: Add rollback runbook and migration docs
+
+agent_contract:
+  pr_size_limit_files: 15
+  mandatory_checks:
+    - "no new android imports in shared-core"
+    - "all changed parser tests pass"
+    - "contract snapshots updated intentionally"
+  review_template:
+    - "what boundary moved"
+    - "behavior guarantees"
+    - "known follow-ups"

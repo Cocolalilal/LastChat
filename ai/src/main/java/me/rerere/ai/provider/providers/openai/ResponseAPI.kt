@@ -1,6 +1,6 @@
 package me.rerere.ai.provider.providers.openai
 
-import android.util.Log
+import me.rerere.ai.util.AppLogger
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -71,7 +71,7 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
             .configureReferHeaders(providerSetting.baseUrl)
             .build()
 
-        Log.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
+        AppLogger.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
 
         val response = client.configureClientWithProxy(providerSetting.proxy).newCall(request).await()
         if (!response.isSuccessful) {
@@ -79,7 +79,7 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
         }
 
         val bodyStr = response.body?.string() ?: ""
-        Log.i(TAG, "generateText: $bodyStr")
+        AppLogger.i(TAG, "generateText: $bodyStr")
         val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
         val output = parseResponseOutput(bodyJson)
 
@@ -105,7 +105,7 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
             .configureReferHeaders(providerSetting.baseUrl)
             .build()
 
-        Log.i(TAG, "streamText: ${json.encodeToString(requestBody)}")
+        AppLogger.i(TAG, "streamText: ${json.encodeToString(requestBody)}")
 
         val listener = object : EventSourceListener() {
             override fun onEvent(
@@ -114,7 +114,7 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
                 type: String?,
                 data: String
             ) {
-                Log.d(TAG, "onEvent: $id/$type $data")
+                AppLogger.d(TAG, "onEvent: $id/$type $data")
                 val json = json.parseToJsonElement(data).jsonObject
                 val chunk = parseResponseDelta(json)
                 if (chunk != null) {
@@ -137,10 +137,10 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
                         val bodyElement = Json.parseToJsonElement(bodyRaw)
                         println(bodyElement)
                         exception = bodyElement.parseErrorDetail()
-                        Log.i(TAG, "onFailure: $exception")
+                        AppLogger.i(TAG, "onFailure: $exception")
                     }
                 } catch (e: Throwable) {
-                    Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
+                    AppLogger.w(TAG, "onFailure: failed to parse from $bodyRaw")
                     e.printStackTrace()
                 } finally {
                     close(exception)
@@ -284,7 +284,7 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
                                     }
 
                                     else -> {
-                                        Log.w(
+                                        AppLogger.w(
                                             TAG,
                                             "buildMessages: message part not supported: $part"
                                         )
