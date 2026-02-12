@@ -723,6 +723,12 @@ class ChatVM(
         }
     }
 
+    fun updateConversationTitle(conversation: Conversation, title: String) {
+        viewModelScope.launch {
+            conversationRepo.updateConversation(conversation.copy(title = title))
+        }
+    }
+
     fun generateTitle(conversation: Conversation, force: Boolean = false) {
         viewModelScope.launch {
             val conversationFull = conversationRepo.getConversationById(conversation.id) ?: return@launch
