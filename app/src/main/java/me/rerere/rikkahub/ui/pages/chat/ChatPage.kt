@@ -13,7 +13,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.lazy.LazyListState
@@ -32,8 +34,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.adaptive.currentWindowDpSize
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
@@ -60,8 +60,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.AddBox
-import androidx.compose.material.icons.rounded.AddCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Search
@@ -877,8 +875,10 @@ private fun TopBar(
     onToggleTemporaryChat: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
-    val topContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f)
+    val topContainerColor = MaterialTheme.colorScheme.surfaceContainer
+    val topContainerBorder = BorderStroke(1.dp, MaterialTheme.colorScheme.background)
     val buttonShape = RoundedCornerShape(999.dp)
+    val topPillSize = 48.dp
 
     // State for assistant picker - must be at function level for proper recomposition
     var showAssistantPicker by remember { mutableStateOf(false) }
@@ -905,8 +905,9 @@ private fun TopBar(
 
         Row(
             modifier = Modifier
+                .statusBarsPadding()
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (!bigScreen) {
@@ -915,10 +916,11 @@ private fun TopBar(
                         scope.launch { drawerState.open() }
                     },
                     shape = buttonShape,
-                    color = topContainerColor
+                    color = topContainerColor,
+                    border = topContainerBorder
                 ) {
                     Box(
-                        modifier = Modifier.size(52.dp),
+                        modifier = Modifier.size(topPillSize),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(Icons.Rounded.Menu, "Messages")
@@ -930,7 +932,8 @@ private fun TopBar(
 
             Surface(
                 shape = buttonShape,
-                color = topContainerColor
+                color = topContainerColor,
+                border = topContainerBorder
             ) {
                 androidx.compose.animation.AnimatedContent(
                     targetState = isEmpty to isTemporaryChat,
@@ -956,19 +959,28 @@ private fun TopBar(
                             effectiveDisplay.newChatHeaderStyle == me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.GREETING
                         )
                     val hideTopRightAvatar = !hasPresetMessages && headerShowsAvatar
+                    val actionCount = when {
+                        isEmptyState && !isTempChat && hideTopRightAvatar -> 1
+                        isEmptyState && !isTempChat -> 2
+                        isEmptyState && isTempChat -> 2
+                        else -> 2
+                    }
 
                     Row(
-                        modifier = Modifier.padding(horizontal = 4.dp),
+                        modifier = Modifier.padding(horizontal = if (actionCount > 1) 4.dp else 0.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         when {
                             isEmptyState && !isTempChat -> {
-                                IconButton(onClick = { onToggleTemporaryChat() }) {
+                                IconButton(
+                                    onClick = { onToggleTemporaryChat() },
+                                    modifier = Modifier.size(topPillSize)
+                                ) {
                                     Icon(Icons.Rounded.HistoryToggleOff, "Temporary Chat")
                                 }
                                 if (!hideTopRightAvatar) {
                                     Box(
-                                        modifier = Modifier.size(48.dp),
+                                        modifier = Modifier.size(topPillSize),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         me.rerere.rikkahub.ui.components.ui.UIAvatar(
@@ -982,11 +994,14 @@ private fun TopBar(
                             }
 
                             isEmptyState && isTempChat -> {
-                                IconButton(onClick = { onToggleTemporaryChat() }) {
+                                IconButton(
+                                    onClick = { onToggleTemporaryChat() },
+                                    modifier = Modifier.size(topPillSize)
+                                ) {
                                     Icon(Icons.Rounded.History, "Make Normal Chat")
                                 }
                                 Box(
-                                    modifier = Modifier.size(48.dp),
+                                    modifier = Modifier.size(topPillSize),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     me.rerere.rikkahub.ui.components.ui.UIAvatar(
@@ -999,11 +1014,17 @@ private fun TopBar(
                             }
 
                             else -> {
-                                IconButton(onClick = { onClickMenu() }) {
+                                IconButton(
+                                    onClick = { onClickMenu() },
+                                    modifier = Modifier.size(topPillSize)
+                                ) {
                                     Icon(if (previewMode) Icons.Rounded.Close else Icons.Rounded.Search, "Chat Options")
                                 }
-                                IconButton(onClick = { onNewChat() }) {
-                                    Icon(Icons.Rounded.AddCircle, "New Message")
+                                IconButton(
+                                    onClick = { onNewChat() },
+                                    modifier = Modifier.size(topPillSize)
+                                ) {
+                                    Icon(Icons.Rounded.Add, "New Message")
                                 }
                             }
                         }
