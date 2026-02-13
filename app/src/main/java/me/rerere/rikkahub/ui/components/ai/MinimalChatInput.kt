@@ -25,6 +25,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.util.fastForEach
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.foundation.clickable
 import androidx.compose.animation.core.spring
 import androidx.core.net.toUri
@@ -1330,13 +1331,49 @@ private fun ChatSuggestionsRow(
     var pressedSuggestionIndex by remember { mutableStateOf<Int?>(null) }
     var selectedSuggestionIndex by remember { mutableStateOf<Int?>(null) }
 
-    Row(
+    val canScrollLeft by remember { androidx.compose.runtime.derivedStateOf { scrollState.value > 0 } }
+    val canScrollRight by remember { androidx.compose.runtime.derivedStateOf { scrollState.value < scrollState.maxValue } }
+    val leftFadeAlpha by animateFloatAsState(
+        targetValue = if (canScrollLeft) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(150),
+        label = "left_fade"
+    )
+    val rightFadeAlpha by animateFloatAsState(
+        targetValue = if (canScrollRight) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(150),
+        label = "right_fade"
+    )
+
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .horizontalScroll(scrollState),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+            .drawWithContent {
+                drawContent()
+                if (leftFadeAlpha > 0f || rightFadeAlpha > 0f) {
+                    val fadeWidthPx = 24.dp.toPx()
+                    val leftEnd = (fadeWidthPx / size.width).coerceAtMost(0.4f)
+                    val rightStart = (1f - fadeWidthPx / size.width).coerceAtLeast(0.6f)
+                    val colorStops = arrayOf(
+                        0f to Color.Black.copy(alpha = 1f - leftFadeAlpha),
+                        leftEnd to Color.Black,
+                        rightStart to Color.Black,
+                        1f to Color.Black.copy(alpha = 1f - rightFadeAlpha)
+                    )
+                    drawRect(
+                        brush = androidx.compose.ui.graphics.Brush.horizontalGradient(colorStops = colorStops),
+                        blendMode = androidx.compose.ui.graphics.BlendMode.DstIn
+                    )
+                }
+            }
     ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(scrollState),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
         suggestions.forEachIndexed { index, suggestion ->
             var visible by remember { mutableStateOf(false) }
             val interactionSource = remember { MutableInteractionSource() }
@@ -1397,6 +1434,7 @@ private fun ChatSuggestionsRow(
                 Surface(
                     shape = RoundedCornerShape(16.dp),
                     color = MaterialTheme.colorScheme.surfaceContainer,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
                     modifier = Modifier
                         .graphicsLayer {
                             scaleX = scale
@@ -1417,6 +1455,7 @@ private fun ChatSuggestionsRow(
                     )
                 }
             }
+        }
         }
     }
 }
