@@ -50,6 +50,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
@@ -279,7 +280,7 @@ private fun ChatPageContent(
     var pendingRegenerateMessage by rememberSaveable { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
     val currentAssistant = setting.getCurrentAssistant()
     val topMessagePadding = remember(conversation.messageNodes.size) {
-        if (conversation.messageNodes.size <= 2) 72.dp else 8.dp
+        if (conversation.messageNodes.size <= 2) 72.dp else 24.dp
     }
     
     // Auto-scroll to first matching message when opened from search
@@ -542,7 +543,9 @@ private fun ChatPageContent(
                     visible = shouldShowNewChatContent,
                     enter = androidx.compose.animation.fadeIn(),
                     exit = androidx.compose.animation.fadeOut(),
-                    modifier = Modifier.align(Alignment.Center)
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .offset(y = 28.dp)
                 ) {
                     NewChatContent(
                         assistant = currentAssistant,
@@ -895,6 +898,11 @@ private fun TopBar(
     var showAssistantPicker by remember { mutableStateOf(false) }
     val currentAssistant = settings.getCurrentAssistant()
     val isEmpty = !conversation.messageNodes.any { it.role == me.rerere.ai.core.MessageRole.USER }
+    var animateTopPillIn by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        animateTopPillIn = true
+    }
 
     Box(
         modifier = Modifier
@@ -942,10 +950,24 @@ private fun TopBar(
 
             androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
 
+            val topPillScale by androidx.compose.animation.core.animateFloatAsState(
+                targetValue = if (animateTopPillIn) 1f else 0.88f,
+                animationSpec = androidx.compose.animation.core.spring(
+                    dampingRatio = 0.6f,
+                    stiffness = 300f
+                ),
+                label = "top_pill_scale"
+            )
+
             Surface(
                 shape = buttonShape,
                 color = topContainerColor,
-                border = topContainerBorder
+                border = topContainerBorder,
+                modifier = Modifier
+                    .graphicsLayer {
+                        scaleX = topPillScale
+                        scaleY = topPillScale
+                    }
             ) {
                 androidx.compose.animation.AnimatedContent(
                     targetState = TopBarActionState(
@@ -964,19 +986,34 @@ private fun TopBar(
                     ),
                     transitionSpec = {
                         (androidx.compose.animation.fadeIn(
-                            animationSpec = androidx.compose.animation.core.tween(durationMillis = 220)
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = 0.6f,
+                                stiffness = 300f
+                            )
                         ) + androidx.compose.animation.scaleIn(
-                            initialScale = 0.9f,
-                            animationSpec = androidx.compose.animation.core.tween(durationMillis = 220)
+                            initialScale = 0.92f,
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = 0.6f,
+                                stiffness = 300f
+                            )
                         )) togetherWith (androidx.compose.animation.fadeOut(
-                            animationSpec = androidx.compose.animation.core.tween(durationMillis = 180)
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = 0.75f,
+                                stiffness = 400f
+                            )
                         ) + androidx.compose.animation.scaleOut(
-                            targetScale = 0.9f,
-                            animationSpec = androidx.compose.animation.core.tween(durationMillis = 180)
+                            targetScale = 0.92f,
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = 0.75f,
+                                stiffness = 400f
+                            )
                         )) using androidx.compose.animation.SizeTransform(
                             clip = false,
                             sizeAnimationSpec = { _, _ ->
-                                androidx.compose.animation.core.tween(durationMillis = 220)
+                                androidx.compose.animation.core.spring(
+                                    dampingRatio = 0.6f,
+                                    stiffness = 300f
+                                )
                             }
                         )
                     },

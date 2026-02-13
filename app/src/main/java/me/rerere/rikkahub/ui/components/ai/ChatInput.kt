@@ -580,7 +580,7 @@ fun ChatInput(
                                                         },
                                                         type = ModelType.CHAT,
                                                         onlyIcon = true,
-                                                        modifier = Modifier.size(28.dp),
+                                                        modifier = Modifier.size(32.dp),
                                                     )
                                                 }
                                             }
