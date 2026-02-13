@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.calculateBottomPadding
+import androidx.compose.foundation.layout.calculateTopPadding
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -346,7 +349,7 @@ private fun ChatPageContent(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(innerPadding)
+                        .padding(bottom = innerPadding.calculateBottomPadding())
                 ) {
                     ChatList(
                         innerPadding = PaddingValues(top = 8.dp, bottom = 140.dp),
@@ -879,6 +882,7 @@ private fun TopBar(
     val topContainerBorder = BorderStroke(1.dp, MaterialTheme.colorScheme.background)
     val buttonShape = RoundedCornerShape(999.dp)
     val topPillSize = 48.dp
+    val statusBarTopPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
     // State for assistant picker - must be at function level for proper recomposition
     var showAssistantPicker by remember { mutableStateOf(false) }
@@ -888,13 +892,12 @@ private fun TopBar(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .statusBarsPadding()
     ) {
         Box(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .height(120.dp)
+                .height(120.dp + statusBarTopPadding)
                 .background(
                     brush = androidx.compose.ui.graphics.Brush.verticalGradient(
                         colors = listOf(
@@ -950,7 +953,12 @@ private fun TopBar(
                         ) + androidx.compose.animation.scaleOut(
                             targetScale = 0.9f,
                             animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 300f)
-                        ))
+                        )) using androidx.compose.animation.SizeTransform(
+                            clip = false,
+                            sizeAnimationSpec = { _, _ ->
+                                androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 300f)
+                            }
+                        )
                     },
                     label = "topbar_actions"
                 ) { (isEmptyState, isTempChat) ->
@@ -961,16 +969,10 @@ private fun TopBar(
                             effectiveDisplay.newChatHeaderStyle == me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.GREETING
                         )
                     val hideTopRightAvatar = !hasPresetMessages && headerShowsAvatar
-                    val actionCount = when {
-                        isEmptyState && !isTempChat && hideTopRightAvatar -> 1
-                        isEmptyState && !isTempChat -> 2
-                        isEmptyState && isTempChat -> 2
-                        else -> 2
-                    }
-                    val actionContainerPadding = if (actionCount > 1) 2.dp else 0.dp
-
                     Row(
-                        modifier = Modifier.padding(all = actionContainerPadding),
+                        modifier = Modifier
+                            .height(topPillSize)
+                            .padding(horizontal = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         when {

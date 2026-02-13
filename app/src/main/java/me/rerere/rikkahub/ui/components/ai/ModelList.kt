@@ -2,6 +2,7 @@ package me.rerere.rikkahub.ui.components.ai
 
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
@@ -27,6 +28,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import androidx.compose.material.icons.Icons
@@ -164,17 +166,18 @@ fun ModelSelector(
             }
         }
     } else {
-        IconButton(
-            onClick = {
-                popup = true
-            },
+        Box(
+            modifier = modifier
+                .clip(CircleShape)
+                .clickable { popup = true },
+            contentAlignment = Alignment.Center
         ) {
             if (model != null) {
                 val provider = model.findProvider(providers = providers)
                 ModelIcon(
                     model = model,
                     provider = provider,
-                    modifier = Modifier.size(36.dp),
+                    modifier = Modifier.fillMaxSize(),
                     color = Color.Transparent,
                 )
             } else {
