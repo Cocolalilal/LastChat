@@ -349,7 +349,7 @@ private fun ChatPageContent(
                         .padding(innerPadding)
                 ) {
                     ChatList(
-                        innerPadding = PaddingValues(bottom = 140.dp),
+                        innerPadding = PaddingValues(top = 8.dp, bottom = 140.dp),
                         conversation = conversation,
                         state = chatListState,
                         loading = loadingJob != null,
@@ -886,7 +886,9 @@ private fun TopBar(
     val isEmpty = !conversation.messageNodes.any { it.role == me.rerere.ai.core.MessageRole.USER }
 
     Box(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
     ) {
         Box(
             modifier = Modifier
@@ -965,9 +967,10 @@ private fun TopBar(
                         isEmptyState && isTempChat -> 2
                         else -> 2
                     }
+                    val actionContainerPadding = if (actionCount > 1) 2.dp else 0.dp
 
                     Row(
-                        modifier = Modifier.padding(horizontal = if (actionCount > 1) 4.dp else 0.dp),
+                        modifier = Modifier.padding(all = actionContainerPadding),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         when {
