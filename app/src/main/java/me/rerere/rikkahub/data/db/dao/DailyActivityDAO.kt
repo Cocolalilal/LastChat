@@ -54,6 +54,12 @@ interface DailyActivityDAO {
     suspend fun recordActivity(date: String, timestamp: Long = System.currentTimeMillis())
     
     /**
+     * Get activity for the last 7 days (for weekly messages graph)
+     */
+    @Query("SELECT * FROM daily_activity WHERE date >= :startDate ORDER BY date ASC")
+    fun getWeeklyActivityFlow(startDate: String): Flow<List<DailyActivityEntity>>
+    
+    /**
      * Insert a date without incrementing count (for migration)
      */
     @Query("""

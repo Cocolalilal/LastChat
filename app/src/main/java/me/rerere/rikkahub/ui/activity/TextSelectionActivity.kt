@@ -61,30 +61,19 @@ class TextSelectionActivity : ComponentActivity() {
                             val intent = Intent(this@TextSelectionActivity, RouteActivity::class.java).apply {
                                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                                 
-                                // Check if it was a translate action
-                                if (viewModel.lastAction == QuickAction.TRANSLATE) {
-                                    // Navigate to Translator page with pre-filled data
-                                    putExtra("navigate_to", "translator")
-                                    putExtra("translator_input", viewModel.selectedText)
-                                    val state = viewModel.state
-                                    if (state is TextSelectionState.Result) {
-                                        putExtra("translator_output", state.responseText)
-                                    }
-                                } else {
-                                    // For other actions, open chat with context
-                                    putExtra("continue_conversation", true)
-                                    putExtra("selected_text", viewModel.selectedText)
-                                    // Pass the assistant ID from text selection config
-                                    settings.textSelectionConfig.assistantId?.let { 
-                                        putExtra("selection_assistant_id", it.toString())
-                                    }
-                                    val state = viewModel.state
-                                    if (state is TextSelectionState.Result) {
-                                        putExtra("ai_response", state.responseText)
-                                    }
-                                    if (viewModel.lastAction == QuickAction.CUSTOM) {
-                                        putExtra("user_prompt", viewModel.customPrompt)
-                                    }
+                                // All actions open chat with context
+                                putExtra("continue_conversation", true)
+                                putExtra("selected_text", viewModel.selectedText)
+                                // Pass the assistant ID from text selection config
+                                settings.textSelectionConfig.assistantId?.let { 
+                                    putExtra("selection_assistant_id", it.toString())
+                                }
+                                val state = viewModel.state
+                                if (state is TextSelectionState.Result) {
+                                    putExtra("ai_response", state.responseText)
+                                }
+                                if (viewModel.lastAction == QuickAction.CUSTOM) {
+                                    putExtra("user_prompt", viewModel.customPrompt)
                                 }
                             }
                             startActivity(intent)

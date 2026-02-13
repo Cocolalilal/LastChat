@@ -106,12 +106,18 @@ private fun buildAssistantColorScheme(
     val primaryContainer = lerp(primary, baseScheme.surface, containerBlend)
     val secondaryContainer = lerp(secondary, baseScheme.surface, containerBlend)
     val tertiaryContainer = lerp(tertiary, baseScheme.surface, containerBlend)
+    val inversePrimary = if (darkTheme) {
+        lerp(primary, Color.White, 0.55f)
+    } else {
+        lerp(primary, Color.Black, 0.3f)
+    }
 
     return baseScheme.copy(
         primary = primary,
         onPrimary = onColorFor(primary),
         primaryContainer = primaryContainer,
         onPrimaryContainer = onColorFor(primaryContainer),
+        inversePrimary = inversePrimary,
         secondary = secondary,
         onSecondary = onColorFor(secondary),
         secondaryContainer = secondaryContainer,

@@ -634,14 +634,6 @@
   <string name="translation_language_selection_title">选择翻译语言</string>
   <string name="translation_model_not_configured">未配置翻译模型</string>
   <string name="translation_text">译文</string>
-  <string name="translator_page_cancel">取消</string>
-  <string name="translator_page_input_placeholder">请输入要翻译的文本...</string>
-  <string name="translator_page_input_text">输入文本</string>
-  <string name="translator_page_result">翻译结果</string>
-  <string name="translator_page_result_placeholder">翻译结果将显示在这里</string>
-  <string name="translator_page_target_language">目标语言:</string>
-  <string name="translator_page_title">翻译</string>
-  <string name="translator_page_translate">翻译</string>
   <string name="tts">语音</string>
   <string name="unknown_language">未知语言</string>
   <string name="unpin_chat">取消置顶聊天</string>

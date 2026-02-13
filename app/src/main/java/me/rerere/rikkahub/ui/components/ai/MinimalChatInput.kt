@@ -363,11 +363,11 @@ fun MinimalChatInput(
                                 )
                             )
                             
-                            // Action button - bottom-right, 4dp padding ("4dp all around")
+                            // Action button - bottom-right, extra bottom padding for visual alignment
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
-                                    .padding(4.dp)
+                                    .padding(start = 4.dp, end = 6.dp, top = 4.dp, bottom = 6.dp)
                             ) {
                                 val currentAction = when {
                                     state.loading -> "loading"
@@ -391,7 +391,7 @@ fun MinimalChatInput(
                                     },
                                     shape = CircleShape,
                                     color = containerColor,
-                                    modifier = Modifier.size(40.dp)  // Same as plus button
+                                    modifier = Modifier.size(36.dp)
                                 ) {
                                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                                         AnimatedContent(
@@ -404,7 +404,7 @@ fun MinimalChatInput(
                                                     Icon(
                                                         imageVector = Icons.Rounded.Stop,
                                                         contentDescription = null,
-                                                        modifier = Modifier.size(19.dp),
+                                                        modifier = Modifier.size(18.dp),
                                                         tint = MaterialTheme.colorScheme.onErrorContainer
                                                     )
                                                 }
@@ -412,7 +412,7 @@ fun MinimalChatInput(
                                                     Icon(
                                                         imageVector = Icons.Rounded.ArrowUpward,
                                                         contentDescription = null,
-                                                        modifier = Modifier.size(19.dp),
+                                                        modifier = Modifier.size(18.dp),
                                                         tint = MaterialTheme.colorScheme.onPrimary
                                                     )
                                                 }
@@ -732,14 +732,14 @@ private fun MinimalPickerContent(
                     me.rerere.rikkahub.ui.components.ui.ModelIcon(
                         model = currentModel,
                         provider = provider,
-                        modifier = Modifier.size(24.dp),
+                        modifier = Modifier.size(28.dp),
                         color = androidx.compose.ui.graphics.Color.Transparent
                     )
                 } else {
                     Icon(
                         imageVector = Icons.Rounded.ViewModule,
                         contentDescription = null,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(28.dp)
                     )
                 }
             },
@@ -769,8 +769,8 @@ private fun MinimalPickerContent(
             )
         }
         
-        // Search picker - show selected provider if enabled
-        val searchService = settings.searchServices.getOrNull(settings.searchServiceSelected)
+        // Search picker - show selected provider if enabled (use effectiveProviderIndex to track current selection)
+        val searchService = settings.searchServices.getOrNull(effectiveProviderIndex)
         val searchProviderName = if (searchService != null) {
             SearchServiceOptions.TYPES[searchService::class]
         } else null

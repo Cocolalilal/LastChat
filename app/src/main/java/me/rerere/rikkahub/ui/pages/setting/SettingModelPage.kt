@@ -100,10 +100,6 @@ fun SettingModelPage(vm: SettingVM = koinViewModel()) {
             }
 
             item {
-                DefaultTranslationModelSetting(settings = settings, vm = vm)
-            }
-
-            item {
                 DefaultOcrModelSetting(settings = settings, vm = vm)
             }
 

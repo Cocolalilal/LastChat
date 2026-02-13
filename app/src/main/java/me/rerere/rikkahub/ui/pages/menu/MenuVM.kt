@@ -15,7 +15,6 @@ import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
-import kotlin.uuid.Uuid
 
 enum class TimeLabel {
     EARLY_BIRD,      // 5am-11am
@@ -23,52 +22,54 @@ enum class TimeLabel {
     NIGHT_OWL        // 6pm-5am
 }
 
+data class DayMessages(
+    val dayLabel: String, // e.g. "Mon", "Tue"
+    val count: Int
+)
+
 class MenuVM(
     private val conversationRepository: ConversationRepository,
     private val settingsStore: SettingsStore
 ) : ViewModel() {
+
+    private val weekStartDate = LocalDate.now().minusDays(6)
+        .format(DateTimeFormatter.ISO_LOCAL_DATE)
 
     val currentAssistant = settingsStore.settingsFlow
         .map { it.getCurrentAssistant() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val stats: StateFlow<MenuStats> = combine(
-        conversationRepository.getConversationCountFlow(),
-        conversationRepository.getDailyActivityDatesFlow(), // Uses persistent activity table instead of conversation dates
-        conversationRepository.getMostActiveAssistantIdFlow(),
-        conversationRepository.getEpisodeCountFlow(),
+        conversationRepository.getDailyActivityDatesFlow(),
         conversationRepository.getConversationHoursFlow(),
-        settingsStore.settingsFlow
-    ) { flows ->
-        val totalChats = flows[0] as Int
-        val distinctDates = flows[1] as List<String>
-        val mostActiveAssistantId = flows[2] as String?
-        val episodeCount = flows[3] as Int
-        val hours = flows[4] as List<Int>
-        val settings = flows[5] as me.rerere.rikkahub.data.datastore.Settings
-        
+        conversationRepository.getWeeklyActivityFlow(weekStartDate)
+    ) { distinctDates, hours, weeklyEntities ->
         // Daily Chat Streak
         val streak = calculateStreak(distinctDates)
-
-        // Most Active Assistant
-        val mostActiveAssistantName = mostActiveAssistantId?.let { id ->
-            try {
-                settings.assistants.find { it.id == Uuid.parse(id) }?.name
-            } catch (e: Exception) {
-                null
-            }
-        } ?: "None"
 
         // Time Label based on when user chats most
         val timeLabel = calculateTimeLabel(hours)
 
+        // Weekly messages - build a list for the last 7 days
+        val today = LocalDate.now()
+        val formatter = DateTimeFormatter.ISO_LOCAL_DATE
+        val entityMap = weeklyEntities.associate { it.date to it.messageCount }
+        val weeklyMessages = (0..6).map { daysAgo ->
+            val date = today.minusDays((6 - daysAgo).toLong())
+            val dayLabel = date.dayOfWeek.getDisplayName(
+                java.time.format.TextStyle.SHORT,
+                java.util.Locale.getDefault()
+            )
+            DayMessages(
+                dayLabel = dayLabel,
+                count = entityMap[date.format(formatter)] ?: 0
+            )
+        }
+
         MenuStats(
-            totalChats = totalChats,
-            totalMemories = episodeCount,
-            mostActiveAssistantName = mostActiveAssistantName,
-            totalAssistants = settings.assistants.size,
             dailyChatStreak = streak,
-            timeLabel = timeLabel
+            timeLabel = timeLabel,
+            weeklyMessages = weeklyMessages
         )
     }
         .flowOn(Dispatchers.Default)
@@ -82,7 +83,6 @@ class MenuVM(
     private fun calculateTimeLabel(hours: List<Int>): TimeLabel {
         if (hours.isEmpty()) return TimeLabel.DAYTIME_CHATTER
         
-        // Count chats in each time period
         var earlyBird = 0   // 5am-11am (5-10)
         var daytime = 0     // 11am-6pm (11-17)
         var nightOwl = 0    // 6pm-5am (18-23, 0-4)
@@ -91,7 +91,7 @@ class MenuVM(
             when (hour) {
                 in 5..10 -> earlyBird++
                 in 11..17 -> daytime++
-                else -> nightOwl++ // 18-23 and 0-4
+                else -> nightOwl++
             }
         }
         
@@ -115,11 +115,10 @@ class MenuVM(
         val today = LocalDate.now()
         val yesterday = today.minusDays(1)
         
-        // Check if streak is active (chatted today or yesterday)
         val startDate = when {
             dates.contains(today) -> today
             dates.contains(yesterday) -> yesterday
-            else -> return 0 // Streak broken
+            else -> return 0
         }
         
         var streak = 0
@@ -135,10 +134,7 @@ class MenuVM(
 }
 
 data class MenuStats(
-    val totalChats: Int = 0,
-    val totalMemories: Int = 0,
-    val mostActiveAssistantName: String = "None",
-    val totalAssistants: Int = 0,
     val dailyChatStreak: Int = 0,
-    val timeLabel: TimeLabel = TimeLabel.DAYTIME_CHATTER
+    val timeLabel: TimeLabel = TimeLabel.DAYTIME_CHATTER,
+    val weeklyMessages: List<DayMessages> = emptyList()
 )

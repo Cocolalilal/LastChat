@@ -559,9 +559,6 @@ private fun ChatPageContent(
                         onNavigateToImageGen = {
                             navController.navigate(Screen.ImageGen)
                         },
-                        onNavigateToTranslator = {
-                            navController.navigate(Screen.Translator)
-                        },
                         onAvatarClick = {
                             showHeaderAssistantPicker = true
                         }

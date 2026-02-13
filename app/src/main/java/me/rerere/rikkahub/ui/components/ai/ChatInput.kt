@@ -326,7 +326,7 @@ fun ChatInput(
             ) {
                 Row(
                     modifier = Modifier.padding(8.dp), // Increased padding
-                    verticalAlignment = Alignment.Bottom,
+                    verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(2.dp) // Tighter spacing
                 ) {
                     // Plus button with physics-based animations
@@ -351,8 +351,7 @@ fun ChatInput(
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
-                            .align(Alignment.Bottom)
-                            .padding(start = 10.dp, bottom = 2.dp)
+                            .padding(start = 10.dp)
                             .size(36.dp)
                             .graphicsLayer {
                                 scaleX = plusScale
@@ -399,9 +398,7 @@ fun ChatInput(
                     
                     androidx.compose.animation.AnimatedVisibility(
                         visible = showPickers,
-                        modifier = Modifier
-                            .align(Alignment.Bottom)
-                            .padding(bottom = 2.dp),
+                        modifier = Modifier,
                         enter = androidx.compose.animation.fadeIn(
                             animationSpec = androidx.compose.animation.core.tween(150)
                         ) + androidx.compose.animation.expandHorizontally(
@@ -480,13 +477,12 @@ fun ChatInput(
                             color = containerColor,
                             tonalElevation = elevation,
                             modifier = Modifier
-                                .align(Alignment.Bottom)
                                 .weight(1f)
                                 .heightIn(min = 40.dp)
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(start = 12.dp, end = 2.dp)
+                                modifier = Modifier.padding(start = 12.dp, end = 4.dp)
                             ) {
                                 Box(
                                     modifier = Modifier.weight(1f)
@@ -647,10 +643,6 @@ private fun TextInputRow(
     trailingIcon: @Composable (() -> Unit)? = null
 ) {
     val assistant = LocalSettings.current.getCurrentAssistant()
-    val trailingButtonSize = 36.dp
-    val trailingButtonInset = 2.dp
-    val trailingTextGap = 8.dp
-    val trailingTextEndPadding = trailingButtonSize + (trailingButtonInset * 2) + trailingTextGap
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth(),
@@ -801,7 +793,7 @@ private fun TextInputRow(
                             // Draw a gradient overlay on the right side (before trailing icon)
                             val fadeWidthPx = fadeWidth.toPx()
                             // Position gradient to end just before the trailing icon starts
-                            val endX = size.width - trailingTextEndPadding.toPx()
+                            val endX = size.width - 48.dp.toPx() // trailing icon area
                             val startX = endX - fadeWidthPx
                             
                             drawRect(
@@ -856,30 +848,15 @@ private fun TextInputRow(
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                         imeAction = androidx.compose.ui.text.input.ImeAction.None
                     ),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                        start = 16.dp,
-                        end = trailingTextEndPadding,
-                        top = 16.dp,
-                        bottom = 16.dp
-                    ),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 16.dp),
                     colors = TextFieldDefaults.colors().copy(
                         unfocusedIndicatorColor = Color.Transparent,
                         focusedIndicatorColor = Color.Transparent,
                         focusedContainerColor = Color.Transparent,
                         unfocusedContainerColor = Color.Transparent,
                     ),
+                    trailingIcon = trailingIcon
                 )
-
-                if (trailingIcon != null) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(end = trailingButtonInset, bottom = trailingButtonInset),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        trailingIcon()
-                    }
-                }
             }
             if (isFullScreen) {
                 FullScreenEditor(state = state) {
