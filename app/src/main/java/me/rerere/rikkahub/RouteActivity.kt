@@ -8,7 +8,8 @@ import androidx.lifecycle.lifecycleScope
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.SharedTransitionLayout
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -412,23 +413,23 @@ class RouteActivity : ComponentActivity() {
                     navController = navBackStack,
                     enterTransition = { 
                         slideInHorizontally(
-                            animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f)
-                        ) { it / 2 } + fadeIn(animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f))
+                            animationSpec = tween(200, easing = FastOutSlowInEasing)
+                        ) { it / 2 } + fadeIn(animationSpec = tween(150))
                     },
                     exitTransition = { 
                         slideOutHorizontally(
-                            animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f)
-                        ) { -it / 4 } + fadeOut(animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f))
+                            animationSpec = tween(200, easing = FastOutSlowInEasing)
+                        ) { -it / 4 } + fadeOut(animationSpec = tween(100))
                     },
                     popEnterTransition = {
                         slideInHorizontally(
-                            animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f)
-                        ) { -it / 4 } + fadeIn(animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f))
+                            animationSpec = tween(200, easing = FastOutSlowInEasing)
+                        ) { -it / 4 } + fadeIn(animationSpec = tween(150))
                     },
                     popExitTransition = {
                         slideOutHorizontally(
-                            animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f)
-                        ) { it / 2 } + fadeOut(animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f))
+                            animationSpec = tween(200, easing = FastOutSlowInEasing)
+                        ) { it / 2 } + fadeOut(animationSpec = tween(100))
                     }
                 ) {
                     composable<Screen.Chat>(
