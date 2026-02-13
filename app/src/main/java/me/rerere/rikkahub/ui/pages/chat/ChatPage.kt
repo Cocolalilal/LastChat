@@ -939,19 +939,19 @@ private fun TopBar(
                     targetState = isEmpty to isTemporaryChat,
                     transitionSpec = {
                         (androidx.compose.animation.fadeIn(
-                            animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 300f)
+                            animationSpec = androidx.compose.animation.core.tween(durationMillis = 220)
                         ) + androidx.compose.animation.scaleIn(
                             initialScale = 0.9f,
-                            animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 300f)
+                            animationSpec = androidx.compose.animation.core.tween(durationMillis = 220)
                         )) togetherWith (androidx.compose.animation.fadeOut(
-                            animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 300f)
+                            animationSpec = androidx.compose.animation.core.tween(durationMillis = 180)
                         ) + androidx.compose.animation.scaleOut(
                             targetScale = 0.9f,
-                            animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 300f)
+                            animationSpec = androidx.compose.animation.core.tween(durationMillis = 180)
                         )) using androidx.compose.animation.SizeTransform(
                             clip = false,
                             sizeAnimationSpec = { _, _ ->
-                                androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 300f)
+                                androidx.compose.animation.core.tween(durationMillis = 220)
                             }
                         )
                     },
@@ -964,21 +964,28 @@ private fun TopBar(
                             effectiveDisplay.newChatHeaderStyle == me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.GREETING
                         )
                     val hideTopRightAvatar = !hasPresetMessages && headerShowsAvatar
-                    Row(
-                        modifier = Modifier
-                            .height(topPillSize)
-                            .padding(horizontal = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        when {
-                            isEmptyState && !isTempChat -> {
-                                IconButton(
-                                    onClick = { onToggleTemporaryChat() },
-                                    modifier = Modifier.size(topPillSize)
-                                ) {
-                                    Icon(Icons.Rounded.HistoryToggleOff, "Temporary Chat")
-                                }
-                                if (!hideTopRightAvatar) {
+                    when {
+                        isEmptyState && !isTempChat && hideTopRightAvatar -> {
+                            IconButton(
+                                onClick = { onToggleTemporaryChat() },
+                                modifier = Modifier.size(topPillSize)
+                            ) {
+                                Icon(Icons.Rounded.HistoryToggleOff, "Temporary Chat")
+                            }
+                        }
+
+                        else -> Row(
+                            modifier = Modifier.height(topPillSize),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            when {
+                                isEmptyState && !isTempChat -> {
+                                    IconButton(
+                                        onClick = { onToggleTemporaryChat() },
+                                        modifier = Modifier.size(topPillSize)
+                                    ) {
+                                        Icon(Icons.Rounded.HistoryToggleOff, "Temporary Chat")
+                                    }
                                     Box(
                                         modifier = Modifier.size(topPillSize),
                                         contentAlignment = Alignment.Center
@@ -991,40 +998,40 @@ private fun TopBar(
                                         )
                                     }
                                 }
-                            }
 
-                            isEmptyState && isTempChat -> {
-                                IconButton(
-                                    onClick = { onToggleTemporaryChat() },
-                                    modifier = Modifier.size(topPillSize)
-                                ) {
-                                    Icon(Icons.Rounded.History, "Make Normal Chat")
+                                isEmptyState && isTempChat -> {
+                                    IconButton(
+                                        onClick = { onToggleTemporaryChat() },
+                                        modifier = Modifier.size(topPillSize)
+                                    ) {
+                                        Icon(Icons.Rounded.History, "Make Normal Chat")
+                                    }
+                                    Box(
+                                        modifier = Modifier.size(topPillSize),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        me.rerere.rikkahub.ui.components.ui.UIAvatar(
+                                            name = currentAssistant.name.ifBlank { "Character" },
+                                            value = currentAssistant.avatar,
+                                            modifier = Modifier.size(30.dp),
+                                            onClick = { showAssistantPicker = true }
+                                        )
+                                    }
                                 }
-                                Box(
-                                    modifier = Modifier.size(topPillSize),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    me.rerere.rikkahub.ui.components.ui.UIAvatar(
-                                        name = currentAssistant.name.ifBlank { "Character" },
-                                        value = currentAssistant.avatar,
-                                        modifier = Modifier.size(30.dp),
-                                        onClick = { showAssistantPicker = true }
-                                    )
-                                }
-                            }
 
-                            else -> {
-                                IconButton(
-                                    onClick = { onClickMenu() },
-                                    modifier = Modifier.size(topPillSize)
-                                ) {
-                                    Icon(if (previewMode) Icons.Rounded.Close else Icons.Rounded.Search, "Chat Options")
-                                }
-                                IconButton(
-                                    onClick = { onNewChat() },
-                                    modifier = Modifier.size(topPillSize)
-                                ) {
-                                    Icon(Icons.Rounded.Add, "New Message")
+                                else -> {
+                                    IconButton(
+                                        onClick = { onClickMenu() },
+                                        modifier = Modifier.size(topPillSize)
+                                    ) {
+                                        Icon(if (previewMode) Icons.Rounded.Close else Icons.Rounded.Search, "Chat Options")
+                                    }
+                                    IconButton(
+                                        onClick = { onNewChat() },
+                                        modifier = Modifier.size(topPillSize)
+                                    ) {
+                                        Icon(Icons.Rounded.Add, "New Message")
+                                    }
                                 }
                             }
                         }
