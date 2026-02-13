@@ -345,11 +345,10 @@ private fun ChatPageContent(
                 // Removed bottomBar to allow floating input
                 containerColor = Color.Transparent,
                 contentWindowInsets = WindowInsets(0.dp)
-            ) { innerPadding ->
+            ) { _ ->
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(bottom = innerPadding.calculateBottomPadding())
                 ) {
                     ChatList(
                         innerPadding = PaddingValues(top = 8.dp, bottom = 140.dp),
@@ -897,7 +896,8 @@ private fun TopBar(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .height(120.dp + statusBarTopPadding)
+                .statusBarsPadding()
+                .height(120.dp)
                 .background(
                     brush = androidx.compose.ui.graphics.Brush.verticalGradient(
                         colors = listOf(
