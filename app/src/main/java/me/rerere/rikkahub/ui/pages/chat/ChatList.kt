@@ -637,6 +637,7 @@ private fun SharedTransitionScope.ChatListPreview(
     initialSearchQuery: String? = null,
 ) {
     var searchQuery by remember { mutableStateOf(initialSearchQuery ?: "") }
+    val previewTopPadding = 20.dp
 
     // Filter messages
     val filteredMessages = remember(conversation.messageNodes, searchQuery) {
@@ -652,6 +653,7 @@ private fun SharedTransitionScope.ChatListPreview(
     Column(
         modifier = Modifier
             .padding(innerPadding)
+            .padding(top = previewTopPadding)
             .fillMaxSize(),
     ) {
         // 搜索框

@@ -279,9 +279,7 @@ private fun ChatPageContent(
     var showRegenerateConfirmDialog by rememberSaveable { mutableStateOf(false) }
     var pendingRegenerateMessage by rememberSaveable { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
     val currentAssistant = setting.getCurrentAssistant()
-    val topMessagePadding = remember(conversation.messageNodes.size) {
-        if (conversation.messageNodes.size <= 2) 72.dp else 24.dp
-    }
+    val topMessagePadding = 72.dp
     
     // Auto-scroll to first matching message when opened from search
     LaunchedEffect(initialSearchQuery, conversation.messageNodes) {
@@ -872,7 +870,8 @@ private data class TopBarActionState(
     val isEmpty: Boolean,
     val isTemporaryChat: Boolean,
     val shouldUseCompactTemporaryToggle: Boolean,
-    val assistantId: kotlin.uuid.Uuid
+    val assistantId: kotlin.uuid.Uuid,
+    val conversationId: kotlin.uuid.Uuid
 )
 
 @Composable
@@ -900,7 +899,9 @@ private fun TopBar(
     val isEmpty = !conversation.messageNodes.any { it.role == me.rerere.ai.core.MessageRole.USER }
     var animateTopPillIn by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(conversation.id) {
+        animateTopPillIn = false
+        delay(16)
         animateTopPillIn = true
     }
 
@@ -982,7 +983,8 @@ private fun TopBar(
                                 )
                             !hasPresetMessages && headerShowsAvatar
                         },
-                        assistantId = currentAssistant.id
+                        assistantId = currentAssistant.id,
+                        conversationId = conversation.id
                     ),
                     transitionSpec = {
                         (androidx.compose.animation.fadeIn(

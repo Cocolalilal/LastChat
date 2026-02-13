@@ -5,10 +5,9 @@
 **App Name:** LastChat (Repo: RikkaHub)
 
 **The "Fidget Toy" Philosophy:**
-LastChat is not just a tool; it is designed to be a "fidget toy".
--   **Feel:** Interactions must be playful, physics-based, and deeply satisfying.
+LastChat is designed to be a "fidget toy".
+-   **Feel:** Interactions must be playful and deeply satisfying.
 -   **Tactile Feedback:** High-quality haptics are non-negotiable. Every tap, toggle, and drag must have appropriate feedback.
--   **Motion:** **Strictly NO Linear (Tween) animations.** All motion must use physics-based interpolators (springs) to convey momentum and weight.
 
 **Workflow:**
 -   **Iterative Polish:** We prefer iterative "glow-ups" of specific components over massive, risky refactors.

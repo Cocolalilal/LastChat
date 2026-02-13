@@ -404,7 +404,7 @@ fun MinimalChatInput(
                                                     Icon(
                                                         imageVector = Icons.Rounded.Stop,
                                                         contentDescription = null,
-                                                        modifier = Modifier.size(22.dp),
+                                                        modifier = Modifier.size(19.dp),
                                                         tint = MaterialTheme.colorScheme.onErrorContainer
                                                     )
                                                 }
@@ -412,7 +412,7 @@ fun MinimalChatInput(
                                                     Icon(
                                                         imageVector = Icons.Rounded.ArrowUpward,
                                                         contentDescription = null,
-                                                        modifier = Modifier.size(22.dp),
+                                                        modifier = Modifier.size(19.dp),
                                                         tint = MaterialTheme.colorScheme.onPrimary
                                                     )
                                                 }
@@ -423,7 +423,7 @@ fun MinimalChatInput(
                                                         onSelect = { onUpdateChatModel(it) },
                                                         type = me.rerere.ai.provider.ModelType.CHAT,
                                                         onlyIcon = true,
-                                                        modifier = Modifier.size(30.dp),
+                                                        modifier = Modifier.size(34.dp),
                                                     )
                                                 }
                                             }
