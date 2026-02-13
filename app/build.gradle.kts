@@ -22,7 +22,7 @@ android {
 
     defaultConfig {
         applicationId = "lastchat.rikkafork.cocolal"
-        minSdk = 31
+        minSdk = 28
         targetSdk = 36
         versionCode = 27
         versionName = "1.3.6"
