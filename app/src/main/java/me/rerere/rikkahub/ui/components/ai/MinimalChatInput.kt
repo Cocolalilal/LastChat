@@ -423,7 +423,7 @@ fun MinimalChatInput(
                                                         onSelect = { onUpdateChatModel(it) },
                                                         type = me.rerere.ai.provider.ModelType.CHAT,
                                                         onlyIcon = true,
-                                                        modifier = Modifier.size(24.dp),
+                                                        modifier = Modifier.size(30.dp),
                                                     )
                                                 }
                                             }
