@@ -342,11 +342,10 @@ private fun ChatPageContent(
                 // Removed bottomBar to allow floating input
                 containerColor = Color.Transparent,
                 contentWindowInsets = WindowInsets(0.dp)
-            ) { innerPadding ->
+            ) { _ ->
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(innerPadding)
                 ) {
                     ChatList(
                         innerPadding = PaddingValues(top = 8.dp, bottom = 140.dp),
@@ -888,12 +887,12 @@ private fun TopBar(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .statusBarsPadding()
     ) {
         Box(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
+                .statusBarsPadding()
                 .height(120.dp)
                 .background(
                     brush = androidx.compose.ui.graphics.Brush.verticalGradient(
@@ -950,7 +949,12 @@ private fun TopBar(
                         ) + androidx.compose.animation.scaleOut(
                             targetScale = 0.9f,
                             animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 300f)
-                        ))
+                        )) using androidx.compose.animation.SizeTransform(
+                            clip = false,
+                            sizeAnimationSpec = { _, _ ->
+                                androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 300f)
+                            }
+                        )
                     },
                     label = "topbar_actions"
                 ) { (isEmptyState, isTempChat) ->
@@ -961,16 +965,10 @@ private fun TopBar(
                             effectiveDisplay.newChatHeaderStyle == me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.GREETING
                         )
                     val hideTopRightAvatar = !hasPresetMessages && headerShowsAvatar
-                    val actionCount = when {
-                        isEmptyState && !isTempChat && hideTopRightAvatar -> 1
-                        isEmptyState && !isTempChat -> 2
-                        isEmptyState && isTempChat -> 2
-                        else -> 2
-                    }
-                    val actionContainerPadding = if (actionCount > 1) 2.dp else 0.dp
-
                     Row(
-                        modifier = Modifier.padding(all = actionContainerPadding),
+                        modifier = Modifier
+                            .height(topPillSize)
+                            .padding(horizontal = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         when {
