@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateTopPadding
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -49,7 +51,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.isImeVisible
@@ -277,6 +278,9 @@ private fun ChatPageContent(
     var showRegenerateConfirmDialog by rememberSaveable { mutableStateOf(false) }
     var pendingRegenerateMessage by rememberSaveable { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
     val currentAssistant = setting.getCurrentAssistant()
+    val topMessagePadding = remember(conversation.messageNodes.size) {
+        if (conversation.messageNodes.size <= 2) 72.dp else 8.dp
+    }
     
     // Auto-scroll to first matching message when opened from search
     LaunchedEffect(initialSearchQuery, conversation.messageNodes) {
@@ -348,7 +352,7 @@ private fun ChatPageContent(
                         .fillMaxSize()
                 ) {
                     ChatList(
-                        innerPadding = PaddingValues(top = 8.dp, bottom = 140.dp),
+                        innerPadding = PaddingValues(top = topMessagePadding, bottom = 140.dp),
                         conversation = conversation,
                         state = chatListState,
                         loading = loadingJob != null,
@@ -860,6 +864,14 @@ private fun ChatPageContent(
         }
     }
 }
+
+private data class TopBarActionState(
+    val isEmpty: Boolean,
+    val isTemporaryChat: Boolean,
+    val shouldUseCompactTemporaryToggle: Boolean,
+    val assistantId: kotlin.uuid.Uuid
+)
+
 @Composable
 private fun TopBar(
     settings: Settings,
@@ -878,6 +890,7 @@ private fun TopBar(
     val topContainerBorder = BorderStroke(1.dp, MaterialTheme.colorScheme.background)
     val buttonShape = RoundedCornerShape(999.dp)
     val topPillSize = 48.dp
+    val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     // State for assistant picker - must be at function level for proper recomposition
     var showAssistantPicker by remember { mutableStateOf(false) }
     val currentAssistant = settings.getCurrentAssistant()
@@ -891,8 +904,7 @@ private fun TopBar(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .statusBarsPadding()
-                .height(120.dp)
+                .height(120.dp + statusBarHeight)
                 .background(
                     brush = androidx.compose.ui.graphics.Brush.verticalGradient(
                         colors = listOf(
@@ -936,7 +948,20 @@ private fun TopBar(
                 border = topContainerBorder
             ) {
                 androidx.compose.animation.AnimatedContent(
-                    targetState = isEmpty to isTemporaryChat,
+                    targetState = TopBarActionState(
+                        isEmpty = isEmpty,
+                        isTemporaryChat = isTemporaryChat,
+                        shouldUseCompactTemporaryToggle = run {
+                            val hasPresetMessages = currentAssistant.presetMessages.isNotEmpty()
+                            val effectiveDisplay = settings.getEffectiveDisplaySetting(currentAssistant)
+                            val headerShowsAvatar = effectiveDisplay.newChatShowAvatar && (
+                                effectiveDisplay.newChatHeaderStyle == me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.BIG_ICON ||
+                                    effectiveDisplay.newChatHeaderStyle == me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.GREETING
+                                )
+                            !hasPresetMessages && headerShowsAvatar
+                        },
+                        assistantId = currentAssistant.id
+                    ),
                     transitionSpec = {
                         (androidx.compose.animation.fadeIn(
                             animationSpec = androidx.compose.animation.core.tween(durationMillis = 220)
@@ -956,14 +981,10 @@ private fun TopBar(
                         )
                     },
                     label = "topbar_actions"
-                ) { (isEmptyState, isTempChat) ->
-                    val hasPresetMessages = currentAssistant.presetMessages.isNotEmpty()
-                    val effectiveDisplay = settings.getEffectiveDisplaySetting(currentAssistant)
-                    val headerShowsAvatar = effectiveDisplay.newChatShowAvatar && (
-                        effectiveDisplay.newChatHeaderStyle == me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.BIG_ICON ||
-                            effectiveDisplay.newChatHeaderStyle == me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.GREETING
-                        )
-                    val hideTopRightAvatar = !hasPresetMessages && headerShowsAvatar
+                ) { actionState ->
+                    val isEmptyState = actionState.isEmpty
+                    val isTempChat = actionState.isTemporaryChat
+                    val hideTopRightAvatar = actionState.shouldUseCompactTemporaryToggle
                     when {
                         isEmptyState && !isTempChat && hideTopRightAvatar -> {
                             IconButton(
