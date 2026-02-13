@@ -34,8 +34,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.adaptive.currentWindowDpSize
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
@@ -62,8 +60,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.AddBox
-import androidx.compose.material.icons.rounded.AddCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Search
@@ -882,6 +878,7 @@ private fun TopBar(
     val topContainerColor = MaterialTheme.colorScheme.surfaceContainer
     val topContainerBorder = BorderStroke(1.dp, MaterialTheme.colorScheme.background)
     val buttonShape = RoundedCornerShape(999.dp)
+    val topPillSize = 48.dp
 
     // State for assistant picker - must be at function level for proper recomposition
     var showAssistantPicker by remember { mutableStateOf(false) }
@@ -923,7 +920,7 @@ private fun TopBar(
                     border = topContainerBorder
                 ) {
                     Box(
-                        modifier = Modifier.size(52.dp),
+                        modifier = Modifier.size(topPillSize),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(Icons.Rounded.Menu, "Messages")
@@ -975,12 +972,15 @@ private fun TopBar(
                     ) {
                         when {
                             isEmptyState && !isTempChat -> {
-                                IconButton(onClick = { onToggleTemporaryChat() }) {
+                                IconButton(
+                                    onClick = { onToggleTemporaryChat() },
+                                    modifier = Modifier.size(topPillSize)
+                                ) {
                                     Icon(Icons.Rounded.HistoryToggleOff, "Temporary Chat")
                                 }
                                 if (!hideTopRightAvatar) {
                                     Box(
-                                        modifier = Modifier.size(48.dp),
+                                        modifier = Modifier.size(topPillSize),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         me.rerere.rikkahub.ui.components.ui.UIAvatar(
@@ -994,11 +994,14 @@ private fun TopBar(
                             }
 
                             isEmptyState && isTempChat -> {
-                                IconButton(onClick = { onToggleTemporaryChat() }) {
+                                IconButton(
+                                    onClick = { onToggleTemporaryChat() },
+                                    modifier = Modifier.size(topPillSize)
+                                ) {
                                     Icon(Icons.Rounded.History, "Make Normal Chat")
                                 }
                                 Box(
-                                    modifier = Modifier.size(48.dp),
+                                    modifier = Modifier.size(topPillSize),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     me.rerere.rikkahub.ui.components.ui.UIAvatar(
@@ -1011,11 +1014,17 @@ private fun TopBar(
                             }
 
                             else -> {
-                                IconButton(onClick = { onClickMenu() }) {
+                                IconButton(
+                                    onClick = { onClickMenu() },
+                                    modifier = Modifier.size(topPillSize)
+                                ) {
                                     Icon(if (previewMode) Icons.Rounded.Close else Icons.Rounded.Search, "Chat Options")
                                 }
-                                IconButton(onClick = { onNewChat() }) {
-                                    Icon(Icons.Rounded.AddCircle, "New Message")
+                                IconButton(
+                                    onClick = { onNewChat() },
+                                    modifier = Modifier.size(topPillSize)
+                                ) {
+                                    Icon(Icons.Rounded.Add, "New Message")
                                 }
                             }
                         }
