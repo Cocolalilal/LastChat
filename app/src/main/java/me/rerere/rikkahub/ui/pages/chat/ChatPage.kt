@@ -950,7 +950,12 @@ private fun TopBar(
                         ) + androidx.compose.animation.scaleOut(
                             targetScale = 0.9f,
                             animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 300f)
-                        ))
+                        )) using androidx.compose.animation.SizeTransform(
+                            clip = false,
+                            sizeAnimationSpec = { _, _ ->
+                                androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 300f)
+                            }
+                        )
                     },
                     label = "topbar_actions"
                 ) { (isEmptyState, isTempChat) ->
@@ -961,16 +966,10 @@ private fun TopBar(
                             effectiveDisplay.newChatHeaderStyle == me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.GREETING
                         )
                     val hideTopRightAvatar = !hasPresetMessages && headerShowsAvatar
-                    val actionCount = when {
-                        isEmptyState && !isTempChat && hideTopRightAvatar -> 1
-                        isEmptyState && !isTempChat -> 2
-                        isEmptyState && isTempChat -> 2
-                        else -> 2
-                    }
-                    val actionContainerPadding = if (actionCount > 1) 2.dp else 0.dp
-
                     Row(
-                        modifier = Modifier.padding(all = actionContainerPadding),
+                        modifier = Modifier
+                            .height(topPillSize)
+                            .padding(horizontal = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         when {
