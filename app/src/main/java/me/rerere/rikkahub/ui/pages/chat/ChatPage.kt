@@ -907,6 +907,7 @@ private fun TopBar(
 
         Row(
             modifier = Modifier
+                .statusBarsPadding()
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
