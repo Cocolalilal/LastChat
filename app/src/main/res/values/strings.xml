@@ -684,14 +684,6 @@
     <string name="translation_language_selection_title">Select Language</string>
     <string name="translation_model_not_configured">Translation Model Not Configured</string>
     <string name="translation_text">Translation</string>
-    <string name="translator_page_cancel">Cancel</string>
-    <string name="translator_page_input_placeholder">Enter text to translate...</string>
-    <string name="translator_page_input_text">Input Text</string>
-    <string name="translator_page_result">Result</string>
-    <string name="translator_page_result_placeholder">Translation result will appear here</string>
-    <string name="translator_page_target_language">Target Language:</string>
-    <string name="translator_page_title">Translator</string>
-    <string name="translator_page_translate">Translate</string>
     <string name="tts">TTS</string>
     <string name="unknown_language">Unknown Language</string>
     <string name="undo">Undo</string>
@@ -881,8 +873,8 @@
     <string name="setting_android_integration">Android Integration</string>
     <string name="setting_android_integration_desc">Text selection popup settings</string>
     <string name="text_selection_preview">Preview</string>
-    <string name="text_selection_assistant">Assistant</string>
-    <string name="text_selection_use_default">Use default assistant</string>
+    <string name="text_selection_assistant">Character</string>
+    <string name="text_selection_use_default">Use default character</string>
     <string name="text_selection_translate_language">Translate to</string>
     <string name="text_selection_edit_action">Edit Action</string>
     <string name="text_selection_add_action">Add Action</string>

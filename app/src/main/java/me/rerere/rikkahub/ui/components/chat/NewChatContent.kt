@@ -1,8 +1,5 @@
 package me.rerere.rikkahub.ui.components.chat
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -29,10 +26,8 @@ import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.LocalFireDepartment
-import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.NightsStay
 import androidx.compose.material.icons.rounded.SmartToy
-import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -56,7 +51,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.draw.clipToBounds
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.NewChatContentStyle
 import me.rerere.rikkahub.data.datastore.NewChatHeaderStyle
@@ -95,7 +89,6 @@ fun NewChatContent(
     hasBackgroundImage: Boolean = false,
     onTemplateClick: (String) -> Unit,
     onNavigateToImageGen: (() -> Unit)? = null,
-    onNavigateToTranslator: (() -> Unit)? = null,
     onAvatarClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -206,18 +199,17 @@ fun NewChatContent(
             }
             NewChatContentStyle.ACTIONS -> {
                 // ChatGPT-style action pills with colored icons
-                var showMore by remember { mutableStateOf(false) }
-                
                 // Material You derived colors
                 val primaryColor = MaterialTheme.colorScheme.primary
-                val tertiaryColor = MaterialTheme.colorScheme.tertiary
                 val secondaryColor = MaterialTheme.colorScheme.secondary
+                val writeColor = MaterialTheme.colorScheme.inversePrimary
+                val brainstormColor = MaterialTheme.colorScheme.tertiary
                 
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // First row: Create image, Translate
+                    // First row: Create image, Brainstorm
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -231,18 +223,16 @@ fun NewChatContent(
                                 onClick = onNavigateToImageGen
                             )
                         }
-                        if (onNavigateToTranslator != null) {
-                            ActionPill(
-                                icon = Icons.Rounded.Translate,
-                                text = stringResource(R.string.new_chat_action_translate),
-                                iconColor = tertiaryColor,
-                                hasBackgroundImage = hasBackgroundImage,
-                                onClick = onNavigateToTranslator
-                            )
-                        }
+                        ActionPill(
+                            icon = Icons.Rounded.Lightbulb,
+                            text = stringResource(R.string.new_chat_template_brainstorm),
+                            iconColor = brainstormColor,
+                            hasBackgroundImage = hasBackgroundImage,
+                            onClick = { onTemplateClick(brainstormPrompt) }
+                        )
                     }
                     
-                    // Second row: Code, More
+                    // Second row: Code, Write
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -255,68 +245,12 @@ fun NewChatContent(
                             onClick = { onTemplateClick(codePrompt) }
                         )
                         ActionPill(
-                            icon = Icons.Rounded.MoreHoriz,
-                            text = stringResource(R.string.new_chat_action_more),
-                            iconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            icon = Icons.Rounded.Edit,
+                            text = stringResource(R.string.new_chat_template_write),
+                            iconColor = writeColor,
                             hasBackgroundImage = hasBackgroundImage,
-                            onClick = { showMore = !showMore }
+                            onClick = { onTemplateClick(writePrompt) }
                         )
-                    }
-                    
-                    // Expanded templates
-                    AnimatedVisibility(
-                        visible = showMore,
-                        enter = expandVertically(
-                            animationSpec = androidx.compose.animation.core.spring(
-                                dampingRatio = 0.8f,
-                                stiffness = 300f
-                            )
-                        ),
-                        exit = shrinkVertically(
-                            animationSpec = androidx.compose.animation.core.spring(
-                                dampingRatio = 0.8f,
-                                stiffness = 300f
-                            )
-                        ),
-                        modifier = Modifier.clipToBounds()
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.padding(top = 4.dp)
-                        ) {
-                            FlowRow(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                ActionPill(
-                                    icon = Icons.Rounded.Edit,
-                                    text = stringResource(R.string.new_chat_template_write),
-                                    iconColor = Color(0xFF9C7CF4), // Purple
-                                    hasBackgroundImage = hasBackgroundImage,
-                                    onClick = { onTemplateClick(writePrompt) }
-                                )
-                                ActionPill(
-                                    icon = Icons.Rounded.Lightbulb,
-                                    text = stringResource(R.string.new_chat_template_brainstorm),
-                                    iconColor = Color(0xFFFFC107), // Amber
-                                    hasBackgroundImage = hasBackgroundImage,
-                                    onClick = { onTemplateClick(brainstormPrompt) }
-                                )
-                            }
-                            FlowRow(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                ActionPill(
-                                    icon = Icons.AutoMirrored.Rounded.MenuBook,
-                                    text = stringResource(R.string.new_chat_template_learn),
-                                    iconColor = Color(0xFF4CAF50), // Green
-                                    hasBackgroundImage = hasBackgroundImage,
-                                    onClick = { onTemplateClick(learnPrompt) }
-                                )
-                            }
-                        }
                     }
                 }
             }

@@ -22,10 +22,10 @@ android {
 
     defaultConfig {
         applicationId = "lastchat.rikkafork.cocolal"
-        minSdk = 31
+        minSdk = 28
         targetSdk = 36
-        versionCode = 26
-        versionName = "1.3.5"
+        versionCode = 27
+        versionName = "1.3.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

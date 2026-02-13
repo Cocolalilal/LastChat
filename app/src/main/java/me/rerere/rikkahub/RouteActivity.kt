@@ -85,7 +85,6 @@ import me.rerere.rikkahub.ui.pages.setting.SettingModesPage
 import me.rerere.rikkahub.ui.pages.setting.SettingLorebooksPage
 import me.rerere.rikkahub.ui.pages.setting.SettingLorebookDetailPage
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerPage
-import me.rerere.rikkahub.ui.pages.translator.TranslatorPage
 import me.rerere.rikkahub.ui.pages.webview.WebViewPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAndroidIntegrationPage
 import me.rerere.rikkahub.ui.pages.setting.SettingUICustomizationPage
@@ -108,8 +107,6 @@ data class TextSelectionData(
     val selectedText: String?,
     val aiResponse: String?,
     val userPrompt: String?,
-    val translatorInput: String?,
-    val translatorOutput: String?,
     val selectionAssistantId: String?
 )
 
@@ -136,14 +133,12 @@ class RouteActivity : ComponentActivity() {
         // Check for text selection intent
         val navigateTo = intent?.getStringExtra("navigate_to")
         val continueConversation = intent?.getBooleanExtra("continue_conversation", false) ?: false
-        if (navigateTo == "translator" || continueConversation) {
+        if (continueConversation) {
             pendingTextSelection = TextSelectionData(
                 navigateTo = navigateTo,
                 selectedText = intent?.getStringExtra("selected_text"),
                 aiResponse = intent?.getStringExtra("ai_response"),
                 userPrompt = intent?.getStringExtra("user_prompt"),
-                translatorInput = intent?.getStringExtra("translator_input"),
-                translatorOutput = intent?.getStringExtra("translator_output"),
                 selectionAssistantId = intent?.getStringExtra("selection_assistant_id")
             )
         }
@@ -254,60 +249,53 @@ class RouteActivity : ComponentActivity() {
             if (data != null) {
                 pendingTextSelection = null
                 try {
-                    when (data.navigateTo) {
-                        "translator" -> {
-                            // Navigate to Translator page
-                            navBackStack.navigate(Screen.Translator)
+                    // Create a new conversation with pre-existing messages
+                    val conversationId = Uuid.random()
+                    
+                    // Create user message with selected text
+                    val userContent = buildString {
+                        if (!data.selectedText.isNullOrBlank()) {
+                            append(data.selectedText)
                         }
-                        else -> {
-                            // Create a new conversation with pre-existing messages
-                            val conversationId = Uuid.random()
-                            
-                            // Create user message with selected text
-                            val userContent = buildString {
-                                if (!data.selectedText.isNullOrBlank()) {
-                                    append(data.selectedText)
-                                }
-                                if (!data.userPrompt.isNullOrBlank()) {
-                                    append("\n\n")
-                                    append(data.userPrompt)
-                                }
-                            }
-                            
-                            val messages = mutableListOf<me.rerere.rikkahub.data.model.MessageNode>()
-                            
-                            // Add user message if there's content
-                            if (userContent.isNotBlank()) {
-                                val userMessage = me.rerere.ai.ui.UIMessage.user(userContent.trim())
-                                messages.add(me.rerere.rikkahub.data.model.MessageNode.of(userMessage))
-                            }
-                            
-                            // Add AI response message if available
-                            if (!data.aiResponse.isNullOrBlank()) {
-                                val assistantMessage = me.rerere.ai.ui.UIMessage.assistant(data.aiResponse)
-                                messages.add(me.rerere.rikkahub.data.model.MessageNode.of(assistantMessage))
-                            }
-                            
-                            if (messages.isNotEmpty()) {
-                                // Use the assistant from text selection config if available
-                                val assistantId = data.selectionAssistantId?.takeIf { it.isNotBlank() }?.let { 
-                                    try { Uuid.parse(it) } catch (e: Exception) { null }
-                                } ?: settings.assistantId
-                                
-                                // Create the conversation with messages
-                                val conversation = me.rerere.rikkahub.data.model.Conversation.ofId(
-                                    id = conversationId,
-                                    assistantId = assistantId,
-                                    messages = messages
-                                )
-                                
-                                // Save to database
-                                chatService.saveConversation(conversationId, conversation)
-                                
-                                // Navigate to the conversation
-                                navBackStack.navigate(Screen.Chat(id = conversationId.toString()))
-                            }
+                        if (!data.userPrompt.isNullOrBlank()) {
+                            append("\n\n")
+                            append(data.userPrompt)
                         }
+                    }
+                    
+                    val messages = mutableListOf<me.rerere.rikkahub.data.model.MessageNode>()
+                    
+                    // Add user message if there's content
+                    if (userContent.isNotBlank()) {
+                        val userMessage = me.rerere.ai.ui.UIMessage.user(userContent.trim())
+                        messages.add(me.rerere.rikkahub.data.model.MessageNode.of(userMessage))
+                    }
+                    
+                    // Add AI response message if available
+                    val aiResponse = data.aiResponse
+                    if (!aiResponse.isNullOrBlank()) {
+                        val assistantMessage = me.rerere.ai.ui.UIMessage.assistant(aiResponse)
+                        messages.add(me.rerere.rikkahub.data.model.MessageNode.of(assistantMessage))
+                    }
+                    
+                    if (messages.isNotEmpty()) {
+                        // Use the assistant from text selection config if available
+                        val assistantId = data.selectionAssistantId?.takeIf { it.isNotBlank() }?.let { 
+                            try { Uuid.parse(it) } catch (e: Exception) { null }
+                        } ?: settings.assistantId
+                        
+                        // Create the conversation with messages
+                        val conversation = me.rerere.rikkahub.data.model.Conversation.ofId(
+                            id = conversationId,
+                            assistantId = assistantId,
+                            messages = messages
+                        )
+                        
+                        // Save to database
+                        chatService.saveConversation(conversationId, conversation)
+                        
+                        // Navigate to the conversation
+                        navBackStack.navigate(Screen.Chat(id = conversationId.toString()))
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -479,10 +467,6 @@ class RouteActivity : ComponentActivity() {
                         MenuPage()
                     }
 
-                    composable<Screen.Translator> {
-                        TranslatorPage()
-                    }
-
                     composable<Screen.Setting> {
                         SettingPage()
                     }
@@ -602,9 +586,6 @@ sealed interface Screen {
 
     @Serializable
     data object Menu : Screen
-
-    @Serializable
-    data object Translator : Screen
 
     @Serializable
     data object Setting : Screen

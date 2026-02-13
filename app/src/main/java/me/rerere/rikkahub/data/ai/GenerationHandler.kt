@@ -1025,9 +1025,11 @@ class GenerationHandler(
         settings: Settings,
         sourceText: String,
         targetLanguage: Locale,
+        modelIdOverride: Uuid? = null,
         onStreamUpdate: ((String) -> Unit)? = null
     ): Flow<String> = flow {
-        val model = settings.providers.findModelById(settings.translateModeId)
+        val modelId = modelIdOverride ?: settings.translateModeId
+        val model = settings.providers.findModelById(modelId)
             ?: error("Translation model not found")
         val provider = model.findProvider(settings.providers)
             ?: error("Translation provider not found")

@@ -4,6 +4,7 @@ import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -16,26 +17,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AutoAwesome
-import androidx.compose.material.icons.rounded.ChatBubble
-import androidx.compose.material.icons.rounded.DateRange
+import androidx.compose.material.icons.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Image
-import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.rounded.Translate
-import androidx.compose.material.icons.rounded.PushPin
-import androidx.compose.material.icons.rounded.Calculate
-import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material.icons.rounded.NightsStay
-import androidx.compose.material.icons.automirrored.rounded.Chat
+import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -49,6 +42,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -98,23 +94,15 @@ fun MenuPage() {
             item {
                 StatsSection(stats)
             }
-
-            item {
-                ToolsSection()
-            }
         }
     }
 }
 
 @Composable
 private fun StatsSection(stats: MenuStats) {
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(
-            text = "Overview",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold
-        )
-
+    val navController = LocalNavController.current
+    
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         // Daily Chat Streak (Full Width)
         StatCard(
             title = "Daily Chat Streak",
@@ -127,83 +115,44 @@ private fun StatsSection(stats: MenuStats) {
                 .height(IntrinsicSize.Min)
         )
 
-        // Total Chats & Time Label (Row)
+        // Chat Style & Image Gen (Row) - Chat Style moved to left, Image Gen on right
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(IntrinsicSize.Min),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            StatCard(
-                title = "Total chats",
-                value = stats.totalChats.shortenNumber(decimals = 0),
-                icon = Icons.Rounded.ChatBubble,
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-            )
-            
-            // Time Label with appropriate icon
+            // Chat Style widget (moved from right to left, new color)
             val (timeLabelText, timeLabelIcon) = when (stats.timeLabel) {
-                TimeLabel.EARLY_BIRD -> stringResource(me.rerere.rikkahub.R.string.time_label_early_bird) to Icons.Rounded.WbSunny
-                TimeLabel.DAYTIME_CHATTER -> stringResource(me.rerere.rikkahub.R.string.time_label_daytime_chatter) to Icons.Rounded.WbSunny
-                TimeLabel.NIGHT_OWL -> stringResource(me.rerere.rikkahub.R.string.time_label_night_owl) to Icons.Rounded.NightsStay
+                TimeLabel.EARLY_BIRD -> stringResource(R.string.time_label_early_bird) to Icons.Rounded.WbSunny
+                TimeLabel.DAYTIME_CHATTER -> stringResource(R.string.time_label_daytime_chatter) to Icons.Rounded.WbSunny
+                TimeLabel.NIGHT_OWL -> stringResource(R.string.time_label_night_owl) to Icons.Rounded.NightsStay
             }
             StatCard(
                 title = "Chat Style",
                 value = timeLabelText,
                 icon = timeLabelIcon,
-                containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-                contentColor = MaterialTheme.colorScheme.onSurface,
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+            )
+            
+            // Image Gen widget (navigates to image generation page)
+            ImageGenCard(
+                onClick = { navController.navigate(Screen.ImageGen) },
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
             )
         }
 
-        Card(
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                contentColor = MaterialTheme.colorScheme.onTertiaryContainer
-            ),
-            shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
+        // Weekly Messages Graph (replaces Most Active Character)
+        WeeklyMessagesCard(
+            weeklyMessages = stats.weeklyMessages,
             modifier = Modifier.fillMaxWidth()
-        ) {
-            Row(
-                modifier = Modifier.padding(24.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Surface(
-                    color = MaterialTheme.colorScheme.tertiary,
-                    contentColor = MaterialTheme.colorScheme.onTertiary,
-                    shape = me.rerere.rikkahub.ui.theme.AppShapes.CardSmall,
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Rounded.Person, null)
-                    }
-                }
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = "Most Active Character",
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                    Text(
-                        text = stats.mostActiveAssistantName.ifBlank { "None" },
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "${stats.totalAssistants} characters available",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f)
-                    )
-                }
-            }
-        }
+        )
     }
 }
 
@@ -257,40 +206,7 @@ private fun StatCard(
 }
 
 @Composable
-private fun ToolsSection() {
-    val navController = LocalNavController.current
-
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(
-            text = "Tools",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            ToolButton(
-                icon = Icons.Rounded.Translate,
-                label = stringResource(R.string.menu_page_ai_translator),
-                onClick = { navController.navigate(Screen.Translator) },
-                modifier = Modifier.weight(1f)
-            )
-            ToolButton(
-                icon = Icons.Rounded.Image, // Or Palette/Brush
-                label = stringResource(R.string.menu_page_image_generation),
-                onClick = { navController.navigate(Screen.ImageGen) },
-                modifier = Modifier.weight(1f)
-            )
-        }
-    }
-}
-
-@Composable
-private fun ToolButton(
-    icon: ImageVector,
-    label: String,
+private fun ImageGenCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -301,55 +217,192 @@ private fun ToolButton(
     val scale by animateFloatAsState(
         targetValue = if (isPressed) 0.95f else 1f,
         animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
-        label = "tool_scale"
+        label = "imagegen_scale"
     )
     
-    Surface(
+    Card(
         onClick = {
             haptics.perform(HapticPattern.Pop)
             onClick()
         },
-        shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
-        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
         interactionSource = interactionSource,
-        modifier = modifier
-            .height(100.dp)
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
+        modifier = modifier.graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+        }
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier
+                .padding(20.dp)
+                .fillMaxHeight(),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            Surface(
-                color = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.Chip,
-                modifier = Modifier.size(32.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(contentAlignment = Alignment.Center) {
+                Surface(
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f),
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.Chip,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.Image, null)
+                    }
+                }
+                Surface(
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.14f),
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    shape = RoundedCornerShape(999.dp)
+                ) {
+                    Text(
+                        text = "Open",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                    )
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Image Gen",
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.Bold
+                    )
                     Icon(
-                        imageVector = icon,
+                        imageVector = Icons.Rounded.ArrowForward,
                         contentDescription = null,
                         modifier = Modifier.size(20.dp)
                     )
                 }
+                Text(
+                    text = "Create images",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                )
             }
-            Text(
-                text = label,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
         }
     }
 }
 
-private fun Int.shortenNumber(decimals: Int = 1): String {
-    return when {
-        this < 1000 -> this.toString()
-        this < 1_000_000 -> String.format("%.${decimals}fk", this / 1000.0)
-        else -> String.format("%.${decimals}fM", this / 1_000_000.0)
+@Composable
+private fun WeeklyMessagesCard(
+    weeklyMessages: List<DayMessages>,
+    modifier: Modifier = Modifier
+) {
+    val totalMessages = weeklyMessages.sumOf { it.count }
+    val dailyAverage = if (weeklyMessages.isNotEmpty()) totalMessages / weeklyMessages.size else 0
+    val maxCount = weeklyMessages.maxOfOrNull { it.count } ?: 1
+    
+    val containerColor = if (LocalDarkMode.current) {
+        MaterialTheme.colorScheme.surfaceContainerLow
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerHigh
+    }
+    val contentColor = MaterialTheme.colorScheme.onSurface
+    val barColor = contentColor.copy(alpha = 0.55f)
+    val barHighlightColor = contentColor
+    
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = containerColor,
+            contentColor = contentColor
+        ),
+        shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
+        modifier = modifier
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = "This Week",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = contentColor.copy(alpha = 0.8f)
+                    )
+                    Text(
+                        text = "$totalMessages messages",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = "~$dailyAverage/day",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = contentColor.copy(alpha = 0.7f)
+                    )
+                }
+            }
+            
+            // Bar chart
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(80.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.Bottom
+            ) {
+                weeklyMessages.forEach { day ->
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        // Bar
+                        val barFraction = if (maxCount > 0) day.count.toFloat() / maxCount else 0f
+                        val isToday = day == weeklyMessages.lastOrNull()
+                        val currentBarColor = if (isToday) barHighlightColor else barColor
+                        
+                        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                            Canvas(
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .fillMaxWidth(0.7f)
+                                    .fillMaxHeight(barFraction.coerceAtLeast(0.04f))
+                            ) {
+                                drawRoundRect(
+                                    color = currentBarColor,
+                                    cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx()),
+                                    size = size
+                                )
+                            }
+                        }
+                        
+                        // Day label
+                        Text(
+                            text = day.dayLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isToday) {
+                                contentColor
+                            } else {
+                                contentColor.copy(alpha = 0.6f)
+                            },
+                            fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
+                }
+            }
+        }
     }
 }

@@ -25,6 +25,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.util.fastForEach
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.foundation.clickable
 import androidx.compose.animation.core.spring
 import androidx.core.net.toUri
@@ -363,11 +364,11 @@ fun MinimalChatInput(
                                 )
                             )
                             
-                            // Action button - bottom-right, 4dp padding ("4dp all around")
+                            // Action button - bottom-right, extra bottom padding for visual alignment
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
-                                    .padding(4.dp)
+                                    .padding(start = 4.dp, end = 6.dp, top = 4.dp, bottom = 6.dp)
                             ) {
                                 val currentAction = when {
                                     state.loading -> "loading"
@@ -391,7 +392,7 @@ fun MinimalChatInput(
                                     },
                                     shape = CircleShape,
                                     color = containerColor,
-                                    modifier = Modifier.size(40.dp)  // Same as plus button
+                                    modifier = Modifier.size(36.dp)
                                 ) {
                                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                                         AnimatedContent(
@@ -404,7 +405,7 @@ fun MinimalChatInput(
                                                     Icon(
                                                         imageVector = Icons.Rounded.Stop,
                                                         contentDescription = null,
-                                                        modifier = Modifier.size(22.dp),
+                                                        modifier = Modifier.size(18.dp),
                                                         tint = MaterialTheme.colorScheme.onErrorContainer
                                                     )
                                                 }
@@ -412,7 +413,7 @@ fun MinimalChatInput(
                                                     Icon(
                                                         imageVector = Icons.Rounded.ArrowUpward,
                                                         contentDescription = null,
-                                                        modifier = Modifier.size(22.dp),
+                                                        modifier = Modifier.size(18.dp),
                                                         tint = MaterialTheme.colorScheme.onPrimary
                                                     )
                                                 }
@@ -423,7 +424,7 @@ fun MinimalChatInput(
                                                         onSelect = { onUpdateChatModel(it) },
                                                         type = me.rerere.ai.provider.ModelType.CHAT,
                                                         onlyIcon = true,
-                                                        modifier = Modifier.size(24.dp),
+                                                        modifier = Modifier.size(34.dp),
                                                     )
                                                 }
                                             }
@@ -732,14 +733,14 @@ private fun MinimalPickerContent(
                     me.rerere.rikkahub.ui.components.ui.ModelIcon(
                         model = currentModel,
                         provider = provider,
-                        modifier = Modifier.size(24.dp),
+                        modifier = Modifier.size(28.dp),
                         color = androidx.compose.ui.graphics.Color.Transparent
                     )
                 } else {
                     Icon(
                         imageVector = Icons.Rounded.ViewModule,
                         contentDescription = null,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(28.dp)
                     )
                 }
             },
@@ -769,8 +770,8 @@ private fun MinimalPickerContent(
             )
         }
         
-        // Search picker - show selected provider if enabled
-        val searchService = settings.searchServices.getOrNull(settings.searchServiceSelected)
+        // Search picker - show selected provider if enabled (use effectiveProviderIndex to track current selection)
+        val searchService = settings.searchServices.getOrNull(effectiveProviderIndex)
         val searchProviderName = if (searchService != null) {
             SearchServiceOptions.TYPES[searchService::class]
         } else null
@@ -1330,13 +1331,49 @@ private fun ChatSuggestionsRow(
     var pressedSuggestionIndex by remember { mutableStateOf<Int?>(null) }
     var selectedSuggestionIndex by remember { mutableStateOf<Int?>(null) }
 
-    Row(
+    val canScrollLeft by remember { androidx.compose.runtime.derivedStateOf { scrollState.value > 0 } }
+    val canScrollRight by remember { androidx.compose.runtime.derivedStateOf { scrollState.value < scrollState.maxValue } }
+    val leftFadeAlpha by animateFloatAsState(
+        targetValue = if (canScrollLeft) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(150),
+        label = "left_fade"
+    )
+    val rightFadeAlpha by animateFloatAsState(
+        targetValue = if (canScrollRight) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(150),
+        label = "right_fade"
+    )
+
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .horizontalScroll(scrollState),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+            .drawWithContent {
+                drawContent()
+                if (leftFadeAlpha > 0f || rightFadeAlpha > 0f) {
+                    val fadeWidthPx = 24.dp.toPx()
+                    val leftEnd = (fadeWidthPx / size.width).coerceAtMost(0.4f)
+                    val rightStart = (1f - fadeWidthPx / size.width).coerceAtLeast(0.6f)
+                    val colorStops = arrayOf(
+                        0f to Color.Black.copy(alpha = 1f - leftFadeAlpha),
+                        leftEnd to Color.Black,
+                        rightStart to Color.Black,
+                        1f to Color.Black.copy(alpha = 1f - rightFadeAlpha)
+                    )
+                    drawRect(
+                        brush = androidx.compose.ui.graphics.Brush.horizontalGradient(colorStops = colorStops),
+                        blendMode = androidx.compose.ui.graphics.BlendMode.DstIn
+                    )
+                }
+            }
     ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(scrollState),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
         suggestions.forEachIndexed { index, suggestion ->
             var visible by remember { mutableStateOf(false) }
             val interactionSource = remember { MutableInteractionSource() }
@@ -1397,6 +1434,7 @@ private fun ChatSuggestionsRow(
                 Surface(
                     shape = RoundedCornerShape(16.dp),
                     color = MaterialTheme.colorScheme.surfaceContainer,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
                     modifier = Modifier
                         .graphicsLayer {
                             scaleX = scale
@@ -1417,6 +1455,7 @@ private fun ChatSuggestionsRow(
                     )
                 }
             }
+        }
         }
     }
 }

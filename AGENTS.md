@@ -5,10 +5,9 @@
 **App Name:** LastChat (Repo: RikkaHub)
 
 **The "Fidget Toy" Philosophy:**
-LastChat is not just a tool; it is designed to be a "fidget toy".
--   **Feel:** Interactions must be playful, physics-based, and deeply satisfying.
+LastChat is designed to be a "fidget toy".
+-   **Feel:** Interactions must be playful and deeply satisfying.
 -   **Tactile Feedback:** High-quality haptics are non-negotiable. Every tap, toggle, and drag must have appropriate feedback.
--   **Motion:** **Strictly NO Linear (Tween) animations.** All motion must use physics-based interpolators (springs) to convey momentum and weight.
 
 **Workflow:**
 -   **Iterative Polish:** We prefer iterative "glow-ups" of specific components over massive, risky refactors.
@@ -73,9 +72,11 @@ LastChat is not just a tool; it is designed to be a "fidget toy".
         -   Success: `HapticPattern.Success`
 
 ### Animation
--   **Standard Spec:** `spring(dampingRatio = 0.5f, stiffness = 400f)`
--   **Bouncy/Clicky Spec:** `spring(dampingRatio = 0.6f, stiffness = 300f)`
--   **Prohibited:** `tween` or linear animations.
+-   **Default Specs:**
+    -   **Standard spring:** `spring(dampingRatio = 0.5f, stiffness = 400f)`
+    -   **Bouncy/Clicky spring:** `spring(dampingRatio = 0.6f, stiffness = 300f)`
+-   **Choose by context:** Use the animation that best fits the interaction (snappy state swaps, ambient fades, heavy motion, etc.).
+-   **Guideline:** Prefer physically-plausible motion for tactile interactions, but non-spring timing (including `tween`) is acceptable where it improves clarity and UX for that specific UI region.
 
 ## 5. Specific Feature Guidelines
 

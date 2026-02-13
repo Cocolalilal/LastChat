@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.util.Log
+import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.utils.LogUtil
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
@@ -1304,6 +1305,9 @@ class ChatService(
         appScope.launch(Dispatchers.IO) {
             try {
                 val settings = settingsStore.settingsFlow.first()
+                val conversation = getConversationFlow(conversationId).value
+                val assistant = settings.getAssistantById(conversation.assistantId)
+                val chatModelId = assistant?.chatModelId ?: settings.chatModelId
 
                 val messageText = message.parts.filterIsInstance<UIMessagePart.Text>()
                     .joinToString("\n\n") { it.text }
@@ -1318,7 +1322,8 @@ class ChatService(
                 generationHandler.translateText(
                     settings = settings,
                     sourceText = messageText,
-                    targetLanguage = targetLanguage
+                    targetLanguage = targetLanguage,
+                    modelIdOverride = chatModelId,
                 ) { translatedText ->
                     // Update translation field in real-time
                     appScope.launch {

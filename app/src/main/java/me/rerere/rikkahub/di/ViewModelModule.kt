@@ -10,7 +10,6 @@ import me.rerere.rikkahub.ui.pages.imggen.ImgGenVM
 import me.rerere.rikkahub.ui.pages.setting.SettingVM
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerVM
 import me.rerere.rikkahub.ui.pages.menu.MenuVM
-import me.rerere.rikkahub.ui.pages.translator.TranslatorVM
 import org.koin.core.module.dsl.viewModel
 import org.koin.core.module.dsl.viewModelOf
 import org.koin.dsl.module
@@ -47,7 +46,6 @@ val viewModelModule = module {
             providerManager = get(),
         )
     }
-    viewModelOf(::TranslatorVM)
     viewModel<ShareHandlerVM> {
         ShareHandlerVM(
             text = it.get(),

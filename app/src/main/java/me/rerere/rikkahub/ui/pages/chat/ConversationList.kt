@@ -29,11 +29,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.surfaceColorAtElevation
@@ -63,6 +66,7 @@ import androidx.paging.compose.itemKey
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.PushPin
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Memory
@@ -105,6 +109,7 @@ fun ColumnScope.ConversationList(
     onClick: (Conversation) -> Unit = {},
     onDelete: (Conversation) -> Unit = {},
     onRegenerateTitle: (Conversation) -> Unit = {},
+    onEditTitle: (Conversation, String) -> Unit = { _, _ -> },
     onConsolidate: (Conversation) -> Unit = {},
     onPin: (Conversation) -> Unit = {},
     showUnconsolidatedDot: Boolean = false,
@@ -231,6 +236,7 @@ fun ColumnScope.ConversationList(
                             onClick = onClick,
                             onDelete = onDelete,
                             onRegenerateTitle = onRegenerateTitle,
+                            onEditTitle = onEditTitle,
                             onConsolidate = onConsolidate,
                             onPin = onPin,
                             showUnconsolidatedDot = showUnconsolidatedDot,
@@ -348,6 +354,7 @@ private fun ConversationItem(
     modifier: Modifier = Modifier,
     onDelete: (Conversation) -> Unit = {},
     onRegenerateTitle: (Conversation) -> Unit = {},
+    onEditTitle: (Conversation, String) -> Unit = { _, _ -> },
     onConsolidate: (Conversation) -> Unit = {},
     onPin: (Conversation) -> Unit = {},
     showUnconsolidatedDot: Boolean = false,
@@ -395,6 +402,8 @@ private fun ConversationItem(
     var showDropdownMenu by remember {
         mutableStateOf(false)
     }
+    var showEditTitleDialog by remember { mutableStateOf(false) }
+    var editedTitle by remember(conversation.id) { mutableStateOf(conversation.title) }
     Box(
         modifier = modifier
             .graphicsLayer {
@@ -488,6 +497,21 @@ private fun ConversationItem(
 
                 DropdownMenuItem(
                     text = {
+                        Text(stringResource(R.string.chat_page_edit_title))
+                    },
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        editedTitle = conversation.title
+                        showEditTitleDialog = true
+                        showDropdownMenu = false
+                    },
+                    leadingIcon = {
+                        Icon(Icons.Rounded.Edit, null)
+                    }
+                )
+
+                DropdownMenuItem(
+                    text = {
                         Text(stringResource(id = R.string.chat_page_regenerate_title))
                     },
                     onClick = {
@@ -527,6 +551,35 @@ private fun ConversationItem(
                     },
                     leadingIcon = {
                         Icon(Icons.Rounded.Delete, null)
+                    }
+                )
+            }
+
+            if (showEditTitleDialog) {
+                AlertDialog(
+                    onDismissRequest = { showEditTitleDialog = false },
+                    title = { Text(stringResource(R.string.chat_page_edit_title)) },
+                    text = {
+                        OutlinedTextField(
+                            value = editedTitle,
+                            onValueChange = { editedTitle = it },
+                            singleLine = true
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                onEditTitle(conversation, editedTitle)
+                                showEditTitleDialog = false
+                            }
+                        ) {
+                            Text(stringResource(R.string.chat_page_save))
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showEditTitleDialog = false }) {
+                            Text(stringResource(R.string.chat_page_cancel))
+                        }
                     }
                 )
             }

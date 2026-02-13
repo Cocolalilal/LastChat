@@ -7,13 +7,18 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.lazy.LazyListState
@@ -32,8 +37,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.adaptive.currentWindowDpSize
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
@@ -47,11 +50,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -60,8 +62,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.AddBox
-import androidx.compose.material.icons.rounded.AddCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Search
@@ -279,6 +279,7 @@ private fun ChatPageContent(
     var showRegenerateConfirmDialog by rememberSaveable { mutableStateOf(false) }
     var pendingRegenerateMessage by rememberSaveable { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
     val currentAssistant = setting.getCurrentAssistant()
+    val topMessagePadding = 72.dp
     
     // Auto-scroll to first matching message when opened from search
     LaunchedEffect(initialSearchQuery, conversation.messageNodes) {
@@ -333,9 +334,6 @@ private fun ChatPageContent(
                         onClickMenu = {
                             previewMode = !previewMode
                         },
-                        onUpdateTitle = {
-                            vm.updateTitle(it)
-                        },
                         onUpdateSettings = { newSettings ->
                             vm.updateSettings(newSettings)
                         },
@@ -347,14 +345,13 @@ private fun ChatPageContent(
                 // Removed bottomBar to allow floating input
                 containerColor = Color.Transparent,
                 contentWindowInsets = WindowInsets(0.dp)
-            ) { innerPadding ->
+            ) { _ ->
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(innerPadding)
                 ) {
                     ChatList(
-                        innerPadding = PaddingValues(bottom = 140.dp),
+                        innerPadding = PaddingValues(top = topMessagePadding, bottom = 140.dp),
                         conversation = conversation,
                         state = chatListState,
                         loading = loadingJob != null,
@@ -544,7 +541,9 @@ private fun ChatPageContent(
                     visible = shouldShowNewChatContent,
                     enter = androidx.compose.animation.fadeIn(),
                     exit = androidx.compose.animation.fadeOut(),
-                    modifier = Modifier.align(Alignment.Center)
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .offset(y = 28.dp)
                 ) {
                     NewChatContent(
                         assistant = currentAssistant,
@@ -559,9 +558,6 @@ private fun ChatPageContent(
                         },
                         onNavigateToImageGen = {
                             navController.navigate(Screen.ImageGen)
-                        },
-                        onNavigateToTranslator = {
-                            navController.navigate(Screen.Translator)
                         },
                         onAvatarClick = {
                             showHeaderAssistantPicker = true
@@ -866,6 +862,15 @@ private fun ChatPageContent(
         }
     }
 }
+
+private data class TopBarActionState(
+    val isEmpty: Boolean,
+    val isTemporaryChat: Boolean,
+    val shouldUseCompactTemporaryToggle: Boolean,
+    val assistantId: kotlin.uuid.Uuid,
+    val conversationId: kotlin.uuid.Uuid
+)
+
 @Composable
 private fun TopBar(
     settings: Settings,
@@ -876,164 +881,222 @@ private fun TopBar(
     isTemporaryChat: Boolean,
     onClickMenu: () -> Unit,
     onNewChat: () -> Unit,
-    onUpdateTitle: (String) -> Unit,
     onUpdateSettings: (Settings) -> Unit,
     onToggleTemporaryChat: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
-    val toaster = LocalToaster.current
-    val titleState = useEditState<String> {
-        onUpdateTitle(it)
-    }
-    
+    val topContainerColor = MaterialTheme.colorScheme.surfaceContainer
+    val topContainerBorder = BorderStroke(1.dp, MaterialTheme.colorScheme.background)
+    val buttonShape = RoundedCornerShape(999.dp)
+    val topPillSize = 48.dp
+    val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     // State for assistant picker - must be at function level for proper recomposition
     var showAssistantPicker by remember { mutableStateOf(false) }
     val currentAssistant = settings.getCurrentAssistant()
+    val isEmpty = !conversation.messageNodes.any { it.role == me.rerere.ai.core.MessageRole.USER }
+    var animateTopPillIn by remember { mutableStateOf(false) }
 
-    TopAppBar(
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
-        navigationIcon = {
+    LaunchedEffect(conversation.id) {
+        animateTopPillIn = false
+        delay(16)
+        animateTopPillIn = true
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+    ) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .height(120.dp)
+                .background(
+                    brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                        colors = listOf(
+                            MaterialTheme.colorScheme.background.copy(alpha = 0.95f),
+                            Color.Transparent
+                        )
+                    )
+                )
+        )
+
+        Row(
+            modifier = Modifier
+                .statusBarsPadding()
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             if (!bigScreen) {
-                IconButton(
+                Surface(
                     onClick = {
                         scope.launch { drawerState.open() }
-                    }
+                    },
+                    shape = buttonShape,
+                    color = topContainerColor,
+                    border = topContainerBorder
                 ) {
-                    Icon(Icons.Rounded.Menu, "Messages")
-                }
-            }
-        },
-        title = {
-            val editTitleWarning = stringResource(R.string.chat_page_edit_title_warning)
-            
-            // Crossfade between normal title and "Temporary Chat"
-            androidx.compose.animation.AnimatedContent(
-                targetState = isTemporaryChat,
-                transitionSpec = {
-                    androidx.compose.animation.fadeIn(
-                        animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 400f)
-                    ) togetherWith androidx.compose.animation.fadeOut(
-                        animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 400f)
-                    )
-                },
-                label = "title_crossfade"
-            ) { isTempChat ->
-                if (isTempChat) {
-                    Text(
-                        text = stringResource(R.string.temporary_chat_title),
-                        maxLines = 1,
-                        style = MaterialTheme.typography.titleMedium,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                } else {
-                    Surface(
-                        onClick = {
-                            if (conversation.messageNodes.isNotEmpty()) {
-                                titleState.open(conversation.title)
-                            } else {
-                                toaster.show(editTitleWarning, type = ToastType.Warning)
-                            }
-                        },
-                        color = Color.Transparent,
+                    Box(
+                        modifier = Modifier.size(topPillSize),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = conversation.title.ifBlank { stringResource(R.string.chat_page_new_chat) },
-                            maxLines = 1,
-                            style = MaterialTheme.typography.titleMedium,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        Icon(Icons.Rounded.Menu, "Messages")
                     }
                 }
             }
-        },
-        actions = {
-            // Check if chat is "empty" (no user-sent messages, ignoring preset messages)
-            val isEmpty = !conversation.messageNodes.any { it.role == me.rerere.ai.core.MessageRole.USER }
-            
-            // Fluid transition between assistant icon and search/new icons
-            androidx.compose.animation.AnimatedContent(
-                targetState = isEmpty to isTemporaryChat,
-                transitionSpec = {
-                    (androidx.compose.animation.fadeIn(
-                        animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 400f)
-                    ) + androidx.compose.animation.scaleIn(
-                        initialScale = 0.85f,
-                        animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 400f)
-                    )) togetherWith (androidx.compose.animation.fadeOut(
-                        animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 400f)
-                    ) + androidx.compose.animation.scaleOut(
-                        targetScale = 0.85f,
-                        animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 400f)
-                    ))
-                },
-                label = "topbar_actions"
-            ) { (isEmptyState, isTempChat) ->
-                // Check if header mode shows an avatar (to hide top-right avatar)
-                val hasPresetMessages = currentAssistant.presetMessages.isNotEmpty()
-                val effectiveDisplay = settings.getEffectiveDisplaySetting(currentAssistant)
-                val headerShowsAvatar = effectiveDisplay.newChatShowAvatar && (
-                    effectiveDisplay.newChatHeaderStyle == me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.BIG_ICON ||
-                    effectiveDisplay.newChatHeaderStyle == me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.GREETING
-                )
-                val hideTopRightAvatar = !hasPresetMessages && headerShowsAvatar
-                
-                when {
-                    // Empty normal chat: show temp toggle + assistant (unless big icon mode)
-                    isEmptyState && !isTempChat -> {
-                        Row {
-                            IconButton(onClick = { onToggleTemporaryChat() }) {
+
+            androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+
+            val topPillScale by androidx.compose.animation.core.animateFloatAsState(
+                targetValue = if (animateTopPillIn) 1f else 0.88f,
+                animationSpec = androidx.compose.animation.core.spring(
+                    dampingRatio = 0.6f,
+                    stiffness = 300f
+                ),
+                label = "top_pill_scale"
+            )
+
+            Surface(
+                shape = buttonShape,
+                color = topContainerColor,
+                border = topContainerBorder,
+                modifier = Modifier
+                    .graphicsLayer {
+                        scaleX = topPillScale
+                        scaleY = topPillScale
+                    }
+            ) {
+                androidx.compose.animation.AnimatedContent(
+                    targetState = TopBarActionState(
+                        isEmpty = isEmpty,
+                        isTemporaryChat = isTemporaryChat,
+                        shouldUseCompactTemporaryToggle = run {
+                            val hasPresetMessages = currentAssistant.presetMessages.isNotEmpty()
+                            val effectiveDisplay = settings.getEffectiveDisplaySetting(currentAssistant)
+                            val headerShowsAvatar = effectiveDisplay.newChatShowAvatar && (
+                                effectiveDisplay.newChatHeaderStyle == me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.BIG_ICON ||
+                                    effectiveDisplay.newChatHeaderStyle == me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.GREETING
+                                )
+                            !hasPresetMessages && headerShowsAvatar
+                        },
+                        assistantId = currentAssistant.id,
+                        conversationId = conversation.id
+                    ),
+                    transitionSpec = {
+                        (androidx.compose.animation.fadeIn(
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = 0.6f,
+                                stiffness = 300f
+                            )
+                        ) + androidx.compose.animation.scaleIn(
+                            initialScale = 0.92f,
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = 0.6f,
+                                stiffness = 300f
+                            )
+                        )) togetherWith (androidx.compose.animation.fadeOut(
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = 0.75f,
+                                stiffness = 400f
+                            )
+                        ) + androidx.compose.animation.scaleOut(
+                            targetScale = 0.92f,
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = 0.75f,
+                                stiffness = 400f
+                            )
+                        )) using androidx.compose.animation.SizeTransform(
+                            clip = false,
+                            sizeAnimationSpec = { _, _ ->
+                                androidx.compose.animation.core.spring(
+                                    dampingRatio = 0.6f,
+                                    stiffness = 300f
+                                )
+                            }
+                        )
+                    },
+                    label = "topbar_actions"
+                ) { actionState ->
+                    val isEmptyState = actionState.isEmpty
+                    val isTempChat = actionState.isTemporaryChat
+                    val hideTopRightAvatar = actionState.shouldUseCompactTemporaryToggle
+                    when {
+                        isEmptyState && !isTempChat && hideTopRightAvatar -> {
+                            IconButton(
+                                onClick = { onToggleTemporaryChat() },
+                                modifier = Modifier.size(topPillSize)
+                            ) {
                                 Icon(Icons.Rounded.HistoryToggleOff, "Temporary Chat")
                             }
-                            // Only show avatar if header doesn't already show one
-                            if (!hideTopRightAvatar) {
-                                Box(
-                                    modifier = Modifier.size(48.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    me.rerere.rikkahub.ui.components.ui.UIAvatar(
-                                        name = currentAssistant.name.ifBlank { "Character" },
-                                        value = currentAssistant.avatar,
-                                        modifier = Modifier.size(32.dp),
-                                        onClick = { showAssistantPicker = true }
-                                    )
+                        }
+
+                        else -> Row(
+                            modifier = Modifier.height(topPillSize),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            when {
+                                isEmptyState && !isTempChat -> {
+                                    IconButton(
+                                        onClick = { onToggleTemporaryChat() },
+                                        modifier = Modifier.size(topPillSize)
+                                    ) {
+                                        Icon(Icons.Rounded.HistoryToggleOff, "Temporary Chat")
+                                    }
+                                    Box(
+                                        modifier = Modifier.size(topPillSize),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        me.rerere.rikkahub.ui.components.ui.UIAvatar(
+                                            name = currentAssistant.name.ifBlank { "Character" },
+                                            value = currentAssistant.avatar,
+                                            modifier = Modifier.size(30.dp),
+                                            onClick = { showAssistantPicker = true }
+                                        )
+                                    }
+                                }
+
+                                isEmptyState && isTempChat -> {
+                                    IconButton(
+                                        onClick = { onToggleTemporaryChat() },
+                                        modifier = Modifier.size(topPillSize)
+                                    ) {
+                                        Icon(Icons.Rounded.History, "Make Normal Chat")
+                                    }
+                                    Box(
+                                        modifier = Modifier.size(topPillSize),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        me.rerere.rikkahub.ui.components.ui.UIAvatar(
+                                            name = currentAssistant.name.ifBlank { "Character" },
+                                            value = currentAssistant.avatar,
+                                            modifier = Modifier.size(30.dp),
+                                            onClick = { showAssistantPicker = true }
+                                        )
+                                    }
+                                }
+
+                                else -> {
+                                    IconButton(
+                                        onClick = { onClickMenu() },
+                                        modifier = Modifier.size(topPillSize)
+                                    ) {
+                                        Icon(if (previewMode) Icons.Rounded.Close else Icons.Rounded.Search, "Chat Options")
+                                    }
+                                    IconButton(
+                                        onClick = { onNewChat() },
+                                        modifier = Modifier.size(topPillSize)
+                                    ) {
+                                        Icon(Icons.Rounded.Add, "New Message")
+                                    }
                                 }
                             }
                         }
                     }
-                    // Empty temporary chat: show history (toggle back) + assistant
-                    isEmptyState && isTempChat -> {
-                        Row {
-                            IconButton(onClick = { onToggleTemporaryChat() }) {
-                                Icon(Icons.Rounded.History, "Make Normal Chat")
-                            }
-                            Box(
-                                modifier = Modifier.size(48.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                me.rerere.rikkahub.ui.components.ui.UIAvatar(
-                                    name = currentAssistant.name.ifBlank { "Character" },
-                                    value = currentAssistant.avatar,
-                                    modifier = Modifier.size(32.dp),
-                                    onClick = { showAssistantPicker = true }
-                                )
-                            }
-                        }
-                    }
-                    // Non-empty (either temporary or normal): show search + new chat
-                    else -> {
-                        Row {
-                            IconButton(onClick = { onClickMenu() }) {
-                                Icon(if (previewMode) Icons.Rounded.Close else Icons.Rounded.Search, "Chat Options")
-                            }
-                            IconButton(onClick = { onNewChat() }) {
-                                Icon(Icons.Rounded.AddCircle, "New Message")
-                            }
-                        }
-                    }
                 }
             }
-        },
-    )
+        }
+    }
     
     // Assistant picker sheet - outside TopAppBar for proper state handling
     if (showAssistantPicker) {
@@ -1046,42 +1109,6 @@ private fun TopBar(
                 showAssistantPicker = false
             },
             onDismiss = { showAssistantPicker = false }
-        )
-    }
-    titleState.EditStateContent { title, onUpdate ->
-        AlertDialog(
-            onDismissRequest = {
-                titleState.dismiss()
-            },
-            title = {
-                Text(stringResource(R.string.chat_page_edit_title))
-            },
-            text = {
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = onUpdate,
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        titleState.confirm()
-                    }
-                ) {
-                    Text(stringResource(R.string.chat_page_save))
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        titleState.dismiss()
-                    }
-                ) {
-                    Text(stringResource(R.string.chat_page_cancel))
-                }
-            }
         )
     }
 }

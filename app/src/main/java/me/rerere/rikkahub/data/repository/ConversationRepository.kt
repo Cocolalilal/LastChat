@@ -341,6 +341,9 @@ class ConversationRepository(
      */
     fun getDailyActivityDatesFlow(): Flow<List<String>> = dailyActivityDAO.getAllDatesFlow()
     
+    fun getWeeklyActivityFlow(startDate: String): Flow<List<me.rerere.rikkahub.data.db.entity.DailyActivityEntity>> =
+        dailyActivityDAO.getWeeklyActivityFlow(startDate)
+    
     /**
      * Check if user has sent a message today.
      */
