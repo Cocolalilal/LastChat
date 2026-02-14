@@ -13,8 +13,10 @@ import kotlinx.coroutines.flow.stateIn
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.repository.ConversationRepository
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.time.temporal.TemporalAdjusters
 
 enum class TimeLabel {
     EARLY_BIRD,      // 5am-11am
@@ -24,7 +26,8 @@ enum class TimeLabel {
 
 data class DayMessages(
     val dayLabel: String, // e.g. "Mon", "Tue"
-    val count: Int
+    val count: Int,
+    val isWeekend: Boolean
 )
 
 class MenuVM(
@@ -50,26 +53,42 @@ class MenuVM(
         // Time Label based on when user chats most
         val timeLabel = calculateTimeLabel(hours)
 
-        // Weekly messages - build a list for the last 7 days
+        // Weekly messages graph - keep rolling 7 days with today on the right
         val today = LocalDate.now()
+        val monday = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+        val sunday = monday.plusDays(6)
         val formatter = DateTimeFormatter.ISO_LOCAL_DATE
         val entityMap = weeklyEntities.associate { it.date to it.messageCount }
-        val weeklyMessages = (0..6).map { daysAgo ->
-            val date = today.minusDays((6 - daysAgo).toLong())
+        val weeklyMessages = (0..6).map { dayOffset ->
+            val date = today.minusDays((6 - dayOffset).toLong())
             val dayLabel = date.dayOfWeek.getDisplayName(
                 java.time.format.TextStyle.SHORT,
                 java.util.Locale.getDefault()
             )
             DayMessages(
                 dayLabel = dayLabel,
-                count = entityMap[date.format(formatter)] ?: 0
+                count = entityMap[date.format(formatter)] ?: 0,
+                isWeekend = date.dayOfWeek == DayOfWeek.SATURDAY || date.dayOfWeek == DayOfWeek.SUNDAY
             )
         }
+
+        val thisWeekMessageCount = entityMap
+            .filterKeys { dateString ->
+                val date = try {
+                    LocalDate.parse(dateString, formatter)
+                } catch (_: Exception) {
+                    null
+                }
+                date != null && !date.isBefore(monday) && !date.isAfter(sunday)
+            }
+            .values
+            .sum()
 
         MenuStats(
             dailyChatStreak = streak,
             timeLabel = timeLabel,
-            weeklyMessages = weeklyMessages
+            weeklyMessages = weeklyMessages,
+            thisWeekMessageCount = thisWeekMessageCount
         )
     }
         .flowOn(Dispatchers.Default)
@@ -136,5 +155,6 @@ class MenuVM(
 data class MenuStats(
     val dailyChatStreak: Int = 0,
     val timeLabel: TimeLabel = TimeLabel.DAYTIME_CHATTER,
-    val weeklyMessages: List<DayMessages> = emptyList()
+    val weeklyMessages: List<DayMessages> = emptyList(),
+    val thisWeekMessageCount: Int = 0
 )

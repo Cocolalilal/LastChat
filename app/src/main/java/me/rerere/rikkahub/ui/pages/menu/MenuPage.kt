@@ -151,6 +151,7 @@ private fun StatsSection(stats: MenuStats) {
         // Weekly Messages Graph (replaces Most Active Character)
         WeeklyMessagesCard(
             weeklyMessages = stats.weeklyMessages,
+            thisWeekMessageCount = stats.thisWeekMessageCount,
             modifier = Modifier.fillMaxWidth()
         )
     }
@@ -302,6 +303,7 @@ private fun ImageGenCard(
 @Composable
 private fun WeeklyMessagesCard(
     weeklyMessages: List<DayMessages>,
+    thisWeekMessageCount: Int,
     modifier: Modifier = Modifier
 ) {
     val totalMessages = weeklyMessages.sumOf { it.count }
@@ -341,7 +343,7 @@ private fun WeeklyMessagesCard(
                         color = contentColor.copy(alpha = 0.8f)
                     )
                     Text(
-                        text = "$totalMessages messages",
+                        text = "$thisWeekMessageCount messages",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
@@ -393,7 +395,9 @@ private fun WeeklyMessagesCard(
                         Text(
                             text = day.dayLabel,
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (isToday) {
+                            color = if (day.isWeekend) {
+                                MaterialTheme.colorScheme.error
+                            } else if (isToday) {
                                 contentColor
                             } else {
                                 contentColor.copy(alpha = 0.6f)
