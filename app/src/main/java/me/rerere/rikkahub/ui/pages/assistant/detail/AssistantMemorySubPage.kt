@@ -100,7 +100,7 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 private fun getMemoryMode(assistant: Assistant): MemoryMode {
     return when {
         !assistant.enableMemory -> MemoryMode.OFF
-        assistant.enableMemoryConsolidation -> MemoryMode.ADVANCED
+        assistant.useGraphMemory -> MemoryMode.ADVANCED
         assistant.useRagMemoryRetrieval -> MemoryMode.BASIC_RAG
         assistant.enableRecentChatsReference -> MemoryMode.BASIC_RECENT
         else -> MemoryMode.BASIC
@@ -112,7 +112,7 @@ private enum class MemoryMode(val displayName: String, val description: String) 
     BASIC("Basic", "All memories sent to model in every conversation"),
     BASIC_RECENT("Basic + Recent Chats", "Adds titles and timestamps of recent conversations"),
     BASIC_RAG("Basic + RAG", "Smart memory retrieval based on conversation context"),
-    ADVANCED("Advanced", "Forms episodic memories with automatic consolidation")
+    ADVANCED("Advanced", "Knowledge graph with entity extraction & temporal awareness")
 }
 
 private enum class MemorySortOrder(val displayName: String) {
@@ -237,44 +237,30 @@ fun AssistantMemorySettings(
                 }
             )
 
-            // Recent Chats Toggle (when memory enabled)
+            // Recent Chats Toggle (hidden when graph memory is ON)
             AnimatedVisibility(
-                visible = assistant.enableMemory,
+                visible = assistant.enableMemory && !assistant.useGraphMemory,
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
-                val isLockedByConsolidation = assistant.enableMemoryConsolidation
-                
                 MemorySettingsItem(
                     title = stringResource(R.string.assistant_page_recent_chats),
                     subtitle = stringResource(R.string.assistant_page_recent_chats_desc),
-                    // RAG toggle is always visible below when memory is on, so this is always MIDDLE
                     position = "MIDDLE",
                     trailing = {
-                        // Use 0.75f alpha for disabled state - subtle but visible
-                        val toggleAlpha by animateFloatAsState(
-                            targetValue = if (isLockedByConsolidation) 0.75f else 1f,
-                            animationSpec = spring(stiffness = 300f),
-                            label = "toggle_alpha"
+                        HapticSwitch(
+                            checked = assistant.enableRecentChatsReference,
+                            onCheckedChange = { 
+                                onUpdateAssistant(assistant.copy(enableRecentChatsReference = it))
+                            }
                         )
-                        Box(modifier = Modifier.graphicsLayer { alpha = toggleAlpha }) {
-                            HapticSwitch(
-                                checked = assistant.enableRecentChatsReference || isLockedByConsolidation,
-                                onCheckedChange = { 
-                                    if (!isLockedByConsolidation) {
-                                        onUpdateAssistant(assistant.copy(enableRecentChatsReference = it))
-                                    }
-                                },
-                                enabled = !isLockedByConsolidation
-                            )
-                        }
                     }
                 )
             }
 
-            // RAG Toggle (when memory enabled)
+            // RAG Toggle (hidden when graph memory is ON)
             AnimatedVisibility(
-                visible = assistant.enableMemory,
+                visible = assistant.enableMemory && !assistant.useGraphMemory,
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
@@ -300,30 +286,26 @@ fun AssistantMemorySettings(
                 )
             }
 
-            // Memory Consolidation Toggle (requires RAG)
+            // Advanced Memory Toggle (replaces old consolidation — now activates graph memory)
             AnimatedVisibility(
-                visible = assistant.enableMemory && assistant.useRagMemoryRetrieval,
+                visible = assistant.enableMemory,
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
                 MemorySettingsItem(
                     title = "Advanced Memory",
-                    subtitle = "Form episodic memories from conversations",
+                    subtitle = "Knowledge graph with entity extraction & temporal awareness",
                     position = "LAST",
                     trailing = {
                         HapticSwitch(
-                            checked = assistant.enableMemoryConsolidation,
+                            checked = assistant.useGraphMemory,
                             onCheckedChange = { enabled ->
-                                if (!enabled) {
-                                    onUpdateAssistant(assistant.copy(
-                                        enableMemoryConsolidation = false
-                                    ))
-                                } else {
-                                    onUpdateAssistant(assistant.copy(
-                                        enableMemoryConsolidation = true,
-                                        enableRecentChatsReference = true
-                                    ))
-                                }
+                                onUpdateAssistant(assistant.copy(
+                                    useGraphMemory = enabled,
+                                    enableMemoryConsolidation = enabled, // backward compat with worker
+                                    enableRecentChatsReference = if (enabled) true else assistant.enableRecentChatsReference,
+                                    useRagMemoryRetrieval = if (enabled) true else assistant.useRagMemoryRetrieval,
+                                ))
                             }
                         )
                     }
@@ -332,10 +314,43 @@ fun AssistantMemorySettings(
         }
 
         // ═══════════════════════════════════════════════════════════════════
-        // RAG SETTINGS (when RAG is enabled)
+        // GRAPH MEMORY EXPLORER (when graph memory is ON — replaces everything below)
         // ═══════════════════════════════════════════════════════════════════
         AnimatedVisibility(
-            visible = assistant.enableMemory && assistant.useRagMemoryRetrieval,
+            visible = assistant.enableMemory && assistant.useGraphMemory,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()
+        ) {
+            val graphNodes by assistantDetailVM.allNodes.collectAsState()
+            val graphEdges by assistantDetailVM.allEdges.collectAsState()
+            val graphEvents by assistantDetailVM.allTimelineEvents.collectAsState()
+            val graphEpisodes by assistantDetailVM.allGraphEpisodes.collectAsState()
+            val graphProcessing by assistantDetailVM.graphProcessing.collectAsState()
+
+            GraphMemoryContent(
+                assistant = assistant,
+                onUpdateAssistant = onUpdateAssistant,
+                nodes = graphNodes,
+                edges = graphEdges,
+                timelineEvents = graphEvents,
+                episodes = graphEpisodes,
+                nodeCountFlow = assistantDetailVM.graphNodeCount,
+                edgeCountFlow = assistantDetailVM.graphEdgeCount,
+                activeEventCountFlow = assistantDetailVM.graphActiveEventCount,
+                episodeCountFlow = assistantDetailVM.graphEpisodeCount,
+                onClearAllGraphData = { assistantDetailVM.clearGraphMemory() },
+                onDeleteNode = { assistantDetailVM.deleteGraphNode(it) },
+                onDeleteEdge = { assistantDetailVM.deleteGraphEdge(it) },
+                onProcessText = { assistantDetailVM.processTextIntoGraph(it) },
+                isProcessing = graphProcessing,
+            )
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // RAG SETTINGS (when RAG is enabled, hidden when graph memory ON)
+        // ═══════════════════════════════════════════════════════════════════
+        AnimatedVisibility(
+            visible = assistant.enableMemory && assistant.useRagMemoryRetrieval && !assistant.useGraphMemory,
             enter = fadeIn() + expandVertically(),
             exit = fadeOut() + shrinkVertically()
         ) {
@@ -346,10 +361,10 @@ fun AssistantMemorySettings(
         }
 
         // ═══════════════════════════════════════════════════════════════════
-        // CONSOLIDATION SETTINGS (when consolidation is enabled)
+        // CONSOLIDATION SETTINGS (hidden when graph memory ON)
         // ═══════════════════════════════════════════════════════════════════
         AnimatedVisibility(
-            visible = assistant.enableMemory && assistant.enableMemoryConsolidation,
+            visible = assistant.enableMemory && assistant.enableMemoryConsolidation && !assistant.useGraphMemory,
             enter = fadeIn() + expandVertically(),
             exit = fadeOut() + shrinkVertically()
         ) {
@@ -368,10 +383,10 @@ fun AssistantMemorySettings(
 
 
         // ═══════════════════════════════════════════════════════════════════
-        // MEMORY STATISTICS (when memory is enabled)
+        // MEMORY STATISTICS (hidden when graph memory ON)
         // ═══════════════════════════════════════════════════════════════════
         AnimatedVisibility(
-            visible = assistant.enableMemory,
+            visible = assistant.enableMemory && !assistant.useGraphMemory,
             enter = fadeIn() + expandVertically(),
             exit = fadeOut() + shrinkVertically()
         ) {
@@ -383,10 +398,10 @@ fun AssistantMemorySettings(
         }
 
         // ═══════════════════════════════════════════════════════════════════
-        // MANAGE MEMORIES (when memory is enabled)
+        // MANAGE MEMORIES (hidden when graph memory ON)
         // ═══════════════════════════════════════════════════════════════════
         AnimatedVisibility(
-            visible = assistant.enableMemory,
+            visible = assistant.enableMemory && !assistant.useGraphMemory,
             enter = fadeIn() + expandVertically(),
             exit = fadeOut() + shrinkVertically()
         ) {
@@ -401,17 +416,17 @@ fun AssistantMemorySettings(
                 memorySearchQuery = memorySearchQuery,
                 onSearchQueryChange = { assistantDetailVM.updateMemorySearchQuery(it) },
                 currentEmbeddingModelId = currentEmbeddingModelId,
-                showMemoryTypes = assistant.enableMemoryConsolidation,
+                showMemoryTypes = false,
                 initialMemoryTab = initialMemoryTab,
                 scrollToMemoryId = scrollToMemoryId
             )
         }
 
         // ═══════════════════════════════════════════════════════════════════
-        // MEMORY DEBUGGER (RAG only)
+        // MEMORY DEBUGGER (RAG only, hidden when graph memory ON)
         // ═══════════════════════════════════════════════════════════════════
         AnimatedVisibility(
-            visible = assistant.enableMemory && assistant.useRagMemoryRetrieval && onTestRetrieval != null,
+            visible = assistant.enableMemory && assistant.useRagMemoryRetrieval && !assistant.useGraphMemory && onTestRetrieval != null,
             enter = fadeIn() + expandVertically(),
             exit = fadeOut() + shrinkVertically()
         ) {

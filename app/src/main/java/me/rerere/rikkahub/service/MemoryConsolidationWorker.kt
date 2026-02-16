@@ -281,5 +281,21 @@ class MemoryConsolidationWorker(
         } catch (e: Exception) {
             Log.e("MemoryConsolidation", "Error auto-embedding memories", e)
         }
+
+        // =========================================================================================
+        // GRAPH MEMORY CONSOLIDATION (when advanced graph memory is enabled)
+        // =========================================================================================
+        if (assistant.useGraphMemory) {
+            try {
+                val memoryAgent: me.rerere.rikkahub.data.ai.memory.MemoryAgent by inject()
+                memoryAgent.runConsolidation(
+                    assistantId = assistantId,
+                    decayHalfLifeDays = assistant.graphDecayRateDays.toDouble()
+                )
+                Log.i("MemoryConsolidation", "Graph memory consolidation complete")
+            } catch (e: Exception) {
+                Log.e("MemoryConsolidation", "Error running graph consolidation", e)
+            }
+        }
     }
 }

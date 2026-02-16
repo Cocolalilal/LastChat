@@ -84,6 +84,7 @@ private object AssistantDetailRoutes {
     const val LOREBOOKS = "lorebooks"
     const val TOOLS = "tools"
     const val MEMORY = "memory"
+
     const val UI = "ui"
     const val ADVANCED = "advanced"
 }
@@ -425,6 +426,7 @@ fun AssistantDetailPage(
                     onNavigateToModels = { navController.navigate(AssistantDetailRoutes.MODEL) }
                 )
             }
+
 
             // UI Customization
             composable(AssistantDetailRoutes.UI) {

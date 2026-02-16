@@ -97,6 +97,7 @@ class GenerationHandler(
         truncateIndex: Int = -1,
         maxSteps: Int = 256,
         enabledModeIds: Set<Uuid> = emptySet(),
+        graphContext: String? = null, // Pre-built graph memory context (when useGraphMemory is enabled)
     ): Flow<GenerationChunk> = flow {
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = providerManager.getProviderByType(provider)
@@ -108,8 +109,9 @@ class GenerationHandler(
 
             val toolsInternal = buildList {
                 Log.i(TAG, "generateInternal: build tools($assistant)")
-                // Add memory tools if memory is enabled for this assistant
-                if (assistant.enableMemory) {
+                // Only add memory tools if memory is enabled AND graph memory is NOT active
+                // When graph memory is active, the Memory Agent is the sole owner of graph mutations
+                if (assistant.enableMemory && !assistant.useGraphMemory) {
                     buildMemoryTools(
                         onCreation = { content ->
                             memoryRepo.addMemory(assistant.id.toString(), content)
@@ -155,7 +157,8 @@ class GenerationHandler(
                 memories = memories ?: emptyList(),
                 truncateIndex = truncateIndex,
                 stream = assistant.streamOutput,
-                enabledModeIds = enabledModeIds
+                enabledModeIds = enabledModeIds,
+                graphContext = graphContext
             )
             messages = messages.visualTransforms(
                 transformers = outputTransformers,
@@ -247,6 +250,7 @@ class GenerationHandler(
         memories: List<AssistantMemory>,
         truncateIndex: Int,
         enabledModeIds: Set<Uuid> = emptySet(),
+        graphContext: String? = null,
     ): BuildMessagesResult {
         // Token estimator (rough estimate: 4 chars per token)
         fun estimateTokens(text: String) = text.length / 4
@@ -670,7 +674,11 @@ class GenerationHandler(
         val builtMessages = buildList {
             val finalSystemPrompt = buildString {
                 append(baseSystemPrompt)
-                if (selectedMemories.isNotEmpty()) {
+                // When graph memory is active, use graph context instead of flat memories
+                if (!graphContext.isNullOrBlank()) {
+                    appendLine()
+                    append(graphContext)
+                } else if (selectedMemories.isNotEmpty()) {
                     appendLine()
                     append(buildMemoryPrompt(model, selectedMemories))
                 }
@@ -727,7 +735,8 @@ class GenerationHandler(
         memories: List<AssistantMemory>,
         truncateIndex: Int,
         stream: Boolean,
-        enabledModeIds: Set<Uuid> = emptySet()
+        enabledModeIds: Set<Uuid> = emptySet(),
+        graphContext: String? = null
     ) {
         val buildResult = buildMessages(
             assistant = assistant,
@@ -737,7 +746,8 @@ class GenerationHandler(
             tools = tools,
             memories = memories,
             truncateIndex = truncateIndex,
-            enabledModeIds = enabledModeIds
+            enabledModeIds = enabledModeIds,
+            graphContext = graphContext
         )
         val internalMessages = buildResult.messages.transforms(transformers, context, model, assistant)
         val usedLorebookEntries = buildResult.activatedLorebookEntries

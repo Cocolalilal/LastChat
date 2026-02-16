@@ -44,6 +44,8 @@ val viewModelModule = module {
             context = get(),
             chatEpisodeDAO = get(),
             providerManager = get(),
+            graphMemoryRepo = get(),
+            memoryAgent = get(),
         )
     }
     viewModel<ShareHandlerVM> {

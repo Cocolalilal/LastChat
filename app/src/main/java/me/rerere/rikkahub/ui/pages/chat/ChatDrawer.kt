@@ -221,8 +221,8 @@ fun ChatDrawerContent(
                 onPin = {
                     vm.updatePinnedStatus(it)
                 },
-                showUnconsolidatedDot = settings.getCurrentAssistant().enableMemory && settings.getCurrentAssistant().enableMemoryConsolidation,
-                showConsolidateOption = settings.getCurrentAssistant().enableMemory && settings.getCurrentAssistant().enableMemoryConsolidation
+                showUnconsolidatedDot = settings.getCurrentAssistant().enableMemory && (settings.getCurrentAssistant().enableMemoryConsolidation || settings.getCurrentAssistant().useGraphMemory),
+                showConsolidateOption = settings.getCurrentAssistant().enableMemory && (settings.getCurrentAssistant().enableMemoryConsolidation || settings.getCurrentAssistant().useGraphMemory)
             )
 
             // 助手选择器

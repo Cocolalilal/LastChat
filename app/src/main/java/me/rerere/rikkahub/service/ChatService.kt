@@ -114,6 +114,8 @@ class ChatService(
     private val providerManager: ProviderManager,
     private val localTools: LocalTools,
     val mcpManager: McpManager,
+    private val graphMemoryRepo: me.rerere.rikkahub.data.repository.GraphMemoryRepository,
+    private val memoryAgent: me.rerere.rikkahub.data.ai.memory.MemoryAgent,
 ) {
     // 存储每个对话的状态
     private val conversations = ConcurrentHashMap<Uuid, MutableStateFlow<Conversation>>()
@@ -497,7 +499,7 @@ class ChatService(
                     }
                 },
                 assistant = settings.getCurrentAssistant(),
-                memories = if (settings.getCurrentAssistant().enableMemory && !temporaryConversations.contains(conversationId)) {
+                memories = if (settings.getCurrentAssistant().enableMemory && !settings.getCurrentAssistant().useGraphMemory && !temporaryConversations.contains(conversationId)) {
                     val assistant = settings.getCurrentAssistant()
                     if (assistant.useRagMemoryRetrieval) {
                         // RAG mode: retrieve relevant memories based on context
@@ -588,6 +590,19 @@ class ChatService(
                 },
                 truncateIndex = conversation.truncateIndex,
                 enabledModeIds = conversation.enabledModeIds,
+                graphContext = if (assistant.useGraphMemory && assistant.enableMemory && !temporaryConversations.contains(conversationId)) {
+                    // Build graph context for system prompt injection
+                    val lastUserMessage = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: ""
+                    try {
+                        graphMemoryRepo.buildGraphContext(
+                            assistantId = settings.assistantId.toString(),
+                            queryText = lastUserMessage,
+                        )
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to build graph context", e)
+                        null
+                    }
+                } else null,
             ).onCompletion {
                 // Calculate generation duration from first token (excludes TTFT)
                 val generationDurationMs = firstTokenTime?.let { System.currentTimeMillis() - it }
@@ -660,6 +675,27 @@ class ChatService(
                     // Auto-summarization check
                     launch {
                         checkAndAutoSummarize(conversationId, finalConversation, settings)
+                    }
+                    
+                    // Graph memory: async processing of the exchange
+                    val currentAssistant = settings.getCurrentAssistant()
+                    if (currentAssistant.useGraphMemory && currentAssistant.enableMemory && !temporaryConversations.contains(conversationId)) {
+                        launch {
+                            try {
+                                val messages = finalConversation.currentMessages
+                                val lastUserMsg = messages.lastOrNull { it.role == MessageRole.USER }?.toText()
+                                val lastAssistantMsg = messages.lastOrNull { it.role == MessageRole.ASSISTANT }?.toText()
+                                if (!lastUserMsg.isNullOrBlank() && !lastAssistantMsg.isNullOrBlank()) {
+                                    memoryAgent.processExchange(
+                                        assistantId = settings.assistantId.toString(),
+                                        userMessage = lastUserMsg,
+                                        assistantReply = lastAssistantMsg,
+                                    )
+                                }
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Async graph memory processing failed", e)
+                            }
+                        }
                     }
                 }
             }.invokeOnCompletion {

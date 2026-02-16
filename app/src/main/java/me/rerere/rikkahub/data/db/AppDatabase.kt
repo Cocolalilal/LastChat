@@ -17,13 +17,21 @@ import me.rerere.rikkahub.data.db.dao.ConversationDAO
 import me.rerere.rikkahub.data.db.dao.DailyActivityDAO
 import me.rerere.rikkahub.data.db.dao.EmbeddingCacheDAO
 import me.rerere.rikkahub.data.db.dao.GenMediaDAO
+import me.rerere.rikkahub.data.db.dao.GraphEpisodeDAO
 import me.rerere.rikkahub.data.db.dao.MemoryDAO
+import me.rerere.rikkahub.data.db.dao.MemoryEdgeDAO
+import me.rerere.rikkahub.data.db.dao.MemoryNodeDAO
+import me.rerere.rikkahub.data.db.dao.TimelineEventDAO
 import me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.data.db.entity.ConversationEntity
 import me.rerere.rikkahub.data.db.entity.DailyActivityEntity
 import me.rerere.rikkahub.data.db.entity.EmbeddingCacheEntity
 import me.rerere.rikkahub.data.db.entity.GenMediaEntity
+import me.rerere.rikkahub.data.db.entity.GraphEpisodeEntity
+import me.rerere.rikkahub.data.db.entity.MemoryEdgeEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEntity
+import me.rerere.rikkahub.data.db.entity.MemoryNodeEntity
+import me.rerere.rikkahub.data.db.entity.TimelineEventEntity
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.utils.JsonInstant
 import kotlinx.serialization.json.JsonArray
@@ -36,8 +44,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 @Database(
-    entities = [ConversationEntity::class, MemoryEntity::class, GenMediaEntity::class, ChatEpisodeEntity::class, EmbeddingCacheEntity::class, DailyActivityEntity::class],
-    version = 23,
+    entities = [ConversationEntity::class, MemoryEntity::class, GenMediaEntity::class, ChatEpisodeEntity::class, EmbeddingCacheEntity::class, DailyActivityEntity::class, MemoryNodeEntity::class, MemoryEdgeEntity::class, TimelineEventEntity::class, GraphEpisodeEntity::class],
+    version = 24,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -72,6 +80,14 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun embeddingCacheDao(): EmbeddingCacheDAO
 
     abstract fun dailyActivityDao(): DailyActivityDAO
+
+    abstract fun memoryNodeDao(): MemoryNodeDAO
+
+    abstract fun memoryEdgeDao(): MemoryEdgeDAO
+
+    abstract fun timelineEventDao(): TimelineEventDAO
+
+    abstract fun graphEpisodeDao(): GraphEpisodeDAO
 
     companion object {
         const val TAG = "AppDatabase"
@@ -301,6 +317,98 @@ abstract class AppDatabase : RoomDatabase() {
                     e.printStackTrace()
                     return json
                 }
+            }
+        }
+
+        val MIGRATION_23_24 = object : Migration(23, 24) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "migrate: start migrate from 23 to 24 (Graph Memory tables)")
+
+                // Create MemoryNodeEntity table
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `MemoryNodeEntity` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `assistant_id` TEXT NOT NULL,
+                        `node_type` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `description` TEXT NOT NULL DEFAULT '',
+                        `importance` INTEGER NOT NULL DEFAULT 5,
+                        `emotional_valence` REAL NOT NULL DEFAULT 0,
+                        `first_mentioned` INTEGER NOT NULL DEFAULT 0,
+                        `last_mentioned` INTEGER NOT NULL DEFAULT 0,
+                        `mention_count` INTEGER NOT NULL DEFAULT 1,
+                        `status` TEXT NOT NULL DEFAULT 'active',
+                        `valid_from` INTEGER,
+                        `valid_until` INTEGER,
+                        `embedding` TEXT,
+                        `embedding_model_id` TEXT
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_MemoryNodeEntity_assistant_id_node_type` ON `MemoryNodeEntity` (`assistant_id`, `node_type`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_MemoryNodeEntity_assistant_id_status` ON `MemoryNodeEntity` (`assistant_id`, `status`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_MemoryNodeEntity_assistant_id_last_mentioned` ON `MemoryNodeEntity` (`assistant_id` DESC, `last_mentioned` DESC)")
+
+                // Create MemoryEdgeEntity table
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `MemoryEdgeEntity` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `assistant_id` TEXT NOT NULL,
+                        `source_node_id` INTEGER NOT NULL,
+                        `target_node_id` INTEGER NOT NULL,
+                        `relation_type` TEXT NOT NULL,
+                        `strength` REAL NOT NULL DEFAULT 1.0,
+                        `description` TEXT NOT NULL DEFAULT '',
+                        `created_at` INTEGER NOT NULL DEFAULT 0,
+                        `last_reinforced` INTEGER NOT NULL DEFAULT 0,
+                        `episode_id` INTEGER,
+                        FOREIGN KEY(`source_node_id`) REFERENCES `MemoryNodeEntity`(`id`) ON DELETE CASCADE,
+                        FOREIGN KEY(`target_node_id`) REFERENCES `MemoryNodeEntity`(`id`) ON DELETE CASCADE
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_MemoryEdgeEntity_assistant_id` ON `MemoryEdgeEntity` (`assistant_id`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_MemoryEdgeEntity_source_node_id` ON `MemoryEdgeEntity` (`source_node_id`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_MemoryEdgeEntity_target_node_id` ON `MemoryEdgeEntity` (`target_node_id`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_MemoryEdgeEntity_source_node_id_target_node_id_relation_type` ON `MemoryEdgeEntity` (`source_node_id`, `target_node_id`, `relation_type`)")
+
+                // Create TimelineEventEntity table
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `TimelineEventEntity` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `assistant_id` TEXT NOT NULL,
+                        `node_id` INTEGER NOT NULL,
+                        `event_type` TEXT NOT NULL,
+                        `scheduled_at` INTEGER,
+                        `completed_at` INTEGER,
+                        `recurrence_rule` TEXT,
+                        `description` TEXT NOT NULL DEFAULT '',
+                        `last_checked` INTEGER NOT NULL DEFAULT 0,
+                        FOREIGN KEY(`node_id`) REFERENCES `MemoryNodeEntity`(`id`) ON DELETE CASCADE
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_TimelineEventEntity_assistant_id_event_type` ON `TimelineEventEntity` (`assistant_id`, `event_type`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_TimelineEventEntity_node_id` ON `TimelineEventEntity` (`node_id`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_TimelineEventEntity_scheduled_at` ON `TimelineEventEntity` (`scheduled_at`)")
+
+                // Create GraphEpisodeEntity table
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `GraphEpisodeEntity` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `assistant_id` TEXT NOT NULL,
+                        `conversation_id` TEXT,
+                        `content` TEXT NOT NULL,
+                        `significance` INTEGER NOT NULL DEFAULT 5,
+                        `start_time` INTEGER NOT NULL,
+                        `end_time` INTEGER NOT NULL,
+                        `embedding` TEXT,
+                        `embedding_model_id` TEXT,
+                        `node_ids` TEXT NOT NULL DEFAULT '[]',
+                        `edge_ids` TEXT NOT NULL DEFAULT '[]'
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_GraphEpisodeEntity_assistant_id_end_time` ON `GraphEpisodeEntity` (`assistant_id`, `end_time`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_GraphEpisodeEntity_conversation_id` ON `GraphEpisodeEntity` (`conversation_id`)")
+
+                Log.i(TAG, "migrate: migrate from 23 to 24 success (Graph Memory tables created)")
             }
         }
     }

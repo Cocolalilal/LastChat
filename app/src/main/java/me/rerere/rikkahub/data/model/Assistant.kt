@@ -101,6 +101,12 @@ data class Assistant(
     val lastConsolidationTime: Long = 0L,
     val lastConsolidationResult: String = "",
 
+    // Graph Memory (Advanced Mode)
+    val useGraphMemory: Boolean = false, // Enable graph-based advanced memory
+    val graphDecayRateDays: Int = 14, // Half-life in days for edge strength decay
+    val graphMaxNodes: Int = 200, // Maximum active nodes before forced archiving
+    val graphTimelineEnabled: Boolean = true, // Enable timeline tracking for temporal awareness
+
 
     // Per-assistant UI customization (null = use global setting)
     val uiSettings: AssistantUISettings = AssistantUISettings(),

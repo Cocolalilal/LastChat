@@ -35,6 +35,8 @@ class AssistantDetailVM(
     private val context: Application,
     private val chatEpisodeDAO: ChatEpisodeDAO,
     private val providerManager: me.rerere.ai.provider.ProviderManager,
+    private val graphMemoryRepo: me.rerere.rikkahub.data.repository.GraphMemoryRepository,
+    private val memoryAgent: me.rerere.rikkahub.data.ai.memory.MemoryAgent,
 ) : ViewModel() {
     private val assistantId = Uuid.parse(id)
 
@@ -104,6 +106,62 @@ class AssistantDetailVM(
         .stateIn(
             scope = viewModelScope, started = SharingStarted.Lazily, initialValue = emptyList()
         )
+
+    // Graph memory stat flows
+    val graphNodeCount = graphMemoryRepo.getNodeCountFlow(id)
+    val graphEdgeCount = graphMemoryRepo.getEdgeCountFlow(id)
+    val graphActiveEventCount = graphMemoryRepo.getActiveEventCountFlow(id)
+    val graphEpisodeCount = graphMemoryRepo.getEpisodeCountFlow(id)
+
+    // Graph data browsing flows
+    val allNodes = graphMemoryRepo.getAllNodesFlow(id)
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+    val allEdges = graphMemoryRepo.getAllEdgesFlow(id)
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+    val allTimelineEvents = graphMemoryRepo.getAllEventsFlow(id)
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+    val allGraphEpisodes = graphMemoryRepo.getAllEpisodesFlow(id)
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    fun clearGraphMemory() {
+        viewModelScope.launch {
+            graphMemoryRepo.deleteAllGraphData(id)
+        }
+    }
+
+    fun deleteGraphNode(nodeId: Int) {
+        viewModelScope.launch {
+            graphMemoryRepo.deleteNode(nodeId)
+        }
+    }
+
+    fun deleteGraphEdge(edgeId: Int) {
+        viewModelScope.launch {
+            graphMemoryRepo.deleteEdge(edgeId)
+        }
+    }
+
+    private val _graphProcessing = MutableStateFlow(false)
+    val graphProcessing = _graphProcessing.asStateFlow()
+
+    fun processTextIntoGraph(text: String) {
+        viewModelScope.launch {
+            _graphProcessing.value = true
+            try {
+                memoryAgent.processExchange(
+                    assistantId = id,
+                    userMessage = text,
+                    assistantReply = "(Manual graph memory ingestion)"
+                )
+                _snackbarMessage.value = "Text processed into graph memory"
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to process text into graph", e)
+                _snackbarMessage.value = "Failed: ${e.message}"
+            } finally {
+                _graphProcessing.value = false
+            }
+        }
+    }
 
     val episodeStats = combine(episodes, memories) { episodeList, memoryList ->
         val totalEpisodes = episodeList.size
