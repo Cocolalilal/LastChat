@@ -21,6 +21,7 @@ import me.rerere.rikkahub.data.db.dao.GraphEpisodeDAO
 import me.rerere.rikkahub.data.db.dao.MemoryDAO
 import me.rerere.rikkahub.data.db.dao.MemoryEdgeDAO
 import me.rerere.rikkahub.data.db.dao.MemoryNodeDAO
+import me.rerere.rikkahub.data.db.dao.PersonProfileDAO
 import me.rerere.rikkahub.data.db.dao.TimelineEventDAO
 import me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.data.db.entity.ConversationEntity
@@ -31,6 +32,7 @@ import me.rerere.rikkahub.data.db.entity.GraphEpisodeEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEdgeEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEntity
 import me.rerere.rikkahub.data.db.entity.MemoryNodeEntity
+import me.rerere.rikkahub.data.db.entity.PersonProfileEntity
 import me.rerere.rikkahub.data.db.entity.TimelineEventEntity
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.utils.JsonInstant
@@ -44,8 +46,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 @Database(
-    entities = [ConversationEntity::class, MemoryEntity::class, GenMediaEntity::class, ChatEpisodeEntity::class, EmbeddingCacheEntity::class, DailyActivityEntity::class, MemoryNodeEntity::class, MemoryEdgeEntity::class, TimelineEventEntity::class, GraphEpisodeEntity::class],
-    version = 24,
+    entities = [ConversationEntity::class, MemoryEntity::class, GenMediaEntity::class, ChatEpisodeEntity::class, EmbeddingCacheEntity::class, DailyActivityEntity::class, MemoryNodeEntity::class, MemoryEdgeEntity::class, TimelineEventEntity::class, GraphEpisodeEntity::class, PersonProfileEntity::class],
+    version = 25,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -88,6 +90,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun timelineEventDao(): TimelineEventDAO
 
     abstract fun graphEpisodeDao(): GraphEpisodeDAO
+
+    abstract fun personProfileDao(): PersonProfileDAO
 
     companion object {
         const val TAG = "AppDatabase"
@@ -409,6 +413,33 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_GraphEpisodeEntity_conversation_id` ON `GraphEpisodeEntity` (`conversation_id`)")
 
                 Log.i(TAG, "migrate: migrate from 23 to 24 success (Graph Memory tables created)")
+            }
+        }
+
+        val MIGRATION_24_25 = object : Migration(24, 25) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "migrate: start migrate from 24 to 25 (Person profiles)")
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `PersonProfileEntity` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `assistant_id` TEXT NOT NULL,
+                        `node_id` INTEGER NOT NULL,
+                        `display_name` TEXT NOT NULL DEFAULT '',
+                        `avatar` TEXT,
+                        `date_of_birth` TEXT,
+                        `birth_year` INTEGER,
+                        `physical_summary` TEXT NOT NULL DEFAULT '',
+                        `physical_source_node_ids` TEXT NOT NULL DEFAULT '[]',
+                        `personality_summary` TEXT NOT NULL DEFAULT '',
+                        `personality_source_node_ids` TEXT NOT NULL DEFAULT '[]',
+                        `other_summary` TEXT NOT NULL DEFAULT '',
+                        `updated_at` INTEGER NOT NULL DEFAULT 0,
+                        FOREIGN KEY(`node_id`) REFERENCES `MemoryNodeEntity`(`id`) ON DELETE CASCADE
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_PersonProfileEntity_assistant_id` ON `PersonProfileEntity` (`assistant_id`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_PersonProfileEntity_node_id` ON `PersonProfileEntity` (`node_id`)")
+                Log.i(TAG, "migrate: migrate from 24 to 25 success (Person profiles table created)")
             }
         }
     }

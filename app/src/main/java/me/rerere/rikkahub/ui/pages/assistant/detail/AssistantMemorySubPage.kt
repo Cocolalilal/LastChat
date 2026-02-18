@@ -326,6 +326,12 @@ fun AssistantMemorySettings(
             val graphEvents by assistantDetailVM.allTimelineEvents.collectAsState()
             val graphEpisodes by assistantDetailVM.allGraphEpisodes.collectAsState()
             val graphProcessing by assistantDetailVM.graphProcessing.collectAsState()
+            val personProfiles by assistantDetailVM.personProfiles.collectAsState()
+            val settings by assistantDetailVM.settings.collectAsState()
+
+            LaunchedEffect(graphNodes) {
+                if (graphNodes.isNotEmpty()) assistantDetailVM.ensureCorePersonProfiles()
+            }
 
             GraphMemoryContent(
                 assistant = assistant,
@@ -334,6 +340,8 @@ fun AssistantMemorySettings(
                 edges = graphEdges,
                 timelineEvents = graphEvents,
                 episodes = graphEpisodes,
+                personProfiles = personProfiles,
+                userAvatar = settings.displaySetting.userAvatar,
                 nodeCountFlow = assistantDetailVM.graphNodeCount,
                 edgeCountFlow = assistantDetailVM.graphEdgeCount,
                 activeEventCountFlow = assistantDetailVM.graphActiveEventCount,
@@ -342,6 +350,7 @@ fun AssistantMemorySettings(
                 onDeleteNode = { assistantDetailVM.deleteGraphNode(it) },
                 onDeleteEdge = { assistantDetailVM.deleteGraphEdge(it) },
                 onProcessText = { assistantDetailVM.processTextIntoGraph(it) },
+                onUpsertPersonProfile = { assistantDetailVM.upsertPersonProfile(it) },
                 isProcessing = graphProcessing,
             )
         }

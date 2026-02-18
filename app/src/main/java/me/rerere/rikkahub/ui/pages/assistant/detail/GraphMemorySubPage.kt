@@ -67,6 +67,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
@@ -75,6 +76,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -98,11 +100,17 @@ import me.rerere.rikkahub.data.db.entity.GraphEpisodeEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEdgeEntity
 import me.rerere.rikkahub.data.db.entity.MemoryNodeEntity
 import me.rerere.rikkahub.data.db.entity.NodeType
+import me.rerere.rikkahub.data.db.entity.PersonProfileEntity
 import me.rerere.rikkahub.data.db.entity.TimelineEventEntity
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.ui.components.ui.FormItem
+import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
+import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.utils.JsonInstant
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -128,6 +136,8 @@ fun GraphMemoryContent(
     edges: List<MemoryEdgeEntity> = emptyList(),
     timelineEvents: List<TimelineEventEntity> = emptyList(),
     episodes: List<GraphEpisodeEntity> = emptyList(),
+    personProfiles: List<PersonProfileEntity> = emptyList(),
+    userAvatar: Avatar = Avatar.Dummy,
     nodeCountFlow: Flow<Int> = flowOf(0),
     edgeCountFlow: Flow<Int> = flowOf(0),
     activeEventCountFlow: Flow<Int> = flowOf(0),
@@ -136,6 +146,7 @@ fun GraphMemoryContent(
     onDeleteNode: (Int) -> Unit = {},
     onDeleteEdge: (Int) -> Unit = {},
     onProcessText: (String) -> Unit = {},
+    onUpsertPersonProfile: (PersonProfileEntity) -> Unit = {},
     isProcessing: Boolean = false,
 ) {
     val nodeCount by nodeCountFlow.collectAsState(initial = 0)
@@ -289,6 +300,10 @@ fun GraphMemoryContent(
                 GraphView.ENTITIES -> EntitiesView(
                     nodes = nodes,
                     edges = edges,
+                    assistant = assistant,
+                    userAvatar = userAvatar,
+                    personProfiles = personProfiles,
+                    onUpsertPersonProfile = onUpsertPersonProfile,
                     onDeleteNode = onDeleteNode,
                 )
                 GraphView.RELATIONSHIPS -> RelationshipsView(
@@ -446,24 +461,42 @@ private fun GraphStatItem(value: String, label: String, color: Color) {
 private fun EntitiesView(
     nodes: List<MemoryNodeEntity>,
     edges: List<MemoryEdgeEntity>,
+    assistant: Assistant,
+    userAvatar: Avatar,
+    personProfiles: List<PersonProfileEntity>,
+    onUpsertPersonProfile: (PersonProfileEntity) -> Unit,
     onDeleteNode: (Int) -> Unit,
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedType by remember { mutableStateOf<String?>(null) }
     var expandedNodeId by remember { mutableStateOf<Int?>(null) }
+    var selectedPersonNode by remember { mutableStateOf<MemoryNodeEntity?>(null) }
+
+    val profileMap = remember(personProfiles) { personProfiles.associateBy { it.nodeId } }
 
     val filteredNodes = nodes
         .filter { node ->
             (selectedType == null || node.nodeType == selectedType) &&
-            (searchQuery.isBlank() || node.name.contains(searchQuery, ignoreCase = true) || node.description.contains(searchQuery, ignoreCase = true))
+                (searchQuery.isBlank() || node.name.contains(searchQuery, ignoreCase = true) || node.description.contains(searchQuery, ignoreCase = true))
         }
-        .sortedByDescending { it.importance * 1000 + it.mentionCount }
+        .sortedWith(compareByDescending<MemoryNodeEntity> { it.nodeType == NodeType.PERSON }.thenByDescending { it.importance * 1000 + it.mentionCount })
 
-    // Type counts for chips
     val typeCounts = nodes.groupBy { it.nodeType }.mapValues { it.value.size }
 
+    if (selectedPersonNode != null) {
+        PersonProfileSheet(
+            node = selectedPersonNode!!,
+            assistant = assistant,
+            userAvatar = userAvatar,
+            profile = profileMap[selectedPersonNode!!.id],
+            edges = edges,
+            nodes = nodes,
+            onDismiss = { selectedPersonNode = null },
+            onSave = onUpsertPersonProfile,
+        )
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        // Search
         TextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
@@ -485,16 +518,11 @@ private fun EntitiesView(
             )
         )
 
-        // Type filter chips
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            FilterChip(
-                selected = selectedType == null,
-                onClick = { selectedType = null },
-                label = { Text("All (${nodes.size})") },
-            )
+            FilterChip(selected = selectedType == null, onClick = { selectedType = null }, label = { Text("All (${nodes.size})") })
             NodeType.ALL.forEach { type ->
                 val count = typeCounts[type] ?: 0
                 if (count > 0) {
@@ -502,36 +530,24 @@ private fun EntitiesView(
                         selected = selectedType == type,
                         onClick = { selectedType = if (selectedType == type) null else type },
                         label = { Text("${type.replaceFirstChar { it.uppercase() }} ($count)") },
-                        leadingIcon = {
-                            Icon(nodeTypeIcon(type), null, modifier = Modifier.size(14.dp))
-                        },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = nodeTypeColor(type).copy(alpha = 0.2f)
-                        )
+                        leadingIcon = { Icon(nodeTypeIcon(type), null, modifier = Modifier.size(14.dp)) },
+                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = nodeTypeColor(type).copy(alpha = 0.2f))
                     )
                 }
             }
         }
 
-        // Node list
         Column(
-            modifier = Modifier
-                .clip(RoundedCornerShape(20.dp))
-                .animateContentSize(),
+            modifier = Modifier.clip(RoundedCornerShape(20.dp)).animateContentSize(),
             verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
             if (filteredNodes.isEmpty()) {
-                EmptyPlaceholder(
-                    if (searchQuery.isBlank() && selectedType == null) "No entities yet — they'll appear as you chat"
-                    else "No matching entities"
-                )
+                EmptyPlaceholder(if (searchQuery.isBlank() && selectedType == null) "No entities yet — they'll appear as you chat" else "No matching entities")
             } else {
                 filteredNodes.forEachIndexed { index, node ->
                     key(node.id) {
                         val isExpanded = expandedNodeId == node.id
-                        val nodeEdges = if (isExpanded) {
-                            edges.filter { it.sourceNodeId == node.id || it.targetNodeId == node.id }
-                        } else emptyList()
+                        val nodeEdges = if (isExpanded) edges.filter { it.sourceNodeId == node.id || it.targetNodeId == node.id } else emptyList()
                         val connectedNodes = if (isExpanded) {
                             val connectedIds = nodeEdges.map { if (it.sourceNodeId == node.id) it.targetNodeId else it.sourceNodeId }.toSet()
                             nodes.filter { it.id in connectedIds }.associateBy { it.id }
@@ -543,7 +559,9 @@ private fun EntitiesView(
                             edges = nodeEdges,
                             connectedNodes = connectedNodes,
                             position = cardPosition(index, filteredNodes.size),
+                            isPersonProfile = node.nodeType == NodeType.PERSON,
                             onToggleExpand = { expandedNodeId = if (isExpanded) null else node.id },
+                            onOpenProfile = { selectedPersonNode = node },
                             onDelete = { onDeleteNode(node.id) }
                         )
                     }
@@ -564,7 +582,9 @@ private fun NodeCard(
     edges: List<MemoryEdgeEntity>,
     connectedNodes: Map<Int, MemoryNodeEntity>,
     position: String,
+    isPersonProfile: Boolean = false,
     onToggleExpand: () -> Unit,
+    onOpenProfile: () -> Unit = {},
     onDelete: () -> Unit,
 ) {
     val shape = cardShape(position)
@@ -576,7 +596,9 @@ private fun NodeCard(
     }
 
     Surface(
-        onClick = onToggleExpand,
+        onClick = {
+            if (isPersonProfile) onOpenProfile() else onToggleExpand()
+        },
         color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = shape,
     ) {
@@ -651,7 +673,7 @@ private fun NodeCard(
                     }
                 }
 
-                // Mentions + expand
+                // Mentions + action
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         "${node.mentionCount}×",
@@ -659,7 +681,7 @@ private fun NodeCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Icon(
-                        if (isExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                        if (isPersonProfile) Icons.Rounded.Edit else if (isExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
                         null,
                         modifier = Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -669,7 +691,7 @@ private fun NodeCard(
 
             // Expanded details
             AnimatedVisibility(
-                visible = isExpanded,
+                visible = isExpanded && !isPersonProfile,
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
@@ -769,6 +791,124 @@ private fun NodeCard(
             }
         }
     }
+}
+
+@Composable
+private fun PersonProfileSheet(
+    node: MemoryNodeEntity,
+    assistant: Assistant,
+    userAvatar: Avatar,
+    profile: PersonProfileEntity?,
+    edges: List<MemoryEdgeEntity>,
+    nodes: List<MemoryNodeEntity>,
+    onDismiss: () -> Unit,
+    onSave: (PersonProfileEntity) -> Unit,
+) {
+    val haptics = rememberPremiumHaptics()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var isEditing by remember { mutableStateOf(false) }
+
+    val existingAvatar = remember(profile?.avatar, node.name, assistant.avatar, userAvatar) {
+        when {
+            !profile?.avatar.isNullOrBlank() -> runCatching { JsonInstant.decodeFromString(Avatar.serializer(), profile!!.avatar!!) }.getOrNull() ?: Avatar.Dummy
+            node.name.equals(assistant.name, ignoreCase = true) -> assistant.avatar
+            else -> userAvatar
+        }
+    }
+
+    var draftName by remember(profile, node) { mutableStateOf(profile?.displayName?.ifBlank { node.name } ?: node.name) }
+    var draftAvatar by remember(profile, existingAvatar) { mutableStateOf(existingAvatar) }
+    var draftDateOfBirth by remember(profile) { mutableStateOf(profile?.dateOfBirth.orEmpty()) }
+    var draftBirthYear by remember(profile) { mutableStateOf(profile?.birthYear?.toString().orEmpty()) }
+    var draftPhysical by remember(profile) { mutableStateOf(profile?.physicalSummary.orEmpty()) }
+    var draftPersonality by remember(profile) { mutableStateOf(profile?.personalitySummary.orEmpty()) }
+    var draftOther by remember(profile) { mutableStateOf(profile?.otherSummary.orEmpty()) }
+
+    val related = remember(edges, nodes, node.id) {
+        val ids = edges.filter { it.sourceNodeId == node.id || it.targetNodeId == node.id }
+            .map { if (it.sourceNodeId == node.id) it.targetNodeId else it.sourceNodeId }
+            .toSet()
+        nodes.filter { it.id in ids }
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(modifier = Modifier.fillMaxWidth().imePadding().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("Person Profile", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                TextButton(onClick = {
+                    isEditing = !isEditing
+                    haptics.perform(HapticPattern.Pop)
+                }) { Text(if (isEditing) "Done" else "Edit") }
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                UIAvatar(name = draftName, value = draftAvatar, modifier = Modifier.size(56.dp), onUpdate = if (isEditing) ({ draftAvatar = it }) else null)
+                Column {
+                    Text(draftName.ifBlank { node.name }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text("Age: ${calculateAgeText(draftBirthYear, draftDateOfBirth)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+
+            if (isEditing) {
+                TextField(value = draftName, onValueChange = { draftName = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Name") }, shape = RoundedCornerShape(14.dp))
+                TextField(value = draftDateOfBirth, onValueChange = { draftDateOfBirth = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Date of birth") }, placeholder = { Text("YYYY or YYYY-MM-DD") }, shape = RoundedCornerShape(14.dp))
+                TextField(value = draftBirthYear, onValueChange = { draftBirthYear = it.filter(Char::isDigit).take(4) }, modifier = Modifier.fillMaxWidth(), label = { Text("Birth year") }, shape = RoundedCornerShape(14.dp))
+                TextField(value = draftPhysical, onValueChange = { draftPhysical = it }, modifier = Modifier.fillMaxWidth(), minLines = 2, label = { Text("Physical attributes summary") }, shape = RoundedCornerShape(14.dp))
+                TextField(value = draftPersonality, onValueChange = { draftPersonality = it }, modifier = Modifier.fillMaxWidth(), minLines = 2, label = { Text("Personality summary") }, shape = RoundedCornerShape(14.dp))
+                TextField(value = draftOther, onValueChange = { draftOther = it }, modifier = Modifier.fillMaxWidth(), minLines = 2, label = { Text("Other info summary") }, shape = RoundedCornerShape(14.dp))
+                Button(
+                    onClick = {
+                        onSave(
+                            PersonProfileEntity(
+                                id = profile?.id ?: 0,
+                                assistantId = node.assistantId,
+                                nodeId = node.id,
+                                displayName = draftName,
+                                avatar = JsonInstant.encodeToString(Avatar.serializer(), draftAvatar),
+                                dateOfBirth = draftDateOfBirth.ifBlank { null },
+                                birthYear = draftBirthYear.toIntOrNull(),
+                                physicalSummary = draftPhysical,
+                                personalitySummary = draftPersonality,
+                                otherSummary = draftOther,
+                                physicalSourceNodeIds = profile?.physicalSourceNodeIds ?: "[]",
+                                personalitySourceNodeIds = profile?.personalitySourceNodeIds ?: "[]",
+                            )
+                        )
+                        isEditing = false
+                        haptics.perform(HapticPattern.Success)
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Save profile") }
+            } else {
+                ProfileSummaryBlock("Physical attributes", profile?.physicalSummary)
+                ProfileSummaryBlock("Personality", profile?.personalitySummary)
+                ProfileSummaryBlock("Other", profile?.otherSummary)
+                ProfileSummaryBlock("Relationships", related.joinToString { it.name }.ifBlank { "No linked people yet" })
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+}
+
+@Composable
+private fun ProfileSummaryBlock(title: String, value: String?) {
+    Surface(
+        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(14.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Text(value?.ifBlank { "No information yet" } ?: "No information yet", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+private fun calculateAgeText(birthYearText: String, dateOfBirthText: String): String {
+    val year = birthYearText.toIntOrNull()
+        ?: dateOfBirthText.take(4).toIntOrNull()
+        ?: return "Unknown"
+    val currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+    return (currentYear - year).coerceAtLeast(0).toString()
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -20,6 +20,9 @@ import me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.data.db.entity.NodeType
+import me.rerere.rikkahub.data.db.entity.PersonProfileEntity
+import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.data.model.Tag
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.utils.deleteChatFiles
@@ -122,6 +125,55 @@ class AssistantDetailVM(
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
     val allGraphEpisodes = graphMemoryRepo.getAllEpisodesFlow(id)
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+
+    val personProfiles = graphMemoryRepo.getPersonProfilesFlow(id)
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    val personNodeIds = allNodes
+        .map { nodes -> nodes.filter { it.nodeType == NodeType.PERSON }.map { it.id }.toSet() }
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptySet())
+
+    fun upsertPersonProfile(profile: PersonProfileEntity) {
+        viewModelScope.launch {
+            graphMemoryRepo.upsertPersonProfile(profile)
+        }
+    }
+
+    fun ensureCorePersonProfiles() {
+        viewModelScope.launch {
+            val currentAssistant = assistant.value
+            val currentSettings = settings.value
+            val nodesSnapshot = allNodes.value
+            val personNodes = nodesSnapshot.filter { it.nodeType == NodeType.PERSON }
+
+            val userName = currentSettings.displaySetting.userNickname.ifBlank { "User" }
+            val userNode = personNodes.firstOrNull { it.name.equals(userName, ignoreCase = true) }
+            if (userNode != null) {
+                graphMemoryRepo.upsertPersonProfile(
+                    PersonProfileEntity(
+                        assistantId = id,
+                        nodeId = userNode.id,
+                        displayName = userName,
+                        avatar = JsonInstant.encodeToString(Avatar.serializer(), currentSettings.displaySetting.userAvatar),
+                    )
+                )
+            }
+
+            val characterName = currentAssistant.name.ifBlank { "Character" }
+            val characterNode = personNodes.firstOrNull { it.name.equals(characterName, ignoreCase = true) }
+            if (characterNode != null) {
+                graphMemoryRepo.upsertPersonProfile(
+                    PersonProfileEntity(
+                        assistantId = id,
+                        nodeId = characterNode.id,
+                        displayName = characterName,
+                        avatar = JsonInstant.encodeToString(Avatar.serializer(), currentAssistant.avatar),
+                    )
+                )
+            }
+        }
+    }
 
     fun clearGraphMemory() {
         viewModelScope.launch {

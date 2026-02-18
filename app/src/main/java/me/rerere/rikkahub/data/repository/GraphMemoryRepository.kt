@@ -8,10 +8,12 @@ import me.rerere.rikkahub.data.ai.rag.VectorEngine
 import me.rerere.rikkahub.data.db.dao.GraphEpisodeDAO
 import me.rerere.rikkahub.data.db.dao.MemoryEdgeDAO
 import me.rerere.rikkahub.data.db.dao.MemoryNodeDAO
+import me.rerere.rikkahub.data.db.dao.PersonProfileDAO
 import me.rerere.rikkahub.data.db.dao.TimelineEventDAO
 import me.rerere.rikkahub.data.db.entity.GraphEpisodeEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEdgeEntity
 import me.rerere.rikkahub.data.db.entity.MemoryNodeEntity
+import me.rerere.rikkahub.data.db.entity.PersonProfileEntity
 import me.rerere.rikkahub.data.db.entity.NodeStatus
 import me.rerere.rikkahub.data.db.entity.TimelineEventEntity
 import me.rerere.rikkahub.utils.JsonInstant
@@ -28,6 +30,7 @@ class GraphMemoryRepository(
     private val edgeDAO: MemoryEdgeDAO,
     private val timelineEventDAO: TimelineEventDAO,
     private val graphEpisodeDAO: GraphEpisodeDAO,
+    private val personProfileDAO: PersonProfileDAO,
     private val embeddingService: EmbeddingService,
 ) {
     companion object {
@@ -68,6 +71,39 @@ class GraphMemoryRepository(
     suspend fun deleteNode(id: Int) = nodeDAO.delete(id)
 
     suspend fun deleteAllNodesForAssistant(assistantId: String) = nodeDAO.deleteAllForAssistant(assistantId)
+
+
+
+    // ─── Person Profile Operations ───────────────────────────────────────
+
+    suspend fun getPersonProfileByNodeId(nodeId: Int): PersonProfileEntity? =
+        personProfileDAO.getByNodeId(nodeId)
+
+    fun getPersonProfilesFlow(assistantId: String): Flow<List<PersonProfileEntity>> =
+        personProfileDAO.getByAssistantFlow(assistantId)
+
+    suspend fun upsertPersonProfile(profile: PersonProfileEntity): Int {
+        val existing = personProfileDAO.getByNodeId(profile.nodeId)
+        return if (existing != null) {
+            personProfileDAO.update(
+                existing.copy(
+                    displayName = profile.displayName.ifBlank { existing.displayName },
+                    avatar = profile.avatar ?: existing.avatar,
+                    dateOfBirth = profile.dateOfBirth ?: existing.dateOfBirth,
+                    birthYear = profile.birthYear ?: existing.birthYear,
+                    physicalSummary = if (profile.physicalSummary.isBlank()) existing.physicalSummary else profile.physicalSummary,
+                    physicalSourceNodeIds = if (profile.physicalSourceNodeIds == "[]") existing.physicalSourceNodeIds else profile.physicalSourceNodeIds,
+                    personalitySummary = if (profile.personalitySummary.isBlank()) existing.personalitySummary else profile.personalitySummary,
+                    personalitySourceNodeIds = if (profile.personalitySourceNodeIds == "[]") existing.personalitySourceNodeIds else profile.personalitySourceNodeIds,
+                    otherSummary = if (profile.otherSummary.isBlank()) existing.otherSummary else profile.otherSummary,
+                    updatedAt = System.currentTimeMillis(),
+                )
+            )
+            existing.id
+        } else {
+            personProfileDAO.insert(profile.copy(updatedAt = System.currentTimeMillis())).toInt()
+        }
+    }
 
     // ─── Edge Operations ────────────────────────────────────────────────
 
