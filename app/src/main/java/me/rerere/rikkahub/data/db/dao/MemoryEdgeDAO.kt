@@ -28,6 +28,9 @@ interface MemoryEdgeDAO {
     @Query("SELECT * FROM MemoryEdgeEntity WHERE source_node_id = :nodeId OR target_node_id = :nodeId")
     suspend fun getEdgesForNode(nodeId: Int): List<MemoryEdgeEntity>
 
+    @Query("SELECT * FROM MemoryEdgeEntity WHERE source_node_id IN (:nodeIds) OR target_node_id IN (:nodeIds)")
+    suspend fun getEdgesForNodes(nodeIds: List<Int>): List<MemoryEdgeEntity>
+
     @Query("SELECT * FROM MemoryEdgeEntity WHERE source_node_id = :nodeId")
     suspend fun getOutgoingEdges(nodeId: Int): List<MemoryEdgeEntity>
 

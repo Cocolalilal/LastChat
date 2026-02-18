@@ -67,26 +67,12 @@ class AssistantDetailVM(
 
     val memories = combine(
         memoryRepository.getMemoriesOfAssistantFlow(assistantId.toString()),
-        chatEpisodeDAO.getEpisodesOfAssistantFlow(assistantId.toString()),
         _memorySearchQuery
-    ) { coreMemories, episodes, query ->
-        val core = coreMemories
-        val episodic = episodes.map { 
-            AssistantMemory(
-                id = -it.id, // Negative ID to distinguish from core memories
-                content = it.content, 
-                type = 1, // EPISODIC
-                hasEmbedding = it.embedding != null,
-                embeddingModelId = it.embeddingModelId,
-                timestamp = it.startTime,
-                significance = it.significance
-            ) 
-        }
-        val allMemories = core + episodic
+    ) { coreMemories, query ->
         if (query.isBlank()) {
-            allMemories
+            coreMemories
         } else {
-            allMemories.filter { it.content.contains(query, ignoreCase = true) }
+            coreMemories.filter { it.content.contains(query, ignoreCase = true) }
         }
     }.stateIn(
         scope = viewModelScope, started = SharingStarted.Lazily, initialValue = emptyList()
@@ -138,6 +124,36 @@ class AssistantDetailVM(
     fun deleteGraphEdge(edgeId: Int) {
         viewModelScope.launch {
             graphMemoryRepo.deleteEdge(edgeId)
+        }
+    }
+
+    fun updateGraphNode(node: me.rerere.rikkahub.data.db.entity.MemoryNodeEntity) {
+        viewModelScope.launch {
+            graphMemoryRepo.updateNode(node)
+        }
+    }
+
+    fun updateGraphEdge(edge: me.rerere.rikkahub.data.db.entity.MemoryEdgeEntity) {
+        viewModelScope.launch {
+            graphMemoryRepo.updateEdge(edge)
+        }
+    }
+
+    fun deleteTimelineEvent(eventId: Int) {
+        viewModelScope.launch {
+            graphMemoryRepo.deleteTimelineEvent(eventId)
+        }
+    }
+
+    fun updateTimelineEvent(event: me.rerere.rikkahub.data.db.entity.TimelineEventEntity) {
+        viewModelScope.launch {
+            graphMemoryRepo.updateTimelineEvent(event)
+        }
+    }
+
+    fun deleteGraphEpisode(episodeId: Int) {
+        viewModelScope.launch {
+            graphMemoryRepo.deleteEpisode(episodeId)
         }
     }
 
@@ -355,7 +371,7 @@ class AssistantDetailVM(
                     limit = limit,
                     similarityThreshold = threshold,
                     includeCore = currentAssistant.ragIncludeCore,
-                    includeEpisodes = currentAssistant.ragIncludeEpisodes
+                    includeEpisodes = false
                 )
                 _retrievalResults.value = results
             } catch (e: Exception) {

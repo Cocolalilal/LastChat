@@ -516,7 +516,7 @@ class ChatService(
                                 limit = 50, // Hardcoded high limit for dynamic context
                                 similarityThreshold = assistant.ragSimilarityThreshold,
                                 includeCore = assistant.ragIncludeCore,
-                                includeEpisodes = assistant.ragIncludeEpisodes
+                                includeEpisodes = false
                             )
                             if (settings.enableRagLogging) {
                                 Log.d("RAG", "Retrieved ${results.size} memories")
@@ -683,8 +683,8 @@ class ChatService(
                         launch {
                             try {
                                 val messages = finalConversation.currentMessages
-                                val lastUserMsg = messages.lastOrNull { it.role == MessageRole.USER }?.toText()
-                                val lastAssistantMsg = messages.lastOrNull { it.role == MessageRole.ASSISTANT }?.toText()
+                                val lastUserMsg = messages.lastOrNull { it.role == MessageRole.USER }?.toContentText()
+                                val lastAssistantMsg = messages.lastOrNull { it.role == MessageRole.ASSISTANT }?.toContentText()
                                 if (!lastUserMsg.isNullOrBlank() && !lastAssistantMsg.isNullOrBlank()) {
                                     memoryAgent.processExchange(
                                         assistantId = settings.assistantId.toString(),
