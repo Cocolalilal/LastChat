@@ -93,8 +93,6 @@ import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.toLocalString
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
-import me.rerere.rikkahub.ui.components.ui.ItemPosition
-import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 
 /**
  * Memory mode based on current settings
@@ -343,11 +341,6 @@ fun AssistantMemorySettings(
                 onClearAllGraphData = { assistantDetailVM.clearGraphMemory() },
                 onDeleteNode = { assistantDetailVM.deleteGraphNode(it) },
                 onDeleteEdge = { assistantDetailVM.deleteGraphEdge(it) },
-                onUpdateNode = { assistantDetailVM.updateGraphNode(it) },
-                onUpdateEdge = { assistantDetailVM.updateGraphEdge(it) },
-                onDeleteTimelineEvent = { assistantDetailVM.deleteTimelineEvent(it) },
-                onUpdateTimelineEvent = { assistantDetailVM.updateTimelineEvent(it) },
-                onDeleteEpisode = { assistantDetailVM.deleteGraphEpisode(it) },
                 onProcessText = { assistantDetailVM.processTextIntoGraph(it) },
                 isProcessing = graphProcessing,
             )
@@ -1052,12 +1045,6 @@ private fun ManageMemoriesSection(
         )
 
         // Memory list with animation
-        // Swipe neighbor tracking
-        var draggingIndex by remember { mutableIntStateOf(-1) }
-        var dragOffset by remember { mutableFloatStateOf(0f) }
-        var isUnlocked by remember { mutableStateOf(false) }
-        var neighborsUnlocked by remember { mutableStateOf(false) }
-
         Column(
             modifier = Modifier
                 .clip(RoundedCornerShape(24.dp))
@@ -1067,47 +1054,20 @@ private fun ManageMemoriesSection(
             displayMemories.forEachIndexed { index, memory ->
                 key(memory.id) {
                     val position = when {
-                        displayMemories.size == 1 -> ItemPosition.ONLY
-                        index == 0 -> ItemPosition.FIRST
-                        index == displayMemories.size - 1 -> ItemPosition.LAST
-                        else -> ItemPosition.MIDDLE
-                    }
-                    val positionStr = when {
                         displayMemories.size == 1 -> "ONLY"
                         index == 0 -> "FIRST"
                         index == displayMemories.size - 1 -> "LAST"
                         else -> "MIDDLE"
                     }
-                    val neighborOffset = if (draggingIndex in listOf(index - 1, index + 1) && neighborsUnlocked) dragOffset * 0.15f else 0f
-
-                    PhysicsSwipeToDelete(
-                        position = position,
-                        deleteEnabled = true,
-                        neighborOffset = neighborOffset,
-                        onDragProgress = { offset, unlocked ->
-                            draggingIndex = index
-                            dragOffset = offset
-                            isUnlocked = unlocked
-                            neighborsUnlocked = unlocked
-                        },
-                        onDragEnd = {
-                            draggingIndex = -1
-                            dragOffset = 0f
-                            isUnlocked = false
-                            neighborsUnlocked = false
-                        },
-                        onDelete = { onDeleteMemory(memory) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { _ ->
-                        MemoryItem(
-                            memory = memory,
-                            onEditMemory = onEditMemory,
-                            useRagMemoryRetrieval = assistant.useRagMemoryRetrieval,
-                            currentEmbeddingModelId = currentEmbeddingModelId,
-                            showType = showMemoryTypes,
-                            position = positionStr
-                        )
-                    }
+                    MemoryItem(
+                        memory = memory,
+                        onEditMemory = onEditMemory,
+                        onDeleteMemory = onDeleteMemory,
+                        useRagMemoryRetrieval = assistant.useRagMemoryRetrieval,
+                        currentEmbeddingModelId = currentEmbeddingModelId,
+                        showType = showMemoryTypes,
+                        position = position
+                    )
                 }
             }
             
@@ -1133,11 +1093,14 @@ private fun ManageMemoriesSection(
 private fun MemoryItem(
     memory: AssistantMemory,
     onEditMemory: (AssistantMemory) -> Unit,
+    onDeleteMemory: (AssistantMemory) -> Unit,
     useRagMemoryRetrieval: Boolean = false,
     currentEmbeddingModelId: String = "",
     showType: Boolean = false,
     position: String = "MIDDLE"
 ) {
+    var showDeleteConfirmation by remember { mutableStateOf(false) }
+    val haptics = rememberPremiumHaptics()
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     
@@ -1163,6 +1126,33 @@ private fun MemoryItem(
         animationSpec = spring(dampingRatio = 0.8f, stiffness = 200f),
         label = "bottomCorner"
     )
+    
+    if (showDeleteConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            title = { Text(stringResource(R.string.assistant_page_delete)) },
+            text = { 
+                Text(
+                    text = stringResource(R.string.delete_memory_confirmation) + "\n\n\"${memory.content.take(100)}${if (memory.content.length > 100) "..." else ""}\""
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirmation = false
+                        onDeleteMemory(memory)
+                    }
+                ) {
+                    Text(stringResource(R.string.assistant_page_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmation = false }) {
+                    Text(stringResource(R.string.assistant_page_cancel))
+                }
+            }
+        )
+    }
     
     Surface(
         onClick = { onEditMemory(memory) },
@@ -1239,6 +1229,16 @@ private fun MemoryItem(
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodyMedium
                 )
+            }
+            
+            // Only show delete for core memories (user-created)
+            if (memory.type == 0) {
+                IconButton(onClick = { 
+                    haptics.perform(HapticPattern.Pop)
+                    showDeleteConfirmation = true 
+                }) {
+                    Icon(Icons.Rounded.Delete, stringResource(R.string.assistant_page_delete))
+                }
             }
         }
     }

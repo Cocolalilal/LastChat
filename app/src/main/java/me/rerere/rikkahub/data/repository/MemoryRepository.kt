@@ -27,12 +27,22 @@ class MemoryRepository(
             }
 
     /**
-     * Get core memories as AssistantMemory objects.
-     * Episodic memories are no longer included here — they are managed exclusively
-     * through the Advanced (Graph) memory mode.
+     * Get combined memories (core) and episodes (episodic) as AssistantMemory objects.
+     * This includes significance scores for episodic memories.
      */
     fun getCombinedMemoriesFlow(assistantId: String): Flow<List<AssistantMemory>> =
-        getMemoriesOfAssistantFlow(assistantId)
+        kotlinx.coroutines.flow.combine(
+            memoryDAO.getMemoriesOfAssistantFlow(assistantId),
+            chatEpisodeDAO.getEpisodesOfAssistantFlow(assistantId)
+        ) { memories, episodes ->
+            val coreMemories = memories.map { 
+                AssistantMemory(it.id, it.content, it.type, it.embedding != null, it.embeddingModelId, it.createdAt)
+            }
+            val episodicMemories = episodes.map { 
+                AssistantMemory(-it.id, it.content, MemoryType.EPISODIC, it.embedding != null, it.embeddingModelId, it.startTime, it.significance)
+            }
+            coreMemories + episodicMemories
+        }
 
     fun getAverageMemoryLength(assistantId: String): Flow<Int> =
         memoryDAO.getMemoriesOfAssistantFlow(assistantId)

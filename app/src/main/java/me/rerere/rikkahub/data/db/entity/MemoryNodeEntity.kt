@@ -18,7 +18,7 @@ data class MemoryNodeEntity(
     @ColumnInfo("assistant_id")
     val assistantId: String,
     @ColumnInfo("node_type")
-    val nodeType: String, // "person", "place", "object", "event", "concept", "preference", "emotion"
+    val nodeType: String, // "person", "place", "object", "event", "concept", "preference", "emotion", "plan"
     @ColumnInfo("name")
     val name: String,
     @ColumnInfo("description")
@@ -53,8 +53,9 @@ object NodeType {
     const val CONCEPT = "concept"
     const val PREFERENCE = "preference"
     const val EMOTION = "emotion"
+    const val PLAN = "plan"
 
-    val ALL = listOf(PERSON, PLACE, OBJECT, EVENT, CONCEPT, PREFERENCE, EMOTION)
+    val ALL = listOf(PERSON, PLACE, OBJECT, EVENT, CONCEPT, PREFERENCE, EMOTION, PLAN)
 }
 
 object NodeStatus {

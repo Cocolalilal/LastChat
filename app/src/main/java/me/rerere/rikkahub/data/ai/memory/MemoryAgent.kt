@@ -6,7 +6,6 @@ import me.rerere.rikkahub.data.db.entity.MemoryEdgeEntity
 import me.rerere.rikkahub.data.db.entity.MemoryNodeEntity
 import me.rerere.rikkahub.data.db.entity.NodeStatus
 import me.rerere.rikkahub.data.db.entity.NodeType
-import me.rerere.rikkahub.data.db.entity.GraphEpisodeEntity
 import me.rerere.rikkahub.data.repository.GraphMemoryRepository
 import me.rerere.rikkahub.utils.JsonInstant
 
@@ -53,7 +52,7 @@ class MemoryAgent(
             val existingNames = existingNodes.map { it.name }
 
             // 1. Extract structured data from the exchange
-            val result = extractor.extract(assistantId, userMessage, assistantReply, existingNames)
+            val result = extractor.extract(userMessage, assistantReply, existingNames)
             Log.i(TAG, "Extracted ${result.nodes.size} nodes, ${result.edges.size} edges, ${result.timelineEvents.size} timeline events")
 
             if (result.nodes.isEmpty() && result.edges.isEmpty() && result.timelineEvents.isEmpty()) {
@@ -125,31 +124,7 @@ class MemoryAgent(
                 }
             }
 
-            // 5. Create episode for this exchange
-            val involvedNodeIds = nameToId.values.toList()
-            val avgSignificance = if (result.nodes.isNotEmpty()) {
-                result.nodes.map { it.importance.coerceIn(1, 10) }.average().toInt().coerceIn(1, 10)
-            } else 5
-            val episodeContent = buildString {
-                append("User: ")
-                append(userMessage.take(200))
-                if (userMessage.length > 200) append("...")
-                append("\nAssistant: ")
-                append(assistantReply.take(300))
-                if (assistantReply.length > 300) append("...")
-            }
-            graphRepo.insertEpisode(
-                GraphEpisodeEntity(
-                    assistantId = assistantId,
-                    content = episodeContent,
-                    significance = avgSignificance,
-                    startTime = now,
-                    endTime = System.currentTimeMillis(),
-                    nodeIds = JsonInstant.encodeToString(involvedNodeIds),
-                )
-            )
-
-            // 6. Embed new/updated nodes that don't have embeddings yet
+            // 5. Embed new/updated nodes that don't have embeddings yet
             embedMissingNodes(assistantId)
 
             Log.i(TAG, "Exchange processing complete for assistant $assistantId")

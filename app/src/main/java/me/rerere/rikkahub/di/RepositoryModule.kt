@@ -9,8 +9,6 @@ import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.GenMediaRepository
 import me.rerere.rikkahub.data.repository.GraphMemoryRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
-import me.rerere.rikkahub.data.repository.PersonProfileRepository
-import me.rerere.rikkahub.service.PersonProfileService
 import org.koin.dsl.module
 
 val repositoryModule = module {
@@ -35,7 +33,7 @@ val repositoryModule = module {
     }
 
     single {
-        RelationExtractor(providerManager = get(), settingsStore = get(), graphRepo = get())
+        RelationExtractor(providerManager = get(), settingsStore = get())
     }
 
     single {

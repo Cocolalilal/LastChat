@@ -62,8 +62,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -81,7 +79,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -105,11 +102,6 @@ import me.rerere.rikkahub.data.db.entity.TimelineEventEntity
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
-import me.rerere.rikkahub.ui.components.ui.ItemPosition
-import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
-import me.rerere.rikkahub.ui.components.memory.PersonProfileBanner
-import me.rerere.rikkahub.ui.hooks.HapticPattern
-import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -143,11 +135,6 @@ fun GraphMemoryContent(
     onClearAllGraphData: () -> Unit = {},
     onDeleteNode: (Int) -> Unit = {},
     onDeleteEdge: (Int) -> Unit = {},
-    onUpdateNode: (MemoryNodeEntity) -> Unit = {},
-    onUpdateEdge: (MemoryEdgeEntity) -> Unit = {},
-    onDeleteTimelineEvent: (Int) -> Unit = {},
-    onUpdateTimelineEvent: (TimelineEventEntity) -> Unit = {},
-    onDeleteEpisode: (Int) -> Unit = {},
     onProcessText: (String) -> Unit = {},
     isProcessing: Boolean = false,
 ) {
@@ -162,13 +149,28 @@ fun GraphMemoryContent(
     var showIngestion by remember { mutableStateOf(false) }
     var ingestionText by remember { mutableStateOf("") }
 
-    // Slider-based clear confirmation dialog
+    // Clear confirmation dialog
     if (showClearDialog) {
-        SliderDeleteConfirmationDialog(
-            onDismiss = { showClearDialog = false },
-            onConfirm = {
-                onClearAllGraphData()
-                showClearDialog = false
+        AlertDialog(
+            onDismissRequest = { showClearDialog = false },
+            title = { Text("Clear Graph Memory") },
+            text = {
+                Text("This will permanently delete all graph memory data (nodes, edges, events, episodes) for this assistant. This cannot be undone.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onClearAllGraphData()
+                        showClearDialog = false
+                    }
+                ) {
+                    Text("Delete All", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearDialog = false }) {
+                    Text("Cancel")
+                }
             }
         )
     }
@@ -287,27 +289,20 @@ fun GraphMemoryContent(
                 GraphView.ENTITIES -> EntitiesView(
                     nodes = nodes,
                     edges = edges,
-                    timelineEvents = timelineEvents,
-                    assistantId = assistant.id,
                     onDeleteNode = onDeleteNode,
-                    onUpdateNode = onUpdateNode,
                 )
                 GraphView.RELATIONSHIPS -> RelationshipsView(
                     edges = edges,
                     nodes = nodes,
                     onDeleteEdge = onDeleteEdge,
-                    onUpdateEdge = onUpdateEdge,
                 )
                 GraphView.TIMELINE -> TimelineView(
                     events = timelineEvents,
                     nodes = nodes,
-                    onDeleteEvent = onDeleteTimelineEvent,
-                    onUpdateEvent = onUpdateTimelineEvent,
                 )
                 GraphView.EPISODES -> EpisodesView(
                     episodes = episodes,
                     nodes = nodes,
-                    onDeleteEpisode = onDeleteEpisode,
                 )
             }
         }
@@ -451,44 +446,11 @@ private fun GraphStatItem(value: String, label: String, color: Color) {
 private fun EntitiesView(
     nodes: List<MemoryNodeEntity>,
     edges: List<MemoryEdgeEntity>,
-    timelineEvents: List<TimelineEventEntity> = emptyList(),
-    assistantId: String,
     onDeleteNode: (Int) -> Unit,
-    onUpdateNode: (MemoryNodeEntity) -> Unit = {},
 ) {
-    var editingNode by remember { mutableStateOf<MemoryNodeEntity?>(null) }
-    var showingPersonProfile by remember { mutableStateOf<Int?>(null) }
-
-    // Edit dialog for nodes
-    editingNode?.let { node ->
-        EditNodeDialog(
-            node = node,
-            onDismiss = { editingNode = null },
-            onSave = { updated ->
-                onUpdateNode(updated)
-                editingNode = null
-            }
-        )
-    }
-
-    // Person profile banner
-    showingPersonProfile?.let { nodeId ->
-        PersonProfileBanner(
-            nodeId = nodeId,
-            assistantId = assistantId,
-            onDismiss = { showingPersonProfile = null }
-        )
-    }
-
     var searchQuery by remember { mutableStateOf("") }
     var selectedType by remember { mutableStateOf<String?>(null) }
     var expandedNodeId by remember { mutableStateOf<Int?>(null) }
-
-    // Swipe neighbor tracking
-    var draggingIndex by remember { mutableIntStateOf(-1) }
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-    var isUnlocked by remember { mutableStateOf(false) }
-    var neighborsUnlocked by remember { mutableStateOf(false) }
 
     val filteredNodes = nodes
         .filter { node ->
@@ -574,49 +536,16 @@ private fun EntitiesView(
                             val connectedIds = nodeEdges.map { if (it.sourceNodeId == node.id) it.targetNodeId else it.sourceNodeId }.toSet()
                             nodes.filter { it.id in connectedIds }.associateBy { it.id }
                         } else emptyMap()
-                        val nodeEvents = if (isExpanded) {
-                            timelineEvents.filter { it.nodeId == node.id }
-                        } else emptyList()
 
-                        val position = when {
-                            filteredNodes.size == 1 -> ItemPosition.ONLY
-                            index == 0 -> ItemPosition.FIRST
-                            index == filteredNodes.size - 1 -> ItemPosition.LAST
-                            else -> ItemPosition.MIDDLE
-                        }
-                        val neighborOffset = if (draggingIndex in listOf(index - 1, index + 1) && neighborsUnlocked) dragOffset * 0.15f else 0f
-
-                        PhysicsSwipeToDelete(
-                            position = position,
-                            deleteEnabled = true,
-                            neighborOffset = neighborOffset,
-                            onDragProgress = { offset, unlocked ->
-                                draggingIndex = index
-                                dragOffset = offset
-                                isUnlocked = unlocked
-                                neighborsUnlocked = unlocked
-                            },
-                            onDragEnd = {
-                                draggingIndex = -1
-                                dragOffset = 0f
-                                isUnlocked = false
-                                neighborsUnlocked = false
-                            },
-                            onDelete = { onDeleteNode(node.id) },
-                            modifier = Modifier.fillMaxWidth()
-                        ) { _ ->
-                            NodeCard(
-                                node = node,
-                                isExpanded = isExpanded,
-                                edges = nodeEdges,
-                                connectedNodes = connectedNodes,
-                                timelineEvents = nodeEvents,
-                                position = cardPosition(index, filteredNodes.size),
-                                onToggleExpand = { expandedNodeId = if (isExpanded) null else node.id },
-                                onEdit = { editingNode = node },
-                                onPersonClick = { showingPersonProfile = node.id },
-                            )
-                        }
+                        NodeCard(
+                            node = node,
+                            isExpanded = isExpanded,
+                            edges = nodeEdges,
+                            connectedNodes = connectedNodes,
+                            position = cardPosition(index, filteredNodes.size),
+                            onToggleExpand = { expandedNodeId = if (isExpanded) null else node.id },
+                            onDelete = { onDeleteNode(node.id) }
+                        )
                     }
                 }
             }
@@ -634,13 +563,10 @@ private fun NodeCard(
     isExpanded: Boolean,
     edges: List<MemoryEdgeEntity>,
     connectedNodes: Map<Int, MemoryNodeEntity>,
-    timelineEvents: List<TimelineEventEntity> = emptyList(),
     position: String,
     onToggleExpand: () -> Unit,
-    onEdit: () -> Unit,
-    onPersonClick: () -> Unit = {},
+    onDelete: () -> Unit,
 ) {
-    val haptics = rememberPremiumHaptics()
     val shape = cardShape(position)
     val typeColor = nodeTypeColor(node.nodeType)
     val valenceColor = when {
@@ -650,17 +576,7 @@ private fun NodeCard(
     }
 
     Surface(
-        modifier = Modifier.combinedClickable(
-            onClick = {
-                if (node.nodeType == NodeType.PERSON) {
-                    haptics.perform(HapticPattern.Pop)
-                    onPersonClick()
-                } else {
-                    onToggleExpand()
-                }
-            },
-            onLongClick = onEdit
-        ),
+        onClick = onToggleExpand,
         color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = shape,
     ) {
@@ -839,65 +755,15 @@ private fun NodeCard(
                         }
                     }
 
-                    // Timeline events linked to this node
-                    if (timelineEvents.isNotEmpty()) {
-                        Text(
-                            "Timeline (${timelineEvents.size})",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                        timelineEvents.forEach { event ->
-                            val statusIcon = when (event.eventType) {
-                                "upcoming" -> "⏳"
-                                "ongoing" -> "🔄"
-                                "completed" -> "✅"
-                                "recurring" -> "🔁"
-                                else -> "📌"
-                            }
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f))
-                                    .padding(8.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(statusIcon, style = MaterialTheme.typography.bodySmall)
-                                Text(
-                                    event.description.take(100),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    modifier = Modifier.weight(1f),
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Surface(
-                                    color = when (event.eventType) {
-                                        "upcoming" -> Color(0xFF42A5F5)
-                                        "ongoing" -> Color(0xFFFFA726)
-                                        "completed" -> Color(0xFF66BB6A)
-                                        "recurring" -> Color(0xFF7E57C2)
-                                        else -> MaterialTheme.colorScheme.secondary
-                                    }.copy(alpha = 0.15f),
-                                    shape = RoundedCornerShape(6.dp)
-                                ) {
-                                    Text(
-                                        event.eventType.replaceFirstChar { it.uppercase() },
-                                        style = MaterialTheme.typography.labelSmall,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                        fontWeight = FontWeight.Medium,
-                                        color = when (event.eventType) {
-                                            "upcoming" -> Color(0xFF42A5F5)
-                                            "ongoing" -> Color(0xFFFFA726)
-                                            "completed" -> Color(0xFF66BB6A)
-                                            "recurring" -> Color(0xFF7E57C2)
-                                            else -> MaterialTheme.colorScheme.secondary
-                                        }
-                                    )
-                                }
-                            }
-                        }
+                    // Delete action
+                    TextButton(
+                        onClick = onDelete,
+                        modifier = Modifier.align(Alignment.End),
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Icon(Icons.Rounded.Delete, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Delete", style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }
@@ -914,30 +780,9 @@ private fun RelationshipsView(
     edges: List<MemoryEdgeEntity>,
     nodes: List<MemoryNodeEntity>,
     onDeleteEdge: (Int) -> Unit,
-    onUpdateEdge: (MemoryEdgeEntity) -> Unit = {},
 ) {
-    var editingEdge by remember { mutableStateOf<MemoryEdgeEntity?>(null) }
-
-    // Edit dialog for edges
-    editingEdge?.let { edge ->
-        EditEdgeDialog(
-            edge = edge,
-            onDismiss = { editingEdge = null },
-            onSave = { updated ->
-                onUpdateEdge(updated)
-                editingEdge = null
-            }
-        )
-    }
-
     var sortByStrength by remember { mutableStateOf(true) }
     val nodeMap = remember(nodes) { nodes.associateBy { it.id } }
-
-    // Swipe neighbor tracking
-    var draggingIndex by remember { mutableIntStateOf(-1) }
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-    var isUnlocked by remember { mutableStateOf(false) }
-    var neighborsUnlocked by remember { mutableStateOf(false) }
 
     val sortedEdges = if (sortByStrength) {
         edges.sortedByDescending { it.strength }
@@ -975,100 +820,68 @@ private fun RelationshipsView(
                         val sourceName = nodeMap[edge.sourceNodeId]?.name ?: "?"
                         val targetName = nodeMap[edge.targetNodeId]?.name ?: "?"
 
-                        val position = when {
-                            sortedEdges.size == 1 -> ItemPosition.ONLY
-                            index == 0 -> ItemPosition.FIRST
-                            index == sortedEdges.size - 1 -> ItemPosition.LAST
-                            else -> ItemPosition.MIDDLE
-                        }
-                        val neighborOffset = if (draggingIndex in listOf(index - 1, index + 1) && neighborsUnlocked) dragOffset * 0.15f else 0f
-
-                        PhysicsSwipeToDelete(
-                            position = position,
-                            deleteEnabled = true,
-                            neighborOffset = neighborOffset,
-                            onDragProgress = { offset, unlocked ->
-                                draggingIndex = index
-                                dragOffset = offset
-                                isUnlocked = unlocked
-                                neighborsUnlocked = unlocked
-                            },
-                            onDragEnd = {
-                                draggingIndex = -1
-                                dragOffset = 0f
-                                isUnlocked = false
-                                neighborsUnlocked = false
-                            },
-                            onDelete = { onDeleteEdge(edge.id) },
-                            modifier = Modifier.fillMaxWidth()
-                        ) { _ ->
-                            Surface(
-                                modifier = Modifier.combinedClickable(
-                                    onClick = { editingEdge = edge },
-                                    onLongClick = { editingEdge = edge }
-                                ),
-                                color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-                                shape = cardShape(cardPosition(index, sortedEdges.size)),
+                        Surface(
+                            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+                            shape = cardShape(cardPosition(index, sortedEdges.size)),
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(14.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(14.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    // Source → Target
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Row(
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                sourceName,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                fontWeight = FontWeight.Bold,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.weight(1f, fill = false)
-                                            )
-                                            Text("→", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
-                                            Text(
-                                                targetName,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                fontWeight = FontWeight.Bold,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.weight(1f, fill = false)
-                                            )
-                                        }
-                                        Row(
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                edge.relationType.replace("_", " "),
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.secondary,
-                                            )
-                                            if (edge.description.isNotBlank()) {
-                                                Text(
-                                                    "· ${edge.description}",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    modifier = Modifier.weight(1f)
-                                                )
-                                            }
-                                        }
-                                    }
-                                    // Strength
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        StrengthBar(edge.strength, modifier = Modifier.width(40.dp))
+                                // Source → Target
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
                                         Text(
-                                            "${(edge.strength * 100).toInt()}%",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            sourceName,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                        Text("→", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                                        Text(
+                                            targetName,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false)
                                         )
                                     }
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            edge.relationType.replace("_", " "),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.secondary,
+                                        )
+                                        if (edge.description.isNotBlank()) {
+                                            Text(
+                                                "· ${edge.description}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                    }
+                                }
+                                // Strength
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    StrengthBar(edge.strength, modifier = Modifier.width(40.dp))
+                                    Text(
+                                        "${(edge.strength * 100).toInt()}%",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
                             }
                         }
@@ -1087,30 +900,9 @@ private fun RelationshipsView(
 private fun TimelineView(
     events: List<TimelineEventEntity>,
     nodes: List<MemoryNodeEntity>,
-    onDeleteEvent: (Int) -> Unit = {},
-    onUpdateEvent: (TimelineEventEntity) -> Unit = {},
 ) {
     val nodeMap = remember(nodes) { nodes.associateBy { it.id } }
     val sortedEvents = events.sortedByDescending { it.scheduledAt ?: it.lastChecked }
-    var editingEvent by remember { mutableStateOf<TimelineEventEntity?>(null) }
-
-    // Edit dialog for timeline events
-    editingEvent?.let { event ->
-        EditTimelineEventDialog(
-            event = event,
-            onDismiss = { editingEvent = null },
-            onSave = { updated ->
-                onUpdateEvent(updated)
-                editingEvent = null
-            }
-        )
-    }
-
-    // Swipe neighbor tracking
-    var draggingIndex by remember { mutableIntStateOf(-1) }
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-    var isUnlocked by remember { mutableStateOf(false) }
-    var neighborsUnlocked by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier.clip(RoundedCornerShape(20.dp)).animateContentSize(),
@@ -1137,87 +929,55 @@ private fun TimelineView(
                         else -> MaterialTheme.colorScheme.onSurfaceVariant
                     }
 
-                    val position = when {
-                        sortedEvents.size == 1 -> ItemPosition.ONLY
-                        index == 0 -> ItemPosition.FIRST
-                        index == sortedEvents.size - 1 -> ItemPosition.LAST
-                        else -> ItemPosition.MIDDLE
-                    }
-                    val neighborOffset = if (draggingIndex in listOf(index - 1, index + 1) && neighborsUnlocked) dragOffset * 0.15f else 0f
-
-                    PhysicsSwipeToDelete(
-                        position = position,
-                        deleteEnabled = true,
-                        neighborOffset = neighborOffset,
-                        onDragProgress = { offset, unlocked ->
-                            draggingIndex = index
-                            dragOffset = offset
-                            isUnlocked = unlocked
-                            neighborsUnlocked = unlocked
-                        },
-                        onDragEnd = {
-                            draggingIndex = -1
-                            dragOffset = 0f
-                            isUnlocked = false
-                            neighborsUnlocked = false
-                        },
-                        onDelete = { onDeleteEvent(event.id) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { _ ->
-                        Surface(
-                            modifier = Modifier.combinedClickable(
-                                onClick = { editingEvent = event },
-                                onLongClick = { editingEvent = event }
-                            ),
-                            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-                            shape = cardShape(cardPosition(index, sortedEvents.size)),
+                    Surface(
+                        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shape = cardShape(cardPosition(index, sortedEvents.size)),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(14.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(14.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(statusColor.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .clip(CircleShape)
-                                        .background(statusColor.copy(alpha = 0.15f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(icon, null, modifier = Modifier.size(16.dp), tint = statusColor)
-                                }
-                                Column(modifier = Modifier.weight(1f)) {
+                                Icon(icon, null, modifier = Modifier.size(16.dp), tint = statusColor)
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    nodeName,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (event.description.isNotBlank()) {
                                     Text(
-                                        nodeName,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1,
+                                        event.description,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 2,
                                         overflow = TextOverflow.Ellipsis
                                     )
-                                    if (event.description.isNotBlank()) {
-                                        Text(
-                                            event.description,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 2,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
                                 }
-                                Column(horizontalAlignment = Alignment.End) {
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    event.eventType.replaceFirstChar { it.uppercase() },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = statusColor,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                                event.scheduledAt?.let {
                                     Text(
-                                        event.eventType.replaceFirstChar { it.uppercase() },
+                                        relativeTime(it),
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = statusColor,
-                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
-                                    event.scheduledAt?.let {
-                                        Text(
-                                            formatDate(it),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
                                 }
                             }
                         }
@@ -1236,17 +996,10 @@ private fun TimelineView(
 private fun EpisodesView(
     episodes: List<GraphEpisodeEntity>,
     nodes: List<MemoryNodeEntity>,
-    onDeleteEpisode: (Int) -> Unit = {},
 ) {
     val nodeMap = remember(nodes) { nodes.associateBy { it.id } }
     val sortedEpisodes = episodes.sortedByDescending { it.endTime }
     var expandedEpisodeId by remember { mutableStateOf<Int?>(null) }
-
-    // Swipe neighbor tracking
-    var draggingIndex by remember { mutableIntStateOf(-1) }
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-    var isUnlocked by remember { mutableStateOf(false) }
-    var neighborsUnlocked by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier.clip(RoundedCornerShape(20.dp)).animateContentSize(),
@@ -1263,123 +1016,92 @@ private fun EpisodesView(
                     } catch (_: Exception) { emptyList() }
                     val linkedNodes = linkedNodeIds.mapNotNull { nodeMap[it] }
 
-                    val position = when {
-                        sortedEpisodes.size == 1 -> ItemPosition.ONLY
-                        index == 0 -> ItemPosition.FIRST
-                        index == sortedEpisodes.size - 1 -> ItemPosition.LAST
-                        else -> ItemPosition.MIDDLE
-                    }
-                    val neighborOffset = if (draggingIndex in listOf(index - 1, index + 1) && neighborsUnlocked) dragOffset * 0.15f else 0f
-
-                    PhysicsSwipeToDelete(
-                        position = position,
-                        deleteEnabled = true,
-                        neighborOffset = neighborOffset,
-                        onDragProgress = { offset, unlocked ->
-                            draggingIndex = index
-                            dragOffset = offset
-                            isUnlocked = unlocked
-                            neighborsUnlocked = unlocked
-                        },
-                        onDragEnd = {
-                            draggingIndex = -1
-                            dragOffset = 0f
-                            isUnlocked = false
-                            neighborsUnlocked = false
-                        },
-                        onDelete = { onDeleteEpisode(episode.id) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { _ ->
-                        Surface(
-                            modifier = Modifier.combinedClickable(
-                                onClick = { expandedEpisodeId = if (isExpanded) null else episode.id },
-                                onLongClick = {}
-                            ),
-                            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-                            shape = cardShape(cardPosition(index, sortedEpisodes.size)),
+                    Surface(
+                        onClick = { expandedEpisodeId = if (isExpanded) null else episode.id },
+                        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shape = cardShape(cardPosition(index, sortedEpisodes.size)),
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp)
+                                .animateContentSize()
                         ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(14.dp)
-                                    .animateContentSize()
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            episode.content.take(80) + if (episode.content.length > 80) "..." else "",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.Medium,
-                                            maxLines = if (isExpanded) Int.MAX_VALUE else 2,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Row(
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                formatDate(episode.endTime),
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                            if (episode.significance >= 7) {
-                                                Text(
-                                                    "★ Important",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.tertiary,
-                                                    fontWeight = FontWeight.Bold,
-                                                )
-                                            }
-                                        }
-                                    }
-                                    Icon(
-                                        if (isExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                                        null,
-                                        modifier = Modifier.size(16.dp),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        episode.content.take(80) + if (episode.content.length > 80) "..." else "",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = if (isExpanded) Int.MAX_VALUE else 2,
+                                        overflow = TextOverflow.Ellipsis
                                     )
-                                }
-
-                                AnimatedVisibility(
-                                    visible = isExpanded,
-                                    enter = fadeIn() + expandVertically(),
-                                    exit = fadeOut() + shrinkVertically()
-                                ) {
-                                    Column(modifier = Modifier.padding(top = 8.dp)) {
-                                        if (isExpanded && episode.content.length > 80) {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            formatDate(episode.endTime),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        if (episode.significance >= 7) {
                                             Text(
-                                                episode.content,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.padding(bottom = 8.dp)
-                                            )
-                                        }
-                                        if (linkedNodes.isNotEmpty()) {
-                                            Text(
-                                                "Related entities:",
+                                                "★ Important",
                                                 style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.tertiary,
                                                 fontWeight = FontWeight.Bold,
                                             )
-                                            Row(
-                                                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                            ) {
-                                                linkedNodes.forEach { node ->
-                                                    Surface(
-                                                        color = nodeTypeColor(node.nodeType).copy(alpha = 0.12f),
-                                                        shape = RoundedCornerShape(8.dp)
-                                                    ) {
-                                                        Text(
-                                                            node.name,
-                                                            style = MaterialTheme.typography.labelSmall,
-                                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                                            color = nodeTypeColor(node.nodeType)
-                                                        )
-                                                    }
+                                        }
+                                    }
+                                }
+                                Icon(
+                                    if (isExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                    null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            AnimatedVisibility(
+                                visible = isExpanded,
+                                enter = fadeIn() + expandVertically(),
+                                exit = fadeOut() + shrinkVertically()
+                            ) {
+                                Column(modifier = Modifier.padding(top = 8.dp)) {
+                                    if (isExpanded && episode.content.length > 80) {
+                                        Text(
+                                            episode.content,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(bottom = 8.dp)
+                                        )
+                                    }
+                                    if (linkedNodes.isNotEmpty()) {
+                                        Text(
+                                            "Related entities:",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                        Row(
+                                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            linkedNodes.forEach { node ->
+                                                Surface(
+                                                    color = nodeTypeColor(node.nodeType).copy(alpha = 0.12f),
+                                                    shape = RoundedCornerShape(8.dp)
+                                                ) {
+                                                    Text(
+                                                        node.name,
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                        color = nodeTypeColor(node.nodeType)
+                                                    )
                                                 }
                                             }
                                         }
@@ -1544,88 +1266,6 @@ private fun StrengthBar(strength: Float, modifier: Modifier = Modifier) {
     )
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SLIDER DELETE CONFIRMATION DIALOG
-// ═══════════════════════════════════════════════════════════════════════════════
-
-@Composable
-private fun SliderDeleteConfirmationDialog(
-    onDismiss: () -> Unit,
-    onConfirm: () -> Unit,
-) {
-    var sliderValue by remember { mutableStateOf(0f) }
-    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
-    val isReady = sliderValue >= 0.95f
-
-    val textColor by animateColorAsState(
-        targetValue = if (isReady) MaterialTheme.colorScheme.error
-        else MaterialTheme.colorScheme.onSurface,
-        label = "sliderText"
-    )
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                "Clear All Graph Memory",
-                color = textColor,
-                fontWeight = FontWeight.Bold
-            )
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text(
-                    "This will permanently delete all nodes, edges, timeline events, and episodes. This cannot be undone.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        if (isReady) "✓ Ready to delete" else "Slide to confirm →",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isReady) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = if (isReady) FontWeight.Bold else FontWeight.Normal,
-                    )
-                    Slider(
-                        value = sliderValue,
-                        onValueChange = { newValue ->
-                            val oldThreshold = (sliderValue * 4).toInt()
-                            val newThreshold = (newValue * 4).toInt()
-                            if (newThreshold > oldThreshold) {
-                                haptic.performHapticFeedback(
-                                    androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove
-                                )
-                            }
-                            if (newValue >= 0.95f && sliderValue < 0.95f) {
-                                haptic.performHapticFeedback(
-                                    androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress
-                                )
-                            }
-                            sliderValue = newValue
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = onConfirm,
-                enabled = isReady,
-            ) {
-                Text(
-                    "Delete All",
-                    color = if (isReady) MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
-                    fontWeight = FontWeight.Bold,
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
-    )
-}
-
 @Composable
 private fun EmptyPlaceholder(text: String) {
     Surface(
@@ -1654,6 +1294,7 @@ private fun nodeTypeIcon(type: String): ImageVector = when (type) {
     NodeType.CONCEPT -> Icons.Rounded.Lightbulb
     NodeType.PREFERENCE -> Icons.Rounded.Favorite
     NodeType.EMOTION -> Icons.Rounded.EmojiEmotions
+    NodeType.PLAN -> Icons.Rounded.TaskAlt
     else -> Icons.Rounded.Star
 }
 
@@ -1666,6 +1307,7 @@ private fun nodeTypeColor(type: String): Color = when (type) {
     NodeType.CONCEPT -> Color(0xFF7E57C2)
     NodeType.PREFERENCE -> Color(0xFFEC407A)
     NodeType.EMOTION -> Color(0xFFFFA726)
+    NodeType.PLAN -> Color(0xFF42A5F5)
     else -> MaterialTheme.colorScheme.onSurfaceVariant
 }
 
@@ -1696,262 +1338,4 @@ private fun relativeTime(timestamp: Long): String {
 
 private fun formatDate(timestamp: Long): String {
     return SimpleDateFormat("MMM d, yyyy", Locale.getDefault()).format(Date(timestamp))
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// EDIT DIALOGS
-// ═══════════════════════════════════════════════════════════════════════════════
-
-@Composable
-private fun EditNodeDialog(
-    node: MemoryNodeEntity,
-    onDismiss: () -> Unit,
-    onSave: (MemoryNodeEntity) -> Unit,
-) {
-    var name by remember { mutableStateOf(node.name) }
-    var description by remember { mutableStateOf(node.description) }
-    var selectedType by remember { mutableStateOf(node.nodeType) }
-    var importance by remember { mutableFloatStateOf(node.importance.toFloat()) }
-    var typeDropdownExpanded by remember { mutableStateOf(false) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Edit Entity") },
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text("Description") },
-                    maxLines = 3,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                // Type selector
-                Box {
-                    OutlinedTextField(
-                        value = selectedType.replaceFirstChar { it.uppercase() },
-                        onValueChange = {},
-                        label = { Text("Type") },
-                        readOnly = true,
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().clickable { typeDropdownExpanded = true },
-                        trailingIcon = {
-                            Icon(
-                                if (typeDropdownExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                                null,
-                                modifier = Modifier.clickable { typeDropdownExpanded = !typeDropdownExpanded }
-                            )
-                        }
-                    )
-                    DropdownMenu(
-                        expanded = typeDropdownExpanded,
-                        onDismissRequest = { typeDropdownExpanded = false }
-                    ) {
-                        NodeType.ALL.forEach { type ->
-                            DropdownMenuItem(
-                                text = {
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(nodeTypeIcon(type), null, modifier = Modifier.size(16.dp))
-                                        Text(type.replaceFirstChar { it.uppercase() })
-                                    }
-                                },
-                                onClick = {
-                                    selectedType = type
-                                    typeDropdownExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-
-                // Importance slider
-                Column {
-                    Text(
-                        "Importance: ${importance.toInt()}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Slider(
-                        value = importance,
-                        onValueChange = { importance = it },
-                        valueRange = 1f..10f,
-                        steps = 8,
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    onSave(node.copy(
-                        name = name.trim(),
-                        description = description.trim(),
-                        nodeType = selectedType,
-                        importance = importance.toInt()
-                    ))
-                },
-                enabled = name.isNotBlank()
-            ) { Text("Save") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
-    )
-}
-
-@Composable
-private fun EditEdgeDialog(
-    edge: MemoryEdgeEntity,
-    onDismiss: () -> Unit,
-    onSave: (MemoryEdgeEntity) -> Unit,
-) {
-    var relationType by remember { mutableStateOf(edge.relationType) }
-    var description by remember { mutableStateOf(edge.description) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Edit Relationship") },
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                OutlinedTextField(
-                    value = relationType,
-                    onValueChange = { relationType = it },
-                    label = { Text("Relation Type") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text("Description") },
-                    maxLines = 3,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    onSave(edge.copy(
-                        relationType = relationType.trim(),
-                        description = description.trim()
-                    ))
-                },
-                enabled = relationType.isNotBlank()
-            ) { Text("Save") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
-    )
-}
-
-@Composable
-private fun EditTimelineEventDialog(
-    event: TimelineEventEntity,
-    onDismiss: () -> Unit,
-    onSave: (TimelineEventEntity) -> Unit,
-) {
-    var description by remember { mutableStateOf(event.description) }
-    var selectedType by remember { mutableStateOf(event.eventType) }
-    var typeDropdownExpanded by remember { mutableStateOf(false) }
-
-    val eventTypes = listOf("upcoming", "ongoing", "completed", "recurring")
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Edit Timeline Event") },
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text("Description") },
-                    maxLines = 3,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                // Event type selector
-                Box {
-                    OutlinedTextField(
-                        value = selectedType.replaceFirstChar { it.uppercase() },
-                        onValueChange = {},
-                        label = { Text("Status") },
-                        readOnly = true,
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().clickable { typeDropdownExpanded = true },
-                        trailingIcon = {
-                            Icon(
-                                if (typeDropdownExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                                null,
-                                modifier = Modifier.clickable { typeDropdownExpanded = !typeDropdownExpanded }
-                            )
-                        }
-                    )
-                    DropdownMenu(
-                        expanded = typeDropdownExpanded,
-                        onDismissRequest = { typeDropdownExpanded = false }
-                    ) {
-                        eventTypes.forEach { type ->
-                            val icon = when (type) {
-                                "upcoming" -> Icons.Rounded.Schedule
-                                "ongoing" -> Icons.Rounded.PlayArrow
-                                "completed" -> Icons.Rounded.TaskAlt
-                                "recurring" -> Icons.Rounded.CalendarMonth
-                                else -> Icons.Rounded.Pending
-                            }
-                            DropdownMenuItem(
-                                text = {
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(icon, null, modifier = Modifier.size(16.dp))
-                                        Text(type.replaceFirstChar { it.uppercase() })
-                                    }
-                                },
-                                onClick = {
-                                    selectedType = type
-                                    typeDropdownExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    onSave(event.copy(
-                        description = description.trim(),
-                        eventType = selectedType
-                    ))
-                }
-            ) { Text("Save") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
-    )
 }

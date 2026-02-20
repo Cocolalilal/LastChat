@@ -6,7 +6,6 @@ import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
-import me.rerere.rikkahub.data.repository.GraphMemoryRepository
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.db.entity.MemoryEdgeEntity
@@ -28,7 +27,6 @@ import kotlinx.serialization.json.intOrNull
 class RelationExtractor(
     private val providerManager: ProviderManager,
     private val settingsStore: SettingsStore,
-    private val graphRepo: GraphMemoryRepository,
 ) {
     companion object {
         private const val TAG = "RelationExtractor"
@@ -72,7 +70,6 @@ class RelationExtractor(
      * Extract entities, relations, and timeline events from a conversation exchange.
      */
     suspend fun extract(
-        assistantId: String,
         userMessage: String,
         assistantReply: String,
         existingNodeNames: List<String> = emptyList(),
@@ -97,54 +94,31 @@ class RelationExtractor(
             "\n**Existing nodes in the graph** (re-use these names if referring to the same entity):\n${existingNodeNames.joinToString(", ")}\n"
         } else ""
 
-        val currentDate = java.time.LocalDate.now()
-        val dayOfWeek = currentDate.dayOfWeek.name.lowercase().replaceFirstChar { it.uppercase() }
-        val currentDateStr = currentDate.toString() // yyyy-MM-dd
-
-        // Get existing timeline events for dedup
-        val existingEvents = try {
-            graphRepo.getActiveEvents(assistantId)
-        } catch (_: Exception) { emptyList() }
-        val existingEventsHint = if (existingEvents.isNotEmpty()) {
-            "\n**Existing timeline events** (do NOT create duplicates of these):\n${existingEvents.joinToString("\n") { "- ${it.description} (${it.eventType})" }}\n"
-        } else ""
-
         val prompt = """
             Analyze this conversation exchange and extract structured information for a knowledge graph.
-            
-            **Today's date is $currentDateStr ($dayOfWeek).** Use this to determine correct dates and event statuses.
-            $existingNodesHint$existingEventsHint
+            $existingNodesHint
             **User:** $userMessage
             
             **Assistant:** $assistantReply
             
-            IMPORTANT: Only extract information from the actual conversation content above. Do NOT extract from any reasoning, thinking, or internal monologue — only the final messages matter.
-            
             Extract:
-            1. **Entities** (people, places, objects, events, concepts, preferences, emotions)
+            1. **Entities** (people, places, objects, events, concepts, preferences, emotions, plans)
             2. **Relations** between entities
             3. **Timeline events** (anything with temporal relevance: upcoming plans, deadlines, ongoing activities)
             
             Valid node types: ${NodeType.ALL.joinToString(", ")}
             Valid relation types: knows, likes, dislikes, scheduled_for, happened_at, related_to, feels_about, owns, part_of, similar_to
-            
-            **Event type rules (use today's date $currentDateStr to decide):**
-            - "upcoming" = has NOT happened yet, has a clear future date
-            - "ongoing" = currently happening or in progress, no clear end date yet
-            - "completed" = already happened or is past the scheduled date
-            - "recurring" = repeating pattern (daily, weekly, monthly)
-            Do NOT create events that duplicate existing ones listed above.
+            Valid event types: upcoming, ongoing, completed, recurring
             
             Only extract genuinely meaningful information. Skip trivial/generic content.
             Importance: 1-3 trivial, 4-6 normal, 7-9 important, 10 critical.
             Emotional valence: -1.0 very negative to 1.0 very positive, 0 neutral.
-            For dates, ALWAYS include the full year (e.g. "$currentDateStr", not just month-day).
             
             Output ONLY valid JSON (no markdown fences):
             {
               "nodes": [{"name": "...", "type": "...", "description": "...", "importance": 5, "emotionalValence": 0.0}],
               "edges": [{"source": "NodeName1", "target": "NodeName2", "relationType": "...", "description": "..."}],
-              "timelineEvents": [{"nodeName": "...", "eventType": "upcoming", "description": "...", "scheduledDate": "$currentDateStr"}]
+              "timelineEvents": [{"nodeName": "...", "eventType": "upcoming", "description": "...", "scheduledDate": "2025-03-01"}]
             }
             
             If nothing meaningful to extract, return: {"nodes": [], "edges": [], "timelineEvents": []}

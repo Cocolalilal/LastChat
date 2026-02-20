@@ -21,7 +21,6 @@ import me.rerere.rikkahub.data.db.dao.GraphEpisodeDAO
 import me.rerere.rikkahub.data.db.dao.MemoryDAO
 import me.rerere.rikkahub.data.db.dao.MemoryEdgeDAO
 import me.rerere.rikkahub.data.db.dao.MemoryNodeDAO
-import me.rerere.rikkahub.data.db.dao.PersonProfileDAO
 import me.rerere.rikkahub.data.db.dao.TimelineEventDAO
 import me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.data.db.entity.ConversationEntity
@@ -32,8 +31,6 @@ import me.rerere.rikkahub.data.db.entity.GraphEpisodeEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEdgeEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEntity
 import me.rerere.rikkahub.data.db.entity.MemoryNodeEntity
-import me.rerere.rikkahub.data.db.entity.PersonProfileEntity
-import me.rerere.rikkahub.data.db.entity.ProfileSummarySourceEntity
 import me.rerere.rikkahub.data.db.entity.TimelineEventEntity
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.utils.JsonInstant
@@ -47,8 +44,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 @Database(
-    entities = [ConversationEntity::class, MemoryEntity::class, GenMediaEntity::class, ChatEpisodeEntity::class, EmbeddingCacheEntity::class, DailyActivityEntity::class, MemoryNodeEntity::class, MemoryEdgeEntity::class, TimelineEventEntity::class, GraphEpisodeEntity::class, PersonProfileEntity::class, ProfileSummarySourceEntity::class],
-    version = 25,
+    entities = [ConversationEntity::class, MemoryEntity::class, GenMediaEntity::class, ChatEpisodeEntity::class, EmbeddingCacheEntity::class, DailyActivityEntity::class, MemoryNodeEntity::class, MemoryEdgeEntity::class, TimelineEventEntity::class, GraphEpisodeEntity::class],
+    version = 24,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -68,7 +65,6 @@ import kotlinx.serialization.json.put
         AutoMigration(from = 19, to = 20),
         AutoMigration(from = 20, to = 21), // Adds context_summary, context_summary_up_to_index, last_prune_time, last_prune_message_count, last_refresh_time to ConversationEntity
         AutoMigration(from = 21, to = 22), // Adds DailyActivityEntity table for persistent streak tracking
-        AutoMigration(from = 24, to = 25), // Adds PersonProfileEntity and ProfileSummarySourceEntity tables
     ]
 )
 @TypeConverters(TokenUsageConverter::class)

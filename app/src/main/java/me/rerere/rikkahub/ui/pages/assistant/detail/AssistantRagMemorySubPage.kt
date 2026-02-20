@@ -155,6 +155,19 @@ fun AssistantRagMemorySubPage(
                         }
                     )
 
+                    FormItem(
+                        label = { Text("Include Episodic Memories") },
+                        description = { Text("Include conversation history in retrieval.") },
+                        tail = {
+                            HapticSwitch(
+                                checked = assistant.ragIncludeEpisodes,
+                                onCheckedChange = {
+                                    onUpdateAssistant(assistant.copy(ragIncludeEpisodes = it))
+                                }
+                            )
+                        }
+                    )
+
 
                 }
             }

@@ -72,24 +72,6 @@ class TimelineManager(
         description: String,
         scheduledDateStr: String? = null,
     ): Int {
-        // Deduplicate: check if a similar event already exists for this node
-        val existingEvents = timelineEventDAO.getActiveEvents(assistantId)
-        val duplicate = existingEvents.find { existing ->
-            existing.nodeId == nodeId &&
-            (existing.description.equals(description, ignoreCase = true) ||
-             existing.description.contains(description, ignoreCase = true) ||
-             description.contains(existing.description, ignoreCase = true))
-        }
-        if (duplicate != null) {
-            Log.i(TAG, "Skipping duplicate timeline event: '$description' (matches existing: '${duplicate.description}')")
-            // If the new event has a date and the existing doesn't, update it
-            val scheduledAt = scheduledDateStr?.let { parseDateString(it) }
-            if (scheduledAt != null && duplicate.scheduledAt == null) {
-                timelineEventDAO.update(duplicate.copy(scheduledAt = scheduledAt))
-            }
-            return duplicate.id
-        }
-
         val scheduledAt = scheduledDateStr?.let { parseDateString(it) }
 
         val event = TimelineEventEntity(
