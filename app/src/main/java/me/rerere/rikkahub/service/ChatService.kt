@@ -513,10 +513,10 @@ class ChatService(
                             val results = memoryRepository.retrieveRelevantMemories(
                                 assistantId = settings.assistantId.toString(),
                                 query = lastUserMessage,
-                                limit = 50, // Hardcoded high limit for dynamic context
+                                limit = assistant.ragLimit,
                                 similarityThreshold = assistant.ragSimilarityThreshold,
                                 includeCore = assistant.ragIncludeCore,
-                                includeEpisodes = assistant.ragIncludeEpisodes
+                                includeEpisodes = false // Episodic memory is exclusive to Advanced (graph) mode
                             )
                             if (settings.enableRagLogging) {
                                 Log.d("RAG", "Retrieved ${results.size} memories")
@@ -690,6 +690,8 @@ class ChatService(
                                         assistantId = settings.assistantId.toString(),
                                         userMessage = lastUserMsg,
                                         assistantReply = lastAssistantMsg,
+                                        conversationId = conversationId.toString(),
+                                        timelineEnabled = currentAssistant.graphTimelineEnabled,
                                     )
                                 }
                             } catch (e: Exception) {

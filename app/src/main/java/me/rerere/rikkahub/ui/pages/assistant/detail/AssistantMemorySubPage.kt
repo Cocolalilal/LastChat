@@ -78,13 +78,17 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastForEach
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.ai.provider.Model
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.db.entity.MemoryNodeEntity
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantMemory
+import me.rerere.rikkahub.ui.components.ui.ItemPosition
+import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.useEditState
@@ -327,6 +331,11 @@ fun AssistantMemorySettings(
             val graphEpisodes by assistantDetailVM.allGraphEpisodes.collectAsState()
             val graphProcessing by assistantDetailVM.graphProcessing.collectAsState()
 
+            var profileSheetNode by remember { mutableStateOf<MemoryNodeEntity?>(null) }
+            val personNodes by assistantDetailVM.personNodes.collectAsState()
+            val settings by assistantDetailVM.settings.collectAsState()
+            val allProfiles by assistantDetailVM.allProfiles.collectAsState()
+
             GraphMemoryContent(
                 assistant = assistant,
                 onUpdateAssistant = onUpdateAssistant,
@@ -341,9 +350,32 @@ fun AssistantMemorySettings(
                 onClearAllGraphData = { assistantDetailVM.clearGraphMemory() },
                 onDeleteNode = { assistantDetailVM.deleteGraphNode(it) },
                 onDeleteEdge = { assistantDetailVM.deleteGraphEdge(it) },
+                onDeleteTimelineEvent = { assistantDetailVM.deleteTimelineEvent(it) },
+                onDeleteEpisode = { assistantDetailVM.deleteEpisode(it) },
+                onUpdateNode = { assistantDetailVM.updateNode(it) },
+                onUpdateEdge = { assistantDetailVM.updateEdge(it) },
+                onUpdateTimelineEvent = { assistantDetailVM.updateTimelineEvent(it) },
+                onUpdateEpisode = { assistantDetailVM.updateEpisode(it) },
                 onProcessText = { assistantDetailVM.processTextIntoGraph(it) },
                 isProcessing = graphProcessing,
+                onOpenPersonProfile = { node -> profileSheetNode = node },
+                profilesByNodeId = allProfiles,
+                userAvatar = settings.displaySetting.userAvatar,
+                characterAvatar = assistant.avatar,
             )
+
+            // Person Profile Bottom Sheet
+            profileSheetNode?.let { node ->
+                PersonProfileSheet(
+                    nodeId = node.id,
+                    node = node,
+                    vm = assistantDetailVM,
+                    userAvatar = settings.displaySetting.userAvatar,
+                    characterAvatar = assistant.avatar,
+                    allPersonNodes = personNodes,
+                    onDismiss = { profileSheetNode = null },
+                )
+            }
         }
 
         // ═══════════════════════════════════════════════════════════════════
@@ -914,6 +946,17 @@ private fun ManageMemoriesSection(
     var sortOrder by remember { mutableStateOf(MemorySortOrder.NEWEST_FIRST) }
     var showSortMenu by remember { mutableStateOf(false) }
     
+    // Swipe tracking for neighbor effect
+    val density = LocalDensity.current
+    var draggingIndex by remember { mutableStateOf(-1) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    var isUnlocked by remember { mutableStateOf(false) }
+    var neighborsUnlocked by remember { mutableStateOf(false) }
+    
+    if (dragOffset == 0f && neighborsUnlocked) {
+        neighborsUnlocked = false
+    }
+    
     // Auto-select tab when navigating from context sources
     LaunchedEffect(initialMemoryTab) {
         if (initialMemoryTab != null) {
@@ -1044,7 +1087,7 @@ private fun ManageMemoriesSection(
             )
         )
 
-        // Memory list with animation
+        // Memory list with animation and swipe-to-delete
         Column(
             modifier = Modifier
                 .clip(RoundedCornerShape(24.dp))
@@ -1054,20 +1097,62 @@ private fun ManageMemoriesSection(
             displayMemories.forEachIndexed { index, memory ->
                 key(memory.id) {
                     val position = when {
-                        displayMemories.size == 1 -> "ONLY"
-                        index == 0 -> "FIRST"
-                        index == displayMemories.size - 1 -> "LAST"
-                        else -> "MIDDLE"
+                        displayMemories.size == 1 -> ItemPosition.ONLY
+                        index == 0 -> ItemPosition.FIRST
+                        index == displayMemories.size - 1 -> ItemPosition.LAST
+                        else -> ItemPosition.MIDDLE
                     }
-                    MemoryItem(
-                        memory = memory,
-                        onEditMemory = onEditMemory,
-                        onDeleteMemory = onDeleteMemory,
-                        useRagMemoryRetrieval = assistant.useRagMemoryRetrieval,
-                        currentEmbeddingModelId = currentEmbeddingModelId,
-                        showType = showMemoryTypes,
-                        position = position
-                    )
+                    
+                    // Calculate neighbor offset
+                    val thresholdPx = with(density) { 35.dp.toPx() }
+                    if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
+                        neighborsUnlocked = true
+                    }
+                    
+                    val shouldNeighborFollow = draggingIndex >= 0 && 
+                        draggingIndex != index && 
+                        !isUnlocked && 
+                        !neighborsUnlocked
+                    
+                    val neighborOffset = if (shouldNeighborFollow) {
+                        val distance = kotlin.math.abs(index - draggingIndex)
+                        when (distance) {
+                            1 -> dragOffset * 0.35f
+                            2 -> dragOffset * 0.12f
+                            else -> 0f
+                        }
+                    } else 0f
+                    
+                    // Only allow delete for core memories (user-created)
+                    val canDelete = memory.type == 0
+                    
+                    PhysicsSwipeToDelete(
+                        position = position,
+                        deleteEnabled = canDelete,
+                        neighborOffset = neighborOffset,
+                        onDragProgress = { offset, unlocked ->
+                            draggingIndex = index
+                            dragOffset = offset
+                            isUnlocked = unlocked
+                        },
+                        onDragEnd = {
+                            if (draggingIndex == index) {
+                                draggingIndex = -1
+                                dragOffset = 0f
+                            }
+                        },
+                        onDelete = { onDeleteMemory(memory) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { _ ->
+                        MemoryItem(
+                            memory = memory,
+                            onEditMemory = onEditMemory,
+                            useRagMemoryRetrieval = assistant.useRagMemoryRetrieval,
+                            currentEmbeddingModelId = currentEmbeddingModelId,
+                            showType = showMemoryTypes,
+                            position = position
+                        )
+                    }
                 }
             }
             
@@ -1093,13 +1178,11 @@ private fun ManageMemoriesSection(
 private fun MemoryItem(
     memory: AssistantMemory,
     onEditMemory: (AssistantMemory) -> Unit,
-    onDeleteMemory: (AssistantMemory) -> Unit,
     useRagMemoryRetrieval: Boolean = false,
     currentEmbeddingModelId: String = "",
     showType: Boolean = false,
-    position: String = "MIDDLE"
+    position: ItemPosition = ItemPosition.MIDDLE
 ) {
-    var showDeleteConfirmation by remember { mutableStateOf(false) }
     val haptics = rememberPremiumHaptics()
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -1112,7 +1195,7 @@ private fun MemoryItem(
     
     val topCorner by animateDpAsState(
         targetValue = when (position) {
-            "ONLY", "FIRST" -> 24.dp
+            ItemPosition.ONLY, ItemPosition.FIRST -> 24.dp
             else -> 10.dp
         },
         animationSpec = spring(dampingRatio = 0.8f, stiffness = 200f),
@@ -1120,42 +1203,18 @@ private fun MemoryItem(
     )
     val bottomCorner by animateDpAsState(
         targetValue = when (position) {
-            "ONLY", "LAST" -> 24.dp
+            ItemPosition.ONLY, ItemPosition.LAST -> 24.dp
             else -> 10.dp
         },
         animationSpec = spring(dampingRatio = 0.8f, stiffness = 200f),
         label = "bottomCorner"
     )
     
-    if (showDeleteConfirmation) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirmation = false },
-            title = { Text(stringResource(R.string.assistant_page_delete)) },
-            text = { 
-                Text(
-                    text = stringResource(R.string.delete_memory_confirmation) + "\n\n\"${memory.content.take(100)}${if (memory.content.length > 100) "..." else ""}\""
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDeleteConfirmation = false
-                        onDeleteMemory(memory)
-                    }
-                ) {
-                    Text(stringResource(R.string.assistant_page_delete))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirmation = false }) {
-                    Text(stringResource(R.string.assistant_page_cancel))
-                }
-            }
-        )
-    }
-    
     Surface(
-        onClick = { onEditMemory(memory) },
+        onClick = { 
+            haptics.perform(HapticPattern.Pop)
+            onEditMemory(memory) 
+        },
         color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = RoundedCornerShape(
             topStart = topCorner,
@@ -1229,16 +1288,6 @@ private fun MemoryItem(
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodyMedium
                 )
-            }
-            
-            // Only show delete for core memories (user-created)
-            if (memory.type == 0) {
-                IconButton(onClick = { 
-                    haptics.perform(HapticPattern.Pop)
-                    showDeleteConfirmation = true 
-                }) {
-                    Icon(Icons.Rounded.Delete, stringResource(R.string.assistant_page_delete))
-                }
             }
         }
     }

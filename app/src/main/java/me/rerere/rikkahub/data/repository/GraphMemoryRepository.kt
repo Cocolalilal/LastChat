@@ -8,12 +8,17 @@ import me.rerere.rikkahub.data.ai.rag.VectorEngine
 import me.rerere.rikkahub.data.db.dao.GraphEpisodeDAO
 import me.rerere.rikkahub.data.db.dao.MemoryEdgeDAO
 import me.rerere.rikkahub.data.db.dao.MemoryNodeDAO
+import me.rerere.rikkahub.data.db.dao.PersonProfileDAO
 import me.rerere.rikkahub.data.db.dao.TimelineEventDAO
 import me.rerere.rikkahub.data.db.entity.GraphEpisodeEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEdgeEntity
 import me.rerere.rikkahub.data.db.entity.MemoryNodeEntity
 import me.rerere.rikkahub.data.db.entity.NodeStatus
+import me.rerere.rikkahub.data.db.entity.NodeType
+import me.rerere.rikkahub.data.db.entity.PersonProfileEntity
+import me.rerere.rikkahub.data.db.entity.RelationType
 import me.rerere.rikkahub.data.db.entity.TimelineEventEntity
+import java.util.Calendar
 import me.rerere.rikkahub.utils.JsonInstant
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
@@ -28,6 +33,7 @@ class GraphMemoryRepository(
     private val edgeDAO: MemoryEdgeDAO,
     private val timelineEventDAO: TimelineEventDAO,
     private val graphEpisodeDAO: GraphEpisodeDAO,
+    private val personProfileDAO: PersonProfileDAO,
     private val embeddingService: EmbeddingService,
 ) {
     companion object {
@@ -69,6 +75,149 @@ class GraphMemoryRepository(
 
     suspend fun deleteAllNodesForAssistant(assistantId: String) = nodeDAO.deleteAllForAssistant(assistantId)
 
+    // ─── Person Profile Operations ────────────────────────────────────────
+
+    suspend fun getProfile(nodeId: Int): PersonProfileEntity? =
+        personProfileDAO.getByNodeId(nodeId)
+
+    fun getProfileFlow(nodeId: Int): Flow<PersonProfileEntity?> =
+        personProfileDAO.getByNodeIdFlow(nodeId)
+
+    suspend fun getUserProfile(assistantId: String): PersonProfileEntity? =
+        personProfileDAO.getUserProfile(assistantId)
+
+    suspend fun getCharacterProfile(assistantId: String): PersonProfileEntity? =
+        personProfileDAO.getCharacterProfile(assistantId)
+
+    fun getAllProfilesFlow(assistantId: String): Flow<List<PersonProfileEntity>> =
+        personProfileDAO.getAllProfilesFlow(assistantId)
+
+    suspend fun getAllProfiles(assistantId: String): List<PersonProfileEntity> =
+        personProfileDAO.getAllProfiles(assistantId)
+
+    suspend fun upsertProfile(profile: PersonProfileEntity): Int {
+        val existing = personProfileDAO.getByNodeId(profile.nodeId)
+        if (existing != null) {
+            personProfileDAO.update(profile.copy(id = existing.id))
+            return existing.id
+        } else {
+            return personProfileDAO.insert(profile).toInt()
+        }
+    }
+
+    suspend fun updateProfile(profile: PersonProfileEntity) {
+        personProfileDAO.update(profile)
+    }
+
+    suspend fun deleteProfile(nodeId: Int) = personProfileDAO.deleteByNodeId(nodeId)
+
+    /**
+     * Get person-to-person relationships for a given person node.
+     * Returns edges where both source and target are person nodes,
+     * filtered to person-to-person relation types.
+     */
+    suspend fun getPersonRelationships(nodeId: Int): List<MemoryEdgeEntity> {
+        val edges = edgeDAO.getEdgesForNode(nodeId)
+        return edges.filter { it.relationType in RelationType.PERSON_TO_PERSON }
+    }
+
+    /**
+     * Get nodes that contribute to a person's physical description.
+     */
+    suspend fun getPhysicalAttributeNodes(personNodeId: Int): List<MemoryNodeEntity> {
+        val edges = edgeDAO.getIncomingEdges(personNodeId)
+            .filter { it.relationType == RelationType.DESCRIBES_PHYSICAL }
+        return edges.mapNotNull { nodeDAO.getById(it.sourceNodeId) }
+    }
+
+    /**
+     * Get nodes that contribute to a person's personality description.
+     */
+    suspend fun getPersonalityNodes(personNodeId: Int): List<MemoryNodeEntity> {
+        val edges = edgeDAO.getIncomingEdges(personNodeId)
+            .filter { it.relationType == RelationType.DESCRIBES_PERSONALITY }
+        return edges.mapNotNull { nodeDAO.getById(it.sourceNodeId) }
+    }
+
+    /**
+     * Get nodes that contribute to a person's "other info" description.
+     */
+    suspend fun getOtherInfoNodes(personNodeId: Int): List<MemoryNodeEntity> {
+        val edges = edgeDAO.getIncomingEdges(personNodeId)
+            .filter { it.relationType == RelationType.DESCRIBES_OTHER }
+        return edges.mapNotNull { nodeDAO.getById(it.sourceNodeId) }
+    }
+
+    /**
+     * Seed default User and Character person nodes + profiles when graph memory is enabled.
+     * No-op if profiles already exist for this assistant.
+     */
+    suspend fun seedDefaultProfiles(
+        assistantId: String,
+        userName: String,
+        characterName: String,
+    ) {
+        // Seed user profile
+        if (personProfileDAO.getUserProfile(assistantId) == null) {
+            val userDisplayName = userName.ifBlank { "User" }
+            val userNodeId = upsertNode(assistantId, MemoryNodeEntity(
+                assistantId = assistantId,
+                nodeType = NodeType.PERSON,
+                name = userDisplayName,
+                description = "The user.",
+                importance = 10,
+            ))
+            personProfileDAO.insert(PersonProfileEntity(
+                nodeId = userNodeId,
+                assistantId = assistantId,
+                isUserProfile = true,
+                displayName = userDisplayName,
+            ))
+            Log.i(TAG, "Seeded user profile node=$userNodeId for assistant $assistantId")
+        }
+
+        // Seed character profile
+        if (personProfileDAO.getCharacterProfile(assistantId) == null) {
+            val charDisplayName = characterName.ifBlank { "Assistant" }
+            val charNodeId = upsertNode(assistantId, MemoryNodeEntity(
+                assistantId = assistantId,
+                nodeType = NodeType.PERSON,
+                name = charDisplayName,
+                description = "The assistant character.",
+                importance = 10,
+            ))
+            personProfileDAO.insert(PersonProfileEntity(
+                nodeId = charNodeId,
+                assistantId = assistantId,
+                isCharacterProfile = true,
+                displayName = charDisplayName,
+            ))
+            Log.i(TAG, "Seeded character profile node=$charNodeId for assistant $assistantId")
+        }
+    }
+
+    /**
+     * Calculate age from birth year (and optional month/day).
+     * Returns null if birthYear is null.
+     */
+    fun calculateAge(birthYear: Int?, birthMonth: Int? = null, birthDay: Int? = null): Int? {
+        if (birthYear == null) return null
+        val now = Calendar.getInstance()
+        var age = now.get(Calendar.YEAR) - birthYear
+        if (birthMonth != null) {
+            val currentMonth = now.get(Calendar.MONTH) + 1
+            if (birthDay != null) {
+                val currentDay = now.get(Calendar.DAY_OF_MONTH)
+                if (birthMonth > currentMonth || (birthMonth == currentMonth && birthDay > currentDay)) {
+                    age--
+                }
+            } else if (birthMonth > now.get(Calendar.MONTH) + 1) {
+                age--
+            }
+        }
+        return age.coerceAtLeast(0)
+    }
+
     // ─── Edge Operations ────────────────────────────────────────────────
 
     suspend fun insertEdge(edge: MemoryEdgeEntity): Int {
@@ -82,6 +231,9 @@ class GraphMemoryRepository(
 
     fun getAllEdgesFlow(assistantId: String): Flow<List<MemoryEdgeEntity>> =
         edgeDAO.getAllEdgesFlow(assistantId)
+
+    suspend fun getAllEdges(assistantId: String): List<MemoryEdgeEntity> =
+        edgeDAO.getAllEdges(assistantId)
 
     suspend fun findEdge(sourceId: Int, targetId: Int, relationType: String): MemoryEdgeEntity? =
         edgeDAO.findEdge(sourceId, targetId, relationType)
@@ -124,6 +276,8 @@ class GraphMemoryRepository(
 
     suspend fun deleteAllEventsForAssistant(assistantId: String) = timelineEventDAO.deleteAllForAssistant(assistantId)
 
+    suspend fun deleteTimelineEvent(id: Int) = timelineEventDAO.delete(id)
+
     // ─── Episode Operations ─────────────────────────────────────────────
 
     suspend fun insertEpisode(episode: GraphEpisodeEntity): Int {
@@ -139,6 +293,8 @@ class GraphMemoryRepository(
         graphEpisodeDAO.getRecentEpisodes(assistantId, limit)
 
     suspend fun deleteAllEpisodesForAssistant(assistantId: String) = graphEpisodeDAO.deleteAllForAssistant(assistantId)
+
+    suspend fun deleteEpisode(id: Int) = graphEpisodeDAO.delete(id)
 
     // ─── Graph Statistics ────────────────────────────────────────────────
 
@@ -173,6 +329,8 @@ class GraphMemoryRepository(
     suspend fun upsertNode(assistantId: String, node: MemoryNodeEntity): Int {
         val existing = nodeDAO.findByName(assistantId, node.name)
         if (existing != null) {
+            // Reinforce confidence: each re-mention nudges confidence up (diminishing returns)
+            val reinforcedConfidence = minOf(1.0f, existing.confidence + (1.0f - existing.confidence) * 0.15f)
             val merged = existing.copy(
                 description = if (node.description.isNotBlank() && node.description != existing.description) {
                     // Append new info if different
@@ -186,6 +344,7 @@ class GraphMemoryRepository(
                 status = if (existing.status == NodeStatus.ARCHIVED) NodeStatus.ACTIVE else existing.status,
                 validFrom = node.validFrom ?: existing.validFrom,
                 validUntil = node.validUntil ?: existing.validUntil,
+                confidence = reinforcedConfidence,
             )
             nodeDAO.update(merged)
             return existing.id
@@ -381,14 +540,49 @@ class GraphMemoryRepository(
             appendLine("## Knowledge Graph Memory")
             appendLine()
 
-            // Group nodes by type
+            // Group nodes by type, render persons with profile summaries first
             val grouped = nodes.groupBy { it.node.nodeType }
-            for ((type, typeNodes) in grouped) {
+            val personNodes = grouped[NodeType.PERSON].orEmpty()
+            val otherGroups = grouped.filterKeys { it != NodeType.PERSON }
+
+            // Person profiles with rich summaries
+            if (personNodes.isNotEmpty()) {
+                appendLine("### People")
+                for (scoredNode in personNodes) {
+                    val n = scoredNode.node
+                    val profile = try { personProfileDAO.getByNodeId(n.id) } catch (_: Exception) { null }
+                    val importance = "★".repeat(n.importance.coerceIn(1, 5))
+                    append("- **${profile?.displayName ?: n.name}** ($importance)")
+                    if (profile != null) {
+                        val age = calculateAge(profile.birthYear, profile.birthMonth, profile.birthDay)
+                        if (age != null) append(", age $age")
+                        appendLine()
+                        if (profile.personalitySummary.isNotBlank()) {
+                            appendLine("  - Personality: ${profile.personalitySummary.take(200)}")
+                        }
+                        if (profile.physicalSummary.isNotBlank()) {
+                            appendLine("  - Physical: ${profile.physicalSummary.take(200)}")
+                        }
+                        if (profile.otherInfoSummary.isNotBlank()) {
+                            appendLine("  - Info: ${profile.otherInfoSummary.take(200)}")
+                        }
+                    } else {
+                        if (n.description.isNotBlank()) append(": ${n.description.take(200)}")
+                        appendLine()
+                    }
+                }
+                appendLine()
+            }
+
+            // Other node types
+            for ((type, typeNodes) in otherGroups) {
                 appendLine("### ${type.replaceFirstChar { it.uppercase() }}s")
                 for (scoredNode in typeNodes) {
                     val n = scoredNode.node
                     val importance = "★".repeat(n.importance.coerceIn(1, 5))
                     append("- **${n.name}** ($importance)")
+                    // Mark low-confidence facts so the AI can weigh them appropriately
+                    if (n.confidence < 0.5f) append(" [uncertain]")
                     if (n.description.isNotBlank()) {
                         append(": ${n.description.take(200)}")
                     }
@@ -443,12 +637,34 @@ class GraphMemoryRepository(
                 }
                 appendLine()
             }
+
+            // Episodic Memory — relevant past conversation summaries
+            val relevantEpisodes = try {
+                retrieveRelevantEpisodes(assistantId, queryText, limit = 5)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to retrieve episodes for context", e)
+                emptyList()
+            }
+            if (relevantEpisodes.isNotEmpty()) {
+                appendLine("### Recent Episodes")
+                val dateFormat = java.text.SimpleDateFormat("MMM d", java.util.Locale.getDefault())
+                for (scored in relevantEpisodes) {
+                    val ep = scored.episode
+                    val date = dateFormat.format(java.util.Date(ep.endTime))
+                    val sigMarker = if (ep.significance >= 7) " ★" else ""
+                    append("- [$date$sigMarker] ${ep.content.take(200)}")
+                    if (ep.content.length > 200) append("...")
+                    appendLine()
+                }
+                appendLine()
+            }
         }
     }
 
     // ─── Delete All Graph Data ───────────────────────────────────────────
 
     suspend fun deleteAllGraphData(assistantId: String) {
+        personProfileDAO.deleteAllForAssistant(assistantId)
         graphEpisodeDAO.deleteAllForAssistant(assistantId)
         timelineEventDAO.deleteAllForAssistant(assistantId)
         edgeDAO.deleteAllForAssistant(assistantId)
@@ -460,4 +676,56 @@ class GraphMemoryRepository(
         val score: Float,
         val semanticScore: Float,
     )
+
+    data class ScoredEpisode(
+        val episode: GraphEpisodeEntity,
+        val score: Float,
+    )
+
+    /**
+     * Retrieve the most relevant graph episodes for a given query.
+     * Scoring: semantic_similarity × 0.5 + recency × 0.3 + significance × 0.2
+     */
+    suspend fun retrieveRelevantEpisodes(
+        assistantId: String,
+        queryText: String,
+        limit: Int = 5,
+    ): List<ScoredEpisode> {
+        val episodes = graphEpisodeDAO.getEpisodesWithEmbeddings(assistantId)
+        if (episodes.isEmpty()) return emptyList()
+
+        val queryEmbedding = try {
+            embeddingService.embed(queryText, assistantId)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to embed query for episode retrieval", e)
+            null
+        }
+
+        val now = System.currentTimeMillis()
+
+        val scored = episodes.map { episode ->
+            // Semantic similarity
+            val semanticScore = if (queryEmbedding != null && episode.embedding != null) {
+                try {
+                    val episodeEmb = JsonInstant.decodeFromString<List<Float>>(episode.embedding!!)
+                    VectorEngine.cosineSimilarity(queryEmbedding, episodeEmb).coerceIn(0f, 1f)
+                } catch (e: Exception) { 0f }
+            } else 0f
+
+            // Recency (exponential decay over 14 days)
+            val daysSince = (now - episode.endTime).toFloat() / (1000 * 60 * 60 * 24)
+            val recencyScore = Math.exp(-daysSince / 14.0).toFloat().coerceIn(0f, 1f)
+
+            // Significance (normalize 1-10 to 0-1)
+            val significanceScore = (episode.significance / 10f).coerceIn(0f, 1f)
+
+            val finalScore = (semanticScore * 0.5f) + (recencyScore * 0.3f) + (significanceScore * 0.2f)
+            ScoredEpisode(episode, finalScore)
+        }
+
+        return scored
+            .sortedByDescending { it.score }
+            .take(limit)
+            .filter { it.score > 0.1f } // Filter out very low scoring episodes
+    }
 }

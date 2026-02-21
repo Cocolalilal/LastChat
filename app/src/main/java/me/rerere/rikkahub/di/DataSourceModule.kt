@@ -107,6 +107,10 @@ val dataSourceModule = module {
         get<AppDatabase>().graphEpisodeDao()
     }
 
+    single {
+        get<AppDatabase>().personProfileDao()
+    }
+
     single { McpManager(settingsStore = get(), appScope = get()) }
 
     single {

@@ -5,6 +5,8 @@ import me.rerere.rikkahub.data.db.dao.MemoryEdgeDAO
 import me.rerere.rikkahub.data.db.dao.MemoryNodeDAO
 import me.rerere.rikkahub.data.db.entity.MemoryNodeEntity
 import me.rerere.rikkahub.data.db.entity.NodeStatus
+import me.rerere.rikkahub.data.db.entity.NodeType
+import me.rerere.rikkahub.data.db.entity.RelationType
 import kotlin.math.exp
 
 /**
@@ -35,6 +37,10 @@ class DecayEngine(
 
         var updatedCount = 0
         for (edge in edges) {
+            // Never decay profile-contributing or person-to-person edges
+            if (edge.relationType in RelationType.PROFILE_SUMMARY ||
+                edge.relationType in RelationType.PERSON_TO_PERSON) continue
+
             val daysSinceReinforced = (now - edge.lastReinforced).toDouble() / (1000 * 60 * 60 * 24)
             if (daysSinceReinforced < 1.0) continue // Skip recently reinforced edges
 
@@ -69,6 +75,8 @@ class DecayEngine(
         var archivedCount = 0
 
         for (node in nodes) {
+            // Never archive person nodes — they carry profile data
+            if (node.nodeType == NodeType.PERSON) continue
             // Don't archive high-importance nodes
             if (node.importance >= 7) continue
 
@@ -150,6 +158,62 @@ class DecayEngine(
 
         // Archive the duplicate
         nodeDAO.archive(duplicate.id)
+    }
+
+    /**
+     * Slightly decay confidence for nodes not mentioned recently.
+     * Nodes mentioned within the last 7 days are unaffected.
+     * Person nodes decay much slower.
+     */
+    suspend fun decayConfidence(assistantId: String) {
+        val now = System.currentTimeMillis()
+        val nodes = nodeDAO.getActiveNodes(assistantId)
+        var decayed = 0
+
+        for (node in nodes) {
+            val daysSinceMention = (now - node.lastMentioned).toDouble() / (1000 * 60 * 60 * 24)
+            if (daysSinceMention < 7.0) continue // Recently mentioned — no decay
+            if (node.confidence <= 0.3f) continue // Already low enough
+
+            // Person nodes decay 5x slower
+            val decayRate = if (node.nodeType == NodeType.PERSON) 0.005f else 0.025f
+            val newConfidence = (node.confidence - decayRate).coerceIn(0.3f, 1.0f)
+
+            if (newConfidence != node.confidence) {
+                nodeDAO.update(node.copy(confidence = newConfidence))
+                decayed++
+            }
+        }
+
+        if (decayed > 0) {
+            Log.i(TAG, "Decayed confidence for $decayed nodes for assistant $assistantId")
+        }
+    }
+
+    /**
+     * Enforce graphMaxNodes: if active node count exceeds the limit,
+     * archive lowest-importance non-person nodes until under the cap.
+     */
+    suspend fun enforceMaxNodes(assistantId: String, maxNodes: Int) {
+        val activeCount = nodeDAO.getActiveNodeCount(assistantId)
+        if (activeCount <= maxNodes) return
+
+        val excess = activeCount - maxNodes
+        val nodes = nodeDAO.getActiveNodes(assistantId)
+            .filter { it.nodeType != NodeType.PERSON } // Never archive person nodes
+            .sortedBy { it.importance * 100 + it.mentionCount } // Lowest importance first
+
+        var archived = 0
+        for (node in nodes) {
+            if (archived >= excess) break
+            if (node.importance >= 8) break // Don't archive high-importance nodes even under pressure
+            nodeDAO.archive(node.id)
+            archived++
+        }
+
+        if (archived > 0) {
+            Log.i(TAG, "Enforced max nodes ($maxNodes): archived $archived excess nodes for assistant $assistantId")
+        }
     }
 
     /**

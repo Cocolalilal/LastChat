@@ -36,6 +36,7 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.EmojiEmotions
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
@@ -98,11 +99,19 @@ import me.rerere.rikkahub.data.db.entity.GraphEpisodeEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEdgeEntity
 import me.rerere.rikkahub.data.db.entity.MemoryNodeEntity
 import me.rerere.rikkahub.data.db.entity.NodeType
+import me.rerere.rikkahub.data.db.entity.PersonProfileEntity
 import me.rerere.rikkahub.data.db.entity.TimelineEventEntity
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
+import me.rerere.rikkahub.ui.components.ui.ItemPosition
+import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
+import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.platform.LocalDensity
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -135,8 +144,18 @@ fun GraphMemoryContent(
     onClearAllGraphData: () -> Unit = {},
     onDeleteNode: (Int) -> Unit = {},
     onDeleteEdge: (Int) -> Unit = {},
+    onDeleteTimelineEvent: (Int) -> Unit = {},
+    onDeleteEpisode: (Int) -> Unit = {},
+    onUpdateNode: (MemoryNodeEntity) -> Unit = {},
+    onUpdateEdge: (MemoryEdgeEntity) -> Unit = {},
+    onUpdateTimelineEvent: (TimelineEventEntity) -> Unit = {},
+    onUpdateEpisode: (GraphEpisodeEntity) -> Unit = {},
     onProcessText: (String) -> Unit = {},
     isProcessing: Boolean = false,
+    onOpenPersonProfile: (MemoryNodeEntity) -> Unit = {},
+    profilesByNodeId: Map<Int, PersonProfileEntity> = emptyMap(),
+    userAvatar: Avatar = Avatar.Dummy,
+    characterAvatar: Avatar = Avatar.Dummy,
 ) {
     val nodeCount by nodeCountFlow.collectAsState(initial = 0)
     val edgeCount by edgeCountFlow.collectAsState(initial = 0)
@@ -290,19 +309,29 @@ fun GraphMemoryContent(
                     nodes = nodes,
                     edges = edges,
                     onDeleteNode = onDeleteNode,
+                    onUpdateNode = onUpdateNode,
+                    onOpenPersonProfile = onOpenPersonProfile,
+                    profilesByNodeId = profilesByNodeId,
+                    userAvatar = userAvatar,
+                    characterAvatar = characterAvatar,
                 )
                 GraphView.RELATIONSHIPS -> RelationshipsView(
                     edges = edges,
                     nodes = nodes,
                     onDeleteEdge = onDeleteEdge,
+                    onUpdateEdge = onUpdateEdge,
                 )
                 GraphView.TIMELINE -> TimelineView(
                     events = timelineEvents,
                     nodes = nodes,
+                    onDeleteEvent = onDeleteTimelineEvent,
+                    onUpdateEvent = onUpdateTimelineEvent,
                 )
                 GraphView.EPISODES -> EpisodesView(
                     episodes = episodes,
                     nodes = nodes,
+                    onDeleteEpisode = onDeleteEpisode,
+                    onUpdateEpisode = onUpdateEpisode,
                 )
             }
         }
@@ -447,10 +476,29 @@ private fun EntitiesView(
     nodes: List<MemoryNodeEntity>,
     edges: List<MemoryEdgeEntity>,
     onDeleteNode: (Int) -> Unit,
+    onUpdateNode: (MemoryNodeEntity) -> Unit,
+    onOpenPersonProfile: (MemoryNodeEntity) -> Unit = {},
+    profilesByNodeId: Map<Int, PersonProfileEntity> = emptyMap(),
+    userAvatar: Avatar = Avatar.Dummy,
+    characterAvatar: Avatar = Avatar.Dummy,
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedType by remember { mutableStateOf<String?>(null) }
     var expandedNodeId by remember { mutableStateOf<Int?>(null) }
+    var editingNode by remember { mutableStateOf<MemoryNodeEntity?>(null) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var nodeToDelete by remember { mutableStateOf<MemoryNodeEntity?>(null) }
+    
+    // Swipe tracking for neighbor effect
+    val density = LocalDensity.current
+    var draggingIndex by remember { mutableStateOf(-1) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    var isUnlocked by remember { mutableStateOf(false) }
+    var neighborsUnlocked by remember { mutableStateOf(false) }
+    
+    if (dragOffset == 0f && neighborsUnlocked) {
+        neighborsUnlocked = false
+    }
 
     val filteredNodes = nodes
         .filter { node ->
@@ -461,6 +509,98 @@ private fun EntitiesView(
 
     // Type counts for chips
     val typeCounts = nodes.groupBy { it.nodeType }.mapValues { it.value.size }
+    
+    // Delete confirmation dialog
+    if (showDeleteDialog && nodeToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { 
+                showDeleteDialog = false
+                nodeToDelete = null
+            },
+            title = { Text("Delete Entity") },
+            text = { Text("Delete \"${nodeToDelete?.name}\"? This will also remove all its relationships.") },
+            dismissButton = {
+                TextButton(onClick = { 
+                    showDeleteDialog = false
+                    nodeToDelete = null
+                }) {
+                    Text("Cancel")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    nodeToDelete?.let { onDeleteNode(it.id) }
+                    showDeleteDialog = false
+                    nodeToDelete = null
+                }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            }
+        )
+    }
+    
+    // Edit node dialog
+    editingNode?.let { node ->
+        var editName by remember(node) { mutableStateOf(node.name) }
+        var editDescription by remember(node) { mutableStateOf(node.description) }
+        var editImportance by remember(node) { mutableFloatStateOf(node.importance.toFloat()) }
+        
+        AlertDialog(
+            onDismissRequest = { editingNode = null },
+            title = { Text("Edit Entity") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = editName,
+                        onValueChange = { editName = it },
+                        label = { Text("Name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = editDescription,
+                        onValueChange = { editDescription = it },
+                        label = { Text("Description") },
+                        minLines = 2,
+                        maxLines = 4,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Importance", style = MaterialTheme.typography.bodyMedium)
+                            Text("${editImportance.toInt()}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                        }
+                        Slider(
+                            value = editImportance,
+                            onValueChange = { editImportance = it },
+                            valueRange = 1f..10f,
+                            steps = 8
+                        )
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingNode = null }) {
+                    Text("Cancel")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onUpdateNode(node.copy(
+                        name = editName,
+                        description = editDescription,
+                        importance = editImportance.toInt()
+                    ))
+                    editingNode = null
+                }) {
+                    Text("Save")
+                }
+            }
+        )
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         // Search
@@ -513,7 +653,7 @@ private fun EntitiesView(
             }
         }
 
-        // Node list
+        // Node list with swipe-to-delete
         Column(
             modifier = Modifier
                 .clip(RoundedCornerShape(20.dp))
@@ -536,16 +676,74 @@ private fun EntitiesView(
                             val connectedIds = nodeEdges.map { if (it.sourceNodeId == node.id) it.targetNodeId else it.sourceNodeId }.toSet()
                             nodes.filter { it.id in connectedIds }.associateBy { it.id }
                         } else emptyMap()
+                        
+                        val position = when {
+                            filteredNodes.size == 1 -> ItemPosition.ONLY
+                            index == 0 -> ItemPosition.FIRST
+                            index == filteredNodes.lastIndex -> ItemPosition.LAST
+                            else -> ItemPosition.MIDDLE
+                        }
+                        
+                        // Calculate neighbor offset
+                        val thresholdPx = with(density) { 35.dp.toPx() }
+                        if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
+                            neighborsUnlocked = true
+                        }
+                        
+                        val shouldNeighborFollow = draggingIndex >= 0 && 
+                            draggingIndex != index && 
+                            !isUnlocked && 
+                            !neighborsUnlocked
+                        
+                        val neighborOffset = if (shouldNeighborFollow) {
+                            val distance = kotlin.math.abs(index - draggingIndex)
+                            when (distance) {
+                                1 -> dragOffset * 0.35f
+                                2 -> dragOffset * 0.12f
+                                else -> 0f
+                            }
+                        } else 0f
 
-                        NodeCard(
-                            node = node,
-                            isExpanded = isExpanded,
-                            edges = nodeEdges,
-                            connectedNodes = connectedNodes,
-                            position = cardPosition(index, filteredNodes.size),
-                            onToggleExpand = { expandedNodeId = if (isExpanded) null else node.id },
-                            onDelete = { onDeleteNode(node.id) }
-                        )
+                        PhysicsSwipeToDelete(
+                            position = position,
+                            deleteEnabled = true,
+                            neighborOffset = neighborOffset,
+                            onDragProgress = { offset, unlocked ->
+                                draggingIndex = index
+                                dragOffset = offset
+                                isUnlocked = unlocked
+                            },
+                            onDragEnd = {
+                                if (draggingIndex == index) {
+                                    draggingIndex = -1
+                                    dragOffset = 0f
+                                }
+                            },
+                            onDelete = {
+                                nodeToDelete = node
+                                showDeleteDialog = true
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { _ ->
+                            NodeCard(
+                                node = node,
+                                isExpanded = isExpanded,
+                                edges = nodeEdges,
+                                connectedNodes = connectedNodes,
+                                position = cardPosition(index, filteredNodes.size),
+                                onToggleExpand = {
+                                    if (node.nodeType == NodeType.PERSON) {
+                                        onOpenPersonProfile(node)
+                                    } else {
+                                        expandedNodeId = if (isExpanded) null else node.id
+                                    }
+                                },
+                                onEdit = { editingNode = node },
+                                profile = profilesByNodeId[node.id],
+                                userAvatar = userAvatar,
+                                characterAvatar = characterAvatar,
+                            )
+                        }
                     }
                 }
             }
@@ -565,7 +763,10 @@ private fun NodeCard(
     connectedNodes: Map<Int, MemoryNodeEntity>,
     position: String,
     onToggleExpand: () -> Unit,
-    onDelete: () -> Unit,
+    onEdit: () -> Unit,
+    profile: PersonProfileEntity? = null,
+    userAvatar: Avatar = Avatar.Dummy,
+    characterAvatar: Avatar = Avatar.Dummy,
 ) {
     val shape = cardShape(position)
     val typeColor = nodeTypeColor(node.nodeType)
@@ -592,20 +793,29 @@ private fun NodeCard(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Type icon with colored circle
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(typeColor.copy(alpha = 0.15f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        nodeTypeIcon(node.nodeType),
-                        null,
-                        modifier = Modifier.size(18.dp),
-                        tint = typeColor
+                // Type icon or avatar for person nodes
+                if (node.nodeType == NodeType.PERSON && profile != null) {
+                    NodeAvatar(
+                        profile = profile,
+                        userAvatar = userAvatar,
+                        characterAvatar = characterAvatar,
+                        size = 36,
                     )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(typeColor.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            nodeTypeIcon(node.nodeType),
+                            null,
+                            modifier = Modifier.size(18.dp),
+                            tint = typeColor
+                        )
+                    }
                 }
 
                 Column(modifier = Modifier.weight(1f)) {
@@ -755,15 +965,15 @@ private fun NodeCard(
                         }
                     }
 
-                    // Delete action
+                    // Edit action
                     TextButton(
-                        onClick = onDelete,
+                        onClick = onEdit,
                         modifier = Modifier.align(Alignment.End),
-                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary)
                     ) {
-                        Icon(Icons.Rounded.Delete, null, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Rounded.Edit, null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Delete", style = MaterialTheme.typography.labelSmall)
+                        Text("Edit", style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }
@@ -780,14 +990,125 @@ private fun RelationshipsView(
     edges: List<MemoryEdgeEntity>,
     nodes: List<MemoryNodeEntity>,
     onDeleteEdge: (Int) -> Unit,
+    onUpdateEdge: (MemoryEdgeEntity) -> Unit,
 ) {
     var sortByStrength by remember { mutableStateOf(true) }
     val nodeMap = remember(nodes) { nodes.associateBy { it.id } }
+    var editingEdge by remember { mutableStateOf<MemoryEdgeEntity?>(null) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var edgeToDelete by remember { mutableStateOf<MemoryEdgeEntity?>(null) }
+    
+    // Swipe tracking for neighbor effect
+    val density = LocalDensity.current
+    var draggingIndex by remember { mutableStateOf(-1) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    var isUnlocked by remember { mutableStateOf(false) }
+    var neighborsUnlocked by remember { mutableStateOf(false) }
+    
+    if (dragOffset == 0f && neighborsUnlocked) {
+        neighborsUnlocked = false
+    }
 
     val sortedEdges = if (sortByStrength) {
         edges.sortedByDescending { it.strength }
     } else {
         edges.sortedByDescending { it.lastReinforced }
+    }
+    
+    // Delete confirmation dialog
+    if (showDeleteDialog && edgeToDelete != null) {
+        val sourceName = nodeMap[edgeToDelete?.sourceNodeId]?.name ?: "?"
+        val targetName = nodeMap[edgeToDelete?.targetNodeId]?.name ?: "?"
+        AlertDialog(
+            onDismissRequest = { 
+                showDeleteDialog = false
+                edgeToDelete = null
+            },
+            title = { Text("Delete Relationship") },
+            text = { Text("Delete the \"${edgeToDelete?.relationType?.replace("_", " ")}\" relationship between \"$sourceName\" and \"$targetName\"?") },
+            dismissButton = {
+                TextButton(onClick = { 
+                    showDeleteDialog = false
+                    edgeToDelete = null
+                }) {
+                    Text("Cancel")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    edgeToDelete?.let { onDeleteEdge(it.id) }
+                    showDeleteDialog = false
+                    edgeToDelete = null
+                }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            }
+        )
+    }
+    
+    // Edit edge dialog
+    editingEdge?.let { edge ->
+        var editDescription by remember(edge) { mutableStateOf(edge.description) }
+        var editStrength by remember(edge) { mutableFloatStateOf(edge.strength) }
+        val sourceName = nodeMap[edge.sourceNodeId]?.name ?: "?"
+        val targetName = nodeMap[edge.targetNodeId]?.name ?: "?"
+        
+        AlertDialog(
+            onDismissRequest = { editingEdge = null },
+            title = { Text("Edit Relationship") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "$sourceName → $targetName",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        edge.relationType.replace("_", " "),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                    OutlinedTextField(
+                        value = editDescription,
+                        onValueChange = { editDescription = it },
+                        label = { Text("Description") },
+                        minLines = 2,
+                        maxLines = 4,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Strength", style = MaterialTheme.typography.bodyMedium)
+                            Text("${(editStrength * 100).toInt()}%", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                        }
+                        Slider(
+                            value = editStrength,
+                            onValueChange = { editStrength = it },
+                            valueRange = 0.1f..1f,
+                        )
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingEdge = null }) {
+                    Text("Cancel")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onUpdateEdge(edge.copy(
+                        description = editDescription,
+                        strength = editStrength
+                    ))
+                    editingEdge = null
+                }) {
+                    Text("Save")
+                }
+            }
+        )
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -819,69 +1140,119 @@ private fun RelationshipsView(
                     key(edge.id) {
                         val sourceName = nodeMap[edge.sourceNodeId]?.name ?: "?"
                         val targetName = nodeMap[edge.targetNodeId]?.name ?: "?"
+                        
+                        val position = when {
+                            sortedEdges.size == 1 -> ItemPosition.ONLY
+                            index == 0 -> ItemPosition.FIRST
+                            index == sortedEdges.lastIndex -> ItemPosition.LAST
+                            else -> ItemPosition.MIDDLE
+                        }
+                        
+                        // Calculate neighbor offset
+                        val thresholdPx = with(density) { 35.dp.toPx() }
+                        if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
+                            neighborsUnlocked = true
+                        }
+                        
+                        val shouldNeighborFollow = draggingIndex >= 0 && 
+                            draggingIndex != index && 
+                            !isUnlocked && 
+                            !neighborsUnlocked
+                        
+                        val neighborOffset = if (shouldNeighborFollow) {
+                            val distance = kotlin.math.abs(index - draggingIndex)
+                            when (distance) {
+                                1 -> dragOffset * 0.35f
+                                2 -> dragOffset * 0.12f
+                                else -> 0f
+                            }
+                        } else 0f
 
-                        Surface(
-                            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-                            shape = cardShape(cardPosition(index, sortedEdges.size)),
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(14.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
+                        PhysicsSwipeToDelete(
+                            position = position,
+                            deleteEnabled = true,
+                            neighborOffset = neighborOffset,
+                            onDragProgress = { offset, unlocked ->
+                                draggingIndex = index
+                                dragOffset = offset
+                                isUnlocked = unlocked
+                            },
+                            onDragEnd = {
+                                if (draggingIndex == index) {
+                                    draggingIndex = -1
+                                    dragOffset = 0f
+                                }
+                            },
+                            onDelete = {
+                                edgeToDelete = edge
+                                showDeleteDialog = true
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { _ ->
+                            Surface(
+                                onClick = { editingEdge = edge },
+                                color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+                                shape = cardShape(cardPosition(index, sortedEdges.size)),
                             ) {
-                                // Source → Target
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            sourceName,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.weight(1f, fill = false)
-                                        )
-                                        Text("→", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
-                                        Text(
-                                            targetName,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.weight(1f, fill = false)
-                                        )
-                                    }
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            edge.relationType.replace("_", " "),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.secondary,
-                                        )
-                                        if (edge.description.isNotBlank()) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(14.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    // Source → Target
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
                                             Text(
-                                                "· ${edge.description}",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                sourceName,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.weight(1f)
+                                                modifier = Modifier.weight(1f, fill = false)
+                                            )
+                                            Text("→", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                                            Text(
+                                                targetName,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f, fill = false)
                                             )
                                         }
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                edge.relationType.replace("_", " "),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.secondary,
+                                            )
+                                            if (edge.description.isNotBlank()) {
+                                                Text(
+                                                    "· ${edge.description}",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                            }
+                                        }
                                     }
-                                }
-                                // Strength
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    StrengthBar(edge.strength, modifier = Modifier.width(40.dp))
-                                    Text(
-                                        "${(edge.strength * 100).toInt()}%",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                    // Strength
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        StrengthBar(edge.strength, modifier = Modifier.width(40.dp))
+                                        Text(
+                                            "${(edge.strength * 100).toInt()}%",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -900,9 +1271,114 @@ private fun RelationshipsView(
 private fun TimelineView(
     events: List<TimelineEventEntity>,
     nodes: List<MemoryNodeEntity>,
+    onDeleteEvent: (Int) -> Unit,
+    onUpdateEvent: (TimelineEventEntity) -> Unit,
 ) {
     val nodeMap = remember(nodes) { nodes.associateBy { it.id } }
     val sortedEvents = events.sortedByDescending { it.scheduledAt ?: it.lastChecked }
+    var editingEvent by remember { mutableStateOf<TimelineEventEntity?>(null) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var eventToDelete by remember { mutableStateOf<TimelineEventEntity?>(null) }
+    
+    // Swipe tracking for neighbor effect
+    val density = LocalDensity.current
+    var draggingIndex by remember { mutableStateOf(-1) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    var isUnlocked by remember { mutableStateOf(false) }
+    var neighborsUnlocked by remember { mutableStateOf(false) }
+    
+    if (dragOffset == 0f && neighborsUnlocked) {
+        neighborsUnlocked = false
+    }
+    
+    // Delete confirmation dialog
+    if (showDeleteDialog && eventToDelete != null) {
+        val nodeName = nodeMap[eventToDelete?.nodeId]?.name ?: "Unknown"
+        AlertDialog(
+            onDismissRequest = { 
+                showDeleteDialog = false
+                eventToDelete = null
+            },
+            title = { Text("Delete Timeline Event") },
+            text = { Text("Delete the \"${eventToDelete?.eventType}\" event for \"$nodeName\"?") },
+            dismissButton = {
+                TextButton(onClick = { 
+                    showDeleteDialog = false
+                    eventToDelete = null
+                }) {
+                    Text("Cancel")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    eventToDelete?.let { onDeleteEvent(it.id) }
+                    showDeleteDialog = false
+                    eventToDelete = null
+                }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            }
+        )
+    }
+    
+    // Edit event dialog
+    editingEvent?.let { event ->
+        var editDescription by remember(event) { mutableStateOf(event.description) }
+        var editEventType by remember(event) { mutableStateOf(event.eventType) }
+        val nodeName = nodeMap[event.nodeId]?.name ?: "Unknown"
+        val eventTypes = listOf("upcoming", "ongoing", "completed", "recurring")
+        
+        AlertDialog(
+            onDismissRequest = { editingEvent = null },
+            title = { Text("Edit Timeline Event") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "Event for: $nodeName",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    OutlinedTextField(
+                        value = editDescription,
+                        onValueChange = { editDescription = it },
+                        label = { Text("Description") },
+                        minLines = 2,
+                        maxLines = 4,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text("Status", style = MaterialTheme.typography.labelMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        eventTypes.forEach { type ->
+                            FilterChip(
+                                selected = editEventType == type,
+                                onClick = { editEventType = type },
+                                label = { Text(type.replaceFirstChar { it.uppercase() }) },
+                            )
+                        }
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingEvent = null }) {
+                    Text("Cancel")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onUpdateEvent(event.copy(
+                        description = editDescription,
+                        eventType = editEventType
+                    ))
+                    editingEvent = null
+                }) {
+                    Text("Save")
+                }
+            }
+        )
+    }
 
     Column(
         modifier = Modifier.clip(RoundedCornerShape(20.dp)).animateContentSize(),
@@ -928,56 +1404,106 @@ private fun TimelineView(
                         "recurring" -> MaterialTheme.colorScheme.secondary
                         else -> MaterialTheme.colorScheme.onSurfaceVariant
                     }
+                    
+                    val position = when {
+                        sortedEvents.size == 1 -> ItemPosition.ONLY
+                        index == 0 -> ItemPosition.FIRST
+                        index == sortedEvents.lastIndex -> ItemPosition.LAST
+                        else -> ItemPosition.MIDDLE
+                    }
+                    
+                    // Calculate neighbor offset
+                    val thresholdPx = with(density) { 35.dp.toPx() }
+                    if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
+                        neighborsUnlocked = true
+                    }
+                    
+                    val shouldNeighborFollow = draggingIndex >= 0 && 
+                        draggingIndex != index && 
+                        !isUnlocked && 
+                        !neighborsUnlocked
+                    
+                    val neighborOffset = if (shouldNeighborFollow) {
+                        val distance = kotlin.math.abs(index - draggingIndex)
+                        when (distance) {
+                            1 -> dragOffset * 0.35f
+                            2 -> dragOffset * 0.12f
+                            else -> 0f
+                        }
+                    } else 0f
 
-                    Surface(
-                        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-                        shape = cardShape(cardPosition(index, sortedEvents.size)),
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(14.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .clip(CircleShape)
-                                    .background(statusColor.copy(alpha = 0.15f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(icon, null, modifier = Modifier.size(16.dp), tint = statusColor)
+                    PhysicsSwipeToDelete(
+                        position = position,
+                        deleteEnabled = true,
+                        neighborOffset = neighborOffset,
+                        onDragProgress = { offset, unlocked ->
+                            draggingIndex = index
+                            dragOffset = offset
+                            isUnlocked = unlocked
+                        },
+                        onDragEnd = {
+                            if (draggingIndex == index) {
+                                draggingIndex = -1
+                                dragOffset = 0f
                             }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    nodeName,
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                if (event.description.isNotBlank()) {
+                        },
+                        onDelete = {
+                            eventToDelete = event
+                            showDeleteDialog = true
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { _ ->
+                        Surface(
+                            onClick = { editingEvent = event },
+                            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+                            shape = cardShape(cardPosition(index, sortedEvents.size)),
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(14.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(statusColor.copy(alpha = 0.15f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(icon, null, modifier = Modifier.size(16.dp), tint = statusColor)
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        event.description,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 2,
+                                        nodeName,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
+                                    if (event.description.isNotBlank()) {
+                                        Text(
+                                            event.description,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 }
-                            }
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(
-                                    event.eventType.replaceFirstChar { it.uppercase() },
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = statusColor,
-                                    fontWeight = FontWeight.Medium,
-                                )
-                                event.scheduledAt?.let {
+                                Column(horizontalAlignment = Alignment.End) {
                                     Text(
-                                        relativeTime(it),
+                                        event.eventType.replaceFirstChar { it.uppercase() },
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        color = statusColor,
+                                        fontWeight = FontWeight.Medium,
                                     )
+                                    event.scheduledAt?.let {
+                                        Text(
+                                            relativeTime(it),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -996,10 +1522,114 @@ private fun TimelineView(
 private fun EpisodesView(
     episodes: List<GraphEpisodeEntity>,
     nodes: List<MemoryNodeEntity>,
+    onDeleteEpisode: (Int) -> Unit,
+    onUpdateEpisode: (GraphEpisodeEntity) -> Unit,
 ) {
     val nodeMap = remember(nodes) { nodes.associateBy { it.id } }
     val sortedEpisodes = episodes.sortedByDescending { it.endTime }
     var expandedEpisodeId by remember { mutableStateOf<Int?>(null) }
+    var editingEpisode by remember { mutableStateOf<GraphEpisodeEntity?>(null) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var episodeToDelete by remember { mutableStateOf<GraphEpisodeEntity?>(null) }
+    
+    // Swipe tracking for neighbor effect
+    val density = LocalDensity.current
+    var draggingIndex by remember { mutableStateOf(-1) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    var isUnlocked by remember { mutableStateOf(false) }
+    var neighborsUnlocked by remember { mutableStateOf(false) }
+    
+    if (dragOffset == 0f && neighborsUnlocked) {
+        neighborsUnlocked = false
+    }
+    
+    // Delete confirmation dialog
+    if (showDeleteDialog && episodeToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { 
+                showDeleteDialog = false
+                episodeToDelete = null
+            },
+            title = { Text("Delete Episode") },
+            text = { Text("Delete this episode?\n\n\"${episodeToDelete?.content?.take(100)}${if ((episodeToDelete?.content?.length ?: 0) > 100) "..." else ""}\"") },
+            dismissButton = {
+                TextButton(onClick = { 
+                    showDeleteDialog = false
+                    episodeToDelete = null
+                }) {
+                    Text("Cancel")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    episodeToDelete?.let { onDeleteEpisode(it.id) }
+                    showDeleteDialog = false
+                    episodeToDelete = null
+                }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            }
+        )
+    }
+    
+    // Edit episode dialog
+    editingEpisode?.let { episode ->
+        var editContent by remember(episode) { mutableStateOf(episode.content) }
+        var editSignificance by remember(episode) { mutableFloatStateOf(episode.significance.toFloat()) }
+        
+        AlertDialog(
+            onDismissRequest = { editingEpisode = null },
+            title = { Text("Edit Episode") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "Created: ${formatDate(episode.endTime)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = editContent,
+                        onValueChange = { editContent = it },
+                        label = { Text("Content") },
+                        minLines = 3,
+                        maxLines = 6,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Significance", style = MaterialTheme.typography.bodyMedium)
+                            Text("${editSignificance.toInt()}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                        }
+                        Slider(
+                            value = editSignificance,
+                            onValueChange = { editSignificance = it },
+                            valueRange = 1f..10f,
+                            steps = 8
+                        )
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingEpisode = null }) {
+                    Text("Cancel")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onUpdateEpisode(episode.copy(
+                        content = editContent,
+                        significance = editSignificance.toInt()
+                    ))
+                    editingEpisode = null
+                }) {
+                    Text("Save")
+                }
+            }
+        )
+    }
 
     Column(
         modifier = Modifier.clip(RoundedCornerShape(20.dp)).animateContentSize(),
@@ -1015,95 +1645,153 @@ private fun EpisodesView(
                         kotlinx.serialization.json.Json.decodeFromString<List<Int>>(episode.nodeIds)
                     } catch (_: Exception) { emptyList() }
                     val linkedNodes = linkedNodeIds.mapNotNull { nodeMap[it] }
+                    
+                    val position = when {
+                        sortedEpisodes.size == 1 -> ItemPosition.ONLY
+                        index == 0 -> ItemPosition.FIRST
+                        index == sortedEpisodes.lastIndex -> ItemPosition.LAST
+                        else -> ItemPosition.MIDDLE
+                    }
+                    
+                    // Calculate neighbor offset
+                    val thresholdPx = with(density) { 35.dp.toPx() }
+                    if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
+                        neighborsUnlocked = true
+                    }
+                    
+                    val shouldNeighborFollow = draggingIndex >= 0 && 
+                        draggingIndex != index && 
+                        !isUnlocked && 
+                        !neighborsUnlocked
+                    
+                    val neighborOffset = if (shouldNeighborFollow) {
+                        val distance = kotlin.math.abs(index - draggingIndex)
+                        when (distance) {
+                            1 -> dragOffset * 0.35f
+                            2 -> dragOffset * 0.12f
+                            else -> 0f
+                        }
+                    } else 0f
 
-                    Surface(
-                        onClick = { expandedEpisodeId = if (isExpanded) null else episode.id },
-                        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-                        shape = cardShape(cardPosition(index, sortedEpisodes.size)),
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(14.dp)
-                                .animateContentSize()
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        episode.content.take(80) + if (episode.content.length > 80) "..." else "",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Medium,
-                                        maxLines = if (isExpanded) Int.MAX_VALUE else 2,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            formatDate(episode.endTime),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                        if (episode.significance >= 7) {
-                                            Text(
-                                                "★ Important",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.tertiary,
-                                                fontWeight = FontWeight.Bold,
-                                            )
-                                        }
-                                    }
-                                }
-                                Icon(
-                                    if (isExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                                    null,
-                                    modifier = Modifier.size(16.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                    PhysicsSwipeToDelete(
+                        position = position,
+                        deleteEnabled = true,
+                        neighborOffset = neighborOffset,
+                        onDragProgress = { offset, unlocked ->
+                            draggingIndex = index
+                            dragOffset = offset
+                            isUnlocked = unlocked
+                        },
+                        onDragEnd = {
+                            if (draggingIndex == index) {
+                                draggingIndex = -1
+                                dragOffset = 0f
                             }
-
-                            AnimatedVisibility(
-                                visible = isExpanded,
-                                enter = fadeIn() + expandVertically(),
-                                exit = fadeOut() + shrinkVertically()
+                        },
+                        onDelete = {
+                            episodeToDelete = episode
+                            showDeleteDialog = true
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { _ ->
+                        Surface(
+                            onClick = { expandedEpisodeId = if (isExpanded) null else episode.id },
+                            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+                            shape = cardShape(cardPosition(index, sortedEpisodes.size)),
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(14.dp)
+                                    .animateContentSize()
                             ) {
-                                Column(modifier = Modifier.padding(top = 8.dp)) {
-                                    if (isExpanded && episode.content.length > 80) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            episode.content,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.padding(bottom = 8.dp)
-                                        )
-                                    }
-                                    if (linkedNodes.isNotEmpty()) {
-                                        Text(
-                                            "Related entities:",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Bold,
+                                            episode.content.take(80) + if (episode.content.length > 80) "..." else "",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium,
+                                            maxLines = if (isExpanded) Int.MAX_VALUE else 2,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                         Row(
-                                            modifier = Modifier.horizontalScroll(rememberScrollState()),
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            linkedNodes.forEach { node ->
-                                                Surface(
-                                                    color = nodeTypeColor(node.nodeType).copy(alpha = 0.12f),
-                                                    shape = RoundedCornerShape(8.dp)
-                                                ) {
-                                                    Text(
-                                                        node.name,
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                                        color = nodeTypeColor(node.nodeType)
-                                                    )
+                                            Text(
+                                                formatDate(episode.endTime),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                            if (episode.significance >= 7) {
+                                                Text(
+                                                    "★ Important",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.tertiary,
+                                                    fontWeight = FontWeight.Bold,
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Icon(
+                                        if (isExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                        null,
+                                        modifier = Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                AnimatedVisibility(
+                                    visible = isExpanded,
+                                    enter = fadeIn() + expandVertically(),
+                                    exit = fadeOut() + shrinkVertically()
+                                ) {
+                                    Column(modifier = Modifier.padding(top = 8.dp)) {
+                                        if (isExpanded && episode.content.length > 80) {
+                                            Text(
+                                                episode.content,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.padding(bottom = 8.dp)
+                                            )
+                                        }
+                                        if (linkedNodes.isNotEmpty()) {
+                                            Text(
+                                                "Related entities:",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                            )
+                                            Row(
+                                                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                linkedNodes.forEach { node ->
+                                                    Surface(
+                                                        color = nodeTypeColor(node.nodeType).copy(alpha = 0.12f),
+                                                        shape = RoundedCornerShape(8.dp)
+                                                    ) {
+                                                        Text(
+                                                            node.name,
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                            color = nodeTypeColor(node.nodeType)
+                                                        )
+                                                    }
                                                 }
                                             }
+                                        }
+                                        // Edit button
+                                        TextButton(
+                                            onClick = { editingEpisode = episode },
+                                            modifier = Modifier.align(Alignment.End)
+                                        ) {
+                                            Icon(Icons.Rounded.Edit, null, modifier = Modifier.size(16.dp))
+                                            Spacer(Modifier.width(4.dp))
+                                            Text("Edit", style = MaterialTheme.typography.labelSmall)
                                         }
                                     }
                                 }
@@ -1338,4 +2026,60 @@ private fun relativeTime(timestamp: Long): String {
 
 private fun formatDate(timestamp: Long): String {
     return SimpleDateFormat("MMM d, yyyy", Locale.getDefault()).format(Date(timestamp))
+}
+
+@Composable
+private fun NodeAvatar(
+    profile: PersonProfileEntity,
+    userAvatar: Avatar,
+    characterAvatar: Avatar,
+    size: Int = 36,
+) {
+    val avatar = when {
+        profile.profileImageUri?.isNotBlank() == true -> Avatar.Image(profile.profileImageUri!!)
+        profile.isUserProfile -> userAvatar
+        profile.isCharacterProfile -> characterAvatar
+        else -> Avatar.Dummy
+    }
+
+    Surface(
+        modifier = Modifier.size(size.dp),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.primaryContainer,
+        tonalElevation = 2.dp,
+    ) {
+        when (avatar) {
+            is Avatar.Image -> {
+                coil3.compose.AsyncImage(
+                    model = avatar.url,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                )
+            }
+            is Avatar.Emoji -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(avatar.content, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+            is Avatar.Resource -> {
+                coil3.compose.AsyncImage(
+                    model = avatar.id,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                )
+            }
+            is Avatar.Dummy -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Rounded.Group,
+                        null,
+                        modifier = Modifier.size((size * 0.5f).dp),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                }
+            }
+        }
+    }
 }

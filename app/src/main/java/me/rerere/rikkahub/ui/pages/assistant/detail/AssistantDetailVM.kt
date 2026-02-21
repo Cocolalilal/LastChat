@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -13,6 +14,13 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import me.rerere.rikkahub.data.db.entity.GraphEpisodeEntity
+import me.rerere.rikkahub.data.db.entity.MemoryEdgeEntity
+import me.rerere.rikkahub.data.db.entity.MemoryNodeEntity
+import me.rerere.rikkahub.data.db.entity.NodeType
+import me.rerere.rikkahub.data.db.entity.TimelineEventEntity
+import me.rerere.rikkahub.data.db.entity.PersonProfileEntity
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.db.dao.ChatEpisodeDAO
@@ -67,26 +75,14 @@ class AssistantDetailVM(
 
     val memories = combine(
         memoryRepository.getMemoriesOfAssistantFlow(assistantId.toString()),
-        chatEpisodeDAO.getEpisodesOfAssistantFlow(assistantId.toString()),
         _memorySearchQuery
-    ) { coreMemories, episodes, query ->
-        val core = coreMemories
-        val episodic = episodes.map { 
-            AssistantMemory(
-                id = -it.id, // Negative ID to distinguish from core memories
-                content = it.content, 
-                type = 1, // EPISODIC
-                hasEmbedding = it.embedding != null,
-                embeddingModelId = it.embeddingModelId,
-                timestamp = it.startTime,
-                significance = it.significance
-            ) 
-        }
-        val allMemories = core + episodic
+    ) { coreMemories, query ->
+        // Only core memories are shown here — episodic memory is exclusive to Advanced (graph) mode
+        // and is displayed via allGraphEpisodes flow in the graph memory explorer
         if (query.isBlank()) {
-            allMemories
+            coreMemories
         } else {
-            allMemories.filter { it.content.contains(query, ignoreCase = true) }
+            coreMemories.filter { it.content.contains(query, ignoreCase = true) }
         }
     }.stateIn(
         scope = viewModelScope, started = SharingStarted.Lazily, initialValue = emptyList()
@@ -141,6 +137,54 @@ class AssistantDetailVM(
         }
     }
 
+    fun deleteTimelineEvent(eventId: Int) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                graphMemoryRepo.deleteTimelineEvent(eventId)
+            }
+        }
+    }
+
+    fun deleteEpisode(episodeId: Int) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                graphMemoryRepo.deleteEpisode(episodeId)
+            }
+        }
+    }
+
+    fun updateNode(node: MemoryNodeEntity) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                graphMemoryRepo.updateNode(node)
+            }
+        }
+    }
+
+    fun updateEdge(edge: MemoryEdgeEntity) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                graphMemoryRepo.updateEdge(edge)
+            }
+        }
+    }
+
+    fun updateTimelineEvent(event: TimelineEventEntity) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                graphMemoryRepo.updateTimelineEvent(event)
+            }
+        }
+    }
+
+    fun updateEpisode(episode: GraphEpisodeEntity) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                graphMemoryRepo.updateEpisode(episode)
+            }
+        }
+    }
+
     private val _graphProcessing = MutableStateFlow(false)
     val graphProcessing = _graphProcessing.asStateFlow()
 
@@ -148,12 +192,21 @@ class AssistantDetailVM(
         viewModelScope.launch {
             _graphProcessing.value = true
             try {
-                memoryAgent.processExchange(
-                    assistantId = id,
-                    userMessage = text,
-                    assistantReply = "(Manual graph memory ingestion)"
-                )
-                _snackbarMessage.value = "Text processed into graph memory"
+                val result = withContext(Dispatchers.IO) {
+                    memoryAgent.processExchange(
+                        assistantId = id,
+                        userMessage = text,
+                        assistantReply = "(Manual graph memory ingestion)",
+                        isManualIngestion = true, // Skip episodic memory creation
+                    )
+                }
+                if (result.error != null) {
+                    _snackbarMessage.value = "Graph extraction failed: ${result.error}"
+                } else if (result.isEmpty) {
+                    _snackbarMessage.value = "No meaningful information extracted from this text"
+                } else {
+                    _snackbarMessage.value = "Extracted ${result.nodesUpserted} entities, ${result.edgesCreated} relations"
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to process text into graph", e)
                 _snackbarMessage.value = "Failed: ${e.message}"
@@ -269,8 +322,12 @@ class AssistantDetailVM(
             val currentSettings = settingsStore.settingsFlow.value
             val oldAssistant = currentSettings.assistants.find { it.id == assistant.id }
             if (oldAssistant != null) {
-                checkAvatarDelete(old = oldAssistant, new = assistant) // 删除旧头像
-                checkBackgroundDelete(old = oldAssistant, new = assistant) // 删除旧背景
+                checkAvatarDelete(old = oldAssistant, new = assistant)
+                checkBackgroundDelete(old = oldAssistant, new = assistant)
+                // Auto-seed person profiles when graph memory is first enabled
+                if (!oldAssistant.useGraphMemory && assistant.useGraphMemory) {
+                    seedDefaultProfiles()
+                }
             }
             settingsStore.update(
                 settings = currentSettings.copy(
@@ -505,6 +562,111 @@ class AssistantDetailVM(
     val hasLorebooks = assistant.map { 
         it.enabledLorebookIds.isNotEmpty()
     }.stateIn(viewModelScope, SharingStarted.Lazily, false)
+
+    // ─── Person Profile Operations ────────────────────────────────────────
+
+    fun getProfileFlow(nodeId: Int) = graphMemoryRepo.getProfileFlow(nodeId)
+
+    fun updateProfile(profile: PersonProfileEntity) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                graphMemoryRepo.updateProfile(profile)
+            }
+        }
+    }
+
+    fun getPersonRelationships(nodeId: Int, callback: (List<MemoryEdgeEntity>) -> Unit) {
+        viewModelScope.launch {
+            val edges = withContext(Dispatchers.IO) {
+                graphMemoryRepo.getPersonRelationships(nodeId)
+            }
+            callback(edges)
+        }
+    }
+
+    fun getPersonalityNodes(nodeId: Int, callback: (List<MemoryNodeEntity>) -> Unit) {
+        viewModelScope.launch {
+            val nodes = withContext(Dispatchers.IO) {
+                graphMemoryRepo.getPersonalityNodes(nodeId)
+            }
+            callback(nodes)
+        }
+    }
+
+    fun getPhysicalAttributeNodes(nodeId: Int, callback: (List<MemoryNodeEntity>) -> Unit) {
+        viewModelScope.launch {
+            val nodes = withContext(Dispatchers.IO) {
+                graphMemoryRepo.getPhysicalAttributeNodes(nodeId)
+            }
+            callback(nodes)
+        }
+    }
+
+    fun getOtherInfoNodes(nodeId: Int, callback: (List<MemoryNodeEntity>) -> Unit) {
+        viewModelScope.launch {
+            val nodes = withContext(Dispatchers.IO) {
+                graphMemoryRepo.getOtherInfoNodes(nodeId)
+            }
+            callback(nodes)
+        }
+    }
+
+    fun addPersonRelationship(sourceNodeId: Int, targetNodeId: Int, relationType: String, description: String = "") {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                graphMemoryRepo.upsertEdge(MemoryEdgeEntity(
+                    assistantId = id,
+                    sourceNodeId = sourceNodeId,
+                    targetNodeId = targetNodeId,
+                    relationType = relationType,
+                    description = description,
+                ))
+            }
+        }
+    }
+
+    fun removePersonRelationship(edgeId: Int) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                graphMemoryRepo.deleteEdge(edgeId)
+            }
+        }
+    }
+
+    /**
+     * Get all person-type nodes for this assistant (for relationship picker).
+     */
+    val personNodes = allNodes.map { nodes ->
+        nodes.filter { it.nodeType == NodeType.PERSON }
+    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    /**
+     * All person profiles for this assistant, keyed by nodeId for quick lookup.
+     */
+    val allProfiles = graphMemoryRepo.getAllProfilesFlow(id)
+        .map { profiles -> profiles.associateBy { it.nodeId } }
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyMap())
+
+    /**
+     * Seed default User + Character profiles when graph memory is first enabled.
+     * Called from update() when useGraphMemory transitions false → true.
+     */
+    fun seedDefaultProfiles() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                val currentSettings = settingsStore.settingsFlow.value
+                val currentAssistant = assistant.value
+                graphMemoryRepo.seedDefaultProfiles(
+                    assistantId = id,
+                    userName = currentSettings.displaySetting.userNickname,
+                    characterName = currentAssistant.name,
+                )
+            }
+        }
+    }
+
+    fun calculateAge(birthYear: Int?, birthMonth: Int? = null, birthDay: Int? = null): Int? =
+        graphMemoryRepo.calculateAge(birthYear, birthMonth, birthDay)
 }
 
 data class EmbeddingProgress(

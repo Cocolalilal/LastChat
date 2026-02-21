@@ -7,10 +7,10 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
-import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.db.entity.MemoryEdgeEntity
 import me.rerere.rikkahub.data.db.entity.MemoryNodeEntity
 import me.rerere.rikkahub.data.db.entity.NodeType
+import me.rerere.rikkahub.data.db.entity.RelationType
 import me.rerere.rikkahub.data.db.entity.TimelineEventEntity
 import me.rerere.rikkahub.utils.JsonInstant
 import kotlinx.serialization.Serializable
@@ -37,6 +37,31 @@ class RelationExtractor(
         val nodes: List<ExtractedNode> = emptyList(),
         val edges: List<ExtractedEdge> = emptyList(),
         val timelineEvents: List<ExtractedTimelineEvent> = emptyList(),
+        val personUpdates: List<ExtractedPersonUpdate> = emptyList(),
+    )
+
+    @Serializable
+    data class ExtractedPersonUpdate(
+        val personName: String,
+        val birthYear: Int? = null,
+        val birthMonth: Int? = null,
+        val birthDay: Int? = null,
+        val personalityTraits: List<String> = emptyList(),
+        val physicalAttributes: List<String> = emptyList(),
+        val otherInfo: List<String> = emptyList(),
+        val pronouns: String? = null,
+        val occupation: String? = null,
+        val location: String? = null,
+        val interests: List<String> = emptyList(),
+        val relationships: List<ExtractedRelationship> = emptyList(),
+    )
+
+    @Serializable
+    data class ExtractedRelationship(
+        val targetName: String,
+        val relationType: String,
+        val relationLabel: String? = null,
+        val notes: String = "",
     )
 
     @Serializable
@@ -70,15 +95,21 @@ class RelationExtractor(
      * Extract entities, relations, and timeline events from a conversation exchange.
      */
     suspend fun extract(
+        assistantId: String,
         userMessage: String,
         assistantReply: String,
         existingNodeNames: List<String> = emptyList(),
     ): ExtractionResult {
         val settings = settingsStore.settingsFlow.value
-        val assistant = settings.getCurrentAssistant()
+        val assistant = settings.assistants.find { it.id.toString() == assistantId }
+        if (assistant == null) {
+            Log.w(TAG, "Assistant not found: $assistantId")
+            return ExtractionResult()
+        }
 
         val backgroundModelId = assistant.summarizerModelId
             ?: assistant.backgroundModelId
+            ?: assistant.chatModelId
             ?: settings.chatModelId
         val model = settings.findModelById(backgroundModelId) ?: run {
             Log.w(TAG, "No background model found for graph extraction")
@@ -94,6 +125,9 @@ class RelationExtractor(
             "\n**Existing nodes in the graph** (re-use these names if referring to the same entity):\n${existingNodeNames.joinToString(", ")}\n"
         } else ""
 
+        val profileEdgeTypes = RelationType.PROFILE_SUMMARY.joinToString(", ")
+        val semanticEdgeTypes = RelationType.SEMANTIC.joinToString(", ")
+
         val prompt = """
             Analyze this conversation exchange and extract structured information for a knowledge graph.
             $existingNodesHint
@@ -103,12 +137,35 @@ class RelationExtractor(
             
             Extract:
             1. **Entities** (people, places, objects, events, concepts, preferences, emotions, plans)
-            2. **Relations** between entities
+            2. **Relations** between entities (semantic connections, NOT interpersonal relationships)
             3. **Timeline events** (anything with temporal relevance: upcoming plans, deadlines, ongoing activities)
+            4. **Person profile updates** — any new personal information learned about people:
+               - Birth year/month/day (only if explicitly mentioned)
+               - Pronouns (he/him, she/her, they/them, etc.)
+               - Occupation (job, profession, role)
+               - Location (city, country, or general area)
+               - Interests (hobbies, likes, passions — as a list)
+               - Personality traits (character, temperament, behavior patterns — NOT physical)
+               - Physical attributes (appearance, height, hair color, etc. — NOT personality)
+               - Other info (background facts — NOT the above categories)
+               - Relationships with other people (family, friends, colleagues, etc.)
+               Each category is STRICTLY separate. Never mix categories.
             
             Valid node types: ${NodeType.ALL.joinToString(", ")}
-            Valid relation types: knows, likes, dislikes, scheduled_for, happened_at, related_to, feels_about, owns, part_of, similar_to
+            Valid semantic edge types: $semanticEdgeTypes
+            Valid profile-contributing edge types: $profileEdgeTypes
             Valid event types: upcoming, ongoing, completed, recurring
+            
+            Relationship types for personUpdates.relationships:
+            Family: parent, child, sibling, spouse, grandparent, grandchild, aunt_uncle, niece_nephew, cousin, in_law
+            Social: friend, best_friend, acquaintance, neighbor
+            Professional: colleague, boss, employee, mentor, mentee, client
+            Romantic: partner, ex_partner, crush
+            Other: rival, enemy, roommate, pet_owner, pet
+            
+            For edges, use semantic types (connected_to, associated_with, interacts_with, likes, owns, etc.)
+            For trait/attribute → person edges, use describes_personality, describes_physical, describes_other, describes_interest.
+            For interpersonal relationships, put them in personUpdates.relationships (NOT as edges).
             
             Only extract genuinely meaningful information. Skip trivial/generic content.
             Importance: 1-3 trivial, 4-6 normal, 7-9 important, 10 critical.
@@ -117,11 +174,12 @@ class RelationExtractor(
             Output ONLY valid JSON (no markdown fences):
             {
               "nodes": [{"name": "...", "type": "...", "description": "...", "importance": 5, "emotionalValence": 0.0}],
-              "edges": [{"source": "NodeName1", "target": "NodeName2", "relationType": "...", "description": "..."}],
-              "timelineEvents": [{"nodeName": "...", "eventType": "upcoming", "description": "...", "scheduledDate": "2025-03-01"}]
+              "edges": [{"source": "NodeName1", "target": "NodeName2", "relationType": "connected_to", "description": "..."}],
+              "timelineEvents": [{"nodeName": "...", "eventType": "upcoming", "description": "...", "scheduledDate": "2025-03-01"}],
+              "personUpdates": [{"personName": "Alice", "pronouns": "she/her", "occupation": "Engineer", "location": "Tokyo", "interests": ["hiking", "cooking"], "personalityTraits": ["kind"], "physicalAttributes": ["tall"], "otherInfo": [], "relationships": [{"targetName": "Bob", "relationType": "sibling", "relationLabel": "older brother", "notes": ""}]}]
             }
             
-            If nothing meaningful to extract, return: {"nodes": [], "edges": [], "timelineEvents": []}
+            If nothing meaningful to extract, return: {"nodes": [], "edges": [], "timelineEvents": [], "personUpdates": []}
         """.trimIndent()
 
         return try {
@@ -187,7 +245,39 @@ class RelationExtractor(
                 } catch (e: Exception) { null }
             } ?: emptyList()
 
-            ExtractionResult(nodes, edges, timelineEvents)
+            val personUpdates = json["personUpdates"]?.jsonArray?.mapNotNull { updateEl ->
+                try {
+                    val obj = updateEl.jsonObject
+                    val relationships = obj["relationships"]?.jsonArray?.mapNotNull { relEl ->
+                        try {
+                            val relObj = relEl.jsonObject
+                            ExtractedRelationship(
+                                targetName = relObj["targetName"]?.jsonPrimitive?.content ?: return@mapNotNull null,
+                                relationType = relObj["relationType"]?.jsonPrimitive?.content ?: "friend",
+                                relationLabel = relObj["relationLabel"]?.jsonPrimitive?.content,
+                                notes = relObj["notes"]?.jsonPrimitive?.content ?: "",
+                            )
+                        } catch (e: Exception) { null }
+                    } ?: emptyList()
+                    
+                    ExtractedPersonUpdate(
+                        personName = obj["personName"]?.jsonPrimitive?.content ?: return@mapNotNull null,
+                        birthYear = obj["birthYear"]?.jsonPrimitive?.intOrNull,
+                        birthMonth = obj["birthMonth"]?.jsonPrimitive?.intOrNull,
+                        birthDay = obj["birthDay"]?.jsonPrimitive?.intOrNull,
+                        personalityTraits = obj["personalityTraits"]?.jsonArray?.mapNotNull { it.jsonPrimitive.content } ?: emptyList(),
+                        physicalAttributes = obj["physicalAttributes"]?.jsonArray?.mapNotNull { it.jsonPrimitive.content } ?: emptyList(),
+                        otherInfo = obj["otherInfo"]?.jsonArray?.mapNotNull { it.jsonPrimitive.content } ?: emptyList(),
+                        pronouns = obj["pronouns"]?.jsonPrimitive?.content,
+                        occupation = obj["occupation"]?.jsonPrimitive?.content,
+                        location = obj["location"]?.jsonPrimitive?.content,
+                        interests = obj["interests"]?.jsonArray?.mapNotNull { it.jsonPrimitive.content } ?: emptyList(),
+                        relationships = relationships,
+                    )
+                } catch (e: Exception) { null }
+            } ?: emptyList()
+
+            ExtractionResult(nodes, edges, timelineEvents, personUpdates)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to parse extraction result", e)
             ExtractionResult()

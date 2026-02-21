@@ -19,8 +19,10 @@ import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.db.dao.ChatEpisodeDAO
 import me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity
+import me.rerere.rikkahub.data.db.entity.GraphEpisodeEntity
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.repository.ConversationRepository
+import me.rerere.rikkahub.data.repository.GraphMemoryRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.utils.JsonInstant
 import org.koin.core.component.KoinComponent
@@ -39,6 +41,7 @@ class MemoryConsolidationWorker(
     private val conversationRepository: ConversationRepository by inject()
     private val memoryRepository: MemoryRepository by inject()
     private val chatEpisodeDAO: ChatEpisodeDAO by inject()
+    private val graphMemoryRepo: GraphMemoryRepository by inject()
     private val settingsStore: SettingsStore by inject()
     private val embeddingService: EmbeddingService by inject()
     private val providerManager: me.rerere.ai.provider.ProviderManager by inject()
@@ -74,8 +77,9 @@ class MemoryConsolidationWorker(
         var trackACount = 0
         val now = System.currentTimeMillis()
         
-        // Only process conversations if consolidation is enabled
-        if (assistant.enableMemoryConsolidation || forceConversationId != null) {
+        // Only process conversations if consolidation is enabled AND graph memory is active
+        // Episodic memory creation is exclusive to Advanced (graph) memory mode
+        if ((assistant.enableMemoryConsolidation || forceConversationId != null) && assistant.useGraphMemory) {
             val conversationsToProcess = if (forceConversationId != null) {
                 // Manual consolidation: only process the specific conversation
                 val targetConversation = conversationRepository.getConversationById(kotlin.uuid.Uuid.parse(forceConversationId))
@@ -101,9 +105,9 @@ class MemoryConsolidationWorker(
                 continue
             }
             
-            // Double check with DAO if we are doing a full scan (heuristic fallback)
+            // Double check with graph episode DAO if we are doing a full scan (heuristic fallback)
             if (isFullScan) {
-                val existingEpisodes = chatEpisodeDAO.getEpisodesOfAssistant(assistantId)
+                val existingEpisodes = graphMemoryRepo.getRecentEpisodes(assistantId, 500)
                 val isProcessed = existingEpisodes.any { 
                     kotlin.math.abs(it.endTime - conversation.updateAt.toEpochMilli()) < 1000 * 60 
                 }
@@ -185,39 +189,20 @@ class MemoryConsolidationWorker(
                 val embeddingModelId = summaryEmbeddingResult.modelId
                 
                 if (summaryEmbedding != null) {
-                    // Check if an episode already exists for this conversation
-                    val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(conversation.id.toString())
-                    
-                    if (existingEpisode != null) {
-                        // Update existing episode
-                        chatEpisodeDAO.insertEpisode(
-                            existingEpisode.copy(
-                                content = summary,
-                                embedding = JsonInstant.encodeToString(summaryEmbedding),
-                                embeddingModelId = embeddingModelId,
-                                endTime = conversation.updateAt.toEpochMilli(),
-                                lastAccessedAt = System.currentTimeMillis(),
-                                significance = significance
-                            )
+                    // Create graph episode (replaces legacy ChatEpisodeEntity)
+                    graphMemoryRepo.insertEpisode(
+                        GraphEpisodeEntity(
+                            assistantId = assistantId,
+                            conversationId = conversation.id.toString(),
+                            content = summary,
+                            significance = significance,
+                            startTime = conversation.createAt.toEpochMilli(),
+                            endTime = conversation.updateAt.toEpochMilli(),
+                            embedding = JsonInstant.encodeToString(summaryEmbedding),
+                            embeddingModelId = embeddingModelId,
                         )
-                        Log.i("MemoryConsolidation", "Updated episode (sig=$significance) for conversation ${conversation.id}")
-                    } else {
-                        // Create new episode
-                        chatEpisodeDAO.insertEpisode(
-                            ChatEpisodeEntity(
-                                assistantId = assistantId,
-                                content = summary,
-                                embedding = JsonInstant.encodeToString(summaryEmbedding),
-                                embeddingModelId = embeddingModelId,
-                                startTime = conversation.createAt.toEpochMilli(),
-                                endTime = conversation.updateAt.toEpochMilli(),
-                                lastAccessedAt = System.currentTimeMillis(),
-                                significance = significance,
-                                conversationId = conversation.id.toString()
-                            )
-                        )
-                        Log.i("MemoryConsolidation", "Created episode (sig=$significance) for conversation ${conversation.id}")
-                    }
+                    )
+                    Log.i("MemoryConsolidation", "Created graph episode (sig=$significance) for conversation ${conversation.id}")
                     
                     conversationRepository.markAsConsolidated(conversation.id)
                     trackACount++
@@ -290,7 +275,9 @@ class MemoryConsolidationWorker(
                 val memoryAgent: me.rerere.rikkahub.data.ai.memory.MemoryAgent by inject()
                 memoryAgent.runConsolidation(
                     assistantId = assistantId,
-                    decayHalfLifeDays = assistant.graphDecayRateDays.toDouble()
+                    decayHalfLifeDays = assistant.graphDecayRateDays.toDouble(),
+                    maxNodes = assistant.graphMaxNodes,
+                    timelineEnabled = assistant.graphTimelineEnabled,
                 )
                 Log.i("MemoryConsolidation", "Graph memory consolidation complete")
             } catch (e: Exception) {

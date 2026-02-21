@@ -1,0 +1,869 @@
+package me.rerere.rikkahub.ui.pages.assistant.detail
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Cake
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.EmojiPeople
+import androidx.compose.material.icons.rounded.Face
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.Group
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.LocationOn
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Psychology
+import androidx.compose.material.icons.rounded.Work
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
+import me.rerere.rikkahub.data.db.entity.MemoryEdgeEntity
+import me.rerere.rikkahub.data.db.entity.MemoryNodeEntity
+import me.rerere.rikkahub.data.db.entity.PersonProfileEntity
+import me.rerere.rikkahub.data.db.entity.PersonRelationship
+import me.rerere.rikkahub.data.db.entity.PersonRelationType
+import me.rerere.rikkahub.data.db.entity.RelationType
+import me.rerere.rikkahub.utils.JsonInstant
+import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.theme.AppShapes
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun PersonProfileSheet(
+    nodeId: Int,
+    node: MemoryNodeEntity,
+    vm: AssistantDetailVM,
+    userAvatar: Avatar,
+    characterAvatar: Avatar,
+    allPersonNodes: List<MemoryNodeEntity>,
+    onDismiss: () -> Unit,
+) {
+    val haptics = rememberPremiumHaptics()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val profile by vm.getProfileFlow(nodeId).collectAsState(initial = null)
+
+    var isEditing by remember { mutableStateOf(false) }
+
+    // Loaded data
+    var relationships by remember { mutableStateOf<List<MemoryEdgeEntity>>(emptyList()) }
+    var personalityNodes by remember { mutableStateOf<List<MemoryNodeEntity>>(emptyList()) }
+    var physicalNodes by remember { mutableStateOf<List<MemoryNodeEntity>>(emptyList()) }
+    var otherInfoNodes by remember { mutableStateOf<List<MemoryNodeEntity>>(emptyList()) }
+
+    LaunchedEffect(nodeId) {
+        vm.getPersonRelationships(nodeId) { relationships = it }
+        vm.getPersonalityNodes(nodeId) { personalityNodes = it }
+        vm.getPhysicalAttributeNodes(nodeId) { physicalNodes = it }
+        vm.getOtherInfoNodes(nodeId) { otherInfoNodes = it }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = AppShapes.BottomSheet,
+    ) {
+        val p = profile
+        if (p == null) {
+            // Profile not created yet — show minimal info
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp)
+                    .navigationBarsPadding(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    node.name,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    node.description.ifBlank { "No profile data yet." },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        } else if (isEditing) {
+            ProfileEditMode(
+                profile = p,
+                onSave = { updated ->
+                    vm.updateProfile(updated)
+                    haptics.perform(HapticPattern.Success)
+                    isEditing = false
+                },
+                onCancel = {
+                    haptics.perform(HapticPattern.Cancel)
+                    isEditing = false
+                },
+            )
+        } else {
+            ProfileViewMode(
+                profile = p,
+                node = node,
+                userAvatar = userAvatar,
+                characterAvatar = characterAvatar,
+                relationships = relationships,
+                personalityNodes = personalityNodes,
+                physicalNodes = physicalNodes,
+                otherInfoNodes = otherInfoNodes,
+                allPersonNodes = allPersonNodes,
+                calculateAge = { year, month, day -> vm.calculateAge(year, month, day) },
+                onEdit = {
+                    haptics.perform(HapticPattern.Pop)
+                    isEditing = true
+                },
+            )
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// VIEW MODE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ProfileViewMode(
+    profile: PersonProfileEntity,
+    node: MemoryNodeEntity,
+    userAvatar: Avatar,
+    characterAvatar: Avatar,
+    relationships: List<MemoryEdgeEntity>,
+    personalityNodes: List<MemoryNodeEntity>,
+    physicalNodes: List<MemoryNodeEntity>,
+    otherInfoNodes: List<MemoryNodeEntity>,
+    allPersonNodes: List<MemoryNodeEntity>,
+    calculateAge: (Int?, Int?, Int?) -> Int?,
+    onEdit: () -> Unit,
+) {
+    val scrollState = rememberScrollState()
+    val age = calculateAge(profile.birthYear, profile.birthMonth, profile.birthDay)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(scrollState)
+            .padding(horizontal = 20.dp)
+            .padding(bottom = 24.dp)
+            .navigationBarsPadding()
+            .animateContentSize(animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f)),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        // ─── Header: Avatar + Name + Edit ────────────────────────────
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // Avatar
+            ProfileAvatar(
+                profile = profile,
+                userAvatar = userAvatar,
+                characterAvatar = characterAvatar,
+                size = 64,
+            )
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = profile.displayName.ifBlank { node.name },
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (age != null) {
+                    Text(
+                        text = "Age $age",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (profile.isUserProfile) {
+                    ProfileBadge("You")
+                } else if (profile.isCharacterProfile) {
+                    ProfileBadge("Character")
+                }
+            }
+
+            // Edit button with spring press scale
+            HapticIconButton(
+                onClick = onEdit,
+                icon = Icons.Rounded.Edit,
+                contentDescription = "Edit profile",
+            )
+        }
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+        // ─── Birthday (conditional) ──────────────────────────────────
+        if (profile.birthYear != null) {
+            ProfileSection(
+                icon = Icons.Rounded.Cake,
+                title = "Birthday",
+            ) {
+                val dateStr = buildString {
+                    if (profile.birthMonth != null && profile.birthDay != null) {
+                        append(monthName(profile.birthMonth))
+                        append(" ${profile.birthDay}, ")
+                    } else if (profile.birthMonth != null) {
+                        append(monthName(profile.birthMonth))
+                        append(", ")
+                    }
+                    append("${profile.birthYear}")
+                }
+                Text(
+                    text = dateStr,
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                if (age != null) {
+                    Text(
+                        text = "$age years old",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+
+        // ─── Pronouns / Occupation / Location (inline) ────────────────
+        val hasBasicInfo = profile.pronouns.isNotBlank() || profile.occupation.isNotBlank() || profile.location.isNotBlank()
+        if (hasBasicInfo) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (profile.pronouns.isNotBlank()) {
+                    InfoChip(Icons.Rounded.Person, profile.pronouns)
+                }
+                if (profile.occupation.isNotBlank()) {
+                    InfoChip(Icons.Rounded.Work, profile.occupation)
+                }
+                if (profile.location.isNotBlank()) {
+                    InfoChip(Icons.Rounded.LocationOn, profile.location)
+                }
+            }
+        }
+
+        // ─── Interests (conditional) ───────────────────────────────────
+        val interests = try {
+            JsonInstant.decodeFromString<List<String>>(profile.interestsJson)
+        } catch (e: Exception) { emptyList() }
+        if (interests.isNotEmpty()) {
+            ProfileSection(
+                icon = Icons.Rounded.Favorite,
+                title = "Interests",
+            ) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    interests.forEach { interest ->
+                        Surface(
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            shape = AppShapes.Chip,
+                        ) {
+                            Text(
+                                interest,
+                                style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // ─── Person Relationships (from profile JSON) ────────────────
+        val profileRelationships = try {
+            JsonInstant.decodeFromString<List<PersonRelationship>>(profile.relationshipsJson)
+        } catch (e: Exception) { emptyList() }
+        if (profileRelationships.isNotEmpty()) {
+            ProfileSection(
+                icon = Icons.Rounded.Group,
+                title = "Relationships",
+            ) {
+                // Group by category
+                val familyRels = profileRelationships.filter { it.relationType in PersonRelationType.FAMILY }
+                val socialRels = profileRelationships.filter { it.relationType in PersonRelationType.SOCIAL }
+                val professionalRels = profileRelationships.filter { it.relationType in PersonRelationType.PROFESSIONAL }
+                val romanticRels = profileRelationships.filter { it.relationType in PersonRelationType.ROMANTIC }
+                val otherRels = profileRelationships.filter { 
+                    it.relationType !in PersonRelationType.FAMILY &&
+                    it.relationType !in PersonRelationType.SOCIAL &&
+                    it.relationType !in PersonRelationType.PROFESSIONAL &&
+                    it.relationType !in PersonRelationType.ROMANTIC
+                }
+                
+                @Composable
+                fun RelationshipGroup(title: String, rels: List<PersonRelationship>) {
+                    if (rels.isEmpty()) return
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        rels.forEach { rel ->
+                            val label = rel.relationLabel ?: rel.relationType.replace("_", " ")
+                            Surface(
+                                color = MaterialTheme.colorScheme.tertiaryContainer,
+                                shape = AppShapes.Chip,
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.Person,
+                                        null,
+                                        modifier = Modifier.size(14.dp),
+                                        tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    )
+                                    Text(
+                                        "${rel.targetName} · $label",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+                
+                RelationshipGroup("Family", familyRels)
+                RelationshipGroup("Social", socialRels)
+                RelationshipGroup("Professional", professionalRels)
+                RelationshipGroup("Romantic", romanticRels)
+                RelationshipGroup("Other", otherRels)
+            }
+        }
+
+        // ─── Legacy Relationships from edges (conditional) ───────────
+        if (relationships.isNotEmpty()) {
+            ProfileSection(
+                icon = Icons.Rounded.Group,
+                title = "Relationships",
+            ) {
+                val nodeMap = allPersonNodes.associateBy { it.id }
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    relationships.forEach { edge ->
+                        val otherId = if (edge.sourceNodeId == profile.nodeId) edge.targetNodeId else edge.sourceNodeId
+                        val otherName = nodeMap[otherId]?.name ?: "Unknown"
+                        val label = edge.relationType.replace("_", " ").removeSuffix(" of")
+
+                        Surface(
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            shape = AppShapes.Chip,
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Person,
+                                    null,
+                                    modifier = Modifier.size(14.dp),
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                )
+                                Text(
+                                    "$otherName · $label",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ─── Personality (conditional, above physical per user request) ──
+        if (profile.personalitySummary.isNotBlank()) {
+            ProfileSection(
+                icon = Icons.Rounded.Psychology,
+                title = "Personality",
+            ) {
+                Text(
+                    text = profile.personalitySummary,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                if (personalityNodes.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    ContributingNodesRow(personalityNodes)
+                }
+            }
+        }
+
+        // ─── Physical Attributes (conditional) ───────────────────────
+        if (profile.physicalSummary.isNotBlank()) {
+            ProfileSection(
+                icon = Icons.Rounded.EmojiPeople,
+                title = "Physical Attributes",
+            ) {
+                Text(
+                    text = profile.physicalSummary,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                if (physicalNodes.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    ContributingNodesRow(physicalNodes)
+                }
+            }
+        }
+
+        // ─── Other Info (conditional) ────────────────────────────────
+        if (profile.otherInfoSummary.isNotBlank()) {
+            ProfileSection(
+                icon = Icons.Rounded.Info,
+                title = "Other Info",
+            ) {
+                Text(
+                    text = profile.otherInfoSummary,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                if (otherInfoNodes.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    ContributingNodesRow(otherInfoNodes)
+                }
+            }
+        }
+
+        // If absolutely nothing to show beyond name
+        val hasAnyContent = profile.birthYear != null ||
+            relationships.isNotEmpty() ||
+            profile.personalitySummary.isNotBlank() ||
+            profile.physicalSummary.isNotBlank() ||
+            profile.otherInfoSummary.isNotBlank()
+
+        if (!hasAnyContent) {
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = AppShapes.CardMedium,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    text = "No details yet — they'll be gathered from conversations over time.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(20.dp),
+                )
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// EDIT MODE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun ProfileEditMode(
+    profile: PersonProfileEntity,
+    onSave: (PersonProfileEntity) -> Unit,
+    onCancel: () -> Unit,
+) {
+    var displayName by remember { mutableStateOf(profile.displayName) }
+    var birthYear by remember { mutableStateOf(profile.birthYear?.toString() ?: "") }
+    var birthMonth by remember { mutableStateOf(profile.birthMonth?.toString() ?: "") }
+    var birthDay by remember { mutableStateOf(profile.birthDay?.toString() ?: "") }
+    var personalitySummary by remember { mutableStateOf(profile.personalitySummary) }
+    var physicalSummary by remember { mutableStateOf(profile.physicalSummary) }
+    var otherInfoSummary by remember { mutableStateOf(profile.otherInfoSummary) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp)
+            .padding(bottom = 24.dp)
+            .navigationBarsPadding(),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        // Header
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Edit Profile",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                HapticIconButton(
+                    onClick = onCancel,
+                    icon = Icons.Rounded.Close,
+                    contentDescription = "Cancel",
+                )
+                HapticIconButton(
+                    onClick = {
+                        onSave(profile.copy(
+                            displayName = displayName,
+                            birthYear = birthYear.toIntOrNull(),
+                            birthMonth = birthMonth.toIntOrNull()?.coerceIn(1, 12),
+                            birthDay = birthDay.toIntOrNull()?.coerceIn(1, 31),
+                            personalitySummary = personalitySummary,
+                            physicalSummary = physicalSummary,
+                            otherInfoSummary = otherInfoSummary,
+                        ))
+                    },
+                    icon = Icons.Rounded.Check,
+                    contentDescription = "Save",
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+
+        // Name
+        OutlinedTextField(
+            value = displayName,
+            onValueChange = { displayName = it },
+            label = { Text("Display Name") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            shape = AppShapes.InputField,
+        )
+
+        // Birthday row
+        Text(
+            "Birthday",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OutlinedTextField(
+                value = birthYear,
+                onValueChange = { birthYear = it.filter { c -> c.isDigit() }.take(4) },
+                label = { Text("Year") },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                shape = AppShapes.InputField,
+            )
+            OutlinedTextField(
+                value = birthMonth,
+                onValueChange = { birthMonth = it.filter { c -> c.isDigit() }.take(2) },
+                label = { Text("Month") },
+                modifier = Modifier.weight(0.7f),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                shape = AppShapes.InputField,
+            )
+            OutlinedTextField(
+                value = birthDay,
+                onValueChange = { birthDay = it.filter { c -> c.isDigit() }.take(2) },
+                label = { Text("Day") },
+                modifier = Modifier.weight(0.7f),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                shape = AppShapes.InputField,
+            )
+        }
+
+        // Personality
+        OutlinedTextField(
+            value = personalitySummary,
+            onValueChange = { personalitySummary = it },
+            label = { Text("Personality") },
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 2,
+            maxLines = 5,
+            shape = AppShapes.InputField,
+        )
+
+        // Physical
+        OutlinedTextField(
+            value = physicalSummary,
+            onValueChange = { physicalSummary = it },
+            label = { Text("Physical Attributes") },
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 2,
+            maxLines = 5,
+            shape = AppShapes.InputField,
+        )
+
+        // Other
+        OutlinedTextField(
+            value = otherInfoSummary,
+            onValueChange = { otherInfoSummary = it },
+            label = { Text("Other Info") },
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 2,
+            maxLines = 5,
+            shape = AppShapes.InputField,
+        )
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SHARED COMPONENTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun ProfileAvatar(
+    profile: PersonProfileEntity,
+    userAvatar: Avatar,
+    characterAvatar: Avatar,
+    size: Int = 64,
+) {
+    val avatar = when {
+        profile.profileImageUri != null -> Avatar.Image(profile.profileImageUri)
+        profile.isUserProfile -> userAvatar
+        profile.isCharacterProfile -> characterAvatar
+        else -> Avatar.Dummy
+    }
+
+    Surface(
+        modifier = Modifier.size(size.dp),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.primaryContainer,
+        tonalElevation = 4.dp,
+    ) {
+        when (avatar) {
+            is Avatar.Image -> {
+                AsyncImage(
+                    model = avatar.url,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            }
+            is Avatar.Emoji -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(avatar.content, style = MaterialTheme.typography.headlineMedium)
+                }
+            }
+            is Avatar.Resource -> {
+                AsyncImage(
+                    model = avatar.id,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            }
+            is Avatar.Dummy -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Rounded.Face,
+                        null,
+                        modifier = Modifier.size((size * 0.5f).dp),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileBadge(text: String) {
+    Surface(
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        shape = AppShapes.Tag,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onTertiaryContainer,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+        )
+    }
+}
+
+@Composable
+private fun InfoChip(
+    icon: ImageVector,
+    text: String,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = AppShapes.Chip,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                icon,
+                null,
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ProfileSection(
+    icon: ImageVector,
+    title: String,
+    content: @Composable () -> Unit,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = AppShapes.CardMedium,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    icon,
+                    null,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            content()
+        }
+    }
+}
+
+@Composable
+private fun ContributingNodesRow(nodes: List<MemoryNodeEntity>) {
+    Row(
+        modifier = Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        nodes.forEach { node ->
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                shape = AppShapes.Chip,
+            ) {
+                Text(
+                    node.name,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HapticIconButton(
+    onClick: () -> Unit,
+    icon: ImageVector,
+    contentDescription: String?,
+    tint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
+    val haptics = rememberPremiumHaptics()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isPressed) 0.85f else 1f,
+        animationSpec = spring(dampingRatio = 0.4f, stiffness = 400f),
+        label = "iconBtnScale",
+    )
+
+    IconButton(
+        onClick = {
+            haptics.perform(HapticPattern.Pop)
+            onClick()
+        },
+        interactionSource = interactionSource,
+        modifier = Modifier.scale(scale),
+    ) {
+        Icon(icon, contentDescription, tint = tint)
+    }
+}
+
+private fun monthName(month: Int): String = when (month) {
+    1 -> "January"; 2 -> "February"; 3 -> "March"; 4 -> "April"
+    5 -> "May"; 6 -> "June"; 7 -> "July"; 8 -> "August"
+    9 -> "September"; 10 -> "October"; 11 -> "November"; 12 -> "December"
+    else -> "?"
+}

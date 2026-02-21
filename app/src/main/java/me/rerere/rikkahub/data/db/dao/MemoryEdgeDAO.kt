@@ -58,6 +58,6 @@ interface MemoryEdgeDAO {
     @Query("DELETE FROM MemoryEdgeEntity WHERE assistant_id = :assistantId")
     suspend fun deleteAllForAssistant(assistantId: String)
 
-    @Query("DELETE FROM MemoryEdgeEntity WHERE strength < :threshold AND assistant_id = :assistantId")
+    @Query("DELETE FROM MemoryEdgeEntity WHERE strength < :threshold AND assistant_id = :assistantId AND relation_type NOT IN ('describes_personality', 'describes_physical', 'describes_other', 'friend_of', 'family_of', 'romantic_partner_of', 'colleague_of', 'rival_of', 'mentor_of', 'acquaintance_of')")
     suspend fun deleteWeakEdges(assistantId: String, threshold: Float): Int
 }

@@ -29,7 +29,7 @@ val repositoryModule = module {
     }
 
     single {
-        GraphMemoryRepository(get(), get(), get(), get(), get())
+        GraphMemoryRepository(get(), get(), get(), get(), get(), get())
     }
 
     single {

@@ -39,6 +39,10 @@ data class MemoryNodeEntity(
     val validFrom: Long? = null,
     @ColumnInfo("valid_until")
     val validUntil: Long? = null,
+    @ColumnInfo(name = "confidence", defaultValue = "1.0")
+    val confidence: Float = 1.0f, // 0.0-1.0, how certain we are about this fact
+    @ColumnInfo(name = "source_turn", defaultValue = "")
+    val sourceTurn: String = "", // Conversation ID of the turn that first created this node
     @ColumnInfo("embedding")
     val embedding: String? = null, // JSON string of float array
     @ColumnInfo("embedding_model_id")
