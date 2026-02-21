@@ -1653,6 +1653,14 @@ private fun TimelineView(
     editingEvent?.let { event ->
         var editDescription by remember(event) { mutableStateOf(event.description) }
         var editEventType by remember(event) { mutableStateOf(event.eventType) }
+        var editScheduledDate by remember(event) {
+            mutableStateOf(
+                event.scheduledAt?.let {
+                    SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(it))
+                } ?: ""
+            )
+        }
+        var editRecurrenceRule by remember(event) { mutableStateOf(event.recurrenceRule ?: "") }
         val nodeName = nodeMap[event.nodeId]?.name ?: "Unknown"
         val eventTypes = listOf("upcoming", "ongoing", "completed", "recurring")
         
@@ -1674,10 +1682,28 @@ private fun TimelineView(
                         maxLines = 4,
                         modifier = Modifier.fillMaxWidth()
                     )
+                    OutlinedTextField(
+                        value = editScheduledDate,
+                        onValueChange = { editScheduledDate = it },
+                        label = { Text("Scheduled Date") },
+                        placeholder = { Text("YYYY-MM-DD") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (editEventType == "recurring") {
+                        OutlinedTextField(
+                            value = editRecurrenceRule,
+                            onValueChange = { editRecurrenceRule = it },
+                            label = { Text("Recurrence Rule") },
+                            placeholder = { Text("e.g. daily, weekly:mon,wed, monthly:15") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                     Text("Status", style = MaterialTheme.typography.labelMedium)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         eventTypes.forEach { type ->
                             FilterChip(
@@ -1696,9 +1722,16 @@ private fun TimelineView(
             },
             confirmButton = {
                 TextButton(onClick = {
+                    val parsedDate = try {
+                        if (editScheduledDate.isNotBlank()) {
+                            SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(editScheduledDate)?.time
+                        } else null
+                    } catch (e: Exception) { event.scheduledAt }
                     onUpdateEvent(event.copy(
                         description = editDescription,
-                        eventType = editEventType
+                        eventType = editEventType,
+                        scheduledAt = parsedDate,
+                        recurrenceRule = editRecurrenceRule.ifBlank { null }
                     ))
                     editingEvent = null
                 }) {

@@ -536,9 +536,19 @@ private fun ProfileEditMode(
     var birthYear by remember { mutableStateOf(profile.birthYear?.toString() ?: "") }
     var birthMonth by remember { mutableStateOf(profile.birthMonth?.toString() ?: "") }
     var birthDay by remember { mutableStateOf(profile.birthDay?.toString() ?: "") }
+    var pronouns by remember { mutableStateOf(profile.pronouns) }
+    var occupation by remember { mutableStateOf(profile.occupation) }
+    var location by remember { mutableStateOf(profile.location) }
+    var interests by remember {
+        mutableStateOf(
+            try { JsonInstant.decodeFromString<List<String>>(profile.interestsJson).joinToString(", ") }
+            catch (e: Exception) { "" }
+        )
+    }
     var personalitySummary by remember { mutableStateOf(profile.personalitySummary) }
     var physicalSummary by remember { mutableStateOf(profile.physicalSummary) }
     var otherInfoSummary by remember { mutableStateOf(profile.otherInfoSummary) }
+    var notes by remember { mutableStateOf(profile.notes) }
 
     Column(
         modifier = Modifier
@@ -568,14 +578,20 @@ private fun ProfileEditMode(
                 )
                 HapticIconButton(
                     onClick = {
+                        val interestsList = interests.split(",").map { it.trim() }.filter { it.isNotBlank() }
                         onSave(profile.copy(
                             displayName = displayName,
                             birthYear = birthYear.toIntOrNull(),
                             birthMonth = birthMonth.toIntOrNull()?.coerceIn(1, 12),
                             birthDay = birthDay.toIntOrNull()?.coerceIn(1, 31),
+                            pronouns = pronouns,
+                            occupation = occupation,
+                            location = location,
+                            interestsJson = JsonInstant.encodeToString(interestsList),
                             personalitySummary = personalitySummary,
                             physicalSummary = physicalSummary,
                             otherInfoSummary = otherInfoSummary,
+                            notes = notes,
                         ))
                     },
                     icon = Icons.Rounded.Check,
@@ -634,6 +650,48 @@ private fun ProfileEditMode(
             )
         }
 
+        // Pronouns
+        OutlinedTextField(
+            value = pronouns,
+            onValueChange = { pronouns = it },
+            label = { Text("Pronouns") },
+            placeholder = { Text("e.g. she/her, he/him, they/them") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            shape = AppShapes.InputField,
+        )
+
+        // Occupation
+        OutlinedTextField(
+            value = occupation,
+            onValueChange = { occupation = it },
+            label = { Text("Occupation") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            shape = AppShapes.InputField,
+        )
+
+        // Location
+        OutlinedTextField(
+            value = location,
+            onValueChange = { location = it },
+            label = { Text("Location") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            shape = AppShapes.InputField,
+        )
+
+        // Interests
+        OutlinedTextField(
+            value = interests,
+            onValueChange = { interests = it },
+            label = { Text("Interests") },
+            placeholder = { Text("e.g. hiking, cooking, music") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            shape = AppShapes.InputField,
+        )
+
         // Personality
         OutlinedTextField(
             value = personalitySummary,
@@ -656,7 +714,7 @@ private fun ProfileEditMode(
             shape = AppShapes.InputField,
         )
 
-        // Other
+        // Other Info
         OutlinedTextField(
             value = otherInfoSummary,
             onValueChange = { otherInfoSummary = it },
@@ -664,6 +722,17 @@ private fun ProfileEditMode(
             modifier = Modifier.fillMaxWidth(),
             minLines = 2,
             maxLines = 5,
+            shape = AppShapes.InputField,
+        )
+
+        // Notes
+        OutlinedTextField(
+            value = notes,
+            onValueChange = { notes = it },
+            label = { Text("Notes") },
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 2,
+            maxLines = 4,
             shape = AppShapes.InputField,
         )
     }
