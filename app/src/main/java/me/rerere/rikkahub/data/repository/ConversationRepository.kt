@@ -30,6 +30,7 @@ class ConversationRepository(
     private val conversationDAO: ConversationDAO,
     private val chatEpisodeDAO: me.rerere.rikkahub.data.db.dao.ChatEpisodeDAO,
     private val dailyActivityDAO: DailyActivityDAO,
+    private val graphEpisodeDAO: me.rerere.rikkahub.data.db.dao.GraphEpisodeDAO,
 ) {
     companion object {
         private const val PAGE_SIZE = 20
@@ -153,6 +154,8 @@ class ConversationRepository(
                     endTime = Long.MAX_VALUE
                 )
             }
+            // Also delete graph episodes for this conversation
+            graphEpisodeDAO.deleteByConversationId(conversation.id.toString())
         } else {
             conversationDAO.update(
                 conversationToConversationEntity(conversation)

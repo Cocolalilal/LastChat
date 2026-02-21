@@ -7,10 +7,7 @@ import androidx.work.WorkerParameters
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
+
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.data.ai.rag.EmbeddingService
@@ -28,6 +25,7 @@ import me.rerere.rikkahub.utils.JsonInstant
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import me.rerere.rikkahub.data.ai.rag.VectorEngine
+import me.rerere.rikkahub.data.ai.memory.MemoryAgent
 import me.rerere.rikkahub.data.db.entity.MemoryType
 import me.rerere.rikkahub.data.db.entity.MemoryEntity
 import me.rerere.ai.provider.Model
@@ -45,6 +43,7 @@ class MemoryConsolidationWorker(
     private val settingsStore: SettingsStore by inject()
     private val embeddingService: EmbeddingService by inject()
     private val providerManager: me.rerere.ai.provider.ProviderManager by inject()
+    private val memoryAgent: MemoryAgent by inject()
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         try {
@@ -141,21 +140,17 @@ class MemoryConsolidationWorker(
                 """.trimIndent()
             } else ""
             
+            // Compute significance via heuristic (avoids unreliable LLM ratings)
+            val significance = computeEpisodeSignificance(messagesToProcess)
+            
             val prompt = """
-                Analyze the following conversation and create a "Memory Episode".
+                Summarize this conversation in under 100 words. Focus on key facts, decisions, and emotions.
                 
                 $contextSection
-                1. **Summary**: Concise summary of what happened (under 100 words).
-                2. **Significance**: Rate the emotional impact or importance of this conversation from 1-10 (10 = life-changing, 1 = trivial).
-                
                 Conversation:
                 $messagesText
                 
-                Output JSON format:
-                {
-                    "summary": "...",
-                    "significance": 5
-                }
+                Output ONLY the summary text, no JSON or formatting.
             """.trimIndent()
             
             try {
@@ -164,24 +159,7 @@ class MemoryConsolidationWorker(
                     messages = listOf(UIMessage.user(prompt)),
                     params = TextGenerationParams(model = model, temperature = 0.5f)
                 )
-                val responseText = response.choices.firstOrNull()?.message?.toContentText() ?: continue
-                
-                var summary = responseText
-                var significance = 5
-                
-                // Try to parse JSON
-                try {
-                    val jsonStart = responseText.indexOf("{")
-                    val jsonEnd = responseText.lastIndexOf("}")
-                    if (jsonStart != -1 && jsonEnd != -1) {
-                        val jsonStr = responseText.substring(jsonStart, jsonEnd + 1)
-                        val json = Json.parseToJsonElement(jsonStr).jsonObject
-                        summary = json["summary"]?.jsonPrimitive?.content ?: summary
-                        significance = json["significance"]?.jsonPrimitive?.intOrNull ?: 5
-                    }
-                } catch (e: Exception) {
-                    // Fallback: use raw text as summary if JSON parsing fails
-                }
+                val summary = response.choices.firstOrNull()?.message?.toContentText() ?: continue
                 
                 // Generate embedding for the episode
                 val summaryEmbeddingResult = embeddingService.embedWithModelId(summary, assistantId)
@@ -206,6 +184,25 @@ class MemoryConsolidationWorker(
                     
                     conversationRepository.markAsConsolidated(conversation.id)
                     trackACount++
+                    
+                    // Also extract nodes/edges/profiles from the conversation
+                    // This ensures person profiles get populated during background consolidation
+                    try {
+                        val userMessages = messagesToProcess.filter { it.role == me.rerere.ai.core.MessageRole.USER }.joinToString("\n") { it.toText() }
+                        val assistantMessages = messagesToProcess.filter { it.role == me.rerere.ai.core.MessageRole.ASSISTANT }.joinToString("\n") { it.toText() }
+                        if (userMessages.isNotBlank() && assistantMessages.isNotBlank()) {
+                            memoryAgent.processExchange(
+                                assistantId = assistantId,
+                                userMessage = userMessages,
+                                assistantReply = assistantMessages,
+                                conversationId = conversation.id.toString(),
+                                timelineEnabled = assistant.useGraphMemory,
+                                isManualIngestion = true,
+                            )
+                        }
+                    } catch (e: Exception) {
+                        Log.w("MemoryConsolidation", "Graph extraction failed for ${conversation.id} (non-fatal)", e)
+                    }
                 }
             } catch (e: Exception) {
                 Log.e("MemoryConsolidation", "Failed to process conversation ${conversation.id}", e)
@@ -284,5 +281,51 @@ class MemoryConsolidationWorker(
                 Log.e("MemoryConsolidation", "Error running graph consolidation", e)
             }
         }
+    }
+
+    /**
+     * Compute episode significance (1-10) using a heuristic instead of asking the LLM.
+     * Analyzes message count, question density, emotional markers, and presence of
+     * names/dates/places to produce a consistent score.
+     */
+    private fun computeEpisodeSignificance(messages: List<me.rerere.ai.ui.UIMessage>): Int {
+        var score = 3 // Baseline for any conversation worth consolidating
+
+        val allText = messages.joinToString(" ") { it.toText() }.lowercase()
+        val messageCount = messages.size
+
+        // More messages = more substantial conversation
+        if (messageCount >= 20) score += 2
+        else if (messageCount >= 10) score += 1
+
+        // Questions indicate exploration / seeking info
+        val questionCount = allText.count { it == '?' }
+        if (questionCount >= 5) score += 1
+
+        // Emotional language markers
+        val emotionalWords = listOf(
+            "love", "hate", "excited", "scared", "angry", "happy", "sad", "afraid",
+            "worried", "thrilled", "devastated", "amazing", "terrible", "awesome",
+            "anxious", "proud", "grateful", "lonely", "heartbroken", "furious",
+            "died", "death", "born", "married", "divorced", "pregnant", "fired",
+            "hired", "promoted", "graduated", "diagnosed"
+        )
+        val emotionalHits = emotionalWords.count { allText.contains(it) }
+        if (emotionalHits >= 3) score += 2
+        else if (emotionalHits >= 1) score += 1
+
+        // Life event markers (high significance)
+        val lifeEventWords = listOf(
+            "new job", "got fired", "moving to", "break up", "broke up",
+            "engaged", "wedding", "baby", "surgery", "accident", "hospital",
+            "university", "college", "degree", "retirement"
+        )
+        if (lifeEventWords.any { allText.contains(it) }) score += 2
+
+        // Exclamation marks indicate intensity
+        val exclamationCount = allText.count { it == '!' }
+        if (exclamationCount >= 5) score += 1
+
+        return score.coerceIn(1, 10)
     }
 }

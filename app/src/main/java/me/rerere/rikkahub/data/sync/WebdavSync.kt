@@ -237,6 +237,28 @@ class WebdavSync(
                     )
                 }
             }
+
+            // Backup avatar images (always included - essential for assistant/user identity)
+            val avatarsFolder = File(context.filesDir, "avatars")
+            if (avatarsFolder.exists() && avatarsFolder.isDirectory) {
+                LogUtil.i(TAG, "prepareBackupFile: Backing up avatars from ${avatarsFolder.absolutePath}")
+                avatarsFolder.listFiles()?.forEach { file ->
+                    if (file.isFile) {
+                        addFileToZip(zipOut, file, "avatars/${file.name}")
+                    }
+                }
+            }
+
+            // Backup custom fonts (always included - essential for display settings)
+            val fontsFolder = File(context.filesDir, "custom_fonts")
+            if (fontsFolder.exists() && fontsFolder.isDirectory) {
+                LogUtil.i(TAG, "prepareBackupFile: Backing up custom fonts from ${fontsFolder.absolutePath}")
+                fontsFolder.listFiles()?.forEach { file ->
+                    if (file.isFile) {
+                        addFileToZip(zipOut, file, "custom_fonts/${file.name}")
+                    }
+                }
+            }
         }
 
         backupFile
@@ -343,6 +365,48 @@ class WebdavSync(
                                                     e
                                                 )
                                                 throw Exception("Failed to restore file ${zipEntry.name}: ${e.message}")
+                                            }
+                                        }
+                                    } else if (zipEntry.name.startsWith("avatars/")) {
+                                        // Restore avatar images
+                                        val fileName = zipEntry.name.substringAfter("avatars/")
+                                        if (fileName.isNotEmpty()) {
+                                            val avatarsFolder = File(context.filesDir, "avatars")
+                                            if (!avatarsFolder.exists()) {
+                                                avatarsFolder.mkdirs()
+                                                LogUtil.i(TAG, "restoreFromBackupFile: Created avatars directory")
+                                            }
+                                            val targetFile = File(avatarsFolder, fileName)
+                                            LogUtil.i(TAG, "restoreFromBackupFile: Restoring avatar ${zipEntry.name} to ${targetFile.absolutePath}")
+                                            try {
+                                                FileOutputStream(targetFile).use { outputStream ->
+                                                    zipIn.copyTo(outputStream)
+                                                }
+                                                LogUtil.i(TAG, "restoreFromBackupFile: Restored ${zipEntry.name} (${targetFile.length()} bytes)")
+                                            } catch (e: Exception) {
+                                                LogUtil.e(TAG, "restoreFromBackupFile: Failed to restore avatar ${zipEntry.name}", e)
+                                                // Non-fatal: don't throw, just log
+                                            }
+                                        }
+                                    } else if (zipEntry.name.startsWith("custom_fonts/")) {
+                                        // Restore custom font files
+                                        val fileName = zipEntry.name.substringAfter("custom_fonts/")
+                                        if (fileName.isNotEmpty()) {
+                                            val fontsFolder = File(context.filesDir, "custom_fonts")
+                                            if (!fontsFolder.exists()) {
+                                                fontsFolder.mkdirs()
+                                                LogUtil.i(TAG, "restoreFromBackupFile: Created custom_fonts directory")
+                                            }
+                                            val targetFile = File(fontsFolder, fileName)
+                                            LogUtil.i(TAG, "restoreFromBackupFile: Restoring font ${zipEntry.name} to ${targetFile.absolutePath}")
+                                            try {
+                                                FileOutputStream(targetFile).use { outputStream ->
+                                                    zipIn.copyTo(outputStream)
+                                                }
+                                                LogUtil.i(TAG, "restoreFromBackupFile: Restored ${zipEntry.name} (${targetFile.length()} bytes)")
+                                            } catch (e: Exception) {
+                                                LogUtil.e(TAG, "restoreFromBackupFile: Failed to restore font ${zipEntry.name}", e)
+                                                // Non-fatal: don't throw, just log
                                             }
                                         }
                                     } else {

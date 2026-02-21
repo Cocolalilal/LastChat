@@ -139,8 +139,8 @@ class RelationExtractor(
             1. **Entities** (people, places, objects, events, concepts, preferences, emotions, plans)
             2. **Relations** between entities (semantic connections, NOT interpersonal relationships)
             3. **Timeline events** (anything with temporal relevance: upcoming plans, deadlines, ongoing activities)
-            4. **Person profile updates** — any new personal information learned about people:
-               - Birth year/month/day (only if explicitly mentioned)
+            4. **Person profile updates** — CRITICAL: emit a personUpdate for EVERY person mentioned when ANY personal info is learned:
+               - Birth year/month/day (MUST go here, NOT as separate nodes)
                - Pronouns (he/him, she/her, they/them, etc.)
                - Occupation (job, profession, role)
                - Location (city, country, or general area)
@@ -148,8 +148,15 @@ class RelationExtractor(
                - Personality traits (character, temperament, behavior patterns — NOT physical)
                - Physical attributes (appearance, height, hair color, etc. — NOT personality)
                - Other info (background facts — NOT the above categories)
-               - Relationships with other people (family, friends, colleagues, etc.)
+               - Relationships with other people (family, friends, romantic partners, etc.)
                Each category is STRICTLY separate. Never mix categories.
+            
+            IMPORTANT RULES:
+            - Personal facts (birthday, traits, appearance, occupation, location, interests) MUST be in personUpdates. You may ALSO create nodes/edges for them, but the personUpdate is MANDATORY.
+            - Relationships are BIDIRECTIONAL: if A is B's sibling, emit personUpdates for BOTH A and B with the relationship to each other.
+            - ALWAYS use the person's exact name as it appears in existing nodes (match case and spelling exactly).
+            - If someone is described as having a trait (e.g. "empathetic"), put it in personalityTraits AND you may create a concept node and edge.
+            - If a birthday is mentioned (e.g. "born March 5"), put birthMonth: 3, birthDay: 5 in the personUpdate.
             
             Valid node types: ${NodeType.ALL.joinToString(", ")}
             Valid semantic edge types: $semanticEdgeTypes
@@ -176,7 +183,7 @@ class RelationExtractor(
               "nodes": [{"name": "...", "type": "...", "description": "...", "importance": 5, "emotionalValence": 0.0}],
               "edges": [{"source": "NodeName1", "target": "NodeName2", "relationType": "connected_to", "description": "..."}],
               "timelineEvents": [{"nodeName": "...", "eventType": "upcoming", "description": "...", "scheduledDate": "2025-03-01"}],
-              "personUpdates": [{"personName": "Alice", "pronouns": "she/her", "occupation": "Engineer", "location": "Tokyo", "interests": ["hiking", "cooking"], "personalityTraits": ["kind"], "physicalAttributes": ["tall"], "otherInfo": [], "relationships": [{"targetName": "Bob", "relationType": "sibling", "relationLabel": "older brother", "notes": ""}]}]
+              "personUpdates": [{"personName": "Alice", "pronouns": "she/her", "occupation": "Engineer", "location": "Tokyo", "interests": ["hiking", "cooking"], "personalityTraits": ["kind"], "physicalAttributes": ["tall"], "otherInfo": [], "birthMonth": 3, "birthDay": 5, "relationships": [{"targetName": "Bob", "relationType": "sibling", "relationLabel": "older brother", "notes": ""}]}]
             }
             
             If nothing meaningful to extract, return: {"nodes": [], "edges": [], "timelineEvents": [], "personUpdates": []}

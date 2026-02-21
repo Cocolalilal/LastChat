@@ -570,7 +570,7 @@ class AssistantDetailVM(
     fun updateProfile(profile: PersonProfileEntity) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
-                graphMemoryRepo.updateProfile(profile)
+                graphMemoryRepo.upsertProfile(profile)
             }
         }
     }

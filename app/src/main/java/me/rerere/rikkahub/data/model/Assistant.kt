@@ -97,7 +97,7 @@ data class Assistant(
     val autoRegenerateSummary: Boolean = false, // Automatically summarize when maxHistoryMessages reached
 
     // Memory System Configuration & Stats
-    val consolidationDelayMinutes: Int = 30, // Wait time before consolidating a chat
+    val consolidationDelayMinutes: Int = 10, // Wait time before consolidating a chat
     val lastConsolidationTime: Long = 0L,
     val lastConsolidationResult: String = "",
 

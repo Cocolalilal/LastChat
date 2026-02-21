@@ -45,4 +45,7 @@ interface GraphEpisodeDAO {
 
     @Query("DELETE FROM GraphEpisodeEntity WHERE assistant_id = :assistantId")
     suspend fun deleteAllForAssistant(assistantId: String)
+
+    @Query("DELETE FROM GraphEpisodeEntity WHERE conversation_id = :conversationId")
+    suspend fun deleteByConversationId(conversationId: String): Int
 }

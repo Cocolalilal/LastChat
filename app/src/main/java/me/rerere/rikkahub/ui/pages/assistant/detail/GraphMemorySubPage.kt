@@ -9,11 +9,15 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,10 +25,12 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -67,6 +73,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -90,6 +97,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -150,6 +158,7 @@ fun GraphMemoryContent(
     onUpdateEdge: (MemoryEdgeEntity) -> Unit = {},
     onUpdateTimelineEvent: (TimelineEventEntity) -> Unit = {},
     onUpdateEpisode: (GraphEpisodeEntity) -> Unit = {},
+    onUpdateProfile: (PersonProfileEntity) -> Unit = {},
     onProcessText: (String) -> Unit = {},
     isProcessing: Boolean = false,
     onOpenPersonProfile: (MemoryNodeEntity) -> Unit = {},
@@ -168,24 +177,23 @@ fun GraphMemoryContent(
     var showIngestion by remember { mutableStateOf(false) }
     var ingestionText by remember { mutableStateOf("") }
 
-    // Clear confirmation dialog
+    // Clear confirmation dialog with swipe-to-confirm
     if (showClearDialog) {
         AlertDialog(
             onDismissRequest = { showClearDialog = false },
             title = { Text("Clear Graph Memory") },
             text = {
-                Text("This will permanently delete all graph memory data (nodes, edges, events, episodes) for this assistant. This cannot be undone.")
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        onClearAllGraphData()
-                        showClearDialog = false
-                    }
-                ) {
-                    Text("Delete All", color = MaterialTheme.colorScheme.error)
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text("This will permanently delete all graph memory data (nodes, edges, events, episodes) for this assistant. This cannot be undone.")
+                    SwipeToConfirmSlider(
+                        onConfirm = {
+                            onClearAllGraphData()
+                            showClearDialog = false
+                        }
+                    )
                 }
             },
+            confirmButton = { /* Handled by swipe slider */ },
             dismissButton = {
                 TextButton(onClick = { showClearDialog = false }) {
                     Text("Cancel")
@@ -310,6 +318,7 @@ fun GraphMemoryContent(
                     edges = edges,
                     onDeleteNode = onDeleteNode,
                     onUpdateNode = onUpdateNode,
+                    onUpdateProfile = onUpdateProfile,
                     onOpenPersonProfile = onOpenPersonProfile,
                     profilesByNodeId = profilesByNodeId,
                     userAvatar = userAvatar,
@@ -477,6 +486,7 @@ private fun EntitiesView(
     edges: List<MemoryEdgeEntity>,
     onDeleteNode: (Int) -> Unit,
     onUpdateNode: (MemoryNodeEntity) -> Unit,
+    onUpdateProfile: (PersonProfileEntity) -> Unit = {},
     onOpenPersonProfile: (MemoryNodeEntity) -> Unit = {},
     profilesByNodeId: Map<Int, PersonProfileEntity> = emptyMap(),
     userAvatar: Avatar = Avatar.Dummy,
@@ -544,12 +554,34 @@ private fun EntitiesView(
         var editName by remember(node) { mutableStateOf(node.name) }
         var editDescription by remember(node) { mutableStateOf(node.description) }
         var editImportance by remember(node) { mutableFloatStateOf(node.importance.toFloat()) }
+        var editNodeType by remember(node) { mutableStateOf(node.nodeType) }
+        var editValence by remember(node) { mutableFloatStateOf(node.emotionalValence) }
+        var editConfidence by remember(node) { mutableFloatStateOf(node.confidence) }
+        
+        // Profile fields for person nodes
+        val existingProfile = profilesByNodeId[node.id]
+        var editPronouns by remember(node) { mutableStateOf(existingProfile?.pronouns ?: "") }
+        var editOccupation by remember(node) { mutableStateOf(existingProfile?.occupation ?: "") }
+        var editLocation by remember(node) { mutableStateOf(existingProfile?.location ?: "") }
+        var editBirthYear by remember(node) { mutableStateOf(existingProfile?.birthYear?.toString() ?: "") }
+        var editBirthMonth by remember(node) { mutableStateOf(existingProfile?.birthMonth?.toString() ?: "") }
+        var editBirthDay by remember(node) { mutableStateOf(existingProfile?.birthDay?.toString() ?: "") }
+        var editInterests by remember(node) { mutableStateOf(
+            try { me.rerere.rikkahub.utils.JsonInstant.decodeFromString<List<String>>(existingProfile?.interestsJson ?: "[]").joinToString(", ") }
+            catch (e: Exception) { "" }
+        ) }
+        var editPersonality by remember(node) { mutableStateOf(existingProfile?.personalitySummary ?: "") }
+        var editPhysical by remember(node) { mutableStateOf(existingProfile?.physicalSummary ?: "") }
+        var editNotes by remember(node) { mutableStateOf(existingProfile?.notes ?: "") }
         
         AlertDialog(
             onDismissRequest = { editingNode = null },
             title = { Text("Edit Entity") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     OutlinedTextField(
                         value = editName,
                         onValueChange = { editName = it },
@@ -557,6 +589,29 @@ private fun EntitiesView(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
+                    // Node type selector
+                    Column {
+                        Text("Type", style = MaterialTheme.typography.bodyMedium)
+                        Spacer(Modifier.height(4.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            NodeType.ALL.forEach { type ->
+                                FilterChip(
+                                    selected = editNodeType == type,
+                                    onClick = { editNodeType = type },
+                                    label = { Text(type.replaceFirstChar { it.uppercase() }) },
+                                    leadingIcon = {
+                                        Icon(nodeTypeIcon(type), null, modifier = Modifier.size(14.dp))
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = nodeTypeColor(type).copy(alpha = 0.2f)
+                                    )
+                                )
+                            }
+                        }
+                    }
                     OutlinedTextField(
                         value = editDescription,
                         onValueChange = { editDescription = it },
@@ -565,6 +620,7 @@ private fun EntitiesView(
                         maxLines = 4,
                         modifier = Modifier.fillMaxWidth()
                     )
+                    // Importance slider
                     Column {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -580,6 +636,145 @@ private fun EntitiesView(
                             steps = 8
                         )
                     }
+                    // Emotional valence slider
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Emotional Valence", style = MaterialTheme.typography.bodyMedium)
+                            val valenceLabel = when {
+                                editValence > 0.3f -> "Positive"
+                                editValence < -0.3f -> "Negative"
+                                else -> "Neutral"
+                            }
+                            val valenceColor = when {
+                                editValence > 0.3f -> Color(0xFF4CAF50)
+                                editValence < -0.3f -> Color(0xFFF44336)
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                            Text(valenceLabel, style = MaterialTheme.typography.labelLarge, color = valenceColor)
+                        }
+                        Slider(
+                            value = editValence,
+                            onValueChange = { editValence = it },
+                            valueRange = -1f..1f,
+                        )
+                    }
+                    // Confidence slider
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Confidence", style = MaterialTheme.typography.bodyMedium)
+                            Text("${(editConfidence * 100).toInt()}%", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                        }
+                        Slider(
+                            value = editConfidence,
+                            onValueChange = { editConfidence = it },
+                            valueRange = 0f..1f,
+                        )
+                    }
+                    
+                    // === PERSON PROFILE FIELDS (only shown for person type) ===
+                    if (editNodeType == NodeType.PERSON) {
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                        Text(
+                            "Person Profile",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        // Birthday row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = editBirthYear,
+                                onValueChange = { editBirthYear = it.filter { c -> c.isDigit() }.take(4) },
+                                label = { Text("Year") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                            OutlinedTextField(
+                                value = editBirthMonth,
+                                onValueChange = { editBirthMonth = it.filter { c -> c.isDigit() }.take(2) },
+                                label = { Text("Month") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                            OutlinedTextField(
+                                value = editBirthDay,
+                                onValueChange = { editBirthDay = it.filter { c -> c.isDigit() }.take(2) },
+                                label = { Text("Day") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        OutlinedTextField(
+                            value = editPronouns,
+                            onValueChange = { editPronouns = it },
+                            label = { Text("Pronouns") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = editOccupation,
+                            onValueChange = { editOccupation = it },
+                            label = { Text("Occupation") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = editLocation,
+                            onValueChange = { editLocation = it },
+                            label = { Text("Location") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = editInterests,
+                            onValueChange = { editInterests = it },
+                            label = { Text("Interests (comma-separated)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = editPersonality,
+                            onValueChange = { editPersonality = it },
+                            label = { Text("Personality") },
+                            minLines = 2,
+                            maxLines = 4,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = editPhysical,
+                            onValueChange = { editPhysical = it },
+                            label = { Text("Physical") },
+                            minLines = 2,
+                            maxLines = 4,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = editNotes,
+                            onValueChange = { editNotes = it },
+                            label = { Text("Notes") },
+                            minLines = 2,
+                            maxLines = 4,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = existingProfile?.otherInfoSummary ?: "",
+                            onValueChange = { },
+                            label = { Text("Other Info (auto-generated)") },
+                            enabled = false,
+                            minLines = 1,
+                            maxLines = 3,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 }
             },
             dismissButton = {
@@ -592,8 +787,33 @@ private fun EntitiesView(
                     onUpdateNode(node.copy(
                         name = editName,
                         description = editDescription,
-                        importance = editImportance.toInt()
+                        importance = editImportance.toInt(),
+                        nodeType = editNodeType,
+                        emotionalValence = editValence,
+                        confidence = editConfidence,
                     ))
+                    // Save profile if person type
+                    if (editNodeType == NodeType.PERSON) {
+                        val interestsList = editInterests.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                        val profile = (existingProfile ?: PersonProfileEntity(
+                            nodeId = node.id,
+                            assistantId = node.assistantId,
+                            displayName = editName,
+                        )).copy(
+                            displayName = editName,
+                            pronouns = editPronouns,
+                            occupation = editOccupation,
+                            location = editLocation,
+                            birthYear = editBirthYear.toIntOrNull(),
+                            birthMonth = editBirthMonth.toIntOrNull(),
+                            birthDay = editBirthDay.toIntOrNull(),
+                            interestsJson = me.rerere.rikkahub.utils.JsonInstant.encodeToString(interestsList),
+                            personalitySummary = editPersonality,
+                            physicalSummary = editPhysical,
+                            notes = editNotes,
+                        )
+                        onUpdateProfile(profile)
+                    }
                     editingNode = null
                 }) {
                     Text("Save")
@@ -910,6 +1130,114 @@ private fun NodeCard(
                             Text(
                                 relativeTime(node.lastMentioned),
                                 style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+
+                    // Person profile info
+                    if (node.nodeType == NodeType.PERSON && profile != null) {
+                        val age = profile.birthYear?.let { birthYear ->
+                            val now = java.util.Calendar.getInstance()
+                            var a = now.get(java.util.Calendar.YEAR) - birthYear
+                            val bm = profile.birthMonth
+                            val bd = profile.birthDay
+                            val cm = now.get(java.util.Calendar.MONTH) + 1
+                            val cd = now.get(java.util.Calendar.DAY_OF_MONTH)
+                            if (bm != null && (bm > cm || (bm == cm && (bd ?: 0) > cd))) a--
+                            a.coerceAtLeast(0)
+                        }
+                        // Age + tags row with proper spacing
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (age != null) {
+                                Text(
+                                    "Age $age",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            if (profile.isUserProfile) {
+                                Box(
+                                    modifier = Modifier
+                                        .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(6.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text("You", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                }
+                            }
+                            if (profile.isCharacterProfile) {
+                                Box(
+                                    modifier = Modifier
+                                        .background(MaterialTheme.colorScheme.tertiaryContainer, RoundedCornerShape(6.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text("Character", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                                }
+                            }
+                            if (profile.pronouns.isNotBlank()) {
+                                Text(
+                                    profile.pronouns,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        // Occupation + Location
+                        if (profile.occupation.isNotBlank() || profile.location.isNotBlank()) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                if (profile.occupation.isNotBlank()) {
+                                    Text(
+                                        profile.occupation,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                if (profile.location.isNotBlank()) {
+                                    Text(
+                                        "📍 ${profile.location}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                        // Interests as chips
+                        val interests = try {
+                            me.rerere.rikkahub.utils.JsonInstant.decodeFromString<List<String>>(profile.interestsJson)
+                        } catch (e: Exception) { emptyList() }
+                        if (interests.isNotEmpty()) {
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                interests.forEach { interest ->
+                                    Box(
+                                        modifier = Modifier
+                                            .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(8.dp))
+                                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                                    ) {
+                                        Text(
+                                            interest,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        // Summaries
+                        if (profile.personalitySummary.isNotBlank()) {
+                            Text(
+                                profile.personalitySummary,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -1969,6 +2297,101 @@ private fun EmptyPlaceholder(text: String) {
         )
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SWIPE TO CONFIRM SLIDER
+// ═══════════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun SwipeToConfirmSlider(
+    onConfirm: () -> Unit,
+    label: String = "Slide to delete all",
+) {
+    val haptics = rememberPremiumHaptics()
+    var offsetX by remember { mutableFloatStateOf(0f) }
+    var confirmed by remember { mutableStateOf(false) }
+    val density = LocalDensity.current
+    val handleSizeDp = 48.dp
+    val handleSizePx = with(density) { handleSizeDp.toPx() }
+    
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(handleSizeDp)
+            .clip(RoundedCornerShape(handleSizeDp / 2))
+            .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f))
+    ) {
+        // Track width (for calculating max offset)
+        var trackWidth by remember { mutableFloatStateOf(0f) }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Transparent)
+                .onSizeChanged { trackWidth = it.width.toFloat() },
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
+            )
+        }
+        
+        // Progress fill
+        val maxOffset = (trackWidth - handleSizePx).coerceAtLeast(0f)
+        val progress = if (maxOffset > 0f) (offsetX / maxOffset).coerceIn(0f, 1f) else 0f
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .fillMaxWidth(fraction = progress.coerceAtLeast(0.01f))
+                .background(
+                    MaterialTheme.colorScheme.error.copy(alpha = progress * 0.3f),
+                    RoundedCornerShape(handleSizeDp / 2)
+                )
+        )
+        
+        // Draggable handle
+        Box(
+            modifier = Modifier
+                .offset(x = with(density) { offsetX.toDp() })
+                .size(handleSizeDp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.error)
+                .draggable(
+                    orientation = Orientation.Horizontal,
+                    state = rememberDraggableState { delta ->
+                        if (!confirmed) {
+                            val newOffset = (offsetX + delta).coerceIn(0f, maxOffset)
+                            val wasBelow = offsetX / maxOffset < 0.95f
+                            offsetX = newOffset
+                            // Haptic when crossing threshold
+                            if (wasBelow && maxOffset > 0f && newOffset / maxOffset >= 0.95f) {
+                                haptics.perform(HapticPattern.Thud)
+                            }
+                        }
+                    },
+                    onDragStopped = {
+                        if (maxOffset > 0f && offsetX / maxOffset >= 0.95f) {
+                            confirmed = true
+                            haptics.perform(HapticPattern.Success)
+                            onConfirm()
+                        } else {
+                            offsetX = 0f
+                        }
+                    }
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Rounded.Delete,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onError,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // UTILITIES

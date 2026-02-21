@@ -1,6 +1,8 @@
 package me.rerere.rikkahub.data.repository
 
 import android.util.Log
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import me.rerere.rikkahub.data.ai.rag.EmbeddingService
@@ -322,12 +324,44 @@ class GraphMemoryRepository(
     // ─── Upsert (Merge-Aware Insert) ────────────────────────────────────
 
     /**
-     * Insert a node, or if a node with the same name already exists for the assistant,
+     * Insert a node, or if a node with the same/similar name already exists,
      * update it by merging the new info and bumping mention count.
+     * 
+     * Matching priority:
+     * 1. Exact name match
+     * 2. Case-insensitive exact match
+     * 3. Substring match (for person nodes: "Julia" matches "Julia Crawford")
+     * 4. Levenshtein similarity >= 0.80 (same node type only)
+     * 
      * Returns the (new or existing) node ID.
      */
     suspend fun upsertNode(assistantId: String, node: MemoryNodeEntity): Int {
-        val existing = nodeDAO.findByName(assistantId, node.name)
+        // 1. Exact name match
+        val exactMatch = nodeDAO.findByName(assistantId, node.name)
+        
+        // 2. If no exact match, try fuzzy matching
+        val existing = exactMatch ?: run {
+            val allActive = nodeDAO.getActiveNodes(assistantId)
+            val nameLower = node.name.lowercase().trim()
+            
+            // Case-insensitive exact match
+            allActive.find { it.name.lowercase().trim() == nameLower }
+                // Substring match for person nodes ("Julia" -> "Julia Crawford")
+                ?: if (node.nodeType == NodeType.PERSON && nameLower.length >= 3) {
+                    allActive.find { existing ->
+                        existing.nodeType == NodeType.PERSON && (
+                            existing.name.lowercase().trim().contains(nameLower) ||
+                            nameLower.contains(existing.name.lowercase().trim())
+                        )
+                    }
+                } else null
+                // Levenshtein similarity >= 0.80 (same type only)
+                ?: allActive.find { existing ->
+                    existing.nodeType == node.nodeType &&
+                    nameSimilarity(existing.name, node.name) >= 0.80f
+                }
+        }
+        
         if (existing != null) {
             // Reinforce confidence: each re-mention nudges confidence up (diminishing returns)
             val reinforcedConfidence = minOf(1.0f, existing.confidence + (1.0f - existing.confidence) * 0.15f)
@@ -351,6 +385,32 @@ class GraphMemoryRepository(
         } else {
             return nodeDAO.insert(node).toInt()
         }
+    }
+
+    /**
+     * Simple normalized string similarity using Levenshtein distance.
+     */
+    private fun nameSimilarity(a: String, b: String): Float {
+        val la = a.lowercase().trim()
+        val lb = b.lowercase().trim()
+        if (la == lb) return 1f
+        val maxLen = maxOf(la.length, lb.length)
+        if (maxLen == 0) return 1f
+        val distance = levenshteinDistance(la, lb)
+        return 1f - (distance.toFloat() / maxLen)
+    }
+
+    private fun levenshteinDistance(s1: String, s2: String): Int {
+        val dp = Array(s1.length + 1) { IntArray(s2.length + 1) }
+        for (i in 0..s1.length) dp[i][0] = i
+        for (j in 0..s2.length) dp[0][j] = j
+        for (i in 1..s1.length) {
+            for (j in 1..s2.length) {
+                val cost = if (s1[i - 1] == s2[j - 1]) 0 else 1
+                dp[i][j] = minOf(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost)
+            }
+        }
+        return dp[s1.length][s2.length]
     }
 
     /**
@@ -386,18 +446,25 @@ class GraphMemoryRepository(
      * - temporal_relevance (0.15): whether the node is relevant right now (timeline)
      *
      * Then applies MMR diversity filtering to avoid fixation.
+     *
+     * @param precomputedQueryEmbedding if provided, skips the embedding API call (perf optimization)
+     * @param preloadedEdges if provided, uses batch-loaded edges instead of per-node DB queries
+     * @param preloadedActiveEvents if provided, uses pre-fetched events instead of querying again
      */
     suspend fun retrieveRelevantNodes(
         assistantId: String,
         queryText: String,
         limit: Int = 20,
         recentNodeIds: Set<Int> = emptySet(),
+        precomputedQueryEmbedding: List<Float>? = null,
+        preloadedEdges: List<MemoryEdgeEntity>? = null,
+        preloadedActiveEvents: List<TimelineEventEntity>? = null,
     ): List<ScoredNode> {
         val allNodes = nodeDAO.getActiveNodes(assistantId)
         if (allNodes.isEmpty()) return emptyList()
 
-        // Generate query embedding
-        val queryEmbedding = try {
+        // Use pre-computed embedding or generate one
+        val queryEmbedding = precomputedQueryEmbedding ?: try {
             embeddingService.embed(queryText, assistantId)
         } catch (e: Exception) {
             Log.w(TAG, "Failed to embed query, falling back to recency-based retrieval", e)
@@ -405,22 +472,44 @@ class GraphMemoryRepository(
         }
 
         val now = System.currentTimeMillis()
-        val activeEvents = timelineEventDAO.getActiveEvents(assistantId)
+        val activeEvents = preloadedActiveEvents ?: timelineEventDAO.getActiveEvents(assistantId)
         val activeEventNodeIds = activeEvents.map { it.nodeId }.toSet()
+
+        // Pre-parse all node embeddings ONCE into a HashMap (avoids repeated JSON deserialization)
+        val parsedEmbeddings = HashMap<Int, List<Float>>(allNodes.size)
+        for (node in allNodes) {
+            if (node.embedding != null) {
+                try {
+                    parsedEmbeddings[node.id] = JsonInstant.decodeFromString<List<Float>>(node.embedding)
+                } catch (_: Exception) { }
+            }
+        }
+
+        // Build edge index for graph distance scoring (batch instead of N+1 queries)
+        val edgesByNode: Map<Int, List<MemoryEdgeEntity>> = if (recentNodeIds.isNotEmpty()) {
+            val edges = preloadedEdges ?: edgeDAO.getEdgesForNodes(allNodes.map { it.id })
+            // Index edges by both source and target for O(1) lookup
+            val index = HashMap<Int, MutableList<MemoryEdgeEntity>>()
+            for (edge in edges) {
+                index.getOrPut(edge.sourceNodeId) { mutableListOf() }.add(edge)
+                index.getOrPut(edge.targetNodeId) { mutableListOf() }.add(edge)
+            }
+            index
+        } else emptyMap()
 
         // Score each node
         val scored = allNodes.map { node ->
-            // 1. Semantic similarity
-            val semanticScore = if (queryEmbedding != null && node.embedding != null) {
-                try {
-                    val nodeEmb = JsonInstant.decodeFromString<List<Float>>(node.embedding)
+            // 1. Semantic similarity (using pre-parsed embeddings)
+            val semanticScore = if (queryEmbedding != null) {
+                val nodeEmb = parsedEmbeddings[node.id]
+                if (nodeEmb != null) {
                     VectorEngine.cosineSimilarity(queryEmbedding, nodeEmb).coerceIn(0f, 1f)
-                } catch (e: Exception) { 0f }
+                } else 0f
             } else 0f
 
-            // 2. Graph distance (simplified: boost nodes connected to recently active nodes)
+            // 2. Graph distance (using batch-loaded edge index instead of per-node DB call)
             val graphScore = if (recentNodeIds.isNotEmpty()) {
-                val edges = edgeDAO.getEdgesForNode(node.id)
+                val edges = edgesByNode[node.id].orEmpty()
                 val connectedToRecent = edges.any { e ->
                     (e.sourceNodeId in recentNodeIds || e.targetNodeId in recentNodeIds)
                 }
@@ -451,19 +540,22 @@ class GraphMemoryRepository(
             ScoredNode(node, finalScore, semanticScore)
         }
 
-        // Sort by score, then apply MMR diversity filtering
+        // Sort by score, then apply MMR diversity filtering (with pre-parsed embedding cache)
         val sorted = scored.sortedByDescending { it.score }
-        return applyMMR(sorted, limit, lambda = 0.7f)
+        return applyMMR(sorted, limit, lambda = 0.7f, embeddingCache = parsedEmbeddings)
     }
 
     /**
      * Maximum Marginal Relevance: selects diverse results by penalizing
      * candidates too similar to already-selected ones.
+     *
+     * @param embeddingCache pre-parsed embeddings by node ID (avoids O(n²) JSON re-parsing)
      */
     private fun applyMMR(
         candidates: List<ScoredNode>,
         limit: Int,
-        lambda: Float = 0.7f
+        lambda: Float = 0.7f,
+        embeddingCache: Map<Int, List<Float>> = emptyMap(),
     ): List<ScoredNode> {
         if (candidates.size <= limit) return candidates
 
@@ -480,15 +572,13 @@ class GraphMemoryRepository(
             var bestMMRScore = Float.MIN_VALUE
 
             for (candidate in remaining) {
-                // Max similarity to any already-selected node
-                val maxSimilarity = selected.maxOfOrNull { selected ->
-                    if (candidate.semanticScore > 0f && selected.semanticScore > 0f &&
-                        candidate.node.embedding != null && selected.node.embedding != null) {
-                        try {
-                            val candEmb = JsonInstant.decodeFromString<List<Float>>(candidate.node.embedding!!)
-                            val selEmb = JsonInstant.decodeFromString<List<Float>>(selected.node.embedding!!)
-                            VectorEngine.cosineSimilarity(candEmb, selEmb)
-                        } catch (e: Exception) { 0f }
+                // Max similarity to any already-selected node (using pre-parsed cache)
+                val maxSimilarity = selected.maxOfOrNull { sel ->
+                    val candEmb = embeddingCache[candidate.node.id]
+                    val selEmb = embeddingCache[sel.node.id]
+                    if (candEmb != null && selEmb != null &&
+                        candidate.semanticScore > 0f && sel.semanticScore > 0f) {
+                        VectorEngine.cosineSimilarity(candEmb, selEmb)
                     } else 0f
                 } ?: 0f
 
@@ -510,6 +600,9 @@ class GraphMemoryRepository(
 
     /**
      * Build the formatted graph context string for injection into the system prompt.
+     *
+     * Performance: uses parallel retrieval, single embedding call, batch-loaded
+     * edges/profiles/events to minimize latency.
      */
     suspend fun buildGraphContext(
         assistantId: String,
@@ -517,24 +610,65 @@ class GraphMemoryRepository(
         limit: Int = 20,
         recentNodeIds: Set<Int> = emptySet(),
     ): String {
-        val nodes = retrieveRelevantNodes(assistantId, queryText, limit, recentNodeIds)
-        if (nodes.isEmpty()) return ""
+        // ONE embedding call, shared by both node and episode retrieval
+        val queryEmbedding = try {
+            embeddingService.embed(queryText, assistantId)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to embed query for graph context", e)
+            null
+        }
+
+        // Fetch active events once (shared by retrieval + context building)
+        val activeEvents = timelineEventDAO.getActiveEvents(assistantId)
+
+        // Parallel retrieval: nodes + episodes run concurrently, sharing the embedding
+        val (nodes, episodes) = coroutineScope {
+            val nodesDeferred = async {
+                retrieveRelevantNodes(
+                    assistantId, queryText, limit, recentNodeIds,
+                    precomputedQueryEmbedding = queryEmbedding,
+                    preloadedActiveEvents = activeEvents,
+                )
+            }
+            val episodesDeferred = async {
+                try {
+                    retrieveRelevantEpisodes(assistantId, queryText, 5, queryEmbedding)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to retrieve episodes for context", e)
+                    emptyList()
+                }
+            }
+            Pair(nodesDeferred.await(), episodesDeferred.await())
+        }
+
+        if (nodes.isEmpty() && episodes.isEmpty()) return ""
 
         val nodeIds = nodes.map { it.node.id }.toSet()
 
-        // Get edges between relevant nodes
-        val relevantEdges = mutableListOf<MemoryEdgeEntity>()
-        for (node in nodes) {
-            val edges = edgeDAO.getEdgesForNode(node.node.id)
-            relevantEdges.addAll(edges.filter { e ->
-                e.sourceNodeId in nodeIds || e.targetNodeId in nodeIds
-            })
+        // Batch-load edges and profiles in parallel (replaces N+1 per-node queries)
+        val (relevantEdges, profileMap) = coroutineScope {
+            val edgesDeferred = async {
+                if (nodeIds.isNotEmpty()) {
+                    edgeDAO.getEdgesForNodes(nodeIds.toList())
+                        .filter { e -> e.sourceNodeId in nodeIds || e.targetNodeId in nodeIds }
+                        .distinctBy { it.id }
+                } else emptyList()
+            }
+            val profilesDeferred = async {
+                val personNodeIds = nodes
+                    .filter { it.node.nodeType == NodeType.PERSON }
+                    .map { it.node.id }
+                if (personNodeIds.isNotEmpty()) {
+                    personProfileDAO.getAllProfiles(assistantId)
+                        .filter { it.nodeId in personNodeIds.toSet() }
+                        .associateBy { it.nodeId }
+                } else emptyMap()
+            }
+            Pair(edgesDeferred.await(), profilesDeferred.await())
         }
-        val uniqueEdges = relevantEdges.distinctBy { it.id }
 
-        // Get active timeline events for relevant nodes
-        val activeEvents = timelineEventDAO.getActiveEvents(assistantId)
-            .filter { it.nodeId in nodeIds }
+        // Filter active events to relevant nodes (already fetched above)
+        val relevantActiveEvents = activeEvents.filter { it.nodeId in nodeIds }
 
         return buildString {
             appendLine("## Knowledge Graph Memory")
@@ -545,12 +679,12 @@ class GraphMemoryRepository(
             val personNodes = grouped[NodeType.PERSON].orEmpty()
             val otherGroups = grouped.filterKeys { it != NodeType.PERSON }
 
-            // Person profiles with rich summaries
+            // Person profiles with rich summaries (using batch-loaded profile map)
             if (personNodes.isNotEmpty()) {
                 appendLine("### People")
                 for (scoredNode in personNodes) {
                     val n = scoredNode.node
-                    val profile = try { personProfileDAO.getByNodeId(n.id) } catch (_: Exception) { null }
+                    val profile = profileMap[n.id]  // O(1) lookup from batch
                     val importance = "★".repeat(n.importance.coerceIn(1, 5))
                     append("- **${profile?.displayName ?: n.name}** ($importance)")
                     if (profile != null) {
@@ -600,10 +734,10 @@ class GraphMemoryRepository(
             }
 
             // Relations
-            if (uniqueEdges.isNotEmpty()) {
+            if (relevantEdges.isNotEmpty()) {
                 appendLine("### Relations")
                 val nodeNameMap = nodes.associate { it.node.id to it.node.name }
-                for (edge in uniqueEdges.take(15)) {
+                for (edge in relevantEdges.take(15)) {
                     val sourceName = nodeNameMap[edge.sourceNodeId] ?: "?"
                     val targetName = nodeNameMap[edge.targetNodeId] ?: "?"
                     append("- $sourceName → [${edge.relationType}] → $targetName")
@@ -616,10 +750,10 @@ class GraphMemoryRepository(
             }
 
             // Timeline
-            if (activeEvents.isNotEmpty()) {
+            if (relevantActiveEvents.isNotEmpty()) {
                 appendLine("### Timeline")
                 val nodeNameMap = nodes.associate { it.node.id to it.node.name }
-                for (event in activeEvents) {
+                for (event in relevantActiveEvents) {
                     val nodeName = nodeNameMap[event.nodeId] ?: "?"
                     val status = when (event.eventType) {
                         "upcoming" -> "⏳"
@@ -638,17 +772,11 @@ class GraphMemoryRepository(
                 appendLine()
             }
 
-            // Episodic Memory — relevant past conversation summaries
-            val relevantEpisodes = try {
-                retrieveRelevantEpisodes(assistantId, queryText, limit = 5)
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to retrieve episodes for context", e)
-                emptyList()
-            }
-            if (relevantEpisodes.isNotEmpty()) {
+            // Episodic Memory — relevant past conversation summaries (already retrieved in parallel)
+            if (episodes.isNotEmpty()) {
                 appendLine("### Recent Episodes")
                 val dateFormat = java.text.SimpleDateFormat("MMM d", java.util.Locale.getDefault())
-                for (scored in relevantEpisodes) {
+                for (scored in episodes) {
                     val ep = scored.episode
                     val date = dateFormat.format(java.util.Date(ep.endTime))
                     val sigMarker = if (ep.significance >= 7) " ★" else ""
@@ -685,16 +813,20 @@ class GraphMemoryRepository(
     /**
      * Retrieve the most relevant graph episodes for a given query.
      * Scoring: semantic_similarity × 0.5 + recency × 0.3 + significance × 0.2
+     *
+     * @param precomputedQueryEmbedding if provided, skips the embedding API call
      */
     suspend fun retrieveRelevantEpisodes(
         assistantId: String,
         queryText: String,
         limit: Int = 5,
+        precomputedQueryEmbedding: List<Float>? = null,
     ): List<ScoredEpisode> {
         val episodes = graphEpisodeDAO.getEpisodesWithEmbeddings(assistantId)
         if (episodes.isEmpty()) return emptyList()
 
-        val queryEmbedding = try {
+        // Use pre-computed embedding or generate one
+        val queryEmbedding = precomputedQueryEmbedding ?: try {
             embeddingService.embed(queryText, assistantId)
         } catch (e: Exception) {
             Log.w(TAG, "Failed to embed query for episode retrieval", e)

@@ -166,7 +166,15 @@ class MemoryAgent(
 
             // 5. Process person profile updates
             for (update in result.personUpdates) {
-                val personNodeId = nameToId[update.personName] ?: continue
+                // Fuzzy match: exact → case-insensitive → substring → DB fallback
+                val personNodeId = nameToId[update.personName]
+                    ?: nameToId.entries.firstOrNull { it.key.equals(update.personName, ignoreCase = true) }?.value
+                    ?: nameToId.entries.firstOrNull {
+                        it.key.contains(update.personName, ignoreCase = true) ||
+                        update.personName.contains(it.key, ignoreCase = true)
+                    }?.value
+                    ?: graphRepo.findNodeByName(assistantId, update.personName)?.id
+                    ?: continue
                 val personNode = graphRepo.getNodeById(personNodeId)
                 if (personNode == null || personNode.nodeType != NodeType.PERSON) continue
 
@@ -184,50 +192,9 @@ class MemoryAgent(
                 Log.w(TAG, "Embedding failed (non-fatal)", e)
             }
 
-            // 7. Create a GraphEpisodeEntity to record this exchange as an episodic memory
-            // Skip episode creation for manual ingestion - it's not a real conversation
-            if (!isManualIngestion) {
-                val touchedNodeIds = nameToId.values.filter { id ->
-                    result.nodes.any { nameToId[it.name] == id }
-                }.toList()
-                val touchedEdgeIds = mutableListOf<Int>() // Edge IDs are hard to track from upsert; leave empty for now
-
-                try {
-                    val episodeSummary = buildEpisodeSummary(userMessage, assistantReply, result)
-                    val significance = calculateSignificance(result)
-
-                    // Embed the episode summary
-                    var episodeEmbedding: String? = null
-                    var episodeEmbeddingModelId: String? = null
-                    try {
-                        val modelId = embeddingService.getEmbeddingModelId(assistantId)
-                        val embedding = embeddingService.embed(episodeSummary, assistantId)
-                        episodeEmbedding = JsonInstant.encodeToString(embedding)
-                        episodeEmbeddingModelId = modelId
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Failed to embed episode (non-fatal)", e)
-                    }
-
-                    val episode = GraphEpisodeEntity(
-                        assistantId = assistantId,
-                        conversationId = conversationId ?: "",
-                        content = episodeSummary,
-                        significance = significance,
-                        startTime = now,
-                        endTime = System.currentTimeMillis(),
-                        embedding = episodeEmbedding,
-                        embeddingModelId = episodeEmbeddingModelId,
-                        nodeIds = JsonInstant.encodeToString(touchedNodeIds),
-                        edgeIds = JsonInstant.encodeToString(touchedEdgeIds),
-                    )
-                    graphRepo.insertEpisode(episode)
-                    Log.i(TAG, "Created graph episode (sig=$significance, nodes=${touchedNodeIds.size})")
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to create graph episode (non-fatal)", e)
-                }
-            } else {
-                Log.i(TAG, "Skipped episode creation for manual ingestion")
-            }
+            // NOTE: Episode creation is handled by MemoryConsolidationWorker,
+            // NOT inline per-exchange. This ensures episodes summarize completed
+            // chats rather than individual message pairs.
 
             val processingResult = ProcessingResult(
                 nodesUpserted = result.nodes.size,
@@ -421,7 +388,18 @@ class MemoryAgent(
     ) {
         if (!relationship.bidirectional) return
         
-        val targetProfile = graphRepo.getProfile(relationship.targetNodeId) ?: return
+        val targetProfile = graphRepo.getProfile(relationship.targetNodeId) ?: run {
+        // Create profile on-the-fly if missing — prevents silently dropping reverse relationships
+        val targetNode = graphRepo.getNodeById(relationship.targetNodeId) ?: return
+        if (targetNode.nodeType != NodeType.PERSON) return
+        val newProfile = PersonProfileEntity(
+            nodeId = relationship.targetNodeId,
+            assistantId = assistantId,
+            displayName = targetNode.name,
+        )
+        graphRepo.upsertProfile(newProfile)
+        newProfile
+    }
         val reverseType = PersonRelationType.getReverse(relationship.relationType)
         
         val existingRelationships = try {
@@ -605,7 +583,16 @@ class MemoryAgent(
             for (orphan in orphanNodes) {
                 // Skip person nodes - they should have profiles, not be archived
                 if (orphan.nodeType == NodeType.PERSON) {
-                    // Ensure person has a profile
+                    // Validate: does this actually look like a person?
+                    // If not, it was likely misclassified — fix the type instead of creating a profile
+                    if (!looksLikePerson(orphan)) {
+                        Log.w(TAG, "Node '${orphan.name}' typed as person but doesn't look like one — reclassifying to concept")
+                        graphRepo.updateNode(orphan.copy(nodeType = NodeType.CONCEPT))
+                        orphansFixed++
+                        continue
+                    }
+                    
+                    // Ensure valid person has a profile
                     val profile = graphRepo.getProfile(orphan.id)
                     if (profile == null) {
                         graphRepo.upsertProfile(PersonProfileEntity(
@@ -764,5 +751,43 @@ class MemoryAgent(
         } catch (e: Exception) {
             Log.e(TAG, "Error migrating core memories", e)
         }
+    }
+
+    /**
+     * Heuristic: does this node's description look like it's about a person?
+     * Used to catch misclassified nodes before blindly creating PersonProfileEntity.
+     */
+    private fun looksLikePerson(node: MemoryNodeEntity): Boolean {
+        val desc = node.description.lowercase()
+        val name = node.name.lowercase()
+
+        // If the node is the user or assistant profile, it's definitely a person
+        if (desc.contains("the user") || desc.contains("the assistant")) return true
+
+        // Person indicators: pronouns, titles, age references, occupation words
+        val personIndicators = listOf(
+            "he ", "she ", "they ", "him ", "her ", "his ", "their ",
+            "mr.", "mrs.", "ms.", "dr.", "prof.",
+            "years old", "age ", "born ",
+            "friend", "sibling", "parent", "partner", "colleague",
+            "person", "man ", "woman ", "boy ", "girl ",
+            "works as", "works at", "studies", "student",
+        )
+        if (personIndicators.any { desc.contains(it) }) return true
+
+        // Non-person indicators: if description contains these, likely not a person
+        val objectIndicators = listOf(
+            "boat", "car", "house", "building", "tool", "device", "app",
+            "software", "game", "book", "movie", "song", "food", "drink",
+            "place", "city", "country", "location", "address",
+            "concept", "idea", "theory", "method",
+        )
+        if (objectIndicators.any { desc.contains(it) || name.contains(it) }) return false
+
+        // If description is very short or empty, we can't tell — assume it's valid
+        // (better to keep than wrongly reclassify)
+        if (desc.length < 10) return true
+
+        return true // Default: trust the classification
     }
 }

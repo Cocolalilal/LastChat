@@ -85,6 +85,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.ai.provider.Model
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.db.entity.MemoryNodeEntity
+import me.rerere.rikkahub.data.db.entity.PersonProfileEntity
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
@@ -356,6 +357,7 @@ fun AssistantMemorySettings(
                 onUpdateEdge = { assistantDetailVM.updateEdge(it) },
                 onUpdateTimelineEvent = { assistantDetailVM.updateTimelineEvent(it) },
                 onUpdateEpisode = { assistantDetailVM.updateEpisode(it) },
+                onUpdateProfile = { assistantDetailVM.updateProfile(it) },
                 onProcessText = { assistantDetailVM.processTextIntoGraph(it) },
                 isProcessing = graphProcessing,
                 onOpenPersonProfile = { node -> profileSheetNode = node },

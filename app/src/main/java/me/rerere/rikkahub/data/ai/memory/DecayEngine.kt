@@ -21,7 +21,7 @@ class DecayEngine(
         private const val TAG = "DecayEngine"
         private const val DEFAULT_DECAY_HALF_LIFE_DAYS = 14.0
         private const val WEAK_EDGE_THRESHOLD = 0.1f
-        private const val MERGE_NAME_SIMILARITY_THRESHOLD = 0.85f
+        private const val MERGE_NAME_SIMILARITY_THRESHOLD = 0.80f
     }
 
     /**
@@ -192,21 +192,56 @@ class DecayEngine(
 
     /**
      * Enforce graphMaxNodes: if active node count exceeds the limit,
-     * archive lowest-importance non-person nodes until under the cap.
+     * archive lowest preservation-score non-person nodes until under the cap.
+     * 
+     * Preservation score is a composite of importance, mention frequency,
+     * connectedness, recency, and emotional weight — making forgetting 
+     * more organic rather than purely mechanical.
      */
     suspend fun enforceMaxNodes(assistantId: String, maxNodes: Int) {
         val activeCount = nodeDAO.getActiveNodeCount(assistantId)
         if (activeCount <= maxNodes) return
 
         val excess = activeCount - maxNodes
+        val now = System.currentTimeMillis()
         val nodes = nodeDAO.getActiveNodes(assistantId)
             .filter { it.nodeType != NodeType.PERSON } // Never archive person nodes
-            .sortedBy { it.importance * 100 + it.mentionCount } // Lowest importance first
+
+        // Build edge count index for preservation scoring
+        val allEdges = edgeDAO.getAllEdges(assistantId)
+        val edgeCountByNode = mutableMapOf<Int, Int>()
+        for (edge in allEdges) {
+            edgeCountByNode[edge.sourceNodeId] = (edgeCountByNode[edge.sourceNodeId] ?: 0) + 1
+            edgeCountByNode[edge.targetNodeId] = (edgeCountByNode[edge.targetNodeId] ?: 0) + 1
+        }
+
+        // Composite preservation score: higher = more worth keeping
+        val scored = nodes.map { node ->
+            val daysSinceMention = (now - node.lastMentioned).toFloat() / (1000 * 60 * 60 * 24)
+            val recencyBonus = when {
+                daysSinceMention < 7 -> 50f    // Very recent — strong protection
+                daysSinceMention < 14 -> 30f   // Recent
+                daysSinceMention < 30 -> 15f   // Somewhat recent
+                else -> 0f
+            }
+            val emotionalBonus = kotlin.math.abs(node.emotionalValence) * 20f  // Emotionally charged = memorable
+            val edgeCount = edgeCountByNode[node.id] ?: 0
+
+            val preservationScore = (node.importance * 30f) +
+                (node.mentionCount * 5f) +
+                (edgeCount * 10f) +
+                recencyBonus +
+                emotionalBonus +
+                (node.confidence * 10f)
+
+            Pair(node, preservationScore)
+        }.sortedBy { it.second } // Lowest preservation score first
 
         var archived = 0
-        for (node in nodes) {
+        for ((node, _) in scored) {
             if (archived >= excess) break
-            if (node.importance >= 8) break // Don't archive high-importance nodes even under pressure
+            if (node.importance >= 8) break // Don't archive high-importance even under pressure
+            if (node.confidence >= 0.9f) continue // Don't archive high-confidence nodes
             nodeDAO.archive(node.id)
             archived++
         }
