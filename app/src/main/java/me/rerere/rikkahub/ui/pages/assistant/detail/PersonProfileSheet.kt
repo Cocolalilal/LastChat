@@ -219,13 +219,6 @@ private fun ProfileViewMode(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (age != null) {
-                    Text(
-                        text = "Age $age",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
                 if (profile.isUserProfile) {
                     ProfileBadge("You")
                 } else if (profile.isCharacterProfile) {
@@ -393,8 +386,8 @@ private fun ProfileViewMode(
             }
         }
 
-        // ─── Legacy Relationships from edges (conditional) ───────────
-        if (relationships.isNotEmpty()) {
+        // ─── Legacy Relationships from edges (only if no profile relationships) ──
+        if (relationships.isNotEmpty() && profileRelationships.isEmpty()) {
             ProfileSection(
                 icon = Icons.Rounded.Group,
                 title = "Relationships",
