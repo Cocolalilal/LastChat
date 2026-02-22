@@ -515,7 +515,10 @@ private fun EntitiesView(
             (selectedType == null || node.nodeType == selectedType) &&
             (searchQuery.isBlank() || node.name.contains(searchQuery, ignoreCase = true) || node.description.contains(searchQuery, ignoreCase = true))
         }
-        .sortedByDescending { it.importance * 1000 + it.mentionCount }
+        .sortedWith(compareByDescending<MemoryNodeEntity> {
+            val p = profilesByNodeId[it.id]
+            p?.isUserProfile == true || p?.isCharacterProfile == true
+        }.thenByDescending { it.lastMentioned })
 
     // Type counts for chips
     val typeCounts = nodes.groupBy { it.nodeType }.mapValues { it.value.size }
@@ -553,10 +556,7 @@ private fun EntitiesView(
     editingNode?.let { node ->
         var editName by remember(node) { mutableStateOf(node.name) }
         var editDescription by remember(node) { mutableStateOf(node.description) }
-        var editImportance by remember(node) { mutableFloatStateOf(node.importance.toFloat()) }
         var editNodeType by remember(node) { mutableStateOf(node.nodeType) }
-        var editValence by remember(node) { mutableFloatStateOf(node.emotionalValence) }
-        var editConfidence by remember(node) { mutableFloatStateOf(node.confidence) }
         
         // Profile fields for person nodes
         val existingProfile = profilesByNodeId[node.id]
@@ -630,62 +630,6 @@ private fun EntitiesView(
                         maxLines = 4,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    // Importance slider
-                    Column {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Importance", style = MaterialTheme.typography.bodyMedium)
-                            Text("${editImportance.toInt()}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                        }
-                        Slider(
-                            value = editImportance,
-                            onValueChange = { editImportance = it },
-                            valueRange = 1f..10f,
-                            steps = 8
-                        )
-                    }
-                    // Emotional valence slider
-                    Column {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Emotional Valence", style = MaterialTheme.typography.bodyMedium)
-                            val valenceLabel = when {
-                                editValence > 0.3f -> "Positive"
-                                editValence < -0.3f -> "Negative"
-                                else -> "Neutral"
-                            }
-                            val valenceColor = when {
-                                editValence > 0.3f -> Color(0xFF4CAF50)
-                                editValence < -0.3f -> Color(0xFFF44336)
-                                else -> MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                            Text(valenceLabel, style = MaterialTheme.typography.labelLarge, color = valenceColor)
-                        }
-                        Slider(
-                            value = editValence,
-                            onValueChange = { editValence = it },
-                            valueRange = -1f..1f,
-                        )
-                    }
-                    // Confidence slider
-                    Column {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Confidence", style = MaterialTheme.typography.bodyMedium)
-                            Text("${(editConfidence * 100).toInt()}%", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                        }
-                        Slider(
-                            value = editConfidence,
-                            onValueChange = { editConfidence = it },
-                            valueRange = 0f..1f,
-                        )
-                    }
                     
                     // === PERSON PROFILE FIELDS (only shown for person type) ===
                     if (editNodeType == NodeType.PERSON) {
@@ -800,10 +744,7 @@ private fun EntitiesView(
                     onUpdateNode(node.copy(
                         name = editName,
                         description = editDescription,
-                        importance = editImportance.toInt(),
                         nodeType = editNodeType,
-                        emotionalValence = editValence,
-                        confidence = editConfidence,
                     ))
                     // Save profile if person type
                     if (editNodeType == NodeType.PERSON) {
@@ -1070,24 +1011,6 @@ private fun NodeCard(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false)
                         )
-                        // Importance badge
-                        if (node.importance >= 7) {
-                            Box(
-                                modifier = Modifier
-                                    .background(
-                                        MaterialTheme.colorScheme.tertiaryContainer,
-                                        RoundedCornerShape(6.dp)
-                                    )
-                                    .padding(horizontal = 5.dp, vertical = 1.dp)
-                            ) {
-                                Text(
-                                    "★${node.importance}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
                     }
                     if (node.description.isNotBlank()) {
                         Text(

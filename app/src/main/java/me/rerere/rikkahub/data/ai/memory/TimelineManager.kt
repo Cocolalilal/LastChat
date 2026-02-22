@@ -136,6 +136,7 @@ class TimelineManager(
             rule == "daily" -> baseTime + 24 * 60 * 60 * 1000L
             rule.startsWith("weekly") -> baseTime + 7 * 24 * 60 * 60 * 1000L
             rule.startsWith("monthly") -> baseTime + 30L * 24 * 60 * 60 * 1000L
+            rule.startsWith("yearly") -> baseTime + 365L * 24 * 60 * 60 * 1000L
             else -> null
         }
     }

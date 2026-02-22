@@ -128,7 +128,7 @@ class MemoryConsolidationWorker(
                 allMessages
             }.takeLast(30) // Limit to last 30 for processing
             
-            val messagesText = messagesToProcess.joinToString("\n") { "${it.role}: ${it.toText()}" }
+            val messagesText = messagesToProcess.joinToString("\n") { "${it.role}: ${it.toContentText()}" }
             
             // Include context summary if available for better context
             val contextSection = if (hasSummary) {
@@ -271,18 +271,18 @@ class MemoryConsolidationWorker(
      * names/dates/places to produce a consistent score.
      */
     private fun computeEpisodeSignificance(messages: List<me.rerere.ai.ui.UIMessage>): Int {
-        var score = 3 // Baseline for any conversation worth consolidating
+        var score = 1 // Low baseline: most conversations are casual
 
-        val allText = messages.joinToString(" ") { it.toText() }.lowercase()
+        val allText = messages.joinToString(" ") { it.toContentText() }.lowercase()
         val messageCount = messages.size
 
         // More messages = more substantial conversation
-        if (messageCount >= 20) score += 2
-        else if (messageCount >= 10) score += 1
+        if (messageCount >= 30) score += 2
+        else if (messageCount >= 20) score += 1
 
         // Questions indicate exploration / seeking info
         val questionCount = allText.count { it == '?' }
-        if (questionCount >= 5) score += 1
+        if (questionCount >= 10) score += 1
 
         // Emotional language markers
         val emotionalWords = listOf(

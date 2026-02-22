@@ -458,13 +458,15 @@ class ChatVM(
                 if (!node.messages.any { it.id == messageId }) {
                     return@map node // 如果这个node没有这个消息，则不修改
                 }
-                val originalMessage = node.messages.find { it.id == messageId }
+                // Replace in-place: discard all previous versions, keep only the edited one.
+                // No version history is saved for manual edits — only regeneration creates branches.
+                val editedMessage = UIMessage(
+                    role = node.role,
+                    parts = processedParts,
+                )
                 node.copy(
-                    messages = node.messages + UIMessage(
-                        role = node.role,
-                        parts = processedParts,
-                        versionTag = originalMessage?.versionTag,  // Preserve versionTag for filtering
-                    ), selectIndex = node.messages.size
+                    messages = listOf(editedMessage),
+                    selectIndex = 0
                 )
             },
         )

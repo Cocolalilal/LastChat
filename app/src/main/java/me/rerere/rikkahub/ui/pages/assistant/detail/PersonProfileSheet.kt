@@ -186,6 +186,7 @@ private fun ProfileViewMode(
 ) {
     val scrollState = rememberScrollState()
     val age = calculateAge(profile.birthYear, profile.birthMonth, profile.birthDay)
+    val lenientJson = remember { kotlinx.serialization.json.Json { ignoreUnknownKeys = true; isLenient = true } }
 
     Column(
         modifier = Modifier
@@ -219,6 +220,7 @@ private fun ProfileViewMode(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
+                Spacer(Modifier.height(4.dp))
                 if (profile.isUserProfile) {
                     ProfileBadge("You")
                 } else if (profile.isCharacterProfile) {
@@ -431,8 +433,7 @@ private fun ProfileViewMode(
 
         // ─── Personality (conditional) ──────────────────────────────
         val personalityAttrs = try {
-            kotlinx.serialization.json.Json { ignoreUnknownKeys = true; isLenient = true }
-                .decodeFromString<List<CategorizedAttribute>>(profile.personalityJson)
+            lenientJson.decodeFromString<List<CategorizedAttribute>>(profile.personalityJson)
         } catch (e: Exception) { emptyList() }
         if (personalityAttrs.isNotEmpty()) {
             ProfileSection(
@@ -448,8 +449,7 @@ private fun ProfileViewMode(
 
         // ─── Physical Attributes (conditional) ───────────────────────
         val physicalAttrs = try {
-            kotlinx.serialization.json.Json { ignoreUnknownKeys = true; isLenient = true }
-                .decodeFromString<List<CategorizedAttribute>>(profile.physicalJson)
+            lenientJson.decodeFromString<List<CategorizedAttribute>>(profile.physicalJson)
         } catch (e: Exception) { emptyList() }
         if (physicalAttrs.isNotEmpty()) {
             ProfileSection(
@@ -465,8 +465,7 @@ private fun ProfileViewMode(
 
         // ─── Other Info (conditional) ────────────────────────────────
         val otherInfoAttrs = try {
-            kotlinx.serialization.json.Json { ignoreUnknownKeys = true; isLenient = true }
-                .decodeFromString<List<CategorizedAttribute>>(profile.otherInfoJson)
+            lenientJson.decodeFromString<List<CategorizedAttribute>>(profile.otherInfoJson)
         } catch (e: Exception) { emptyList() }
         if (otherInfoAttrs.isNotEmpty()) {
             ProfileSection(

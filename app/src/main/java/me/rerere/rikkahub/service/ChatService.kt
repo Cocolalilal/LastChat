@@ -126,6 +126,16 @@ class ChatService(
     // 记录哪些对话是临时对话（不持久化、不使用记忆）
     private val temporaryConversations = ConcurrentHashMap.newKeySet<Uuid>()
 
+    // Pending memory exchange: stored after response, processed on next user message
+    private data class PendingMemoryExchange(
+        val assistantId: String,
+        val userMessage: String,
+        val assistantReply: String,
+        val conversationId: String,
+        val timelineEnabled: Boolean,
+    )
+    private val pendingMemoryExchanges = ConcurrentHashMap<Uuid, PendingMemoryExchange>()
+
     // 存储每个对话的生成任务状态
     private val _generationJobs = MutableStateFlow<Map<Uuid, Job?>>(emptyMap())
     private val generationJobs: StateFlow<Map<Uuid, Job?>> = _generationJobs
@@ -290,6 +300,24 @@ class ChatService(
 
                 // Record daily activity for streak tracking (persists even if chat is deleted)
                 conversationRepo.recordDailyActivity()
+
+                // Process pending memory exchange from the PREVIOUS turn (deferred processing)
+                val pendingExchange = pendingMemoryExchanges.remove(conversationId)
+                if (pendingExchange != null) {
+                    appScope.launch {
+                        try {
+                            memoryAgent.processExchange(
+                                assistantId = pendingExchange.assistantId,
+                                userMessage = pendingExchange.userMessage,
+                                assistantReply = pendingExchange.assistantReply,
+                                conversationId = pendingExchange.conversationId,
+                                timelineEnabled = pendingExchange.timelineEnabled,
+                            )
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Deferred graph memory processing failed", e)
+                        }
+                    }
+                }
 
                 // 开始补全
                 if(answer){
@@ -677,26 +705,20 @@ class ChatService(
                         checkAndAutoSummarize(conversationId, finalConversation, settings)
                     }
                     
-                    // Graph memory: async processing of the exchange
+                    // Graph memory: store exchange for deferred processing on next user message
                     val currentAssistant = settings.getCurrentAssistant()
                     if (currentAssistant.useGraphMemory && currentAssistant.enableMemory && !temporaryConversations.contains(conversationId)) {
-                        launch {
-                            try {
-                                val messages = finalConversation.currentMessages
-                                val lastUserMsg = messages.lastOrNull { it.role == MessageRole.USER }?.toText()
-                                val lastAssistantMsg = messages.lastOrNull { it.role == MessageRole.ASSISTANT }?.toText()
-                                if (!lastUserMsg.isNullOrBlank() && !lastAssistantMsg.isNullOrBlank()) {
-                                    memoryAgent.processExchange(
-                                        assistantId = settings.assistantId.toString(),
-                                        userMessage = lastUserMsg,
-                                        assistantReply = lastAssistantMsg,
-                                        conversationId = conversationId.toString(),
-                                        timelineEnabled = currentAssistant.graphTimelineEnabled,
-                                    )
-                                }
-                            } catch (e: Exception) {
-                                Log.w(TAG, "Async graph memory processing failed", e)
-                            }
+                        val messages = finalConversation.currentMessages
+                        val lastUserMsg = messages.lastOrNull { it.role == MessageRole.USER }?.toContentText()
+                        val lastAssistantMsg = messages.lastOrNull { it.role == MessageRole.ASSISTANT }?.toContentText()
+                        if (!lastUserMsg.isNullOrBlank() && !lastAssistantMsg.isNullOrBlank()) {
+                            pendingMemoryExchanges[conversationId] = PendingMemoryExchange(
+                                assistantId = settings.assistantId.toString(),
+                                userMessage = lastUserMsg,
+                                assistantReply = lastAssistantMsg,
+                                conversationId = conversationId.toString(),
+                                timelineEnabled = currentAssistant.graphTimelineEnabled,
+                            )
                         }
                     }
                 }

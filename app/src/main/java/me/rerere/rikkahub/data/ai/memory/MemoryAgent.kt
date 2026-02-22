@@ -104,6 +104,9 @@ class MemoryAgent(
             val existingNames = existingNodes.map { it.name }
             val existingAliases = buildAliasMap(assistantId, existingNodes)
 
+            // Build existing profile summaries for the extractor
+            val profileSummaries = buildProfileSummaries(assistantId, existingNodes)
+
             // 1. Extract structured data from the exchange
             val result = extractor.extract(
                 assistantId = assistantId,
@@ -111,6 +114,7 @@ class MemoryAgent(
                 assistantReply = assistantReply,
                 existingNodeNames = existingNames,
                 existingAliases = existingAliases,
+                existingProfileSummaries = profileSummaries,
                 provider = provider,
                 model = model,
             )
@@ -212,10 +216,19 @@ class MemoryAgent(
                 for (event in result.timelineEvents) {
                     val nodeId = resolveNodeId(event.entityName, nameToId, assistantId)
                     if (nodeId != null) {
+                        // Determine event type based on date (past vs future)
+                        val eventType = when {
+                            event.recurring != null -> "recurring"
+                            event.date != null -> {
+                                val eventEpoch = parseDateToEpoch(event.date)
+                                if (eventEpoch != null && eventEpoch < now) "completed" else "upcoming"
+                            }
+                            else -> "upcoming"
+                        }
                         val created = timelineManager.createEventFromExtraction(
                             assistantId = assistantId,
                             nodeId = nodeId,
-                            eventType = if (event.recurring != null) "recurring" else "upcoming",
+                            eventType = eventType,
                             description = event.description,
                             scheduledDateStr = event.date,
                             recurrenceRule = event.recurring,
@@ -336,7 +349,7 @@ class MemoryAgent(
                 json.decodeFromString<List<PersonRelationship>>(updated.relationshipsJson)
             } catch (e: Exception) { emptyList() }
 
-            val newRels = mutableListOf<PersonRelationship>()
+            val updatedRels = existingRels.toMutableList()
             for (rel in update.relationships) {
                 val targetNodeId = resolveNodeId(rel.targetName, nameToId, assistantId)
                 if (targetNodeId != null && targetNodeId != personNodeId) {
@@ -347,27 +360,19 @@ class MemoryAgent(
                         relationType = relType,
                         relationLabel = rel.label,
                     )
-                    // Don't add duplicates
-                    if (existingRels.none { it.targetNodeId == targetNodeId && it.relationType == relType }) {
-                        newRels.add(relationship)
+                    // Replace any existing relationship with the same target person
+                    val existingIdx = updatedRels.indexOfFirst { it.targetNodeId == targetNodeId }
+                    if (existingIdx >= 0) {
+                        updatedRels[existingIdx] = relationship
+                    } else {
+                        updatedRels.add(relationship)
                     }
-                    // Create bidirectional relationship
+                    // Create bidirectional relationship (also replaces)
                     createBidirectionalRelationship(assistantId, personNodeId, update.personName, relationship)
-                    // Also create a 'knows' edge
-                    graphRepo.upsertEdge(MemoryEdgeEntity(
-                        assistantId = assistantId,
-                        sourceNodeId = personNodeId,
-                        targetNodeId = targetNodeId,
-                        relationType = RelationType.KNOWS,
-                        description = "${update.personName} <-> ${rel.targetName} (${relType})",
-                    ))
                 }
             }
 
-            if (newRels.isNotEmpty()) {
-                val merged = existingRels + newRels
-                updated = updated.copy(relationshipsJson = json.encodeToString(merged))
-            }
+            updated = updated.copy(relationshipsJson = json.encodeToString(updatedRels.toList()))
         }
 
         graphRepo.upsertProfile(updated)
@@ -392,8 +397,12 @@ class MemoryAgent(
                 category = item.category.lowercase().trim(),
                 value = item.value.trim(),
             )
-            // Replace existing item in the same category, or add new
-            val existingIndex = merged.indexOfFirst { it.category == attr.category }
+            // Fuzzy match: if new category contains existing or vice versa, treat as same
+            val existingIndex = merged.indexOfFirst { existing ->
+                existing.category == attr.category ||
+                existing.category.contains(attr.category) ||
+                attr.category.contains(existing.category)
+            }
             if (existingIndex >= 0) {
                 merged[existingIndex] = attr
             } else {
@@ -419,19 +428,22 @@ class MemoryAgent(
 
         val reverseType = PersonRelationType.getReverse(relationship.relationType) ?: relationship.relationType
 
-        // Check if reverse relationship already exists
-        if (existingRels.any { it.targetNodeId == sourceNodeId && it.relationType == reverseType }) {
-            return
-        }
-
         val reverseRel = PersonRelationship(
             targetNodeId = sourceNodeId,
             targetName = sourceName,
             relationType = reverseType,
         )
-        val updated = existingRels + reverseRel
+
+        // Replace any existing relationship with the same source person
+        val updatedRels = existingRels.toMutableList()
+        val existingIdx = updatedRels.indexOfFirst { it.targetNodeId == sourceNodeId }
+        if (existingIdx >= 0) {
+            updatedRels[existingIdx] = reverseRel
+        } else {
+            updatedRels.add(reverseRel)
+        }
         graphRepo.upsertProfile(
-            targetProfile.copy(relationshipsJson = json.encodeToString(updated))
+            targetProfile.copy(relationshipsJson = json.encodeToString(updatedRels.toList()))
         )
     }
 
@@ -458,6 +470,37 @@ class MemoryAgent(
                         result[node.name] = aliases
                     }
                 }
+            }
+        }
+        return result
+    }
+
+    /**
+     * Build profile summaries for each person node (for extraction context).
+     * Keeps summaries concise to avoid bloating the prompt.
+     */
+    private suspend fun buildProfileSummaries(
+        assistantId: String,
+        nodes: List<MemoryNodeEntity>,
+    ): Map<String, String> {
+        val result = mutableMapOf<String, String>()
+        for (node in nodes) {
+            if (node.nodeType != NodeType.PERSON) continue
+            val profile = graphRepo.getProfile(node.id) ?: continue
+            val parts = mutableListOf<String>()
+            if (profile.pronouns.isNotBlank()) parts.add("pronouns: ${profile.pronouns}")
+            if (profile.occupation.isNotBlank()) parts.add("occupation: ${profile.occupation}")
+            if (profile.location.isNotBlank()) parts.add("location: ${profile.location}")
+            val personality = try { json.decodeFromString<List<CategorizedAttribute>>(profile.personalityJson) } catch (e: Exception) { emptyList() }
+            if (personality.isNotEmpty()) parts.add("personality: ${personality.joinToString(", ") { it.value }}")
+            val physical = try { json.decodeFromString<List<CategorizedAttribute>>(profile.physicalJson) } catch (e: Exception) { emptyList() }
+            if (physical.isNotEmpty()) parts.add("physical: ${physical.joinToString(", ") { it.value }}")
+            val otherInfo = try { json.decodeFromString<List<CategorizedAttribute>>(profile.otherInfoJson) } catch (e: Exception) { emptyList() }
+            if (otherInfo.isNotEmpty()) parts.add("other: ${otherInfo.joinToString(", ") { it.value }}")
+            val rels = try { json.decodeFromString<List<PersonRelationship>>(profile.relationshipsJson) } catch (e: Exception) { emptyList() }
+            if (rels.isNotEmpty()) parts.add("relationships: ${rels.joinToString(", ") { "${it.targetName} (${it.relationType})" }}")
+            if (parts.isNotEmpty()) {
+                result[node.name] = parts.joinToString("; ")
             }
         }
         return result

@@ -127,7 +127,8 @@ class RelationExtractor(
         userMessage: String,
         assistantReply: String,
         existingNodeNames: List<String> = emptyList(),
-        existingAliases: Map<String, List<String>> = emptyMap(), // nodeName -> aliases
+        existingAliases: Map<String, List<String>> = emptyMap(),
+        existingProfileSummaries: Map<String, String> = emptyMap(),
         provider: ProviderSetting,
         model: Model,
     ): ExtractionResult {
@@ -145,10 +146,19 @@ class RelationExtractor(
             "**No existing entities yet.**"
         }
 
+        val profileSection = if (existingProfileSummaries.isNotEmpty()) {
+            val entries = existingProfileSummaries.entries.joinToString("\n") { (name, summary) ->
+                "- $name: $summary"
+            }
+            "**What we already know about these people** (update/correct if the conversation changes any of this):\n$entries"
+        } else ""
+
         val prompt = """
             Analyze this conversation and extract ONLY what is worth remembering long-term.
             
             $existingNamesSection
+            
+            $profileSection
             
             **User:** $userMessage
             **Assistant:** $assistantReply
@@ -156,41 +166,47 @@ class RelationExtractor(
             Rules:
             1. Only extract NAMED, SPECIFIC entities (people, places, things).
                - People: Only if they have a name or clear identity (e.g. "Mom", "Dr. Smith", "Julia")
-               - Places: Only if specifically named (e.g. "Tokyo", "MIT", not "a park" or "the store")
-               - Things: Only if named/specific and independently meaningful (e.g. "Max the dog", "Project Aurora")
-            2. Do NOT create entities for: emotions, activities, vague concepts, unnamed things, personality traits, preferences, or attributes
-            3. Return AT MOST 3 new entities per exchange. If nothing truly significant, return empty arrays.
-            4. For person updates: put ALL personal attributes in personUpdates, NOT as separate entities.
-               - Each attribute needs a category and value for contradiction tracking:
-                 - personalityTraits: category = trait dimension (e.g. "demeanor", "social style"), value = the trait
-                 - physicalAttributes: category = body part/feature (e.g. "hair", "height", "build"), value = description
-                 - otherInfo: category = info type (e.g. "education", "background"), value = the fact
-               - relationships: specify the target person name and type (parent, sibling, friend, partner, colleague, etc.)
-            5. Timeline events: ONLY for concrete dates/deadlines, NOT vague plans like "I should..." or "maybe someday..."
-            6. If the exchange is casual banter with no new factual information, return ALL empty arrays.
-            7. For relationships between entities: only use these types: related_to, owns, part_of, likes, dislikes, located_at, happened_at, knows
+               - Places: Only if specifically named (e.g. "Tokyo", "MIT", not "the store")
+               - Things: Only if named/specific and meaningful (e.g. "Max the dog", "Project Aurora")
+            2. Do NOT create entities for: emotions, activities, concepts, unnamed things, traits, or preferences.
+            3. Return AT MOST 3 new entities per exchange. If nothing significant, return empty arrays.
+            4. For person updates: put ALL personal attributes in personUpdates.
+               - CRITICAL: Each value MUST be a **self-contained, readable phrase**. 
+                 BAD: {"category": "hair", "value": "brown"} — "brown" alone is meaningless
+                 GOOD: {"category": "hair", "value": "brown hair"}
+                 BAD: {"category": "education", "value": "MIT"} — no context
+                 GOOD: {"category": "education", "value": "studies at MIT"}
+               - Categories:
+                 - personalityTraits: category = dimension (e.g. "demeanor"), value = readable trait (e.g. "calm and composed")
+                 - physicalAttributes: category = feature (e.g. "hair", "eyes", "build"), value = full description (e.g. "curly brown hair", "wears glasses")
+                 - otherInfo: category = info type (e.g. "education", "hobby"), value = complete fact (e.g. "goes to school at Lincoln High")
+               - relationships: specify target person and type. If a relationship type CHANGED (e.g. acquaintance→partner), output the NEW type — it will replace the old one.
+            5. If the conversation CORRECTS or UPDATES existing info, include the correction. Do NOT avoid outputting changes.
+            6. Timeline events: ONLY for concrete dates. Use recurring for repeating events:
+               - "yearly" for birthdays and anniversaries
+               - "weekly" / "monthly" for regular schedules
+               - null for one-time events
+               Past events (like a birthday that already happened) still get a date — the system handles past vs future.
+            7. Entity relationships (not person profile relationships): only use: related_to, owns, part_of, likes, dislikes, located_at, happened_at, knows
+            8. If the exchange is casual banter with no new facts, return ALL empty arrays.
             
-            Output ONLY valid JSON, no other text:
+            Output ONLY valid JSON:
             {
               "entities": [{"name": "...", "type": "person|place|thing", "description": "..."}],
               "personUpdates": [
                 {
                   "personName": "...",
-                  "birthYear": null,
-                  "birthMonth": null,
-                  "birthDay": null,
-                  "pronouns": null,
-                  "occupation": null,
-                  "location": null,
+                  "birthYear": null, "birthMonth": null, "birthDay": null,
+                  "pronouns": null, "occupation": null, "location": null,
                   "interests": [],
-                  "personalityTraits": [{"category": "...", "value": "..."}],
-                  "physicalAttributes": [{"category": "...", "value": "..."}],
-                  "otherInfo": [{"category": "...", "value": "..."}],
-                  "relationships": [{"targetName": "...", "relationType": "...", "label": null}]
+                  "personalityTraits": [{"category": "...", "value": "self-contained description"}],
+                  "physicalAttributes": [{"category": "...", "value": "self-contained description"}],
+                  "otherInfo": [{"category": "...", "value": "self-contained description"}],
+                  "relationships": [{"targetName": "...", "relationType": "parent|sibling|friend|partner|colleague|...", "label": null}]
                 }
               ],
               "relationships": [{"source": "...", "target": "...", "type": "...", "description": "..."}],
-              "timelineEvents": [{"entityName": "...", "description": "...", "date": "YYYY-MM-DD", "recurring": null}]
+              "timelineEvents": [{"entityName": "...", "description": "...", "date": "YYYY-MM-DD", "recurring": "yearly|monthly|weekly|daily|null"}]
             }
         """.trimIndent()
 
