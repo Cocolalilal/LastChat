@@ -570,8 +570,18 @@ private fun EntitiesView(
             try { me.rerere.rikkahub.utils.JsonInstant.decodeFromString<List<String>>(existingProfile?.interestsJson ?: "[]").joinToString(", ") }
             catch (e: Exception) { "" }
         ) }
-        var editPersonality by remember(node) { mutableStateOf(existingProfile?.personalitySummary ?: "") }
-        var editPhysical by remember(node) { mutableStateOf(existingProfile?.physicalSummary ?: "") }
+        var editPersonality by remember(node) { mutableStateOf(
+            try {
+                kotlinx.serialization.json.Json { ignoreUnknownKeys = true; isLenient = true }
+                    .decodeFromString<List<me.rerere.rikkahub.data.db.entity.CategorizedAttribute>>(existingProfile?.personalityJson ?: "[]").joinToString(", ") { it.value }
+            } catch (e: Exception) { "" }
+        ) }
+        var editPhysical by remember(node) { mutableStateOf(
+            try {
+                kotlinx.serialization.json.Json { ignoreUnknownKeys = true; isLenient = true }
+                    .decodeFromString<List<me.rerere.rikkahub.data.db.entity.CategorizedAttribute>>(existingProfile?.physicalJson ?: "[]").joinToString(", ") { it.value }
+            } catch (e: Exception) { "" }
+        ) }
         var editNotes by remember(node) { mutableStateOf(existingProfile?.notes ?: "") }
         
         AlertDialog(
@@ -766,7 +776,10 @@ private fun EntitiesView(
                             modifier = Modifier.fillMaxWidth()
                         )
                         OutlinedTextField(
-                            value = existingProfile?.otherInfoSummary ?: "",
+                            value = try {
+                                kotlinx.serialization.json.Json { ignoreUnknownKeys = true; isLenient = true }
+                                    .decodeFromString<List<me.rerere.rikkahub.data.db.entity.CategorizedAttribute>>(existingProfile?.otherInfoJson ?: "[]").joinToString(", ") { it.value }
+                            } catch (e: Exception) { "" },
                             onValueChange = { },
                             label = { Text("Other Info (auto-generated)") },
                             enabled = false,
@@ -795,6 +808,12 @@ private fun EntitiesView(
                     // Save profile if person type
                     if (editNodeType == NodeType.PERSON) {
                         val interestsList = editInterests.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                        val lenientJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true; isLenient = true }
+                        fun textToAttrJson(text: String): String {
+                            val items = text.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                            val attrs = items.map { me.rerere.rikkahub.data.db.entity.CategorizedAttribute(category = "general", value = it) }
+                            return lenientJson.encodeToString(attrs)
+                        }
                         val profile = (existingProfile ?: PersonProfileEntity(
                             nodeId = node.id,
                             assistantId = node.assistantId,
@@ -808,8 +827,8 @@ private fun EntitiesView(
                             birthMonth = editBirthMonth.toIntOrNull(),
                             birthDay = editBirthDay.toIntOrNull(),
                             interestsJson = me.rerere.rikkahub.utils.JsonInstant.encodeToString(interestsList),
-                            personalitySummary = editPersonality,
-                            physicalSummary = editPhysical,
+                            personalityJson = textToAttrJson(editPersonality),
+                            physicalJson = textToAttrJson(editPhysical),
                             notes = editNotes,
                         )
                         onUpdateProfile(profile)
@@ -1230,10 +1249,14 @@ private fun NodeCard(
                                 }
                             }
                         }
-                        // Summaries
-                        if (profile.personalitySummary.isNotBlank()) {
+                        // Personality summary
+                        val personalityAttrs = try {
+                            kotlinx.serialization.json.Json { ignoreUnknownKeys = true; isLenient = true }
+                                .decodeFromString<List<me.rerere.rikkahub.data.db.entity.CategorizedAttribute>>(profile.personalityJson)
+                        } catch (e: Exception) { emptyList() }
+                        if (personalityAttrs.isNotEmpty()) {
                             Text(
-                                profile.personalitySummary,
+                                personalityAttrs.joinToString(", ") { it.value },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 3,
@@ -2433,12 +2456,7 @@ private fun SwipeToConfirmSlider(
 private fun nodeTypeIcon(type: String): ImageVector = when (type) {
     NodeType.PERSON -> Icons.Rounded.Group
     NodeType.PLACE -> Icons.Rounded.Place
-    NodeType.OBJECT -> Icons.Rounded.Widgets
-    NodeType.EVENT -> Icons.Rounded.CalendarMonth
-    NodeType.CONCEPT -> Icons.Rounded.Lightbulb
-    NodeType.PREFERENCE -> Icons.Rounded.Favorite
-    NodeType.EMOTION -> Icons.Rounded.EmojiEmotions
-    NodeType.PLAN -> Icons.Rounded.TaskAlt
+    NodeType.THING -> Icons.Rounded.Widgets
     else -> Icons.Rounded.Star
 }
 
@@ -2446,12 +2464,7 @@ private fun nodeTypeIcon(type: String): ImageVector = when (type) {
 private fun nodeTypeColor(type: String): Color = when (type) {
     NodeType.PERSON -> MaterialTheme.colorScheme.primary
     NodeType.PLACE -> Color(0xFF26A69A)
-    NodeType.OBJECT -> MaterialTheme.colorScheme.secondary
-    NodeType.EVENT -> Color(0xFFFF7043)
-    NodeType.CONCEPT -> Color(0xFF7E57C2)
-    NodeType.PREFERENCE -> Color(0xFFEC407A)
-    NodeType.EMOTION -> Color(0xFFFFA726)
-    NodeType.PLAN -> Color(0xFF42A5F5)
+    NodeType.THING -> MaterialTheme.colorScheme.secondary
     else -> MaterialTheme.colorScheme.onSurfaceVariant
 }
 

@@ -2,25 +2,38 @@ package me.rerere.rikkahub.data.ai.memory
 
 import android.util.Log
 import me.rerere.rikkahub.data.ai.rag.EmbeddingService
-import me.rerere.rikkahub.data.db.entity.GraphEpisodeEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEdgeEntity
 import me.rerere.rikkahub.data.db.entity.MemoryNodeEntity
 import me.rerere.rikkahub.data.db.entity.NodeStatus
 import me.rerere.rikkahub.data.db.entity.NodeType
 import me.rerere.rikkahub.data.db.entity.PersonProfileEntity
+import me.rerere.rikkahub.data.db.entity.CategorizedAttribute
 import me.rerere.rikkahub.data.db.entity.PersonRelationship
 import me.rerere.rikkahub.data.db.entity.PersonRelationType
 import me.rerere.rikkahub.data.db.entity.RelationType
 import me.rerere.rikkahub.data.repository.GraphMemoryRepository
+import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.findModelById
+import me.rerere.rikkahub.data.datastore.findProvider
+import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.utils.JsonInstant
+import kotlinx.serialization.json.Json
 
 /**
- * Central orchestrator for the graph memory system.
- * Responsible for:
- * - Processing conversation exchanges (async, fire-and-forget)
- * - Embedding new/updated nodes
- * - Coordinating extraction → upsert → embed pipeline
- * - Running background consolidation (decay, merge, sweep)
+ * Orchestrates the advanced memory pipeline.
+ *
+ * Design philosophy: SPARSE, PERSON-CENTRIC
+ * - Nodes = entities that exist in the world (person, place, thing)
+ * - Attributes = properties OF entities, stored on their profile/description
+ * - Person profiles are the single source of truth for person facts
+ *
+ * Pipeline:
+ * 1. Extract entities + attributes from conversation
+ * 2. Upsert entity nodes (max 3 per exchange)
+ * 3. Update person profiles directly (no trait/attribute nodes)
+ * 4. Create/reinforce edges between entities
+ * 5. Create timeline events (with deduplication)
+ * 6. Embed new/updated nodes
  */
 class MemoryAgent(
     private val graphRepo: GraphMemoryRepository,
@@ -28,9 +41,15 @@ class MemoryAgent(
     private val decayEngine: DecayEngine,
     private val timelineManager: TimelineManager,
     private val embeddingService: EmbeddingService,
+    private val settingsStore: SettingsStore,
 ) {
     companion object {
         private const val TAG = "MemoryAgent"
+    }
+
+    private val json = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
     }
 
     data class ProcessingResult(
@@ -44,24 +63,17 @@ class MemoryAgent(
         val isEmpty get() = totalItems == 0 && error == null
     }
 
-    data class RepairStats(
-        val orphansFixed: Int = 0,
-        val profilesFixed: Int = 0,
-        val edgesFixed: Int = 0,
-    ) {
-        val totalFixed get() = orphansFixed + profilesFixed + edgesFixed
-    }
-
     /**
-     * Process a conversation exchange asynchronously.
+     * Process a conversation exchange.
      * Called fire-and-forget after each user↔assistant message pair.
      *
      * Pipeline:
-     * 1. Extract entities/relations from the exchange
-     * 2. Upsert nodes (merge if similar exists)
-     * 3. Create/reinforce edges
-     * 4. Create timeline events
-     * 5. Embed new/updated nodes
+     * 1. Extract entities/attributes from the exchange
+     * 2. Upsert entity nodes (max 3 new per exchange)
+     * 3. Update person profiles directly with extracted attributes
+     * 4. Create/reinforce edges
+     * 5. Create timeline events (deduplicated)
+     * 6. Embed new/updated nodes
      */
     suspend fun processExchange(
         assistantId: String,
@@ -74,52 +86,75 @@ class MemoryAgent(
         try {
             Log.i(TAG, "Processing exchange for assistant $assistantId (manual=$isManualIngestion)")
 
-            // Auto-repair: Fix broken graph data before processing
-            val repairStats = repairBrokenGraphData(assistantId)
-            if (repairStats.totalFixed > 0) {
-                Log.i(TAG, "Auto-repair: fixed ${repairStats.totalFixed} issues " +
-                    "(orphans=${repairStats.orphansFixed}, profiles=${repairStats.profilesFixed})")
+            // Resolve model/provider for extraction
+            val settings = settingsStore.settingsFlow.value
+            val assistant = settings.getCurrentAssistant()
+            val backgroundModelId = assistant.summarizerModelId ?: assistant.backgroundModelId ?: settings.chatModelId
+            val model = settings.findModelById(backgroundModelId) ?: run {
+                Log.w(TAG, "No model found for extraction")
+                return ProcessingResult(error = "No model configured")
+            }
+            val provider = model.findProvider(settings.providers) ?: run {
+                Log.w(TAG, "No provider found for extraction model")
+                return ProcessingResult(error = "No provider configured")
             }
 
-            // Get existing node names for the extractor hint
+            // Get existing nodes and their aliases for the extractor hint
             val existingNodes = graphRepo.getActiveNodes(assistantId)
             val existingNames = existingNodes.map { it.name }
+            val existingAliases = buildAliasMap(assistantId, existingNodes)
 
             // 1. Extract structured data from the exchange
-            val result = extractor.extract(assistantId, userMessage, assistantReply, existingNames)
-            Log.i(TAG, "Extracted ${result.nodes.size} nodes, ${result.edges.size} edges, ${result.timelineEvents.size} timeline events, ${result.personUpdates.size} person updates")
+            val result = extractor.extract(
+                assistantId = assistantId,
+                userMessage = userMessage,
+                assistantReply = assistantReply,
+                existingNodeNames = existingNames,
+                existingAliases = existingAliases,
+                provider = provider,
+                model = model,
+            )
+            Log.i(TAG, "Extracted ${result.entities.size} entities, ${result.relationships.size} relationships, ${result.timelineEvents.size} timeline events, ${result.personUpdates.size} person updates")
 
-            if (result.nodes.isEmpty() && result.edges.isEmpty() && result.timelineEvents.isEmpty() && result.personUpdates.isEmpty()) {
+            if (result.entities.isEmpty() && result.relationships.isEmpty() && result.timelineEvents.isEmpty() && result.personUpdates.isEmpty()) {
                 Log.i(TAG, "Nothing meaningful extracted, skipping")
                 return ProcessingResult()
             }
 
-            // 2. Upsert nodes and build name→id map
+            // 2. Upsert entity nodes and build name→id map
             val now = System.currentTimeMillis()
             val nameToId = mutableMapOf<String, Int>()
+            var nodesUpserted = 0
 
-            for (extractedNode in result.nodes) {
-                val nodeType = if (extractedNode.type in NodeType.ALL) extractedNode.type else "concept"
+            for (entity in result.entities) {
+                // Fixed importance: person=10, place/thing=7
+                val importance = when (entity.type) {
+                    NodeType.PERSON -> 10
+                    else -> 7
+                }
 
-                val entity = MemoryNodeEntity(
+                val node = MemoryNodeEntity(
                     assistantId = assistantId,
-                    nodeType = nodeType,
-                    name = extractedNode.name,
-                    description = extractedNode.description,
-                    importance = extractedNode.importance.coerceIn(1, 10),
-                    emotionalValence = extractedNode.emotionalValence.coerceIn(-1f, 1f),
+                    nodeType = entity.type,
+                    name = entity.name,
+                    description = entity.description,
+                    importance = importance,
                     firstMentioned = now,
                     lastMentioned = now,
                     mentionCount = 1,
                     status = NodeStatus.ACTIVE,
-                    validFrom = extractedNode.validFrom?.let { parseDateToEpoch(it) },
-                    validUntil = extractedNode.validUntil?.let { parseDateToEpoch(it) },
                     confidence = 1.0f,
                     sourceTurn = conversationId ?: "",
                 )
 
-                val nodeId = graphRepo.upsertNode(assistantId, entity)
-                nameToId[extractedNode.name] = nodeId
+                val nodeId = graphRepo.upsertNode(assistantId, node)
+                nameToId[entity.name] = nodeId
+                nodesUpserted++
+
+                // Auto-create PersonProfile for person-type nodes
+                if (entity.type == NodeType.PERSON) {
+                    ensurePersonProfile(assistantId, nodeId, entity.name)
+                }
             }
 
             // Also map existing nodes not in extraction
@@ -127,82 +162,83 @@ class MemoryAgent(
                 if (existingNode.name !in nameToId) {
                     nameToId[existingNode.name] = existingNode.id
                 }
+                // Also map by aliases
+                val aliases = existingAliases[existingNode.name] ?: emptyList()
+                for (alias in aliases) {
+                    if (alias !in nameToId) {
+                        nameToId[alias] = existingNode.id
+                    }
+                }
             }
 
-            // 3. Create/reinforce edges
-            for (extractedEdge in result.edges) {
-                val sourceId = nameToId[extractedEdge.source]
-                val targetId = nameToId[extractedEdge.target]
+            // 3. Process person profile updates — attributes go directly into profile
+            var personUpdatesCount = 0
+            for (update in result.personUpdates) {
+                val personNodeId = resolvePersonNodeId(update.personName, nameToId, assistantId)
+                    ?: continue
+
+                try {
+                    applyPersonUpdate(assistantId, personNodeId, update, nameToId)
+                    personUpdatesCount++
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to apply person update for ${update.personName}", e)
+                }
+            }
+
+            // 4. Create/reinforce edges
+            var edgesCreated = 0
+            for (rel in result.relationships) {
+                val sourceId = resolveNodeId(rel.source, nameToId, assistantId)
+                val targetId = resolveNodeId(rel.target, nameToId, assistantId)
 
                 if (sourceId != null && targetId != null && sourceId != targetId) {
                     val edge = MemoryEdgeEntity(
                         assistantId = assistantId,
                         sourceNodeId = sourceId,
                         targetNodeId = targetId,
-                        relationType = extractedEdge.relationType,
-                        description = extractedEdge.description,
+                        relationType = if (rel.type in RelationType.ALL) rel.type else RelationType.RELATED_TO,
+                        description = rel.description,
                         createdAt = now,
                         lastReinforced = now,
                     )
                     graphRepo.upsertEdge(edge)
+                    edgesCreated++
                 }
             }
 
-            // 4. Create timeline events (only if timeline tracking is enabled)
+            // 5. Create timeline events (deduplicated)
+            var timelineEventsCreated = 0
             if (timelineEnabled) {
-                for (extractedEvent in result.timelineEvents) {
-                    val nodeId = nameToId[extractedEvent.nodeName]
+                for (event in result.timelineEvents) {
+                    val nodeId = resolveNodeId(event.entityName, nameToId, assistantId)
                     if (nodeId != null) {
-                        timelineManager.createEventFromExtraction(
+                        val created = timelineManager.createEventFromExtraction(
                             assistantId = assistantId,
                             nodeId = nodeId,
-                            eventType = extractedEvent.eventType,
-                            description = extractedEvent.description,
-                            scheduledDateStr = extractedEvent.scheduledDate,
+                            eventType = if (event.recurring != null) "recurring" else "upcoming",
+                            description = event.description,
+                            scheduledDateStr = event.date,
+                            recurrenceRule = event.recurring,
                         )
+                        if (created > 0) timelineEventsCreated++
                     }
                 }
             }
 
-            // 5. Process person profile updates
-            for (update in result.personUpdates) {
-                // Fuzzy match: exact → case-insensitive → substring → DB fallback
-                val personNodeId = nameToId[update.personName]
-                    ?: nameToId.entries.firstOrNull { it.key.equals(update.personName, ignoreCase = true) }?.value
-                    ?: nameToId.entries.firstOrNull {
-                        it.key.contains(update.personName, ignoreCase = true) ||
-                        update.personName.contains(it.key, ignoreCase = true)
-                    }?.value
-                    ?: graphRepo.findNodeByName(assistantId, update.personName)?.id
-                    ?: continue
-                val personNode = graphRepo.getNodeById(personNodeId)
-                if (personNode == null || personNode.nodeType != NodeType.PERSON) continue
-
-                try {
-                    applyPersonUpdate(assistantId, personNodeId, update, nameToId)
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to apply person update for ${update.personName}", e)
-                }
-            }
-
-            // 6. Embed new/updated nodes that don't have embeddings yet
+            // 6. Embed new/updated nodes
             try {
                 embedMissingNodes(assistantId)
             } catch (e: Exception) {
                 Log.w(TAG, "Embedding failed (non-fatal)", e)
             }
 
-            // NOTE: Episode creation is handled by MemoryConsolidationWorker,
-            // NOT inline per-exchange. This ensures episodes summarize completed
-            // chats rather than individual message pairs.
-
             val processingResult = ProcessingResult(
-                nodesUpserted = result.nodes.size,
-                edgesCreated = result.edges.size,
-                timelineEvents = result.timelineEvents.size,
-                personUpdates = result.personUpdates.size,
+                nodesUpserted = nodesUpserted,
+                edgesCreated = edgesCreated,
+                timelineEvents = timelineEventsCreated,
+                personUpdates = personUpdatesCount,
             )
-            Log.i(TAG, "Exchange processing complete for assistant $assistantId: $processingResult")
+            Log.i(TAG, "Exchange processing complete: $processingResult")
             return processingResult
         } catch (e: Exception) {
             Log.e(TAG, "Error processing exchange", e)
@@ -210,9 +246,17 @@ class MemoryAgent(
         }
     }
 
+    // =============================================
+    // Person Profile Updates — Direct, No Trait Nodes
+    // =============================================
+
     /**
-     * Apply extracted person profile updates to the profile entity and create
-     * contributing edges from trait/attribute nodes to the person node.
+     * Apply extracted person attributes directly to PersonProfileEntity.
+     * Uses the contradiction policy:
+     * - Single-value mutable (pronouns, occupation, location): REPLACE
+     * - Lists (interests): ADD, no duplicates
+     * - Structured lists (personality, physical, otherInfo): MERGE by category
+     * - Immutable (birth dates): SET ONCE
      */
     private suspend fun applyPersonUpdate(
         assistantId: String,
@@ -220,161 +264,143 @@ class MemoryAgent(
         update: RelationExtractor.ExtractedPersonUpdate,
         nameToId: Map<String, Int>,
     ) {
-        // Get or create the profile
-        val existing = graphRepo.getProfile(personNodeId)
-        val profile = existing ?: PersonProfileEntity(
-            nodeId = personNodeId,
-            assistantId = assistantId,
-            displayName = update.personName,
-        )
+        val profile = graphRepo.getProfile(personNodeId)
+            ?: PersonProfileEntity(nodeId = personNodeId, assistantId = assistantId)
 
-        // Merge new relationships with existing ones
-        val existingRelationships = try {
-            JsonInstant.decodeFromString<List<PersonRelationship>>(profile.relationshipsJson)
-        } catch (e: Exception) { emptyList() }
-        
-        val newRelationships = update.relationships.mapNotNull { rel ->
-            // Find target node ID by name
-            val targetId = nameToId[rel.targetName] ?: graphRepo.findNodeByName(assistantId, rel.targetName)?.id
-            if (targetId == null) {
-                Log.w(TAG, "Could not find target node for relationship: ${rel.targetName}")
-                return@mapNotNull null
-            }
-            PersonRelationship(
-                targetNodeId = targetId,
-                targetName = rel.targetName,
-                relationType = rel.relationType,
-                relationLabel = rel.relationLabel,
-                notes = rel.notes,
-                bidirectional = true,
+        var updated = profile
+
+        // SET ONCE: birth info (only overwrite if currently null)
+        if (update.birthYear != null && updated.birthYear == null) {
+            updated = updated.copy(birthYear = update.birthYear)
+        }
+        if (update.birthMonth != null && updated.birthMonth == null) {
+            updated = updated.copy(birthMonth = update.birthMonth)
+        }
+        if (update.birthDay != null && updated.birthDay == null) {
+            updated = updated.copy(birthDay = update.birthDay)
+        }
+
+        // REPLACE: single-value mutable fields
+        if (!update.pronouns.isNullOrBlank()) {
+            updated = updated.copy(pronouns = update.pronouns)
+        }
+        if (!update.occupation.isNullOrBlank()) {
+            updated = updated.copy(occupation = update.occupation)
+        }
+        if (!update.location.isNullOrBlank()) {
+            updated = updated.copy(location = update.location)
+        }
+
+        // MERGE by category: personality traits
+        if (update.personalityTraits.isNotEmpty()) {
+            updated = updated.copy(
+                personalityJson = mergeCategorizedAttributes(
+                    existing = updated.personalityJson,
+                    newItems = update.personalityTraits,
+                )
             )
         }
-        
-        // Merge relationships, avoiding duplicates (by targetNodeId + relationType)
-        val mergedRelationships = (existingRelationships + newRelationships)
-            .distinctBy { "${it.targetNodeId}_${it.relationType}" }
-        
-        // Merge interests with existing
-        val existingInterests = try {
-            JsonInstant.decodeFromString<List<String>>(profile.interestsJson)
+
+        // MERGE by category: physical attributes
+        if (update.physicalAttributes.isNotEmpty()) {
+            updated = updated.copy(
+                physicalJson = mergeCategorizedAttributes(
+                    existing = updated.physicalJson,
+                    newItems = update.physicalAttributes,
+                )
+            )
+        }
+
+        // MERGE by category: other info
+        if (update.otherInfo.isNotEmpty()) {
+            updated = updated.copy(
+                otherInfoJson = mergeCategorizedAttributes(
+                    existing = updated.otherInfoJson,
+                    newItems = update.otherInfo,
+                )
+            )
+        }
+
+        // ADD: interests (no duplicates)
+        if (update.interests.isNotEmpty()) {
+            val existingInterests = try {
+                json.decodeFromString<List<String>>(updated.interestsJson)
+            } catch (e: Exception) { emptyList() }
+            val merged = (existingInterests + update.interests).distinctBy { it.lowercase().trim() }
+            updated = updated.copy(interestsJson = json.encodeToString(merged))
+        }
+
+        // Relationships
+        if (update.relationships.isNotEmpty()) {
+            val existingRels = try {
+                json.decodeFromString<List<PersonRelationship>>(updated.relationshipsJson)
+            } catch (e: Exception) { emptyList() }
+
+            val newRels = mutableListOf<PersonRelationship>()
+            for (rel in update.relationships) {
+                val targetNodeId = resolveNodeId(rel.targetName, nameToId, assistantId)
+                if (targetNodeId != null && targetNodeId != personNodeId) {
+                    val relType = if (rel.relationType in PersonRelationType.ALL) rel.relationType else PersonRelationType.ACQUAINTANCE
+                    val relationship = PersonRelationship(
+                        targetNodeId = targetNodeId,
+                        targetName = rel.targetName,
+                        relationType = relType,
+                        relationLabel = rel.label,
+                    )
+                    // Don't add duplicates
+                    if (existingRels.none { it.targetNodeId == targetNodeId && it.relationType == relType }) {
+                        newRels.add(relationship)
+                    }
+                    // Create bidirectional relationship
+                    createBidirectionalRelationship(assistantId, personNodeId, update.personName, relationship)
+                    // Also create a 'knows' edge
+                    graphRepo.upsertEdge(MemoryEdgeEntity(
+                        assistantId = assistantId,
+                        sourceNodeId = personNodeId,
+                        targetNodeId = targetNodeId,
+                        relationType = RelationType.KNOWS,
+                        description = "${update.personName} <-> ${rel.targetName} (${relType})",
+                    ))
+                }
+            }
+
+            if (newRels.isNotEmpty()) {
+                val merged = existingRels + newRels
+                updated = updated.copy(relationshipsJson = json.encodeToString(merged))
+            }
+        }
+
+        graphRepo.upsertProfile(updated)
+        Log.d(TAG, "Updated profile for ${update.personName} (nodeId=$personNodeId)")
+    }
+
+    /**
+     * Merge new categorized attributes into existing ones.
+     * Same-category items get REPLACED; different categories get ADDED.
+     */
+    private fun mergeCategorizedAttributes(
+        existing: String,
+        newItems: List<RelationExtractor.ExtractedAttribute>,
+    ): String {
+        val existingAttrs = try {
+            json.decodeFromString<List<CategorizedAttribute>>(existing)
         } catch (e: Exception) { emptyList() }
-        val mergedInterests = (existingInterests + update.interests).distinct()
 
-        // Update profile with all new info (don't overwrite with null/empty)
-        val updatedProfile = profile.copy(
-            birthYear = update.birthYear ?: profile.birthYear,
-            birthMonth = update.birthMonth ?: profile.birthMonth,
-            birthDay = update.birthDay ?: profile.birthDay,
-            personalitySummary = appendToSummary(profile.personalitySummary, update.personalityTraits),
-            physicalSummary = appendToSummary(profile.physicalSummary, update.physicalAttributes),
-            otherInfoSummary = appendToSummary(profile.otherInfoSummary, update.otherInfo),
-            pronouns = update.pronouns?.takeIf { it.isNotBlank() } ?: profile.pronouns,
-            occupation = update.occupation?.takeIf { it.isNotBlank() } ?: profile.occupation,
-            location = update.location?.takeIf { it.isNotBlank() } ?: profile.location,
-            interestsJson = JsonInstant.encodeToString(mergedInterests),
-            relationshipsJson = JsonInstant.encodeToString(mergedRelationships),
-        )
-
-        graphRepo.upsertProfile(updatedProfile)
-        
-        // Create bidirectional relationships in target profiles
-        for (rel in newRelationships) {
-            try {
-                createBidirectionalRelationship(assistantId, personNodeId, update.personName, rel)
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to create bidirectional relationship", e)
+        val merged = existingAttrs.toMutableList()
+        for (item in newItems) {
+            val attr = CategorizedAttribute(
+                category = item.category.lowercase().trim(),
+                value = item.value.trim(),
+            )
+            // Replace existing item in the same category, or add new
+            val existingIndex = merged.indexOfFirst { it.category == attr.category }
+            if (existingIndex >= 0) {
+                merged[existingIndex] = attr
+            } else {
+                merged.add(attr)
             }
         }
-
-        // Create contributing edges for personality traits
-        for (trait in update.personalityTraits) {
-            val traitNodeId = nameToId[trait] ?: run {
-                val node = MemoryNodeEntity(
-                    assistantId = assistantId,
-                    nodeType = NodeType.CONCEPT,
-                    name = trait,
-                    description = "Personality trait of ${update.personName}",
-                    importance = 4,
-                )
-                graphRepo.upsertNode(assistantId, node)
-            }
-            graphRepo.upsertEdge(MemoryEdgeEntity(
-                assistantId = assistantId,
-                sourceNodeId = traitNodeId,
-                targetNodeId = personNodeId,
-                relationType = RelationType.DESCRIBES_PERSONALITY,
-                description = trait,
-            ))
-        }
-
-        // Create contributing edges for physical attributes
-        for (attr in update.physicalAttributes) {
-            val attrNodeId = nameToId[attr] ?: run {
-                val node = MemoryNodeEntity(
-                    assistantId = assistantId,
-                    nodeType = NodeType.CONCEPT,
-                    name = attr,
-                    description = "Physical attribute of ${update.personName}",
-                    importance = 4,
-                )
-                graphRepo.upsertNode(assistantId, node)
-            }
-            graphRepo.upsertEdge(MemoryEdgeEntity(
-                assistantId = assistantId,
-                sourceNodeId = attrNodeId,
-                targetNodeId = personNodeId,
-                relationType = RelationType.DESCRIBES_PHYSICAL,
-                description = attr,
-            ))
-        }
-
-        // Create contributing edges for other info
-        for (info in update.otherInfo) {
-            val infoNodeId = nameToId[info] ?: run {
-                val node = MemoryNodeEntity(
-                    assistantId = assistantId,
-                    nodeType = NodeType.CONCEPT,
-                    name = info,
-                    description = "Info about ${update.personName}",
-                    importance = 4,
-                )
-                graphRepo.upsertNode(assistantId, node)
-            }
-            graphRepo.upsertEdge(MemoryEdgeEntity(
-                assistantId = assistantId,
-                sourceNodeId = infoNodeId,
-                targetNodeId = personNodeId,
-                relationType = RelationType.DESCRIBES_OTHER,
-                description = info,
-            ))
-        }
-
-        // Create contributing edges for interests
-        for (interest in update.interests) {
-            val interestNodeId = nameToId[interest] ?: run {
-                val node = MemoryNodeEntity(
-                    assistantId = assistantId,
-                    nodeType = NodeType.PREFERENCE,
-                    name = interest,
-                    description = "Interest of ${update.personName}",
-                    importance = 4,
-                )
-                graphRepo.upsertNode(assistantId, node)
-            }
-            graphRepo.upsertEdge(MemoryEdgeEntity(
-                assistantId = assistantId,
-                sourceNodeId = interestNodeId,
-                targetNodeId = personNodeId,
-                relationType = RelationType.DESCRIBES_INTEREST,
-                description = interest,
-            ))
-        }
-
-        Log.i(TAG, "Applied person update for ${update.personName}: " +
-            "birth=${update.birthYear}, pronouns=${update.pronouns}, occupation=${update.occupation}, " +
-            "location=${update.location}, interests=${update.interests.size}, " +
-            "traits=${update.personalityTraits.size}, physical=${update.physicalAttributes.size}, " +
-            "other=${update.otherInfo.size}, relationships=${update.relationships.size}")
+        return json.encodeToString(merged)
     }
 
     /**
@@ -386,61 +412,109 @@ class MemoryAgent(
         sourceName: String,
         relationship: PersonRelationship,
     ) {
-        if (!relationship.bidirectional) return
-        
-        val targetProfile = graphRepo.getProfile(relationship.targetNodeId) ?: run {
-        // Create profile on-the-fly if missing — prevents silently dropping reverse relationships
-        val targetNode = graphRepo.getNodeById(relationship.targetNodeId) ?: return
-        if (targetNode.nodeType != NodeType.PERSON) return
-        val newProfile = PersonProfileEntity(
-            nodeId = relationship.targetNodeId,
-            assistantId = assistantId,
-            displayName = targetNode.name,
-        )
-        graphRepo.upsertProfile(newProfile)
-        newProfile
-    }
-        val reverseType = PersonRelationType.getReverse(relationship.relationType)
-        
-        val existingRelationships = try {
-            JsonInstant.decodeFromString<List<PersonRelationship>>(targetProfile.relationshipsJson)
+        val targetProfile = graphRepo.getProfile(relationship.targetNodeId) ?: return
+        val existingRels = try {
+            json.decodeFromString<List<PersonRelationship>>(targetProfile.relationshipsJson)
         } catch (e: Exception) { emptyList() }
-        
+
+        val reverseType = PersonRelationType.getReverse(relationship.relationType) ?: relationship.relationType
+
         // Check if reverse relationship already exists
-        val alreadyExists = existingRelationships.any { 
-            it.targetNodeId == sourceNodeId && it.relationType == reverseType 
+        if (existingRels.any { it.targetNodeId == sourceNodeId && it.relationType == reverseType }) {
+            return
         }
-        if (alreadyExists) return
-        
-        val reverseRelationship = PersonRelationship(
+
+        val reverseRel = PersonRelationship(
             targetNodeId = sourceNodeId,
             targetName = sourceName,
-            relationType = reverseType ?: relationship.relationType,
-            relationLabel = null, // Don't copy custom labels to reverse
-            notes = "",
-            bidirectional = false, // Prevent infinite loop
+            relationType = reverseType,
         )
-        
-        val updatedRelationships = existingRelationships + reverseRelationship
-        val updatedProfile = targetProfile.copy(
-            relationshipsJson = JsonInstant.encodeToString(updatedRelationships)
+        val updated = existingRels + reverseRel
+        graphRepo.upsertProfile(
+            targetProfile.copy(relationshipsJson = json.encodeToString(updated))
         )
-        graphRepo.upsertProfile(updatedProfile)
-        
-        Log.d(TAG, "Created bidirectional relationship: ${relationship.targetName} → $sourceName ($reverseType)")
+    }
+
+    // =============================================
+    // Helpers
+    // =============================================
+
+    /**
+     * Build alias map: nodeName -> list of aliases.
+     */
+    private suspend fun buildAliasMap(
+        assistantId: String,
+        nodes: List<MemoryNodeEntity>,
+    ): Map<String, List<String>> {
+        val result = mutableMapOf<String, List<String>>()
+        for (node in nodes) {
+            if (node.nodeType == NodeType.PERSON) {
+                val profile = graphRepo.getProfile(node.id)
+                if (profile != null) {
+                    val aliases = try {
+                        json.decodeFromString<List<String>>(profile.aliasesJson)
+                    } catch (e: Exception) { emptyList() }
+                    if (aliases.isNotEmpty()) {
+                        result[node.name] = aliases
+                    }
+                }
+            }
+        }
+        return result
     }
 
     /**
-     * Append new items to an existing summary, avoiding duplicates.
+     * Resolve a person name to node ID, checking:
+     * exact name → case-insensitive → substring → alias → DB fallback
      */
-    private fun appendToSummary(existing: String, newItems: List<String>): String {
-        if (newItems.isEmpty()) return existing
-        val existingLower = existing.lowercase()
-        val genuinelyNew = newItems.filter { it.lowercase() !in existingLower }
-        if (genuinelyNew.isEmpty()) return existing
-        val addition = genuinelyNew.joinToString(", ")
-        return if (existing.isBlank()) addition
-        else "$existing; $addition"
+    private suspend fun resolvePersonNodeId(
+        name: String,
+        nameToId: Map<String, Int>,
+        assistantId: String,
+    ): Int? {
+        // Case-insensitive match requires checking all keys
+        return resolveNodeId(name, nameToId, assistantId)?.let { id ->
+            // Verify it's actually a person node
+            val node = graphRepo.getNodeById(id)
+            if (node?.nodeType == NodeType.PERSON) id else null
+        }
+    }
+
+    /**
+     * Resolve any entity name to node ID.
+     */
+    private suspend fun resolveNodeId(
+        name: String,
+        nameToId: Map<String, Int>,
+        assistantId: String,
+    ): Int? {
+        return nameToId[name]
+            ?: nameToId.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
+            ?: nameToId.entries.firstOrNull {
+                it.key.contains(name, ignoreCase = true) ||
+                name.contains(it.key, ignoreCase = true)
+            }?.value
+            ?: graphRepo.findNodeByName(assistantId, name)?.id
+    }
+
+    /**
+     * Ensure a PersonProfile exists for a person node.
+     */
+    private suspend fun ensurePersonProfile(
+        assistantId: String,
+        nodeId: Int,
+        displayName: String,
+    ) {
+        val existing = graphRepo.getProfile(nodeId)
+        if (existing == null) {
+            graphRepo.upsertProfile(
+                PersonProfileEntity(
+                    nodeId = nodeId,
+                    assistantId = assistantId,
+                    displayName = displayName,
+                )
+            )
+        }
     }
 
     /**
@@ -454,67 +528,6 @@ class MemoryAgent(
             Log.w(TAG, "Failed to parse date: $dateStr", e)
             null
         }
-    }
-
-    /**
-     * Build a concise episode summary from the exchange and extraction result.
-     * This becomes the "narrative memory" of the exchange.
-     */
-    private fun buildEpisodeSummary(
-        userMessage: String,
-        assistantReply: String,
-        result: RelationExtractor.ExtractionResult,
-    ): String {
-        val entityNames = result.nodes.map { it.name }
-        val relations = result.edges.map { "${it.source} ${it.relationType.replace("_", " ")} ${it.target}" }
-
-        return buildString {
-            // Compact exchange summary
-            append("User discussed: ")
-            append(userMessage.take(200))
-            if (userMessage.length > 200) append("...")
-
-            if (entityNames.isNotEmpty()) {
-                append("\nEntities: ")
-                append(entityNames.joinToString(", "))
-            }
-            if (relations.isNotEmpty()) {
-                append("\nRelations: ")
-                append(relations.take(5).joinToString("; "))
-                if (relations.size > 5) append("; ...")
-            }
-            if (result.personUpdates.isNotEmpty()) {
-                append("\nPerson updates: ")
-                append(result.personUpdates.joinToString(", ") { it.personName })
-            }
-        }.take(500) // Cap total length for token economy
-    }
-
-    /**
-     * Heuristic significance score (1-10) based on extraction richness.
-     */
-    private fun calculateSignificance(result: RelationExtractor.ExtractionResult): Int {
-        var score = 3 // Baseline: any exchange that produced data is at least 3
-
-        // More entities = more significant
-        score += (result.nodes.size / 2).coerceAtMost(2)
-
-        // High-importance entities boost significance
-        val maxImportance = result.nodes.maxOfOrNull { it.importance } ?: 0
-        if (maxImportance >= 8) score += 2
-        else if (maxImportance >= 6) score += 1
-
-        // Person updates are high-signal
-        if (result.personUpdates.isNotEmpty()) score += 1
-
-        // Timeline events indicate planning/temporal significance
-        if (result.timelineEvents.isNotEmpty()) score += 1
-
-        // Strong emotional content
-        val maxValence = result.nodes.maxOfOrNull { kotlin.math.abs(it.emotionalValence) } ?: 0f
-        if (maxValence >= 0.7f) score += 1
-
-        return score.coerceIn(1, 10)
     }
 
     /**
@@ -554,133 +567,6 @@ class MemoryAgent(
     }
 
     /**
-     * Repair broken graph data before processing.
-     * This runs at the start of each processExchange call to fix:
-     * - Orphan nodes without any relationships
-     * - Person nodes without profiles
-     * - Profiles with broken relationship references
-     */
-    private suspend fun repairBrokenGraphData(assistantId: String): RepairStats {
-        var orphansFixed = 0
-        var profilesFixed = 0
-        var edgesFixed = 0
-
-        try {
-            val allNodes = graphRepo.getActiveNodes(assistantId)
-            val allEdges = graphRepo.getAllEdges(assistantId)
-            
-            // Build set of node IDs that have at least one edge
-            val connectedNodeIds = mutableSetOf<Int>()
-            for (edge in allEdges) {
-                connectedNodeIds.add(edge.sourceNodeId)
-                connectedNodeIds.add(edge.targetNodeId)
-            }
-            
-            // Find orphan nodes (no edges at all)
-            val orphanNodes = allNodes.filter { it.id !in connectedNodeIds }
-            
-            // For each orphan, try to create a connection or mark for review
-            for (orphan in orphanNodes) {
-                // Skip person nodes - they should have profiles, not be archived
-                if (orphan.nodeType == NodeType.PERSON) {
-                    // Validate: does this actually look like a person?
-                    // If not, it was likely misclassified — fix the type instead of creating a profile
-                    if (!looksLikePerson(orphan)) {
-                        Log.w(TAG, "Node '${orphan.name}' typed as person but doesn't look like one — reclassifying to concept")
-                        graphRepo.updateNode(orphan.copy(nodeType = NodeType.CONCEPT))
-                        orphansFixed++
-                        continue
-                    }
-                    
-                    // Ensure valid person has a profile
-                    val profile = graphRepo.getProfile(orphan.id)
-                    if (profile == null) {
-                        graphRepo.upsertProfile(PersonProfileEntity(
-                            nodeId = orphan.id,
-                            assistantId = assistantId,
-                            displayName = orphan.name,
-                        ))
-                        profilesFixed++
-                        Log.d(TAG, "Created missing profile for person: ${orphan.name}")
-                    }
-                    continue
-                }
-                
-                // For trait/attribute orphans, try to find a relevant person to link to
-                val descLower = orphan.description.lowercase()
-                val personNodes = allNodes.filter { it.nodeType == NodeType.PERSON }
-                
-                var linkedToPerson = false
-                for (person in personNodes) {
-                    // Check if the orphan's description mentions this person
-                    if (descLower.contains(person.name.lowercase())) {
-                        // Determine the edge type based on orphan's nature
-                        val edgeType = when {
-                            descLower.contains("personality") || descLower.contains("trait") -> 
-                                RelationType.DESCRIBES_PERSONALITY
-                            descLower.contains("physical") || descLower.contains("appearance") -> 
-                                RelationType.DESCRIBES_PHYSICAL
-                            descLower.contains("interest") || descLower.contains("hobby") -> 
-                                RelationType.DESCRIBES_INTEREST
-                            else -> RelationType.DESCRIBES_OTHER
-                        }
-                        
-                        graphRepo.upsertEdge(MemoryEdgeEntity(
-                            assistantId = assistantId,
-                            sourceNodeId = orphan.id,
-                            targetNodeId = person.id,
-                            relationType = edgeType,
-                            description = "Auto-linked: ${orphan.name} → ${person.name}",
-                        ))
-                        orphansFixed++
-                        edgesFixed++
-                        linkedToPerson = true
-                        Log.d(TAG, "Auto-linked orphan '${orphan.name}' to person '${person.name}'")
-                        break
-                    }
-                }
-                
-                // If couldn't link to a person, and it's old/low-importance, archive it
-                if (!linkedToPerson && orphan.importance <= 3) {
-                    val daysSinceLastMention = (System.currentTimeMillis() - orphan.lastMentioned) / (1000 * 60 * 60 * 24)
-                    if (daysSinceLastMention > 7) {
-                        graphRepo.archiveNode(orphan.id)
-                        orphansFixed++
-                        Log.d(TAG, "Archived stale orphan: ${orphan.name}")
-                    }
-                }
-            }
-            
-            // Fix profiles with broken relationship references
-            val allProfiles = graphRepo.getAllProfiles(assistantId)
-            val nodeIdSet = allNodes.map { it.id }.toSet()
-            
-            for (profile in allProfiles) {
-                val relationships = try {
-                    JsonInstant.decodeFromString<List<PersonRelationship>>(profile.relationshipsJson)
-                } catch (e: Exception) { emptyList() }
-                
-                // Filter out relationships pointing to non-existent nodes
-                val validRelationships = relationships.filter { it.targetNodeId in nodeIdSet }
-                
-                if (validRelationships.size != relationships.size) {
-                    val updatedProfile = profile.copy(
-                        relationshipsJson = JsonInstant.encodeToString(validRelationships)
-                    )
-                    graphRepo.upsertProfile(updatedProfile)
-                    profilesFixed++
-                    Log.d(TAG, "Cleaned ${relationships.size - validRelationships.size} broken relationships from profile: ${profile.displayName}")
-                }
-            }
-            
-        } catch (e: Exception) {
-            Log.w(TAG, "Error during auto-repair", e)
-        }
-
-        return RepairStats(orphansFixed, profilesFixed, edgesFixed)
-    }
-
-    /**
      * Run background consolidation tasks (called periodically by MemoryConsolidationWorker).
      */
     suspend fun runConsolidation(
@@ -698,7 +584,7 @@ class MemoryAgent(
             // 2. Prune weak edges
             decayEngine.pruneWeakEdges(assistantId)
 
-            // 3. Archive orphaned nodes
+            // 3. Archive orphaned nodes (tightened: 7 days)
             decayEngine.archiveOrphanedNodes(assistantId)
 
             // 4. Merge near-duplicate nodes
@@ -718,9 +604,36 @@ class MemoryAgent(
             // 8. Re-embed any nodes that lost embeddings during merges
             embedMissingNodes(assistantId)
 
+            // 9. Repair: ensure person nodes have profiles
+            repairMissingProfiles(assistantId)
+
             Log.i(TAG, "Graph consolidation complete for assistant $assistantId")
         } catch (e: Exception) {
             Log.e(TAG, "Error during graph consolidation", e)
+        }
+    }
+
+    /**
+     * Ensure all person nodes have a PersonProfile.
+     * Runs during consolidation, NOT every exchange (cheaper).
+     */
+    private suspend fun repairMissingProfiles(assistantId: String) {
+        val personNodes = graphRepo.getActiveNodes(assistantId).filter { it.nodeType == NodeType.PERSON }
+        var fixed = 0
+        for (node in personNodes) {
+            if (graphRepo.getProfile(node.id) == null) {
+                graphRepo.upsertProfile(
+                    PersonProfileEntity(
+                        nodeId = node.id,
+                        assistantId = assistantId,
+                        displayName = node.name,
+                    )
+                )
+                fixed++
+            }
+        }
+        if (fixed > 0) {
+            Log.i(TAG, "Created $fixed missing person profiles")
         }
     }
 
@@ -738,7 +651,7 @@ class MemoryAgent(
             for ((content, embedding) in coreMemories) {
                 val node = MemoryNodeEntity(
                     assistantId = assistantId,
-                    nodeType = NodeType.CONCEPT,
+                    nodeType = NodeType.THING,
                     name = content.take(50).trim(),
                     description = content,
                     importance = 5,
@@ -751,43 +664,5 @@ class MemoryAgent(
         } catch (e: Exception) {
             Log.e(TAG, "Error migrating core memories", e)
         }
-    }
-
-    /**
-     * Heuristic: does this node's description look like it's about a person?
-     * Used to catch misclassified nodes before blindly creating PersonProfileEntity.
-     */
-    private fun looksLikePerson(node: MemoryNodeEntity): Boolean {
-        val desc = node.description.lowercase()
-        val name = node.name.lowercase()
-
-        // If the node is the user or assistant profile, it's definitely a person
-        if (desc.contains("the user") || desc.contains("the assistant")) return true
-
-        // Person indicators: pronouns, titles, age references, occupation words
-        val personIndicators = listOf(
-            "he ", "she ", "they ", "him ", "her ", "his ", "their ",
-            "mr.", "mrs.", "ms.", "dr.", "prof.",
-            "years old", "age ", "born ",
-            "friend", "sibling", "parent", "partner", "colleague",
-            "person", "man ", "woman ", "boy ", "girl ",
-            "works as", "works at", "studies", "student",
-        )
-        if (personIndicators.any { desc.contains(it) }) return true
-
-        // Non-person indicators: if description contains these, likely not a person
-        val objectIndicators = listOf(
-            "boat", "car", "house", "building", "tool", "device", "app",
-            "software", "game", "book", "movie", "song", "food", "drink",
-            "place", "city", "country", "location", "address",
-            "concept", "idea", "theory", "method",
-        )
-        if (objectIndicators.any { desc.contains(it) || name.contains(it) }) return false
-
-        // If description is very short or empty, we can't tell — assume it's valid
-        // (better to keep than wrongly reclassify)
-        if (desc.length < 10) return true
-
-        return true // Default: trust the classification
     }
 }

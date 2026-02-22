@@ -79,6 +79,7 @@ import me.rerere.rikkahub.data.db.entity.PersonProfileEntity
 import me.rerere.rikkahub.data.db.entity.PersonRelationship
 import me.rerere.rikkahub.data.db.entity.PersonRelationType
 import me.rerere.rikkahub.data.db.entity.RelationType
+import me.rerere.rikkahub.data.db.entity.CategorizedAttribute
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.ui.hooks.HapticPattern
@@ -104,15 +105,9 @@ fun PersonProfileSheet(
 
     // Loaded data
     var relationships by remember { mutableStateOf<List<MemoryEdgeEntity>>(emptyList()) }
-    var personalityNodes by remember { mutableStateOf<List<MemoryNodeEntity>>(emptyList()) }
-    var physicalNodes by remember { mutableStateOf<List<MemoryNodeEntity>>(emptyList()) }
-    var otherInfoNodes by remember { mutableStateOf<List<MemoryNodeEntity>>(emptyList()) }
 
     LaunchedEffect(nodeId) {
         vm.getPersonRelationships(nodeId) { relationships = it }
-        vm.getPersonalityNodes(nodeId) { personalityNodes = it }
-        vm.getPhysicalAttributeNodes(nodeId) { physicalNodes = it }
-        vm.getOtherInfoNodes(nodeId) { otherInfoNodes = it }
     }
 
     ModalBottomSheet(
@@ -162,9 +157,6 @@ fun PersonProfileSheet(
                 userAvatar = userAvatar,
                 characterAvatar = characterAvatar,
                 relationships = relationships,
-                personalityNodes = personalityNodes,
-                physicalNodes = physicalNodes,
-                otherInfoNodes = otherInfoNodes,
                 allPersonNodes = allPersonNodes,
                 calculateAge = { year, month, day -> vm.calculateAge(year, month, day) },
                 onEdit = {
@@ -188,9 +180,6 @@ private fun ProfileViewMode(
     userAvatar: Avatar,
     characterAvatar: Avatar,
     relationships: List<MemoryEdgeEntity>,
-    personalityNodes: List<MemoryNodeEntity>,
-    physicalNodes: List<MemoryNodeEntity>,
-    otherInfoNodes: List<MemoryNodeEntity>,
     allPersonNodes: List<MemoryNodeEntity>,
     calculateAge: (Int?, Int?, Int?) -> Int?,
     onEdit: () -> Unit,
@@ -447,63 +436,63 @@ private fun ProfileViewMode(
             }
         }
 
-        // ─── Personality (conditional, above physical per user request) ──
-        if (profile.personalitySummary.isNotBlank()) {
+        // ─── Personality (conditional) ──────────────────────────────
+        val personalityAttrs = try {
+            kotlinx.serialization.json.Json { ignoreUnknownKeys = true; isLenient = true }
+                .decodeFromString<List<CategorizedAttribute>>(profile.personalityJson)
+        } catch (e: Exception) { emptyList() }
+        if (personalityAttrs.isNotEmpty()) {
             ProfileSection(
                 icon = Icons.Rounded.Psychology,
                 title = "Personality",
             ) {
                 Text(
-                    text = profile.personalitySummary,
+                    text = personalityAttrs.joinToString(", ") { it.value },
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                if (personalityNodes.isNotEmpty()) {
-                    Spacer(Modifier.height(8.dp))
-                    ContributingNodesRow(personalityNodes)
-                }
             }
         }
 
         // ─── Physical Attributes (conditional) ───────────────────────
-        if (profile.physicalSummary.isNotBlank()) {
+        val physicalAttrs = try {
+            kotlinx.serialization.json.Json { ignoreUnknownKeys = true; isLenient = true }
+                .decodeFromString<List<CategorizedAttribute>>(profile.physicalJson)
+        } catch (e: Exception) { emptyList() }
+        if (physicalAttrs.isNotEmpty()) {
             ProfileSection(
                 icon = Icons.Rounded.EmojiPeople,
                 title = "Physical Attributes",
             ) {
                 Text(
-                    text = profile.physicalSummary,
+                    text = physicalAttrs.joinToString(", ") { it.value },
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                if (physicalNodes.isNotEmpty()) {
-                    Spacer(Modifier.height(8.dp))
-                    ContributingNodesRow(physicalNodes)
-                }
             }
         }
 
         // ─── Other Info (conditional) ────────────────────────────────
-        if (profile.otherInfoSummary.isNotBlank()) {
+        val otherInfoAttrs = try {
+            kotlinx.serialization.json.Json { ignoreUnknownKeys = true; isLenient = true }
+                .decodeFromString<List<CategorizedAttribute>>(profile.otherInfoJson)
+        } catch (e: Exception) { emptyList() }
+        if (otherInfoAttrs.isNotEmpty()) {
             ProfileSection(
                 icon = Icons.Rounded.Info,
                 title = "Other Info",
             ) {
                 Text(
-                    text = profile.otherInfoSummary,
+                    text = otherInfoAttrs.joinToString(", ") { it.value },
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                if (otherInfoNodes.isNotEmpty()) {
-                    Spacer(Modifier.height(8.dp))
-                    ContributingNodesRow(otherInfoNodes)
-                }
             }
         }
 
         // If absolutely nothing to show beyond name
         val hasAnyContent = profile.birthYear != null ||
             relationships.isNotEmpty() ||
-            profile.personalitySummary.isNotBlank() ||
-            profile.physicalSummary.isNotBlank() ||
-            profile.otherInfoSummary.isNotBlank()
+            personalityAttrs.isNotEmpty() ||
+            physicalAttrs.isNotEmpty() ||
+            otherInfoAttrs.isNotEmpty()
 
         if (!hasAnyContent) {
             Surface(
@@ -545,9 +534,25 @@ private fun ProfileEditMode(
             catch (e: Exception) { "" }
         )
     }
-    var personalitySummary by remember { mutableStateOf(profile.personalitySummary) }
-    var physicalSummary by remember { mutableStateOf(profile.physicalSummary) }
-    var otherInfoSummary by remember { mutableStateOf(profile.otherInfoSummary) }
+    val lenientJson = remember { kotlinx.serialization.json.Json { ignoreUnknownKeys = true; isLenient = true } }
+    var personalityText by remember {
+        mutableStateOf(
+            try { lenientJson.decodeFromString<List<CategorizedAttribute>>(profile.personalityJson).joinToString(", ") { it.value } }
+            catch (e: Exception) { "" }
+        )
+    }
+    var physicalText by remember {
+        mutableStateOf(
+            try { lenientJson.decodeFromString<List<CategorizedAttribute>>(profile.physicalJson).joinToString(", ") { it.value } }
+            catch (e: Exception) { "" }
+        )
+    }
+    var otherInfoText by remember {
+        mutableStateOf(
+            try { lenientJson.decodeFromString<List<CategorizedAttribute>>(profile.otherInfoJson).joinToString(", ") { it.value } }
+            catch (e: Exception) { "" }
+        )
+    }
     var notes by remember { mutableStateOf(profile.notes) }
 
     Column(
@@ -579,6 +584,12 @@ private fun ProfileEditMode(
                 HapticIconButton(
                     onClick = {
                         val interestsList = interests.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                        // Convert comma-separated text to CategorizedAttribute JSON
+                        fun textToAttrJson(text: String): String {
+                            val items = text.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                            val attrs = items.map { CategorizedAttribute(category = "general", value = it) }
+                            return lenientJson.encodeToString(attrs)
+                        }
                         onSave(profile.copy(
                             displayName = displayName,
                             birthYear = birthYear.toIntOrNull(),
@@ -588,9 +599,9 @@ private fun ProfileEditMode(
                             occupation = occupation,
                             location = location,
                             interestsJson = JsonInstant.encodeToString(interestsList),
-                            personalitySummary = personalitySummary,
-                            physicalSummary = physicalSummary,
-                            otherInfoSummary = otherInfoSummary,
+                            personalityJson = textToAttrJson(personalityText),
+                            physicalJson = textToAttrJson(physicalText),
+                            otherInfoJson = textToAttrJson(otherInfoText),
                             notes = notes,
                         ))
                     },
@@ -694,8 +705,8 @@ private fun ProfileEditMode(
 
         // Personality
         OutlinedTextField(
-            value = personalitySummary,
-            onValueChange = { personalitySummary = it },
+            value = personalityText,
+            onValueChange = { personalityText = it },
             label = { Text("Personality") },
             modifier = Modifier.fillMaxWidth(),
             minLines = 2,
@@ -705,8 +716,8 @@ private fun ProfileEditMode(
 
         // Physical
         OutlinedTextField(
-            value = physicalSummary,
-            onValueChange = { physicalSummary = it },
+            value = physicalText,
+            onValueChange = { physicalText = it },
             label = { Text("Physical Attributes") },
             modifier = Modifier.fillMaxWidth(),
             minLines = 2,
@@ -716,8 +727,8 @@ private fun ProfileEditMode(
 
         // Other Info
         OutlinedTextField(
-            value = otherInfoSummary,
-            onValueChange = { otherInfoSummary = it },
+            value = otherInfoText,
+            onValueChange = { otherInfoText = it },
             label = { Text("Other Info") },
             modifier = Modifier.fillMaxWidth(),
             minLines = 2,

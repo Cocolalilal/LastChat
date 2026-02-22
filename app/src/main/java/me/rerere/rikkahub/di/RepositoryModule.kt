@@ -33,7 +33,7 @@ val repositoryModule = module {
     }
 
     single {
-        RelationExtractor(providerManager = get(), settingsStore = get())
+        RelationExtractor(providerManager = get())
     }
 
     single {
@@ -51,6 +51,7 @@ val repositoryModule = module {
             decayEngine = get(),
             timelineManager = get(),
             embeddingService = get(),
+            settingsStore = get(),
         )
     }
 }

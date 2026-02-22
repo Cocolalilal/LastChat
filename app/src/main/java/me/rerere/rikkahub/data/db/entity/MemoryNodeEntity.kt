@@ -18,7 +18,7 @@ data class MemoryNodeEntity(
     @ColumnInfo("assistant_id")
     val assistantId: String,
     @ColumnInfo("node_type")
-    val nodeType: String, // "person", "place", "object", "event", "concept", "preference", "emotion", "plan"
+    val nodeType: String, // "person", "place", "thing"
     @ColumnInfo("name")
     val name: String,
     @ColumnInfo("description")
@@ -34,17 +34,17 @@ data class MemoryNodeEntity(
     @ColumnInfo("mention_count")
     val mentionCount: Int = 1,
     @ColumnInfo("status")
-    val status: String = NodeStatus.ACTIVE, // "active", "completed", "expired", "archived"
+    val status: String = NodeStatus.ACTIVE,
     @ColumnInfo("valid_from")
     val validFrom: Long? = null,
     @ColumnInfo("valid_until")
     val validUntil: Long? = null,
     @ColumnInfo(name = "confidence", defaultValue = "1.0")
-    val confidence: Float = 1.0f, // 0.0-1.0, how certain we are about this fact
+    val confidence: Float = 1.0f,
     @ColumnInfo(name = "source_turn", defaultValue = "")
-    val sourceTurn: String = "", // Conversation ID of the turn that first created this node
+    val sourceTurn: String = "",
     @ColumnInfo("embedding")
-    val embedding: String? = null, // JSON string of float array
+    val embedding: String? = null,
     @ColumnInfo("embedding_model_id")
     val embeddingModelId: String? = null,
 )
@@ -52,14 +52,9 @@ data class MemoryNodeEntity(
 object NodeType {
     const val PERSON = "person"
     const val PLACE = "place"
-    const val OBJECT = "object"
-    const val EVENT = "event"
-    const val CONCEPT = "concept"
-    const val PREFERENCE = "preference"
-    const val EMOTION = "emotion"
-    const val PLAN = "plan"
+    const val THING = "thing"
 
-    val ALL = listOf(PERSON, PLACE, OBJECT, EVENT, CONCEPT, PREFERENCE, EMOTION, PLAN)
+    val ALL = listOf(PERSON, PLACE, THING)
 }
 
 object NodeStatus {

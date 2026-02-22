@@ -63,7 +63,8 @@ class TimelineManager(
 
     /**
      * Create a timeline event from extracted data.
-     * Parses date strings and links to the appropriate node.
+     * Deduplicates: skips if an event with similar description already exists on the same node
+     * within the last 24 hours.
      */
     suspend fun createEventFromExtraction(
         assistantId: String,
@@ -71,7 +72,21 @@ class TimelineManager(
         eventType: String,
         description: String,
         scheduledDateStr: String? = null,
+        recurrenceRule: String? = null,
     ): Int {
+        // Deduplication: check for existing similar event on same node
+        val recentEvents = timelineEventDAO.getEventsForNode(nodeId)
+        val isDuplicate = recentEvents.any { existing ->
+            existing.description.equals(description, ignoreCase = true) ||
+            (existing.description.length > 10 && description.length > 10 &&
+                (existing.description.contains(description, ignoreCase = true) ||
+                 description.contains(existing.description, ignoreCase = true)))
+        }
+        if (isDuplicate) {
+            Log.d(TAG, "Skipping duplicate timeline event: $description")
+            return 0
+        }
+
         val scheduledAt = scheduledDateStr?.let { parseDateString(it) }
 
         val event = TimelineEventEntity(
@@ -79,6 +94,7 @@ class TimelineManager(
             nodeId = nodeId,
             eventType = eventType,
             scheduledAt = scheduledAt,
+            recurrenceRule = recurrenceRule,
             description = description,
         )
 

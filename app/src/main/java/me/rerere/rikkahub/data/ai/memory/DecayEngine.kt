@@ -37,9 +37,8 @@ class DecayEngine(
 
         var updatedCount = 0
         for (edge in edges) {
-            // Never decay profile-contributing or person-to-person edges
-            if (edge.relationType in RelationType.PROFILE_SUMMARY ||
-                edge.relationType in RelationType.PERSON_TO_PERSON) continue
+            // Never decay 'knows' edges (person-to-person relationships)
+            if (edge.relationType == RelationType.KNOWS) continue
 
             val daysSinceReinforced = (now - edge.lastReinforced).toDouble() / (1000 * 60 * 60 * 24)
             if (daysSinceReinforced < 1.0) continue // Skip recently reinforced edges

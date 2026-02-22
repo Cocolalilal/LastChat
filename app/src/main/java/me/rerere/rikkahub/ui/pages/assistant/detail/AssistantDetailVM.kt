@@ -584,32 +584,7 @@ class AssistantDetailVM(
         }
     }
 
-    fun getPersonalityNodes(nodeId: Int, callback: (List<MemoryNodeEntity>) -> Unit) {
-        viewModelScope.launch {
-            val nodes = withContext(Dispatchers.IO) {
-                graphMemoryRepo.getPersonalityNodes(nodeId)
-            }
-            callback(nodes)
-        }
-    }
 
-    fun getPhysicalAttributeNodes(nodeId: Int, callback: (List<MemoryNodeEntity>) -> Unit) {
-        viewModelScope.launch {
-            val nodes = withContext(Dispatchers.IO) {
-                graphMemoryRepo.getPhysicalAttributeNodes(nodeId)
-            }
-            callback(nodes)
-        }
-    }
-
-    fun getOtherInfoNodes(nodeId: Int, callback: (List<MemoryNodeEntity>) -> Unit) {
-        viewModelScope.launch {
-            val nodes = withContext(Dispatchers.IO) {
-                graphMemoryRepo.getOtherInfoNodes(nodeId)
-            }
-            callback(nodes)
-        }
-    }
 
     fun addPersonRelationship(sourceNodeId: Int, targetNodeId: Int, relationType: String, description: String = "") {
         viewModelScope.launch {

@@ -185,24 +185,6 @@ class MemoryConsolidationWorker(
                     conversationRepository.markAsConsolidated(conversation.id)
                     trackACount++
                     
-                    // Also extract nodes/edges/profiles from the conversation
-                    // This ensures person profiles get populated during background consolidation
-                    try {
-                        val userMessages = messagesToProcess.filter { it.role == me.rerere.ai.core.MessageRole.USER }.joinToString("\n") { it.toText() }
-                        val assistantMessages = messagesToProcess.filter { it.role == me.rerere.ai.core.MessageRole.ASSISTANT }.joinToString("\n") { it.toText() }
-                        if (userMessages.isNotBlank() && assistantMessages.isNotBlank()) {
-                            memoryAgent.processExchange(
-                                assistantId = assistantId,
-                                userMessage = userMessages,
-                                assistantReply = assistantMessages,
-                                conversationId = conversation.id.toString(),
-                                timelineEnabled = assistant.useGraphMemory,
-                                isManualIngestion = true,
-                            )
-                        }
-                    } catch (e: Exception) {
-                        Log.w("MemoryConsolidation", "Graph extraction failed for ${conversation.id} (non-fatal)", e)
-                    }
                 }
             } catch (e: Exception) {
                 Log.e("MemoryConsolidation", "Failed to process conversation ${conversation.id}", e)

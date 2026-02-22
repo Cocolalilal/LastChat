@@ -115,39 +115,11 @@ class GraphMemoryRepository(
 
     /**
      * Get person-to-person relationships for a given person node.
-     * Returns edges where both source and target are person nodes,
-     * filtered to person-to-person relation types.
+     * In the new model, 'knows' edges link person nodes.
      */
     suspend fun getPersonRelationships(nodeId: Int): List<MemoryEdgeEntity> {
         val edges = edgeDAO.getEdgesForNode(nodeId)
-        return edges.filter { it.relationType in RelationType.PERSON_TO_PERSON }
-    }
-
-    /**
-     * Get nodes that contribute to a person's physical description.
-     */
-    suspend fun getPhysicalAttributeNodes(personNodeId: Int): List<MemoryNodeEntity> {
-        val edges = edgeDAO.getIncomingEdges(personNodeId)
-            .filter { it.relationType == RelationType.DESCRIBES_PHYSICAL }
-        return edges.mapNotNull { nodeDAO.getById(it.sourceNodeId) }
-    }
-
-    /**
-     * Get nodes that contribute to a person's personality description.
-     */
-    suspend fun getPersonalityNodes(personNodeId: Int): List<MemoryNodeEntity> {
-        val edges = edgeDAO.getIncomingEdges(personNodeId)
-            .filter { it.relationType == RelationType.DESCRIBES_PERSONALITY }
-        return edges.mapNotNull { nodeDAO.getById(it.sourceNodeId) }
-    }
-
-    /**
-     * Get nodes that contribute to a person's "other info" description.
-     */
-    suspend fun getOtherInfoNodes(personNodeId: Int): List<MemoryNodeEntity> {
-        val edges = edgeDAO.getIncomingEdges(personNodeId)
-            .filter { it.relationType == RelationType.DESCRIBES_OTHER }
-        return edges.mapNotNull { nodeDAO.getById(it.sourceNodeId) }
+        return edges.filter { it.relationType == RelationType.KNOWS }
     }
 
     /**
@@ -366,10 +338,9 @@ class GraphMemoryRepository(
             // Reinforce confidence: each re-mention nudges confidence up (diminishing returns)
             val reinforcedConfidence = minOf(1.0f, existing.confidence + (1.0f - existing.confidence) * 0.15f)
             val merged = existing.copy(
-                description = if (node.description.isNotBlank() && node.description != existing.description) {
-                    // Append new info if different
-                    if (existing.description.isBlank()) node.description
-                    else "${existing.description}\n${node.description}"
+                description = if (node.description.isNotBlank()) {
+                    // REPLACE instead of append, capped at 500 chars
+                    node.description.take(500)
                 } else existing.description,
                 importance = maxOf(existing.importance, node.importance),
                 emotionalValence = (existing.emotionalValence + node.emotionalValence) / 2f,
@@ -690,15 +661,29 @@ class GraphMemoryRepository(
                     if (profile != null) {
                         val age = calculateAge(profile.birthYear, profile.birthMonth, profile.birthDay)
                         if (age != null) append(", age $age")
+                        if (profile.pronouns.isNotBlank()) append(", ${profile.pronouns}")
                         appendLine()
-                        if (profile.personalitySummary.isNotBlank()) {
-                            appendLine("  - Personality: ${profile.personalitySummary.take(200)}")
+                        if (profile.occupation.isNotBlank()) {
+                            appendLine("  - Occupation: ${profile.occupation}")
                         }
-                        if (profile.physicalSummary.isNotBlank()) {
-                            appendLine("  - Physical: ${profile.physicalSummary.take(200)}")
+                        if (profile.location.isNotBlank()) {
+                            appendLine("  - Location: ${profile.location}")
                         }
-                        if (profile.otherInfoSummary.isNotBlank()) {
-                            appendLine("  - Info: ${profile.otherInfoSummary.take(200)}")
+                        val personality = formatCategorizedList(profile.personalityJson)
+                        if (personality.isNotBlank()) {
+                            appendLine("  - Personality: $personality")
+                        }
+                        val physical = formatCategorizedList(profile.physicalJson)
+                        if (physical.isNotBlank()) {
+                            appendLine("  - Physical: $physical")
+                        }
+                        val otherInfo = formatCategorizedList(profile.otherInfoJson)
+                        if (otherInfo.isNotBlank()) {
+                            appendLine("  - Info: $otherInfo")
+                        }
+                        val interests = formatStringList(profile.interestsJson)
+                        if (interests.isNotBlank()) {
+                            appendLine("  - Interests: $interests")
                         }
                     } else {
                         if (n.description.isNotBlank()) append(": ${n.description.take(200)}")
@@ -859,5 +844,33 @@ class GraphMemoryRepository(
             .sortedByDescending { it.score }
             .take(limit)
             .filter { it.score > 0.1f } // Filter out very low scoring episodes
+    }
+
+    // ─── Format Helpers ─────────────────────────────────────────────────
+
+    private val lenientJson = kotlinx.serialization.json.Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+    }
+
+    /**
+     * Format a JSON array of CategorizedAttribute into a readable string.
+     * e.g. [{"category":"hair","value":"blonde"}] → "blonde"
+     */
+    private fun formatCategorizedList(jsonStr: String): String {
+        return try {
+            val attrs = lenientJson.decodeFromString<List<me.rerere.rikkahub.data.db.entity.CategorizedAttribute>>(jsonStr)
+            attrs.joinToString(", ") { it.value }.take(200)
+        } catch (e: Exception) { "" }
+    }
+
+    /**
+     * Format a JSON array of strings into a readable string.
+     */
+    private fun formatStringList(jsonStr: String): String {
+        return try {
+            val items = lenientJson.decodeFromString<List<String>>(jsonStr)
+            items.joinToString(", ").take(200)
+        } catch (e: Exception) { "" }
     }
 }

@@ -1,43 +1,30 @@
 package me.rerere.rikkahub.data.ai.memory
 
 import android.util.Log
-import me.rerere.ai.provider.ProviderManager
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.UIMessage
-import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.data.datastore.findModelById
-import me.rerere.rikkahub.data.datastore.findProvider
-import me.rerere.rikkahub.data.db.entity.MemoryEdgeEntity
-import me.rerere.rikkahub.data.db.entity.MemoryNodeEntity
+import me.rerere.ai.provider.ProviderManager
 import me.rerere.rikkahub.data.db.entity.NodeType
 import me.rerere.rikkahub.data.db.entity.RelationType
-import me.rerere.rikkahub.data.db.entity.TimelineEventEntity
-import me.rerere.rikkahub.utils.JsonInstant
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.floatOrNull
-import kotlinx.serialization.json.intOrNull
 
-/**
- * Uses an LLM to extract entities, relations, and timeline events from conversation messages.
- * This runs asynchronously after each user↔assistant exchange.
- */
+private const val TAG = "RelationExtractor"
+
 class RelationExtractor(
     private val providerManager: ProviderManager,
-    private val settingsStore: SettingsStore,
 ) {
-    companion object {
-        private const val TAG = "RelationExtractor"
-    }
+    // =============================================
+    // Data classes for extraction results
+    // =============================================
 
     @Serializable
-    data class ExtractionResult(
-        val nodes: List<ExtractedNode> = emptyList(),
-        val edges: List<ExtractedEdge> = emptyList(),
-        val timelineEvents: List<ExtractedTimelineEvent> = emptyList(),
-        val personUpdates: List<ExtractedPersonUpdate> = emptyList(),
+    data class ExtractedEntity(
+        val name: String,
+        val type: String, // "person", "place", "thing"
+        val description: String = "",
     )
 
     @Serializable
@@ -46,248 +33,209 @@ class RelationExtractor(
         val birthYear: Int? = null,
         val birthMonth: Int? = null,
         val birthDay: Int? = null,
-        val personalityTraits: List<String> = emptyList(),
-        val physicalAttributes: List<String> = emptyList(),
-        val otherInfo: List<String> = emptyList(),
         val pronouns: String? = null,
         val occupation: String? = null,
         val location: String? = null,
         val interests: List<String> = emptyList(),
-        val relationships: List<ExtractedRelationship> = emptyList(),
+        val personalityTraits: List<ExtractedAttribute> = emptyList(),
+        val physicalAttributes: List<ExtractedAttribute> = emptyList(),
+        val otherInfo: List<ExtractedAttribute> = emptyList(),
+        val relationships: List<ExtractedRelationshipUpdate> = emptyList(),
+    )
+
+    @Serializable
+    data class ExtractedAttribute(
+        val category: String, // e.g. "hair", "height", "demeanor"
+        val value: String, // e.g. "blonde hair", "tall", "calm and composed"
+    )
+
+    @Serializable
+    data class ExtractedRelationshipUpdate(
+        val targetName: String,
+        val relationType: String,
+        val label: String? = null,
     )
 
     @Serializable
     data class ExtractedRelationship(
-        val targetName: String,
-        val relationType: String,
-        val relationLabel: String? = null,
-        val notes: String = "",
-    )
-
-    @Serializable
-    data class ExtractedNode(
-        val name: String,
-        val type: String,
-        val description: String = "",
-        val importance: Int = 5,
-        val emotionalValence: Float = 0f,
-        val validFrom: String? = null,
-        val validUntil: String? = null,
-    )
-
-    @Serializable
-    data class ExtractedEdge(
-        val source: String, // Node name
-        val target: String, // Node name
-        val relationType: String,
+        val source: String,
+        val target: String,
+        val type: String, // from RelationType
         val description: String = "",
     )
 
     @Serializable
     data class ExtractedTimelineEvent(
-        val nodeName: String,
-        val eventType: String, // "upcoming", "ongoing", "completed"
-        val description: String = "",
-        val scheduledDate: String? = null, // ISO date string
+        val entityName: String,
+        val description: String,
+        val date: String? = null, // ISO date: "2025-03-15"
+        val recurring: String? = null, // e.g. "weekly", "monthly", "yearly"
     )
 
-    /**
-     * Extract entities, relations, and timeline events from a conversation exchange.
-     */
+    @Serializable
+    data class ExtractionResult(
+        val entities: List<ExtractedEntity> = emptyList(),
+        val personUpdates: List<ExtractedPersonUpdate> = emptyList(),
+        val relationships: List<ExtractedRelationship> = emptyList(),
+        val timelineEvents: List<ExtractedTimelineEvent> = emptyList(),
+    )
+
+    // =============================================
+    // Generic name blocklist for post-extraction guardrails
+    // =============================================
+
+    companion object {
+        val GENERIC_NAMES = setOf(
+            "barista", "waiter", "waitress", "driver", "teacher",
+            "professor", "doctor", "nurse", "stranger", "someone",
+            "person", "man", "woman", "boy", "girl", "friend",
+            "user", "assistant", "ai", "bot", "human",
+            "they", "them", "he", "she", "it",
+            "everyone", "anyone", "nobody", "somebody",
+        )
+    }
+
+    // =============================================
+    // Post-extraction server-side guardrails
+    // =============================================
+
+    fun validateExtraction(result: ExtractionResult): ExtractionResult {
+        return result.copy(
+            entities = result.entities
+                .take(3) // Hard cap: max 3 new entities per exchange
+                .filter { it.type in NodeType.ALL } // Valid types only
+                .filter { it.name.length >= 2 } // No single-char names
+                .filter { it.name.lowercase().trim() !in GENERIC_NAMES }, // Blocklist
+            personUpdates = result.personUpdates
+                .filter { it.personName.length >= 2 }
+                .filter { it.personName.lowercase().trim() !in GENERIC_NAMES },
+            relationships = result.relationships
+                .filter { it.type in RelationType.ALL } // Valid relation types only
+                .filter { it.source.isNotBlank() && it.target.isNotBlank() },
+            timelineEvents = result.timelineEvents
+                .filter { !it.date.isNullOrBlank() || !it.recurring.isNullOrBlank() } // Must have a date or recurring rule
+                .filter { it.entityName.isNotBlank() && it.description.isNotBlank() },
+        )
+    }
+
+    // =============================================
+    // Main extraction function
+    // =============================================
+
     suspend fun extract(
         assistantId: String,
         userMessage: String,
         assistantReply: String,
         existingNodeNames: List<String> = emptyList(),
+        existingAliases: Map<String, List<String>> = emptyMap(), // nodeName -> aliases
+        provider: ProviderSetting,
+        model: Model,
     ): ExtractionResult {
-        val settings = settingsStore.settingsFlow.value
-        val assistant = settings.assistants.find { it.id.toString() == assistantId }
-        if (assistant == null) {
-            Log.w(TAG, "Assistant not found: $assistantId")
-            return ExtractionResult()
+        val existingNamesSection = if (existingNodeNames.isNotEmpty()) {
+            val namesList = existingNodeNames.joinToString(", ") { name ->
+                val aliases = existingAliases[name]
+                if (!aliases.isNullOrEmpty()) {
+                    "$name (also known as: ${aliases.joinToString(", ")})"
+                } else {
+                    name
+                }
+            }
+            "**Existing entities** — reuse these EXACT names if referring to the same entity:\n$namesList"
+        } else {
+            "**No existing entities yet.**"
         }
-
-        val backgroundModelId = assistant.summarizerModelId
-            ?: assistant.backgroundModelId
-            ?: assistant.chatModelId
-            ?: settings.chatModelId
-        val model = settings.findModelById(backgroundModelId) ?: run {
-            Log.w(TAG, "No background model found for graph extraction")
-            return ExtractionResult()
-        }
-        val providerSetting = model.findProvider(settings.providers) ?: run {
-            Log.w(TAG, "No provider found for background model")
-            return ExtractionResult()
-        }
-        val provider = providerManager.getProviderByType(providerSetting)
-
-        val existingNodesHint = if (existingNodeNames.isNotEmpty()) {
-            "\n**Existing nodes in the graph** (re-use these names if referring to the same entity):\n${existingNodeNames.joinToString(", ")}\n"
-        } else ""
-
-        val profileEdgeTypes = RelationType.PROFILE_SUMMARY.joinToString(", ")
-        val semanticEdgeTypes = RelationType.SEMANTIC.joinToString(", ")
 
         val prompt = """
-            Analyze this conversation exchange and extract structured information for a knowledge graph.
-            $existingNodesHint
-            **User:** $userMessage
+            Analyze this conversation and extract ONLY what is worth remembering long-term.
             
+            $existingNamesSection
+            
+            **User:** $userMessage
             **Assistant:** $assistantReply
             
-            Extract:
-            1. **Entities** (people, places, objects, events, concepts, preferences, emotions, plans)
-            2. **Relations** between entities (semantic connections, NOT interpersonal relationships)
-            3. **Timeline events** (anything with temporal relevance: upcoming plans, deadlines, ongoing activities)
-            4. **Person profile updates** — CRITICAL: emit a personUpdate for EVERY person mentioned when ANY personal info is learned:
-               - Birth year/month/day (MUST go here, NOT as separate nodes)
-               - Pronouns (he/him, she/her, they/them, etc.)
-               - Occupation (job, profession, role)
-               - Location (city, country, or general area)
-               - Interests (hobbies, likes, passions — as a list)
-               - Personality traits (character, temperament, behavior patterns — NOT physical)
-               - Physical attributes (appearance, height, hair color, etc. — NOT personality)
-               - Other info (background facts — NOT the above categories)
-               - Relationships with other people (family, friends, romantic partners, etc.)
-               Each category is STRICTLY separate. Never mix categories.
+            Rules:
+            1. Only extract NAMED, SPECIFIC entities (people, places, things).
+               - People: Only if they have a name or clear identity (e.g. "Mom", "Dr. Smith", "Julia")
+               - Places: Only if specifically named (e.g. "Tokyo", "MIT", not "a park" or "the store")
+               - Things: Only if named/specific and independently meaningful (e.g. "Max the dog", "Project Aurora")
+            2. Do NOT create entities for: emotions, activities, vague concepts, unnamed things, personality traits, preferences, or attributes
+            3. Return AT MOST 3 new entities per exchange. If nothing truly significant, return empty arrays.
+            4. For person updates: put ALL personal attributes in personUpdates, NOT as separate entities.
+               - Each attribute needs a category and value for contradiction tracking:
+                 - personalityTraits: category = trait dimension (e.g. "demeanor", "social style"), value = the trait
+                 - physicalAttributes: category = body part/feature (e.g. "hair", "height", "build"), value = description
+                 - otherInfo: category = info type (e.g. "education", "background"), value = the fact
+               - relationships: specify the target person name and type (parent, sibling, friend, partner, colleague, etc.)
+            5. Timeline events: ONLY for concrete dates/deadlines, NOT vague plans like "I should..." or "maybe someday..."
+            6. If the exchange is casual banter with no new factual information, return ALL empty arrays.
+            7. For relationships between entities: only use these types: related_to, owns, part_of, likes, dislikes, located_at, happened_at, knows
             
-            IMPORTANT RULES:
-            - Personal facts (birthday, traits, appearance, occupation, location, interests) MUST be in personUpdates. You may ALSO create nodes/edges for them, but the personUpdate is MANDATORY.
-            - Relationships are BIDIRECTIONAL: if A is B's sibling, emit personUpdates for BOTH A and B with the relationship to each other.
-            - ALWAYS use the person's exact name as it appears in existing nodes (match case and spelling exactly).
-            - If someone is described as having a trait (e.g. "empathetic"), put it in personalityTraits AND you may create a concept node and edge.
-            - If a birthday is mentioned (e.g. "born March 5"), put birthMonth: 3, birthDay: 5 in the personUpdate.
-            
-            Valid node types: ${NodeType.ALL.joinToString(", ")}
-            Valid semantic edge types: $semanticEdgeTypes
-            Valid profile-contributing edge types: $profileEdgeTypes
-            Valid event types: upcoming, ongoing, completed, recurring
-            
-            Relationship types for personUpdates.relationships:
-            Family: parent, child, sibling, spouse, grandparent, grandchild, aunt_uncle, niece_nephew, cousin, in_law
-            Social: friend, best_friend, acquaintance, neighbor
-            Professional: colleague, boss, employee, mentor, mentee, client
-            Romantic: partner, ex_partner, crush
-            Other: rival, enemy, roommate, pet_owner, pet
-            
-            For edges, use semantic types (connected_to, associated_with, interacts_with, likes, owns, etc.)
-            For trait/attribute → person edges, use describes_personality, describes_physical, describes_other, describes_interest.
-            For interpersonal relationships, put them in personUpdates.relationships (NOT as edges).
-            
-            Only extract genuinely meaningful information. Skip trivial/generic content.
-            Importance: 1-3 trivial, 4-6 normal, 7-9 important, 10 critical.
-            Emotional valence: -1.0 very negative to 1.0 very positive, 0 neutral.
-            
-            Output ONLY valid JSON (no markdown fences):
+            Output ONLY valid JSON, no other text:
             {
-              "nodes": [{"name": "...", "type": "...", "description": "...", "importance": 5, "emotionalValence": 0.0}],
-              "edges": [{"source": "NodeName1", "target": "NodeName2", "relationType": "connected_to", "description": "..."}],
-              "timelineEvents": [{"nodeName": "...", "eventType": "upcoming", "description": "...", "scheduledDate": "2025-03-01"}],
-              "personUpdates": [{"personName": "Alice", "pronouns": "she/her", "occupation": "Engineer", "location": "Tokyo", "interests": ["hiking", "cooking"], "personalityTraits": ["kind"], "physicalAttributes": ["tall"], "otherInfo": [], "birthMonth": 3, "birthDay": 5, "relationships": [{"targetName": "Bob", "relationType": "sibling", "relationLabel": "older brother", "notes": ""}]}]
+              "entities": [{"name": "...", "type": "person|place|thing", "description": "..."}],
+              "personUpdates": [
+                {
+                  "personName": "...",
+                  "birthYear": null,
+                  "birthMonth": null,
+                  "birthDay": null,
+                  "pronouns": null,
+                  "occupation": null,
+                  "location": null,
+                  "interests": [],
+                  "personalityTraits": [{"category": "...", "value": "..."}],
+                  "physicalAttributes": [{"category": "...", "value": "..."}],
+                  "otherInfo": [{"category": "...", "value": "..."}],
+                  "relationships": [{"targetName": "...", "relationType": "...", "label": null}]
+                }
+              ],
+              "relationships": [{"source": "...", "target": "...", "type": "...", "description": "..."}],
+              "timelineEvents": [{"entityName": "...", "description": "...", "date": "YYYY-MM-DD", "recurring": null}]
             }
-            
-            If nothing meaningful to extract, return: {"nodes": [], "edges": [], "timelineEvents": [], "personUpdates": []}
         """.trimIndent()
 
+        val handler = providerManager.getProviderByType(provider)
+        val response = handler.generateText(
+            providerSetting = provider,
+            messages = listOf(UIMessage.user(prompt)),
+            params = TextGenerationParams(model = model, temperature = 0.3f),
+        )
+
+        val content = response.choices.firstOrNull()?.message?.toContentText() ?: return ExtractionResult()
+
         return try {
-            val response = provider.generateText(
-                providerSetting = providerSetting,
-                messages = listOf(UIMessage.user(prompt)),
-                params = TextGenerationParams(model = model, temperature = 0.3f)
-            )
-            val responseText = response.choices.firstOrNull()?.message?.toContentText() ?: return ExtractionResult()
-            parseExtractionResult(responseText)
+            val jsonStr = extractJsonFromResponse(content)
+            val result = lenientJson.decodeFromString<ExtractionResult>(jsonStr)
+            // Apply server-side guardrails
+            validateExtraction(result)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to extract relations", e)
+            Log.e(TAG, "Failed to parse extraction result: $content", e)
             ExtractionResult()
         }
     }
 
-    private fun parseExtractionResult(responseText: String): ExtractionResult {
-        return try {
-            // Find JSON in the response
-            val jsonStart = responseText.indexOf("{")
-            val jsonEnd = responseText.lastIndexOf("}") + 1
-            if (jsonStart < 0 || jsonEnd <= jsonStart) return ExtractionResult()
+    // =============================================
+    // Helpers
+    // =============================================
 
-            val jsonStr = responseText.substring(jsonStart, jsonEnd)
-            val json = JsonInstant.parseToJsonElement(jsonStr).jsonObject
+    private val lenientJson = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+        coerceInputValues = true
+    }
 
-            val nodes = json["nodes"]?.jsonArray?.mapNotNull { nodeEl ->
-                try {
-                    val obj = nodeEl.jsonObject
-                    ExtractedNode(
-                        name = obj["name"]?.jsonPrimitive?.content ?: return@mapNotNull null,
-                        type = obj["type"]?.jsonPrimitive?.content ?: "concept",
-                        description = obj["description"]?.jsonPrimitive?.content ?: "",
-                        importance = obj["importance"]?.jsonPrimitive?.intOrNull ?: 5,
-                        emotionalValence = obj["emotionalValence"]?.jsonPrimitive?.floatOrNull ?: 0f,
-                        validFrom = obj["validFrom"]?.jsonPrimitive?.content,
-                        validUntil = obj["validUntil"]?.jsonPrimitive?.content,
-                    )
-                } catch (e: Exception) { null }
-            } ?: emptyList()
-
-            val edges = json["edges"]?.jsonArray?.mapNotNull { edgeEl ->
-                try {
-                    val obj = edgeEl.jsonObject
-                    ExtractedEdge(
-                        source = obj["source"]?.jsonPrimitive?.content ?: return@mapNotNull null,
-                        target = obj["target"]?.jsonPrimitive?.content ?: return@mapNotNull null,
-                        relationType = obj["relationType"]?.jsonPrimitive?.content ?: "related_to",
-                        description = obj["description"]?.jsonPrimitive?.content ?: "",
-                    )
-                } catch (e: Exception) { null }
-            } ?: emptyList()
-
-            val timelineEvents = json["timelineEvents"]?.jsonArray?.mapNotNull { eventEl ->
-                try {
-                    val obj = eventEl.jsonObject
-                    ExtractedTimelineEvent(
-                        nodeName = obj["nodeName"]?.jsonPrimitive?.content ?: return@mapNotNull null,
-                        eventType = obj["eventType"]?.jsonPrimitive?.content ?: "upcoming",
-                        description = obj["description"]?.jsonPrimitive?.content ?: "",
-                        scheduledDate = obj["scheduledDate"]?.jsonPrimitive?.content,
-                    )
-                } catch (e: Exception) { null }
-            } ?: emptyList()
-
-            val personUpdates = json["personUpdates"]?.jsonArray?.mapNotNull { updateEl ->
-                try {
-                    val obj = updateEl.jsonObject
-                    val relationships = obj["relationships"]?.jsonArray?.mapNotNull { relEl ->
-                        try {
-                            val relObj = relEl.jsonObject
-                            ExtractedRelationship(
-                                targetName = relObj["targetName"]?.jsonPrimitive?.content ?: return@mapNotNull null,
-                                relationType = relObj["relationType"]?.jsonPrimitive?.content ?: "friend",
-                                relationLabel = relObj["relationLabel"]?.jsonPrimitive?.content,
-                                notes = relObj["notes"]?.jsonPrimitive?.content ?: "",
-                            )
-                        } catch (e: Exception) { null }
-                    } ?: emptyList()
-                    
-                    ExtractedPersonUpdate(
-                        personName = obj["personName"]?.jsonPrimitive?.content ?: return@mapNotNull null,
-                        birthYear = obj["birthYear"]?.jsonPrimitive?.intOrNull,
-                        birthMonth = obj["birthMonth"]?.jsonPrimitive?.intOrNull,
-                        birthDay = obj["birthDay"]?.jsonPrimitive?.intOrNull,
-                        personalityTraits = obj["personalityTraits"]?.jsonArray?.mapNotNull { it.jsonPrimitive.content } ?: emptyList(),
-                        physicalAttributes = obj["physicalAttributes"]?.jsonArray?.mapNotNull { it.jsonPrimitive.content } ?: emptyList(),
-                        otherInfo = obj["otherInfo"]?.jsonArray?.mapNotNull { it.jsonPrimitive.content } ?: emptyList(),
-                        pronouns = obj["pronouns"]?.jsonPrimitive?.content,
-                        occupation = obj["occupation"]?.jsonPrimitive?.content,
-                        location = obj["location"]?.jsonPrimitive?.content,
-                        interests = obj["interests"]?.jsonArray?.mapNotNull { it.jsonPrimitive.content } ?: emptyList(),
-                        relationships = relationships,
-                    )
-                } catch (e: Exception) { null }
-            } ?: emptyList()
-
-            ExtractionResult(nodes, edges, timelineEvents, personUpdates)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse extraction result", e)
-            ExtractionResult()
+    private fun extractJsonFromResponse(content: String): String {
+        // Try to find JSON block in markdown code fence
+        val codeBlockRegex = Regex("""```(?:json)?\s*\n?([\s\S]*?)\n?\s*```""")
+        codeBlockRegex.find(content)?.let {
+            return it.groupValues[1].trim()
         }
+        // Try to find JSON object directly
+        val jsonStart = content.indexOf('{')
+        val jsonEnd = content.lastIndexOf('}')
+        if (jsonStart >= 0 && jsonEnd > jsonStart) {
+            return content.substring(jsonStart, jsonEnd + 1)
+        }
+        return content
     }
 }
