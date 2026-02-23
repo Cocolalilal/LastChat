@@ -1,0 +1,338 @@
+package me.rerere.rikkahub.ui.pages.assistant.detail
+
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.util.fastForEach
+import androidx.compose.ui.util.fastForEachIndexed
+import kotlin.uuid.Uuid
+import me.rerere.ai.core.MessageRole
+import me.rerere.ai.provider.Model
+import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.UIMessagePart
+import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
+import me.rerere.rikkahub.data.ai.transformers.TransformerContext
+import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.model.AssistantAffectScope
+import me.rerere.rikkahub.data.model.AssistantRegex
+import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
+import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
+import me.rerere.rikkahub.ui.components.ui.HapticSwitch
+import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.utils.UiState
+import me.rerere.rikkahub.utils.onError
+import me.rerere.rikkahub.utils.onSuccess
+import org.koin.compose.koinInject
+
+@Composable
+fun MessageTemplateSettingsCard(
+    assistant: Assistant,
+    onUpdate: (Assistant) -> Unit
+) {
+    val context = LocalContext.current
+    val templateTransformer = koinInject<TemplateTransformer>()
+
+    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = if (LocalDarkMode.current) {
+                MaterialTheme.colorScheme.surfaceContainerLow
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHigh
+            },
+            shape = AppShapes.CardLarge
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(stringResource(R.string.assistant_page_message_template), style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.assistant_page_message_template_desc), style = MaterialTheme.typography.bodyMedium)
+                Text(buildAnnotatedString {
+                    append(stringResource(R.string.assistant_page_template_variables_label)); append(" ")
+                    append(stringResource(R.string.assistant_page_template_variable_role)); append(": ")
+                    withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary)) { append("{{ role }}") }
+                    append(", ")
+                    append(stringResource(R.string.assistant_page_template_variable_message)); append(": ")
+                    withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary)) { append("{{ message }}") }
+                    append(", ")
+                    append(stringResource(R.string.assistant_page_template_variable_time)); append(": ")
+                    withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary)) { append("{{ time }}") }
+                    append(", ")
+                    append(stringResource(R.string.assistant_page_template_variable_date)); append(": ")
+                    withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary)) { append("{{ date }}") }
+                }, style = MaterialTheme.typography.bodySmall)
+
+                DebouncedTextField(
+                    value = assistant.messageTemplate,
+                    onValueChange = { onUpdate(assistant.copy(messageTemplate = it)) },
+                    stateKey = "advanced_message_template_${assistant.id}",
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 5,
+                    maxLines = 15,
+                    textStyle = LocalTextStyle.current.copy(
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        lineHeight = 16.sp
+                    )
+                )
+
+                Column(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.background)
+                        .padding(8.dp)
+                        .fillMaxWidth()
+                ) {
+                    Text(
+                        text = stringResource(R.string.assistant_page_template_preview),
+                        style = MaterialTheme.typography.titleSmall
+                    )
+
+                    val rawMessages = listOf(
+                        UIMessage.user("Hello"),
+                        UIMessage.assistant("Hello, how can I help you?"),
+                    )
+                    val preview by produceState<UiState<List<UIMessage>>>(
+                        UiState.Success(rawMessages),
+                        assistant
+                    ) {
+                        value = runCatching {
+                            UiState.Success(
+                                templateTransformer.transform(
+                                    ctx = TransformerContext(
+                                        context = context,
+                                        model = Model(modelId = "gpt-4o", displayName = "GPT-4o"),
+                                        assistant = assistant
+                                    ),
+                                    messages = rawMessages
+                                )
+                            )
+                        }.getOrElse {
+                            UiState.Error(it)
+                        }
+                    }
+
+                    preview.onError {
+                        Text(
+                            text = it.message ?: it.javaClass.name,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+
+                    preview.onSuccess {
+                        it.fastForEach { message ->
+                            val roleLabel = when (message.role) {
+                                MessageRole.USER -> "User"
+                                MessageRole.ASSISTANT -> "Assistant"
+                                else -> message.role.name
+                            }
+                            val textContent = message.parts
+                                .filterIsInstance<UIMessagePart.Text>()
+                                .joinToString("\n") { part -> part.text }
+
+                            Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                                Text(
+                                    text = "$roleLabel:",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                MarkdownBlock(content = textContent)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun MessageRegexSettingsCard(
+    assistant: Assistant,
+    onUpdate: (Assistant) -> Unit
+) {
+    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = if (LocalDarkMode.current) {
+                MaterialTheme.colorScheme.surfaceContainerLow
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHigh
+            },
+            shape = AppShapes.CardLarge
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(stringResource(R.string.assistant_page_regex_title), style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.assistant_page_regex_desc), style = MaterialTheme.typography.bodyMedium)
+
+                assistant.regexes.fastForEachIndexed { index, regex ->
+                    RegexEditorCard(regex = regex, assistant = assistant, index = index, onUpdate = onUpdate)
+                }
+
+                Button(
+                    onClick = {
+                        onUpdate(assistant.copy(regexes = assistant.regexes + AssistantRegex(id = Uuid.random())))
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Rounded.Add, contentDescription = null)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RegexEditorCard(
+    regex: AssistantRegex,
+    assistant: Assistant,
+    index: Int,
+    onUpdate: (Assistant) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.background
+    ) {
+        Column(
+            modifier = Modifier
+                .padding(12.dp)
+                .animateContentSize(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = regex.name,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).widthIn(max = 200.dp)
+                )
+                HapticSwitch(
+                    checked = regex.enabled,
+                    onCheckedChange = { enabled ->
+                        onUpdate(
+                            assistant.copy(
+                                regexes = assistant.regexes.mapIndexed { i, reg ->
+                                    if (i == index) reg.copy(enabled = enabled) else reg
+                                }
+                            )
+                        )
+                    }
+                )
+                IconButton(onClick = { expanded = !expanded }) {
+                    Icon(if (expanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown, null)
+                }
+            }
+
+            if (expanded) {
+                DebouncedTextField(
+                    value = regex.name,
+                    onValueChange = { value ->
+                        onUpdate(assistant.copy(regexes = assistant.regexes.mapIndexed { i, reg -> if (i == index) reg.copy(name = value) else reg }))
+                    },
+                    label = stringResource(R.string.assistant_page_regex_name),
+                    stateKey = "adv_regex_name_${regex.id}",
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                DebouncedTextField(
+                    value = regex.findRegex,
+                    onValueChange = { value ->
+                        onUpdate(assistant.copy(regexes = assistant.regexes.mapIndexed { i, reg -> if (i == index) reg.copy(findRegex = value) else reg }))
+                    },
+                    label = stringResource(R.string.assistant_page_regex_find_regex),
+                    stateKey = "adv_regex_find_${regex.id}",
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                DebouncedTextField(
+                    value = regex.replaceString,
+                    onValueChange = { value ->
+                        onUpdate(assistant.copy(regexes = assistant.regexes.mapIndexed { i, reg -> if (i == index) reg.copy(replaceString = value) else reg }))
+                    },
+                    label = stringResource(R.string.assistant_page_regex_replace_string),
+                    stateKey = "adv_regex_replace_${regex.id}",
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Text(stringResource(R.string.assistant_page_regex_affecting_scopes), style = MaterialTheme.typography.labelMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    AssistantAffectScope.entries.forEach { scope ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = scope in regex.affectingScope,
+                                onCheckedChange = { checked ->
+                                    val newScopes = if (checked) regex.affectingScope + scope else regex.affectingScope - scope
+                                    onUpdate(assistant.copy(regexes = assistant.regexes.mapIndexed { i, reg -> if (i == index) reg.copy(affectingScope = newScopes) else reg }))
+                                }
+                            )
+                            Text(scope.name.lowercase().replaceFirstChar { it.uppercase() })
+                        }
+                    }
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = regex.visualOnly,
+                        onCheckedChange = { visualOnly ->
+                            onUpdate(assistant.copy(regexes = assistant.regexes.mapIndexed { i, reg -> if (i == index) reg.copy(visualOnly = visualOnly) else reg }))
+                        }
+                    )
+                    Text(stringResource(R.string.assistant_page_regex_visual_only))
+                }
+
+                TextButton(
+                    onClick = {
+                        onUpdate(assistant.copy(regexes = assistant.regexes.filterIndexed { i, _ -> i != index }))
+                    }
+                ) {
+                    Icon(Icons.Rounded.Delete, null)
+                    Text(stringResource(R.string.delete))
+                }
+            }
+        }
+    }
+}
