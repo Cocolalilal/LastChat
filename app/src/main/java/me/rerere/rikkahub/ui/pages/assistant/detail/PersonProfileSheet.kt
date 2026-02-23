@@ -29,10 +29,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Cake
+import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Edit
@@ -42,18 +45,27 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.LocationOn
+import androidx.compose.material.icons.rounded.Notes
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Work
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.InputChip
+import androidx.compose.material3.InputChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -69,6 +81,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -85,6 +98,8 @@ import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
+import java.util.Calendar
+import java.util.TimeZone
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -114,6 +129,7 @@ fun PersonProfileSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = AppShapes.BottomSheet,
+        dragHandle = null,
     ) {
         val p = profile
         if (p == null) {
@@ -507,25 +523,28 @@ private fun ProfileViewMode(
 // EDIT MODE
 // ═══════════════════════════════════════════════════════════════════════════════
 
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun ProfileEditMode(
     profile: PersonProfileEntity,
     onSave: (PersonProfileEntity) -> Unit,
     onCancel: () -> Unit,
 ) {
+    val haptics = rememberPremiumHaptics()
     var displayName by remember { mutableStateOf(profile.displayName) }
-    var birthYear by remember { mutableStateOf(profile.birthYear?.toString() ?: "") }
-    var birthMonth by remember { mutableStateOf(profile.birthMonth?.toString() ?: "") }
-    var birthDay by remember { mutableStateOf(profile.birthDay?.toString() ?: "") }
+    var birthYear by remember { mutableStateOf(profile.birthYear) }
+    var birthMonth by remember { mutableStateOf(profile.birthMonth) }
+    var birthDay by remember { mutableStateOf(profile.birthDay) }
     var pronouns by remember { mutableStateOf(profile.pronouns) }
     var occupation by remember { mutableStateOf(profile.occupation) }
     var location by remember { mutableStateOf(profile.location) }
-    var interests by remember {
+    var interestsList by remember {
         mutableStateOf(
-            try { JsonInstant.decodeFromString<List<String>>(profile.interestsJson).joinToString(", ") }
-            catch (e: Exception) { "" }
+            try { JsonInstant.decodeFromString<List<String>>(profile.interestsJson).filter { it.isNotBlank() } }
+            catch (e: Exception) { emptyList() }
         )
     }
+    var newInterest by remember { mutableStateOf("") }
     val lenientJson = remember { kotlinx.serialization.json.Json { ignoreUnknownKeys = true; isLenient = true } }
     var personalityText by remember {
         mutableStateOf(
@@ -546,200 +565,392 @@ private fun ProfileEditMode(
         )
     }
     var notes by remember { mutableStateOf(profile.notes) }
+    var showDatePicker by remember { mutableStateOf(false) }
+
+    // Native date picker dialog
+    if (showDatePicker) {
+        val initialMillis = if (birthYear != null) {
+            val cal = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
+            cal.set(Calendar.YEAR, birthYear ?: 2000)
+            cal.set(Calendar.MONTH, (birthMonth ?: 1) - 1)
+            cal.set(Calendar.DAY_OF_MONTH, birthDay ?: 1)
+            cal.timeInMillis
+        } else null
+        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = initialMillis)
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let { millis ->
+                        val cal = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
+                        cal.timeInMillis = millis
+                        birthYear = cal.get(Calendar.YEAR)
+                        birthMonth = cal.get(Calendar.MONTH) + 1
+                        birthDay = cal.get(Calendar.DAY_OF_MONTH)
+                    }
+                    showDatePicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
+            },
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+
+    fun buildSaveProfile() {
+        fun textToAttrJson(text: String): String {
+            val items = text.split(",").map { it.trim() }.filter { it.isNotBlank() }
+            val attrs = items.map { CategorizedAttribute(category = "general", value = it) }
+            return lenientJson.encodeToString(attrs)
+        }
+        onSave(profile.copy(
+            displayName = displayName,
+            birthYear = birthYear,
+            birthMonth = birthMonth,
+            birthDay = birthDay,
+            pronouns = pronouns,
+            occupation = occupation,
+            location = location,
+            interestsJson = JsonInstant.encodeToString(interestsList),
+            personalityJson = textToAttrJson(personalityText),
+            physicalJson = textToAttrJson(physicalText),
+            otherInfoJson = textToAttrJson(otherInfoText),
+            notes = notes,
+        ))
+    }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp)
-            .padding(bottom = 24.dp)
+            .padding(top = 16.dp, bottom = 24.dp)
             .navigationBarsPadding(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // Header
+        // ─── Header ──────────────────────────────────────────────────
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                "Edit Profile",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                HapticIconButton(
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Surface(
                     onClick = onCancel,
-                    icon = Icons.Rounded.Close,
-                    contentDescription = "Cancel",
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.Close, "Cancel", modifier = Modifier.size(18.dp))
+                    }
+                }
+                Text(
+                    "Edit Profile",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
                 )
-                HapticIconButton(
-                    onClick = {
-                        val interestsList = interests.split(",").map { it.trim() }.filter { it.isNotBlank() }
-                        // Convert comma-separated text to CategorizedAttribute JSON
-                        fun textToAttrJson(text: String): String {
-                            val items = text.split(",").map { it.trim() }.filter { it.isNotBlank() }
-                            val attrs = items.map { CategorizedAttribute(category = "general", value = it) }
-                            return lenientJson.encodeToString(attrs)
-                        }
-                        onSave(profile.copy(
-                            displayName = displayName,
-                            birthYear = birthYear.toIntOrNull(),
-                            birthMonth = birthMonth.toIntOrNull()?.coerceIn(1, 12),
-                            birthDay = birthDay.toIntOrNull()?.coerceIn(1, 31),
-                            pronouns = pronouns,
-                            occupation = occupation,
-                            location = location,
-                            interestsJson = JsonInstant.encodeToString(interestsList),
-                            personalityJson = textToAttrJson(personalityText),
-                            physicalJson = textToAttrJson(physicalText),
-                            otherInfoJson = textToAttrJson(otherInfoText),
-                            notes = notes,
-                        ))
-                    },
-                    icon = Icons.Rounded.Check,
-                    contentDescription = "Save",
-                    tint = MaterialTheme.colorScheme.primary,
-                )
+            }
+            FilledTonalButton(
+                onClick = {
+                    haptics.perform(HapticPattern.Success)
+                    buildSaveProfile()
+                },
+            ) {
+                Icon(Icons.Rounded.Check, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Save")
             }
         }
 
-        // Name
-        OutlinedTextField(
-            value = displayName,
-            onValueChange = { displayName = it },
-            label = { Text("Display Name") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            shape = AppShapes.InputField,
-        )
-
-        // Birthday row
-        Text(
-            "Birthday",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
+        // ═══ IDENTITY SECTION ═══════════════════════════════════════
+        EditSection(icon = Icons.Rounded.Person, title = "Identity") {
             OutlinedTextField(
-                value = birthYear,
-                onValueChange = { birthYear = it.filter { c -> c.isDigit() }.take(4) },
-                label = { Text("Year") },
-                modifier = Modifier.weight(1f),
+                value = displayName,
+                onValueChange = { displayName = it },
+                label = { Text("Display Name") },
+                modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 shape = AppShapes.InputField,
+                colors = editFieldColors(),
             )
             OutlinedTextField(
-                value = birthMonth,
-                onValueChange = { birthMonth = it.filter { c -> c.isDigit() }.take(2) },
-                label = { Text("Month") },
-                modifier = Modifier.weight(0.7f),
+                value = pronouns,
+                onValueChange = { pronouns = it },
+                label = { Text("Pronouns") },
+                placeholder = { Text("e.g. she/her, he/him, they/them") },
+                modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 shape = AppShapes.InputField,
-            )
-            OutlinedTextField(
-                value = birthDay,
-                onValueChange = { birthDay = it.filter { c -> c.isDigit() }.take(2) },
-                label = { Text("Day") },
-                modifier = Modifier.weight(0.7f),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                shape = AppShapes.InputField,
+                colors = editFieldColors(),
             )
         }
 
-        // Pronouns
-        OutlinedTextField(
-            value = pronouns,
-            onValueChange = { pronouns = it },
-            label = { Text("Pronouns") },
-            placeholder = { Text("e.g. she/her, he/him, they/them") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            shape = AppShapes.InputField,
-        )
+        // ═══ DETAILS SECTION ════════════════════════════════════════
+        EditSection(icon = Icons.Rounded.Work, title = "Details") {
+            // Birthday — tappable row that opens native DatePickerDialog
+            val birthdayText = if (birthYear != null) {
+                buildString {
+                    if (birthMonth != null && birthDay != null) {
+                        append(monthName(birthMonth!!))
+                        append(" $birthDay, ")
+                    } else if (birthMonth != null) {
+                        append(monthName(birthMonth!!))
+                        append(", ")
+                    }
+                    append("$birthYear")
+                }
+            } else "Not set"
 
-        // Occupation
-        OutlinedTextField(
-            value = occupation,
-            onValueChange = { occupation = it },
-            label = { Text("Occupation") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            shape = AppShapes.InputField,
-        )
+            Surface(
+                onClick = { showDatePicker = true },
+                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                shape = AppShapes.InputField,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Rounded.CalendarMonth,
+                        null,
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Birthday",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            birthdayText,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = if (birthYear != null) FontWeight.Medium else FontWeight.Normal,
+                            color = if (birthYear != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (birthYear != null) {
+                        Surface(
+                            onClick = {
+                                birthYear = null
+                                birthMonth = null
+                                birthDay = null
+                            },
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                            modifier = Modifier.size(28.dp),
+                        ) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Icon(
+                                    Icons.Rounded.Close,
+                                    "Clear date",
+                                    modifier = Modifier.size(14.dp),
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
 
-        // Location
-        OutlinedTextField(
-            value = location,
-            onValueChange = { location = it },
-            label = { Text("Location") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            shape = AppShapes.InputField,
-        )
+            OutlinedTextField(
+                value = occupation,
+                onValueChange = { occupation = it },
+                label = { Text("Occupation") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = AppShapes.InputField,
+                colors = editFieldColors(),
+            )
+            OutlinedTextField(
+                value = location,
+                onValueChange = { location = it },
+                label = { Text("Location") },
+                leadingIcon = { Icon(Icons.Rounded.LocationOn, null, modifier = Modifier.size(18.dp)) },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = AppShapes.InputField,
+                colors = editFieldColors(),
+            )
+        }
 
-        // Interests
-        OutlinedTextField(
-            value = interests,
-            onValueChange = { interests = it },
-            label = { Text("Interests") },
-            placeholder = { Text("e.g. hiking, cooking, music") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            shape = AppShapes.InputField,
-        )
+        // ═══ INTERESTS SECTION (chip-based) ═════════════════════════
+        EditSection(icon = Icons.Rounded.Favorite, title = "Interests") {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                interestsList.forEachIndexed { idx, interest ->
+                    InputChip(
+                        selected = false,
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            interestsList = interestsList.toMutableList().also { it.removeAt(idx) }
+                        },
+                        label = { Text(interest) },
+                        trailingIcon = {
+                            Icon(Icons.Rounded.Close, "Remove", modifier = Modifier.size(14.dp))
+                        },
+                        colors = InputChipDefaults.inputChipColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        ),
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    value = newInterest,
+                    onValueChange = { newInterest = it },
+                    placeholder = { Text("Add interest…") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    shape = AppShapes.InputField,
+                    colors = editFieldColors(),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(
+                        onDone = {
+                            if (newInterest.isNotBlank()) {
+                                interestsList = interestsList + newInterest.trim()
+                                newInterest = ""
+                            }
+                        }
+                    ),
+                )
+                Surface(
+                    onClick = {
+                        if (newInterest.isNotBlank()) {
+                            haptics.perform(HapticPattern.Pop)
+                            interestsList = interestsList + newInterest.trim()
+                            newInterest = ""
+                        }
+                    },
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(40.dp),
+                ) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Rounded.Add,
+                            "Add",
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                }
+            }
+        }
 
-        // Personality
-        OutlinedTextField(
-            value = personalityText,
-            onValueChange = { personalityText = it },
-            label = { Text("Personality") },
-            modifier = Modifier.fillMaxWidth(),
-            minLines = 2,
-            maxLines = 5,
-            shape = AppShapes.InputField,
-        )
+        // ═══ PERSONALITY & TRAITS SECTION ═══════════════════════════
+        EditSection(icon = Icons.Rounded.Psychology, title = "Personality & Traits") {
+            OutlinedTextField(
+                value = personalityText,
+                onValueChange = { personalityText = it },
+                label = { Text("Personality") },
+                placeholder = { Text("e.g. kind, introverted, creative") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 2,
+                maxLines = 4,
+                shape = AppShapes.InputField,
+                colors = editFieldColors(),
+            )
+            OutlinedTextField(
+                value = physicalText,
+                onValueChange = { physicalText = it },
+                label = { Text("Physical Attributes") },
+                placeholder = { Text("e.g. tall, brown hair") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 2,
+                maxLines = 4,
+                shape = AppShapes.InputField,
+                colors = editFieldColors(),
+            )
+        }
 
-        // Physical
-        OutlinedTextField(
-            value = physicalText,
-            onValueChange = { physicalText = it },
-            label = { Text("Physical Attributes") },
-            modifier = Modifier.fillMaxWidth(),
-            minLines = 2,
-            maxLines = 5,
-            shape = AppShapes.InputField,
-        )
-
-        // Other Info
-        OutlinedTextField(
-            value = otherInfoText,
-            onValueChange = { otherInfoText = it },
-            label = { Text("Other Info") },
-            modifier = Modifier.fillMaxWidth(),
-            minLines = 2,
-            maxLines = 5,
-            shape = AppShapes.InputField,
-        )
-
-        // Notes
-        OutlinedTextField(
-            value = notes,
-            onValueChange = { notes = it },
-            label = { Text("Notes") },
-            modifier = Modifier.fillMaxWidth(),
-            minLines = 2,
-            maxLines = 4,
-            shape = AppShapes.InputField,
-        )
+        // ═══ OTHER SECTION ══════════════════════════════════════════
+        EditSection(icon = Icons.Rounded.Notes, title = "Other") {
+            OutlinedTextField(
+                value = otherInfoText,
+                onValueChange = { otherInfoText = it },
+                label = { Text("Other Info") },
+                placeholder = { Text("Additional details…") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 2,
+                maxLines = 4,
+                shape = AppShapes.InputField,
+                colors = editFieldColors(),
+            )
+            OutlinedTextField(
+                value = notes,
+                onValueChange = { notes = it },
+                label = { Text("Personal Notes") },
+                placeholder = { Text("Your own notes about this person…") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 2,
+                maxLines = 4,
+                shape = AppShapes.InputField,
+                colors = editFieldColors(),
+            )
+        }
     }
 }
+
+// ─── Edit helpers ────────────────────────────────────────────────────────────
+
+@Composable
+private fun EditSection(
+    icon: ImageVector,
+    title: String,
+    content: @Composable () -> Unit,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = AppShapes.CardMedium,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    icon,
+                    null,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            content()
+        }
+    }
+}
+
+@Composable
+private fun editFieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
+    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.3f),
+)
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SHARED COMPONENTS

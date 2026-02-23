@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -37,13 +38,18 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.EmojiEmotions
+import androidx.compose.material.icons.rounded.EmojiPeople
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Favorite
@@ -54,9 +60,12 @@ import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Notes
 import androidx.compose.material.icons.rounded.Pending
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Send
@@ -65,24 +74,35 @@ import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.material.icons.rounded.Timeline
 import androidx.compose.material.icons.rounded.Widgets
+import androidx.compose.material.icons.rounded.Work
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.InputChip
+import androidx.compose.material3.InputChipDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -99,6 +119,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.Flow
@@ -108,6 +129,7 @@ import me.rerere.rikkahub.data.db.entity.MemoryEdgeEntity
 import me.rerere.rikkahub.data.db.entity.MemoryNodeEntity
 import me.rerere.rikkahub.data.db.entity.NodeType
 import me.rerere.rikkahub.data.db.entity.PersonProfileEntity
+import me.rerere.rikkahub.data.db.entity.RelationType
 import me.rerere.rikkahub.data.db.entity.TimelineEventEntity
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
@@ -117,12 +139,15 @@ import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.platform.LocalDensity
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
 private enum class GraphView(val label: String, val icon: ImageVector) {
@@ -479,7 +504,7 @@ private fun GraphStatItem(value: String, label: String, color: Color) {
 // ENTITIES VIEW
 // ═══════════════════════════════════════════════════════════════════════════════
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun EntitiesView(
     nodes: List<MemoryNodeEntity>,
@@ -552,7 +577,7 @@ private fun EntitiesView(
         )
     }
     
-    // Edit node dialog
+    // Edit node bottom sheet
     editingNode?.let { node ->
         var editName by remember(node) { mutableStateOf(node.name) }
         var editDescription by remember(node) { mutableStateOf(node.description) }
@@ -563,13 +588,14 @@ private fun EntitiesView(
         var editPronouns by remember(node) { mutableStateOf(existingProfile?.pronouns ?: "") }
         var editOccupation by remember(node) { mutableStateOf(existingProfile?.occupation ?: "") }
         var editLocation by remember(node) { mutableStateOf(existingProfile?.location ?: "") }
-        var editBirthYear by remember(node) { mutableStateOf(existingProfile?.birthYear?.toString() ?: "") }
-        var editBirthMonth by remember(node) { mutableStateOf(existingProfile?.birthMonth?.toString() ?: "") }
-        var editBirthDay by remember(node) { mutableStateOf(existingProfile?.birthDay?.toString() ?: "") }
-        var editInterests by remember(node) { mutableStateOf(
-            try { me.rerere.rikkahub.utils.JsonInstant.decodeFromString<List<String>>(existingProfile?.interestsJson ?: "[]").joinToString(", ") }
-            catch (e: Exception) { "" }
+        var editBirthYear by remember(node) { mutableStateOf(existingProfile?.birthYear) }
+        var editBirthMonth by remember(node) { mutableStateOf(existingProfile?.birthMonth) }
+        var editBirthDay by remember(node) { mutableStateOf(existingProfile?.birthDay) }
+        var editInterestsList by remember(node) { mutableStateOf(
+            try { me.rerere.rikkahub.utils.JsonInstant.decodeFromString<List<String>>(existingProfile?.interestsJson ?: "[]").filter { it.isNotBlank() } }
+            catch (e: Exception) { emptyList() }
         ) }
+        var newInterest by remember(node) { mutableStateOf("") }
         var editPersonality by remember(node) { mutableStateOf(
             try {
                 kotlinx.serialization.json.Json { ignoreUnknownKeys = true; isLenient = true }
@@ -582,26 +608,147 @@ private fun EntitiesView(
                     .decodeFromString<List<me.rerere.rikkahub.data.db.entity.CategorizedAttribute>>(existingProfile?.physicalJson ?: "[]").joinToString(", ") { it.value }
             } catch (e: Exception) { "" }
         ) }
+        var editOtherInfo by remember(node) { mutableStateOf(
+            try {
+                kotlinx.serialization.json.Json { ignoreUnknownKeys = true; isLenient = true }
+                    .decodeFromString<List<me.rerere.rikkahub.data.db.entity.CategorizedAttribute>>(existingProfile?.otherInfoJson ?: "[]").joinToString(", ") { it.value }
+            } catch (e: Exception) { "" }
+        ) }
         var editNotes by remember(node) { mutableStateOf(existingProfile?.notes ?: "") }
-        
-        AlertDialog(
+        var showDatePicker by remember(node) { mutableStateOf(false) }
+
+        // Native date picker
+        if (showDatePicker) {
+            val initialMillis = if (editBirthYear != null) {
+                val cal = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
+                cal.set(Calendar.YEAR, editBirthYear ?: 2000)
+                cal.set(Calendar.MONTH, (editBirthMonth ?: 1) - 1)
+                cal.set(Calendar.DAY_OF_MONTH, editBirthDay ?: 1)
+                cal.timeInMillis
+            } else null
+            val datePickerState = rememberDatePickerState(initialSelectedDateMillis = initialMillis)
+            DatePickerDialog(
+                onDismissRequest = { showDatePicker = false },
+                confirmButton = {
+                    TextButton(onClick = {
+                        datePickerState.selectedDateMillis?.let { millis ->
+                            val cal = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
+                            cal.timeInMillis = millis
+                            editBirthYear = cal.get(Calendar.YEAR)
+                            editBirthMonth = cal.get(Calendar.MONTH) + 1
+                            editBirthDay = cal.get(Calendar.DAY_OF_MONTH)
+                        }
+                        showDatePicker = false
+                    }) { Text("OK") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
+                },
+            ) {
+                DatePicker(state = datePickerState)
+            }
+        }
+
+        ModalBottomSheet(
             onDismissRequest = { editingNode = null },
-            title = { Text("Edit Entity") },
-            text = {
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            shape = AppShapes.BottomSheet,
+            dragHandle = null,
+        ) {
+            val haptics = rememberPremiumHaptics()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 16.dp, bottom = 24.dp)
+                    .navigationBarsPadding(),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Surface(
+                            onClick = { editingNode = null },
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Rounded.Close, "Cancel", modifier = Modifier.size(18.dp))
+                            }
+                        }
+                        Text(
+                            "Edit Entity",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                    FilledTonalButton(
+                        onClick = {
+                            haptics.perform(HapticPattern.Success)
+                            onUpdateNode(node.copy(
+                                name = editName,
+                                description = editDescription,
+                                nodeType = editNodeType,
+                            ))
+                            if (editNodeType == NodeType.PERSON) {
+                                val lenientJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true; isLenient = true }
+                                fun textToAttrJson(text: String): String {
+                                    val items = text.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                                    val attrs = items.map { me.rerere.rikkahub.data.db.entity.CategorizedAttribute(category = "general", value = it) }
+                                    return lenientJson.encodeToString(attrs)
+                                }
+                                val profile = (existingProfile ?: PersonProfileEntity(
+                                    nodeId = node.id,
+                                    assistantId = node.assistantId,
+                                    displayName = editName,
+                                )).copy(
+                                    displayName = editName,
+                                    pronouns = editPronouns,
+                                    occupation = editOccupation,
+                                    location = editLocation,
+                                    birthYear = editBirthYear,
+                                    birthMonth = editBirthMonth,
+                                    birthDay = editBirthDay,
+                                    interestsJson = me.rerere.rikkahub.utils.JsonInstant.encodeToString(editInterestsList),
+                                    personalityJson = textToAttrJson(editPersonality),
+                                    physicalJson = textToAttrJson(editPhysical),
+                                    otherInfoJson = textToAttrJson(editOtherInfo),
+                                    notes = editNotes,
+                                )
+                                onUpdateProfile(profile)
+                            }
+                            editingNode = null
+                        },
+                    ) {
+                        Icon(Icons.Rounded.Check, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Save")
+                    }
+                }
+
+                // === Entity basics section ===
+                GraphEditSection(icon = nodeTypeIcon(editNodeType), title = "Entity") {
                     OutlinedTextField(
                         value = editName,
                         onValueChange = { editName = it },
                         label = { Text("Name") },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = AppShapes.InputField,
+                        colors = graphEditFieldColors(),
                     )
                     // Node type selector
                     Column {
-                        Text("Type", style = MaterialTheme.typography.bodyMedium)
+                        Text("Type", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(4.dp))
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -628,88 +775,210 @@ private fun EntitiesView(
                         label = { Text("Description") },
                         minLines = 2,
                         maxLines = 4,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = AppShapes.InputField,
+                        colors = graphEditFieldColors(),
                     )
-                    
-                    // === PERSON PROFILE FIELDS (only shown for person type) ===
-                    if (editNodeType == NodeType.PERSON) {
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                        Text(
-                            "Person Profile",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        // Birthday row
-                        Row(
+                }
+
+                // === Person profile section (only shown for person type) ===
+                if (editNodeType == NodeType.PERSON) {
+                    // Birthday
+                    GraphEditSection(icon = Icons.Rounded.CalendarMonth, title = "Details") {
+                        val birthdayText = if (editBirthYear != null) {
+                            buildString {
+                                if (editBirthMonth != null && editBirthDay != null) {
+                                    append(monthName(editBirthMonth!!))
+                                    append(" $editBirthDay, ")
+                                } else if (editBirthMonth != null) {
+                                    append(monthName(editBirthMonth!!))
+                                    append(", ")
+                                }
+                                append("$editBirthYear")
+                            }
+                        } else "Not set"
+
+                        Surface(
+                            onClick = { showDatePicker = true },
+                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            shape = AppShapes.InputField,
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            OutlinedTextField(
-                                value = editBirthYear,
-                                onValueChange = { editBirthYear = it.filter { c -> c.isDigit() }.take(4) },
-                                label = { Text("Year") },
-                                singleLine = true,
-                                modifier = Modifier.weight(1f)
-                            )
-                            OutlinedTextField(
-                                value = editBirthMonth,
-                                onValueChange = { editBirthMonth = it.filter { c -> c.isDigit() }.take(2) },
-                                label = { Text("Month") },
-                                singleLine = true,
-                                modifier = Modifier.weight(1f)
-                            )
-                            OutlinedTextField(
-                                value = editBirthDay,
-                                onValueChange = { editBirthDay = it.filter { c -> c.isDigit() }.take(2) },
-                                label = { Text("Day") },
-                                singleLine = true,
-                                modifier = Modifier.weight(1f)
-                            )
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    Icons.Rounded.CalendarMonth,
+                                    null,
+                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        "Birthday",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Text(
+                                        birthdayText,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = if (editBirthYear != null) FontWeight.Medium else FontWeight.Normal,
+                                        color = if (editBirthYear != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                if (editBirthYear != null) {
+                                    Surface(
+                                        onClick = {
+                                            editBirthYear = null
+                                            editBirthMonth = null
+                                            editBirthDay = null
+                                        },
+                                        shape = CircleShape,
+                                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                                        modifier = Modifier.size(28.dp),
+                                    ) {
+                                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                            Icon(Icons.Rounded.Close, "Clear", modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.error)
+                                        }
+                                    }
+                                }
+                            }
                         }
                         OutlinedTextField(
                             value = editPronouns,
                             onValueChange = { editPronouns = it },
                             label = { Text("Pronouns") },
                             singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = AppShapes.InputField,
+                            colors = graphEditFieldColors(),
                         )
                         OutlinedTextField(
                             value = editOccupation,
                             onValueChange = { editOccupation = it },
                             label = { Text("Occupation") },
                             singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = AppShapes.InputField,
+                            colors = graphEditFieldColors(),
                         )
                         OutlinedTextField(
                             value = editLocation,
                             onValueChange = { editLocation = it },
                             label = { Text("Location") },
+                            leadingIcon = { Icon(Icons.Rounded.LocationOn, null, modifier = Modifier.size(18.dp)) },
                             singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = AppShapes.InputField,
+                            colors = graphEditFieldColors(),
                         )
-                        OutlinedTextField(
-                            value = editInterests,
-                            onValueChange = { editInterests = it },
-                            label = { Text("Interests (comma-separated)") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                    }
+
+                    // Interests
+                    GraphEditSection(icon = Icons.Rounded.Favorite, title = "Interests") {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            editInterestsList.forEachIndexed { idx, interest ->
+                                InputChip(
+                                    selected = false,
+                                    onClick = {
+                                        haptics.perform(HapticPattern.Pop)
+                                        editInterestsList = editInterestsList.toMutableList().also { it.removeAt(idx) }
+                                    },
+                                    label = { Text(interest) },
+                                    trailingIcon = {
+                                        Icon(Icons.Rounded.Close, "Remove", modifier = Modifier.size(14.dp))
+                                    },
+                                    colors = InputChipDefaults.inputChipColors(
+                                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                        labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    ),
+                                )
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            OutlinedTextField(
+                                value = newInterest,
+                                onValueChange = { newInterest = it },
+                                placeholder = { Text("Add interest…") },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                                shape = AppShapes.InputField,
+                                colors = graphEditFieldColors(),
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(
+                                    onDone = {
+                                        if (newInterest.isNotBlank()) {
+                                            editInterestsList = editInterestsList + newInterest.trim()
+                                            newInterest = ""
+                                        }
+                                    }
+                                ),
+                            )
+                            Surface(
+                                onClick = {
+                                    if (newInterest.isNotBlank()) {
+                                        haptics.perform(HapticPattern.Pop)
+                                        editInterestsList = editInterestsList + newInterest.trim()
+                                        newInterest = ""
+                                    }
+                                },
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(40.dp),
+                            ) {
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Rounded.Add, "Add", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp))
+                                }
+                            }
+                        }
+                    }
+
+                    // Personality & Traits
+                    GraphEditSection(icon = Icons.Rounded.Psychology, title = "Personality & Traits") {
                         OutlinedTextField(
                             value = editPersonality,
                             onValueChange = { editPersonality = it },
                             label = { Text("Personality") },
+                            placeholder = { Text("e.g. kind, introverted, creative") },
                             minLines = 2,
                             maxLines = 4,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = AppShapes.InputField,
+                            colors = graphEditFieldColors(),
                         )
                         OutlinedTextField(
                             value = editPhysical,
                             onValueChange = { editPhysical = it },
                             label = { Text("Physical") },
+                            placeholder = { Text("e.g. tall, brown eyes") },
                             minLines = 2,
                             maxLines = 4,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = AppShapes.InputField,
+                            colors = graphEditFieldColors(),
+                        )
+                    }
+
+                    // Other
+                    GraphEditSection(icon = Icons.Rounded.Notes, title = "Other") {
+                        OutlinedTextField(
+                            value = editOtherInfo,
+                            onValueChange = { editOtherInfo = it },
+                            label = { Text("Other Info") },
+                            minLines = 1,
+                            maxLines = 3,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = AppShapes.InputField,
+                            colors = graphEditFieldColors(),
                         )
                         OutlinedTextField(
                             value = editNotes,
@@ -717,69 +986,14 @@ private fun EntitiesView(
                             label = { Text("Notes") },
                             minLines = 2,
                             maxLines = 4,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            value = try {
-                                kotlinx.serialization.json.Json { ignoreUnknownKeys = true; isLenient = true }
-                                    .decodeFromString<List<me.rerere.rikkahub.data.db.entity.CategorizedAttribute>>(existingProfile?.otherInfoJson ?: "[]").joinToString(", ") { it.value }
-                            } catch (e: Exception) { "" },
-                            onValueChange = { },
-                            label = { Text("Other Info (auto-generated)") },
-                            enabled = false,
-                            minLines = 1,
-                            maxLines = 3,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = AppShapes.InputField,
+                            colors = graphEditFieldColors(),
                         )
                     }
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { editingNode = null }) {
-                    Text("Cancel")
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    onUpdateNode(node.copy(
-                        name = editName,
-                        description = editDescription,
-                        nodeType = editNodeType,
-                    ))
-                    // Save profile if person type
-                    if (editNodeType == NodeType.PERSON) {
-                        val interestsList = editInterests.split(",").map { it.trim() }.filter { it.isNotBlank() }
-                        val lenientJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true; isLenient = true }
-                        fun textToAttrJson(text: String): String {
-                            val items = text.split(",").map { it.trim() }.filter { it.isNotBlank() }
-                            val attrs = items.map { me.rerere.rikkahub.data.db.entity.CategorizedAttribute(category = "general", value = it) }
-                            return lenientJson.encodeToString(attrs)
-                        }
-                        val profile = (existingProfile ?: PersonProfileEntity(
-                            nodeId = node.id,
-                            assistantId = node.assistantId,
-                            displayName = editName,
-                        )).copy(
-                            displayName = editName,
-                            pronouns = editPronouns,
-                            occupation = editOccupation,
-                            location = editLocation,
-                            birthYear = editBirthYear.toIntOrNull(),
-                            birthMonth = editBirthMonth.toIntOrNull(),
-                            birthDay = editBirthDay.toIntOrNull(),
-                            interestsJson = me.rerere.rikkahub.utils.JsonInstant.encodeToString(interestsList),
-                            personalityJson = textToAttrJson(editPersonality),
-                            physicalJson = textToAttrJson(editPhysical),
-                            notes = editNotes,
-                        )
-                        onUpdateProfile(profile)
-                    }
-                    editingNode = null
-                }) {
-                    Text("Save")
                 }
             }
-        )
+        }
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1259,6 +1473,7 @@ private fun NodeCard(
 // RELATIONSHIPS VIEW
 // ═══════════════════════════════════════════════════════════════════════════════
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RelationshipsView(
     edges: List<MemoryEdgeEntity>,
@@ -1320,43 +1535,135 @@ private fun RelationshipsView(
         )
     }
     
-    // Edit edge dialog
+    // Edit edge bottom sheet
     editingEdge?.let { edge ->
         var editDescription by remember(edge) { mutableStateOf(edge.description) }
         var editStrength by remember(edge) { mutableFloatStateOf(edge.strength) }
+        var editRelationType by remember(edge) { mutableStateOf(edge.relationType) }
         val sourceName = nodeMap[edge.sourceNodeId]?.name ?: "?"
         val targetName = nodeMap[edge.targetNodeId]?.name ?: "?"
         
-        AlertDialog(
+        ModalBottomSheet(
             onDismissRequest = { editingEdge = null },
-            title = { Text("Edit Relationship") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        "$sourceName → $targetName",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        edge.relationType.replace("_", " "),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.secondary
-                    )
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            shape = AppShapes.BottomSheet,
+            dragHandle = null,
+        ) {
+            val haptics = rememberPremiumHaptics()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 16.dp, bottom = 24.dp)
+                    .navigationBarsPadding(),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Surface(
+                            onClick = { editingEdge = null },
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Rounded.Close, "Cancel", modifier = Modifier.size(18.dp))
+                            }
+                        }
+                        Text(
+                            "Edit Relationship",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                    FilledTonalButton(
+                        onClick = {
+                            haptics.perform(HapticPattern.Success)
+                            onUpdateEdge(edge.copy(
+                                description = editDescription,
+                                strength = editStrength,
+                                relationType = editRelationType,
+                            ))
+                            editingEdge = null
+                        },
+                    ) {
+                        Icon(Icons.Rounded.Check, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Save")
+                    }
+                }
+
+                // Connection info
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shape = AppShapes.CardMedium,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(sourceName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                            Text("→", color = MaterialTheme.colorScheme.primary)
+                            Text(targetName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                // Relation type
+                GraphEditSection(icon = Icons.Rounded.Link, title = "Relation Type") {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        RelationType.ALL.forEach { type ->
+                            FilterChip(
+                                selected = editRelationType == type,
+                                onClick = { editRelationType = type },
+                                label = { Text(type.replace("_", " ").replaceFirstChar { it.uppercase() }) },
+                            )
+                        }
+                    }
+                }
+
+                // Description
+                GraphEditSection(icon = Icons.Rounded.Edit, title = "Details") {
                     OutlinedTextField(
                         value = editDescription,
                         onValueChange = { editDescription = it },
                         label = { Text("Description") },
                         minLines = 2,
                         maxLines = 4,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = AppShapes.InputField,
+                        colors = graphEditFieldColors(),
                     )
+                    // Strength slider
                     Column {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
-                            Text("Strength", style = MaterialTheme.typography.bodyMedium)
-                            Text("${(editStrength * 100).toInt()}%", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                            Text("Strength", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                "${(editStrength * 100).toInt()}%",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
                         }
                         Slider(
                             value = editStrength,
@@ -1365,24 +1672,8 @@ private fun RelationshipsView(
                         )
                     }
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { editingEdge = null }) {
-                    Text("Cancel")
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    onUpdateEdge(edge.copy(
-                        description = editDescription,
-                        strength = editStrength
-                    ))
-                    editingEdge = null
-                }) {
-                    Text("Save")
-                }
             }
-        )
+        }
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1541,6 +1832,7 @@ private fun RelationshipsView(
 // TIMELINE VIEW
 // ═══════════════════════════════════════════════════════════════════════════════
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TimelineView(
     events: List<TimelineEventEntity>,
@@ -1595,47 +1887,168 @@ private fun TimelineView(
         )
     }
     
-    // Edit event dialog
+    // Edit event bottom sheet
     editingEvent?.let { event ->
         var editDescription by remember(event) { mutableStateOf(event.description) }
         var editEventType by remember(event) { mutableStateOf(event.eventType) }
-        var editScheduledDate by remember(event) {
-            mutableStateOf(
-                event.scheduledAt?.let {
-                    SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(it))
-                } ?: ""
-            )
-        }
+        var editScheduledMillis by remember(event) { mutableStateOf(event.scheduledAt) }
         var editRecurrenceRule by remember(event) { mutableStateOf(event.recurrenceRule ?: "") }
         val nodeName = nodeMap[event.nodeId]?.name ?: "Unknown"
         val eventTypes = listOf("upcoming", "ongoing", "completed", "recurring")
-        
-        AlertDialog(
+        var showDatePicker by remember(event) { mutableStateOf(false) }
+
+        // Native date picker dialog
+        if (showDatePicker) {
+            val datePickerState = rememberDatePickerState(initialSelectedDateMillis = editScheduledMillis)
+            DatePickerDialog(
+                onDismissRequest = { showDatePicker = false },
+                confirmButton = {
+                    TextButton(onClick = {
+                        editScheduledMillis = datePickerState.selectedDateMillis
+                        showDatePicker = false
+                    }) { Text("OK") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
+                },
+            ) {
+                DatePicker(state = datePickerState)
+            }
+        }
+
+        ModalBottomSheet(
             onDismissRequest = { editingEvent = null },
-            title = { Text("Edit Timeline Event") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        "Event for: $nodeName",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
-                    )
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            shape = AppShapes.BottomSheet,
+            dragHandle = null,
+        ) {
+            val haptics = rememberPremiumHaptics()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 16.dp, bottom = 24.dp)
+                    .navigationBarsPadding(),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Surface(
+                            onClick = { editingEvent = null },
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Rounded.Close, "Cancel", modifier = Modifier.size(18.dp))
+                            }
+                        }
+                        Text(
+                            "Edit Event",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                    FilledTonalButton(
+                        onClick = {
+                            haptics.perform(HapticPattern.Success)
+                            onUpdateEvent(event.copy(
+                                description = editDescription,
+                                eventType = editEventType,
+                                scheduledAt = editScheduledMillis,
+                                recurrenceRule = editRecurrenceRule.ifBlank { null },
+                            ))
+                            editingEvent = null
+                        },
+                    ) {
+                        Icon(Icons.Rounded.Check, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Save")
+                    }
+                }
+
+                // Event info
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shape = AppShapes.CardMedium,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Rounded.Person, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                        Text("Event for: ", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(nodeName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                // Description
+                GraphEditSection(icon = Icons.Rounded.Edit, title = "Description") {
                     OutlinedTextField(
                         value = editDescription,
                         onValueChange = { editDescription = it },
                         label = { Text("Description") },
                         minLines = 2,
                         maxLines = 4,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = AppShapes.InputField,
+                        colors = graphEditFieldColors(),
                     )
-                    OutlinedTextField(
-                        value = editScheduledDate,
-                        onValueChange = { editScheduledDate = it },
-                        label = { Text("Scheduled Date") },
-                        placeholder = { Text("YYYY-MM-DD") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                }
+
+                // Scheduled date — native picker
+                GraphEditSection(icon = Icons.Rounded.CalendarMonth, title = "Schedule") {
+                    val dateText = editScheduledMillis?.let {
+                        SimpleDateFormat("MMM d, yyyy", Locale.US).format(Date(it))
+                    } ?: "Not set"
+
+                    Surface(
+                        onClick = { showDatePicker = true },
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        shape = AppShapes.InputField,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Rounded.CalendarMonth, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Scheduled Date", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    dateText,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = if (editScheduledMillis != null) FontWeight.Medium else FontWeight.Normal,
+                                    color = if (editScheduledMillis != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            if (editScheduledMillis != null) {
+                                Surface(
+                                    onClick = { editScheduledMillis = null },
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                                    modifier = Modifier.size(28.dp),
+                                ) {
+                                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Rounded.Close, "Clear", modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.error)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     if (editEventType == "recurring") {
                         OutlinedTextField(
                             value = editRecurrenceRule,
@@ -1643,48 +2056,41 @@ private fun TimelineView(
                             label = { Text("Recurrence Rule") },
                             placeholder = { Text("e.g. daily, weekly:mon,wed, monthly:15") },
                             singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = AppShapes.InputField,
+                            colors = graphEditFieldColors(),
                         )
                     }
-                    Text("Status", style = MaterialTheme.typography.labelMedium)
+                }
+
+                // Status
+                GraphEditSection(icon = Icons.Rounded.Schedule, title = "Status") {
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         eventTypes.forEach { type ->
+                            val statusColor = when (type) {
+                                "upcoming" -> MaterialTheme.colorScheme.primary
+                                "ongoing" -> MaterialTheme.colorScheme.tertiary
+                                "completed" -> Color(0xFF4CAF50)
+                                "recurring" -> MaterialTheme.colorScheme.secondary
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            }
                             FilterChip(
                                 selected = editEventType == type,
                                 onClick = { editEventType = type },
                                 label = { Text(type.replaceFirstChar { it.uppercase() }) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = statusColor.copy(alpha = 0.2f),
+                                    selectedLabelColor = statusColor,
+                                ),
                             )
                         }
                     }
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { editingEvent = null }) {
-                    Text("Cancel")
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    val parsedDate = try {
-                        if (editScheduledDate.isNotBlank()) {
-                            SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(editScheduledDate)?.time
-                        } else null
-                    } catch (e: Exception) { event.scheduledAt }
-                    onUpdateEvent(event.copy(
-                        description = editDescription,
-                        eventType = editEventType,
-                        scheduledAt = parsedDate,
-                        recurrenceRule = editRecurrenceRule.ifBlank { null }
-                    ))
-                    editingEvent = null
-                }) {
-                    Text("Save")
-                }
             }
-        )
+        }
     }
 
     Column(
@@ -1825,6 +2231,7 @@ private fun TimelineView(
 // EPISODES VIEW
 // ═══════════════════════════════════════════════════════════════════════════════
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EpisodesView(
     episodes: List<GraphEpisodeEntity>,
@@ -1879,63 +2286,128 @@ private fun EpisodesView(
         )
     }
     
-    // Edit episode dialog
+    // Edit episode bottom sheet
     editingEpisode?.let { episode ->
         var editContent by remember(episode) { mutableStateOf(episode.content) }
         var editSignificance by remember(episode) { mutableFloatStateOf(episode.significance.toFloat()) }
         
-        AlertDialog(
+        ModalBottomSheet(
             onDismissRequest = { editingEpisode = null },
-            title = { Text("Edit Episode") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        "Created: ${formatDate(episode.endTime)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            shape = AppShapes.BottomSheet,
+            dragHandle = null,
+        ) {
+            val haptics = rememberPremiumHaptics()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 16.dp, bottom = 24.dp)
+                    .navigationBarsPadding(),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Surface(
+                            onClick = { editingEpisode = null },
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Rounded.Close, "Cancel", modifier = Modifier.size(18.dp))
+                            }
+                        }
+                        Text(
+                            "Edit Episode",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                    FilledTonalButton(
+                        onClick = {
+                            haptics.perform(HapticPattern.Success)
+                            onUpdateEpisode(episode.copy(
+                                content = editContent,
+                                significance = editSignificance.toInt(),
+                            ))
+                            editingEpisode = null
+                        },
+                    ) {
+                        Icon(Icons.Rounded.Check, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Save")
+                    }
+                }
+
+                // Created info
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shape = AppShapes.CardMedium,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Rounded.Schedule, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                        Text("Created: ${formatDate(episode.endTime)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+
+                // Content
+                GraphEditSection(icon = Icons.Rounded.MenuBook, title = "Content") {
                     OutlinedTextField(
                         value = editContent,
                         onValueChange = { editContent = it },
-                        label = { Text("Content") },
+                        label = { Text("Episode content") },
                         minLines = 3,
                         maxLines = 6,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = AppShapes.InputField,
+                        colors = graphEditFieldColors(),
                     )
+                }
+
+                // Significance
+                GraphEditSection(icon = Icons.Rounded.Star, title = "Significance") {
                     Column {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
-                            Text("Significance", style = MaterialTheme.typography.bodyMedium)
-                            Text("${editSignificance.toInt()}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                            Text(
+                                "Importance level",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                "${editSignificance.toInt()}/10",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (editSignificance >= 7) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
+                            )
                         }
                         Slider(
                             value = editSignificance,
                             onValueChange = { editSignificance = it },
                             valueRange = 1f..10f,
-                            steps = 8
+                            steps = 8,
                         )
                     }
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { editingEpisode = null }) {
-                    Text("Cancel")
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    onUpdateEpisode(episode.copy(
-                        content = editContent,
-                        significance = editSignificance.toInt()
-                    ))
-                    editingEpisode = null
-                }) {
-                    Text("Save")
-                }
             }
-        )
+        }
     }
 
     Column(
@@ -2474,4 +2946,69 @@ private fun NodeAvatar(
             }
         }
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// EDITING HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun GraphEditSection(
+    icon: ImageVector,
+    title: String,
+    content: @Composable () -> Unit,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = AppShapes.CardMedium,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    icon,
+                    null,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            content()
+        }
+    }
+}
+
+@Composable
+private fun graphEditFieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedBorderColor = MaterialTheme.colorScheme.primary,
+    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.3f),
+    unfocusedContainerColor = Color.Transparent,
+)
+
+private fun monthName(month: Int): String = when (month) {
+    1 -> "Jan"
+    2 -> "Feb"
+    3 -> "Mar"
+    4 -> "Apr"
+    5 -> "May"
+    6 -> "Jun"
+    7 -> "Jul"
+    8 -> "Aug"
+    9 -> "Sep"
+    10 -> "Oct"
+    11 -> "Nov"
+    12 -> "Dec"
+    else -> "?"
 }
