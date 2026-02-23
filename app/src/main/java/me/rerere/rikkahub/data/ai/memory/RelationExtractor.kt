@@ -16,6 +16,11 @@ private const val TAG = "RelationExtractor"
 class RelationExtractor(
     private val providerManager: ProviderManager,
 ) {
+    private data class ExtractionPromptContext(
+        val existingNamesSection: String,
+        val profileSection: String,
+    )
+
     // =============================================
     // Data classes for extraction results
     // =============================================
@@ -93,6 +98,10 @@ class RelationExtractor(
             "they", "them", "he", "she", "it",
             "everyone", "anyone", "nobody", "somebody",
         )
+        private const val MAX_EXISTING_ENTITY_HINTS = 120
+        private const val MAX_ALIASES_PER_ENTITY = 3
+        private const val MAX_PROFILE_SUMMARY_HINTS = 30
+        private const val MAX_PROFILE_SUMMARY_LENGTH = 240
     }
 
     // =============================================
@@ -132,28 +141,128 @@ class RelationExtractor(
         provider: ProviderSetting,
         model: Model,
     ): ExtractionResult {
-        val existingNamesSection = if (existingNodeNames.isNotEmpty()) {
-            val namesList = existingNodeNames.joinToString(", ") { name ->
-                val aliases = existingAliases[name]
-                if (!aliases.isNullOrEmpty()) {
-                    "$name (also known as: ${aliases.joinToString(", ")})"
-                } else {
-                    name
+        val fullContext = buildPromptContext(
+            existingNodeNames = existingNodeNames,
+            existingAliases = existingAliases,
+            existingProfileSummaries = existingProfileSummaries,
+            includeExistingNodes = true,
+            includeProfileSummaries = true,
+        )
+
+        val minimalContext = buildPromptContext(
+            existingNodeNames = existingNodeNames,
+            existingAliases = existingAliases,
+            existingProfileSummaries = existingProfileSummaries,
+            includeExistingNodes = true,
+            includeProfileSummaries = false,
+        )
+
+        val bareContext = buildPromptContext(
+            existingNodeNames = existingNodeNames,
+            existingAliases = existingAliases,
+            existingProfileSummaries = existingProfileSummaries,
+            includeExistingNodes = false,
+            includeProfileSummaries = false,
+        )
+
+        val attempts = listOf(
+            "full_context" to fullContext,
+            "minimal_context" to minimalContext,
+            "bare_context" to bareContext,
+        )
+
+        val handler = providerManager.getProviderByType(provider)
+
+        for ((attemptName, context) in attempts) {
+            try {
+                val prompt = buildPrompt(
+                    existingNamesSection = context.existingNamesSection,
+                    profileSection = context.profileSection,
+                    userMessage = sanitizeForPrompt(userMessage),
+                    assistantReply = sanitizeForPrompt(assistantReply),
+                )
+
+                val response = handler.generateText(
+                    providerSetting = provider,
+                    messages = listOf(UIMessage.user(prompt)),
+                    params = TextGenerationParams(model = model, temperature = 0.3f),
+                )
+
+                val content = response.choices.firstOrNull()?.message?.toContentText() ?: return ExtractionResult()
+                val jsonStr = extractJsonFromResponse(content)
+                val result = lenientJson.decodeFromString<ExtractionResult>(jsonStr)
+
+                if (attemptName != "full_context") {
+                    Log.w(TAG, "Extraction succeeded after fallback: $attemptName")
                 }
+                return validateExtraction(result)
+            } catch (e: Exception) {
+                Log.w(TAG, "Extraction attempt failed ($attemptName)", e)
             }
-            "**Existing entities** — reuse these EXACT names if referring to the same entity:\n$namesList"
-        } else {
-            "**No existing entities yet.**"
         }
 
-        val profileSection = if (existingProfileSummaries.isNotEmpty()) {
-            val entries = existingProfileSummaries.entries.joinToString("\n") { (name, summary) ->
-                "- $name: $summary"
-            }
-            "**What we already know about these people** (update/correct if the conversation changes any of this):\n$entries"
-        } else ""
+        return ExtractionResult()
+    }
 
-        val prompt = """
+    private fun buildPromptContext(
+        existingNodeNames: List<String>,
+        existingAliases: Map<String, List<String>>,
+        existingProfileSummaries: Map<String, String>,
+        includeExistingNodes: Boolean,
+        includeProfileSummaries: Boolean,
+    ): ExtractionPromptContext {
+        val existingNamesSection = if (!includeExistingNodes || existingNodeNames.isEmpty()) {
+            "**No existing entities yet.**"
+        } else {
+            val namesList = existingNodeNames
+                .asSequence()
+                .map { originalName -> originalName to sanitizeForPrompt(originalName) }
+                .filter { (_, sanitizedName) -> sanitizedName.isNotBlank() }
+                .take(MAX_EXISTING_ENTITY_HINTS)
+                .joinToString(", ") { (originalName, sanitizedName) ->
+                    val aliases = existingAliases[originalName]
+                        ?.asSequence()
+                        ?.map(::sanitizeForPrompt)
+                        ?.filter { it.isNotBlank() }
+                        ?.take(MAX_ALIASES_PER_ENTITY)
+                        ?.toList()
+                    if (!aliases.isNullOrEmpty()) {
+                        "$sanitizedName (also known as: ${aliases.joinToString(", ")})"
+                    } else {
+                        sanitizedName
+                    }
+                }
+            "**Existing entities** — reuse these EXACT names if referring to the same entity:\n$namesList"
+        }
+
+        val profileSection = if (!includeProfileSummaries || existingProfileSummaries.isEmpty()) {
+            ""
+        } else {
+            val entries = existingProfileSummaries.entries
+                .asSequence()
+                .map { (name, summary) -> sanitizeForPrompt(name) to sanitizeForPrompt(summary) }
+                .filter { (name, summary) -> name.isNotBlank() && summary.isNotBlank() }
+                .take(MAX_PROFILE_SUMMARY_HINTS)
+                .joinToString("\n") { (name, summary) ->
+                    "- $name: ${summary.take(MAX_PROFILE_SUMMARY_LENGTH)}"
+                }
+            if (entries.isBlank()) {
+                ""
+            } else {
+                "**What we already know about these people** (update/correct if the conversation changes any of this):\n$entries"
+            }
+        }
+
+        return ExtractionPromptContext(existingNamesSection, profileSection)
+    }
+
+    private fun buildPrompt(
+        existingNamesSection: String,
+        profileSection: String,
+        userMessage: String,
+        assistantReply: String,
+    ): String {
+        return """
             Analyze this conversation and extract ONLY what is worth remembering long-term.
             
             $existingNamesSection
@@ -209,30 +318,18 @@ class RelationExtractor(
               "timelineEvents": [{"entityName": "...", "description": "...", "date": "YYYY-MM-DD", "recurring": "yearly|monthly|weekly|daily|null"}]
             }
         """.trimIndent()
-
-        val handler = providerManager.getProviderByType(provider)
-        val response = handler.generateText(
-            providerSetting = provider,
-            messages = listOf(UIMessage.user(prompt)),
-            params = TextGenerationParams(model = model, temperature = 0.3f),
-        )
-
-        val content = response.choices.firstOrNull()?.message?.toContentText() ?: return ExtractionResult()
-
-        return try {
-            val jsonStr = extractJsonFromResponse(content)
-            val result = lenientJson.decodeFromString<ExtractionResult>(jsonStr)
-            // Apply server-side guardrails
-            validateExtraction(result)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse extraction result: $content", e)
-            ExtractionResult()
-        }
     }
 
     // =============================================
     // Helpers
     // =============================================
+
+    internal fun sanitizeForPrompt(value: String): String {
+        return value
+            .replace(Regex("[\\u0000-\\u001F&&[^\\n\\r\\t]]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
 
     private val lenientJson = Json {
         ignoreUnknownKeys = true
@@ -254,4 +351,5 @@ class RelationExtractor(
         }
         return content
     }
+
 }
