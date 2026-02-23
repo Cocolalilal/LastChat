@@ -127,14 +127,6 @@ fun SharedPreferences.getBooleanFlowForKey(keyForBoolean: String, defaultValue: 
     }.buffer(Channel.UNLIMITED) // so trySend never fails
 
 /**
- * Expressive font preference hook (M3E rounded font vs Normal)
- */
-@Composable
-fun rememberExpressiveFont(): MutableState<Boolean> {
-    return rememberSharedPreferenceBoolean("use_expressive_font", true)
-}
-
-/**
  * Font settings hook - retrieves font settings from display settings
  */
 @Composable

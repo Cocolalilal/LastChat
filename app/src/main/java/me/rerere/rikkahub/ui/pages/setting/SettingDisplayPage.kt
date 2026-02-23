@@ -105,7 +105,6 @@ fun SettingDisplayPage(vm: SettingVM = koinViewModel()) {
         ) {
             // Theme Settings
             item {
-                var useExpressiveFont by me.rerere.rikkahub.ui.hooks.rememberExpressiveFont()
                 val navController = me.rerere.rikkahub.ui.context.LocalNavController.current
                 
                 SettingsGroup(

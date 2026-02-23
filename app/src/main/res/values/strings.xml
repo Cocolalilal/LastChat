@@ -301,7 +301,6 @@
     <string name="mcp_picker_title">MCP Servers</string>
     <string name="menu">Menu</string>
     <string name="menu_page_afternoon_greeting">Good Afternoon!</string>
-    <string name="menu_page_ai_translator">AI Translator</string>
     <string name="menu_page_evening_greeting">Good Evening!</string>
     <string name="menu_page_image_generation">Image Gen</string>
     <string name="menu_page_knowledge_base">Knowledge Base (WIP)</string>

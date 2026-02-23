@@ -625,8 +625,6 @@ data class DisplaySetting(
     val showMessageJumper: Boolean = false,
     val messageJumperOnLeft: Boolean = false,
     val fontSizeRatio: Float = 1.0f,
-    @Deprecated("Use fontSettings instead")
-    val useExpressiveFont: Boolean = true, // Kept for migration, use fontSettings
     val fontSettings: FontSettings = FontSettings(), // Comprehensive font customization
     val enableMessageGenerationHapticEffect: Boolean = false,
     val enableUIHaptics: Boolean = true,

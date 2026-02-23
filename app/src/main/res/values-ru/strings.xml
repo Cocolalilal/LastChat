@@ -275,7 +275,6 @@
   <string name="mcp_picker_title">Серверы MCP</string>
   <string name="menu">Меню</string>
   <string name="menu_page_afternoon_greeting">Добрый день👋</string>
-  <string name="menu_page_ai_translator">Переводчик ИИ</string>
   <string name="menu_page_evening_greeting">Добрый вечер👋</string>
   <string name="menu_page_image_generation">Генерация изображений</string>
   <string name="menu_page_knowledge_base">База знаний (в разработке)</string>
