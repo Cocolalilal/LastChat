@@ -30,7 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.RotateRight
+import androidx.compose.material.icons.automirrored.rounded.RotateRight
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -309,7 +309,7 @@ fun CropImageScreen(
                         interactionSource = rotateInteractionSource
                     ) {
                         Icon(
-                            Icons.Rounded.RotateRight,
+                            Icons.AutoMirrored.Rounded.RotateRight,
                             contentDescription = "Rotate",
                             modifier = Modifier.graphicsLayer {
                                 rotationZ = rotateIconRotation

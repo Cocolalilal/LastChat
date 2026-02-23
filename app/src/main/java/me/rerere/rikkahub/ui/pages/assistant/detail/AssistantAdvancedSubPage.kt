@@ -33,17 +33,16 @@ fun AssistantAdvancedSubPage(
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
-        SettingsGroup(title = "Message Formatting") {
-            MessageTemplateSettingsCard(
-                assistant = assistant,
-                onUpdate = onUpdate
-            )
+        // Message formatting settings moved from Prompts tab
+        MessageTemplateSettingsCard(
+            assistant = assistant,
+            onUpdate = onUpdate
+        )
 
-            MessageRegexSettingsCard(
-                assistant = assistant,
-                onUpdate = onUpdate
-            )
-        }
+        MessageRegexSettingsCard(
+            assistant = assistant,
+            onUpdate = onUpdate
+        )
 
         // Custom request settings
         SettingsGroup(title = "Custom Request") {
