@@ -22,11 +22,11 @@ const LOG_FILE = path.join(process.cwd(), 'logs.txt');
 function logToFile(message: string): void {
   const timestamp = new Date().toISOString();
   const logEntry = `[${timestamp}] ${message}\n`;
-  try {
-    fs.appendFileSync(LOG_FILE, logEntry, 'utf8');
-  } catch (error) {
-    console.error('Failed to write to log file:', error);
-  }
+  fs.appendFile(LOG_FILE, logEntry, 'utf8', (error) => {
+    if (error) {
+      console.error('Failed to write to log file:', error);
+    }
+  });
 }
 
 const LANGUAGE_NAMES: Record<string, string> = {
