@@ -54,7 +54,6 @@ object PermissionChecker {
             val textsToCheck = buildList {
                 add(assistant.systemPrompt)
                 add(assistant.messageTemplate)
-                add(assistant.spontaneousPrompt)
                 addAll(assistant.quickMessages.map { it.content })
             }
             

@@ -65,12 +65,6 @@ data class Assistant(
     val enableRagLogging: Boolean = false, // Enable detailed RAG logging
     val enableMemoryConsolidation: Boolean = false, // Enable episodic memory creation from chats (requires RAG)
 
-    // Spontaneous Notification Settings
-    val notificationStartHour: Int = 7, // Hour when notifications can start (0-23)
-    val notificationEndHour: Int = 22, // Hour when notifications must stop (0-23)
-    val notificationFrequencyHours: Int = 4, // Minimum hours between notifications
-    val lastNotificationTime: Long = 0L, // Timestamp of last notification
-    val lastNotificationContent: String = "", // Content of last notification to avoid repetition
     val messageTemplate: String = "{{ message }}",
     val presetMessages: List<UIMessage> = emptyList(),
     val quickMessages: List<QuickMessage> = emptyList(),
@@ -85,8 +79,6 @@ data class Assistant(
     val backgroundDim: Float = 0.6f,
     val useAssistantMaterialYouColors: Boolean = false,
     val learningMode: Boolean = false,
-    val enableSpontaneous: Boolean = false, // 是否启用自发消息
-    val spontaneousPrompt: String = "", // 自发消息的Prompt
     val enabledLorebookIds: Set<Uuid> = emptySet(), // Lorebooks enabled for this assistant
 
     // Context Management Settings
