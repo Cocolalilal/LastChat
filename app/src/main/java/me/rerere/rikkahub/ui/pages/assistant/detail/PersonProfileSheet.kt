@@ -209,7 +209,7 @@ private fun ProfileViewMode(
             .fillMaxWidth()
             .verticalScroll(scrollState)
             .padding(horizontal = 20.dp)
-            .padding(bottom = 24.dp)
+            .padding(top = 12.dp, bottom = 24.dp)
             .navigationBarsPadding()
             .animateContentSize(animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f)),
         verticalArrangement = Arrangement.spacedBy(16.dp),
