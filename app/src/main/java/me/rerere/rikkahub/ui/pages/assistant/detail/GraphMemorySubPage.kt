@@ -537,8 +537,17 @@ private fun EntitiesView(
 
     val filteredNodes = nodes
         .filter { node ->
+            val displayName = profilesByNodeId[node.id]
+                ?.displayName
+                ?.takeIf { it.isNotBlank() }
+                ?: node.name
             (selectedType == null || node.nodeType == selectedType) &&
-            (searchQuery.isBlank() || node.name.contains(searchQuery, ignoreCase = true) || node.description.contains(searchQuery, ignoreCase = true))
+            (
+                searchQuery.isBlank() ||
+                    displayName.contains(searchQuery, ignoreCase = true) ||
+                    node.name.contains(searchQuery, ignoreCase = true) ||
+                    node.description.contains(searchQuery, ignoreCase = true)
+                )
         }
         .sortedWith(compareByDescending<MemoryNodeEntity> {
             val p = profilesByNodeId[it.id]
@@ -1050,7 +1059,6 @@ private fun EntitiesView(
         // Node list with swipe-to-delete
         Column(
             modifier = Modifier
-                .clip(RoundedCornerShape(20.dp))
                 .animateContentSize(),
             verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
@@ -1164,6 +1172,11 @@ private fun NodeCard(
 ) {
     val shape = cardShape(position)
     val typeColor = nodeTypeColor(node.nodeType)
+    val displayName = if (node.nodeType == NodeType.PERSON) {
+        profile?.displayName?.takeIf { it.isNotBlank() } ?: node.name
+    } else {
+        node.name
+    }
     val valenceColor = when {
         node.emotionalValence > 0.3f -> Color(0xFF4CAF50).copy(alpha = 0.08f)
         node.emotionalValence < -0.3f -> Color(0xFFF44336).copy(alpha = 0.08f)
@@ -1218,7 +1231,7 @@ private fun NodeCard(
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
-                            text = node.name,
+                            text = displayName,
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
@@ -1695,7 +1708,7 @@ private fun RelationshipsView(
         }
 
         Column(
-            modifier = Modifier.clip(RoundedCornerShape(20.dp)).animateContentSize(),
+            modifier = Modifier.animateContentSize(),
             verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
             if (sortedEdges.isEmpty()) {
@@ -2094,7 +2107,7 @@ private fun TimelineView(
     }
 
     Column(
-        modifier = Modifier.clip(RoundedCornerShape(20.dp)).animateContentSize(),
+        modifier = Modifier.animateContentSize(),
         verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
         if (sortedEvents.isEmpty()) {
@@ -2411,7 +2424,7 @@ private fun EpisodesView(
     }
 
     Column(
-        modifier = Modifier.clip(RoundedCornerShape(20.dp)).animateContentSize(),
+        modifier = Modifier.animateContentSize(),
         verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
         if (sortedEpisodes.isEmpty()) {
