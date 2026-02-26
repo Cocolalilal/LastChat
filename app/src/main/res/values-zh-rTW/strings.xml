@@ -275,7 +275,6 @@
   <string name="mcp_picker_title">MCP伺服器</string>
   <string name="menu">選單</string>
   <string name="menu_page_afternoon_greeting">下午好\uD83D\uDC4B</string>
-  <string name="menu_page_ai_translator">AI翻譯</string>
   <string name="menu_page_evening_greeting">晚上好\uD83D\uDC4B</string>
   <string name="menu_page_image_generation">圖片生成</string>
   <string name="menu_page_knowledge_base">知識庫 (建設中)</string>

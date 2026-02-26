@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.AppScope
@@ -624,8 +625,6 @@ data class DisplaySetting(
     val showMessageJumper: Boolean = false,
     val messageJumperOnLeft: Boolean = false,
     val fontSizeRatio: Float = 1.0f,
-    @Deprecated("Use fontSettings instead")
-    val useExpressiveFont: Boolean = true, // Kept for migration, use fontSettings
     val fontSettings: FontSettings = FontSettings(), // Comprehensive font customization
     val enableMessageGenerationHapticEffect: Boolean = false,
     val enableUIHaptics: Boolean = true,
