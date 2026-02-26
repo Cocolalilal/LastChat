@@ -275,7 +275,6 @@
   <string name="mcp_picker_title">MCP 서버</string>
   <string name="menu">메뉴</string>
   <string name="menu_page_afternoon_greeting">좋은 오후입니다\uD83D\uDC4B</string>
-  <string name="menu_page_ai_translator">AI 번역기</string>
   <string name="menu_page_evening_greeting">좋은 저녁입니다\uD83D\uDC4B</string>
   <string name="menu_page_image_generation">이미지 생성</string>
   <string name="menu_page_knowledge_base">지식 기반 (준비 중)</string>

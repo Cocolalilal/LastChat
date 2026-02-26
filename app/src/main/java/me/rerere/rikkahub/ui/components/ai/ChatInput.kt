@@ -148,6 +148,7 @@ import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.ui.draw.rotate
+import me.rerere.rikkahub.ui.components.ui.icons.ModeIcons
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.components.crop.CropImageScreen
 import me.rerere.ai.provider.Model
@@ -1251,6 +1252,19 @@ internal fun FilesPicker(
             ) {
                 // Modes button (left half) - matches BigIconTextButton pattern
                 val modesActive = activeModeCount > 0
+                val activeModeIcon = if (activeModeCount == 1) {
+                    val activeMode = settings.modes.find { mode ->
+                        if (conversation.enabledModeIds.isEmpty()) {
+                            mode.defaultEnabled
+                        } else {
+                            conversation.enabledModeIds.contains(mode.id)
+                        }
+                    }
+                    activeMode?.icon?.let { ModeIcons.getIcon(it) } ?: Icons.Rounded.AutoFixHigh
+                } else {
+                    Icons.Rounded.AutoFixHigh
+                }
+
                 CompositionLocalProvider(LocalAbsoluteTonalElevation provides if(amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
                     Surface(
                         modifier = Modifier.weight(1f),
@@ -1265,7 +1279,7 @@ internal fun FilesPicker(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.AutoFixHigh,
+                                imageVector = activeModeIcon,
                                 contentDescription = null,
                                 tint = if (modesActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(20.dp)
@@ -1925,6 +1939,16 @@ internal fun ModesPickerSheet(
                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                // Mode Icon
+                                if (mode.icon != null) {
+                                    Icon(
+                                        imageVector = ModeIcons.getIcon(mode.icon),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(24.dp),
+                                        tint = if (isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
                                 // Mode content
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(

@@ -1,6 +1,6 @@
 import { google } from '@ai-sdk/google';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { generateText } from 'ai';
+import { generateText, LanguageModel } from 'ai';
 import { StringResource } from './xml-parser';
 import { I18nConfig } from './config';
 import * as fs from 'fs';
@@ -22,11 +22,11 @@ const LOG_FILE = path.join(process.cwd(), 'logs.txt');
 function logToFile(message: string): void {
   const timestamp = new Date().toISOString();
   const logEntry = `[${timestamp}] ${message}\n`;
-  try {
-    fs.appendFileSync(LOG_FILE, logEntry, 'utf8');
-  } catch (error) {
-    console.error('Failed to write to log file:', error);
-  }
+  fs.appendFile(LOG_FILE, logEntry, 'utf8', (error) => {
+    if (error) {
+      console.error('Failed to write to log file:', error);
+    }
+  });
 }
 
 const LANGUAGE_NAMES: Record<string, string> = {
@@ -68,12 +68,13 @@ export async function translateString(
   text: string,
   targetLocale: string,
   config: I18nConfig,
-  context?: string
+  context?: string,
+  model?: LanguageModel
 ): Promise<string> {
   logToFile(`Starting translation - Target: ${targetLocale}, Text: "${text}"`);
 
   try {
-    const model = getModel(config);
+    const effectiveModel = model || getModel(config);
     const targetLanguage = getLanguageName(targetLocale);
 
     const prompt = `Translate the following Android app string resource to ${targetLanguage}.
@@ -95,7 +96,7 @@ Translation:`;
     logToFile(`Using provider: ${config.provider.type}, model: ${config.provider.model}`);
 
     const result = await generateText({
-      model,
+      model: effectiveModel,
       prompt,
       temperature: 0.3,
       providerOptions: {
@@ -137,6 +138,8 @@ export async function batchTranslate(
   // Shared index for workers
   let index = 0;
 
+  const model = getModel(config);
+
   async function worker(workerId: number) {
     while (true) {
       const currentIndex = index;
@@ -162,7 +165,8 @@ export async function batchTranslate(
           stringResource.value,
           targetLocale,
           config,
-          `Key: ${stringResource.key}`
+          `Key: ${stringResource.key}`,
+          model
         );
 
         results[currentIndex] = {

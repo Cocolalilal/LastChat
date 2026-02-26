@@ -551,7 +551,7 @@ private fun AssistantDetailHome(
             NavigationCard(
                 icon = Icons.AutoMirrored.Rounded.Chat,
                 title = stringResource(R.string.assistant_page_tab_prompt),
-                description = "System prompts, templates, regex",
+                description = "System prompts, quick messages, presets",
                 onClick = onNavigateToPrompts
             )
 
@@ -597,7 +597,7 @@ private fun AssistantDetailHome(
             NavigationCard(
                 icon = Icons.Rounded.Tune,
                 title = "Advanced",
-                description = "Notifications, custom headers",
+                description = "Templates, regex, custom headers",
                 onClick = onNavigateToAdvanced
             )
         }

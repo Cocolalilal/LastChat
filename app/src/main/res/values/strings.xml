@@ -301,7 +301,6 @@
     <string name="mcp_picker_title">MCP Servers</string>
     <string name="menu">Menu</string>
     <string name="menu_page_afternoon_greeting">Good Afternoon!</string>
-    <string name="menu_page_ai_translator">AI Translator</string>
     <string name="menu_page_evening_greeting">Good Evening!</string>
     <string name="menu_page_image_generation">Image Gen</string>
     <string name="menu_page_knowledge_base">Knowledge Base (WIP)</string>
@@ -597,6 +596,7 @@
     <string name="setting_provider_page_add_custom_provider_desc">Configure a custom API endpoint</string>
     <string name="setting_provider_page_no_providers_but_preset">It looks like you don\'t have this provider in your list. Don\'t worry, we have a preset ready for you!</string>
     <string name="setting_provider_page_select_icon">Select Icon</string>
+    <string name="icon_picker_search_placeholder">Search icons...</string>
     <string name="setting_provider_page_pick_from_gallery">Pick from Gallery</string>
     <string name="setting_provider_page_search_lobehub">Search LobeHub Icons</string>
     <string name="setting_tts_page_add">Add</string>

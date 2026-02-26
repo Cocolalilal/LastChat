@@ -31,7 +31,6 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import me.rerere.rikkahub.service.MemoryConsolidationWorker
-import me.rerere.rikkahub.service.SpontaneousWorker
 import java.util.concurrent.TimeUnit
 import org.koin.androidx.workmanager.koin.workManagerFactory
 import org.koin.core.context.startKoin
@@ -72,20 +71,6 @@ class LastChatApp : Application() {
             setDefaultsAsync(R.xml.remote_config_defaults)
             fetchAndActivate()
         }
-
-        // Schedule Spontaneous Worker
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-            "spontaneous_notification",
-            ExistingPeriodicWorkPolicy.UPDATE,
-            PeriodicWorkRequestBuilder<SpontaneousWorker>(30, TimeUnit.MINUTES)
-                .setConstraints(
-                    Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.CONNECTED)
-                        .build()
-                )
-                .build()
-        )
-
         // Schedule Memory Consolidation Worker dynamically
         get<AppScope>().launch {
             get<SettingsStore>().settingsFlow

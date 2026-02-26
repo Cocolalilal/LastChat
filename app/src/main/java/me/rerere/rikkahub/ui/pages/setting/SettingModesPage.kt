@@ -34,6 +34,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import me.rerere.rikkahub.ui.components.ui.MaterialIconPickerDialog
+import me.rerere.rikkahub.ui.components.ui.icons.ModeIcons
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AttachFile
@@ -566,12 +568,21 @@ private fun ModeCard(
                     modifier = Modifier.size(28.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = priority.toString(),
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimary
-                        )
+                        if (mode.icon != null) {
+                            Icon(
+                                imageVector = ModeIcons.getIcon(mode.icon),
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.onPrimary
+                            )
+                        } else {
+                            Text(
+                                text = priority.toString(),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                        }
                     }
                 }
             },
@@ -591,6 +602,7 @@ internal fun ModeEditorSheet(
     
     var name by remember(mode) { mutableStateOf(mode?.name ?: "") }
     var icon by remember(mode) { mutableStateOf(mode?.icon) }
+    var showIconPicker by remember { mutableStateOf(false) }
     var prompt by remember(mode) { mutableStateOf(mode?.prompt ?: "") }
     var defaultEnabled by remember(mode) { mutableStateOf(mode?.defaultEnabled ?: false) }
     var injectionPosition by remember(mode) { 
@@ -714,8 +726,7 @@ internal fun ModeEditorSheet(
                     // Icon selector (clickable box)
                     Surface(
                         onClick = {
-                            // Cycle through simple letters for now as icon placeholder
-                            // TODO: Implement full icon picker in future
+                            showIconPicker = true
                         },
                         modifier = Modifier.size(56.dp),
                         shape = RoundedCornerShape(12.dp),
@@ -725,12 +736,31 @@ internal fun ModeEditorSheet(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            Text(
-                                text = name.take(1).uppercase().ifBlank { "M" },
-                                style = MaterialTheme.typography.headlineMedium,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer
-                            )
+                            if (icon != null) {
+                                Icon(
+                                    imageVector = ModeIcons.getIcon(icon),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(32.dp),
+                                    tint = MaterialTheme.colorScheme.onTertiaryContainer
+                                )
+                            } else {
+                                Text(
+                                    text = name.take(1).uppercase().ifBlank { "M" },
+                                    style = MaterialTheme.typography.headlineMedium,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                                )
+                            }
                         }
+                    }
+
+                    if (showIconPicker) {
+                        MaterialIconPickerDialog(
+                            onDismiss = { showIconPicker = false },
+                            onIconSelected = { selectedIcon ->
+                                icon = selectedIcon
+                                showIconPicker = false
+                            }
+                        )
                     }
                     
                     // Name field
