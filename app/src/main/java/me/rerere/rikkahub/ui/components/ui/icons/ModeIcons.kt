@@ -82,7 +82,6 @@ object ModeIcons {
         "theater_comedy" to Icons.Rounded.TheaterComedy,
         "bug_report" to Icons.Rounded.BugReport,
         "android" to Icons.Rounded.Android,
-        "apple" to Icons.Rounded.Apple, // Note: Might not be available in all versions, check dependency
         "computer" to Icons.Rounded.Computer,
         "smartphone" to Icons.Rounded.Smartphone,
         "terminal" to Icons.Rounded.Terminal,
