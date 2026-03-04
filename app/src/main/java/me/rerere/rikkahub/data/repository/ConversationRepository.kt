@@ -5,6 +5,7 @@ import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
 import androidx.paging.map
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -501,6 +502,63 @@ class ConversationRepository(
     fun getUsageStatsFlow(): Flow<UsageStatsEntity?> = usageStatsDAO.getStatsFlow()
 
     /**
+     * 12-month rolling usage stats for the statistics page.
+     * Window is calendar-aligned: current month + previous 11 months.
+     */
+    fun getUsageStatsLast12MonthsFlow(): Flow<UsageStatsEntity> = combine(
+        conversationDAO.getAll(),
+        dailyActivityDAO.getAllActivityFlow(),
+        usageStatsDAO.getStatsFlow()
+    ) { allConversations, allActivity, persistedStats ->
+        val today = LocalDate.now()
+        val windowStart = today.withDayOfMonth(1).minusMonths(11)
+        val formatter = DateTimeFormatter.ISO_LOCAL_DATE
+
+        val conversationCountInWindow = allConversations.count { entity ->
+            val createdDate = Instant.ofEpochMilli(entity.createAt)
+                .atZone(ZoneId.systemDefault())
+                .toLocalDate()
+            !createdDate.isBefore(windowStart) && !createdDate.isAfter(today)
+        }.toLong()
+
+        val usageTotalsInWindow = allConversations.fold(HistoricalUsageTotals()) { acc, entity ->
+            val fallbackDate = Instant.ofEpochMilli(entity.createAt)
+                .atZone(ZoneId.systemDefault())
+                .toLocalDate()
+            acc + extractHistoricalUsage(
+                nodesJson = entity.nodes,
+                windowStart = windowStart,
+                windowEnd = today,
+                fallbackDate = fallbackDate
+            )
+        }
+
+        val messagesFromActivityInWindow = allActivity.sumOf { entity ->
+            val date = runCatching { LocalDate.parse(entity.date, formatter) }.getOrNull()
+            if (date != null && !date.isBefore(windowStart) && !date.isAfter(today)) {
+                entity.messageCount.toLong()
+            } else {
+                0L
+            }
+        }
+
+        val bestMessageCount = maxOf(
+            messagesFromActivityInWindow,
+            usageTotalsInWindow.selectedMessageCount.toLong()
+        )
+
+        UsageStatsEntity(
+            id = 1,
+            totalConversations = conversationCountInWindow,
+            totalMessages = bestMessageCount,
+            inputTokens = usageTotalsInWindow.inputTokens,
+            outputTokens = usageTotalsInWindow.outputTokens,
+            cachedTokens = usageTotalsInWindow.cachedTokens,
+            appLaunches = persistedStats?.appLaunches ?: 0L
+        )
+    }
+
+    /**
      * One-time backfill for legacy/imported databases where usage_stats may exist but lacks token data.
      * Keeps counters monotonic by never decreasing existing values.
      */
@@ -561,7 +619,12 @@ class ConversationRepository(
         usageStatsDAO.incrementAppLaunches()
     }
 
-    private fun extractHistoricalUsage(nodesJson: String): HistoricalUsageTotals {
+    private fun extractHistoricalUsage(
+        nodesJson: String,
+        windowStart: LocalDate? = null,
+        windowEnd: LocalDate? = null,
+        fallbackDate: LocalDate? = null
+    ): HistoricalUsageTotals {
         val root = runCatching { JsonInstant.parseToJsonElement(nodesJson) }.getOrNull()
         if (root !is JsonArray) return HistoricalUsageTotals()
 
@@ -578,6 +641,17 @@ class ConversationRepository(
             val selectedIndex = node["selectIndex"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
             val selectedMessage = (messages.getOrNull(selectedIndex) ?: messages.lastOrNull()) as? JsonObject
                 ?: return@forEach
+
+            val messageDate = parseDateString(
+                selectedMessage["createdAt"]?.jsonPrimitiveOrNull?.contentOrNull
+            )?.let { runCatching { LocalDate.parse(it, DateTimeFormatter.ISO_LOCAL_DATE) }.getOrNull() }
+                ?: fallbackDate
+            if (windowStart != null) {
+                if (messageDate == null || messageDate.isBefore(windowStart)) return@forEach
+            }
+            if (windowEnd != null) {
+                if (messageDate == null || messageDate.isAfter(windowEnd)) return@forEach
+            }
 
             selectedMessageCount += 1
 

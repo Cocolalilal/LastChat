@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
@@ -41,25 +42,38 @@ import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.AssistantRegex
 import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
+import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 @Composable
 fun MessageTemplateSettingsCard(
     assistant: Assistant,
     onUpdate: (Assistant) -> Unit
 ) {
-    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = if (LocalDarkMode.current) {
+            MaterialTheme.colorScheme.surfaceContainerLow
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHighest
+        },
+        shape = RoundedCornerShape(10.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(stringResource(R.string.assistant_page_message_template), style = MaterialTheme.typography.titleMedium)
-                Text(stringResource(R.string.assistant_page_message_template_desc), style = MaterialTheme.typography.bodyMedium)
-                Text(buildAnnotatedString {
+            Text(
+                text = stringResource(R.string.assistant_page_message_template),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = stringResource(R.string.assistant_page_message_template_desc),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                buildAnnotatedString {
                     append(stringResource(R.string.assistant_page_template_variables_label)); append(" ")
                     append(stringResource(R.string.assistant_page_template_variable_role)); append(": ")
                     withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary)) { append("{{ role }}") }
@@ -72,16 +86,18 @@ fun MessageTemplateSettingsCard(
                     append(", ")
                     append(stringResource(R.string.assistant_page_template_variable_date)); append(": ")
                     withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary)) { append("{{ date }}") }
-                }, style = MaterialTheme.typography.bodySmall)
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
-                DebouncedTextField(
-                    value = assistant.messageTemplate,
-                    onValueChange = { onUpdate(assistant.copy(messageTemplate = it)) },
-                    stateKey = "advanced_message_template_${assistant.id}",
-                    modifier = Modifier.fillMaxWidth(),
-                    maxLines = 8
-                )
-            }
+            DebouncedTextField(
+                value = assistant.messageTemplate,
+                onValueChange = { onUpdate(assistant.copy(messageTemplate = it)) },
+                stateKey = "advanced_message_template_${assistant.id}",
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 8
+            )
         }
     }
 }
@@ -91,28 +107,41 @@ fun MessageRegexSettingsCard(
     assistant: Assistant,
     onUpdate: (Assistant) -> Unit
 ) {
-    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = if (LocalDarkMode.current) {
+            MaterialTheme.colorScheme.surfaceContainerLow
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHighest
+        },
+        shape = RoundedCornerShape(10.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(stringResource(R.string.assistant_page_regex_title), style = MaterialTheme.typography.titleMedium)
-                Text(stringResource(R.string.assistant_page_regex_desc), style = MaterialTheme.typography.bodyMedium)
+            Text(
+                text = stringResource(R.string.assistant_page_regex_title),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = stringResource(R.string.assistant_page_regex_desc),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
-                assistant.regexes.fastForEachIndexed { index, regex ->
-                    RegexEditorCard(regex = regex, assistant = assistant, index = index, onUpdate = onUpdate)
-                }
+            assistant.regexes.fastForEachIndexed { index, regex ->
+                RegexEditorCard(regex = regex, assistant = assistant, index = index, onUpdate = onUpdate)
+            }
 
-                Button(
-                    onClick = {
-                        onUpdate(assistant.copy(regexes = assistant.regexes + AssistantRegex(id = Uuid.random())))
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Rounded.Add, contentDescription = null)
-                }
+            Button(
+                onClick = {
+                    onUpdate(assistant.copy(regexes = assistant.regexes + AssistantRegex(id = Uuid.random())))
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Rounded.Add, contentDescription = null)
             }
         }
     }
@@ -129,8 +158,8 @@ private fun RegexEditorCard(
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.background
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.surface
     ) {
         Column(
             modifier = Modifier.padding(12.dp).animateContentSize(),

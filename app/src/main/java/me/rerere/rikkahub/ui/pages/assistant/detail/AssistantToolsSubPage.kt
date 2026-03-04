@@ -4,31 +4,47 @@ import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.LinearWavyProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
+import me.rerere.rikkahub.data.ai.mcp.McpStatus
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantSearchMode
-import me.rerere.rikkahub.ui.components.ai.McpPickerButton
+import me.rerere.rikkahub.ui.components.ai.McpPicker
 import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import me.rerere.search.SearchServiceOptions
+import org.koin.compose.koinInject
 
 /**
  * Tools & Search tab - Combined search, local tools, and MCP settings.
@@ -190,19 +206,70 @@ fun AssistantToolsSubPage(
         // MCP GROUP (only show if servers configured)
         // ═══════════════════════════════════════════════════════════════════
         if (mcpServerConfigs.isNotEmpty()) {
+            var showMcpPicker by remember { mutableStateOf(false) }
+            val mcpManager = koinInject<McpManager>()
+            val syncingStatus by mcpManager.syncingStatus.collectAsStateWithLifecycle()
+            val loading = syncingStatus.values.any { it == McpStatus.Connecting }
+            val availableServerCount = mcpServerConfigs.count { it.commonOptions.enable }
+            val enabledServerCount = mcpServerConfigs.count {
+                it.commonOptions.enable && assistant.mcpServers.contains(it.id)
+            }
+
             SettingsGroup(title = stringResource(R.string.assistant_page_tab_mcp)) {
-            SettingGroupItem(
-                    title = "MCP Servers",
-                    subtitle = "Enable external tool servers",
-                    trailing = {
-                        McpPickerButton(
+                SettingGroupItem(
+                    title = stringResource(R.string.mcp_picker_title),
+                    subtitle = when {
+                        loading -> stringResource(R.string.mcp_picker_syncing)
+                        enabledServerCount > 0 -> "$enabledServerCount enabled of $availableServerCount"
+                        else -> "Select external tool servers"
+                    },
+                    onClick = { showMcpPicker = true }
+                )
+            }
+
+            if (showMcpPicker) {
+                ModalBottomSheet(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                    onDismissRequest = { showMcpPicker = false },
+                    sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .fillMaxHeight(0.7f)
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Text(
+                            text = stringResource(id = R.string.mcp_picker_title),
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                fontWeight = FontWeight.Bold
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        AnimatedVisibility(loading) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            ) {
+                                LinearWavyProgressIndicator()
+                                Text(
+                                    text = stringResource(id = R.string.mcp_picker_syncing),
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                            }
+                        }
+                        McpPicker(
                             assistant = assistant,
                             servers = mcpServerConfigs,
-                            mcpManager = org.koin.compose.koinInject(),
-                            onUpdateAssistant = onUpdate
+                            onUpdateAssistant = onUpdate,
+                            modifier = Modifier
+                                .fillMaxWidth()
                         )
                     }
-                )
+                }
             }
         }
     }

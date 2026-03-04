@@ -117,6 +117,7 @@ import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.ui.components.crop.CropImageScreen
+import me.rerere.rikkahub.ui.components.ui.icons.ModeIcons
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionCamera
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionManager
 import me.rerere.rikkahub.ui.components.ui.permission.rememberPermissionState
@@ -802,16 +803,22 @@ private fun MinimalPickerContent(
         )
         
         // Modes - use enabledModeIds from conversation or default modes
-        val activeModesCount = if (conversation.enabledModeIds.isNotEmpty()) {
-            conversation.enabledModeIds.size
+        val activeModes = if (conversation.enabledModeIds.isNotEmpty()) {
+            settings.modes.filter { mode -> conversation.enabledModeIds.contains(mode.id) }
         } else {
-            settings.modes.count { it.defaultEnabled }
+            settings.modes.filter { it.defaultEnabled }
         }
+        val activeModesCount = activeModes.size
         val modesActive = activeModesCount > 0
+        val singleActiveModeIcon = activeModes.singleOrNull()?.icon
         MinimalPickerItem(
             icon = {
                 Icon(
-                    imageVector = Icons.Rounded.FlashOn,
+                    imageVector = if (singleActiveModeIcon != null) {
+                        ModeIcons.getIcon(singleActiveModeIcon)
+                    } else {
+                        Icons.Rounded.FlashOn
+                    },
                     contentDescription = null,
                     modifier = Modifier.size(24.dp),
                     tint = if (modesActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
