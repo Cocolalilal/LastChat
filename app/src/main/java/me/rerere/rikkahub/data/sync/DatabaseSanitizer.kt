@@ -70,7 +70,8 @@ object DatabaseSanitizer {
                 "GenMediaEntity",
                 "ChatEpisodeEntity",
                 "EmbeddingCacheEntity",
-                "daily_activity"
+                "daily_activity",
+                "usage_stats"
             )
 
             for (table in tables) {

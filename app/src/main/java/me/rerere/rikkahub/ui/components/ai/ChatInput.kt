@@ -148,6 +148,7 @@ import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.ui.draw.rotate
+import me.rerere.rikkahub.ui.components.ui.icons.ModeIcons
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.components.crop.CropImageScreen
 import me.rerere.ai.provider.Model
@@ -319,7 +320,7 @@ fun ChatInput(
             // Floating Input Bar
             Surface(
                 shape = RoundedCornerShape(cornerRadius),
-                color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerLow, // Material You Surface Color
+                color = MaterialTheme.colorScheme.surfaceContainerHighest, // Material You Surface Color
                 tonalElevation = 8.dp,
                 border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
                 modifier = Modifier.fillMaxWidth()
@@ -611,7 +612,7 @@ fun ChatInput(
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(40.dp),
-                        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerLow,
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
                         tonalElevation = 8.dp
                     ) {
                         FilesPicker(
@@ -1251,6 +1252,19 @@ internal fun FilesPicker(
             ) {
                 // Modes button (left half) - matches BigIconTextButton pattern
                 val modesActive = activeModeCount > 0
+                val activeModeIcon = if (activeModeCount == 1) {
+                    val activeMode = settings.modes.find { mode ->
+                        if (conversation.enabledModeIds.isEmpty()) {
+                            mode.defaultEnabled
+                        } else {
+                            conversation.enabledModeIds.contains(mode.id)
+                        }
+                    }
+                    activeMode?.icon?.let { ModeIcons.getIcon(it) } ?: Icons.Rounded.AutoFixHigh
+                } else {
+                    Icons.Rounded.AutoFixHigh
+                }
+
                 CompositionLocalProvider(LocalAbsoluteTonalElevation provides if(amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
                     Surface(
                         modifier = Modifier.weight(1f),
@@ -1265,7 +1279,7 @@ internal fun FilesPicker(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.AutoFixHigh,
+                                imageVector = activeModeIcon,
                                 contentDescription = null,
                                 tint = if (modesActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(20.dp)
@@ -1846,6 +1860,7 @@ internal fun ModesPickerSheet(
     val scope = rememberCoroutineScope()
     
     ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         sheetGesturesEnabled = false,
@@ -1860,8 +1875,7 @@ internal fun ModesPickerSheet(
             ) {
                 Icon(Icons.Rounded.KeyboardArrowDown, null)
             }
-        },
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        }
     ) {
         Column(
             modifier = Modifier
@@ -1925,6 +1939,16 @@ internal fun ModesPickerSheet(
                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                // Mode Icon
+                                if (mode.icon != null) {
+                                    Icon(
+                                        imageVector = ModeIcons.getIcon(mode.icon),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(24.dp),
+                                        tint = if (isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
                                 // Mode content
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
@@ -1983,6 +2007,7 @@ internal fun LorebooksPickerSheet(
     val scope = rememberCoroutineScope()
     
     ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         sheetGesturesEnabled = false,
@@ -1997,8 +2022,7 @@ internal fun LorebooksPickerSheet(
             ) {
                 Icon(Icons.Rounded.KeyboardArrowDown, null)
             }
-        },
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        }
     ) {
         Column(
             modifier = Modifier

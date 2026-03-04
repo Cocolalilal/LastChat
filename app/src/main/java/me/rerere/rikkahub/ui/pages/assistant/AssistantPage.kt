@@ -432,6 +432,7 @@ fun AssistantCreationSheet(
 ) {
     state.EditStateContent { assistant, update ->
         ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = {
                 state.dismiss()
             },

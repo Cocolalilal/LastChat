@@ -157,6 +157,7 @@ private fun DefaultTranslationModelSetting(
 
     if (showModal) {
         ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = {
                 showModal = false
             },
@@ -253,6 +254,7 @@ private fun DefaultSuggestionModelSetting(
 
     if (showModal) {
         ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = {
                 showModal = false
             },
@@ -345,6 +347,7 @@ private fun DefaultTitleModelSetting(
 
     if (showModal) {
         ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = {
                 showModal = false
             },
@@ -475,6 +478,7 @@ private fun DefaultOcrModelSetting(
 
     if (showModal) {
         ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = {
                 showModal = false
             },

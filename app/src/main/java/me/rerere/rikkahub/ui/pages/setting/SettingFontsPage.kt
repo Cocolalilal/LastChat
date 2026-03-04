@@ -443,7 +443,7 @@ private fun FontConfigSection(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(8.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                                     .padding(12.dp)
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
@@ -727,7 +727,7 @@ private fun FontPreviewCard(fontSettings: FontSettings) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                     .padding(12.dp)
             ) {
                 Text(

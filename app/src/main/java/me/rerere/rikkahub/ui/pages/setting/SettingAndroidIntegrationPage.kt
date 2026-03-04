@@ -145,7 +145,7 @@ fun SettingAndroidIntegrationPage(
                             // Demo text box
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 androidx.compose.foundation.text.selection.SelectionContainer {

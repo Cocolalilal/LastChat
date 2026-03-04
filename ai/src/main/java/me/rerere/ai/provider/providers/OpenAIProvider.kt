@@ -23,6 +23,7 @@ import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.util.KeyRoulette
 import me.rerere.ai.util.configureClientWithProxy
+import me.rerere.ai.util.configureReferHeaders
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.toHeaders
@@ -85,6 +86,7 @@ class OpenAIProvider(
         val request = Request.Builder()
             .url(url)
             .addHeader("Authorization", "Bearer $key")
+            .configureReferHeaders(providerSetting.baseUrl)
             .get()
             .build()
 
@@ -150,6 +152,7 @@ class OpenAIProvider(
         val request = Request.Builder()
             .url(url)
             .addHeader("Authorization", "Bearer $key")
+            .configureReferHeaders(providerSetting.baseUrl)
             .get()
             .build()
         val response = client.configureClientWithProxy(providerSetting.proxy).newCall(request).await()
@@ -243,6 +246,7 @@ class OpenAIProvider(
             .addHeader("Authorization", "Bearer $key")
             .addHeader("Content-Type", "application/json")
             .post(requestBody.toRequestBody("application/json".toMediaType()))
+            .configureReferHeaders(providerSetting.baseUrl)
             .build()
 
         val response = client.configureClientWithProxy(providerSetting.proxy).newCall(request).await()
@@ -288,6 +292,7 @@ class OpenAIProvider(
             .addHeader("Authorization", "Bearer $key")
             .addHeader("Content-Type", "application/json")
             .post(requestBody.toRequestBody("application/json".toMediaType()))
+            .configureReferHeaders(providerSetting.baseUrl)
             .build()
 
         val response =

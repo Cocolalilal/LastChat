@@ -67,4 +67,39 @@ interface DailyActivityDAO {
         VALUES (:date, 1, :timestamp)
     """)
     suspend fun insertDateIfNotExists(date: String, timestamp: Long)
+    
+    /**
+     * Get all activity entries (for heatmap display)
+     */
+    @Query("SELECT * FROM daily_activity ORDER BY date ASC")
+    fun getAllActivityFlow(): Flow<List<DailyActivityEntity>>
+    
+    /**
+     * Get the total message count across all days (persistent count)
+     */
+    @Query("SELECT COALESCE(SUM(message_count), 0) FROM daily_activity")
+    fun getTotalMessageCountFlow(): Flow<Long>
+
+    /**
+     * Backfill/import-safe insert for historical activity reconstruction.
+     * Uses OR IGNORE for broad SQLite compatibility.
+     */
+    @Query("""
+        INSERT OR IGNORE INTO daily_activity (date, message_count, last_message_time)
+        VALUES (:date, :count, :timestamp)
+    """)
+    suspend fun insertBackfilledActivityIfMissing(date: String, count: Int, timestamp: Long)
+
+    /**
+     * Merge backfilled activity by keeping max values.
+     * Split query avoids fragile UPSERT syntax across old SQLite versions.
+     */
+    @Query("""
+        UPDATE daily_activity
+        SET
+            message_count = CASE WHEN message_count < :count THEN :count ELSE message_count END,
+            last_message_time = CASE WHEN last_message_time < :timestamp THEN :timestamp ELSE last_message_time END
+        WHERE date = :date
+    """)
+    suspend fun mergeBackfilledActivity(date: String, count: Int, timestamp: Long)
 }

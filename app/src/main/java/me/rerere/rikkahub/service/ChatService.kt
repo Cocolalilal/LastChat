@@ -1414,6 +1414,5 @@ private fun kotlinx.serialization.json.JsonElement.truncateLargeJsonText(maxLeng
         }
         is kotlinx.serialization.json.JsonObject -> kotlinx.serialization.json.JsonObject(this.mapValues { it.value.truncateLargeJsonText(maxLength) })
         is kotlinx.serialization.json.JsonArray -> kotlinx.serialization.json.JsonArray(this.map { it.truncateLargeJsonText(maxLength) })
-        else -> this
     }
 }

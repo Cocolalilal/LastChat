@@ -910,6 +910,7 @@ private fun SettingsBottomSheet(
     onDismiss: () -> Unit
 ) {
     ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         dragHandle = { BottomSheetDefaults.DragHandle() }

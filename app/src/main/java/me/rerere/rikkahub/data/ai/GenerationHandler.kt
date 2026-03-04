@@ -841,6 +841,21 @@ class GenerationHandler(
             }
             onUpdateMessages(messages)
         }
+        
+        // Persist token usage to cumulative stats
+        messages.lastOrNull()?.usage?.let { usage ->
+            if (usage.promptTokens > 0 || usage.completionTokens > 0) {
+                try {
+                    conversationRepo.addTokenUsage(
+                        inputTokens = usage.promptTokens.toLong(),
+                        outputTokens = usage.completionTokens.toLong(),
+                        cachedTokens = usage.cachedTokens.toLong()
+                    )
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to persist token usage", e)
+                }
+            }
+        }
     }
 
     private fun buildMemoryTools(

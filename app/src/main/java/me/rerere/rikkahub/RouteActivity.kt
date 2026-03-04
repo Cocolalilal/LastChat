@@ -47,6 +47,7 @@ import okio.Path.Companion.toOkioPath
 import me.rerere.rikkahub.ui.components.ui.AppToasterHost
 import me.rerere.rikkahub.ui.components.ui.rememberAppToasterState
 import kotlinx.serialization.Serializable
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.filterNotNull
 import me.rerere.highlight.Highlighter
@@ -115,6 +116,7 @@ class RouteActivity : ComponentActivity() {
     private val okHttpClient by inject<OkHttpClient>()
     private val settingsStore by inject<SettingsStore>()
     private val chatService by inject<me.rerere.rikkahub.service.ChatService>()
+    private val conversationRepo by inject<me.rerere.rikkahub.data.repository.ConversationRepository>()
     private var navStack by mutableStateOf<NavHostController?>(null)
     private var pendingAssistantId by mutableStateOf<String?>(null)
     private var pendingTextSelection by mutableStateOf<TextSelectionData?>(null)
@@ -125,6 +127,18 @@ class RouteActivity : ComponentActivity() {
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
         disableNavigationBarContrast()
         super.onCreate(savedInstanceState)
+        
+        // Track app launch and initialize usage stats
+        lifecycleScope.launch(Dispatchers.IO) {
+            runCatching { conversationRepo.initUsageStats() }
+                .onFailure { android.util.Log.e(TAG, "initUsageStats failed", it) }
+            runCatching { conversationRepo.backfillDailyActivityFromConversationHistoryIfNeeded() }
+                .onFailure { android.util.Log.e(TAG, "daily activity backfill failed", it) }
+            runCatching { conversationRepo.backfillUsageStatsFromHistoryIfNeeded() }
+                .onFailure { android.util.Log.e(TAG, "usage stats backfill failed", it) }
+            runCatching { conversationRepo.incrementAppLaunches() }
+                .onFailure { android.util.Log.e(TAG, "increment app launches failed", it) }
+        }
         
         // Store intent data - will be processed AFTER composition is ready
         val intentAssistantId = intent?.getStringExtra("assistantId")

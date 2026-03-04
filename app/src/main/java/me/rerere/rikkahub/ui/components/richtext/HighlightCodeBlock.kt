@@ -34,9 +34,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.foundation.layout.offset
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
@@ -203,66 +205,27 @@ fun HighlightCodeBlock(
                         stiffness = 300f
                     )
                 ),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
-            // Physics-based header with press feedback - always full width
-            val headerInteractionSource = remember { MutableInteractionSource() }
-            val isHeaderPressed by headerInteractionSource.collectIsPressedAsState()
-            val headerScale by animateFloatAsState(
-                targetValue = if (isHeaderPressed) 0.97f else 1f,
-                animationSpec = spring(
-                    dampingRatio = 0.4f,
-                    stiffness = 400f
-                ),
-                label = "header_scale"
-            )
-            val headerAlpha by animateFloatAsState(
-                targetValue = if (isHeaderPressed) 0.7f else 1f,
-                animationSpec = spring(
-                    dampingRatio = 0.6f,
-                    stiffness = 300f
-                ),
-                label = "header_alpha"
-            )
-
-            // Header row - always full width with icons at far right
+            // Header row: language label left, action icons right
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .graphicsLayer {
-                        scaleX = headerScale
-                        scaleY = headerScale
-                        alpha = headerAlpha
-                    }
-                    // No clip needed - outer shape is already small (8dp)
-                    .clickable(
-                        onClick = { toggle() },
-                        indication = LocalIndication.current,
-                        interactionSource = headerInteractionSource
-                    )
-                    .padding(horizontal = 4.dp, vertical = 4.dp)
-                    .semantics { role = Role.Button },
+                    .padding(horizontal = 4.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // Left side: Icon and title
-                Icon(
-                    imageVector = Icons.Rounded.Code,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
+                // Left side: language label
                 Text(
-                    text = "$languageDisplayName Snippet",
-                    style = MaterialTheme.typography.titleSmall,
+                    text = language.lowercase(),
+                    style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 
                 // Spacer to push icons to the right
                 Spacer(modifier = Modifier.weight(1f))
                 
-                // Right side: Action icons (always visible) + chevron
                 // Copy icon
                 IconButton(
                     onClick = {
@@ -270,12 +233,12 @@ fun HighlightCodeBlock(
                             clipboardManager.setClipEntry(ClipEntry(ClipData.newPlainText("code", code)))
                         }
                     },
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(28.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.ContentCopy,
                         contentDescription = stringResource(id = R.string.code_block_copy),
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -288,12 +251,12 @@ fun HighlightCodeBlock(
                             "code_${Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())}.$extension"
                         )
                     },
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(28.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Download,
                         contentDescription = stringResource(id = R.string.chat_page_save),
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -304,31 +267,19 @@ fun HighlightCodeBlock(
                         onClick = {
                             navController.navigate(Screen.WebView(content = code.base64Encode()))
                         },
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(28.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.PlayArrow,
                             contentDescription = stringResource(id = R.string.code_block_preview),
-                            modifier = Modifier.size(18.dp),
+                            modifier = Modifier.size(16.dp),
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
                 }
-                
-                // Expand/collapse chevron
-                Icon(
-                    imageVector = if (expandState.expanded) {
-                        Icons.Rounded.KeyboardArrowUp
-                    } else {
-                        Icons.Rounded.KeyboardArrowDown
-                    },
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.primary,
-                )
             }
 
-            // Code content with fade gradients (only when expanded)
+            // Code content with fade gradients (only when expanded/preview)
             if (expandState.expanded) {
                 val textStyle = LocalTextStyle.current.merge(style)
                 
@@ -338,9 +289,8 @@ fun HighlightCodeBlock(
                         .let {
                             if (expandState == CodeBlockState.Preview) {
                                 it
-                                    .graphicsLayer { alpha = 0.99f } // Trigger offscreen rendering for mask
+                                    .graphicsLayer { alpha = 0.99f }
                                     .drawWithCache {
-                                        // Create top and bottom fade gradients
                                         val brush = Brush.verticalGradient(
                                             startY = 0f,
                                             endY = size.height,
@@ -385,6 +335,56 @@ fun HighlightCodeBlock(
                         )
                     }
                 }
+            }
+
+            // Bottom expand/collapse bar
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+                thickness = 0.5.dp,
+                modifier = Modifier.padding(top = if (expandState.expanded) 8.dp else 0.dp)
+            )
+            
+            val bottomInteractionSource = remember { MutableInteractionSource() }
+            val isBottomPressed by bottomInteractionSource.collectIsPressedAsState()
+            val bottomScale by animateFloatAsState(
+                targetValue = if (isBottomPressed) 0.97f else 1f,
+                animationSpec = spring(dampingRatio = 0.4f, stiffness = 400f),
+                label = "bottom_scale"
+            )
+            
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer {
+                        scaleX = bottomScale
+                        scaleY = bottomScale
+                    }
+                    .clickable(
+                        onClick = { toggle() },
+                        indication = LocalIndication.current,
+                        interactionSource = bottomInteractionSource
+                    )
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = if (expandState.expanded) {
+                        Icons.Rounded.ExpandLess
+                    } else {
+                        Icons.Rounded.ExpandMore
+                    },
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = if (expandState.expanded) "Collapse" else "Expand",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
