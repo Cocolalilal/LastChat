@@ -113,7 +113,7 @@ fun SettingRpOptimizationsPage(vm: SettingVM = koinViewModel()) {
             item {
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                        containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
                     ),
                     shape = AppShapes.CardLarge
                 ) {
@@ -187,7 +187,7 @@ fun SettingRpOptimizationsPage(vm: SettingVM = koinViewModel()) {
                 item {
                     Card(
                         colors = CardDefaults.cardColors(
-                            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
                         ),
                         shape = AppShapes.CardLarge
                     ) {
@@ -240,7 +240,7 @@ fun SettingRpOptimizationsPage(vm: SettingVM = koinViewModel()) {
                 item {
                     Card(
                         colors = CardDefaults.cardColors(
-                            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
                         ),
                         shape = AppShapes.CardLarge
                     ) {
@@ -320,7 +320,7 @@ private fun RpStyleRuleItem(
 
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
         ),
         shape = AppShapes.CardLarge,
         onClick = onEdit

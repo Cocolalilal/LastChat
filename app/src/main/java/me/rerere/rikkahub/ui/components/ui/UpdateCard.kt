@@ -107,6 +107,7 @@ fun UpdateCard(vm: ChatVM) {
                 toaster.show("Download started, check status bar for progress", type = ToastType.Info)
             }
             ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
                 onDismissRequest = { showDetail = false },
                 sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             ) {

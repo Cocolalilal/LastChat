@@ -351,6 +351,7 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
         val scope = rememberCoroutineScope()
 
         ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = {
                 editingProvider = null
             },
@@ -472,6 +473,7 @@ private fun TtsTextFilterSettingsDialog(
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     
     ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         sheetGesturesEnabled = false,
@@ -512,7 +514,7 @@ private fun TtsTextFilterSettingsDialog(
             // Description
             androidx.compose.material3.Card(
                 colors = androidx.compose.material3.CardDefaults.cardColors(
-                    containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                    containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
                 ),
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
             ) {
@@ -537,7 +539,7 @@ private fun TtsTextFilterSettingsDialog(
             if (rules.isEmpty()) {
                 androidx.compose.material3.Card(
                     colors = androidx.compose.material3.CardDefaults.cardColors(
-                        containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                        containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
                     ),
                     shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
                 ) {
@@ -620,7 +622,7 @@ private fun TtsFilterRuleItem(
     
     androidx.compose.material3.Card(
         colors = androidx.compose.material3.CardDefaults.cardColors(
-            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
         ),
         shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
         onClick = onEdit
@@ -805,6 +807,7 @@ private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
         val scope = rememberCoroutineScope()
         
         ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = {
                 showBottomSheet = false
             },
@@ -995,7 +998,7 @@ private fun TTSProviderItemContent(
         targetValue = if (isSelected) {
             MaterialTheme.colorScheme.primaryContainer
         } else {
-            if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+            if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
         },
         animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
         label = "selectionBackground"

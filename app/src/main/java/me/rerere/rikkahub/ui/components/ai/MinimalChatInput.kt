@@ -443,9 +443,9 @@ fun MinimalChatInput(
     // Optical roundness: sheet corners (40dp) = button corners (24dp) + padding (16dp)
     if (showPicker) {
         ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = { showPicker = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor = pickerSheetColor,
             shape = pickerSheetShape,
             dragHandle = null
         ) {
@@ -883,10 +883,10 @@ private fun MinimalPickerContent(
         }
         
         ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = { showModelPicker = false },
             sheetState = modelPickerSheetState,
             sheetGesturesEnabled = false,
-            containerColor = sheetContainerColor,
             dragHandle = {
                 IconButton(
                     onClick = {
@@ -966,9 +966,9 @@ private fun MinimalPickerContent(
         val chatModel = settings.getCurrentChatModel()
         
         ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = { showSearchPicker = false },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor = sheetContainerColor
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ) {
             Column(
                 modifier = Modifier

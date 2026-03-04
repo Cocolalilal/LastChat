@@ -19,6 +19,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -202,19 +203,6 @@ fun ColumnScope.ConversationList(
         }
     }
 
-    // Quick action buttons (Imagine, Stats) - animated visibility
-    AnimatedVisibility(
-        visible = !isSearchExpanded && quickActions != null,
-        enter = fadeIn(animationSpec = spring(stiffness = 300f)) + expandVertically(animationSpec = spring(dampingRatio = 0.8f, stiffness = 300f)),
-        exit = fadeOut(animationSpec = spring(stiffness = 500f)) + shrinkVertically(animationSpec = spring(dampingRatio = 0.8f, stiffness = 500f))
-    ) {
-        Column {
-            Spacer(modifier = Modifier.height(4.dp))
-            if (quickActions != null) {
-                quickActions()
-            }
-        }
-    }
 
     Box(modifier = modifier) {
         val listState = rememberLazyListState()
@@ -229,7 +217,24 @@ fun ColumnScope.ConversationList(
             state = listState,
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 8.dp) // Added padding so it has room
         ) {
+            item {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // Quick action buttons (Imagine, Stats) - animated visibility
+                    AnimatedVisibility(
+                        visible = !isSearchExpanded && quickActions != null,
+                        enter = fadeIn(animationSpec = spring(stiffness = 300f)) + expandVertically(animationSpec = spring(dampingRatio = 0.8f, stiffness = 300f)),
+                        exit = fadeOut(animationSpec = spring(stiffness = 500f)) + shrinkVertically(animationSpec = spring(dampingRatio = 0.8f, stiffness = 500f))
+                    ) {
+                        Column {
+                            if (quickActions != null) {
+                                quickActions()
+                            }
+                        }
+                    }
+                }
+            }
             if (conversations.itemCount == 0) {
                 item {
                     Surface(
@@ -237,7 +242,7 @@ fun ColumnScope.ConversationList(
                             .fillMaxWidth()
                             .padding(16.dp),
                         shape = RoundedCornerShape(16.dp),
-                        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest
                     ) {
                         Text(
                             text = stringResource(id = R.string.chat_page_no_conversations),
@@ -329,7 +334,7 @@ fun ColumnScope.ConversationList(
                     .background(
                         brush = androidx.compose.ui.graphics.Brush.verticalGradient(
                             colors = listOf(
-                                if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+                                MaterialTheme.colorScheme.surfaceContainerLow,
                                 Color.Transparent
                             )
                         )
@@ -348,7 +353,7 @@ fun ColumnScope.ConversationList(
                         brush = androidx.compose.ui.graphics.Brush.verticalGradient(
                             colors = listOf(
                                 Color.Transparent,
-                                if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                                MaterialTheme.colorScheme.surfaceContainerLow
                             )
                         )
                     )

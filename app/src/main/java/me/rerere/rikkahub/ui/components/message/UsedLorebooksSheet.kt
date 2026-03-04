@@ -62,6 +62,7 @@ fun UsedLorebooksSheet(
     val scope = rememberCoroutineScope()
     
     ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
         sheetGesturesEnabled = false,

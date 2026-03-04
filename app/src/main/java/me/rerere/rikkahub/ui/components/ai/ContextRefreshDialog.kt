@@ -96,7 +96,7 @@ fun ContextRefreshDialog(
         onDismissRequest = { if (state != RefreshDialogState.LOADING) onDismiss() },
         modifier = Modifier.padding(horizontal = 24.dp),  // Padding from screen edges
         shape = RoundedCornerShape(28.dp),
-        containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         title = {
             AnimatedContent(
                 targetState = state,

@@ -104,7 +104,11 @@ fun ChatDrawerContent(
     var isSearchExpanded by remember { mutableStateOf(false) }
     val drawerWidth by animateDpAsState(
         targetValue = if (isSearchExpanded) 600.dp else 320.dp,
-        animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
+        animationSpec = if (isSearchExpanded) {
+            spring(dampingRatio = 0.8f, stiffness = 400f)
+        } else {
+            androidx.compose.animation.core.tween(durationMillis = 250, easing = androidx.compose.animation.core.FastOutSlowInEasing)
+        },
         label = "drawer_width"
     )
 
@@ -131,7 +135,7 @@ fun ChatDrawerContent(
     ModalDrawerSheet(
         modifier = Modifier.widthIn(max = drawerWidth),
         drawerShape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
-        drawerContainerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+        drawerContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
         Column(
             modifier = Modifier.padding(8.dp),
@@ -243,7 +247,7 @@ fun ChatDrawerContent(
                 // Imagine + Stats buttons (visibility handled by ConversationList)
                 quickActions = {
                     // Quick Action Buttons (settings-style grouping)
-                    val itemColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                    val itemColor = MaterialTheme.colorScheme.surfaceContainerHighest
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -316,21 +320,72 @@ fun ChatDrawerContent(
                 }
             )
 
-            // 助手选择器
-            if (settings.assistants.size > 1) {
-                AssistantPicker(
+            // Character picker state (manages the bottom sheet)
+            val assistantState = me.rerere.rikkahub.ui.hooks.rememberAssistantState(settings) { newSettings ->
+                vm.updateSettings(newSettings)
+            }
+            val defaultAssistantName = stringResource(R.string.assistant_page_default_assistant)
+            var showCharacterPicker by remember { mutableStateOf(false) }
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+            ) {
+                // Character name - left aligned, opens picker
+                Text(
+                    text = assistantState.currentAssistant.name.ifEmpty { defaultAssistantName },
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable {
+                            if (settings.assistants.size > 1) {
+                                showCharacterPicker = true
+                            }
+                        }
+                )
+
+                // Character avatar - opens character settings
+                me.rerere.rikkahub.ui.components.ui.UIAvatar(
+                    name = assistantState.currentAssistant.name.ifEmpty { defaultAssistantName },
+                    value = assistantState.currentAssistant.avatar,
+                    onClick = {
+                        val currentAssistantId = settings.assistantId
+                        navController.navigate(Screen.AssistantDetail(id = currentAssistantId.toString()))
+                    },
+                    modifier = Modifier.size(36.dp)
+                )
+
+                // Settings icon
+                DrawerAction(
+                    icon = {
+                        Icon(Icons.Rounded.Settings, null)
+                    },
+                    label = { Text(stringResource(R.string.settings)) },
+                    onClick = {
+                        navController.navigate(Screen.Setting)
+                    },
+                )
+            }
+
+            // Character picker sheet
+            if (showCharacterPicker) {
+                me.rerere.rikkahub.ui.components.ai.AssistantPickerSheet(
                     settings = settings,
-                    onUpdateSettings = { newSettings ->
-                        // Just update settings - don't navigate yet
-                        vm.updateSettings(newSettings)
+                    currentAssistant = assistantState.currentAssistant,
+                    onAssistantSelected = { assistant ->
+                        assistantState.setSelectAssistant(assistant)
                     },
                     onNavigate = {
-                        // Called after sheet closes - just close drawer and navigate
+                        showCharacterPicker = false
                         scope.launch {
-                            // Close drawer with animation
                             drawerState?.close()
-                            
-                            // Navigate to new chat
+
                             val id = if (context.readBooleanPreference("create_new_conversation_on_start", true)) {
                                 Uuid.random()
                             } else {
@@ -342,41 +397,9 @@ fun ChatDrawerContent(
                             navigateToChatPage(navController = navController, chatId = id)
                         }
                     },
-                    modifier = Modifier.fillMaxWidth(),
-                    onClickSetting = {
-                        val currentAssistantId = settings.assistantId
-                        navController.navigate(Screen.AssistantDetail(id = currentAssistantId.toString()))
+                    onDismiss = {
+                        showCharacterPicker = false
                     }
-                )
-            }
-
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
-            ) {
-                DrawerAction(
-                    icon = {
-                        Icon(imageVector = Icons.Rounded.Group, contentDescription = stringResource(R.string.assistant_page_title))
-                    },
-                    label = {
-                        Text(stringResource(R.string.assistant_page_title))
-                    },
-                    onClick = {
-                        navController.navigate(Screen.Assistant)
-                    },
-                )
-
-                Spacer(Modifier.weight(1f))
-
-                DrawerAction(
-                    icon = {
-                        Icon(Icons.Rounded.Settings, null)
-                    },
-                    label = { Text(stringResource(R.string.settings)) },
-                    onClick = {
-                        navController.navigate(Screen.Setting)
-                    },
                 )
             }
         }

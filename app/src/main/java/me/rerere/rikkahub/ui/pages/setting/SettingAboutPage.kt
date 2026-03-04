@@ -222,7 +222,7 @@ private fun AboutItem(
             }
         },
         enabled = onClick != null,
-        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
         shape = RoundedCornerShape(10.dp),
         interactionSource = interactionSource,
         modifier = Modifier

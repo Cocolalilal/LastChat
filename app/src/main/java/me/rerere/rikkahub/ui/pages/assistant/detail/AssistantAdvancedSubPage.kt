@@ -48,10 +48,7 @@ fun AssistantAdvancedSubPage(
         SettingsGroup(title = "Custom Request") {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (LocalDarkMode.current)
-                    MaterialTheme.colorScheme.surfaceContainerLow
-                else
-                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
                 shape = RoundedCornerShape(10.dp)
             ) {
                 Column(modifier = Modifier.padding(8.dp)) {
@@ -64,10 +61,7 @@ fun AssistantAdvancedSubPage(
 
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (LocalDarkMode.current)
-                    MaterialTheme.colorScheme.surfaceContainerLow
-                else
-                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
                 shape = RoundedCornerShape(10.dp)
             ) {
                 Column(modifier = Modifier.padding(8.dp)) {

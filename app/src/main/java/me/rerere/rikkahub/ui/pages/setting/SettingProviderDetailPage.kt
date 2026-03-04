@@ -416,7 +416,7 @@ private fun SettingProviderConfigPage(
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                 colors = CardDefaults.cardColors(
-                    containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                    containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
                 )
             ) {
                 ProviderConfigure(
@@ -435,7 +435,7 @@ private fun SettingProviderConfigPage(
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                 colors = CardDefaults.cardColors(
-                    containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                    containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
                 )
             ) {
                 Column(
@@ -569,7 +569,7 @@ private fun SettingProviderProxyPage(
                 Card(
                     shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                     colors = CardDefaults.cardColors(
-                        containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                        containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
                     )
                 ) {
                     Column(
@@ -1307,6 +1307,7 @@ private fun AddModelButton(
         dialogState.currentState?.let { modelState ->
             val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
                 onDismissRequest = {
                     dialogState.dismiss()
                 },
@@ -1408,6 +1409,7 @@ private fun ModelPickerFab(
     
     if (showPicker) {
         ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = { showPicker = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ) {
@@ -1608,6 +1610,7 @@ private fun AddNewModelFab(
         dialogState.currentState?.let { modelState ->
             val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
                 onDismissRequest = {
                     dialogState.dismiss()
                 },
@@ -1692,6 +1695,7 @@ private fun ModelPicker(
     var showModal by remember { mutableStateOf(false) }
     if (showModal) {
         ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = { showModal = false },
             sheetState = rememberModalBottomSheetState(
                 skipPartiallyExpanded = true
@@ -2118,6 +2122,7 @@ private fun ModelCard(
         dialogState.currentState?.let { editingModel ->
             val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
                 onDismissRequest = {
                     dialogState.dismiss()
                 },
@@ -2423,6 +2428,7 @@ private fun ProviderOverrideSettings(
         // Provider configuration modal
         if (showProviderConfig && editingProvider != null) {
             ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
                 onDismissRequest = {
                     showProviderConfig = false
                     editingProvider = null

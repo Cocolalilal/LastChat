@@ -315,6 +315,7 @@ fun Mermaid(
 
     if (preview) {
         ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = {
                 preview = false
             },

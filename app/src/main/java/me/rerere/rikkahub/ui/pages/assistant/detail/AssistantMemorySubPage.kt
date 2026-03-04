@@ -482,7 +482,7 @@ private fun MemorySettingsItem(
             }
         },
         enabled = onClick != null,
-        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
         shape = RoundedCornerShape(
             topStart = topCorner,
             topEnd = topCorner,
@@ -532,7 +532,7 @@ private fun MemorySettingsItem(
 private fun MemoryModeIndicator(mode: MemoryMode) {
     val backgroundColor by animateColorAsState(
         targetValue = if (mode == MemoryMode.OFF)
-            if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+            if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
         else
             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
         animationSpec = spring(),
@@ -599,7 +599,7 @@ private fun RagSettingsCard(
     ) {
         // Similarity Threshold
         Surface(
-            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
             shape = RoundedCornerShape(24.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
@@ -715,7 +715,7 @@ private fun ConsolidationSettingsCard(
         
         // Consolidation Delay - corners depend on whether warning banner is shown
         Surface(
-            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
             shape = if (showSummarizerWarning) {
                 RoundedCornerShape(10.dp)
             } else {
@@ -751,7 +751,7 @@ private fun ConsolidationSettingsCard(
 
         // Manual consolidation
         Surface(
-            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
             shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp, topStart = 10.dp, topEnd = 10.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -791,7 +791,7 @@ private fun MemoryStatisticsCard(
     val withEmbeddings = memories.count { it.hasEmbedding }
 
     Surface(
-        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
         shape = RoundedCornerShape(24.dp)
     ) {
         Column(
@@ -1058,7 +1058,7 @@ private fun ManageMemoriesSection(
             
             if (displayMemories.isEmpty()) {
                 Surface(
-                    color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
                     shape = RoundedCornerShape(24.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -1141,7 +1141,7 @@ private fun MemoryItem(
     
     Surface(
         onClick = { onEditMemory(memory) },
-        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
         shape = RoundedCornerShape(
             topStart = topCorner,
             topEnd = topCorner,
@@ -1194,7 +1194,7 @@ private fun MemoryItem(
                         
                         if (useRagMemoryRetrieval && !memory.hasEmbedding) {
                             Surface(
-                                color = Color(0xFFC62828),
+                                color = MaterialTheme.colorScheme.error,
                                 shape = MaterialTheme.shapes.extraSmall
                             ) {
                                 Text(
@@ -1237,7 +1237,7 @@ private fun MemoryDebugger(
     val (query, setQuery) = remember { mutableStateOf("") }
 
     Surface(
-        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
         shape = RoundedCornerShape(24.dp)
     ) {
         Column(
@@ -1287,7 +1287,7 @@ private fun MemoryDebugger(
                     )
                     retrievalResults.forEachIndexed { index, (memory, score) ->
                         Surface(
-                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
                             shape = RoundedCornerShape(10.dp)
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {

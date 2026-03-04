@@ -174,6 +174,7 @@ fun AssistantPickerSheet(
     val density = LocalDensity.current
 
     ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
         onDismissRequest = onDismiss,
         sheetState = sheetState,
     ) {

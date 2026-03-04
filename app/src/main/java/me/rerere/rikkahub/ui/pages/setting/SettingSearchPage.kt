@@ -451,6 +451,7 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
         var currentService by remember(service) { mutableStateOf(service) }
 
         ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = {
                 editingService = null
             },
@@ -631,6 +632,7 @@ private fun AddSearchServiceButton(
         val scope = androidx.compose.runtime.rememberCoroutineScope()
         
         ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = {
                 showBottomSheet = false
             },
@@ -810,7 +812,7 @@ private fun SearchServiceItemContent(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(0.dp))
-            .background(if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh)
+            .background(if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest)
             .clickable {
                 haptics.perform(HapticPattern.Pop)
                 onClick()
@@ -865,7 +867,7 @@ private fun SearchServiceItemContent(
                             brush = Brush.horizontalGradient(
                                 colors = listOf(
                                     Color.Transparent,
-                                    if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                                    if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
                                 )
                             )
                         )

@@ -81,6 +81,7 @@ fun ContextSourcesSheet(
     val sortedEntries = remember(entries) { entries.sortedByDescending { it.priority } }
     
     ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
         sheetGesturesEnabled = false,

@@ -320,7 +320,7 @@ fun ChatInput(
             // Floating Input Bar
             Surface(
                 shape = RoundedCornerShape(cornerRadius),
-                color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerLow, // Material You Surface Color
+                color = MaterialTheme.colorScheme.surfaceContainerHighest, // Material You Surface Color
                 tonalElevation = 8.dp,
                 border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
                 modifier = Modifier.fillMaxWidth()
@@ -612,7 +612,7 @@ fun ChatInput(
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(40.dp),
-                        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerLow,
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
                         tonalElevation = 8.dp
                     ) {
                         FilesPicker(
@@ -1860,6 +1860,7 @@ internal fun ModesPickerSheet(
     val scope = rememberCoroutineScope()
     
     ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         sheetGesturesEnabled = false,
@@ -1874,8 +1875,7 @@ internal fun ModesPickerSheet(
             ) {
                 Icon(Icons.Rounded.KeyboardArrowDown, null)
             }
-        },
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        }
     ) {
         Column(
             modifier = Modifier
@@ -2007,6 +2007,7 @@ internal fun LorebooksPickerSheet(
     val scope = rememberCoroutineScope()
     
     ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         sheetGesturesEnabled = false,
@@ -2021,8 +2022,7 @@ internal fun LorebooksPickerSheet(
             ) {
                 Icon(Icons.Rounded.KeyboardArrowDown, null)
             }
-        },
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        }
     ) {
         Column(
             modifier = Modifier
