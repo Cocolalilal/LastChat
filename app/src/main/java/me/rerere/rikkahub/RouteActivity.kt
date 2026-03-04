@@ -115,6 +115,7 @@ class RouteActivity : ComponentActivity() {
     private val okHttpClient by inject<OkHttpClient>()
     private val settingsStore by inject<SettingsStore>()
     private val chatService by inject<me.rerere.rikkahub.service.ChatService>()
+    private val conversationRepo by inject<me.rerere.rikkahub.data.repository.ConversationRepository>()
     private var navStack by mutableStateOf<NavHostController?>(null)
     private var pendingAssistantId by mutableStateOf<String?>(null)
     private var pendingTextSelection by mutableStateOf<TextSelectionData?>(null)
@@ -125,6 +126,12 @@ class RouteActivity : ComponentActivity() {
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
         disableNavigationBarContrast()
         super.onCreate(savedInstanceState)
+        
+        // Track app launch and initialize usage stats
+        lifecycleScope.launch {
+            conversationRepo.initUsageStats()
+            conversationRepo.incrementAppLaunches()
+        }
         
         // Store intent data - will be processed AFTER composition is ready
         val intentAssistantId = intent?.getStringExtra("assistantId")

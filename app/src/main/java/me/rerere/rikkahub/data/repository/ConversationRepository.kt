@@ -10,7 +10,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import me.rerere.rikkahub.data.db.dao.ConversationDAO
 import me.rerere.rikkahub.data.db.dao.DailyActivityDAO
+import me.rerere.rikkahub.data.db.dao.UsageStatsDAO
 import me.rerere.rikkahub.data.db.entity.ConversationEntity
+import me.rerere.rikkahub.data.db.entity.UsageStatsEntity
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MessageNode
 import kotlinx.serialization.json.JsonArray
@@ -25,11 +27,13 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import kotlin.uuid.Uuid
 
+
 class ConversationRepository(
     private val context: Context,
     private val conversationDAO: ConversationDAO,
     private val chatEpisodeDAO: me.rerere.rikkahub.data.db.dao.ChatEpisodeDAO,
     private val dailyActivityDAO: DailyActivityDAO,
+    private val usageStatsDAO: UsageStatsDAO,
 ) {
     companion object {
         private const val PAGE_SIZE = 20
@@ -130,6 +134,8 @@ class ConversationRepository(
         conversationDAO.insert(
             conversationToConversationEntity(conversation)
         )
+        // Increment persistent conversation counter
+        try { usageStatsDAO.incrementConversations() } catch (_: Exception) {}
     }
 
     suspend fun updateConversation(conversation: Conversation) {
@@ -415,6 +421,38 @@ class ConversationRepository(
             }
     }
 
+    // ===== Persistent Usage Stats =====
+    
+    /** Initialize the usage stats row if it doesn't exist yet */
+    suspend fun initUsageStats() {
+        usageStatsDAO.initIfEmpty()
+    }
+    
+    /** Get usage stats as a Flow for reactive UI */
+    fun getUsageStatsFlow(): Flow<UsageStatsEntity?> = usageStatsDAO.getStatsFlow()
+    
+    /** Get all daily activity entries for heatmap */
+    fun getAllDailyActivityFlow() = dailyActivityDAO.getAllActivityFlow()
+    
+    /** Increment the persistent conversation counter */
+    suspend fun incrementConversationCount() {
+        usageStatsDAO.incrementConversations()
+    }
+    
+    /** Add token usage to persistent cumulative counters */
+    suspend fun addTokenUsage(inputTokens: Long, outputTokens: Long, cachedTokens: Long) {
+        usageStatsDAO.addTokenUsage(inputTokens, outputTokens, cachedTokens)
+    }
+    
+    /** Increment persistent message counter */
+    suspend fun incrementMessageCount(count: Int = 1) {
+        usageStatsDAO.incrementMessages(count)
+    }
+    
+    /** Increment app launch counter */
+    suspend fun incrementAppLaunches() {
+        usageStatsDAO.incrementAppLaunches()
+    }
 }
 
 /**

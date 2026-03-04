@@ -17,6 +17,7 @@ import me.rerere.rikkahub.data.db.dao.ConversationDAO
 import me.rerere.rikkahub.data.db.dao.DailyActivityDAO
 import me.rerere.rikkahub.data.db.dao.EmbeddingCacheDAO
 import me.rerere.rikkahub.data.db.dao.GenMediaDAO
+import me.rerere.rikkahub.data.db.dao.UsageStatsDAO
 import me.rerere.rikkahub.data.db.dao.MemoryDAO
 import me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.data.db.entity.ConversationEntity
@@ -24,6 +25,7 @@ import me.rerere.rikkahub.data.db.entity.DailyActivityEntity
 import me.rerere.rikkahub.data.db.entity.EmbeddingCacheEntity
 import me.rerere.rikkahub.data.db.entity.GenMediaEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEntity
+import me.rerere.rikkahub.data.db.entity.UsageStatsEntity
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.utils.JsonInstant
 import kotlinx.serialization.json.JsonArray
@@ -36,8 +38,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 @Database(
-    entities = [ConversationEntity::class, MemoryEntity::class, GenMediaEntity::class, ChatEpisodeEntity::class, EmbeddingCacheEntity::class, DailyActivityEntity::class],
-    version = 23,
+    entities = [ConversationEntity::class, MemoryEntity::class, GenMediaEntity::class, ChatEpisodeEntity::class, EmbeddingCacheEntity::class, DailyActivityEntity::class, UsageStatsEntity::class],
+    version = 24,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -57,6 +59,8 @@ import kotlinx.serialization.json.put
         AutoMigration(from = 19, to = 20),
         AutoMigration(from = 20, to = 21), // Adds context_summary, context_summary_up_to_index, last_prune_time, last_prune_message_count, last_refresh_time to ConversationEntity
         AutoMigration(from = 21, to = 22), // Adds DailyActivityEntity table for persistent streak tracking
+        // 22->23 is manual migration (MIGRATION_22_23)
+        // 23->24 is manual migration (MIGRATION_23_24) - adds usage_stats table
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -72,6 +76,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun embeddingCacheDao(): EmbeddingCacheDAO
 
     abstract fun dailyActivityDao(): DailyActivityDAO
+
+    abstract fun usageStatsDao(): UsageStatsDAO
 
     companion object {
         const val TAG = "AppDatabase"
@@ -301,6 +307,34 @@ abstract class AppDatabase : RoomDatabase() {
                     e.printStackTrace()
                     return json
                 }
+            }
+        }
+
+        val MIGRATION_23_24 = object : Migration(23, 24) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "migrate: start migrate from 23 to 24")
+                // Create usage_stats table
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `usage_stats` (
+                        `id` INTEGER NOT NULL PRIMARY KEY,
+                        `total_conversations` INTEGER NOT NULL DEFAULT 0,
+                        `total_messages` INTEGER NOT NULL DEFAULT 0,
+                        `input_tokens` INTEGER NOT NULL DEFAULT 0,
+                        `output_tokens` INTEGER NOT NULL DEFAULT 0,
+                        `cached_tokens` INTEGER NOT NULL DEFAULT 0,
+                        `app_launches` INTEGER NOT NULL DEFAULT 0
+                    )
+                """.trimIndent())
+                // Seed initial row
+                db.execSQL("INSERT OR IGNORE INTO usage_stats (id, total_conversations, total_messages, input_tokens, output_tokens, cached_tokens, app_launches) VALUES (1, 0, 0, 0, 0, 0, 0)")
+                
+                // Seed total_conversations from existing conversation count
+                db.execSQL("UPDATE usage_stats SET total_conversations = (SELECT COUNT(*) FROM ConversationEntity) WHERE id = 1")
+                
+                // Seed total_messages from daily_activity if available
+                db.execSQL("UPDATE usage_stats SET total_messages = COALESCE((SELECT SUM(message_count) FROM daily_activity), 0) WHERE id = 1")
+                
+                Log.i(TAG, "migrate: migrate from 23 to 24 success")
             }
         }
     }

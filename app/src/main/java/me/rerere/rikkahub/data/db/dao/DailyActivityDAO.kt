@@ -67,4 +67,16 @@ interface DailyActivityDAO {
         VALUES (:date, 1, :timestamp)
     """)
     suspend fun insertDateIfNotExists(date: String, timestamp: Long)
+    
+    /**
+     * Get all activity entries (for heatmap display)
+     */
+    @Query("SELECT * FROM daily_activity ORDER BY date ASC")
+    fun getAllActivityFlow(): Flow<List<DailyActivityEntity>>
+    
+    /**
+     * Get the total message count across all days (persistent count)
+     */
+    @Query("SELECT COALESCE(SUM(message_count), 0) FROM daily_activity")
+    fun getTotalMessageCountFlow(): Flow<Long>
 }

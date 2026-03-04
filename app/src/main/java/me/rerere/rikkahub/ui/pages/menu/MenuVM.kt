@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
+import me.rerere.rikkahub.data.db.entity.DailyActivityEntity
+import me.rerere.rikkahub.data.db.entity.UsageStatsEntity
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -30,6 +32,11 @@ data class DayMessages(
     val isWeekend: Boolean
 )
 
+data class HeatmapDay(
+    val date: LocalDate,
+    val count: Int
+)
+
 class MenuVM(
     private val conversationRepository: ConversationRepository,
     private val settingsStore: SettingsStore
@@ -45,8 +52,10 @@ class MenuVM(
     val stats: StateFlow<MenuStats> = combine(
         conversationRepository.getDailyActivityDatesFlow(),
         conversationRepository.getConversationHoursFlow(),
-        conversationRepository.getWeeklyActivityFlow(weekStartDate)
-    ) { distinctDates, hours, weeklyEntities ->
+        conversationRepository.getWeeklyActivityFlow(weekStartDate),
+        conversationRepository.getUsageStatsFlow(),
+        conversationRepository.getAllDailyActivityFlow()
+    ) { distinctDates, hours, weeklyEntities, usageStats, allActivity ->
         // Daily Chat Streak
         val streak = calculateStreak(distinctDates)
 
@@ -84,11 +93,33 @@ class MenuVM(
             .values
             .sum()
 
+        // Build heatmap data from daily activity (last ~5 months)
+        val heatmapStartDate = today.minusMonths(5).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+        val activityMap = allActivity.mapNotNull { entity ->
+            try {
+                LocalDate.parse(entity.date, formatter) to entity.messageCount
+            } catch (_: Exception) {
+                null
+            }
+        }.toMap()
+        
+        val heatmapData = generateSequence(heatmapStartDate) { it.plusDays(1) }
+            .takeWhile { !it.isAfter(today) }
+            .map { date ->
+                HeatmapDay(
+                    date = date,
+                    count = activityMap[date] ?: 0
+                )
+            }
+            .toList()
+
         MenuStats(
             dailyChatStreak = streak,
             timeLabel = timeLabel,
             weeklyMessages = weeklyMessages,
-            thisWeekMessageCount = thisWeekMessageCount
+            thisWeekMessageCount = thisWeekMessageCount,
+            usageStats = usageStats ?: UsageStatsEntity(),
+            heatmapData = heatmapData
         )
     }
         .flowOn(Dispatchers.Default)
@@ -156,5 +187,7 @@ data class MenuStats(
     val dailyChatStreak: Int = 0,
     val timeLabel: TimeLabel = TimeLabel.DAYTIME_CHATTER,
     val weeklyMessages: List<DayMessages> = emptyList(),
-    val thisWeekMessageCount: Int = 0
+    val thisWeekMessageCount: Int = 0,
+    val usageStats: UsageStatsEntity = UsageStatsEntity(),
+    val heatmapData: List<HeatmapDay> = emptyList()
 )

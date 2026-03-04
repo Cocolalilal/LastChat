@@ -7,6 +7,10 @@ import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -53,6 +57,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
@@ -105,6 +112,8 @@ fun ColumnScope.ConversationList(
     recentlyRestoredIds: Set<Uuid> = emptySet(),
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
+    isSearchExpanded: Boolean = false,
+    onSearchExpandedChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
     onClick: (Conversation) -> Unit = {},
     onDelete: (Conversation) -> Unit = {},
@@ -113,13 +122,27 @@ fun ColumnScope.ConversationList(
     onConsolidate: (Conversation) -> Unit = {},
     onPin: (Conversation) -> Unit = {},
     showUnconsolidatedDot: Boolean = false,
-    showConsolidateOption: Boolean = false
+    showConsolidateOption: Boolean = false,
+    quickActions: (@Composable () -> Unit)? = null
 ) {
     val navController = LocalNavController.current
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    val focusRequester = remember { FocusRequester() }
+
+    // Auto-expand when search query is non-empty
+    LaunchedEffect(searchQuery) {
+        if (searchQuery.isNotEmpty()) {
+            onSearchExpandedChange(true)
+        }
+    }
 
     // fix: compose很奇怪，会自动聚焦到第一个文本框
     // 在这里放一个空的Box，防止自动聚焦到第一个文本框弹出IME
-    Box(modifier = Modifier.focusable())
+    if (!isSearchExpanded) {
+        Box(modifier = Modifier.focusable())
+    }
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -128,23 +151,37 @@ fun ColumnScope.ConversationList(
             .padding(horizontal = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        // Back button when search is expanded
+        if (isSearchExpanded) {
+            IconButton(
+                onClick = {
+                    keyboardController?.hide()
+                    focusManager.clearFocus()
+                    onSearchExpandedChange(false)
+                    onSearchQueryChange("")
+                },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    Icons.Rounded.Close,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+
         TextField(
             value = searchQuery,
             onValueChange = onSearchQueryChange,
             modifier = Modifier
-                .weight(1f),
-            shape = RoundedCornerShape(50),
-            trailingIcon = {
-                AnimatedVisibility(searchQuery.isNotEmpty()) {
-                    IconButton(
-                        onClick = {
-                            onSearchQueryChange("")
-                        }
-                    ) {
-                        Icon(Icons.Rounded.Close, null)
+                .weight(1f)
+                .focusRequester(focusRequester)
+                .onFocusChanged { focusState ->
+                    if (focusState.isFocused && !isSearchExpanded) {
+                        onSearchExpandedChange(true)
                     }
-                }
-            },
+                },
+            shape = RoundedCornerShape(50),
             colors = TextFieldDefaults.colors(
                 focusedIndicatorColor = Color.Transparent,
                 unfocusedIndicatorColor = Color.Transparent,
@@ -152,8 +189,31 @@ fun ColumnScope.ConversationList(
             ),
             placeholder = {
                 Text(stringResource(id = R.string.chat_page_search_placeholder))
-            }
+            },
+            singleLine = true
         )
+    }
+
+    // Auto-focus search field when expanded
+    LaunchedEffect(isSearchExpanded) {
+        if (isSearchExpanded) {
+            kotlinx.coroutines.delay(100)
+            try { focusRequester.requestFocus() } catch (_: Exception) {}
+        }
+    }
+
+    // Quick action buttons (Imagine, Stats) - animated visibility
+    AnimatedVisibility(
+        visible = !isSearchExpanded && quickActions != null,
+        enter = fadeIn(animationSpec = spring(stiffness = 300f)) + expandVertically(animationSpec = spring(dampingRatio = 0.8f, stiffness = 300f)),
+        exit = fadeOut(animationSpec = spring(stiffness = 500f)) + shrinkVertically(animationSpec = spring(dampingRatio = 0.8f, stiffness = 500f))
+    ) {
+        Column {
+            Spacer(modifier = Modifier.height(4.dp))
+            if (quickActions != null) {
+                quickActions()
+            }
+        }
     }
 
     Box(modifier = modifier) {
