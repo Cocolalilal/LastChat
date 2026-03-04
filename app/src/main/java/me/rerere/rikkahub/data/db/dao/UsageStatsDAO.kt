@@ -56,4 +56,25 @@ interface UsageStatsDAO {
      */
     @Query("UPDATE usage_stats SET app_launches = app_launches + 1 WHERE id = 1")
     suspend fun incrementAppLaunches()
+
+    /**
+     * Overwrite core counters from a trusted backfill source.
+     * app_launches is intentionally untouched.
+     */
+    @Query("""
+        UPDATE usage_stats SET
+            total_conversations = :totalConversations,
+            total_messages = :totalMessages,
+            input_tokens = :inputTokens,
+            output_tokens = :outputTokens,
+            cached_tokens = :cachedTokens
+        WHERE id = 1
+    """)
+    suspend fun overwriteCoreStats(
+        totalConversations: Long,
+        totalMessages: Long,
+        inputTokens: Long,
+        outputTokens: Long,
+        cachedTokens: Long
+    )
 }

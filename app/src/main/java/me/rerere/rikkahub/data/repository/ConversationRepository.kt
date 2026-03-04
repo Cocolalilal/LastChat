@@ -17,13 +17,17 @@ import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MessageNode
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.deleteChatFiles
+import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
 import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.uuid.Uuid
 
@@ -38,6 +42,21 @@ class ConversationRepository(
     companion object {
         private const val PAGE_SIZE = 20
         private const val INITIAL_LOAD_SIZE = 40
+        private val ISO_DATE_REGEX = Regex("\\d{4}-\\d{2}-\\d{2}")
+    }
+
+    private data class HistoricalUsageTotals(
+        val inputTokens: Long = 0L,
+        val outputTokens: Long = 0L,
+        val cachedTokens: Long = 0L,
+        val selectedMessageCount: Int = 0
+    ) {
+        operator fun plus(other: HistoricalUsageTotals): HistoricalUsageTotals = HistoricalUsageTotals(
+            inputTokens = inputTokens + other.inputTokens,
+            outputTokens = outputTokens + other.outputTokens,
+            cachedTokens = cachedTokens + other.cachedTokens,
+            selectedMessageCount = selectedMessageCount + other.selectedMessageCount
+        )
     }
 
     suspend fun getRecentConversations(assistantId: Uuid, limit: Int = 10): List<Conversation> {
@@ -378,6 +397,56 @@ class ConversationRepository(
         }
     }
 
+    /**
+     * Reconstruct missing historical activity days from conversation history.
+     * This is safe to run repeatedly and fills gaps caused by imports/restores.
+     */
+    suspend fun backfillDailyActivityFromConversationHistoryIfNeeded() {
+        val conversations = conversationDAO.getAll().first()
+        if (conversations.isEmpty()) return
+
+        val existingDates = dailyActivityDAO.getAllDatesFlow().first().toHashSet()
+        val dateCounts = mutableMapOf<String, Int>()
+        val formatter = DateTimeFormatter.ISO_LOCAL_DATE
+
+        conversations.forEach { entity ->
+            val fallbackDate = Instant.ofEpochMilli(entity.createAt)
+                .atZone(ZoneId.systemDefault())
+                .toLocalDate()
+                .format(formatter)
+
+            val selectedDates = extractSelectedMessageDates(entity.nodes)
+            if (selectedDates.isEmpty()) {
+                dateCounts[fallbackDate] = (dateCounts[fallbackDate] ?: 0) + 1
+            } else {
+                selectedDates.forEach { date ->
+                    dateCounts[date] = (dateCounts[date] ?: 0) + 1
+                }
+            }
+        }
+
+        if (dateCounts.isEmpty()) return
+        if (dateCounts.keys.all { it in existingDates }) return
+
+        dateCounts.forEach { (date, count) ->
+            val timestamp = runCatching {
+                LocalDate.parse(date, formatter)
+                    .atStartOfDay()
+                    .toEpochSecond(java.time.ZoneOffset.UTC) * 1000
+            }.getOrDefault(System.currentTimeMillis())
+            dailyActivityDAO.insertBackfilledActivityIfMissing(
+                date = date,
+                count = count,
+                timestamp = timestamp
+            )
+            dailyActivityDAO.mergeBackfilledActivity(
+                date = date,
+                count = count,
+                timestamp = timestamp
+            )
+        }
+    }
+
     private fun conversationSummaryToConversation(entity: LightConversationEntity): Conversation {
         return Conversation(
             id = Uuid.parse(entity.id),
@@ -430,6 +499,44 @@ class ConversationRepository(
     
     /** Get usage stats as a Flow for reactive UI */
     fun getUsageStatsFlow(): Flow<UsageStatsEntity?> = usageStatsDAO.getStatsFlow()
+
+    /**
+     * One-time backfill for legacy/imported databases where usage_stats may exist but lacks token data.
+     * Keeps counters monotonic by never decreasing existing values.
+     */
+    suspend fun backfillUsageStatsFromHistoryIfNeeded() {
+        usageStatsDAO.initIfEmpty()
+        val currentStats = usageStatsDAO.getStats() ?: return
+        val conversationCount = conversationDAO.getConversationCountFlow().first().toLong()
+
+        if (conversationCount <= 0L) return
+
+        val needsConversationBackfill = currentStats.totalConversations < conversationCount
+        val hasNoTokenHistory = currentStats.inputTokens <= 0L &&
+            currentStats.outputTokens <= 0L &&
+            currentStats.cachedTokens <= 0L
+
+        if (!needsConversationBackfill && !hasNoTokenHistory) return
+
+        val allConversations = conversationDAO.getAll().first()
+        if (allConversations.isEmpty()) return
+
+        val historicalTotals = allConversations.fold(HistoricalUsageTotals()) { acc, entity ->
+            acc + extractHistoricalUsage(entity.nodes)
+        }
+
+        val messagesFromActivity = runCatching { dailyActivityDAO.getTotalMessageCountFlow().first() }
+            .getOrDefault(0L)
+        val bestMessageCount = maxOf(messagesFromActivity, historicalTotals.selectedMessageCount.toLong())
+
+        usageStatsDAO.overwriteCoreStats(
+            totalConversations = maxOf(currentStats.totalConversations, conversationCount),
+            totalMessages = maxOf(currentStats.totalMessages, bestMessageCount),
+            inputTokens = maxOf(currentStats.inputTokens, historicalTotals.inputTokens),
+            outputTokens = maxOf(currentStats.outputTokens, historicalTotals.outputTokens),
+            cachedTokens = maxOf(currentStats.cachedTokens, historicalTotals.cachedTokens)
+        )
+    }
     
     /** Get all daily activity entries for heatmap */
     fun getAllDailyActivityFlow() = dailyActivityDAO.getAllActivityFlow()
@@ -452,6 +559,75 @@ class ConversationRepository(
     /** Increment app launch counter */
     suspend fun incrementAppLaunches() {
         usageStatsDAO.incrementAppLaunches()
+    }
+
+    private fun extractHistoricalUsage(nodesJson: String): HistoricalUsageTotals {
+        val root = runCatching { JsonInstant.parseToJsonElement(nodesJson) }.getOrNull()
+        if (root !is JsonArray) return HistoricalUsageTotals()
+
+        var inputTokens = 0L
+        var outputTokens = 0L
+        var cachedTokens = 0L
+        var selectedMessageCount = 0
+
+        root.forEach { nodeElement ->
+            val node = nodeElement as? JsonObject ?: return@forEach
+            val messages = node["messages"] as? JsonArray ?: return@forEach
+            if (messages.isEmpty()) return@forEach
+
+            val selectedIndex = node["selectIndex"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
+            val selectedMessage = (messages.getOrNull(selectedIndex) ?: messages.lastOrNull()) as? JsonObject
+                ?: return@forEach
+
+            selectedMessageCount += 1
+
+            val usage = selectedMessage["usage"] as? JsonObject ?: return@forEach
+            inputTokens += usage.readUsageValue("promptTokens", "inputTokens", "prompt_tokens", "input_tokens")
+            outputTokens += usage.readUsageValue(
+                "completionTokens",
+                "outputTokens",
+                "completion_tokens",
+                "output_tokens"
+            )
+            cachedTokens += usage.readUsageValue("cachedTokens", "cached_tokens")
+        }
+
+        return HistoricalUsageTotals(
+            inputTokens = inputTokens,
+            outputTokens = outputTokens,
+            cachedTokens = cachedTokens,
+            selectedMessageCount = selectedMessageCount
+        )
+    }
+
+    private fun JsonObject.readUsageValue(vararg keys: String): Long {
+        keys.forEach { key ->
+            val value = this[key]?.jsonPrimitiveOrNull?.contentOrNull?.toLongOrNull()
+            if (value != null) return value
+        }
+        return 0L
+    }
+
+    private fun extractSelectedMessageDates(nodesJson: String): List<String> {
+        val root = runCatching { JsonInstant.parseToJsonElement(nodesJson) }.getOrNull()
+        if (root !is JsonArray) return emptyList()
+
+        return root.mapNotNull { nodeElement ->
+            val node = nodeElement as? JsonObject ?: return@mapNotNull null
+            val messages = node["messages"] as? JsonArray ?: return@mapNotNull null
+            if (messages.isEmpty()) return@mapNotNull null
+
+            val selectedIndex = node["selectIndex"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
+            val selectedMessage = (messages.getOrNull(selectedIndex) ?: messages.lastOrNull()) as? JsonObject
+                ?: return@mapNotNull null
+            parseDateString(selectedMessage["createdAt"]?.jsonPrimitiveOrNull?.contentOrNull)
+        }
+    }
+
+    private fun parseDateString(raw: String?): String? {
+        val match = raw?.let { ISO_DATE_REGEX.find(it)?.value } ?: return null
+        return runCatching { LocalDate.parse(match, DateTimeFormatter.ISO_LOCAL_DATE).format(DateTimeFormatter.ISO_LOCAL_DATE) }
+            .getOrNull()
     }
 }
 

@@ -17,14 +17,17 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
@@ -47,6 +50,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
@@ -67,6 +71,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
+import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.ui.components.ai.AssistantPicker
@@ -74,6 +79,7 @@ import me.rerere.rikkahub.ui.components.ui.Greeting
 import me.rerere.rikkahub.ui.components.ui.Tooltip
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.components.ui.UpdateCard
+import me.rerere.rikkahub.ui.hooks.rememberAvatarShape
 import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.readBooleanPreference
@@ -85,6 +91,7 @@ import me.rerere.rikkahub.utils.navigateToChatPage
 import me.rerere.rikkahub.utils.toDp
 import org.koin.compose.koinInject
 import kotlin.uuid.Uuid
+import coil3.compose.AsyncImage
 
 @Composable
 fun ChatDrawerContent(
@@ -332,34 +339,69 @@ fun ChatDrawerContent(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
             ) {
-                // Character name - left aligned, opens picker
-                Text(
-                    text = assistantState.currentAssistant.name.ifEmpty { defaultAssistantName },
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurface,
+                val actionButtonSize = 42.dp
+                val assistantAvatarSize = 30.dp
+                val itemColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                val haptics = rememberPremiumHaptics()
+                val assistantName = assistantState.currentAssistant.name.ifEmpty { defaultAssistantName }
+
+                Surface(
+                    color = itemColor,
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.ButtonPill,
                     modifier = Modifier
                         .weight(1f)
-                        .clickable {
-                            if (settings.assistants.size > 1) {
-                                showCharacterPicker = true
-                            }
+                        .height(actionButtonSize)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(start = 12.dp, end = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    haptics.perform(HapticPattern.Pop)
+                                    if (settings.assistants.size > 1) {
+                                        showCharacterPicker = true
+                                    }
+                                },
+                            contentAlignment = Alignment.CenterStart
+                        ) {
+                            Text(
+                                text = assistantName,
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
                         }
-                )
 
-                // Character avatar - opens character settings
-                me.rerere.rikkahub.ui.components.ui.UIAvatar(
-                    name = assistantState.currentAssistant.name.ifEmpty { defaultAssistantName },
-                    value = assistantState.currentAssistant.avatar,
-                    onClick = {
-                        val currentAssistantId = settings.assistantId
-                        navController.navigate(Screen.AssistantDetail(id = currentAssistantId.toString()))
-                    },
-                    modifier = Modifier.size(36.dp)
-                )
+                        Box(
+                            modifier = Modifier
+                                .size(assistantAvatarSize)
+                                .clip(rememberAvatarShape(false))
+                                .clickable {
+                                    haptics.perform(HapticPattern.Pop)
+                                    val currentAssistantId = settings.assistantId
+                                    navController.navigate(Screen.AssistantDetail(id = currentAssistantId.toString()))
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            DrawerAvatarVisual(
+                                name = assistantName,
+                                avatar = assistantState.currentAssistant.avatar,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+                }
 
                 // Settings icon
                 DrawerAction(
@@ -370,6 +412,8 @@ fun ChatDrawerContent(
                     onClick = {
                         navController.navigate(Screen.Setting)
                     },
+                    containerColor = itemColor,
+                    size = actionButtonSize
                 )
             }
 
@@ -451,14 +495,18 @@ private fun DrawerAction(
     icon: @Composable () -> Unit,
     label: @Composable () -> Unit,
     onClick: () -> Unit,
+    containerColor: Color = MaterialTheme.colorScheme.primaryContainer,
+    size: Dp = 42.dp,
 ) {
+    val containerSize = size
+    val iconSize = 22.dp
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.88f else 1f,
+        targetValue = if (isPressed) 0.85f else 1f,
         animationSpec = spring(
-            dampingRatio = 0.4f,
-            stiffness = 400f
+            dampingRatio = 0.6f,
+            stiffness = 300f
         ),
         label = "drawer_scale"
     )
@@ -473,7 +521,7 @@ private fun DrawerAction(
     val haptics = rememberPremiumHaptics()
     Surface(
         onClick = {
-            haptics.perform(HapticPattern.Tick)
+            haptics.perform(HapticPattern.Pop)
             onClick()
         },
         modifier = modifier.graphicsLayer {
@@ -482,7 +530,7 @@ private fun DrawerAction(
             this.alpha = alpha
         },
         interactionSource = interactionSource,
-        color = MaterialTheme.colorScheme.primaryContainer,
+        color = containerColor,
         shape = CircleShape,
         contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
@@ -493,10 +541,62 @@ private fun DrawerAction(
         ) {
             Box(
                 modifier = Modifier
-                    .padding(10.dp)
-                    .size(20.dp),
+                    .size(containerSize),
+                contentAlignment = Alignment.Center
             ) {
-                icon()
+                Box(modifier = Modifier.size(iconSize)) {
+                    icon()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DrawerAvatarVisual(
+    name: String,
+    avatar: Avatar,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier.clip(rememberAvatarShape(false)),
+        contentAlignment = Alignment.Center
+    ) {
+        when (avatar) {
+            is Avatar.Image -> {
+                AsyncImage(
+                    model = avatar.url,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            }
+
+            is Avatar.Resource -> {
+                AsyncImage(
+                    model = avatar.id,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            }
+
+            is Avatar.Emoji -> {
+                Text(
+                    text = avatar.content,
+                    style = MaterialTheme.typography.titleLarge
+                )
+            }
+
+            is Avatar.Dummy -> {
+                Text(
+                    text = name
+                        .ifBlank { "A" }
+                        .take(1)
+                        .uppercase(),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                )
             }
         }
     }

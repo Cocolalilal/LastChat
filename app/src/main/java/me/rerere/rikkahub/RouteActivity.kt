@@ -47,6 +47,7 @@ import okio.Path.Companion.toOkioPath
 import me.rerere.rikkahub.ui.components.ui.AppToasterHost
 import me.rerere.rikkahub.ui.components.ui.rememberAppToasterState
 import kotlinx.serialization.Serializable
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.filterNotNull
 import me.rerere.highlight.Highlighter
@@ -128,9 +129,15 @@ class RouteActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         
         // Track app launch and initialize usage stats
-        lifecycleScope.launch {
-            conversationRepo.initUsageStats()
-            conversationRepo.incrementAppLaunches()
+        lifecycleScope.launch(Dispatchers.IO) {
+            runCatching { conversationRepo.initUsageStats() }
+                .onFailure { android.util.Log.e(TAG, "initUsageStats failed", it) }
+            runCatching { conversationRepo.backfillDailyActivityFromConversationHistoryIfNeeded() }
+                .onFailure { android.util.Log.e(TAG, "daily activity backfill failed", it) }
+            runCatching { conversationRepo.backfillUsageStatsFromHistoryIfNeeded() }
+                .onFailure { android.util.Log.e(TAG, "usage stats backfill failed", it) }
+            runCatching { conversationRepo.incrementAppLaunches() }
+                .onFailure { android.util.Log.e(TAG, "increment app launches failed", it) }
         }
         
         // Store intent data - will be processed AFTER composition is ready

@@ -232,7 +232,6 @@ fun UIAvatar(
 
     if (showEmojiPicker) {
         ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = {
                 showEmojiPicker = false
             },
