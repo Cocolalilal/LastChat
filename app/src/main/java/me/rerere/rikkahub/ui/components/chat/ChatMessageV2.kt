@@ -109,19 +109,21 @@ data class MessageTurnGroup(
     val filteredNodes: List<MessageNode> get() {
         val tag = activeVersionTag
         return nodes.mapNotNull { node ->
-            if (tag == null) {
-                // Active version is null-tagged (old version before versioning)
-                // Find the first message with null versionTag
-                val index = node.messages.indexOfFirst { it.versionTag == null }
-                if (index != -1) {
-                    node.copy(selectIndex = index)
-                } else null
+            val currentIndexMatchesTag = node.messages
+                .getOrNull(node.selectIndex)
+                ?.versionTag == tag
+            val matchingIndex = if (currentIndexMatchesTag) {
+                // Keep the node's active selection when it already matches this turn's tag.
+                node.selectIndex
             } else {
-                // Active version has a tag, find message with matching tag
-                val index = node.messages.indexOfFirst { it.versionTag == tag }
-                if (index != -1) {
-                    node.copy(selectIndex = index)
-                } else null
+                // Fall back to the newest matching message (important for same-tag edits).
+                node.messages.indexOfLast { it.versionTag == tag }
+            }
+
+            if (matchingIndex != -1) {
+                node.copy(selectIndex = matchingIndex)
+            } else {
+                null
             }
         }
     }

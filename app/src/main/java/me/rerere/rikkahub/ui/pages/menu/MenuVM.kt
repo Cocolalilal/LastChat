@@ -39,7 +39,7 @@ class MenuVM(
 
     val stats: StateFlow<MenuStats> = combine(
         conversationRepository.getDailyActivityDatesFlow(),
-        conversationRepository.getUsageStatsFlow(),
+        conversationRepository.getUsageStatsLast12MonthsFlow(),
         conversationRepository.getAllDailyActivityFlow()
     ) { distinctDates, usageStats, allActivity ->
         // Daily Chat Streak
@@ -56,7 +56,8 @@ class MenuVM(
             }
         }
         val activityMap = parsedActivity.toMap()
-        val heatmapStartDate = today.minusMonths(11)
+        val strictWindowStartDate = today.withDayOfMonth(1).minusMonths(11)
+        val heatmapStartDate = strictWindowStartDate
             .with(TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY))
         
         val heatmapData = generateSequence(heatmapStartDate) { it.plusDays(1) }
@@ -64,14 +65,14 @@ class MenuVM(
             .map { date ->
                 HeatmapDay(
                     date = date,
-                    count = activityMap[date] ?: 0
+                    count = if (date.isBefore(strictWindowStartDate)) 0 else (activityMap[date] ?: 0)
                 )
             }
             .toList()
 
         MenuStats(
             dailyChatStreak = streak,
-            usageStats = usageStats ?: UsageStatsEntity(),
+            usageStats = usageStats,
             heatmapData = heatmapData
         )
     }
