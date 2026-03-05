@@ -139,11 +139,13 @@ fun ColumnScope.ConversationList(
         }
     }
 
-    // fix: compose很奇怪，会自动聚焦到第一个文本框
-    // 在这里放一个空的Box，防止自动聚焦到第一个文本框弹出IME
-    if (!isSearchExpanded) {
-        Box(modifier = Modifier.focusable())
-    }
+    // Keep a zero-height focus target to prevent auto-focusing the search field
+    // without introducing layout jumps when search enters/leaves expanded state.
+    Box(
+        modifier = Modifier
+            .height(0.dp)
+            .focusable()
+    )
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
