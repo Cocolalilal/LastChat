@@ -51,6 +51,7 @@ import me.rerere.ai.ui.UsedMemory
 import me.rerere.ai.ui.UsedMode
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.ui.components.ui.icons.ModeIcons
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 private val json = Json { ignoreUnknownKeys = true }
@@ -116,9 +117,9 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                // Modes Section
+                // Skills Section
                 if (sortedModes.isNotEmpty()) {
-                    item { SectionHeader("Modes") }
+                    item { SectionHeader("Skills") }
                     itemsIndexed(sortedModes) { index, mode ->
                         val shape = getGroupedShape(index, sortedModes.size)
                         ModeItem(
@@ -227,7 +228,7 @@ private fun ModeItem(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Mode icon cover
+            // Skill icon cover
             Box(
                 modifier = Modifier
                     .width(45.dp)
@@ -241,20 +242,28 @@ private fun ModeItem(
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = mode.modeName.take(1).uppercase(),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer
-                )
+                if (!mode.modeIcon.isNullOrBlank()) {
+                    Icon(
+                        imageVector = ModeIcons.getIcon(mode.modeIcon),
+                        contentDescription = mode.modeName,
+                        tint = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                } else {
+                    Text(
+                        text = mode.modeName.take(1).uppercase(),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                }
             }
             
-            // Mode info
+            // Skill info
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 Text(
-                    text = "Mode",
+                    text = "Skill",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

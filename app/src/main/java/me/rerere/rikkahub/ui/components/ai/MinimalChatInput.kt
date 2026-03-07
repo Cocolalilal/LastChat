@@ -3,6 +3,7 @@ package me.rerere.rikkahub.ui.components.ai
 import android.net.Uri
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,6 +51,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.content.contentReceiver
 import androidx.compose.foundation.content.MediaType
@@ -61,6 +64,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.CameraAlt
+import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.FolderOpen
@@ -92,7 +96,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
@@ -105,6 +111,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import me.rerere.ai.provider.Model
 import me.rerere.rikkahub.R
@@ -115,6 +122,7 @@ import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.model.Skill
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.ui.components.crop.CropImageScreen
 import me.rerere.rikkahub.ui.components.ui.icons.ModeIcons
@@ -129,7 +137,6 @@ import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.utils.createChatFilesByContents
 import me.rerere.rikkahub.utils.getFileNameFromUri
-import me.rerere.rikkahub.utils.deleteChatFiles
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
 import java.io.File
 import kotlin.uuid.Uuid
@@ -170,6 +177,39 @@ fun MinimalChatInput(
     val keyboardController = LocalSoftwareKeyboardController.current
     val localSettings = LocalSettings.current
     val scope = rememberCoroutineScope()
+    val availableSkills = remember(settings.skills) { settings.skills }
+    val availableSkillIds = remember(availableSkills) { availableSkills.map { it.id }.toSet() }
+    val activeConversationSkillIds = remember(conversation.enabledModeIds, assistant.enabledSkillIds, availableSkillIds) {
+        val activeIds = if (conversation.enabledModeIds.isNotEmpty()) {
+            conversation.enabledModeIds
+        } else {
+            assistant.enabledSkillIds
+        }
+        activeIds.intersect(availableSkillIds)
+    }
+    val slashInvocableSkills = remember(availableSkills) {
+        availableSkills.distinctBy { it.id }
+    }
+    val inputText = state.textContent.text.toString()
+    val slashToken = inputText.substringBefore(" ")
+    val isTypingSlashToken = inputText.startsWith("/") &&
+        !inputText.drop(1).contains(' ') &&
+        !inputText.contains('\n')
+    val filteredSlashSkills = remember(slashToken, slashInvocableSkills) {
+        if (!slashToken.startsWith("/")) {
+            emptyList()
+        } else {
+            val query = slashToken.lowercase()
+            slashInvocableSkills.filter { skill ->
+                skill.slashCommand().lowercase().startsWith(query)
+            }
+        }
+    }
+    val exactSlashSkill = remember(slashToken, slashInvocableSkills) {
+        slashInvocableSkills.firstOrNull { skill ->
+            skill.slashCommand().equals(slashToken, ignoreCase = true)
+        }
+    }
 
     // OLED dark mode handling for picker sheet
     val amoledMode by me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode()
@@ -198,6 +238,12 @@ fun MinimalChatInput(
     }
     
     fun sendMessage() {
+        if (!state.loading && exactSlashSkill != null) {
+            val updatedIds = activeConversationSkillIds + exactSlashSkill.id
+            if (updatedIds != conversation.enabledModeIds) {
+                onUpdateConversation(conversation.copy(enabledModeIds = updatedIds))
+            }
+        }
         keyboardController?.hide()
         haptics.perform(HapticPattern.Send)
         if (state.loading) onCancelClick() else onSendClick()
@@ -231,6 +277,21 @@ fun MinimalChatInput(
                 ChatSuggestionsRow(
                     suggestions = chatSuggestions,
                     onClickSuggestion = onClickSuggestion
+                )
+            }
+
+            androidx.compose.animation.AnimatedVisibility(
+                visible = isTypingSlashToken && filteredSlashSkills.isNotEmpty(),
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                SlashSkillsPicker(
+                    skills = filteredSlashSkills,
+                    onSelect = { skill ->
+                        val slashCommand = "${skill.slashCommand()} "
+                        state.setMessageText(slashCommand)
+                        haptics.perform(HapticPattern.Pop)
+                    }
                 )
             }
             
@@ -360,7 +421,7 @@ fun MinimalChatInput(
                                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
                                     start = 16.dp,
                                     end = 48.dp,  // Space for 40dp button + 4dp padding
-                                    top = 12.dp,  // (48dp height - 24dp text) / 2 = 12dp
+                                    top = 12.dp,
                                     bottom = 12.dp
                                 )
                             )
@@ -471,6 +532,62 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
 }
 
 @Composable
+private fun SlashSkillsPicker(
+    skills: List<Skill>,
+    onSelect: (Skill) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(max = 220.dp)
+    ) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            items(skills, key = { it.id }) { skill ->
+                val slashCommand = skill.slashCommand()
+                ListItem(
+                    modifier = Modifier.clickable { onSelect(skill) },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    leadingContent = {
+                        Icon(
+                            imageVector = ModeIcons.getIcon(skill.icon ?: "category"),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    headlineContent = {
+                        Text(
+                            text = slashCommand,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    },
+                    supportingContent = {
+                        val summary = when {
+                            skill.description.isNotBlank() -> skill.description
+                            skill.instructions.isNotBlank() -> skill.instructions
+                            else -> skill.name
+                        }
+                        Text(
+                            text = summary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun MinimalPickerContent(
     state: ChatInputState,
     conversation: Conversation,
@@ -510,10 +627,16 @@ private fun MinimalPickerContent(
     // Sub-picker states
     var showModelPicker by remember { mutableStateOf(false) }
     var showReasoningPicker by remember { mutableStateOf(false) }
-    var showModesPicker by remember { mutableStateOf(false) }
+    var showSkillsPicker by remember { mutableStateOf(false) }
     var showLorebooksPicker by remember { mutableStateOf(false) }
     var showContextRefreshDialog by remember { mutableStateOf(false) }
     var showSearchPicker by remember { mutableStateOf(false) }
+    val assistantDefaultSkillIds = assistant.enabledSkillIds
+    val effectiveActiveSkillIds = if (conversation.enabledModeIds.isNotEmpty()) {
+        conversation.enabledModeIds
+    } else {
+        assistantDefaultSkillIds
+    }
     
     // Track the last valid search provider index so selection persists when search is disabled
     // Initialize from assistant's searchMode if available, otherwise use global setting
@@ -544,18 +667,49 @@ private fun MinimalPickerContent(
     val leftButtonShape = RoundedCornerShape(topStart = 24.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 10.dp)
     val middleButtonShape = RoundedCornerShape(10.dp)
     val rightButtonShape = RoundedCornerShape(topStart = 10.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 24.dp)
+
+    fun importImages(
+        uris: List<Uri>,
+        dismissOnSuccess: Boolean = false,
+        onFinally: () -> Unit = {}
+    ) {
+        if (uris.isEmpty()) {
+            onFinally()
+            return
+        }
+
+        scope.launch {
+            val importedUris = withContext(Dispatchers.IO) {
+                context.createChatFilesByContents(uris)
+            }
+            if (importedUris.isEmpty()) {
+                Log.w("MinimalChatInput", "Failed to import ${uris.size} selected image(s)")
+                toaster.show("Couldn't add the selected image. Please try again.")
+            } else {
+                state.addImages(importedUris)
+                if (dismissOnSuccess) {
+                    onDismiss()
+                }
+            }
+            onFinally()
+        }
+    }
     
     // Crop screen dialog
     if (showCropScreen && imageToCrop != null) {
         CropImageScreen(
             sourceUri = imageToCrop!!,
             onCropComplete = { croppedUri ->
-                state.addImages(context.createChatFilesByContents(listOf(croppedUri)))
-                showCropScreen = false
-                imageToCrop = null
-                cameraOutputFile?.delete()
-                cameraOutputFile = null
-                cameraOutputUri = null
+                importImages(
+                    uris = listOf(croppedUri),
+                    onFinally = {
+                        showCropScreen = false
+                        imageToCrop = null
+                        cameraOutputFile?.delete()
+                        cameraOutputFile = null
+                        cameraOutputUri = null
+                    }
+                )
             },
             onCancel = {
                 showCropScreen = false
@@ -571,14 +725,20 @@ private fun MinimalPickerContent(
     val cameraLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.TakePicture()
     ) { captureSuccessful ->
-        if (captureSuccessful && cameraOutputUri != null) {
+        val capturedUri = cameraOutputUri
+        val capturedFile = cameraOutputFile
+        if (captureSuccessful && capturedUri != null) {
             if (localSettings.displaySetting.skipCropImage) {
-                state.addImages(context.createChatFilesByContents(listOf(cameraOutputUri!!)))
-                cameraOutputFile?.delete()
-                cameraOutputFile = null
-                cameraOutputUri = null
+                importImages(
+                    uris = listOf(capturedUri),
+                    onFinally = {
+                        capturedFile?.delete()
+                        cameraOutputFile = null
+                        cameraOutputUri = null
+                    }
+                )
             } else {
-                imageToCrop = cameraOutputUri
+                imageToCrop = capturedUri
                 showCropScreen = true
             }
         } else {
@@ -590,20 +750,17 @@ private fun MinimalPickerContent(
     
     // Photo picker launcher
     val imagePickerLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetMultipleContents()
+        ActivityResultContracts.PickMultipleVisualMedia()
     ) { selectedUris ->
         if (selectedUris.isNotEmpty()) {
-            if (localSettings.displaySetting.skipCropImage) {
-                state.addImages(context.createChatFilesByContents(selectedUris))
-                onDismiss()
+            if (localSettings.displaySetting.skipCropImage || selectedUris.size > 1) {
+                importImages(
+                    uris = selectedUris,
+                    dismissOnSuccess = true
+                )
             } else {
-                if (selectedUris.size == 1) {
-                    imageToCrop = selectedUris.first()
-                    showCropScreen = true
-                } else {
-                    state.addImages(context.createChatFilesByContents(selectedUris))
-                    onDismiss()
-                }
+                imageToCrop = selectedUris.first()
+                showCropScreen = true
             }
         }
     }
@@ -703,7 +860,11 @@ private fun MinimalPickerContent(
                 shape = middleButtonShape,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
                 onClick = {
-                    imagePickerLauncher.launch("image/*")
+                    imagePickerLauncher.launch(
+                        PickVisualMediaRequest(
+                            ActivityResultContracts.PickVisualMedia.ImageOnly
+                        )
+                    )
                 }
             )
             
@@ -802,32 +963,35 @@ private fun MinimalPickerContent(
             }
         )
         
-        // Modes - use enabledModeIds from conversation or default modes
-        val activeModes = if (conversation.enabledModeIds.isNotEmpty()) {
-            settings.modes.filter { mode -> conversation.enabledModeIds.contains(mode.id) }
-        } else {
-            settings.modes.filter { it.defaultEnabled }
+        // Skills - use enabledModeIds (legacy field) for per-chat overrides.
+        val availableSkills = settings.skills
+        val activeSkills = availableSkills.filter { skill ->
+            effectiveActiveSkillIds.contains(skill.id)
         }
-        val activeModesCount = activeModes.size
-        val modesActive = activeModesCount > 0
-        val singleActiveModeIcon = activeModes.singleOrNull()?.icon
+        val activeSkillsCount = activeSkills.size
+        val skillsActive = activeSkillsCount > 0
+        val singleActiveSkillIcon = activeSkills.singleOrNull()?.icon
         MinimalPickerItem(
             icon = {
                 Icon(
-                    imageVector = if (singleActiveModeIcon != null) {
-                        ModeIcons.getIcon(singleActiveModeIcon)
+                    imageVector = if (singleActiveSkillIcon != null) {
+                        ModeIcons.getIcon(singleActiveSkillIcon)
                     } else {
-                        Icons.Rounded.FlashOn
+                        Icons.Rounded.Category
                     },
                     contentDescription = null,
                     modifier = Modifier.size(24.dp),
-                    tint = if (modesActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = if (skillsActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             },
-            title = stringResource(R.string.minimal_input_modes),
-            subtitle = if (activeModesCount > 0) "$activeModesCount active" else stringResource(R.string.minimal_input_modes_desc),
+            title = stringResource(R.string.minimal_input_skills),
+            subtitle = if (activeSkillsCount > 0) {
+                stringResource(R.string.skills_picker_active_count, activeSkillsCount)
+            } else {
+                stringResource(R.string.minimal_input_skills_desc)
+            },
             onClick = { 
-                showModesPicker = true
+                showSkillsPicker = true
             }
         )
         
@@ -935,13 +1099,14 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
         }
     }
     
-    // Modes picker sheet
-    if (showModesPicker) {
-        ModesPickerSheet(
+    // Skills picker sheet
+    if (showSkillsPicker) {
+        SkillsPickerSheet(
             settings = settings,
+            assistant = assistant,
             conversation = conversation,
             onUpdateConversation = onUpdateConversation,
-            onDismiss = { showModesPicker = false }
+            onDismiss = { showSkillsPicker = false }
         )
     }
     
@@ -1325,6 +1490,15 @@ private fun MediaFileInputRow(
                 }
             )
         }
+    }
+}
+
+private fun Skill.slashCommand(): String {
+    val hinted = argumentHint?.trim()
+    return when {
+        !hinted.isNullOrBlank() && hinted.startsWith("/") -> hinted
+        name.isNotBlank() -> "/$name"
+        else -> "/skill"
     }
 }
 

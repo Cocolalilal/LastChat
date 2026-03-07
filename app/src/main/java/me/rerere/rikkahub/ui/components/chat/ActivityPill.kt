@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.components.chat
+﻿package me.rerere.rikkahub.ui.components.chat
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Build
+import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.Search
@@ -126,6 +127,7 @@ enum class ActivityType {
     REASONING,
     SEARCH,
     PYTHON,
+    SKILL,
     MCP,
     TOOL_OTHER
 }
@@ -137,6 +139,7 @@ private fun ActivityType.getIcon(): ImageVector = when (this) {
     ActivityType.REASONING -> Icons.Rounded.Lightbulb
     ActivityType.SEARCH -> Icons.Rounded.Public
     ActivityType.PYTHON -> Icons.Rounded.Terminal
+    ActivityType.SKILL -> Icons.Rounded.Category
     ActivityType.MCP -> Icons.Rounded.Memory
     ActivityType.TOOL_OTHER -> Icons.Rounded.Build
 }
@@ -148,6 +151,7 @@ private fun ActivityType.getDisplayText(): String = when (this) {
     ActivityType.REASONING -> "Reasoned"
     ActivityType.SEARCH -> "Searched"
     ActivityType.PYTHON -> "Ran Python"
+    ActivityType.SKILL -> "Skills"
     ActivityType.MCP -> "MCP"
     ActivityType.TOOL_OTHER -> "Used tools"
 }
@@ -159,6 +163,7 @@ internal fun categorizeToolName(toolName: String): ActivityType = when (toolName
     "search_web", "scrape_web" -> ActivityType.SEARCH
     "eval_python", "pip_install", "write_sandbox_file", 
     "read_sandbox_file", "list_sandbox_files", "delete_sandbox_file" -> ActivityType.PYTHON
+    "manage_skills" -> ActivityType.SKILL
     else -> if (toolName.startsWith("mcp_")) ActivityType.MCP else ActivityType.TOOL_OTHER
 }
 
@@ -209,7 +214,7 @@ enum class PillPosition {
 /**
  * A row of activity pills with Apple-like smooth animations.
  * 
- * During loading: Shows a single morphing pill (Waiting → Reasoning → Tool → etc.)
+ * During loading: Shows a single morphing pill (Waiting â†’ Reasoning â†’ Tool â†’ etc.)
  * After completion: If multiple activities, reveals them with staggered fly-out animation
  */
 @Composable
@@ -527,6 +532,7 @@ private fun ExpandedActivityContent(item: ActivityItem) {
         }
         ActivityType.SEARCH -> "Searched the Web"
         ActivityType.PYTHON -> "Ran Python"
+        ActivityType.SKILL -> "Managed skills"
         ActivityType.MCP -> "MCP"
         ActivityType.TOOL_OTHER -> "Used tool"
     }
@@ -723,16 +729,19 @@ private fun ExpandedActivityPill(
                 }
             }
             ActivityType.SEARCH -> {
-                if (item.count > 1) "Searched ×${item.count}" else "Searched the Web"
+                if (item.count > 1) "Searched Ã—${item.count}" else "Searched the Web"
             }
             ActivityType.PYTHON -> {
-                if (item.count > 1) "Ran Python ×${item.count}" else "Ran Python"
+                if (item.count > 1) "Ran Python Ã—${item.count}" else "Ran Python"
+            }
+            ActivityType.SKILL -> {
+                if (item.count > 1) "Managed skills x${item.count}" else "Managed skills"
             }
             ActivityType.MCP -> {
-                if (item.count > 1) "MCP calls ×${item.count}" else "MCP"
+                if (item.count > 1) "MCP calls Ã—${item.count}" else "MCP"
             }
             ActivityType.TOOL_OTHER -> {
-                if (item.count > 1) "Used tools ×${item.count}" else "Used tool"
+                if (item.count > 1) "Used tools Ã—${item.count}" else "Used tool"
             }
         }
         

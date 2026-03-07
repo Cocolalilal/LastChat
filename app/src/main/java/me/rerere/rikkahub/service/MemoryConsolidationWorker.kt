@@ -57,7 +57,7 @@ class MemoryConsolidationWorker(
         val settings = settingsStore.settingsFlow.value
         val assistant = settings.getCurrentAssistant()
         if (!assistant.enableMemory) return
-        val summarizerModelId = assistant.summarizerModelId
+        val summarizerModelId = settings.summarizerModelId
         val backgroundModelId = summarizerModelId ?: assistant.backgroundModelId ?: settings.chatModelId
         val model = settings.findModelById(backgroundModelId) ?: return
         val provider = model.findProvider(settings.providers) ?: return

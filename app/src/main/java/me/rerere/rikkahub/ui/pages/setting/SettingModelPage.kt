@@ -5,13 +5,13 @@ import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Card
@@ -56,10 +56,12 @@ import me.rerere.rikkahub.data.ai.prompts.DEFAULT_SUGGESTION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TITLE_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TRANSLATION_PROMPT
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.FormItem
+import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
 
@@ -84,27 +86,23 @@ fun SettingModelPage(vm: SettingVM = koinViewModel()) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             state = lazyListState,
-            contentPadding = contentPadding + PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = contentPadding,
+            verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
             item {
-                DefaultChatModelSetting(settings = settings, vm = vm)
+                SettingsGroup(title = stringResource(R.string.setting_model_page_group_conversation)) {
+                    DefaultChatModelSetting(settings = settings, vm = vm)
+                    DefaultTitleModelSetting(settings = settings, vm = vm)
+                    DefaultSummarizerModelSetting(settings = settings, vm = vm)
+                    DefaultSuggestionModelSetting(settings = settings, vm = vm)
+                }
             }
 
             item {
-                DefaultTitleModelSetting(settings = settings, vm = vm)
-            }
-
-            item {
-                DefaultSuggestionModelSetting(settings = settings, vm = vm)
-            }
-
-            item {
-                DefaultOcrModelSetting(settings = settings, vm = vm)
-            }
-
-            item {
-                DefaultEmbeddingModelSetting(settings = settings, vm = vm)
+                SettingsGroup(title = stringResource(R.string.setting_model_page_group_processing)) {
+                    DefaultOcrModelSetting(settings = settings, vm = vm)
+                    DefaultEmbeddingModelSetting(settings = settings, vm = vm)
+                }
             }
         }
     }
@@ -397,6 +395,42 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
 }
 
 @Composable
+private fun DefaultSummarizerModelSetting(
+    settings: Settings,
+    vm: SettingVM
+) {
+    ModelFeatureCard(
+        title = {
+            Text(stringResource(R.string.setting_model_page_summarizer_model), maxLines = 1)
+        },
+        description = {
+            Text(stringResource(R.string.setting_model_page_summarizer_model_desc))
+        },
+        icon = {
+            Icon(Icons.Rounded.Psychology, null)
+        },
+        actions = {
+            Box(modifier = Modifier.weight(1f)) {
+                ModelSelector(
+                    modelId = settings.summarizerModelId,
+                    type = ModelType.CHAT,
+                    onSelect = { selectedModel ->
+                        vm.updateSettings(
+                            settings.copy(
+                                summarizerModelId = settings.findModelById(selectedModel.id)?.id
+                            )
+                        )
+                    },
+                    providers = settings.providers,
+                    allowClear = true,
+                    modifier = Modifier.wrapContentWidth()
+                )
+            }
+        }
+    )
+}
+
+@Composable
 private fun DefaultChatModelSetting(
     settings: Settings,
     vm: SettingVM
@@ -576,9 +610,9 @@ private fun ModelFeatureCard(
 ) {
     Card(
         modifier = modifier,
-        shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
+        shape = RoundedCornerShape(10.dp),
         colors = androidx.compose.material3.CardDefaults.cardColors(
-            containerColor = if (LocalDarkMode.current) androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow else androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = if (LocalDarkMode.current) androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow else androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHighest
         )
     ) {
         Column(

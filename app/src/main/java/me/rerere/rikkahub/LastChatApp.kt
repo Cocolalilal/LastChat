@@ -24,6 +24,7 @@ import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -31,6 +32,11 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import me.rerere.rikkahub.service.MemoryConsolidationWorker
+import me.rerere.rikkahub.service.SPONTANEOUS_NOTIFICATION_CHANNEL_ID
+import me.rerere.rikkahub.service.SPONTANEOUS_WORK_INTERVAL_MINUTES
+import me.rerere.rikkahub.service.SPONTANEOUS_WORK_NAME
+import me.rerere.rikkahub.service.SpontaneousWorker
+import me.rerere.rikkahub.service.WebServerService
 import java.util.concurrent.TimeUnit
 import org.koin.androidx.workmanager.koin.workManagerFactory
 import org.koin.core.context.startKoin
@@ -40,6 +46,7 @@ import com.chaquo.python.android.AndroidPlatform
 private const val TAG = "LastChatApp"
 
 const val CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID = "chat_completed"
+const val WEB_SERVER_NOTIFICATION_CHANNEL_ID = "web_server"
 
 class LastChatApp : Application() {
     override fun onCreate() {
@@ -71,6 +78,22 @@ class LastChatApp : Application() {
             setDefaultsAsync(R.xml.remote_config_defaults)
             fetchAndActivate()
         }
+
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            SPONTANEOUS_WORK_NAME,
+            ExistingPeriodicWorkPolicy.UPDATE,
+            PeriodicWorkRequestBuilder<SpontaneousWorker>(
+                SPONTANEOUS_WORK_INTERVAL_MINUTES,
+                TimeUnit.MINUTES
+            )
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .build()
+                )
+                .build()
+        )
+
         // Schedule Memory Consolidation Worker dynamically
         get<AppScope>().launch {
             get<SettingsStore>().settingsFlow
@@ -107,6 +130,13 @@ class LastChatApp : Application() {
                         appShortcutManager.updateAssistantShortcuts(recentlyUsed, assistants)
                     }
                 }
+        }
+
+        get<AppScope>().launch {
+            val settings = get<SettingsStore>().settingsFlowRaw.first()
+            if (settings.webServerEnabled) {
+                WebServerService.start(this@LastChatApp, settings.webServerPort)
+            }
         }
         
         // One-time migration: populate DailyActivityEntity from existing conversation dates
@@ -145,7 +175,25 @@ class LastChatApp : Application() {
             .setName(getString(R.string.notification_channel_chat_completed))
             .setVibrationEnabled(true)
             .build()
+        val webServerChannel = NotificationChannelCompat
+            .Builder(
+                WEB_SERVER_NOTIFICATION_CHANNEL_ID,
+                NotificationManagerCompat.IMPORTANCE_LOW
+            )
+            .setName(getString(R.string.notification_channel_web_server))
+            .setVibrationEnabled(false)
+            .build()
+        val spontaneousChannel = NotificationChannelCompat
+            .Builder(
+                SPONTANEOUS_NOTIFICATION_CHANNEL_ID,
+                NotificationManagerCompat.IMPORTANCE_DEFAULT
+            )
+            .setName(getString(R.string.notification_channel_spontaneous))
+            .setVibrationEnabled(true)
+            .build()
         notificationManager.createNotificationChannel(chatCompletedChannel)
+        notificationManager.createNotificationChannel(webServerChannel)
+        notificationManager.createNotificationChannel(spontaneousChannel)
     }
 
     override fun onTerminate() {

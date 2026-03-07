@@ -1,6 +1,7 @@
 package me.rerere.rikkahub
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -23,7 +24,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -48,10 +48,14 @@ import me.rerere.rikkahub.ui.components.ui.AppToasterHost
 import me.rerere.rikkahub.ui.components.ui.rememberAppToasterState
 import kotlinx.serialization.Serializable
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import me.rerere.highlight.Highlighter
 import me.rerere.highlight.LocalHighlighter
+import me.rerere.rikkahub.data.datastore.SpontaneousMessagingStateStore
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.ui.components.ui.TTSController
 import me.rerere.rikkahub.ui.context.LocalAnimatedVisibilityScope
@@ -80,11 +84,12 @@ import me.rerere.rikkahub.ui.pages.setting.SettingProviderDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingProviderPage
 import me.rerere.rikkahub.ui.pages.setting.SettingSearchPage
 import me.rerere.rikkahub.ui.pages.setting.SettingTTSPage
+import me.rerere.rikkahub.ui.pages.setting.SettingWebPage
 import me.rerere.rikkahub.ui.pages.setting.SettingRpOptimizationsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPromptInjectionsPage
-import me.rerere.rikkahub.ui.pages.setting.SettingModesPage
 import me.rerere.rikkahub.ui.pages.setting.SettingLorebooksPage
 import me.rerere.rikkahub.ui.pages.setting.SettingLorebookDetailPage
+import me.rerere.rikkahub.ui.pages.setting.SettingSkillsPage
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerPage
 import me.rerere.rikkahub.ui.pages.webview.WebViewPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAndroidIntegrationPage
@@ -92,13 +97,22 @@ import me.rerere.rikkahub.ui.pages.setting.SettingUICustomizationPage
 import me.rerere.rikkahub.ui.pages.setting.SettingFontsPage
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.theme.RikkahubTheme
+import me.rerere.rikkahub.service.EXTRA_IS_SPONTANEOUS_NOTIFICATION
+import me.rerere.rikkahub.service.EXTRA_SPONTANEOUS_EVENT_ID
+import me.rerere.rikkahub.service.EXTRA_SPONTANEOUS_MESSAGE
 import okhttp3.OkHttpClient
 import org.koin.android.ext.android.inject
 import me.rerere.rikkahub.utils.fileSizeToString
 import me.rerere.rikkahub.utils.base64Encode
+import me.rerere.rikkahub.utils.createChatFilesByContents
+import me.rerere.rikkahub.utils.createChatTextFile
+import me.rerere.search.SearchService
+import org.jsoup.Jsoup
 import kotlin.uuid.Uuid
 
 private const val TAG = "RouteActivity"
+private const val MAX_SHARED_WEBPAGE_CHARS = 16_000
+private val SHARED_URL_REGEX = Regex("""(?i)\b((?:https?://|www\.)[^\s<>()]+)""")
 
 /**
  * Data class to hold text selection intent data for navigation
@@ -111,16 +125,45 @@ data class TextSelectionData(
     val selectionAssistantId: String?
 )
 
+private data class ShareIntentData(
+    val text: String,
+    val subject: String?,
+    val mimeType: String?,
+    val streamUris: List<String>,
+)
+
+private data class SharedUrlMatch(
+    val raw: String,
+    val normalized: String,
+)
+
+private data class ScrapedWebsiteContent(
+    val url: String,
+    val title: String?,
+    val description: String?,
+    val content: String,
+)
+
+private data class SpontaneousNotificationData(
+    val assistantId: String,
+    val conversationId: String?,
+    val eventId: String,
+    val message: String,
+)
+
 class RouteActivity : ComponentActivity() {
     private val highlighter by inject<Highlighter>()
     private val okHttpClient by inject<OkHttpClient>()
     private val settingsStore by inject<SettingsStore>()
+    private val spontaneousMessagingStateStore by inject<SpontaneousMessagingStateStore>()
     private val chatService by inject<me.rerere.rikkahub.service.ChatService>()
     private val conversationRepo by inject<me.rerere.rikkahub.data.repository.ConversationRepository>()
     private var navStack by mutableStateOf<NavHostController?>(null)
     private var pendingAssistantId by mutableStateOf<String?>(null)
     private var pendingTextSelection by mutableStateOf<TextSelectionData?>(null)
     private var pendingConversationId by mutableStateOf<String?>(null)
+    private var pendingSpontaneousNotification by mutableStateOf<SpontaneousNotificationData?>(null)
+    private var pendingShareIntent by mutableStateOf<ShareIntentData?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -141,8 +184,12 @@ class RouteActivity : ComponentActivity() {
         }
         
         // Store intent data - will be processed AFTER composition is ready
-        val intentAssistantId = intent?.getStringExtra("assistantId")
-        val intentConversationId = intent?.getStringExtra("conversationId")
+        val spontaneousNotification = intent.toSpontaneousNotificationData()
+        val intentAssistantId = if (spontaneousNotification == null) intent?.getStringExtra("assistantId") else null
+        val intentConversationId = if (spontaneousNotification == null) intent?.getStringExtra("conversationId") else null
+        if (spontaneousNotification != null) {
+            pendingSpontaneousNotification = spontaneousNotification
+        }
         
         // Check for text selection intent
         val navigateTo = intent?.getStringExtra("navigate_to")
@@ -155,6 +202,9 @@ class RouteActivity : ComponentActivity() {
                 userPrompt = intent?.getStringExtra("user_prompt"),
                 selectionAssistantId = intent?.getStringExtra("selection_assistant_id")
             )
+        }
+        if (intent?.action == Intent.ACTION_SEND || intent?.action == Intent.ACTION_SEND_MULTIPLE) {
+            pendingShareIntent = intent.toShareIntentData()
         }
         
         setContent {
@@ -223,34 +273,328 @@ class RouteActivity : ComponentActivity() {
     
     // AssistantShortcutHandler removed - shortcuts now handled directly in onCreate/onNewIntent
 
-    @Composable
-    private fun ShareHandler(navBackStack: NavHostController) {
-        val shareIntent = remember {
-            Intent().apply {
-                action = intent?.action
-                putExtra(Intent.EXTRA_TEXT, intent?.getStringExtra(Intent.EXTRA_TEXT))
-                putExtra(Intent.EXTRA_STREAM, intent?.getStringExtra(Intent.EXTRA_STREAM))
+    private fun Intent?.toShareIntentData(): ShareIntentData {
+        if (this == null) {
+            return ShareIntentData(
+                text = "",
+                subject = null,
+                mimeType = null,
+                streamUris = emptyList()
+            )
+        }
+
+        val sharedText = runCatching {
+            getStringExtra(Intent.EXTRA_TEXT)
+                ?: getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
+                ?: getStringExtra(Intent.EXTRA_HTML_TEXT)
+                ?: ""
+        }.getOrElse {
+            android.util.Log.w(TAG, "Failed to parse shared text extra", it)
+            ""
+        }
+        val sharedSubject = runCatching {
+            getStringExtra(Intent.EXTRA_SUBJECT)?.takeIf { it.isNotBlank() }
+        }.getOrElse {
+            android.util.Log.w(TAG, "Failed to parse shared subject extra", it)
+            null
+        }
+        val sharedStreamUris = runCatching {
+            buildList {
+                @Suppress("DEPRECATION")
+                getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.toString()?.let(::add)
+                @Suppress("DEPRECATION")
+                getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
+                    ?.map(Uri::toString)
+                    ?.let(::addAll)
+                getStringExtra(Intent.EXTRA_STREAM)?.takeIf { it.isNotBlank() }?.let(::add)
+                clipData?.let { clip ->
+                    for (index in 0 until clip.itemCount) {
+                        clip.getItemAt(index).uri?.toString()?.let(::add)
+                    }
+                }
+            }.distinct()
+        }.getOrElse {
+            android.util.Log.w(TAG, "Failed to parse shared stream extras", it)
+            emptyList()
+        }
+
+        return ShareIntentData(
+            text = sharedText,
+            subject = sharedSubject,
+            mimeType = type,
+            streamUris = sharedStreamUris
+        )
+    }
+
+    private suspend fun resolveShareIntentData(shareData: ShareIntentData): ShareIntentData {
+        return withContext(Dispatchers.IO) {
+            val copiedStreamUris = if (shareData.streamUris.isEmpty()) {
+                emptyList()
+            } else {
+                createChatFilesByContents(shareData.streamUris.map { it.toUri() }).map(Uri::toString)
+            }
+            val scrapedWebsite = if (copiedStreamUris.isEmpty()) {
+                scrapeWebsiteShare(shareData)
+            } else {
+                null
+            }
+
+            val baseText = shareData.text.ifBlank { shareData.subject.orEmpty() }
+            if (scrapedWebsite == null) {
+                shareData.copy(
+                    text = baseText,
+                    streamUris = copiedStreamUris
+                )
+            } else {
+                shareData.copy(
+                    text = scrapedWebsite.first,
+                    streamUris = copiedStreamUris + scrapedWebsite.second
+                )
+            }
+        }
+    }
+
+    private suspend fun scrapeWebsiteShare(shareData: ShareIntentData): Pair<String, String>? {
+        val sharedUrl = findSharedUrlMatch(shareData.text) ?: return null
+        val scrapedPage = scrapeWebsiteContent(sharedUrl.normalized) ?: return null
+        val cleanedText = shareData.text
+            .replace(sharedUrl.raw, "")
+            .lineSequence()
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .joinToString("\n")
+        val fileName = buildSharedWebpageFileName(
+            title = scrapedPage.title,
+            url = scrapedPage.url
+        )
+        val localFile = createChatTextFile(
+            fileName = fileName,
+            content = buildSharedWebpageDocument(scrapedPage)
+        )
+        return cleanedText to localFile.toString()
+    }
+
+    private suspend fun scrapeWebsiteContent(url: String): ScrapedWebsiteContent? {
+        val settings = settingsStore.settingsFlow.value
+        val selectedSearchOptions = settings.searchServices.getOrElse(
+            index = settings.searchServiceSelected,
+            defaultValue = { me.rerere.search.SearchServiceOptions.DEFAULT }
+        )
+        val searchService = SearchService.getService(selectedSearchOptions)
+
+        if (searchService.scrapingParameters != null) {
+            runCatching {
+                val scrapedResult = searchService.scrape(
+                    params = buildJsonObject {
+                        put("url", url)
+                    },
+                    commonOptions = settings.searchCommonOptions,
+                    serviceOptions = selectedSearchOptions,
+                ).getOrThrow()
+                scrapedResult.urls.firstOrNull { it.content.isNotBlank() }?.let { page ->
+                    return ScrapedWebsiteContent(
+                        url = page.url,
+                        title = page.metadata?.title,
+                        description = page.metadata?.description,
+                        content = limitSharedWebpageContent(page.content)
+                    )
+                }
+            }.onFailure {
+                android.util.Log.w(TAG, "Configured scraper failed for shared URL: $url", it)
             }
         }
 
-        LaunchedEffect(navBackStack) {
-            if (shareIntent.action == Intent.ACTION_SEND) {
-                val text = shareIntent.getStringExtra(Intent.EXTRA_TEXT) ?: ""
-                val imageUri = shareIntent.getStringExtra(Intent.EXTRA_STREAM)
-                navBackStack.navigate(Screen.ShareHandler(text, imageUri))
+        return runCatching {
+            val document = Jsoup.connect(url)
+                .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                .timeout(15_000)
+                .get()
+            val description = document.selectFirst(
+                "meta[name=description], meta[property=og:description]"
+            )?.attr("content")?.trim()?.takeIf { it.isNotBlank() }
+            val mainContent = document.selectFirst("main, article, [role=main]") ?: document.body()
+            val blocks = mainContent
+                .select("h1, h2, h3, h4, h5, h6, p, li, pre, blockquote")
+                .eachText()
+                .map(String::trim)
+                .filter(String::isNotBlank)
+            val textContent = if (blocks.isNotEmpty()) {
+                blocks.joinToString("\n\n")
+            } else {
+                mainContent.text()
+            }.trim()
+
+            if (textContent.isBlank()) {
+                null
+            } else {
+                ScrapedWebsiteContent(
+                    url = url,
+                    title = document.title().takeIf { it.isNotBlank() },
+                    description = description,
+                    content = limitSharedWebpageContent(textContent)
+                )
+            }
+        }.getOrElse {
+            android.util.Log.w(TAG, "Fallback scrape failed for shared URL: $url", it)
+            null
+        }
+    }
+
+    private fun findSharedUrlMatch(text: String): SharedUrlMatch? {
+        val rawMatch = SHARED_URL_REGEX.find(text)?.groupValues?.getOrNull(1)
+            ?.trimEnd('.', ',', ';', ':', ')', ']', '>', '"', '\'')
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+        val normalized = if (rawMatch.startsWith("http://", ignoreCase = true) ||
+            rawMatch.startsWith("https://", ignoreCase = true)
+        ) {
+            rawMatch
+        } else {
+            "https://$rawMatch"
+        }
+        return SharedUrlMatch(raw = rawMatch, normalized = normalized)
+    }
+
+    private fun buildSharedWebpageDocument(page: ScrapedWebsiteContent): String {
+        return buildString {
+            page.title?.let {
+                append("# ")
+                append(it)
+                append("\n\n")
+            }
+            append("Source: ")
+            append(page.url)
+            append("\n\n")
+            page.description?.let {
+                append(it)
+                append("\n\n")
+            }
+            append(page.content)
+        }.trim()
+    }
+
+    private fun buildSharedWebpageFileName(title: String?, url: String): String {
+        val host = Uri.parse(url).host
+            ?.replace(Regex("[^A-Za-z0-9]+"), "-")
+            ?.trim('-')
+            ?.lowercase()
+            ?.takeIf { it.isNotBlank() }
+            ?: "webpage"
+        val titlePart = title
+            ?.replace(Regex("[^A-Za-z0-9]+"), "-")
+            ?.trim('-')
+            ?.lowercase()
+            ?.take(24)
+            ?.takeIf { it.isNotBlank() }
+        val baseName = listOfNotNull("shared-page", host, titlePart).joinToString("-")
+        return "$baseName.md"
+    }
+
+    private fun limitSharedWebpageContent(content: String): String {
+        if (content.length <= MAX_SHARED_WEBPAGE_CHARS) {
+            return content
+        }
+        return content.take(MAX_SHARED_WEBPAGE_CHARS) +
+            "\n\n[Shared webpage content truncated by LastChat.]"
+    }
+
+    private fun Intent?.toSpontaneousNotificationData(): SpontaneousNotificationData? {
+        if (this == null || !getBooleanExtra(EXTRA_IS_SPONTANEOUS_NOTIFICATION, false)) {
+            return null
+        }
+
+        val assistantId = getStringExtra("assistantId") ?: return null
+        val eventId = getStringExtra(EXTRA_SPONTANEOUS_EVENT_ID) ?: return null
+        val message = getStringExtra(EXTRA_SPONTANEOUS_MESSAGE) ?: return null
+
+        return SpontaneousNotificationData(
+            assistantId = assistantId,
+            conversationId = getStringExtra("conversationId"),
+            eventId = eventId,
+            message = message,
+        )
+    }
+
+    @Composable
+    private fun ShareHandler(navBackStack: NavHostController) {
+        val shareData = pendingShareIntent
+        LaunchedEffect(navBackStack, shareData) {
+            val currentShareData = shareData ?: return@LaunchedEffect
+            pendingShareIntent = null
+            val resolvedShareData = runCatching {
+                resolveShareIntentData(currentShareData)
+            }.getOrElse { throwable ->
+                android.util.Log.e(TAG, "Share preprocessing failed", throwable)
+                currentShareData
+            }
+            runCatching {
+                navBackStack.navigate(
+                    Screen.ShareHandler(
+                        text = resolvedShareData.text,
+                        files = resolvedShareData.streamUris
+                    )
+                )
+            }.onFailure { throwable ->
+                android.util.Log.e(TAG, "Share navigation failed", throwable)
+                navBackStack.navigate(
+                    Screen.ShareHandler(
+                        text = resolvedShareData.text,
+                        files = resolvedShareData.streamUris
+                    )
+                )
             }
         }
     }
 
     @Composable
     private fun NotificationHandler(navBackStack: NavHostController) {
+        val spontaneousData = pendingSpontaneousNotification
         val conversationIdStr = pendingConversationId
-        LaunchedEffect(conversationIdStr) {
-            if (conversationIdStr != null) {
+        LaunchedEffect(spontaneousData, conversationIdStr) {
+            if (spontaneousData != null) {
+                pendingSpontaneousNotification = null
+                navigateToSpontaneousNotification(navBackStack, spontaneousData)
+            } else if (conversationIdStr != null) {
                 pendingConversationId = null
                 navBackStack.navigate(Screen.Chat(conversationIdStr))
             }
         }
+    }
+
+    private suspend fun navigateToSpontaneousNotification(
+        navBackStack: NavHostController,
+        data: SpontaneousNotificationData,
+    ) {
+        val assistantId = runCatching { Uuid.parse(data.assistantId) }.getOrNull() ?: return
+        if (data.message.isBlank()) return
+        val originalConversationId = data.conversationId?.let { raw ->
+            runCatching { Uuid.parse(raw) }.getOrNull()
+        }
+
+        settingsStore.updateAssistant(assistantId)
+        settingsStore.markAssistantUsed(assistantId)
+
+        val targetConversationId = when {
+            originalConversationId != null && conversationRepo.getConversationById(originalConversationId) != null -> {
+                originalConversationId
+            }
+
+            else -> {
+                val fallbackConversationId = spontaneousMessagingStateStore.getFallbackConversation(data.eventId)
+                if (fallbackConversationId != null && conversationRepo.getConversationById(fallbackConversationId) != null) {
+                    fallbackConversationId
+                } else {
+                    val fallbackConversation = chatService.persistSpontaneousAssistantMessage(
+                        assistantId = assistantId,
+                        content = data.message,
+                    )
+                    spontaneousMessagingStateStore.rememberFallbackConversation(data.eventId, fallbackConversation.id)
+                    fallbackConversation.id
+                }
+            }
+        }
+
+        navBackStack.navigate(Screen.Chat(targetConversationId.toString()))
     }
 
     @Composable
@@ -320,8 +664,17 @@ class RouteActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         android.util.Log.d(TAG, "onNewIntent called")
         android.util.Log.d(TAG, "Intent extras: conversationId=${intent.getStringExtra("conversationId")}, assistantId=${intent.getStringExtra("assistantId")}")
+        if (intent.action == Intent.ACTION_SEND || intent.action == Intent.ACTION_SEND_MULTIPLE) {
+            pendingShareIntent = intent.toShareIntentData()
+        }
+
+        intent.toSpontaneousNotificationData()?.let { notification ->
+            pendingSpontaneousNotification = notification
+            return
+        }
         
         // Navigate to the chat screen if a conversation ID is provided
         intent.getStringExtra("conversationId")?.let { text ->
@@ -451,7 +804,7 @@ class RouteActivity : ComponentActivity() {
                         val route = backStackEntry.toRoute<Screen.ShareHandler>()
                         ShareHandlerPage(
                             text = route.text,
-                            image = route.streamUri
+                            files = route.files
                         )
                     }
 
@@ -528,6 +881,10 @@ class RouteActivity : ComponentActivity() {
                         SettingTTSPage()
                     }
 
+                    composable<Screen.SettingWeb> {
+                        SettingWebPage()
+                    }
+
                     composable<Screen.SettingMcp> {
                         SettingMcpPage()
                     }
@@ -540,18 +897,92 @@ class RouteActivity : ComponentActivity() {
                         SettingPromptInjectionsPage()
                     }
 
-                    composable<Screen.SettingModes> { backStackEntry ->
-                        val route = backStackEntry.toRoute<Screen.SettingModes>()
-                        SettingModesPage(scrollToModeId = route.scrollToModeId)
-                    }
-
-                    composable<Screen.SettingLorebooks> {
+                    composable<Screen.SettingLorebooks>(
+                        enterTransition = {
+                            if (initialState.destination.route?.contains("SettingSkills") == true) {
+                                slideInHorizontally(
+                                    animationSpec = tween(220, easing = FastOutSlowInEasing)
+                                ) { it } + fadeIn(animationSpec = tween(180))
+                            } else {
+                                null
+                            }
+                        },
+                        exitTransition = {
+                            if (targetState.destination.route?.contains("SettingSkills") == true) {
+                                slideOutHorizontally(
+                                    animationSpec = tween(220, easing = FastOutSlowInEasing)
+                                ) { it } + fadeOut(animationSpec = tween(150))
+                            } else {
+                                null
+                            }
+                        },
+                        popEnterTransition = {
+                            if (initialState.destination.route?.contains("SettingSkills") == true) {
+                                slideInHorizontally(
+                                    animationSpec = tween(220, easing = FastOutSlowInEasing)
+                                ) { it } + fadeIn(animationSpec = tween(180))
+                            } else {
+                                null
+                            }
+                        },
+                        popExitTransition = {
+                            if (targetState.destination.route?.contains("SettingSkills") == true) {
+                                slideOutHorizontally(
+                                    animationSpec = tween(220, easing = FastOutSlowInEasing)
+                                ) { it } + fadeOut(animationSpec = tween(150))
+                            } else {
+                                null
+                            }
+                        }
+                    ) {
                         SettingLorebooksPage()
                     }
 
                     composable<Screen.SettingLorebookDetail> { backStackEntry ->
                         val route = backStackEntry.toRoute<Screen.SettingLorebookDetail>()
                         SettingLorebookDetailPage(id = route.id, scrollToEntryId = route.scrollToEntryId)
+                    }
+
+                    composable<Screen.SettingSkills>(
+                        enterTransition = {
+                            if (initialState.destination.route?.contains("SettingLorebooks") == true) {
+                                slideInHorizontally(
+                                    animationSpec = tween(220, easing = FastOutSlowInEasing)
+                                ) { -it } + fadeIn(animationSpec = tween(180))
+                            } else {
+                                null
+                            }
+                        },
+                        exitTransition = {
+                            if (targetState.destination.route?.contains("SettingLorebooks") == true) {
+                                slideOutHorizontally(
+                                    animationSpec = tween(220, easing = FastOutSlowInEasing)
+                                ) { -it } + fadeOut(animationSpec = tween(150))
+                            } else {
+                                null
+                            }
+                        },
+                        popEnterTransition = {
+                            if (initialState.destination.route?.contains("SettingLorebooks") == true) {
+                                slideInHorizontally(
+                                    animationSpec = tween(220, easing = FastOutSlowInEasing)
+                                ) { -it } + fadeIn(animationSpec = tween(180))
+                            } else {
+                                null
+                            }
+                        },
+                        popExitTransition = {
+                            if (targetState.destination.route?.contains("SettingLorebooks") == true) {
+                                slideOutHorizontally(
+                                    animationSpec = tween(220, easing = FastOutSlowInEasing)
+                                ) { -it } + fadeOut(animationSpec = tween(150))
+                            } else {
+                                null
+                            }
+                        }
+                    ) { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.SettingSkills>()
+                        SettingSkillsPage(scrollToSkillId = route.scrollToSkillId)
                     }
 
                     composable<Screen.Developer> {
@@ -584,7 +1015,7 @@ sealed interface Screen {
     data class Chat(val id: String, val text: String? = null, val files: List<String> = emptyList(), val searchQuery: String? = null) : Screen
 
     @Serializable
-    data class ShareHandler(val text: String, val streamUri: String? = null) : Screen
+    data class ShareHandler(val text: String, val files: List<String> = emptyList()) : Screen
 
 
     @Serializable
@@ -635,6 +1066,9 @@ sealed interface Screen {
     data object SettingTTS : Screen
 
     @Serializable
+    data object SettingWeb : Screen
+
+    @Serializable
     data object SettingMcp : Screen
 
     @Serializable
@@ -644,9 +1078,6 @@ sealed interface Screen {
     data object SettingPromptInjections : Screen
 
     @Serializable
-    data class SettingModes(val scrollToModeId: String? = null) : Screen
-
-    @Serializable
     data object SettingLorebooks : Screen
 
     @Serializable
@@ -654,6 +1085,9 @@ sealed interface Screen {
 
     @Serializable
     data object Developer : Screen
+
+    @Serializable
+    data class SettingSkills(val scrollToSkillId: String? = null) : Screen
 
     @Serializable
     data object SettingAndroidIntegration : Screen

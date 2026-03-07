@@ -80,12 +80,17 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CommentsDisabled
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.FileUpload
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Terminal
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.coroutines.launch
 import me.rerere.ai.core.InputSchema
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.ai.mcp.McpCommonOptions
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.ai.mcp.McpStatus
@@ -103,6 +108,7 @@ import me.rerere.rikkahub.ui.theme.extendColors
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.utils.JsonInstant
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 
@@ -133,6 +139,7 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
     // Delete confirmation state - at function level so accessible by dialog
     var showDeleteDialog by remember { mutableStateOf(false) }
     var mcpToDelete by remember { mutableStateOf<McpServerConfig?>(null) }
+    var showImportDialog by remember { mutableStateOf(false) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val lazyListState = rememberLazyListState()
     
@@ -145,6 +152,13 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
                     BackButton()
                 },
                 actions = {
+                    IconButton(
+                        onClick = {
+                            showImportDialog = true
+                        }
+                    ) {
+                        Icon(Icons.Rounded.FileUpload, null)
+                    }
                     IconButton(
                         onClick = {
                             creationState.open(McpServerConfig.SseTransportServer())
@@ -316,6 +330,23 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
     }
     McpServerConfigModal(creationState)
     McpServerConfigModal(editState)
+    if (showImportDialog) {
+        McpImportModal(
+            onDismiss = { showImportDialog = false },
+            onImport = { importedConfigs ->
+                val existingNames = mcpConfigs.map { it.commonOptions.name.trim().lowercase() }.toSet()
+                val newConfigs = importedConfigs.filter { it.commonOptions.name.trim().lowercase() !in existingNames }
+                if (newConfigs.isNotEmpty()) {
+                    vm.updateSettings(
+                        settings.copy(
+                            mcpServers = mcpConfigs + newConfigs
+                        )
+                    )
+                }
+                showImportDialog = false
+            }
+        )
+    }
 }
 
 @Composable
@@ -937,6 +968,112 @@ private fun McpToolsConfigure(
                             )
                         }
                     )
+                }
+            }
+        }
+    }
+}
+
+private fun parseMcpServersFromJson(json: String): List<McpServerConfig> {
+    val root = JsonInstant.parseToJsonElement(json) as? JsonObject ?: return emptyList()
+    val mcpServers = root["mcpServers"] as? JsonObject ?: return emptyList()
+    return mcpServers.entries.mapNotNull { (name, element) ->
+        val configObject = element as? JsonObject ?: return@mapNotNull null
+        val url = configObject["url"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+        if (url.isBlank()) return@mapNotNull null
+
+        val type = configObject["type"]?.jsonPrimitive?.contentOrNull?.lowercase().orEmpty()
+        val headers = (configObject["headers"] as? JsonObject)
+            ?.entries
+            ?.mapNotNull { (key, value) ->
+                value.jsonPrimitive.contentOrNull?.let { key to it }
+            }
+            .orEmpty()
+        val commonOptions = McpCommonOptions(name = name, headers = headers)
+        when (type) {
+            "sse" -> McpServerConfig.SseTransportServer(commonOptions = commonOptions, url = url)
+            else -> McpServerConfig.StreamableHTTPServer(commonOptions = commonOptions, url = url)
+        }
+    }
+}
+
+@Composable
+private fun McpImportModal(
+    onDismiss: () -> Unit,
+    onImport: (List<McpServerConfig>) -> Unit,
+) {
+    var jsonText by remember { mutableStateOf("") }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val noValidConfigMessage = stringResource(R.string.setting_mcp_page_import_no_valid_config)
+    val parseErrorMessage = stringResource(R.string.setting_mcp_page_import_parse_error)
+
+    ModalBottomSheet(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.7f)
+                .padding(16.dp)
+                .imePadding(),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.setting_mcp_page_import_title),
+                style = MaterialTheme.typography.titleLarge,
+            )
+            Text(
+                text = stringResource(R.string.setting_mcp_page_import_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                value = jsonText,
+                onValueChange = {
+                    jsonText = it
+                    errorMessage = null
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                placeholder = {
+                    Text("{ \"mcpServers\": { ... } }")
+                },
+                isError = errorMessage != null,
+                supportingText = errorMessage?.let { message ->
+                    {
+                        Text(
+                            text = message,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
+            ) {
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.cancel))
+                }
+                Button(
+                    onClick = {
+                        runCatching {
+                            parseMcpServersFromJson(jsonText.trim())
+                        }.onSuccess { configs ->
+                            if (configs.isEmpty()) {
+                                errorMessage = noValidConfigMessage
+                            } else {
+                                onImport(configs)
+                            }
+                        }.onFailure { error ->
+                            errorMessage = parseErrorMessage.format(error.message ?: "")
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.setting_mcp_page_import_confirm))
                 }
             }
         }

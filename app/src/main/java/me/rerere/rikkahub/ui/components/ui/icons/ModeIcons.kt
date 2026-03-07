@@ -92,10 +92,11 @@ object ModeIcons {
         "data_object" to Icons.Rounded.DataObject,
         "rocket_launch" to Icons.Rounded.RocketLaunch,
         "bolt" to Icons.Rounded.Bolt,
-        "flash_on" to Icons.Rounded.FlashOn
+        "flash_on" to Icons.Rounded.FlashOn,
+        "category" to Icons.Rounded.Category
     )
 
     fun getIcon(name: String?): ImageVector {
-        return AllIcons[name] ?: Icons.Rounded.AutoFixHigh
+        return AllIcons[name] ?: Icons.Rounded.Category
     }
 }

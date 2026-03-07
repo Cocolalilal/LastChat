@@ -146,6 +146,12 @@ val SEARCH_SERVICE_PRESETS = listOf(
         hasScraping = false
     ),
     SearchServicePreset(
+        name = "Grok",
+        description = "xAI web search with cited answers",
+        optionsClass = SearchServiceOptions.GrokOptions::class,
+        hasScraping = false
+    ),
+    SearchServicePreset(
         name = "NanoGPT",
         description = "AI web search with scraping and stealth mode",
         optionsClass = SearchServiceOptions.NanoGPTOptions::class,
@@ -534,6 +540,11 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                             }
                             is SearchServiceOptions.PerplexityOptions -> {
                                 PerplexityOptions(currentService as SearchServiceOptions.PerplexityOptions) {
+                                    currentService = it
+                                }
+                            }
+                            is SearchServiceOptions.GrokOptions -> {
+                                GrokOptions(currentService as SearchServiceOptions.GrokOptions) {
                                     currentService = it
                                 }
                             }
@@ -1310,6 +1321,51 @@ private fun PerplexityOptions(
             },
             modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+        )
+    }
+}
+
+@Composable
+private fun GrokOptions(
+    options: SearchServiceOptions.GrokOptions,
+    onUpdateOptions: (SearchServiceOptions.GrokOptions) -> Unit
+) {
+    FormItem(
+        label = {
+            Text("API Key")
+        }
+    ) {
+        OutlinedTextField(
+            value = options.apiKey,
+            onValueChange = {
+                onUpdateOptions(
+                    options.copy(
+                        apiKey = it
+                    )
+                )
+            },
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+
+    FormItem(
+        label = {
+            Text("Model")
+        },
+        description = {
+            Text("Use an xAI model that supports web search")
+        }
+    ) {
+        OutlinedTextField(
+            value = options.model,
+            onValueChange = {
+                onUpdateOptions(
+                    options.copy(
+                        model = it
+                    )
+                )
+            },
+            modifier = Modifier.fillMaxWidth()
         )
     }
 }

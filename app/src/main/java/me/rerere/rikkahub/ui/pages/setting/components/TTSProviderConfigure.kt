@@ -65,6 +65,7 @@ fun TTSProviderConfigure(
             is TTSProviderSetting.Gemini -> GeminiTTSConfiguration(setting, onValueChange)
             is TTSProviderSetting.MiniMax -> MiniMaxTTSConfiguration(setting, onValueChange)
             is TTSProviderSetting.ElevenLabs -> ElevenLabsTTSConfiguration(setting, onValueChange)
+            is TTSProviderSetting.Qwen -> QwenTTSConfiguration(setting, onValueChange)
             is TTSProviderSetting.SystemTTS -> SystemTTSConfiguration(setting, onValueChange)
         }
     }
@@ -463,6 +464,153 @@ private fun SystemTTSConfiguration(
             modifier = Modifier.fillMaxWidth(),
             label = stringResource(R.string.setting_tts_page_pitch)
         )
+    }
+}
+
+@Composable
+private fun QwenTTSConfiguration(
+    setting: TTSProviderSetting.Qwen,
+    onValueChange: (TTSProviderSetting) -> Unit
+) {
+    var apiKeyVisible by remember { mutableStateOf(false) }
+    FormItem(
+        label = { Text(stringResource(R.string.setting_tts_page_api_key)) },
+        description = { Text(stringResource(R.string.setting_tts_page_api_key_description)) }
+    ) {
+        OutlinedTextField(
+            value = setting.apiKey,
+            onValueChange = { newApiKey ->
+                onValueChange(setting.copy(apiKey = newApiKey))
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { if (!it.isFocused) apiKeyVisible = false },
+            placeholder = { Text("sk-xxx") },
+            visualTransformation = if (apiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = {
+                IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
+                    Icon(
+                        imageVector = if (apiKeyVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                        contentDescription = if (apiKeyVisible) "Hide" else "Show"
+                    )
+                }
+            }
+        )
+    }
+
+    FormItem(
+        label = { Text(stringResource(R.string.setting_tts_page_base_url)) },
+        description = { Text(stringResource(R.string.setting_tts_page_base_url_description)) }
+    ) {
+        OutlinedTextField(
+            value = setting.baseUrl,
+            onValueChange = { newBaseUrl ->
+                onValueChange(setting.copy(baseUrl = newBaseUrl))
+            },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("https://dashscope.aliyuncs.com/api/v1") }
+        )
+    }
+
+    FormItem(
+        label = { Text(stringResource(R.string.setting_tts_page_model)) },
+        description = { Text(stringResource(R.string.setting_tts_page_model_description)) }
+    ) {
+        OutlinedTextField(
+            value = setting.model,
+            onValueChange = { newModel ->
+                onValueChange(setting.copy(model = newModel))
+            },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("qwen3-tts-flash") }
+        )
+    }
+
+    var voiceExpanded by remember { mutableStateOf(false) }
+    val voices = listOf(
+        "Cherry", "Serene", "Ethan", "Chelsie",
+        "Momo", "Vivian", "Moon", "Maia", "Kai",
+        "Nofish", "Bella", "Jennifer", "Ryan",
+        "Katerina", "Aiden", "Eldric Sage", "Mia",
+        "Mochi", "Bellona", "Vincent", "Bunny",
+        "Neil", "Elias", "Arthur", "Nini"
+    )
+
+    FormItem(
+        label = { Text(stringResource(R.string.setting_tts_page_voice)) },
+        description = { Text(stringResource(R.string.setting_tts_page_voice_description)) }
+    ) {
+        ExposedDropdownMenuBox(
+            expanded = voiceExpanded,
+            onExpandedChange = { voiceExpanded = !voiceExpanded }
+        ) {
+            OutlinedTextField(
+                value = setting.voice,
+                onValueChange = { newVoice ->
+                    onValueChange(setting.copy(voice = newVoice))
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable),
+                trailingIcon = {
+                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = voiceExpanded)
+                }
+            )
+            ExposedDropdownMenu(
+                expanded = voiceExpanded,
+                onDismissRequest = { voiceExpanded = false }
+            ) {
+                voices.forEach { voice ->
+                    DropdownMenuItem(
+                        text = { Text(voice) },
+                        onClick = {
+                            voiceExpanded = false
+                            onValueChange(setting.copy(voice = voice))
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    var languageExpanded by remember { mutableStateOf(false) }
+    val languageTypes = listOf("Auto", "Chinese", "English", "Japanese", "Korean")
+
+    FormItem(
+        label = { Text(stringResource(R.string.setting_tts_page_language_type)) },
+        description = { Text(stringResource(R.string.setting_tts_page_language_type_description)) }
+    ) {
+        ExposedDropdownMenuBox(
+            expanded = languageExpanded,
+            onExpandedChange = { languageExpanded = !languageExpanded }
+        ) {
+            OutlinedTextField(
+                value = setting.languageType,
+                onValueChange = { newLanguageType ->
+                    onValueChange(setting.copy(languageType = newLanguageType))
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable),
+                trailingIcon = {
+                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = languageExpanded)
+                }
+            )
+            ExposedDropdownMenu(
+                expanded = languageExpanded,
+                onDismissRequest = { languageExpanded = false }
+            ) {
+                languageTypes.forEach { languageType ->
+                    DropdownMenuItem(
+                        text = { Text(languageType) },
+                        onClick = {
+                            languageExpanded = false
+                            onValueChange(setting.copy(languageType = languageType))
+                        }
+                    )
+                }
+            }
+        }
     }
 }
 

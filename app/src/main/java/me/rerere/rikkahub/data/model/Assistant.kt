@@ -10,7 +10,6 @@ import kotlin.uuid.Uuid
 
 import me.rerere.rikkahub.data.datastore.NewChatHeaderStyle
 import me.rerere.rikkahub.data.datastore.NewChatContentStyle
-import me.rerere.rikkahub.data.datastore.ChatInputStyle
 
 /**
  * Per-assistant UI settings. All nullable - null means "use global setting".
@@ -28,8 +27,6 @@ data class AssistantUISettings(
     val codeBlockAutoWrap: Boolean? = null,
     val codeBlockAutoCollapse: Boolean? = null,
     val showContextStacks: Boolean? = null,
-    // Chat input style
-    val chatInputStyle: ChatInputStyle? = null,
     // New chat customization
     val newChatHeaderStyle: NewChatHeaderStyle? = null,
     val newChatContentStyle: NewChatContentStyle? = null,
@@ -53,7 +50,7 @@ data class Assistant(
     val topP: Float? = null,
     val maxTokenUsage: Int = 81920, // 80k default
     val contextPriority: ContextPriority = ContextPriority.BALANCED,
-    val summarizerModelId: Uuid? = null, // Model used for memory summarization
+    val summarizerModelId: Uuid? = null, // Legacy import field; global summarizer lives in Settings
     val streamOutput: Boolean = true,
     val enableMemory: Boolean = false,
     val useRagMemoryRetrieval: Boolean = true, // If true, use vector-based RAG. If false, inject all memories
@@ -64,6 +61,13 @@ data class Assistant(
     val ragIncludeCore: Boolean = true, // Include core memories in RAG
     val enableRagLogging: Boolean = false, // Enable detailed RAG logging
     val enableMemoryConsolidation: Boolean = false, // Enable episodic memory creation from chats (requires RAG)
+    val notificationStartHour: Int = 7, // Hour when spontaneous messages can start (0-23)
+    val notificationEndHour: Int = 22, // Hour when spontaneous messages must stop (0-23)
+    val notificationFrequencyHours: Int = 4, // Minimum hours between spontaneous messages
+    val lastNotificationTime: Long = 0L, // Timestamp of last spontaneous notification
+    val lastNotificationContent: String = "", // Content of last spontaneous notification to reduce repetition
+    val enableSpontaneous: Boolean = false,
+    val spontaneousPrompt: String = "",
 
     val messageTemplate: String = "{{ message }}",
     val presetMessages: List<UIMessage> = emptyList(),
@@ -80,11 +84,13 @@ data class Assistant(
     val useAssistantMaterialYouColors: Boolean = false,
     val learningMode: Boolean = false,
     val enabledLorebookIds: Set<Uuid> = emptySet(), // Lorebooks enabled for this assistant
+    val enabledSkillIds: Set<Uuid> = emptySet(), // Skills enabled for this assistant
 
     // Context Management Settings
     val maxHistoryMessages: Int? = null, // null = unlimited (use token budgeting only)
     val enableHistorySummarization: Boolean = false, // Generate summaries of pruned messages
     val maxSearchResultsRetained: Int? = null, // null = keep all, e.g. 2 = keep last 2 search results
+    val enableTimeAwareness: Boolean = false, // Inject current time and notable timeline cues into context
     val enableContextRefresh: Boolean = false, // Show Summarize Messages button in chat input
     val autoRegenerateSummary: Boolean = false, // Automatically summarize when maxHistoryMessages reached
 

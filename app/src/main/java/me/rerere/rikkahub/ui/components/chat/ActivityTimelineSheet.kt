@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.BookmarkRemove
 import androidx.compose.material.icons.rounded.Build
+import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
@@ -143,6 +144,61 @@ private data class MemoryDeleteTarget(
     val content: String?
 )
 
+private data class SkillChangeSummary(
+    val activated: List<String>,
+    val disabled: List<String>
+)
+
+private fun parseSkillNames(value: JsonElement?): List<String> {
+    val array = value as? JsonArray ?: return emptyList()
+    return array.mapNotNull { item ->
+        when (item) {
+            is JsonObject -> {
+                item["name"]?.jsonPrimitiveOrNull?.contentOrNull?.takeIf { it.isNotBlank() }
+                    ?: item["id"]?.jsonPrimitiveOrNull?.contentOrNull?.takeIf { it.isNotBlank() }
+            }
+
+            else -> item.jsonPrimitiveOrNull?.contentOrNull?.takeIf { it.isNotBlank() }
+        }
+    }.distinct()
+}
+
+private fun getSkillChangeSummary(entry: TimelineEntry.ToolCall): SkillChangeSummary {
+    val argsObj = entry.argumentsJson as? JsonObject
+    val resultObj = entry.resultJson as? JsonObject
+
+    val activated = parseSkillNames(resultObj?.get("activated"))
+    val disabled = parseSkillNames(resultObj?.get("disabled"))
+    if (activated.isNotEmpty() || disabled.isNotEmpty()) {
+        return SkillChangeSummary(activated = activated, disabled = disabled)
+    }
+
+    // Fallback for older saved tool results before activated/disabled were added.
+    val matched = parseSkillNames(resultObj?.get("matched"))
+    val operation = argsObj?.get("operation")?.jsonPrimitiveOrNull?.contentOrNull?.lowercase()
+    return when (operation) {
+        "disable" -> SkillChangeSummary(activated = emptyList(), disabled = matched)
+        "enable", "set" -> SkillChangeSummary(activated = matched, disabled = emptyList())
+        else -> SkillChangeSummary(activated = emptyList(), disabled = emptyList())
+    }
+}
+
+private fun getSkillSummaryPreview(summary: SkillChangeSummary): String {
+    val sections = buildList {
+        if (summary.activated.isNotEmpty()) {
+            add("Activated: ${summary.activated.joinToString(", ")}")
+        }
+        if (summary.disabled.isNotEmpty()) {
+            add("Disabled: ${summary.disabled.joinToString(", ")}")
+        }
+    }
+    return if (sections.isNotEmpty()) {
+        sections.joinToString(" | ")
+    } else {
+        "No skill changes"
+    }
+}
+
 /**
  * Get icon for a timeline entry type.
  */
@@ -153,6 +209,7 @@ private fun getTimelineIcon(entry: TimelineEntry): ImageVector {
             "search_web", "scrape_web" -> Icons.Rounded.Public
             "eval_python", "pip_install", "write_sandbox_file",
             "read_sandbox_file", "list_sandbox_files", "delete_sandbox_file" -> Icons.Rounded.Terminal
+            "manage_skills" -> Icons.Rounded.Category
             else -> Icons.Rounded.Build
         }
         is TimelineEntry.MemoryAction -> when (entry.operation) {
@@ -628,6 +685,8 @@ private fun TimelinePreview(entry: TimelineEntry) {
                     ?.jsonPrimitiveOrNull
                     ?.contentOrNull
                 (answer ?: query).orEmpty().take(160)
+            } else if (entry.toolName == "manage_skills") {
+                getSkillSummaryPreview(getSkillChangeSummary(entry)).take(160)
             } else {
                 val args = entry.argumentsText
                 val result = entry.resultText
@@ -655,6 +714,7 @@ private fun ToolCallDetails(entry: TimelineEntry.ToolCall) {
     when (entry.toolName) {
         "search_web" -> SearchTimelineDetails(entry)
         "scrape_web" -> ScrapeTimelineDetails(entry)
+        "manage_skills" -> SkillManagementTimelineDetails(entry)
         else -> GenericToolDetails(entry)
     }
 }
@@ -819,6 +879,57 @@ private fun ScrapeTimelineDetails(entry: TimelineEntry.ToolCall) {
                 modifier = Modifier.padding(10.dp)
             )
         }
+    }
+}
+
+@Composable
+private fun SkillManagementTimelineDetails(entry: TimelineEntry.ToolCall) {
+    val summary = getSkillChangeSummary(entry)
+
+    if (summary.activated.isNotEmpty()) {
+        Text(
+            text = "Activated:",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.secondary
+        )
+        Surface(
+            shape = AppShapes.CardSmall,
+            color = MaterialTheme.colorScheme.tertiaryContainer
+        ) {
+            Text(
+                text = summary.activated.joinToString(", "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                modifier = Modifier.padding(10.dp)
+            )
+        }
+    }
+
+    if (summary.disabled.isNotEmpty()) {
+        Text(
+            text = "Disabled:",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.secondary
+        )
+        Surface(
+            shape = AppShapes.CardSmall,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh
+        ) {
+            Text(
+                text = summary.disabled.joinToString(", "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(10.dp)
+            )
+        }
+    }
+
+    if (summary.activated.isEmpty() && summary.disabled.isEmpty()) {
+        Text(
+            text = "No skill changes",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 

@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -49,7 +50,6 @@ import me.rerere.rikkahub.data.model.InjectionPosition
 import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.LorebookActivationType
 import me.rerere.rikkahub.data.model.LorebookEntry
-import me.rerere.rikkahub.data.model.Mode
 import me.rerere.rikkahub.data.model.ModeAttachmentType
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
@@ -58,6 +58,7 @@ import java.util.Locale
 import kotlin.uuid.Uuid
 
 private const val TAG = "GenerationHandler"
+private const val SKILL_MANAGEMENT_TOOL_NAME = "manage_skills"
 
 /**
  * Result of building messages, includes both the messages and info about activated context sources.
@@ -97,11 +98,20 @@ class GenerationHandler(
         truncateIndex: Int = -1,
         maxSteps: Int = 256,
         enabledModeIds: Set<Uuid> = emptySet(),
+        onEnabledModeIdsUpdate: (suspend (Set<Uuid>) -> Unit)? = null,
     ): Flow<GenerationChunk> = flow {
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = providerManager.getProviderByType(provider)
 
         var messages: List<UIMessage> = messages
+        val allSkillIds = settings.skills.map { it.id }.toSet()
+        val autonomousSkillsForAssistant = settings.skills.filter { skill ->
+            skill.instructions.isNotBlank() && skill.canAssistantAutonomouslyToggle(assistant.id)
+        }
+        val autonomousSkillIds = autonomousSkillsForAssistant.map { it.id }.toSet()
+        val assistantDefaultSkillIds = assistant.enabledSkillIds.intersect(allSkillIds)
+        var currentEnabledModeIds = enabledModeIds.intersect(allSkillIds)
+        var useAssistantDefaults = enabledModeIds.isEmpty()
 
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
@@ -121,6 +131,36 @@ class GenerationHandler(
                             memoryRepo.deleteMemory(id)
                         }
                     ).let(this::addAll)
+                }
+                if (autonomousSkillsForAssistant.isNotEmpty()) {
+                    add(
+                        buildSkillManagementTool(
+                            skills = autonomousSkillsForAssistant,
+                            getEnabledSkillIds = {
+                                val effectiveEnabled = if (useAssistantDefaults) {
+                                    assistantDefaultSkillIds
+                                } else {
+                                    currentEnabledModeIds
+                                }
+                                effectiveEnabled.intersect(autonomousSkillIds)
+                            },
+                            onUpdateEnabledSkillIds = { updatedIds ->
+                                val normalized = updatedIds.intersect(autonomousSkillIds)
+                                val previousEffective = if (useAssistantDefaults) {
+                                    assistantDefaultSkillIds
+                                } else {
+                                    currentEnabledModeIds
+                                }
+                                val preservedManualIds = previousEffective - autonomousSkillIds
+                                val merged = preservedManualIds + normalized
+                                if (useAssistantDefaults || merged != previousEffective) {
+                                    useAssistantDefaults = false
+                                    currentEnabledModeIds = merged
+                                    onEnabledModeIdsUpdate?.invoke(merged)
+                                }
+                            }
+                        )
+                    )
                 }
                 addAll(tools)
             }
@@ -155,7 +195,11 @@ class GenerationHandler(
                 memories = memories ?: emptyList(),
                 truncateIndex = truncateIndex,
                 stream = assistant.streamOutput,
-                enabledModeIds = enabledModeIds
+                enabledModeIds = if (useAssistantDefaults) {
+                    emptySet()
+                } else {
+                    currentEnabledModeIds
+                }
             )
             messages = messages.visualTransforms(
                 transformers = outputTransformers,
@@ -330,25 +374,29 @@ class GenerationHandler(
         // Get recent message text for lorebook keyword scanning
         val recentMessagesForScan = messages.takeLast(10).map { it.toText() }
 
-        // Collect enabled modes - use per-conversation enabledModeIds if provided, otherwise fall back to defaultEnabled
-        val enabledModes = if (enabledModeIds.isNotEmpty()) {
-            settings.modes.filter { enabledModeIds.contains(it.id) }
-        } else {
-            settings.modes.filter { it.defaultEnabled }
+        val availableSkills = settings.skills.filter { skill ->
+            skill.instructions.isNotBlank()
         }
+        val assistantDefaultSkillIds = assistant.enabledSkillIds
+        val activeSkillIds = if (enabledModeIds.isNotEmpty()) {
+            enabledModeIds
+        } else {
+            assistantDefaultSkillIds
+        }
+        val enabledSkills = availableSkills.filter { activeSkillIds.contains(it.id) }
         
-        // Build UsedMode list for UI display
-        val usedModes = enabledModes.mapIndexed { index, mode ->
-            val reason = if (enabledModeIds.contains(mode.id)) {
-                "Activated by user"
+        // Build UsedMode list for UI display (legacy type name retained for wire compatibility).
+        val usedModes = enabledSkills.mapIndexed { index, skill ->
+            val reason = if (enabledModeIds.contains(skill.id)) {
+                "Activated in chat"
             } else {
-                "Default enabled"
+                "Enabled for assistant"
             }
             me.rerere.ai.ui.UsedMode(
-                modeId = mode.id.toString(),
-                modeName = mode.name,
-                modeIcon = mode.icon,
-                priority = enabledModes.size - index,  // Higher priority for earlier modes
+                modeId = skill.id.toString(),
+                modeName = skill.name,
+                modeIcon = skill.icon,
+                priority = enabledSkills.size - index,  // Higher priority for earlier skills
                 activationReason = reason
             )
         }
@@ -412,17 +460,25 @@ class GenerationHandler(
         }
 
         // Group injections by position
-        val beforeSystemModes = enabledModes.filter { it.injectionPosition == InjectionPosition.BEFORE_SYSTEM }
-        val afterSystemModes = enabledModes.filter { it.injectionPosition == InjectionPosition.AFTER_SYSTEM }
+        val beforeSystemSkills = enabledSkills.filter { it.injectionPosition == InjectionPosition.BEFORE_SYSTEM }
+        val afterSystemSkills = enabledSkills.filter { it.injectionPosition == InjectionPosition.AFTER_SYSTEM }
         val beforeSystemEntries = activatedEntries.filter { it.injectionPosition == InjectionPosition.BEFORE_SYSTEM }
         val afterSystemEntries = activatedEntries.filter { it.injectionPosition == InjectionPosition.AFTER_SYSTEM }
 
-        // 1. Base System Prompt (BEFORE_SYSTEM modes/entries + System + Learning + AFTER_SYSTEM modes/entries + Tools)
+        // 1. Base System Prompt (BEFORE_SYSTEM skills/entries + System + Learning + AFTER_SYSTEM skills/entries + Tools)
         val baseSystemPromptBuilder = StringBuilder()
+
+        fun appendSkillPrompt(skill: me.rerere.rikkahub.data.model.Skill) {
+            if (skill.name.isNotBlank()) {
+                baseSystemPromptBuilder.append("[Skill: ${skill.name}]")
+                baseSystemPromptBuilder.appendLine()
+            }
+            baseSystemPromptBuilder.append(skill.instructions)
+        }
         
         // BEFORE_SYSTEM injections
-        beforeSystemModes.forEach { mode ->
-            baseSystemPromptBuilder.append(mode.prompt)
+        beforeSystemSkills.forEach { skill ->
+            appendSkillPrompt(skill)
             baseSystemPromptBuilder.appendLine()
         }
         beforeSystemEntries.forEach { entry ->
@@ -443,9 +499,9 @@ class GenerationHandler(
         }
         
         // AFTER_SYSTEM injections
-        afterSystemModes.forEach { mode ->
+        afterSystemSkills.forEach { skill ->
             baseSystemPromptBuilder.appendLine()
-            baseSystemPromptBuilder.append(mode.prompt)
+            appendSkillPrompt(skill)
         }
         afterSystemEntries.forEach { entry ->
             baseSystemPromptBuilder.appendLine()
@@ -632,9 +688,9 @@ class GenerationHandler(
         }
 
         // 4. Construct Final List
-        // Collect all attachments from enabled modes
-        val modeAttachmentParts = enabledModes.flatMap { mode ->
-            mode.attachments.map { attachment ->
+        // Collect all attachments from enabled skills
+        val skillAttachmentParts = enabledSkills.flatMap { skill ->
+            skill.attachments.map { attachment ->
                 when (attachment.type) {
                     ModeAttachmentType.IMAGE -> UIMessagePart.Image(url = attachment.url)
                     ModeAttachmentType.VIDEO -> UIMessagePart.Video(url = attachment.url)
@@ -665,21 +721,32 @@ class GenerationHandler(
         }
         
         // Combine all context attachments
-        val allContextAttachments = modeAttachmentParts + lorebookAttachmentParts
+        val allContextAttachments = skillAttachmentParts + lorebookAttachmentParts
         
+        val orderedSelectedMessages = selectedMessages.sortedBy { messages.indexOf(it) }
+        val timeAwarenessPrompt = buildTimeAwarenessBlock(
+            enabled = assistant.enableTimeAwareness,
+            fullMessages = messages,
+            retainedMessages = orderedSelectedMessages
+        )
+
         val builtMessages = buildList {
-            val finalSystemPrompt = buildString {
-                append(baseSystemPrompt)
-                if (selectedMemories.isNotEmpty()) {
-                    appendLine()
-                    append(buildMemoryPrompt(model, selectedMemories))
+            val finalSystemPrompt = buildList {
+                if (baseSystemPrompt.isNotBlank()) {
+                    add(baseSystemPrompt)
                 }
-            }
+                if (selectedMemories.isNotEmpty()) {
+                    add(buildMemoryPrompt(model, selectedMemories))
+                }
+                if (!timeAwarenessPrompt.isNullOrBlank()) {
+                    add(timeAwarenessPrompt)
+                }
+            }.joinToString(separator = "\n")
             if (finalSystemPrompt.isNotBlank()) {
                 add(UIMessage.system(finalSystemPrompt))
             }
             
-            // Add mode and lorebook attachments as a user message if there are any
+            // Add skill and lorebook attachments as a user message if there are any
             if (allContextAttachments.isNotEmpty()) {
                 add(UIMessage(
                     role = me.rerere.ai.core.MessageRole.USER,
@@ -688,7 +755,7 @@ class GenerationHandler(
             }
             
             // Restore chat history order
-            addAll(selectedMessages.sortedBy { messages.indexOf(it) })
+            addAll(orderedSelectedMessages)
         }
         // Build UsedMemory list for UI display
         val usedMemories = selectedMemories.mapIndexed { index, memory ->
@@ -856,6 +923,224 @@ class GenerationHandler(
                 }
             }
         }
+    }
+
+    private fun buildSkillManagementTool(
+        skills: List<me.rerere.rikkahub.data.model.Skill>,
+        getEnabledSkillIds: () -> Set<Uuid>,
+        onUpdateEnabledSkillIds: suspend (Set<Uuid>) -> Unit,
+    ): Tool {
+        fun skillSlashCommand(skill: me.rerere.rikkahub.data.model.Skill): String? {
+            val hinted = skill.argumentHint?.trim()
+            if (!hinted.isNullOrBlank() && hinted.startsWith("/")) {
+                return hinted
+            }
+            val normalizedName = skill.name.trim()
+            return if (normalizedName.isNotBlank()) "/$normalizedName" else null
+        }
+
+        val skillById = skills.associateBy { it.id }
+        val keysToSkill = buildMap {
+            skills.forEach { skill ->
+                put(skill.id.toString().lowercase(Locale.ROOT), skill)
+                if (skill.name.isNotBlank()) {
+                    val normalizedName = skill.name.lowercase(Locale.ROOT)
+                    put(normalizedName, skill)
+                    put("/$normalizedName", skill)
+                }
+                skillSlashCommand(skill)
+                    ?.lowercase(Locale.ROOT)
+                    ?.let { put(it, skill) }
+            }
+        }
+
+        return Tool(
+            name = SKILL_MANAGEMENT_TOOL_NAME,
+            description = "Enable, disable, or set active conversation skills. Use this only when a skill is relevant to the current request.",
+            parameters = {
+                InputSchema.Obj(
+                    properties = buildJsonObject {
+                        put("operation", buildJsonObject {
+                            put("type", "string")
+                            put("description", "One of: enable, disable, set.")
+                            put(
+                                "enum",
+                                JsonArray(
+                                    listOf(
+                                        JsonPrimitive("enable"),
+                                        JsonPrimitive("disable"),
+                                        JsonPrimitive("set")
+                                    )
+                                )
+                            )
+                        })
+                        put("skills", buildJsonObject {
+                            put("type", "array")
+                            put("description", "Skill identifiers to target (id, name, or slash command).")
+                            put("items", buildJsonObject {
+                                put("type", "string")
+                            })
+                        })
+                        put("skill", buildJsonObject {
+                            put("type", "string")
+                            put("description", "Single skill identifier target (id, name, or slash command).")
+                        })
+                    },
+                    required = listOf("operation"),
+                )
+            },
+            systemPrompt = { _, _ ->
+                val activeSkillNames = getEnabledSkillIds()
+                    .mapNotNull { skillById[it] }
+                    .map { skill -> skill.name.ifBlank { skill.id.toString() } }
+                val skillsSummary = skills.joinToString("\n") { skill ->
+                    val label = skill.name.ifBlank { skill.id.toString() }
+                    val slash = skillSlashCommand(skill)?.let { " ($it)" } ?: ""
+                    val scope = when {
+                        skill.autonomousForAllAssistants -> "auto-toggle: all assistants"
+                        skill.autonomousAssistantIds.isNotEmpty() -> "auto-toggle: selected assistants"
+                        else -> "auto-toggle: none"
+                    }
+                    val description = skill.description
+                        .ifBlank { "No description provided." }
+                        .replace('\n', ' ')
+                        .trim()
+                        .take(160)
+                    "- $label$slash [$scope]: $description"
+                }
+                buildString {
+                    appendLine("## Skill Management")
+                    appendLine("Use `manage_skills` only when a listed skill is clearly useful for the current user request.")
+                    appendLine("Do not activate unrelated skills. Activate before use, and disable when no longer needed.")
+                    appendLine("Only the listed skills may be autonomously enabled or disabled by this assistant.")
+                    appendLine()
+                    appendLine(
+                        if (activeSkillNames.isEmpty()) {
+                            "Currently active skills: none"
+                        } else {
+                            "Currently active skills: ${activeSkillNames.joinToString(", ")}"
+                        }
+                    )
+                    appendLine("Available skills:")
+                    append(skillsSummary)
+                }
+            },
+            execute = { args ->
+                val params = args.jsonObject
+                val operation = params["operation"]?.jsonPrimitive?.contentOrNull
+                    ?.lowercase(Locale.ROOT)
+                    ?: error("operation is required")
+                if (operation !in setOf("enable", "disable", "set")) {
+                    error("operation must be one of enable, disable, set")
+                }
+
+                val targetsFromList = (params["skills"] as? JsonArray)
+                    ?.mapNotNull { item ->
+                        (item as? JsonPrimitive)?.contentOrNull
+                            ?.trim()
+                            ?.takeIf { it.isNotBlank() }
+                    }
+                    ?: emptyList()
+                val targetFromSingle = (params["skill"] as? JsonPrimitive)
+                    ?.contentOrNull
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                val targets = (targetsFromList + listOfNotNull(targetFromSingle))
+                    .flatMap { raw ->
+                        raw.split(",")
+                            .map { it.trim() }
+                            .filter { it.isNotBlank() }
+                    }
+                    .distinct()
+                if (targets.isEmpty()) {
+                    error("Provide at least one skill target in `skills` or `skill`.")
+                }
+
+                val targetKeys = targets.map { it.lowercase(Locale.ROOT) }
+                fun resolveSkill(targetKey: String): me.rerere.rikkahub.data.model.Skill? {
+                    keysToSkill[targetKey]?.let { return it }
+                    val normalized = targetKey.removePrefix("/")
+                    keysToSkill[normalized]?.let { return it }
+                    return skills.firstOrNull { skill ->
+                        val name = skill.name.lowercase(Locale.ROOT)
+                        val slash = skillSlashCommand(skill)?.lowercase(Locale.ROOT)?.removePrefix("/")
+                        (name.isNotBlank() && normalized.contains(name)) ||
+                            (!slash.isNullOrBlank() && normalized.contains(slash))
+                    }
+                }
+                val matchedSkills = targetKeys
+                    .mapNotNull(::resolveSkill)
+                    .distinctBy { it.id }
+                val unmatchedTargets = targets.filter { raw ->
+                    resolveSkill(raw.lowercase(Locale.ROOT)) == null
+                }
+                val previousEnabled = getEnabledSkillIds().filter { skillById.containsKey(it) }.toSet()
+                val matchedIds = matchedSkills.map { it.id }.toSet()
+                val updatedEnabled = when (operation) {
+                    "enable" -> previousEnabled + matchedIds
+                    "disable" -> previousEnabled - matchedIds
+                    else -> matchedIds
+                }
+                val activatedIds = updatedEnabled - previousEnabled
+                val disabledIds = previousEnabled - updatedEnabled
+                val activatedSkills = skills.filter { activatedIds.contains(it.id) }
+                val disabledSkills = skills.filter { disabledIds.contains(it.id) }
+
+                onUpdateEnabledSkillIds(updatedEnabled)
+
+                buildJsonObject {
+                    put("operation", JsonPrimitive(operation))
+                    put("updated", JsonPrimitive(updatedEnabled != previousEnabled))
+                    put(
+                        "matched",
+                        JsonArray(
+                            matchedSkills.map { matched ->
+                                buildJsonObject {
+                                    put("id", JsonPrimitive(matched.id.toString()))
+                                    put("name", JsonPrimitive(matched.name))
+                                }
+                            }
+                        )
+                    )
+                    put(
+                        "blocked",
+                        JsonArray(emptyList())
+                    )
+                    put(
+                        "unmatched",
+                        JsonArray(
+                            unmatchedTargets.map { JsonPrimitive(it) }
+                        )
+                    )
+                    put(
+                        "activated",
+                        JsonArray(
+                            activatedSkills.map { activated ->
+                                buildJsonObject {
+                                    put("id", JsonPrimitive(activated.id.toString()))
+                                    put("name", JsonPrimitive(activated.name))
+                                }
+                            }
+                        )
+                    )
+                    put(
+                        "disabled",
+                        JsonArray(
+                            disabledSkills.map { disabled ->
+                                buildJsonObject {
+                                    put("id", JsonPrimitive(disabled.id.toString()))
+                                    put("name", JsonPrimitive(disabled.name))
+                                }
+                            }
+                        )
+                    )
+                    put(
+                        "enabled_skill_ids",
+                        JsonArray(updatedEnabled.map { JsonPrimitive(it.toString()) })
+                    )
+                }
+            }
+        )
     }
 
     private fun buildMemoryTools(

@@ -46,6 +46,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountTree
+import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Cloud
@@ -56,6 +57,7 @@ import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.InvertColors
+import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.Storage
@@ -181,8 +183,8 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_prompt_injections),
                         subtitle = stringResource(R.string.setting_page_prompt_injections_desc),
-                        icon = { Icon(Icons.Rounded.Code, null, modifier = Modifier.size(20.dp)) },
-                        onClick = { navController.navigate(Screen.SettingModes()) }
+                        icon = { Icon(Icons.Rounded.Category, null, modifier = Modifier.size(20.dp)) },
+                        onClick = { navController.navigate(Screen.SettingPromptInjections) }
                     )
                 }
             }
@@ -225,6 +227,13 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         subtitle = stringResource(R.string.setting_page_mcp_desc),
                         icon = { Icon(Icons.Rounded.Code, null, modifier = Modifier.size(20.dp)) },
                         onClick = { navController.navigate(Screen.SettingMcp) }
+                    )
+
+                    SettingGroupItem(
+                        title = stringResource(R.string.setting_page_web_server),
+                        subtitle = stringResource(R.string.setting_page_web_server_desc),
+                        icon = { Icon(Icons.Rounded.Language, null, modifier = Modifier.size(20.dp)) },
+                        onClick = { navController.navigate(Screen.SettingWeb) }
                     )
 
                     SettingGroupItem(

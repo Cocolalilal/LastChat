@@ -1,84 +1,73 @@
 package me.rerere.rikkahub.data.ai.transformers
 
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import kotlin.time.Clock
 
-// Matches <think>...</think> or <thinking>...</thinking> with optional closing tag
-private val THINKING_REGEX = Regex("<think(?:ing)?>([\\s\\S]*?)(?:</think(?:ing)?>|$)", RegexOption.DOT_MATCHES_ALL)
+private val THINKING_REGEX = Regex(
+    "<think(?:ing)?>([\\s\\S]*?)(?:</think(?:ing)?>|$)",
+    RegexOption.DOT_MATCHES_ALL
+)
+private val CLOSING_TAG_REGEX = Regex("</think(?:ing)?>")
 
-// Matches orphaned closing tags: content followed by </think> or </thinking> without opening tag
-private val ORPHAN_CLOSE_TAG_REGEX = Regex("^([\\s\\S]*?)</think(?:ing)?>", RegexOption.DOT_MATCHES_ALL)
-
-// 部分供应商不会返回reasoning parts, 所以需要这个transformer
-// Some models output malformed tags (missing opening tag, or using <thinking> instead of <think>)
+// Some providers stream reasoning inside <think> tags instead of native reasoning parts.
 object ThinkTagTransformer : OutputMessageTransformer {
     override suspend fun visualTransform(
         ctx: TransformerContext,
         messages: List<UIMessage>,
     ): List<UIMessage> {
-        return messages.map { message ->
-            if (message.role == MessageRole.ASSISTANT && message.hasPart<UIMessagePart.Text>()) {
-                message.copy(
-                    parts = message.parts.flatMap { part ->
-                        if (part is UIMessagePart.Text) {
-                            transformTextPart(part)
-                        } else {
-                            listOf(part)
-                        }
-                    }
-                )
-            } else {
-                message
-            }
-        }
+        return transformMessages(messages, finishUnclosed = false)
     }
 
-    private fun transformTextPart(part: UIMessagePart.Text): List<UIMessagePart> {
-        val text = part.text
+    override suspend fun onGenerationFinish(
+        ctx: TransformerContext,
+        messages: List<UIMessage>,
+    ): List<UIMessage> {
+        return transformMessages(messages, finishUnclosed = true)
+    }
 
-        // Case 1: Standard format - text contains <think> or <thinking> opening tag
-        if (text.contains("<think>") || text.contains("<thinking>")) {
-            val reasoning = THINKING_REGEX.find(text)?.groupValues?.getOrNull(1)?.trim() ?: ""
-            val stripped = text.replace(THINKING_REGEX, "").trim()
-
-            if (reasoning.isNotEmpty()) {
-                val now = Clock.System.now()
-                return listOf(
-                    UIMessagePart.Reasoning(
-                        reasoning = reasoning,
-                        finishedAt = now,
-                        createdAt = now,
-                    ),
-                    part.copy(text = stripped),
-                )
+    private fun transformMessages(
+        messages: List<UIMessage>,
+        finishUnclosed: Boolean,
+    ): List<UIMessage> {
+        val generationFinishedAt = if (finishUnclosed) Clock.System.now() else null
+        return messages.map { message ->
+            if (message.role != MessageRole.ASSISTANT || !message.hasPart<UIMessagePart.Text>()) {
+                return@map message
             }
-        }
 
-        // Case 2: Orphaned closing tag - only </think> or </thinking> present (missing opening tag)
-        if (text.contains("</think>") || text.contains("</thinking>")) {
-            val orphanMatch = ORPHAN_CLOSE_TAG_REGEX.find(text)
-            if (orphanMatch != null) {
-                val reasoning = orphanMatch.groupValues.getOrNull(1)?.trim() ?: ""
-                val stripped = text.replace(ORPHAN_CLOSE_TAG_REGEX, "").trim()
+            message.copy(
+                parts = message.parts.flatMap { part ->
+                    if (part !is UIMessagePart.Text || !THINKING_REGEX.containsMatchIn(part.text)) {
+                        return@flatMap listOf(part)
+                    }
 
-                if (reasoning.isNotEmpty()) {
-                    val now = Clock.System.now()
-                    return listOf(
-                        UIMessagePart.Reasoning(
-                            reasoning = reasoning,
-                            finishedAt = now,
-                            createdAt = now,
-                        ),
-                        part.copy(text = stripped),
+                    val reasoning = THINKING_REGEX.find(part.text)?.groupValues?.getOrNull(1)?.trim().orEmpty()
+                    val strippedText = part.text.replace(THINKING_REGEX, "").trim()
+                    if (reasoning.isBlank()) {
+                        return@flatMap listOf(part.copy(text = strippedText))
+                    }
+
+                    val hasClosingTag = CLOSING_TAG_REGEX.containsMatchIn(part.text)
+                    val reasoningPart = UIMessagePart.Reasoning(
+                        reasoning = reasoning,
+                        createdAt = message.createdAt.toInstant(TimeZone.currentSystemDefault()),
+                        finishedAt = when {
+                            finishUnclosed -> generationFinishedAt
+                            hasClosingTag -> Clock.System.now()
+                            else -> null
+                        },
+                    )
+
+                    listOf(
+                        reasoningPart,
+                        part.copy(text = strippedText),
                     )
                 }
-            }
+            )
         }
-
-        // No transformation needed
-        return listOf(part)
     }
 }
-

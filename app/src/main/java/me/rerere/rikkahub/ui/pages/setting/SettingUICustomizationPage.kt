@@ -122,7 +122,6 @@ fun SettingUICustomizationPage(vm: SettingVM = koinViewModel()) {
                                     when (style) {
                                         me.rerere.rikkahub.data.datastore.NewChatContentStyle.NONE -> stringResource(R.string.setting_new_chat_content_none)
                                         me.rerere.rikkahub.data.datastore.NewChatContentStyle.TEMPLATES -> stringResource(R.string.setting_new_chat_content_templates)
-                                        me.rerere.rikkahub.data.datastore.NewChatContentStyle.STATS -> stringResource(R.string.setting_new_chat_content_stats)
                                         me.rerere.rikkahub.data.datastore.NewChatContentStyle.ACTIONS -> stringResource(R.string.setting_new_chat_content_actions)
                                     }
                                 },
@@ -138,25 +137,6 @@ fun SettingUICustomizationPage(vm: SettingVM = koinViewModel()) {
                 SettingsGroup(
                     title = stringResource(R.string.setting_page_chat_settings)
                 ) {
-                    // Chat Input Style dropdown (first item)
-                    SettingGroupItem(
-                        title = stringResource(R.string.setting_chat_input_style),
-                        subtitle = stringResource(R.string.setting_chat_input_style_desc),
-                        trailing = {
-                            me.rerere.rikkahub.ui.components.ui.Select(
-                                options = me.rerere.rikkahub.data.datastore.ChatInputStyle.entries.toList(),
-                                selectedOption = displaySetting.chatInputStyle,
-                                onOptionSelected = { updateDisplaySetting(displaySetting.copy(chatInputStyle = it)) },
-                                optionToString = { style ->
-                                    when (style) {
-                                        me.rerere.rikkahub.data.datastore.ChatInputStyle.FLOATING -> stringResource(R.string.setting_chat_input_style_floating)
-                                        me.rerere.rikkahub.data.datastore.ChatInputStyle.MINIMAL -> stringResource(R.string.setting_chat_input_style_minimal)
-                                    }
-                                },
-                                modifier = Modifier.wrapContentWidth()
-                            )
-                        }
-                    )
                     SettingGroupItem(
                         title = "Show Character Avatar",
                         subtitle = "Show the character's avatar before messages",
@@ -207,7 +187,7 @@ fun SettingUICustomizationPage(vm: SettingVM = koinViewModel()) {
                     )
                     SettingGroupItem(
                         title = "Show Context Stacks",
-                        subtitle = "Show context sources (modes, memories, lorebooks) in message toolbar",
+                        subtitle = "Show context sources (skills, memories, lorebooks) in message toolbar",
                         trailing = {
                             HapticSwitch(
                                 checked = displaySetting.showContextStacks,

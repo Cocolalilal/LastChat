@@ -414,7 +414,7 @@ private fun SharedTransitionScope.ChatListNormal(
                                 navController.navigate(Screen.SettingLorebookDetail(entry.lorebookId, entry.entryId))
                             },
                             onModeClick = { mode ->
-                                navController.navigate(Screen.SettingModes(scrollToModeId = mode.modeId))
+                                navController.navigate(Screen.SettingSkills(scrollToSkillId = mode.modeId))
                             },
                             onMemoryClick = { memory ->
                                 navController.navigate(

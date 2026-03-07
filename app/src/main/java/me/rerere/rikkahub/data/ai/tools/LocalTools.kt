@@ -15,6 +15,12 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
+import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.TtsFilterMode
+import me.rerere.rikkahub.data.datastore.getSelectedTTSProvider
+import me.rerere.rikkahub.utils.stripMarkdown
+import me.rerere.tts.controller.TtsController
+import me.rerere.tts.provider.TTSManager
 import kotlin.uuid.Uuid
 
 @Serializable
@@ -30,9 +36,17 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("python_engine")
     data object PythonEngine : LocalToolOption()
+
+    @Serializable
+    @SerialName("tts")
+    data object Tts : LocalToolOption()
 }
 
-class LocalTools(private val context: Context) {
+class LocalTools(
+    private val context: Context,
+    private val settingsStore: SettingsStore,
+    private val ttsManager: TTSManager,
+) {
     val javascriptTool by lazy {
         Tool(
             name = "eval_javascript",
@@ -64,6 +78,49 @@ class LocalTools(private val context: Context) {
     }
 
     private val pythonSandbox by lazy { PythonSandbox(context) }
+    private val ttsController by lazy { TtsController(context, ttsManager) }
+
+    val ttsTool by lazy {
+        Tool(
+            name = "text_to_speech",
+            description = "Read text aloud using the currently selected LastChat TTS provider. Use this when the user explicitly wants spoken output.",
+            parameters = {
+                InputSchema.Obj(
+                    properties = buildJsonObject {
+                        put("text", buildJsonObject {
+                            put("type", "string")
+                            put("description", "The text to speak aloud")
+                        })
+                    },
+                    required = listOf("text")
+                )
+            },
+            execute = {
+                val rawText = it.jsonObject["text"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                val provider = settingsStore.settingsFlow.value.getSelectedTTSProvider()
+                if (provider == null) {
+                    buildJsonObject {
+                        put("success", false)
+                        put("error", "No TTS provider selected")
+                    }
+                } else {
+                    val processedText = prepareTtsText(rawText)
+                    if (processedText.isBlank()) {
+                        buildJsonObject {
+                            put("success", false)
+                            put("error", "Nothing left to speak after TTS filtering")
+                        }
+                    } else {
+                        ttsController.speakWithProvider(processedText, provider, true)
+                        buildJsonObject {
+                            put("success", true)
+                            put("provider", provider.name.ifBlank { "TTS" })
+                        }
+                    }
+                }
+            }
+        )
+    }
 
     /**
      * Get Python tools for the conversation.
@@ -397,7 +454,7 @@ class LocalTools(private val context: Context) {
             ),
             Tool(
                 name = "schedule_message",
-                description = "Schedule a message to be sent by the assistant after a certain delay.",
+                description = "Schedule a message to be sent by the assistant after a certain delay. Delivery time is approximate and may vary with system battery optimizations.",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
@@ -415,38 +472,27 @@ class LocalTools(private val context: Context) {
                 },
                 execute = {
                     val reason = it.jsonObject["reason"]?.jsonPrimitive?.contentOrNull ?: ""
-                    val delayMinutes = it.jsonObject["delay_minutes"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 1L
+                    val delayMinutes = (it.jsonObject["delay_minutes"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 1L)
+                        .coerceAtLeast(0L)
                     
                     try {
                         val currentTime = System.currentTimeMillis()
                         val targetTime = currentTime + (delayMinutes * 60 * 1000)
-                        
-                        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
-                        
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                            if (!alarmManager.canScheduleExactAlarms()) {
-                                    buildJsonObject { put("status", "error: permission SCHEDULE_EXACT_ALARM not granted") }
-                            }
-                        }
 
-                        val intent = android.content.Intent(context, me.rerere.rikkahub.service.ScheduledMessageReceiver::class.java).apply {
-                            putExtra("assistantId", assistantId.toString())
-                            putExtra("conversationId", conversationId.toString())
-                            putExtra("reason", reason)
-                        }
-                        
-                        val pendingIntent = android.app.PendingIntent.getBroadcast(
-                            context,
-                            (assistantId.hashCode() + conversationId.hashCode() + reason.hashCode()),
-                            intent,
-                            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
-                        )
-                        
-                        alarmManager.setExactAndAllowWhileIdle(
-                            android.app.AlarmManager.RTC_WAKEUP,
-                            targetTime,
-                            pendingIntent
-                        )
+                        // Use WorkManager for delayed assistant follow-ups so this tool works
+                        // without the exact alarm special app access.
+                        val workRequest = androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.ScheduledMessageWorker>()
+                            .setInitialDelay(delayMinutes, java.util.concurrent.TimeUnit.MINUTES)
+                            .setInputData(
+                                androidx.work.workDataOf(
+                                    "assistantId" to assistantId.toString(),
+                                    "conversationId" to conversationId.toString(),
+                                    "reason" to reason
+                                )
+                            )
+                            .build()
+
+                        androidx.work.WorkManager.getInstance(context).enqueue(workRequest)
                         
                         buildJsonObject { 
                             put("status", "success")
@@ -610,6 +656,39 @@ class LocalTools(private val context: Context) {
             )
         )
     }
+
+    private fun prepareTtsText(text: String): String {
+        return applyTtsTextFilters(text).stripMarkdown().trim()
+    }
+
+    private fun applyTtsTextFilters(text: String): String {
+        val settings = settingsStore.settingsFlow.value
+        val rules = settings.displaySetting.ttsTextFilterRules.filter { it.enabled }
+        if (rules.isEmpty()) return text
+
+        var result = text
+        val onlyReadRules = rules.filter { it.mode == TtsFilterMode.ONLY_READ }
+        if (onlyReadRules.isNotEmpty()) {
+            val extracted = StringBuilder()
+            onlyReadRules.forEach { rule ->
+                val pattern = Regex.escape(rule.pattern)
+                val regex = Regex("$pattern(.+?)$pattern")
+                regex.findAll(result).forEach { match ->
+                    if (extracted.isNotEmpty()) extracted.append(" ")
+                    extracted.append(match.groupValues.getOrNull(1).orEmpty())
+                }
+            }
+            result = extracted.toString()
+        }
+
+        rules.filter { it.mode == TtsFilterMode.SKIP }.forEach { rule ->
+            val pattern = Regex.escape(rule.pattern)
+            val regex = Regex("$pattern.+?$pattern")
+            result = result.replace(regex, "")
+        }
+
+        return result
+    }
     
     /**
      * Get all enabled local tools for the conversation.
@@ -626,6 +705,9 @@ class LocalTools(private val context: Context) {
         // Find Python engine option if present - pass user images for auto-import
         if (options.contains(LocalToolOption.PythonEngine)) {
             tools.addAll(getPythonTools(conversationId, userImageUrls))
+        }
+        if (options.contains(LocalToolOption.Tts)) {
+            tools.add(ttsTool)
         }
         return tools
     }

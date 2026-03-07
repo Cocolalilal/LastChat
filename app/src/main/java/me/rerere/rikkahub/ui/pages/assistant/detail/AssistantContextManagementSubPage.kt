@@ -5,7 +5,6 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,8 +20,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -48,9 +45,10 @@ import kotlin.math.roundToInt
 @Composable
 fun AssistantContextManagementSubPage(
     assistant: Assistant,
+    hasSummarizerModelConfigured: Boolean,
     onUpdate: (Assistant) -> Unit,
     onNavigateToLorebooks: () -> Unit,
-    onNavigateToModels: () -> Unit
+    onNavigateToSummarizerSettings: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -76,19 +74,37 @@ fun AssistantContextManagementSubPage(
             )
         }
 
+        SettingsGroup(title = stringResource(R.string.context_time_awareness_title)) {
+            SettingGroupItem(
+                title = stringResource(R.string.context_time_awareness_toggle_title),
+                subtitle = stringResource(R.string.context_time_awareness_desc),
+                trailing = {
+                    HapticSwitch(
+                        checked = assistant.enableTimeAwareness,
+                        onCheckedChange = { enabled ->
+                            onUpdate(assistant.copy(enableTimeAwareness = enabled))
+                        }
+                    )
+                },
+                onClick = {
+                    onUpdate(assistant.copy(enableTimeAwareness = !assistant.enableTimeAwareness))
+                }
+            )
+        }
+
         // ═══════════════════════════════════════════════════════════════════
         // MESSAGE HISTORY
         // ═══════════════════════════════════════════════════════════════════
         
         SettingsGroup(title = stringResource(R.string.context_message_history_title)) {
             // Warning banner when message summarization is enabled but no summarizer model is set
-            val needsSummarizerWarning = assistant.enableContextRefresh && assistant.summarizerModelId == null
+            val needsSummarizerWarning = assistant.enableContextRefresh && !hasSummarizerModelConfigured
             AnimatedVisibility(
                 visible = needsSummarizerWarning,
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
-                SummarizerWarningBanner(onClick = onNavigateToModels)
+                SummarizerWarningBanner(onClick = onNavigateToSummarizerSettings)
             }
             
             // 1. Message summarization toggle (first - enables manual summarization button)
@@ -221,7 +237,7 @@ private fun SummarizerWarningBanner(
                 modifier = Modifier.size(20.dp)
             )
             Text(
-                text = "Select a summarizer model in the Models tab",
+                text = stringResource(R.string.setting_model_page_summarizer_missing_banner),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )

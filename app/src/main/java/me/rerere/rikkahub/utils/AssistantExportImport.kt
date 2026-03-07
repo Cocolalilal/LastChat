@@ -651,8 +651,6 @@ object AssistantExportImport : KoinComponent {
         check(assistant.chatModelId, "Chat Model")
         check(assistant.backgroundModelId, "Background Model")
         check(assistant.embeddingModelId, "Embedding Model")
-        check(assistant.summarizerModelId, "Summarizer Model")
-        
         return missing
     }
     
@@ -672,7 +670,7 @@ object AssistantExportImport : KoinComponent {
             chatModelId = checkAndClear(assistant.chatModelId),
             backgroundModelId = checkAndClear(assistant.backgroundModelId),
             embeddingModelId = checkAndClear(assistant.embeddingModelId),
-            summarizerModelId = checkAndClear(assistant.summarizerModelId)
+            summarizerModelId = null
         )
     }
 

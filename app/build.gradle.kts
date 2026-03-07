@@ -20,6 +20,12 @@ android {
     namespace = "me.rerere.rikkahub"
     compileSdk = 36
 
+    sourceSets {
+        getByName("main") {
+            assets.srcDir("../web-ui/build/client")
+        }
+    }
+
     defaultConfig {
         applicationId = "lastchat.rikkafork.cocolal"
         minSdk = 28
@@ -253,6 +259,15 @@ dependencies {
     implementation(libs.ktor.client.okhttp)
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.kotlinx.json)
+    implementation(libs.ktor.server.core)
+    implementation(libs.ktor.server.cio)
+    implementation(libs.ktor.server.auth)
+    implementation(libs.ktor.server.auth.jwt)
+    implementation(libs.ktor.server.compression)
+    implementation(libs.ktor.server.content.negotiation)
+    implementation(libs.ktor.server.default.headers)
+    implementation(libs.ktor.server.status.pages)
+    implementation(libs.jmdns)
 
 
     // pebble (template engine)

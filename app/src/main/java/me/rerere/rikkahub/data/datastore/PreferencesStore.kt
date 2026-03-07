@@ -34,6 +34,7 @@ import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.Mode
+import me.rerere.rikkahub.data.model.Skill
 import me.rerere.rikkahub.data.model.Tag
 import me.rerere.rikkahub.data.model.TextSelectionConfig
 import me.rerere.rikkahub.ui.theme.PresetThemes
@@ -79,6 +80,7 @@ class SettingsStore(
         val FAVORITE_MODELS = stringPreferencesKey("favorite_models")
         val SELECT_MODEL = stringPreferencesKey("chat_model")
         val TITLE_MODEL = stringPreferencesKey("title_model")
+        val SUMMARIZER_MODEL = stringPreferencesKey("summarizer_model")
         val TRANSLATE_MODEL = stringPreferencesKey("translate_model")
         val SUGGESTION_MODEL = stringPreferencesKey("suggestion_model")
         val IMAGE_GENERATION_MODEL = stringPreferencesKey("image_generation_model")
@@ -115,6 +117,13 @@ class SettingsStore(
         val TTS_PROVIDERS = stringPreferencesKey("tts_providers")
         val SELECTED_TTS_PROVIDER = stringPreferencesKey("selected_tts_provider")
 
+        // Web Server
+        val WEB_SERVER_ENABLED = booleanPreferencesKey("web_server_enabled")
+        val WEB_SERVER_PORT = intPreferencesKey("web_server_port")
+        val WEB_SERVER_JWT_ENABLED = booleanPreferencesKey("web_server_jwt_enabled")
+        val WEB_SERVER_ACCESS_PASSWORD = stringPreferencesKey("web_server_access_password")
+        val WEB_SERVER_BACKGROUND_SETUP_SHOWN = booleanPreferencesKey("web_server_background_setup_shown")
+
         // Background Worker
         val CONSOLIDATION_WORKER_INTERVAL = intPreferencesKey("consolidation_worker_interval")
         val CONSOLIDATION_REQUIRES_DEVICE_IDLE = booleanPreferencesKey("consolidation_requires_device_idle")
@@ -122,12 +131,20 @@ class SettingsStore(
         // Prompt Injections
         val MODES = stringPreferencesKey("modes")
         val LOREBOOKS = stringPreferencesKey("lorebooks")
+        val SKILLS = stringPreferencesKey("skills")
+
+        // Dismissed banners
+        val DISMISSED_BANNERS = stringPreferencesKey("dismissed_banners")
 
         // Android Integration
         val TEXT_SELECTION_CONFIG = stringPreferencesKey("text_selection_config")
     }
 
     private val dataStore = context.settingsStore
+
+    // One-time migration flags
+    private var hasPersistedLegacyModeMigration = false
+    private var hasPersistedLegacySummarizerMigration = false
 
     val settingsFlowRaw = dataStore.data
         .catch { exception ->
@@ -146,6 +163,7 @@ class SettingsStore(
                     ?: GEMINI_2_5_FLASH_ID,
                 titleModelId = preferences[TITLE_MODEL]?.let { Uuid.parse(it) }
                     ?: GEMINI_2_5_FLASH_ID,
+                summarizerModelId = preferences[SUMMARIZER_MODEL]?.let { Uuid.parse(it) },
                 translateModeId = preferences[TRANSLATE_MODEL]?.let { Uuid.parse(it) }
                     ?: GEMINI_2_5_FLASH_ID,
                 suggestionModelId = preferences[SUGGESTION_MODEL]?.let { Uuid.parse(it) }
@@ -194,6 +212,11 @@ class SettingsStore(
                 } ?: emptyList(),
                 selectedTTSProviderId = preferences[SELECTED_TTS_PROVIDER]?.let { Uuid.parse(it) }
                     ?: DEFAULT_SYSTEM_TTS_ID,
+                webServerEnabled = preferences[WEB_SERVER_ENABLED] == true,
+                webServerPort = preferences[WEB_SERVER_PORT] ?: 8080,
+                webServerJwtEnabled = preferences[WEB_SERVER_JWT_ENABLED] == true,
+                webServerAccessPassword = preferences[WEB_SERVER_ACCESS_PASSWORD] ?: "",
+                webServerBackgroundSetupShown = preferences[WEB_SERVER_BACKGROUND_SETUP_SHOWN] == true,
                 consolidationWorkerIntervalMinutes = preferences[CONSOLIDATION_WORKER_INTERVAL] ?: 15,
                 consolidationRequiresDeviceIdle = preferences[CONSOLIDATION_REQUIRES_DEVICE_IDLE] ?: false,
                 modes = preferences[MODES]?.let {
@@ -202,6 +225,12 @@ class SettingsStore(
                 lorebooks = preferences[LOREBOOKS]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: emptyList(),
+                skills = preferences[SKILLS]?.let {
+                    JsonInstant.decodeFromString(it)
+                } ?: emptyList(),
+                dismissedBanners = preferences[DISMISSED_BANNERS]?.let {
+                    JsonInstant.decodeFromString(it)
+                } ?: emptySet(),
                 textSelectionConfig = preferences[TEXT_SELECTION_CONFIG]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: TextSelectionConfig(),
@@ -234,8 +263,8 @@ class SettingsStore(
             it.copy(
                 providers = providers,
                 assistants = assistants,
-                ttsProviders = ttsProviders
-            )
+                ttsProviders = ttsProviders,
+            ).normalizeWebServerSettings()
         }
         .map { settings ->
             // 去重并清理无效引用
@@ -270,6 +299,30 @@ class SettingsStore(
                 }
             )
         }
+        .map { settings ->
+            val migrated = settings.migrateAssistantSummarizerToGlobal()
+            if (!hasPersistedLegacySummarizerMigration) {
+                hasPersistedLegacySummarizerMigration = true
+                if (migrated != settings) {
+                    scope.launch(Dispatchers.IO) {
+                        persistLegacySummarizerMigration(migrated)
+                    }
+                }
+            }
+            migrated
+        }
+        .map { settings ->
+            val migrated = settings.migrateLegacyModesToSkills()
+            if (!hasPersistedLegacyModeMigration) {
+                hasPersistedLegacyModeMigration = true
+                if (migrated != settings) {
+                    scope.launch(Dispatchers.IO) {
+                        persistLegacyModeMigration(migrated)
+                    }
+                }
+            }
+            migrated
+        }
         .onEach {
             get<PebbleEngine>().templateCache.invalidateAll()
         }
@@ -288,7 +341,7 @@ class SettingsStore(
                 if (migratedSettings != settings) {
                     // Secrets were migrated - persist the cleared plaintext back to DataStore
                     // We do this synchronously to ensure consistency
-                    scope.launch {
+                    scope.launch(Dispatchers.IO) {
                         persistMigratedSettings(migratedSettings)
                     }
                 }
@@ -315,6 +368,29 @@ class SettingsStore(
         }
     }
 
+    /**
+     * Persist one-time legacy mode -> skill migration.
+     */
+    private suspend fun persistLegacyModeMigration(settings: Settings) {
+        dataStore.edit { preferences ->
+            preferences[ASSISTANTS] = JsonInstant.encodeToString(settings.assistants)
+            preferences[MODES] = JsonInstant.encodeToString(settings.modes)
+            preferences[SKILLS] = JsonInstant.encodeToString(settings.skills)
+        }
+    }
+
+    /**
+     * Persist one-time assistant summarizer -> global summarizer migration.
+     */
+    private suspend fun persistLegacySummarizerMigration(settings: Settings) {
+        dataStore.edit { preferences ->
+            settings.summarizerModelId?.let {
+                preferences[SUMMARIZER_MODEL] = it.toString()
+            } ?: preferences.remove(SUMMARIZER_MODEL)
+            preferences[ASSISTANTS] = JsonInstant.encodeToString(settings.assistants)
+        }
+    }
+
 
     suspend fun update(settings: Settings) {
         if(settings.init) {
@@ -338,61 +414,75 @@ class SettingsStore(
             settings
         }
         
+        val normalizedSettings = settingsToSave
+            .normalizeWebServerSettings()
+            .migrateLegacyModesToSkills()
+
         // Handle explicit secret deletions (user cleared a field that had a value)
         // This must be called BEFORE migration to remove deleted secrets from SecureStore
-        secretKeyManager.handleExplicitSecretDeletions(settingsFlow.value, settingsToSave)
+        secretKeyManager.handleExplicitSecretDeletions(settingsFlow.value, normalizedSettings)
         
         // Migrate secrets from plaintext to SecureStore if needed
-        val migratedSettings = secretKeyManager.migrateSecretsFromSettings(settingsToSave)
+        val migratedSettings = secretKeyManager.migrateSecretsFromSettings(normalizedSettings)
         
         settingsFlow.value = secretKeyManager.populateSecretsForExport(migratedSettings)
         dataStore.edit { preferences ->
-            preferences[DYNAMIC_COLOR] = settingsToSave.dynamicColor
-            preferences[THEME_ID] = settingsToSave.themeId
-            preferences[DEVELOPER_MODE] = settingsToSave.developerMode
-            preferences[ENABLE_RAG_LOGGING] = settingsToSave.enableRagLogging
-            preferences[DISPLAY_SETTING] = JsonInstant.encodeToString(settingsToSave.displaySetting)
+            preferences[DYNAMIC_COLOR] = normalizedSettings.dynamicColor
+            preferences[THEME_ID] = normalizedSettings.themeId
+            preferences[DEVELOPER_MODE] = normalizedSettings.developerMode
+            preferences[ENABLE_RAG_LOGGING] = normalizedSettings.enableRagLogging
+            preferences[DISPLAY_SETTING] = JsonInstant.encodeToString(normalizedSettings.displaySetting)
 
-            preferences[ENABLE_WEB_SEARCH] = settingsToSave.enableWebSearch
-            preferences[FAVORITE_MODELS] = JsonInstant.encodeToString(settingsToSave.favoriteModels)
-            preferences[SELECT_MODEL] = settingsToSave.chatModelId.toString()
-            preferences[TITLE_MODEL] = settingsToSave.titleModelId.toString()
-            preferences[TRANSLATE_MODEL] = settingsToSave.translateModeId.toString()
-            preferences[SUGGESTION_MODEL] = settingsToSave.suggestionModelId.toString()
-            preferences[IMAGE_GENERATION_MODEL] = settingsToSave.imageGenerationModelId.toString()
-            preferences[TITLE_PROMPT] = settingsToSave.titlePrompt
-            preferences[TRANSLATION_PROMPT] = settingsToSave.translatePrompt
-            preferences[SUGGESTION_PROMPT] = settingsToSave.suggestionPrompt
-            preferences[LEARNING_MODE_PROMPT] = settingsToSave.learningModePrompt
-            preferences[OCR_MODEL] = settingsToSave.ocrModelId.toString()
-            preferences[OCR_PROMPT] = settingsToSave.ocrPrompt
-            preferences[EMBEDDING_MODEL] = settingsToSave.embeddingModelId.toString()
+            preferences[ENABLE_WEB_SEARCH] = normalizedSettings.enableWebSearch
+            preferences[FAVORITE_MODELS] = JsonInstant.encodeToString(normalizedSettings.favoriteModels)
+            preferences[SELECT_MODEL] = normalizedSettings.chatModelId.toString()
+            preferences[TITLE_MODEL] = normalizedSettings.titleModelId.toString()
+            normalizedSettings.summarizerModelId?.let {
+                preferences[SUMMARIZER_MODEL] = it.toString()
+            } ?: preferences.remove(SUMMARIZER_MODEL)
+            preferences[TRANSLATE_MODEL] = normalizedSettings.translateModeId.toString()
+            preferences[SUGGESTION_MODEL] = normalizedSettings.suggestionModelId.toString()
+            preferences[IMAGE_GENERATION_MODEL] = normalizedSettings.imageGenerationModelId.toString()
+            preferences[TITLE_PROMPT] = normalizedSettings.titlePrompt
+            preferences[TRANSLATION_PROMPT] = normalizedSettings.translatePrompt
+            preferences[SUGGESTION_PROMPT] = normalizedSettings.suggestionPrompt
+            preferences[LEARNING_MODE_PROMPT] = normalizedSettings.learningModePrompt
+            preferences[OCR_MODEL] = normalizedSettings.ocrModelId.toString()
+            preferences[OCR_PROMPT] = normalizedSettings.ocrPrompt
+            preferences[EMBEDDING_MODEL] = normalizedSettings.embeddingModelId.toString()
 
             preferences[PROVIDERS] = JsonInstant.encodeToString(migratedSettings.providers)
 
-            preferences[ASSISTANTS] = JsonInstant.encodeToString(settingsToSave.assistants)
-            preferences[SELECT_ASSISTANT] = settingsToSave.assistantId.toString()
-            preferences[ASSISTANT_TAGS] = JsonInstant.encodeToString(settingsToSave.assistantTags)
-            preferences[PROVIDER_TAGS] = JsonInstant.encodeToString(settingsToSave.providerTags)
-            preferences[RECENTLY_USED_ASSISTANTS] = JsonInstant.encodeToString(settingsToSave.recentlyUsedAssistants)
+            preferences[ASSISTANTS] = JsonInstant.encodeToString(normalizedSettings.assistants)
+            preferences[SELECT_ASSISTANT] = normalizedSettings.assistantId.toString()
+            preferences[ASSISTANT_TAGS] = JsonInstant.encodeToString(normalizedSettings.assistantTags)
+            preferences[PROVIDER_TAGS] = JsonInstant.encodeToString(normalizedSettings.providerTags)
+            preferences[RECENTLY_USED_ASSISTANTS] = JsonInstant.encodeToString(normalizedSettings.recentlyUsedAssistants)
 
-            preferences[SEARCH_SERVICES] = JsonInstant.encodeToString(settingsToSave.searchServices)
-            preferences[SEARCH_COMMON] = JsonInstant.encodeToString(settingsToSave.searchCommonOptions)
-            preferences[SEARCH_SELECTED] = settingsToSave.searchServiceSelected.coerceIn(0, settingsToSave.searchServices.size - 1)
+            preferences[SEARCH_SERVICES] = JsonInstant.encodeToString(normalizedSettings.searchServices)
+            preferences[SEARCH_COMMON] = JsonInstant.encodeToString(normalizedSettings.searchCommonOptions)
+            preferences[SEARCH_SELECTED] = normalizedSettings.searchServiceSelected.coerceIn(0, normalizedSettings.searchServices.size - 1)
 
-            preferences[MCP_SERVERS] = JsonInstant.encodeToString(settingsToSave.mcpServers)
+            preferences[MCP_SERVERS] = JsonInstant.encodeToString(normalizedSettings.mcpServers)
             preferences[WEBDAV_CONFIG] = JsonInstant.encodeToString(migratedSettings.webDavConfig)
             preferences[TTS_PROVIDERS] = JsonInstant.encodeToString(migratedSettings.ttsProviders)
-            settingsToSave.selectedTTSProviderId?.let {
+            normalizedSettings.selectedTTSProviderId?.let {
                 preferences[SELECTED_TTS_PROVIDER] = it.toString()
             } ?: preferences.remove(SELECTED_TTS_PROVIDER)
+            preferences[WEB_SERVER_ENABLED] = normalizedSettings.webServerEnabled
+            preferences[WEB_SERVER_PORT] = normalizedSettings.webServerPort
+            preferences[WEB_SERVER_JWT_ENABLED] = normalizedSettings.webServerJwtEnabled
+            preferences[WEB_SERVER_ACCESS_PASSWORD] = normalizedSettings.webServerAccessPassword
+            preferences[WEB_SERVER_BACKGROUND_SETUP_SHOWN] = normalizedSettings.webServerBackgroundSetupShown
 
-            preferences[CONSOLIDATION_WORKER_INTERVAL] = settingsToSave.consolidationWorkerIntervalMinutes
-            preferences[CONSOLIDATION_REQUIRES_DEVICE_IDLE] = settingsToSave.consolidationRequiresDeviceIdle
+            preferences[CONSOLIDATION_WORKER_INTERVAL] = normalizedSettings.consolidationWorkerIntervalMinutes
+            preferences[CONSOLIDATION_REQUIRES_DEVICE_IDLE] = normalizedSettings.consolidationRequiresDeviceIdle
 
-            preferences[MODES] = JsonInstant.encodeToString(settingsToSave.modes)
-            preferences[LOREBOOKS] = JsonInstant.encodeToString(settingsToSave.lorebooks)
-            preferences[TEXT_SELECTION_CONFIG] = JsonInstant.encodeToString(settingsToSave.textSelectionConfig)
+            preferences[MODES] = JsonInstant.encodeToString(normalizedSettings.modes)
+            preferences[LOREBOOKS] = JsonInstant.encodeToString(normalizedSettings.lorebooks)
+            preferences[SKILLS] = JsonInstant.encodeToString(normalizedSettings.skills)
+            preferences[DISMISSED_BANNERS] = JsonInstant.encodeToString(normalizedSettings.dismissedBanners)
+            preferences[TEXT_SELECTION_CONFIG] = JsonInstant.encodeToString(normalizedSettings.textSelectionConfig)
         }
     }
 
@@ -458,6 +548,7 @@ data class Settings(
     val favoriteModels: List<Uuid> = emptyList(),
     val chatModelId: Uuid = Uuid.random(),
     val titleModelId: Uuid = Uuid.random(),
+    val summarizerModelId: Uuid? = null,
     val imageGenerationModelId: Uuid = Uuid.random(),
     val titlePrompt: String = DEFAULT_TITLE_PROMPT,
     val translateModeId: Uuid = Uuid.random(),
@@ -481,11 +572,18 @@ data class Settings(
     val webDavConfig: WebDavConfig = WebDavConfig(),
     val ttsProviders: List<TTSProviderSetting> = DEFAULT_TTS_PROVIDERS,
     val selectedTTSProviderId: Uuid = DEFAULT_SYSTEM_TTS_ID,
+    val webServerEnabled: Boolean = false,
+    val webServerPort: Int = 8080,
+    val webServerJwtEnabled: Boolean = false,
+    val webServerAccessPassword: String = "",
+    val webServerBackgroundSetupShown: Boolean = false,
     val consolidationWorkerIntervalMinutes: Int = 15,
     val consolidationRequiresDeviceIdle: Boolean = false,
     // Prompt Injections
     val modes: List<Mode> = emptyList(),
     val lorebooks: List<Lorebook> = emptyList(),
+    val skills: List<Skill> = emptyList(),
+    val dismissedBanners: Set<String> = emptySet(),
     // Android Integration
     val textSelectionConfig: TextSelectionConfig = TextSelectionConfig(),
 ) {
@@ -613,7 +711,6 @@ data class FontSettings(
 data class DisplaySetting(
     val userAvatar: Avatar = Avatar.Dummy,
     val userNickname: String = "",
-    val chatInputStyle: ChatInputStyle = ChatInputStyle.MINIMAL, // Input bar style (floating toolbar or minimal)
     val showUserAvatar: Boolean = true,
     val showModelIcon: Boolean = true,
     val showModelName: Boolean = true,
@@ -653,20 +750,20 @@ enum class NewChatHeaderStyle {
 enum class NewChatContentStyle {
     NONE,       // Empty content
     TEMPLATES,  // Template cards (Write, Code, etc.)
-    STATS,      // Stats widgets (streak, chats, avg msgs)
     ACTIONS     // ChatGPT-style pill buttons with navigation (Create image, Translate, Code, More)
+}
+
+internal fun Settings.normalizeWebServerSettings(): Settings {
+    return copy(
+        webServerPort = webServerPort.coerceIn(1024, 65535),
+        webServerJwtEnabled = webServerJwtEnabled && webServerAccessPassword.isNotBlank(),
+    )
 }
 
 @Serializable
 enum class ProviderViewMode {
     LIST,
     GRID
-}
-
-@Serializable
-enum class ChatInputStyle {
-    FLOATING,   // "LastChat" - current floating toolbar
-    MINIMAL     // "Minimal" - ChatGPT-style simple bar with bottom sheet picker
 }
 
 @Serializable
@@ -684,6 +781,29 @@ data class WebDavConfig(
     enum class BackupItem {
         DATABASE,
         FILES,
+    }
+}
+
+private fun Settings.migrateAssistantSummarizerToGlobal(): Settings {
+    val selectedAssistantSummarizer = assistants.find { it.id == assistantId }?.summarizerModelId
+    val legacySummarizerModelId = summarizerModelId
+        ?: selectedAssistantSummarizer
+        ?: assistants.firstNotNullOfOrNull { it.summarizerModelId }
+    val clearedAssistants = assistants.map { assistant ->
+        if (assistant.summarizerModelId != null) {
+            assistant.copy(summarizerModelId = null)
+        } else {
+            assistant
+        }
+    }
+
+    return if (legacySummarizerModelId != summarizerModelId || clearedAssistants != assistants) {
+        copy(
+            summarizerModelId = legacySummarizerModelId,
+            assistants = clearedAssistants
+        )
+    } else {
+        this
     }
 }
 
@@ -723,7 +843,6 @@ fun Settings.getAssistantById(id: Uuid): Assistant? {
 fun Settings.getEffectiveDisplaySetting(assistant: Assistant? = null): DisplaySetting {
     val ui = (assistant ?: getCurrentAssistant()).uiSettings
     return displaySetting.copy(
-        chatInputStyle = ui.chatInputStyle ?: displaySetting.chatInputStyle,
         showUserAvatar = ui.showUserAvatar ?: displaySetting.showUserAvatar,
         showModelIcon = ui.showAssistantAvatar ?: displaySetting.showModelIcon,
         showAssistantBubbles = ui.showAssistantBubbles ?: displaySetting.showAssistantBubbles,
@@ -855,7 +974,7 @@ fun Settings.sanitize(): Pair<Settings, me.rerere.rikkahub.data.sync.BackupClean
         assistants = cleanedAssistants,
         favoriteModels = cleanedFavorites,
         searchServiceSelected = clampedSearchSelected,
-    )
+    ).migrateLegacyModesToSkills()
 
     val result = me.rerere.rikkahub.data.sync.BackupCleanupResult(
         invalidSearchModeCount = invalidSearchModeCount,

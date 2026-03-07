@@ -1,7 +1,5 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
-import android.Manifest
-import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -15,10 +13,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import androidx.compose.runtime.Composable
@@ -28,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -43,6 +45,7 @@ import me.rerere.rikkahub.ui.components.ai.McpPicker
 import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
+import me.rerere.rikkahub.utils.PermissionChecker
 import me.rerere.search.SearchServiceOptions
 import org.koin.compose.koinInject
 
@@ -58,6 +61,40 @@ fun AssistantToolsSubPage(
     mcpServerConfigs: List<McpServerConfig>
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    var pendingDeviceControlAccess by remember {
+        mutableStateOf(PermissionChecker.MissingFeatureAccess())
+    }
+    var showDeviceControlAccessDialog by remember { mutableStateOf(false) }
+
+    val deviceControlSettingsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        val remainingAccess = PermissionChecker.getMissingDeviceControlAccess(context)
+        pendingDeviceControlAccess = remainingAccess
+        showDeviceControlAccessDialog = remainingAccess.specialAccesses.isNotEmpty()
+    }
+
+    val deviceControlPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        val remainingAccess = PermissionChecker.getMissingDeviceControlAccess(context)
+        pendingDeviceControlAccess = remainingAccess
+        showDeviceControlAccessDialog = remainingAccess.specialAccesses.isNotEmpty()
+    }
+
+    fun requestDeviceControlAccess() {
+        val missingAccess = PermissionChecker.getMissingDeviceControlAccess(context)
+        pendingDeviceControlAccess = missingAccess
+        when {
+            missingAccess.runtimePermissions.isNotEmpty() -> {
+                deviceControlPermissionLauncher.launch(missingAccess.runtimePermissions.toTypedArray())
+            }
+            missingAccess.specialAccesses.isNotEmpty() -> {
+                showDeviceControlAccessDialog = true
+            }
+        }
+    }
     
     Column(
         modifier = Modifier
@@ -124,13 +161,6 @@ fun AssistantToolsSubPage(
         // ═══════════════════════════════════════════════════════════════════
         // LOCAL TOOLS GROUP
         // ═══════════════════════════════════════════════════════════════════
-        val deviceControlPermissionLauncher = rememberLauncherForActivityResult(
-            ActivityResultContracts.RequestMultiplePermissions()
-        ) {
-            val newLocalTools = assistant.localTools + LocalToolOption.DeviceControl
-            onUpdate(assistant.copy(localTools = newLocalTools))
-        }
-        
         SettingsGroup(title = stringResource(R.string.assistant_page_tab_local_tools)) {
             // JavaScript Engine
             SettingGroupItem(
@@ -160,18 +190,9 @@ fun AssistantToolsSubPage(
                         checked = assistant.localTools.contains(LocalToolOption.DeviceControl),
                         onCheckedChange = { enabled ->
                             if (enabled) {
-                                val permissions = mutableListOf<String>()
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                    permissions.add(Manifest.permission.POST_NOTIFICATIONS)
-                                }
-                                permissions.add(Manifest.permission.CAMERA)
-                                
-                                if (permissions.isNotEmpty()) {
-                                    deviceControlPermissionLauncher.launch(permissions.toTypedArray())
-                                } else {
-                                    val newLocalTools = assistant.localTools + LocalToolOption.DeviceControl
-                                    onUpdate(assistant.copy(localTools = newLocalTools))
-                                }
+                                val newLocalTools = assistant.localTools + LocalToolOption.DeviceControl
+                                onUpdate(assistant.copy(localTools = newLocalTools))
+                                requestDeviceControlAccess()
                             } else {
                                 val newLocalTools = assistant.localTools - LocalToolOption.DeviceControl
                                 onUpdate(assistant.copy(localTools = newLocalTools))
@@ -194,6 +215,24 @@ fun AssistantToolsSubPage(
                                 assistant.localTools + LocalToolOption.PythonEngine
                             } else {
                                 assistant.localTools.filterNot { it is LocalToolOption.PythonEngine }
+                            }
+                            onUpdate(assistant.copy(localTools = newLocalTools))
+                        }
+                    )
+                }
+            )
+
+            SettingGroupItem(
+                title = stringResource(R.string.assistant_page_local_tools_tts_title),
+                subtitle = stringResource(R.string.assistant_page_local_tools_tts_desc),
+                trailing = {
+                    HapticSwitch(
+                        checked = assistant.localTools.contains(LocalToolOption.Tts),
+                        onCheckedChange = { enabled ->
+                            val newLocalTools = if (enabled) {
+                                assistant.localTools + LocalToolOption.Tts
+                            } else {
+                                assistant.localTools - LocalToolOption.Tts
                             }
                             onUpdate(assistant.copy(localTools = newLocalTools))
                         }
@@ -272,5 +311,40 @@ fun AssistantToolsSubPage(
                 }
             }
         }
+    }
+
+    if (showDeviceControlAccessDialog && pendingDeviceControlAccess.specialAccesses.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { showDeviceControlAccessDialog = false },
+            title = { Text("Device Control Access") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Enable the remaining access below so the full Device Control toolset works reliably:")
+                    PermissionChecker.getFeatureAccessDescriptions(pendingDeviceControlAccess).forEach { description ->
+                        Text("- $description", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeviceControlAccessDialog = false
+                        val nextAccess = pendingDeviceControlAccess.specialAccesses.firstOrNull() ?: return@Button
+                        deviceControlSettingsLauncher.launch(
+                            PermissionChecker.createSpecialAccessIntent(nextAccess)
+                        )
+                    }
+                ) {
+                    Text("Open Settings")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showDeviceControlAccessDialog = false }
+                ) {
+                    Text("Not now")
+                }
+            }
+        )
     }
 }

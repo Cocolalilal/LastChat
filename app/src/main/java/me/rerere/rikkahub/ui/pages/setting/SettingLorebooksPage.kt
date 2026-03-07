@@ -17,26 +17,30 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Input
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.AutoFixHigh
+import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.AddPhotoAlternate
-import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.People
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingToolbarDefaults.ScreenOffset
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -71,6 +75,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.ui.components.nav.BackButton
@@ -86,6 +91,7 @@ import me.rerere.rikkahub.ui.components.ui.ToastAction
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.hooks.PremiumHaptics
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
@@ -142,16 +148,6 @@ fun SettingLorebooksPage(vm: SettingVM = koinViewModel()) {
                 scrollBehavior = scrollBehavior,
                 navigationIcon = {
                     BackButton()
-                },
-                actions = {
-                    IconButton(
-                        onClick = {
-                            haptics.perform(HapticPattern.Tick)
-                            importLauncher.launch(arrayOf("application/json", "*/*"))
-                        }
-                    ) {
-                        Icon(Icons.Rounded.Download, contentDescription = stringResource(R.string.import_label))
-                    }
                 }
             )
         },
@@ -165,7 +161,9 @@ fun SettingLorebooksPage(vm: SettingVM = koinViewModel()) {
             ) {
                 // Centered floating tab bar
                 Surface(
-                    modifier = Modifier.align(Alignment.Center),
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .offset(y = -ScreenOffset),
                     shape = RoundedCornerShape(28.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
                     tonalElevation = 6.dp,
@@ -175,21 +173,22 @@ fun SettingLorebooksPage(vm: SettingVM = koinViewModel()) {
                         modifier = Modifier.padding(4.dp),
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        // Modes tab
+                        // Skills tab
                         Box(
                             modifier = Modifier
                                 .clip(CircleShape)
                                 .clickable {
                                     haptics.perform(HapticPattern.Tick)
-                                    navController.navigate(Screen.SettingModes()) {
+                                    navController.navigate(Screen.SettingSkills()) {
                                         popUpTo(Screen.SettingLorebooks) { inclusive = true }
+                                        launchSingleTop = true
                                     }
                                 }
                                 .padding(12.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.AutoFixHigh,
+                                imageVector = Icons.Rounded.Category,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(24.dp)
@@ -213,17 +212,38 @@ fun SettingLorebooksPage(vm: SettingVM = koinViewModel()) {
                         }
                     }
                 }
-                
-                // FAB aligned to end/right
-                FloatingActionButton(
-                    onClick = { 
-                        showAddDialog = true
-                        haptics.perform(HapticPattern.Pop)
-                    },
-                    modifier = Modifier.align(Alignment.CenterEnd),
-                    shape = AppShapes.CardLarge
+
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .offset(y = -ScreenOffset),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.add))
+                    FloatingActionButton(
+                        onClick = {
+                            haptics.perform(HapticPattern.Tick)
+                            importLauncher.launch(arrayOf("application/json", "*/*"))
+                        },
+                        shape = AppShapes.CardLarge,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.Input,
+                            contentDescription = stringResource(R.string.import_label)
+                        )
+                    }
+
+                    FloatingActionButton(
+                        onClick = {
+                            showAddDialog = true
+                            haptics.perform(HapticPattern.Pop)
+                        },
+                        shape = AppShapes.CardLarge
+                    ) {
+                        Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.add))
+                    }
                 }
             }
         },
@@ -394,6 +414,186 @@ fun SettingLorebooksPage(vm: SettingVM = koinViewModel()) {
                 // Navigate to detail page to add entries
                 navController.navigate(Screen.SettingLorebookDetail(lorebook.id.toString()))
             }
+        )
+    }
+}
+
+@Composable
+fun LorebooksPageContent(
+    settings: Settings,
+    vm: SettingVM,
+    haptics: PremiumHaptics,
+    listState: LazyListState = rememberLazyListState(),
+    contentPadding: PaddingValues,
+) {
+    val navController = LocalNavController.current
+    val context = LocalContext.current
+    val toaster = LocalToaster.current
+
+    var draggingIndex by remember { mutableStateOf(-1) }
+    var dragOffset by remember { mutableStateOf(0f) }
+    var isUnlocked by remember { mutableStateOf(false) }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .consumeWindowInsets(contentPadding),
+            state = listState,
+            contentPadding = contentPadding + PaddingValues(16.dp) + PaddingValues(bottom = 40.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            item(key = "description") {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (LocalDarkMode.current) {
+                            MaterialTheme.colorScheme.surfaceContainerLow
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainerHighest
+                        }
+                    ),
+                    shape = AppShapes.CardLarge
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.lorebooks_page_description_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = stringResource(R.string.lorebooks_page_description_text),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+
+            if (settings.lorebooks.isEmpty()) {
+                item(key = "empty") {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (LocalDarkMode.current) {
+                                MaterialTheme.colorScheme.surfaceContainerLow
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerHighest
+                            }
+                        ),
+                        shape = AppShapes.CardLarge
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Icons.Rounded.Book,
+                                contentDescription = null,
+                                modifier = Modifier.size(48.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            )
+                            Text(
+                                text = stringResource(R.string.lorebooks_page_empty_title),
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = stringResource(R.string.lorebooks_page_empty_desc),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            } else {
+                itemsIndexed(
+                    items = settings.lorebooks,
+                    key = { _, lorebook -> lorebook.id }
+                ) { index, lorebook ->
+                    val position = when {
+                        settings.lorebooks.size == 1 -> ItemPosition.ONLY
+                        index == 0 -> ItemPosition.FIRST
+                        index == settings.lorebooks.lastIndex -> ItemPosition.LAST
+                        else -> ItemPosition.MIDDLE
+                    }
+
+                    val neighborOffset = when {
+                        draggingIndex == -1 -> 0f
+                        index == draggingIndex - 1 && isUnlocked -> dragOffset * 0.15f
+                        index == draggingIndex + 1 && isUnlocked -> dragOffset * 0.15f
+                        else -> 0f
+                    }
+
+                    PhysicsSwipeToDelete(
+                        position = position,
+                        deleteEnabled = true,
+                        neighborOffset = neighborOffset,
+                        onDragProgress = { offset, unlocked ->
+                            draggingIndex = index
+                            dragOffset = offset
+                            isUnlocked = unlocked
+                        },
+                        onDragEnd = {
+                            if (draggingIndex == index) {
+                                draggingIndex = -1
+                                dragOffset = 0f
+                            }
+                        },
+                        onDelete = {
+                            val deletedLorebook = lorebook
+                            vm.updateSettings(
+                                settings.copy(lorebooks = settings.lorebooks.filter { it.id != lorebook.id })
+                            )
+                            toaster.show(
+                                message = context.getString(
+                                    R.string.lorebooks_page_deleted,
+                                    lorebook.name.ifEmpty { context.getString(R.string.lorebooks_page_unnamed) }
+                                ),
+                                action = ToastAction(
+                                    label = context.getString(R.string.undo),
+                                    onClick = {
+                                        vm.updateSettings(
+                                            settings.copy(lorebooks = settings.lorebooks.toMutableList().apply {
+                                                add(index.coerceAtMost(size), deletedLorebook)
+                                            })
+                                        )
+                                    }
+                                )
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { _ ->
+                        LorebookCard(
+                            lorebook = lorebook,
+                            position = position,
+                            onClick = {
+                                haptics.perform(HapticPattern.Tick)
+                                navController.navigate(Screen.SettingLorebookDetail(lorebook.id.toString()))
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(120.dp)
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            MaterialTheme.colorScheme.background
+                        )
+                    )
+                )
         )
     }
 }

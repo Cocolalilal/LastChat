@@ -2,9 +2,12 @@ package me.rerere.rikkahub.utils
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.provider.Settings
 import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationManagerCompat
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
 import me.rerere.rikkahub.data.model.Assistant
 
@@ -13,6 +16,17 @@ import me.rerere.rikkahub.data.model.Assistant
  * Used to ensure required permissions are requested after backup import.
  */
 object PermissionChecker {
+    data class MissingFeatureAccess(
+        val runtimePermissions: List<String> = emptyList(),
+        val specialAccesses: List<SpecialAccess> = emptyList()
+    ) {
+        val isEmpty: Boolean
+            get() = runtimePermissions.isEmpty() && specialAccesses.isEmpty()
+    }
+
+    enum class SpecialAccess(val description: String) {
+        NotificationListener("Read device notifications (for notification-reading tools)")
+    }
 
     /**
      * Permission requirements for different features
@@ -37,35 +51,67 @@ object PermissionChecker {
     }
 
     /**
-     * Check which permissions are missing for the given assistants.
-     * @return List of permission strings that need to be requested
+     * Check which runtime permissions and special accesses are missing for the given assistants.
      */
-    fun getMissingPermissions(context: Context, assistants: List<Assistant>): List<String> {
+    fun getMissingFeatureAccess(context: Context, assistants: List<Assistant>): MissingFeatureAccess {
         val requiredPermissions = mutableSetOf<String>()
+        val specialAccesses = mutableSetOf<SpecialAccess>()
 
         for (assistant in assistants) {
-            // Check for Device Control tool
             if (assistant.localTools.contains(LocalToolOption.DeviceControl)) {
                 requiredPermissions.addAll(FeaturePermission.DEVICE_CONTROL.permissions)
+                if (!hasNotificationListenerAccess(context)) {
+                    specialAccesses.add(SpecialAccess.NotificationListener)
+                }
             }
 
-            // Check for location placeholder in all text fields that support placeholders
             val locationPlaceholderPattern = "\\{\\{?location\\}?\\}".toRegex(RegexOption.IGNORE_CASE)
             val textsToCheck = buildList {
                 add(assistant.systemPrompt)
                 add(assistant.messageTemplate)
                 addAll(assistant.quickMessages.map { it.content })
             }
-            
+
             if (textsToCheck.any { locationPlaceholderPattern.containsMatchIn(it) }) {
                 requiredPermissions.addAll(FeaturePermission.LOCATION.permissions)
             }
         }
 
-        // Filter to only permissions not yet granted
-        return requiredPermissions.filter { permission ->
+        val missingPermissions = requiredPermissions.filter { permission ->
             ActivityCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED
         }
+
+        return MissingFeatureAccess(
+            runtimePermissions = missingPermissions,
+            specialAccesses = specialAccesses.toList()
+        )
+    }
+
+    /**
+     * Check missing access specifically for Device Control onboarding.
+     */
+    fun getMissingDeviceControlAccess(context: Context): MissingFeatureAccess {
+        val runtimePermissions = FeaturePermission.DEVICE_CONTROL.permissions.filter { permission ->
+            ActivityCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED
+        }
+        val specialAccesses = buildList {
+            if (!hasNotificationListenerAccess(context)) {
+                add(SpecialAccess.NotificationListener)
+            }
+        }
+
+        return MissingFeatureAccess(
+            runtimePermissions = runtimePermissions,
+            specialAccesses = specialAccesses
+        )
+    }
+
+    /**
+     * Check which permissions are missing for the given assistants.
+     * @return List of permission strings that need to be requested
+     */
+    fun getMissingPermissions(context: Context, assistants: List<Assistant>): List<String> {
+        return getMissingFeatureAccess(context, assistants).runtimePermissions
     }
 
     /**
@@ -83,6 +129,16 @@ object PermissionChecker {
                isPermissionGranted(context, Manifest.permission.ACCESS_FINE_LOCATION)
     }
 
+    fun hasNotificationListenerAccess(context: Context): Boolean {
+        return NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
+    }
+
+    fun createSpecialAccessIntent(access: SpecialAccess): Intent {
+        return when (access) {
+            SpecialAccess.NotificationListener -> Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+        }
+    }
+
     /**
      * Get human-readable descriptions for a list of permissions.
      */
@@ -95,6 +151,13 @@ object PermissionChecker {
                 Manifest.permission.CAMERA -> "Camera access"
                 else -> null
             }
+        }
+    }
+
+    fun getFeatureAccessDescriptions(access: MissingFeatureAccess): List<String> {
+        return buildList {
+            addAll(getPermissionDescriptions(access.runtimePermissions))
+            addAll(access.specialAccesses.map { it.description })
         }
     }
 }

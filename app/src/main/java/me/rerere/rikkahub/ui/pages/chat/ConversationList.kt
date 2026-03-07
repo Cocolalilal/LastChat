@@ -147,54 +147,66 @@ fun ColumnScope.ConversationList(
             .focusable()
     )
 
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        // Back button when search is expanded
-        if (isSearchExpanded) {
-            IconButton(
-                onClick = {
-                    keyboardController?.hide()
-                    focusManager.clearFocus()
-                    onSearchExpandedChange(false)
-                    onSearchQueryChange("")
-                },
-                modifier = Modifier.size(36.dp)
-            ) {
-                Icon(
-                    Icons.Rounded.Close,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp)
-                )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (isSearchExpanded) {
+                IconButton(
+                    onClick = {
+                        keyboardController?.hide()
+                        focusManager.clearFocus()
+                        onSearchExpandedChange(false)
+                        onSearchQueryChange("")
+                    },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        Icons.Rounded.Close,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
+
+            TextField(
+                value = searchQuery,
+                onValueChange = onSearchQueryChange,
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(focusRequester)
+                    .onFocusChanged { focusState ->
+                        if (focusState.isFocused && !isSearchExpanded) {
+                            onSearchExpandedChange(true)
+                        }
+                    },
+                shape = RoundedCornerShape(50),
+                colors = TextFieldDefaults.colors(
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    disabledIndicatorColor = Color.Transparent,
+                ),
+                placeholder = {
+                    Text(stringResource(id = R.string.chat_page_search_placeholder))
+                },
+                singleLine = true
+            )
         }
 
-        TextField(
-            value = searchQuery,
-            onValueChange = onSearchQueryChange,
-            modifier = Modifier
-                .weight(1f)
-                .focusRequester(focusRequester)
-                .onFocusChanged { focusState ->
-                    if (focusState.isFocused && !isSearchExpanded) {
-                        onSearchExpandedChange(true)
-                    }
-                },
-            shape = RoundedCornerShape(50),
-            colors = TextFieldDefaults.colors(
-                focusedIndicatorColor = Color.Transparent,
-                unfocusedIndicatorColor = Color.Transparent,
-                disabledIndicatorColor = Color.Transparent,
-            ),
-            placeholder = {
-                Text(stringResource(id = R.string.chat_page_search_placeholder))
-            },
-            singleLine = true
-        )
+        AnimatedVisibility(visible = isSearchExpanded || searchQuery.isNotBlank()) {
+            Text(
+                text = stringResource(R.string.chat_page_search_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = if (isSearchExpanded) 44.dp else 12.dp)
+            )
+        }
     }
 
     // Auto-focus search field when expanded
@@ -306,6 +318,7 @@ fun ColumnScope.ConversationList(
                             onEditTitle = onEditTitle,
                             onConsolidate = onConsolidate,
                             onPin = onPin,
+                            searchQuery = searchQuery,
                             showUnconsolidatedDot = showUnconsolidatedDot,
                             showConsolidateOption = showConsolidateOption,
                             modifier = Modifier.animateItem(
@@ -424,6 +437,7 @@ private fun ConversationItem(
     onEditTitle: (Conversation, String) -> Unit = { _, _ -> },
     onConsolidate: (Conversation) -> Unit = {},
     onPin: (Conversation) -> Unit = {},
+    searchQuery: String = "",
     showUnconsolidatedDot: Boolean = false,
     showConsolidateOption: Boolean = false,
     onClick: (Conversation) -> Unit
@@ -471,6 +485,8 @@ private fun ConversationItem(
     }
     var showEditTitleDialog by remember { mutableStateOf(false) }
     var editedTitle by remember(conversation.id) { mutableStateOf(conversation.title) }
+    val messageOnlyMatch = searchQuery.isNotBlank() &&
+        !conversation.title.contains(searchQuery, ignoreCase = true)
     Box(
         modifier = modifier
             .graphicsLayer {
@@ -499,12 +515,25 @@ private fun ConversationItem(
                 .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = conversation.title.ifBlank { stringResource(id = R.string.chat_page_new_message) },
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(Modifier.weight(1f))
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = conversation.title.ifBlank { stringResource(id = R.string.chat_page_new_message) },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                AnimatedVisibility(visible = messageOnlyMatch) {
+                    Text(
+                        text = stringResource(R.string.chat_page_search_message_match),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
             
             // Unconsolidated Dot
             AnimatedVisibility(showUnconsolidatedDot && !conversation.isConsolidated) {

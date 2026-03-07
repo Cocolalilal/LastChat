@@ -1,0 +1,56 @@
+package me.rerere.rikkahub.data.model
+
+import kotlinx.serialization.json.Json
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import kotlin.uuid.Uuid
+
+class AssistantSerializationTest {
+    @Test
+    fun olderAssistantJsonDefaultsSpontaneousMessagingFields() {
+        val assistant = Json.decodeFromString<Assistant>(
+            """
+            {
+              "id": "00000000-0000-0000-0000-000000000001",
+              "name": "Legacy Assistant"
+            }
+            """.trimIndent()
+        )
+
+        assertFalse(assistant.enableSpontaneous)
+        assertEquals(7, assistant.notificationStartHour)
+        assertEquals(22, assistant.notificationEndHour)
+        assertEquals(4, assistant.notificationFrequencyHours)
+        assertEquals(0L, assistant.lastNotificationTime)
+        assertEquals("", assistant.lastNotificationContent)
+        assertEquals("", assistant.spontaneousPrompt)
+    }
+
+    @Test
+    fun spontaneousMessagingFieldsRoundTrip() {
+        val assistant = Assistant(
+            id = Uuid.parse("00000000-0000-0000-0000-000000000010"),
+            name = "Iris",
+            enableSpontaneous = true,
+            notificationStartHour = 9,
+            notificationEndHour = 1,
+            notificationFrequencyHours = 6,
+            lastNotificationTime = 123456789L,
+            lastNotificationContent = "Thinking about you.",
+            spontaneousPrompt = "Use {{history}} and {{memories}}",
+        )
+
+        val encoded = Json.encodeToString(Assistant.serializer(), assistant)
+        val decoded = Json.decodeFromString(Assistant.serializer(), encoded)
+
+        assertTrue(decoded.enableSpontaneous)
+        assertEquals(9, decoded.notificationStartHour)
+        assertEquals(1, decoded.notificationEndHour)
+        assertEquals(6, decoded.notificationFrequencyHours)
+        assertEquals(123456789L, decoded.lastNotificationTime)
+        assertEquals("Thinking about you.", decoded.lastNotificationContent)
+        assertEquals("Use {{history}} and {{memories}}", decoded.spontaneousPrompt)
+    }
+}

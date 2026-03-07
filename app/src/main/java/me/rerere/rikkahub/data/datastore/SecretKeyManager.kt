@@ -197,6 +197,7 @@ class SecretKeyManager(
                 is TTSProviderSetting.Gemini -> oldTtsProvider.apiKey
                 is TTSProviderSetting.MiniMax -> oldTtsProvider.apiKey
                 is TTSProviderSetting.ElevenLabs -> oldTtsProvider.apiKey
+                is TTSProviderSetting.Qwen -> oldTtsProvider.apiKey
                 is TTSProviderSetting.SystemTTS -> ""
             }
             val newKey = when (newTtsProvider) {
@@ -204,6 +205,7 @@ class SecretKeyManager(
                 is TTSProviderSetting.Gemini -> newTtsProvider.apiKey
                 is TTSProviderSetting.MiniMax -> newTtsProvider.apiKey
                 is TTSProviderSetting.ElevenLabs -> newTtsProvider.apiKey
+                is TTSProviderSetting.Qwen -> newTtsProvider.apiKey
                 is TTSProviderSetting.SystemTTS -> ""
             }
             
@@ -282,6 +284,13 @@ class SecretKeyManager(
                 } else provider
             }
 
+            is TTSProviderSetting.Qwen -> {
+                if (provider.apiKey.isNotBlank()) {
+                    setTtsApiKey(provider.id, provider.apiKey)
+                    provider.copy(apiKey = "")
+                } else provider
+            }
+
             is TTSProviderSetting.SystemTTS -> provider
         }
     }
@@ -347,6 +356,10 @@ class SecretKeyManager(
             }
 
             is TTSProviderSetting.ElevenLabs -> {
+                provider.copy(apiKey = getTtsApiKey(provider.id, provider.apiKey))
+            }
+
+            is TTSProviderSetting.Qwen -> {
                 provider.copy(apiKey = getTtsApiKey(provider.id, provider.apiKey))
             }
 

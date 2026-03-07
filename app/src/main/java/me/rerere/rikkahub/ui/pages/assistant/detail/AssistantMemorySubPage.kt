@@ -80,8 +80,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastForEach
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import me.rerere.ai.provider.Model
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantMemory
@@ -124,6 +122,7 @@ private enum class MemorySortOrder(val displayName: String) {
 @Composable
 fun AssistantMemorySettings(
     assistant: Assistant,
+    hasSummarizerModelConfigured: Boolean,
     memories: List<AssistantMemory>,
     onUpdateAssistant: (Assistant) -> Unit,
     onAddMemory: (AssistantMemory) -> Unit,
@@ -138,7 +137,7 @@ fun AssistantMemorySettings(
     needsEmbeddingRegeneration: Boolean = false,
     initialMemoryTab: Int? = null,  // 0 = Core, 1 = Episodic
     scrollToMemoryId: Int? = null,
-    onNavigateToModels: () -> Unit = {}
+    onNavigateToSummarizerSettings: () -> Unit = {}
 ) {
     val memoryDialogState = useEditState<AssistantMemory> {
         if (it.id == 0) {
@@ -196,13 +195,6 @@ fun AssistantMemorySettings(
     val memorySearchQuery by assistantDetailVM.memorySearchQuery.collectAsState()
     val currentEmbeddingModelId by assistantDetailVM.currentEmbeddingModelId.collectAsState()
     val currentMode = getMemoryMode(assistant)
-    
-    // Get all models for summarizer picker
-    val providers by assistantDetailVM.providers.collectAsStateWithLifecycle()
-    val allModels = remember(providers) { providers.flatMap { it.models } }
-    val defaultModel = Model("default", "Default (Background Model)")
-    val modelOptions = listOf(defaultModel) + allModels
-    val selectedModel = allModels.find { it.id == assistant.summarizerModelId } ?: defaultModel
 
     Column(
         modifier = Modifier
@@ -360,8 +352,8 @@ fun AssistantMemorySettings(
                     assistant = assistant,
                     onUpdateAssistant = onUpdateAssistant,
                     onConsolidate = { assistantDetailVM.consolidateMemories(true) },
-                    showSummarizerWarning = assistant.summarizerModelId == null,
-                    onNavigateToModels = onNavigateToModels
+                    showSummarizerWarning = !hasSummarizerModelConfigured,
+                    onNavigateToSummarizerSettings = onNavigateToSummarizerSettings
                 )
             }
         }
@@ -662,7 +654,7 @@ private fun SummarizerWarningBanner(
                 modifier = Modifier.size(20.dp)
             )
             Text(
-                text = "Select a summarizer model in the Models tab",
+                text = stringResource(R.string.setting_model_page_summarizer_missing_banner),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
@@ -676,7 +668,7 @@ private fun ConsolidationSettingsCard(
     onUpdateAssistant: (Assistant) -> Unit,
     onConsolidate: () -> Unit,
     showSummarizerWarning: Boolean = false,
-    onNavigateToModels: () -> Unit = {}
+    onNavigateToSummarizerSettings: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier.clip(RoundedCornerShape(24.dp)),
@@ -689,7 +681,7 @@ private fun ConsolidationSettingsCard(
             exit = fadeOut() + shrinkVertically()
         ) {
             Surface(
-                onClick = onNavigateToModels,
+                onClick = onNavigateToSummarizerSettings,
                 color = MaterialTheme.colorScheme.errorContainer,
                 shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
             ) {
@@ -705,7 +697,7 @@ private fun ConsolidationSettingsCard(
                         modifier = Modifier.size(20.dp)
                     )
                     Text(
-                        text = "Select a summarizer model in the Models tab",
+                        text = stringResource(R.string.setting_model_page_summarizer_missing_banner),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onErrorContainer
                     )
