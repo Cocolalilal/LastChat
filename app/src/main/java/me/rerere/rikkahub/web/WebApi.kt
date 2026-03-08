@@ -163,6 +163,16 @@ fun Application.configureWebApi(
             call.respondBuiltClientAsset(context, "favicon.ico")
         }
 
+        get("/{assetName}") {
+            val assetName = call.parameters["assetName"]
+                ?: throw NotFoundException("Asset not found")
+            if (!assetName.contains('.')) {
+                throw NotFoundException("Asset not found")
+            }
+            validateRelativePath(assetName)
+            call.respondBuiltClientAsset(context, assetName)
+        }
+
         get("/assets/{path...}") {
             val relativePath = call.parameters.getAll("path")?.joinToString("/")
                 ?: throw NotFoundException("Asset not found")
@@ -460,12 +470,38 @@ private fun Route.webRoutes(
             call.respond(HttpStatusCode.OK, mapOf("status" to "updated"))
         }
 
+        post("/{id}/skills") {
+            val conversationId = call.parameters["id"].toUuid("conversation id")
+            val request = call.receive<UpdateConversationSkillsRequest>()
+            val settings = settingsStore.settingsFlow.value
+            val validSkillIds = settings.skills.map { it.id }.toSet()
+            val requestedSkillIds = request.skillIds.map { it.toUuid("skill id") }.toSet()
+            if (!validSkillIds.containsAll(requestedSkillIds)) {
+                throw BadRequestException("skillIds contains unknown skill id")
+            }
+
+            val conversation = withContext(Dispatchers.IO) {
+                conversationRepo.getConversationById(conversationId)
+            } ?: throw NotFoundException("Conversation not found")
+
+            chatService.saveConversation(
+                conversationId,
+                conversation.copy(enabledModeIds = requestedSkillIds, updateAt = Instant.now()),
+            )
+            call.respond(HttpStatusCode.OK, mapOf("status" to "updated"))
+        }
+
         post("/{id}/messages") {
             val conversationId = call.parameters["id"].toUuid("conversation id")
             val request = call.receive<SendMessageRequest>()
 
             chatService.initializeConversation(conversationId)
-            chatService.sendMessage(conversationId, request.parts.toUiMessageParts(), answer = true)
+            chatService.sendMessage(
+                conversationId = conversationId,
+                content = request.parts.toUiMessageParts(),
+                answer = true,
+                suppressCompletionNotification = true,
+            )
 
             call.respond(HttpStatusCode.Accepted, mapOf("status" to "accepted"))
         }
@@ -519,7 +555,11 @@ private fun Route.webRoutes(
                 .firstOrNull { it.id == messageId }
                 ?: throw NotFoundException("Message not found")
 
-            chatService.regenerateAtMessage(conversationId, message)
+            chatService.regenerateAtMessage(
+                conversationId = conversationId,
+                message = message,
+                suppressCompletionNotification = true,
+            )
             call.respond(HttpStatusCode.Accepted, mapOf("status" to "accepted"))
         }
 
@@ -1013,6 +1053,7 @@ private fun ConversationDto.singleNodeDiffOrNull(current: ConversationDto): Node
     if (
         title != current.title ||
         isPinned != current.isPinned ||
+        enabledSkillIds != current.enabledSkillIds ||
         truncateIndex != current.truncateIndex ||
         chatSuggestions != current.chatSuggestions
     ) {

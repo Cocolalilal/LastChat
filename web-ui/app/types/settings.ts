@@ -42,6 +42,8 @@ export interface AssistantQuickMessage {
 export interface ModeInjectionProfile {
   id: string;
   name: string;
+  description?: string;
+  argumentHint?: string | null;
   enabled?: boolean;
   [key: string]: unknown;
 }

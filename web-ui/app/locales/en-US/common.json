@@ -48,7 +48,7 @@
     "edit_custom_css": "Edit custom CSS",
     "custom_theme_saved": "Custom theme saved",
     "welcome_back": "Welcome back",
-    "new_conversation": "New conversation",
+    "new_conversation": "New Chat",
     "conversations": "Conversations",
     "loading": "Loading...",
     "no_conversations": "No conversations yet",
@@ -61,7 +61,7 @@
     "no_assistants_by_tag": "No assistants match the selected tags"
   },
   "conversation_search": {
-    "search_conversations": "Search conversations",
+    "search_conversations": "Search Chats",
     "search_failed": "Search failed",
     "input_placeholder": "Search message content...",
     "searching": "Searching...",

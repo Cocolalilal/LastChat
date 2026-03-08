@@ -15,6 +15,20 @@ internal const val SPONTANEOUS_GLOBAL_JITTER_MINUTES = 15L
 internal const val EXTRA_IS_SPONTANEOUS_NOTIFICATION = "is_spontaneous_notification"
 internal const val EXTRA_SPONTANEOUS_EVENT_ID = "spontaneous_event_id"
 internal const val EXTRA_SPONTANEOUS_MESSAGE = "spontaneous_message"
+internal const val EXTRA_SPONTANEOUS_RELATION = "spontaneous_relation"
+
+enum class SpontaneousMessageRelation(
+    val wireValue: String,
+) {
+    RECENT_CHAT("recent_chat"),
+    UNRELATED("unrelated");
+
+    companion object {
+        fun fromWireValue(value: String?): SpontaneousMessageRelation? {
+            return entries.firstOrNull { it.wireValue == value }
+        }
+    }
+}
 
 data class SpontaneousCandidate(
     val assistantId: Uuid,
@@ -26,6 +40,7 @@ data class SpontaneousResponse(
     val reason: String,
     val title: String?,
     val content: String?,
+    val relation: SpontaneousMessageRelation?,
 )
 
 object SpontaneousMessaging {
@@ -77,6 +92,9 @@ object SpontaneousMessaging {
             reason = json["reason"]?.jsonPrimitiveOrNull?.contentOrNull ?: "",
             title = json["title"]?.jsonPrimitiveOrNull?.contentOrNull,
             content = json["content"]?.jsonPrimitiveOrNull?.contentOrNull,
+            relation = SpontaneousMessageRelation.fromWireValue(
+                json["relation"]?.jsonPrimitiveOrNull?.contentOrNull
+            ),
         )
     }
 

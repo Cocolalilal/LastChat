@@ -21,7 +21,8 @@ import { isWebAuthLocked, onWebAuthStateChange } from "./services/api";
 const queryClient = new QueryClient();
 
 export const links: Route.LinksFunction = () => [
-  { rel: "icon", href: "/favicon.ico", type: "image/x-icon", sizes: "any" },
+  { rel: "icon", href: "/favicon.png", type: "image/png", sizes: "512x512" },
+  { rel: "apple-touch-icon", href: "/favicon.png" },
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
   {
     rel: "preconnect",
@@ -30,7 +31,7 @@ export const links: Route.LinksFunction = () => [
   },
   {
     rel: "stylesheet",
-    href: "https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap",
+    href: "https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@8..144,100..1000&family=Google+Sans+Code:wght@300..800&display=swap",
   },
 ];
 

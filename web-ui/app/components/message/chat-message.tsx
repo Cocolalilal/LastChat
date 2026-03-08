@@ -332,7 +332,7 @@ const ChatMessageActionsRow = React.memo(({
   return (
     <div
       className={cn(
-        "flex w-full items-center gap-1 px-1",
+        "flex w-full items-center gap-1 px-1 opacity-75 transition-opacity hover:opacity-100",
         alignRight ? "justify-end" : "justify-start",
       )}
     >
@@ -497,7 +497,7 @@ const ChatMessageNerdLineRow = React.memo(({
   return (
     <div
       className={cn(
-        "flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[11px] text-muted-foreground/50",
+        "flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[11px] text-muted-foreground/45",
         alignRight ? "justify-end" : "justify-start",
       )}
     >
@@ -540,7 +540,7 @@ export const ChatMessage = React.memo(({
 
   return (
     <div
-      className={cn("flex flex-col gap-4", isUser ? "items-end" : "items-start")}
+      className={cn("flex flex-col gap-3", isUser ? "items-end" : "items-start")}
       data-message-role={message.role.toLowerCase()}
       data-message-loading={loading || undefined}
     >
@@ -558,7 +558,9 @@ export const ChatMessage = React.memo(({
             data-message-bubble
             className={cn(
               "flex flex-col gap-2 text-sm",
-              isUser ? "max-w-[85%] rounded-lg bg-muted px-4 py-3" : "w-full",
+              isUser
+                ? "max-w-[78%] rounded-[1.6rem] border border-border/70 bg-card px-4 py-3.5 shadow-sm"
+                : "w-full rounded-[1.75rem] bg-transparent px-0 py-0",
             )}
           >
             <MessageParts

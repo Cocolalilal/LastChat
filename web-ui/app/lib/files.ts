@@ -14,17 +14,16 @@ export function resolveFileUrl(url: string): string {
   if (url.startsWith("http://") || url.startsWith("https://")) {
     return url;
   }
+  if (url.startsWith("/api/")) {
+    return appendWebAuthQuery(url);
+  }
 
-  // Handle file:// protocol URLs from Android
-  if (url.startsWith("file://")) {
-    // Extract path after /files/
-    // Format: file:///data/user/0/package.name/files/upload/xxx
-    const match = url.match(/file:\/\/.*?\/files\/(.+)/);
-    if (match && match[1]) {
-      return appendWebAuthQuery(`/api/files/path/${match[1]}`);
-    }
-    // If we can't extract the path, return as-is (will fail to load with error)
-    return url;
+  if (
+    url.startsWith("file://") ||
+    url.startsWith("content://") ||
+    url.startsWith("android.resource://")
+  ) {
+    return appendWebAuthQuery(`/api/files/content?uri=${encodeURIComponent(url)}`);
   }
 
   // Relative path - convert to API endpoint

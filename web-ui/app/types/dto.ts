@@ -63,6 +63,7 @@ export interface ConversationDto {
   assistantId: string;
   title: string;
   messages: MessageNodeDto[];
+  enabledSkillIds: string[];
   truncateIndex: number;
   chatSuggestions: string[];
   isPinned: boolean;

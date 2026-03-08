@@ -2,6 +2,7 @@ package me.rerere.rikkahub.data.ai
 
 import kotlinx.datetime.LocalDateTime
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -120,6 +121,46 @@ class TimeAwarenessPromptTest {
     }
 
     @Test
+    fun usesCurrentMessageTimestampInsteadOfGenerationTimeForGap() {
+        val messages = listOf(
+            messageAt("2026-03-06T11:20:00"),
+            messageAt("2026-03-06T12:00:00")
+        )
+
+        val block = buildTimeAwarenessBlock(
+            enabled = true,
+            fullMessages = messages,
+            retainedMessages = messages,
+            now = ZonedDateTime.of(2026, 3, 6, 13, 10, 0, 0, zoneId)
+        )
+
+        assertNotNull(block)
+        assertTrue(block!!.contains("About 40 minutes have passed since the last message."))
+        assertFalse(block.contains("About 1 hour and 50 minutes have passed since the last message."))
+    }
+
+    @Test
+    fun skipsToolOnlyMessagesWhenFindingPreviousConversationMessage() {
+        val messages = listOf(
+            assistantMessageAt("2026-03-06T12:00:00"),
+            toolCallAt("2026-03-06T12:22:00"),
+            toolResultAt("2026-03-06T12:24:00"),
+            messageAt("2026-03-06T12:40:00")
+        )
+
+        val block = buildTimeAwarenessBlock(
+            enabled = true,
+            fullMessages = messages,
+            retainedMessages = messages,
+            now = ZonedDateTime.of(2026, 3, 6, 12, 41, 0, 0, zoneId)
+        )
+
+        assertNotNull(block)
+        assertTrue(block!!.contains("About 40 minutes have passed since the last message."))
+        assertFalse(block.contains("About 20 minutes have passed since the last message."))
+    }
+
+    @Test
     fun detectsDayMonthAndYearRollovers() {
         val messages = listOf(
             messageAt("2025-12-31T23:30:00"),
@@ -217,6 +258,37 @@ class TimeAwarenessPromptTest {
     private fun messageAt(timestamp: String): UIMessage = UIMessage(
         role = MessageRole.USER,
         parts = listOf(UIMessagePart.Text("test")),
+        createdAt = LocalDateTime.parse(timestamp)
+    )
+
+    private fun assistantMessageAt(timestamp: String): UIMessage = UIMessage(
+        role = MessageRole.ASSISTANT,
+        parts = listOf(UIMessagePart.Text("test")),
+        createdAt = LocalDateTime.parse(timestamp)
+    )
+
+    private fun toolCallAt(timestamp: String): UIMessage = UIMessage(
+        role = MessageRole.ASSISTANT,
+        parts = listOf(
+            UIMessagePart.ToolCall(
+                toolCallId = "call-1",
+                toolName = "search_web",
+                arguments = "{}"
+            )
+        ),
+        createdAt = LocalDateTime.parse(timestamp)
+    )
+
+    private fun toolResultAt(timestamp: String): UIMessage = UIMessage(
+        role = MessageRole.ASSISTANT,
+        parts = listOf(
+            UIMessagePart.ToolResult(
+                toolCallId = "call-1",
+                toolName = "search_web",
+                content = JsonPrimitive("ok"),
+                arguments = JsonPrimitive("{}")
+            )
+        ),
         createdAt = LocalDateTime.parse(timestamp)
     )
 }

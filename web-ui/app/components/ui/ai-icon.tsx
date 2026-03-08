@@ -1,6 +1,7 @@
 import * as React from "react";
 
 import { cn } from "~/lib/utils";
+import { appendWebAuthQuery } from "~/services/api";
 
 export interface AIIconProps {
   name: string;
@@ -29,19 +30,21 @@ export function AIIcon({
   const normalizedName = name.trim() || "auto";
   const fallbackText = toFallbackText(normalizedName);
   const src = React.useMemo(
-    () => `/api/ai-icon?name=${encodeURIComponent(normalizedName)}`,
+    () => appendWebAuthQuery(`/api/ai-icon?name=${encodeURIComponent(normalizedName)}`),
     [normalizedName],
   );
+  const [loaded, setLoaded] = React.useState(false);
   const [loadFailed, setLoadFailed] = React.useState(false);
 
   React.useEffect(() => {
+    setLoaded(false);
     setLoadFailed(false);
   }, [src]);
 
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary",
+        "relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary",
         loading && "animate-pulse",
         className,
       )}
@@ -49,20 +52,32 @@ export function AIIcon({
       aria-label={normalizedName}
       title={normalizedName}
     >
-      {loadFailed ? (
-        <span className="text-[10px] font-medium text-muted-foreground">{fallbackText}</span>
-      ) : (
+      <span
+        className={cn(
+          "text-[10px] font-medium text-muted-foreground transition-opacity",
+          loaded && !loadFailed && "opacity-0",
+        )}
+      >
+        {fallbackText}
+      </span>
+      {!loadFailed ? (
         <img
           src={src}
           alt={normalizedName}
-          className={cn("h-[72%] w-[72%] object-contain", imageClassName)}
-          loading="lazy"
+          className={cn(
+            "absolute h-[72%] w-[72%] object-contain transition-opacity",
+            loaded ? "opacity-100" : "opacity-0",
+            imageClassName,
+          )}
           decoding="async"
+          onLoad={() => {
+            setLoaded(true);
+          }}
           onError={() => {
             setLoadFailed(true);
           }}
         />
-      )}
+      ) : null}
     </span>
   );
 }

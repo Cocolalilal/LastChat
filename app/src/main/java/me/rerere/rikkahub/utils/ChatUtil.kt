@@ -35,6 +35,7 @@ fun navigateToChatPage(
     initText: String? = null,
     initFiles: List<Uri> = emptyList(),
     searchQuery: String? = null,
+    persistenceMode: String? = null,
 ) {
     Log.i(TAG, "navigateToChatPage: navigate to $chatId")
     navController.navigate(
@@ -43,6 +44,7 @@ fun navigateToChatPage(
             text = initText,
             files = initFiles.map { it.toString() },
             searchQuery = searchQuery,
+            persistenceMode = persistenceMode,
         ),
     ) {
         popUpTo(0) {

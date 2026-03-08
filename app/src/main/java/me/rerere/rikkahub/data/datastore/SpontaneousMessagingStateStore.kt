@@ -11,8 +11,8 @@ class SpontaneousMessagingStateStore(context: Context) {
         private const val PREFS_NAME = "spontaneous_messaging_state"
         private const val KEY_GLOBAL_QUIET_UNTIL = "global_quiet_until"
         private const val KEY_LAST_SENDER_ASSISTANT_ID = "last_sender_assistant_id"
-        private const val KEY_EVENT_RECORDS = "event_records"
-        private const val MAX_EVENT_RECORDS = 32
+        private const val KEY_CONSUMED_EVENT_RECORDS = "consumed_event_records"
+        private const val MAX_CONSUMED_EVENT_RECORDS = 64
     }
 
     private val prefs: SharedPreferences =
@@ -39,47 +39,42 @@ class SpontaneousMessagingStateStore(context: Context) {
             .apply()
     }
 
-    fun getFallbackConversation(eventId: String): Uuid? {
-        return loadEventRecords()
-            .firstOrNull { it.eventId == eventId }
-            ?.fallbackConversationId
-            ?.let { runCatching { Uuid.parse(it) }.getOrNull() }
+    fun isEventConsumed(eventId: String): Boolean {
+        return loadConsumedEventRecords().any { it.eventId == eventId }
     }
 
-    fun rememberFallbackConversation(eventId: String, conversationId: Uuid) {
+    fun markEventConsumed(eventId: String) {
         val now = System.currentTimeMillis()
-        val updated = loadEventRecords()
+        val updated = loadConsumedEventRecords()
             .filterNot { it.eventId == eventId }
             .let { records ->
                 listOf(
-                    SpontaneousNotificationEventRecord(
+                    ConsumedSpontaneousEventRecord(
                         eventId = eventId,
-                        fallbackConversationId = conversationId.toString(),
                         updatedAt = now,
                     )
                 ) + records
             }
-            .take(MAX_EVENT_RECORDS)
-        saveEventRecords(updated)
+            .take(MAX_CONSUMED_EVENT_RECORDS)
+        saveConsumedEventRecords(updated)
     }
 
-    private fun loadEventRecords(): List<SpontaneousNotificationEventRecord> {
-        val stored = prefs.getString(KEY_EVENT_RECORDS, null) ?: return emptyList()
+    private fun loadConsumedEventRecords(): List<ConsumedSpontaneousEventRecord> {
+        val stored = prefs.getString(KEY_CONSUMED_EVENT_RECORDS, null) ?: return emptyList()
         return runCatching {
-            JsonInstant.decodeFromString<List<SpontaneousNotificationEventRecord>>(stored)
+            JsonInstant.decodeFromString<List<ConsumedSpontaneousEventRecord>>(stored)
         }.getOrDefault(emptyList())
     }
 
-    private fun saveEventRecords(records: List<SpontaneousNotificationEventRecord>) {
+    private fun saveConsumedEventRecords(records: List<ConsumedSpontaneousEventRecord>) {
         prefs.edit()
-            .putString(KEY_EVENT_RECORDS, JsonInstant.encodeToString(records))
+            .putString(KEY_CONSUMED_EVENT_RECORDS, JsonInstant.encodeToString(records))
             .apply()
     }
 }
 
 @Serializable
-data class SpontaneousNotificationEventRecord(
+data class ConsumedSpontaneousEventRecord(
     val eventId: String,
-    val fallbackConversationId: String? = null,
     val updatedAt: Long = 0L,
 )

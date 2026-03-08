@@ -92,6 +92,7 @@ import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.rememberChatInputState
 import me.rerere.rikkahub.ui.hooks.useEditState
+import me.rerere.rikkahub.service.ChatPersistenceMode
 import me.rerere.rikkahub.ui.theme.AssistantChatTheme
 import me.rerere.rikkahub.utils.base64Decode
 import me.rerere.rikkahub.utils.createChatFilesByContents
@@ -103,7 +104,13 @@ import org.koin.core.parameter.parametersOf
 import kotlin.uuid.Uuid
 
 @Composable
-fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = null) {
+fun ChatPage(
+    id: Uuid,
+    text: String?,
+    files: List<Uri>,
+    searchQuery: String? = null,
+    persistenceMode: String? = null,
+) {
     val vm: ChatVM = koinViewModel(
         parameters = {
             parametersOf(id.toString())
@@ -124,9 +131,14 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = n
     val setting by vm.settings.collectAsStateWithLifecycle()
     val conversation by vm.conversation.collectAsStateWithLifecycle()
     val loadingJob by vm.conversationJob.collectAsStateWithLifecycle()
+    val conversationPersistenceMode by vm.conversationPersistenceMode.collectAsStateWithLifecycle()
     val currentChatModel by vm.currentChatModel.collectAsStateWithLifecycle()
     val enableWebSearch by vm.enableWebSearch.collectAsStateWithLifecycle()
     val currentSearchMode by vm.currentSearchMode.collectAsStateWithLifecycle()
+
+    LaunchedEffect(persistenceMode) {
+        vm.applyRoutePersistenceMode(ChatPersistenceMode.fromRouteValue(persistenceMode))
+    }
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val softwareKeyboardController = LocalSoftwareKeyboardController.current
@@ -224,6 +236,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = n
                     enableWebSearch = enableWebSearch,
                     currentSearchMode = currentSearchMode,
                     currentChatModel = currentChatModel,
+                    conversationPersistenceMode = conversationPersistenceMode,
                     bigScreen = true,
                     initialSearchQuery = searchQuery
                 )
@@ -255,6 +268,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = n
                     enableWebSearch = enableWebSearch,
                     currentSearchMode = currentSearchMode,
                     currentChatModel = currentChatModel,
+                    conversationPersistenceMode = conversationPersistenceMode,
                     bigScreen = false,
                     initialSearchQuery = searchQuery
                 )
@@ -280,13 +294,20 @@ private fun ChatPageContent(
     enableWebSearch: Boolean,
     currentSearchMode: me.rerere.rikkahub.data.model.AssistantSearchMode,
     currentChatModel: Model?,
+    conversationPersistenceMode: ChatPersistenceMode,
     initialSearchQuery: String? = null,
 ) {
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val context = LocalContext.current
     var previewMode by rememberSaveable { mutableStateOf(false) }
-    var isTemporaryChat by rememberSaveable { mutableStateOf(false) }
+    var manualTemporaryChat by rememberSaveable { mutableStateOf(false) }
+    val activePersistenceMode = when {
+        conversationPersistenceMode == ChatPersistenceMode.PERSIST_ON_REPLY -> ChatPersistenceMode.PERSIST_ON_REPLY
+        manualTemporaryChat || conversationPersistenceMode == ChatPersistenceMode.TEMPORARY -> ChatPersistenceMode.TEMPORARY
+        else -> ChatPersistenceMode.NORMAL
+    }
+    val isTemporaryChat = activePersistenceMode == ChatPersistenceMode.TEMPORARY
 
     // State for regeneration confirmation dialog
     var showRegenerateConfirmDialog by rememberSaveable { mutableStateOf(false) }
@@ -351,7 +372,9 @@ private fun ChatPageContent(
                             vm.updateSettings(newSettings)
                         },
                         onToggleTemporaryChat = {
-                            isTemporaryChat = !isTemporaryChat
+                            if (conversationPersistenceMode != ChatPersistenceMode.PERSIST_ON_REPLY) {
+                                manualTemporaryChat = !manualTemporaryChat
+                            }
                         }
                     )
                 },
@@ -668,7 +691,7 @@ private fun ChatPageContent(
                         if (currentChatModel != null) {
                             vm.handleMessageSend(
                                 listOf(me.rerere.ai.ui.UIMessagePart.Text(suggestion)),
-                                isTemporaryChat = isTemporaryChat
+                                persistenceMode = activePersistenceMode
                             )
                             scope.launch {
                                 chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
@@ -702,7 +725,10 @@ private fun ChatPageContent(
                                 toaster.show("Please select a model first", type = ToastType.Error)
                                 return@MinimalChatInput
                             }
-                            vm.handleMessageSend(inputState.getContents(), isTemporaryChat = isTemporaryChat)
+                            vm.handleMessageSend(
+                                inputState.getContents(),
+                                persistenceMode = activePersistenceMode
+                            )
                             scope.launch {
                                 chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
                             }
@@ -720,7 +746,11 @@ private fun ChatPageContent(
                                 toaster.show("Please select a model first", type = ToastType.Error)
                                 return@MinimalChatInput
                             }
-                            vm.handleMessageSend(content = inputState.getContents(), answer = false, isTemporaryChat = isTemporaryChat)
+                            vm.handleMessageSend(
+                                content = inputState.getContents(),
+                                answer = false,
+                                persistenceMode = activePersistenceMode
+                            )
                             scope.launch {
                                 chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
                             }

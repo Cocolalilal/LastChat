@@ -8,15 +8,15 @@
     "empty": "No MCP servers available"
   },
   "injection": {
-    "title": "Prompt Injection",
-    "description": "Enable mode injections and lorebooks for current assistant",
-    "update_failed": "Failed to update prompt injections",
-    "tab_mode": "Mode Injection",
+    "title": "Skills",
+    "description": "Enable skills and lorebooks for the current assistant",
+    "update_failed": "Failed to update skills",
+    "tab_mode": "Skills",
     "tab_lorebook": "Lorebook",
-    "unnamed_mode": "Unnamed Mode Injection",
+    "unnamed_mode": "Unnamed Skill",
     "unnamed_lorebook": "Unnamed Lorebook",
     "disabled": "Disabled",
-    "empty_mode": "No mode injections available",
+    "empty_mode": "No skills available",
     "empty_lorebook": "No lorebooks available"
   },
   "reasoning": {
@@ -100,6 +100,8 @@
     "placeholder_not_ready": "Please select a conversation first",
     "send_hint_enter": "Press Enter to send, Shift + Enter for newline",
     "send_hint_newline": "Press Shift + Enter to send, Enter for newline",
-    "long_text_as_file": "Long text converted to file attachment"
+    "long_text_as_file": "Long text converted to file attachment",
+    "slash_skills_title": "Skills",
+    "slash_skills_hint": "Type a slash command to activate a skill for this chat"
   }
 }

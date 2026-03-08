@@ -16,6 +16,32 @@ plugins {
     alias(libs.plugins.chaquopy)
 }
 
+val webUiDir = rootProject.file("web-ui")
+val webUiBuildDir = File(webUiDir, "build/client")
+
+val buildWebUi by tasks.registering(Exec::class) {
+    group = "build"
+    description = "Builds the React web UI bundle used by the Android app."
+    workingDir = webUiDir
+
+    inputs.dir(File(webUiDir, "app"))
+    inputs.dir(File(webUiDir, "public"))
+    inputs.file(File(webUiDir, "package.json"))
+    inputs.file(File(webUiDir, "react-router.config.ts"))
+    inputs.file(File(webUiDir, "tsconfig.json"))
+    inputs.file(File(webUiDir, "vite.config.ts"))
+    val packageLock = File(webUiDir, "package-lock.json")
+    if (packageLock.exists()) {
+        inputs.file(packageLock)
+    }
+    outputs.dir(webUiBuildDir)
+
+    commandLine(
+        if (Os.isFamily(Os.FAMILY_WINDOWS)) listOf("cmd", "/c", "npm", "run", "build")
+        else listOf("npm", "run", "build")
+    )
+}
+
 android {
     namespace = "me.rerere.rikkahub"
     compileSdk = 36
@@ -30,8 +56,8 @@ android {
         applicationId = "lastchat.rikkafork.cocolal"
         minSdk = 28
         targetSdk = 36
-        versionCode = 28
-        versionName = "1.3.7"
+        versionCode = 29
+        versionName = "1.3.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -86,8 +112,11 @@ android {
             } else {
                 signingConfig = signingConfigs.getByName("debug")
             }
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // Leave release shrinking off until the startup crash is traced to a
+            // specific keep-rule gap. Resource shrinking stays off because the app
+            // and embedded web UI load assets indirectly at runtime.
+            isMinifyEnabled = false
+            isShrinkResources = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -149,6 +178,10 @@ android {
 tasks.register("buildAll") {
     dependsOn("assembleRelease", "bundleRelease")
     description = "Build both APK and AAB"
+}
+
+tasks.named("preBuild") {
+    dependsOn(buildWebUi)
 }
 
 ksp {

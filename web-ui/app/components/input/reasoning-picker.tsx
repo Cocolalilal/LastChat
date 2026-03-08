@@ -176,7 +176,7 @@ export function ReasoningPickerButton({ disabled = false, className }: Reasoning
           size="sm"
           disabled={!canUse || loading}
           className={cn(
-            "h-8 rounded-full px-2.5 text-sm font-normal text-muted-foreground hover:text-foreground",
+            "h-9 rounded-full border border-border/60 bg-background/80 px-3 text-sm font-normal text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground",
             className,
           )}
         >

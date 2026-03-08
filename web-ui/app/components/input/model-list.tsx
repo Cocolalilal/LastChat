@@ -352,7 +352,7 @@ export function ModelList({ disabled = false, className, onChanged }: ModelListP
           variant="ghost"
           size="sm"
           className={cn(
-            "rounded-full px-0 text-muted-foreground hover:text-foreground sm:h-8 sm:max-w-64 sm:justify-start sm:gap-2 sm:px-2",
+            "h-9 rounded-full border border-border/60 bg-background/80 px-2.5 text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground sm:max-w-64 sm:justify-start sm:gap-2",
             className,
           )}
           disabled={disabled || !currentAssistant}

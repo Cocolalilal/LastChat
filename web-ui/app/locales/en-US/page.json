@@ -1,8 +1,8 @@
 {
   "conversations": {
     "meta": {
-      "title": "RikkaHub Web",
-      "description": "RikkaHub web client"
+      "title": "LastChat Web",
+      "description": "LastChat web client"
     },
     "preview": {
       "empty_message": "Empty message",
@@ -30,9 +30,6 @@
     "welcome_prompt": "How can I help you?",
     "user": {
       "default_name": "User"
-    },
-    "header": {
-      "select_conversation": "Select a conversation"
     }
   }
 }

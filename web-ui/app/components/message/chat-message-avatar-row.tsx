@@ -50,11 +50,11 @@ export function ChatMessageAvatarRow({
 
     return (
       <div className="flex w-full justify-end px-1">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 rounded-full bg-transparent px-1">
           <div className="min-w-0 text-right">
-            <div className="truncate text-sm font-medium text-foreground/90">{userName}</div>
+            <div className="truncate text-[13px] font-medium text-foreground/85">{userName}</div>
             {createdAtLabel ? (
-              <div className="truncate text-xs text-muted-foreground/80">{createdAtLabel}</div>
+              <div className="truncate text-[11px] text-muted-foreground">{createdAtLabel}</div>
             ) : null}
           </div>
           <UIAvatar name={userName} avatar={displaySetting.userAvatar} className="size-9" />
@@ -81,25 +81,25 @@ export function ChatMessageAvatarRow({
 
   return (
     <div className="flex w-full justify-start px-1">
-      <div className="flex min-w-0 items-center gap-2">
+      <div className="flex min-w-0 items-center gap-2 rounded-full bg-transparent px-1">
         {showModelIcon ? (
           useAssistantAvatar ? (
             <UIAvatar name={assistantName} avatar={assistant?.avatar} className="size-9" />
           ) : (
             <AIIcon
               name={model.modelId}
-              size={36}
+              size={34}
               loading={loading}
-              className="bg-secondary"
+              className="bg-secondary/90"
               imageClassName="h-[72%] w-[72%]"
             />
           )
         ) : null}
         {showModelName ? (
           <div className="min-w-0">
-            <div className="truncate text-sm font-medium text-foreground/90">{title}</div>
+            <div className="truncate text-[13px] font-medium text-foreground/85">{title}</div>
             {createdAtLabel ? (
-              <div className="truncate text-xs text-muted-foreground/80">{createdAtLabel}</div>
+              <div className="truncate text-[11px] text-muted-foreground">{createdAtLabel}</div>
             ) : null}
           </div>
         ) : null}

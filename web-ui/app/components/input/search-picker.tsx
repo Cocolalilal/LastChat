@@ -166,8 +166,8 @@ export function SearchPickerButton({ disabled = false, className }: SearchPicker
           size="sm"
           disabled={!canUse || loading}
           className={cn(
-            "h-8 rounded-full px-2 text-muted-foreground hover:text-foreground",
-            checked && "text-primary hover:bg-primary/10",
+            "h-9 rounded-full border border-border/60 bg-background/80 px-2.5 text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground",
+            checked && "border-primary/20 bg-primary/10 text-primary hover:bg-primary/20",
             className,
           )}
         >

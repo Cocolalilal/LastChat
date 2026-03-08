@@ -127,7 +127,9 @@ class ChatService(
     private val conversationReferences = ConcurrentHashMap<Uuid, Int>()
 
     // 记录哪些对话是临时对话（不持久化、不使用记忆）
-    private val temporaryConversations = ConcurrentHashMap.newKeySet<Uuid>()
+    private val _conversationPersistenceModes = MutableStateFlow<Map<Uuid, ChatPersistenceMode>>(emptyMap())
+    private val conversationPersistenceModes: StateFlow<Map<Uuid, ChatPersistenceMode>> =
+        _conversationPersistenceModes.asStateFlow()
 
     // 存储每个对话的生成任务状态
     private val _generationJobs = MutableStateFlow<Map<Uuid, Job?>>(emptyMap())
@@ -230,6 +232,33 @@ class ChatService(
         return generationJobs
     }
 
+    fun getConversationPersistenceModeFlow(conversationId: Uuid): Flow<ChatPersistenceMode> {
+        return conversationPersistenceModes.map { modes ->
+            modes[conversationId] ?: ChatPersistenceMode.NORMAL
+        }
+    }
+
+    fun getConversationPersistenceMode(conversationId: Uuid): ChatPersistenceMode {
+        return conversationPersistenceModes.value[conversationId] ?: ChatPersistenceMode.NORMAL
+    }
+
+    fun ensureConversationPersistenceMode(conversationId: Uuid, mode: ChatPersistenceMode) {
+        val currentMode = getConversationPersistenceMode(conversationId)
+        if (currentMode == ChatPersistenceMode.NORMAL && mode != ChatPersistenceMode.NORMAL) {
+            setConversationPersistenceMode(conversationId, mode)
+        }
+    }
+
+    private fun setConversationPersistenceMode(conversationId: Uuid, mode: ChatPersistenceMode) {
+        _conversationPersistenceModes.value = _conversationPersistenceModes.value.toMutableMap().apply {
+            if (mode == ChatPersistenceMode.NORMAL) {
+                remove(conversationId)
+            } else {
+                this[conversationId] = mode
+            }
+        }.toMap()
+    }
+
     private fun setGenerationJob(conversationId: Uuid, job: Job?) {
         if (job == null) {
             removeGenerationJob(conversationId)
@@ -252,6 +281,18 @@ class ChatService(
 
     // 初始化对话
     suspend fun initializeConversation(conversationId: Uuid) {
+        val inMemoryConversation = conversations[conversationId]?.value
+        if (inMemoryConversation != null &&
+            (
+                inMemoryConversation.messageNodes.isNotEmpty() ||
+                    getConversationPersistenceMode(conversationId) != ChatPersistenceMode.NORMAL
+                )
+        ) {
+            updateConversation(conversationId, inMemoryConversation)
+            settingsStore.updateAssistant(inMemoryConversation.assistantId)
+            return
+        }
+
         val conversation = conversationRepo.getConversationById(conversationId)
         if (conversation != null) {
             updateConversation(conversationId, conversation)
@@ -276,6 +317,24 @@ class ChatService(
             assistantId = assistant.id,
         ).updateCurrentMessages(assistant.presetMessages)
         saveConversation(conversation.id, conversation)
+        return conversation
+    }
+
+    suspend fun seedSpontaneousDraftConversation(
+        assistantId: Uuid,
+        content: String,
+        conversationId: Uuid = Uuid.random(),
+    ): Conversation {
+        val trimmedContent = content.trim()
+        require(trimmedContent.isNotBlank()) { "Spontaneous message content cannot be blank" }
+
+        val conversation = Conversation.ofId(
+            id = conversationId,
+            assistantId = assistantId,
+            messages = listOf(MessageNode.of(UIMessage.assistant(trimmedContent))),
+        )
+        setConversationPersistenceMode(conversationId, ChatPersistenceMode.PERSIST_ON_REPLY)
+        updateConversation(conversationId, conversation)
         return conversation
     }
 
@@ -305,6 +364,20 @@ class ChatService(
 
         saveConversation(conversation.id, conversation)
         return conversation
+    }
+
+    private suspend fun persistConversationToRepository(conversation: Conversation) {
+        if (conversation.title.isBlank() && conversation.messageNodes.isEmpty()) return
+
+        try {
+            if (conversationRepo.getConversationById(conversation.id) == null) {
+                conversationRepo.insertConversation(conversation)
+            } else {
+                conversationRepo.updateConversation(conversation)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     suspend fun getConversationSnapshot(conversationId: Uuid): Conversation? {
@@ -476,12 +549,22 @@ class ChatService(
         )
     }
 
-    fun sendMessage(conversationId: Uuid, content: List<UIMessagePart>, answer: Boolean=true, isTemporaryChat: Boolean = false) {
+    fun sendMessage(
+        conversationId: Uuid,
+        content: List<UIMessagePart>,
+        answer: Boolean = true,
+        persistenceMode: ChatPersistenceMode = ChatPersistenceMode.NORMAL,
+        suppressCompletionNotification: Boolean = false,
+    ) {
         // 标记为临时对话
-        if (isTemporaryChat) {
-            temporaryConversations.add(conversationId)
+        val currentMode = getConversationPersistenceMode(conversationId)
+        val effectiveMode = if (persistenceMode == ChatPersistenceMode.NORMAL) {
+            currentMode
+        } else {
+            persistenceMode
         }
-        
+        setConversationPersistenceMode(conversationId, effectiveMode)
+
         // 取消现有的生成任务
         getGenerationJob(conversationId)?.cancel()
 
@@ -496,14 +579,23 @@ class ChatService(
                         parts = content,
                     ).toMessageNode(),
                 )
-                saveConversation(conversationId, newConversation)
+                if (effectiveMode == ChatPersistenceMode.PERSIST_ON_REPLY) {
+                    updateConversation(conversationId, newConversation)
+                    persistConversationToRepository(newConversation)
+                    setConversationPersistenceMode(conversationId, ChatPersistenceMode.NORMAL)
+                } else {
+                    saveConversation(conversationId, newConversation)
+                }
 
                 // Record daily activity for streak tracking (persists even if chat is deleted)
                 conversationRepo.recordDailyActivity()
 
                 // 开始补全
                 if(answer){
-                    handleMessageComplete(conversationId)
+                    handleMessageComplete(
+                        conversationId = conversationId,
+                        suppressCompletionNotification = suppressCompletionNotification,
+                    )
                 }
 
                 _generationDoneFlow.emit(conversationId)
@@ -533,7 +625,8 @@ class ChatService(
         conversationId: Uuid,
         message: UIMessage,
         regenerateAssistantMsg: Boolean = true,
-        forceWipe: Boolean = false
+        forceWipe: Boolean = false,
+        suppressCompletionNotification: Boolean = false,
     ) {
         getGenerationJob(conversationId)?.cancel()
 
@@ -549,7 +642,10 @@ class ChatService(
                         messageNodes = conversation.messageNodes.subList(0, indexAt + 1)
                     )
                     saveConversation(conversationId, newConversation)
-                    handleMessageComplete(conversationId)
+                    handleMessageComplete(
+                        conversationId = conversationId,
+                        suppressCompletionNotification = suppressCompletionNotification,
+                    )
                 } else {
                     // TURN-BASED REGENERATION for assistant messages
                     if (regenerateAssistantMsg) {
@@ -599,7 +695,10 @@ class ChatService(
                                     messageNodes = nodesBeforeTurn
                                 )
                                 saveConversation(conversationId, newConversation)
-                                handleMessageComplete(conversationId)
+                                handleMessageComplete(
+                                    conversationId = conversationId,
+                                    suppressCompletionNotification = suppressCompletionNotification,
+                                )
                             } else {
                                 // VERSION HISTORY MODE: Keep ALL nodes in the turn but add new versions with shared versionTag
                                 // This is used for simple messages (text/reasoning only)
@@ -639,11 +738,18 @@ class ChatService(
                                     messageNodes = nodesBeforeTurn
                                 )
                                 saveConversation(conversationId, newConversation)
-                                handleMessageComplete(conversationId)
+                                handleMessageComplete(
+                                    conversationId = conversationId,
+                                    suppressCompletionNotification = suppressCompletionNotification,
+                                )
                             }
                         } else {
                             // No user message found, regenerate from the clicked node
-                            handleMessageComplete(conversationId, messageRange = 0..<clickedIndex)
+                            handleMessageComplete(
+                                conversationId = conversationId,
+                                messageRange = 0..<clickedIndex,
+                                suppressCompletionNotification = suppressCompletionNotification,
+                            )
                         }
                     } else {
                         saveConversation(conversationId, conversation)
@@ -670,7 +776,8 @@ class ChatService(
     // 处理消息补全
     private suspend fun handleMessageComplete(
         conversationId: Uuid,
-        messageRange: ClosedRange<Int>? = null
+        messageRange: ClosedRange<Int>? = null,
+        suppressCompletionNotification: Boolean = false,
     ) {
         val settings = settingsStore.settingsFlow.first()
         val model = settings.getCurrentChatModel() ?: return
@@ -709,7 +816,10 @@ class ChatService(
                     }
                 },
                 assistant = settings.getCurrentAssistant(),
-                memories = if (settings.getCurrentAssistant().enableMemory && !temporaryConversations.contains(conversationId)) {
+                memories = if (
+                    settings.getCurrentAssistant().enableMemory &&
+                    getConversationPersistenceMode(conversationId) == ChatPersistenceMode.NORMAL
+                ) {
                     val assistant = settings.getCurrentAssistant()
                     if (assistant.useRagMemoryRetrieval) {
                         // RAG mode: retrieve relevant memories based on context
@@ -839,7 +949,11 @@ class ChatService(
                 updateConversation(conversationId, updatedConversation)
 
                 // Show notification if app is not in foreground
-                if (!isForeground.value && settings.displaySetting.enableNotificationOnMessageGeneration) {
+                if (
+                    !suppressCompletionNotification &&
+                    !isForeground.value &&
+                    settings.displaySetting.enableNotificationOnMessageGeneration
+                ) {
                     sendGenerationDoneNotification(conversationId)
                 }
             }.collect { chunk ->
@@ -1584,7 +1698,7 @@ class ChatService(
     // 保存对话
     suspend fun saveConversation(conversationId: Uuid, conversation: Conversation) {
         // 临时对话不持久化到数据库
-        if (temporaryConversations.contains(conversationId)) {
+        if (getConversationPersistenceMode(conversationId) != ChatPersistenceMode.NORMAL) {
             updateConversation(conversationId, conversation)
             return
         }
@@ -1597,15 +1711,7 @@ class ChatService(
         // Skip database persist for empty conversations (no messages and no title)
         if (conversation.title.isBlank() && conversation.messageNodes.isEmpty()) return
 
-        try {
-            if (conversationRepo.getConversationById(conversation.id) == null) {
-                conversationRepo.insertConversation(updatedConversation)
-            } else {
-                conversationRepo.updateConversation(updatedConversation)
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        persistConversationToRepository(updatedConversation)
     }
 
     // 翻译消息
@@ -1702,6 +1808,7 @@ class ChatService(
         getGenerationJob(conversationId)?.cancel()
         removeGenerationJob(conversationId)
         conversations.remove(conversationId)
+        setConversationPersistenceMode(conversationId, ChatPersistenceMode.NORMAL)
 
         Log.i(
             TAG,

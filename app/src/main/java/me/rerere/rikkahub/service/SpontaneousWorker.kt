@@ -28,7 +28,6 @@ import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
-import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import org.koin.core.component.KoinComponent
@@ -52,7 +51,6 @@ class SpontaneousWorker(
     private val conversationRepository: ConversationRepository by inject()
     private val memoryRepository: MemoryRepository by inject()
     private val providerManager: me.rerere.ai.provider.ProviderManager by inject()
-    private val chatService: ChatService by inject()
     private val spontaneousStateStore: SpontaneousMessagingStateStore by inject()
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
@@ -188,22 +186,29 @@ class SpontaneousWorker(
             return
         }
 
+        val relation = response.relation ?: return
+        val effectiveRelation = if (conversation == null) {
+            SpontaneousMessageRelation.UNRELATED
+        } else {
+            relation
+        }
+
         val content = response.content?.trim().orEmpty()
         if (content.isBlank()) return
 
-        val persistedConversation = chatService.persistSpontaneousAssistantMessage(
-            assistantId = assistant.id,
-            content = content,
-            conversationId = conversation?.id,
-        )
         val eventId = Uuid.random().toString()
 
         sendNotification(
             assistantId = assistant.id,
-            conversationId = persistedConversation.id,
+            conversationId = if (effectiveRelation == SpontaneousMessageRelation.RECENT_CHAT) {
+                conversation?.id
+            } else {
+                null
+            },
             eventId = eventId,
             title = response.title?.takeIf { it.isNotBlank() } ?: assistant.name.ifBlank { applicationContext.getString(R.string.app_name) },
             content = content,
+            relation = effectiveRelation,
         )
 
         settingsStore.update { currentSettings ->
@@ -289,7 +294,7 @@ class SpontaneousWorker(
 
         return """
             You are ${assistant.name}.
-            You are considering whether to send the user a spontaneous in-app message that will also appear as a real assistant message in chat.
+            You are considering whether to send the user a spontaneous in-app message.
 
             $firstContactInstructions
 
@@ -304,11 +309,15 @@ class SpontaneousWorker(
             Decide whether to send a spontaneous message right now.
             Only send if it feels timely, affectionate, interesting, or meaningfully connected to prior context.
             Avoid repetitive check-ins, filler, or anything that would feel spammy.
+            Choose `recent_chat` only if the message clearly continues the latest chat.
+            Choose `unrelated` only if it should stand alone as the first assistant message in a fresh chat.
+            ${if (conversation == null) "Because there is no recent chat available, relation must be `unrelated`." else ""}
 
             Return JSON only:
             {
               "send": true or false,
               "reason": "brief internal reason",
+              "relation": "recent_chat" or "unrelated",
               "title": "short notification title",
               "content": "the exact spontaneous assistant message"
             }
@@ -342,10 +351,11 @@ class SpontaneousWorker(
 
     private fun sendNotification(
         assistantId: Uuid,
-        conversationId: Uuid,
+        conversationId: Uuid?,
         eventId: String,
         title: String,
         content: String,
+        relation: SpontaneousMessageRelation,
     ) {
         val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.createNotificationChannel(
@@ -360,9 +370,10 @@ class SpontaneousWorker(
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra(EXTRA_IS_SPONTANEOUS_NOTIFICATION, true)
             putExtra("assistantId", assistantId.toString())
-            putExtra("conversationId", conversationId.toString())
+            conversationId?.let { putExtra("conversationId", it.toString()) }
             putExtra(EXTRA_SPONTANEOUS_EVENT_ID, eventId)
             putExtra(EXTRA_SPONTANEOUS_MESSAGE, content)
+            putExtra(EXTRA_SPONTANEOUS_RELATION, relation.wireValue)
         }
         val pendingIntent = PendingIntent.getActivity(
             applicationContext,

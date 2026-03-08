@@ -2,6 +2,7 @@ package me.rerere.rikkahub.data.ai
 
 import kotlinx.datetime.toJavaLocalDateTime
 import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.isEmptyUIMessage
 import java.time.Duration
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -46,6 +47,9 @@ internal fun buildTimeAwarenessBlock(
     if (!enabled) return null
 
     val zoneId = now.zone
+    val conversationalMessages = fullMessages.filter(UIMessage::isConversationalMessage)
+    val currentMessageTime = conversationalMessages.lastOrNull().toZonedDateTime(zoneId)
+    val previousMessageTime = conversationalMessages.dropLast(1).lastOrNull().toZonedDateTime(zoneId)
     val lines = mutableListOf<String>()
     lines += "[Time Awareness]"
     lines += "Local timestamp: ${promptTimestampFormatter.format(now)}"
@@ -54,20 +58,15 @@ internal fun buildTimeAwarenessBlock(
     lines += "Year: ${now.year}"
     lines += "Timezone: ${zoneId.id} (${now.zone.getDisplayName(java.time.format.TextStyle.SHORT, Locale.ENGLISH)})"
 
-    val previousMessageTime = fullMessages
-        .dropLast(1)
-        .lastOrNull()
-        .toZonedDateTime(zoneId)
-
-    if (previousMessageTime == null) {
+    if (currentMessageTime == null || previousMessageTime == null) {
         lines += "Conversation state: This appears to be the first visible message in this conversation."
     } else {
-        val previousGap = humanizeGap(previousMessageTime, now)
-        if (safePositiveDuration(previousMessageTime, now) != null) {
+        val previousGap = humanizeGap(previousMessageTime, currentMessageTime)
+        if (safePositiveDuration(previousMessageTime, currentMessageTime) != null) {
             if (previousGap != null) {
                 lines += "${previousGap.sentence} since the last message."
             }
-            if (previousMessageTime.toLocalDate() != now.toLocalDate() && previousGap?.unit !in setOf(
+            if (previousMessageTime.toLocalDate() != currentMessageTime.toLocalDate() && previousGap?.unit !in setOf(
                     GapUnit.DAY,
                     GapUnit.WEEK,
                     GapUnit.MONTH,
@@ -76,20 +75,22 @@ internal fun buildTimeAwarenessBlock(
             ) {
                 lines += "Local day changed since the previous message."
             }
-            if (previousMessageTime.month != now.month && previousGap?.unit !in setOf(
+            if (previousMessageTime.month != currentMessageTime.month && previousGap?.unit !in setOf(
                     GapUnit.MONTH,
                     GapUnit.YEAR
                 )
             ) {
                 lines += "Local month changed since the previous message."
             }
-            if (previousMessageTime.year != now.year && previousGap?.unit != GapUnit.YEAR) {
+            if (previousMessageTime.year != currentMessageTime.year && previousGap?.unit != GapUnit.YEAR) {
                 lines += "Local year changed since the previous message."
             }
         }
     }
 
-    val retainedTimes = retainedMessages.mapNotNull { it.toZonedDateTime(zoneId) }
+    val retainedTimes = retainedMessages
+        .filter(UIMessage::isConversationalMessage)
+        .mapNotNull { it.toZonedDateTime(zoneId) }
     if (retainedTimes.size >= 2) {
         val retainedSpanGap = humanizeGap(retainedTimes.first(), now)
         safePositiveDuration(retainedTimes.first(), now)?.let { span ->
@@ -106,6 +107,10 @@ internal fun buildTimeAwarenessBlock(
     }
 
     return lines.joinToString("\n")
+}
+
+private fun UIMessage.isConversationalMessage(): Boolean {
+    return !parts.isEmptyUIMessage()
 }
 
 private fun buildTimelineNotes(retainedTimes: List<ZonedDateTime>): List<String> {

@@ -22,7 +22,6 @@ import { useCurrentAssistant } from "~/hooks/use-current-assistant";
 import { ModelList } from "~/components/input/model-list";
 import { ReasoningPickerButton } from "~/components/input/reasoning-picker";
 import { SearchPickerButton } from "~/components/input/search-picker";
-import { McpPickerButton } from "~/components/input/mcp-picker";
 import { InjectionPickerButton } from "~/components/input/injection-picker";
 import { useSettingsStore } from "~/stores";
 import { Button } from "~/components/ui/button";
@@ -36,7 +35,7 @@ import { Textarea } from "~/components/ui/textarea";
 import { resolveFileUrl } from "~/lib/files";
 import { cn } from "~/lib/utils";
 import api from "~/services/api";
-import type { UIMessagePart, UploadFilesResponseDto } from "~/types";
+import type { ModeInjectionProfile, UIMessagePart, UploadFilesResponseDto } from "~/types";
 
 export interface ChatInputProps {
   value: string;
@@ -59,6 +58,25 @@ export interface ChatInputProps {
 }
 
 const IMAGE_UPLOAD_ACCEPT = "image/*";
+
+interface SlashSkillOption {
+  id: string;
+  name: string;
+  description: string;
+  command: string;
+}
+
+function getSlashSkillCommand(skill: Pick<ModeInjectionProfile, "argumentHint" | "name">): string {
+  if (typeof skill.argumentHint === "string") {
+    const hinted = skill.argumentHint.trim();
+    if (hinted.startsWith("/")) {
+      return hinted;
+    }
+  }
+
+  const normalizedName = skill.name.trim();
+  return normalizedName ? `/${normalizedName}` : "/skill";
+}
 
 async function isAllowedUploadFile(file: globalThis.File): Promise<boolean> {
   const buffer = await file.slice(0, 4100).arrayBuffer();
@@ -186,7 +204,7 @@ function ChatInputInner({
   const pasteLongTextThreshold = useSettingsStore(
     (state) => state.settings?.displaySetting.pasteLongTextThreshold ?? 1000,
   );
-  const { currentAssistant } = useCurrentAssistant();
+  const { settings, currentAssistant } = useCurrentAssistant();
 
   const quickMessages = React.useMemo(() => {
     const source = currentAssistant?.quickMessages;
@@ -210,6 +228,26 @@ function ChatInputInner({
       })
       .filter((item): item is QuickMessageOption => item !== null);
   }, [currentAssistant?.quickMessages, t]);
+  const slashSkills = React.useMemo(() => {
+    const source = settings?.modeInjections;
+    if (!Array.isArray(source)) {
+      return [] as SlashSkillOption[];
+    }
+
+    return source
+      .filter(
+        (item): item is ModeInjectionProfile =>
+          Boolean(item && typeof item === "object" && typeof item.id === "string") &&
+          item.enabled !== false,
+      )
+      .map((item) => ({
+        id: item.id,
+        name: item.name?.trim() || t("injection.unnamed_mode"),
+        description: item.description?.trim() || "",
+        command: getSlashSkillCommand(item),
+      }))
+      .sort((left, right) => left.command.localeCompare(right.command));
+  }, [settings?.modeInjections, t]);
 
   const imageInputRef = React.useRef<HTMLInputElement | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -222,6 +260,17 @@ function ChatInputInner({
   const dragDepthRef = React.useRef(0);
 
   const isEmpty = value.trim().length === 0 && attachments.length === 0;
+  const slashToken = React.useMemo(() => value.trimStart().split(/\s+/, 1)[0] ?? "", [value]);
+  const isTypingSlashToken =
+    value.startsWith("/") && !value.slice(1).includes(" ") && !value.includes("\n");
+  const filteredSlashSkills = React.useMemo(() => {
+    if (!slashToken.startsWith("/")) {
+      return [] as SlashSkillOption[];
+    }
+
+    const query = slashToken.toLowerCase();
+    return slashSkills.filter((skill) => skill.command.toLowerCase().startsWith(query));
+  }, [slashSkills, slashToken]);
 
   const canStop = ready && Boolean(onStop) && isGenerating && !disabled;
   const canSend = ready && !isGenerating && !disabled && !isEmpty;
@@ -359,6 +408,21 @@ function ChatInputInner({
     [canUseQuickMessage, error, onSuggestionClick],
   );
 
+  const handleSlashSkillSelect = React.useCallback(
+    (command: string) => {
+      if (!canUseQuickMessage) {
+        return;
+      }
+
+      onValueChange(`${command} `);
+      if (error) {
+        setError(null);
+      }
+      textareaRef.current?.focus();
+    },
+    [canUseQuickMessage, error, onValueChange],
+  );
+
   const handleKeyDown = React.useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (event.key !== "Enter") return;
@@ -484,16 +548,16 @@ function ChatInputInner({
   return (
     <div
       className={cn(
-        "bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60",
+        "bg-transparent",
         className,
       )}
     >
-      <div className="mx-auto w-full max-w-3xl px-4 py-4">
+      <div className="mx-auto w-full max-w-4xl">
         <div
           className={cn(
-            "relative flex flex-col gap-2 rounded-lg border bg-muted/50 p-2 shadow-sm transition-shadow focus-within:shadow-md focus-within:ring-1 focus-within:ring-ring",
+            "relative flex flex-col gap-2.5 rounded-[1.3rem] border border-border/70 bg-card/90 px-3 py-3 shadow-xl backdrop-blur-xl transition-shadow focus-within:border-ring/50 focus-within:shadow-2xl focus-within:ring-1 focus-within:ring-ring/40 sm:px-4 sm:py-3.5",
             dragActive &&
-              "border-primary/40 bg-primary/5 ring-2 ring-primary/30",
+              "border-primary/40 bg-primary/5 ring-2 ring-primary/20",
           )}
           onDragEnter={handleDragEnter}
           onDragOver={handleDragOver}
@@ -508,7 +572,7 @@ function ChatInputInner({
             </div>
           ) : null}
           {isEditing ? (
-            <div className="flex items-center justify-between rounded-xl border border-primary/30 bg-primary/5 px-3 py-2 text-xs">
+            <div className="flex items-center justify-between rounded-2xl border border-primary/20 bg-primary/5 px-3 py-2 text-xs">
               <span className="text-primary">{t("chat.editing_tip")}</span>
               <Button
                 type="button"
@@ -523,15 +587,51 @@ function ChatInputInner({
             </div>
           ) : null}
 
-          {suggestions.length > 0 ? (
-            <div className="flex gap-2 overflow-x-auto rounded-lg px-1 py-1">
+          {isTypingSlashToken && filteredSlashSkills.length > 0 ? (
+            <div className="overflow-hidden rounded-[1.05rem] border border-border/70 bg-background/90 shadow-sm">
+              <div className="flex items-center justify-between border-b border-border/60 px-3 py-2 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                <span>{t("chat.slash_skills_title")}</span>
+                <span className="normal-case tracking-normal">{t("chat.slash_skills_hint")}</span>
+              </div>
+              <div className="max-h-56 overflow-y-auto p-1.5">
+                {filteredSlashSkills.map((skill) => (
+                  <button
+                    key={skill.id}
+                    type="button"
+                    disabled={!canUseQuickMessage}
+                    className="flex w-full items-start gap-3 rounded-[0.95rem] px-3 py-2 text-left transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                    onClick={() => {
+                      handleSlashSkillSelect(skill.command);
+                    }}
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-foreground">
+                        {skill.name}
+                      </span>
+                      {skill.description ? (
+                        <span className="mt-0.5 block line-clamp-2 text-xs text-muted-foreground">
+                          {skill.description}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="shrink-0 rounded-full bg-muted px-2 py-1 text-[11px] text-muted-foreground">
+                      {skill.command}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {suggestions.length > 0 && !isTypingSlashToken ? (
+            <div className="flex gap-2 overflow-x-auto px-1 pb-1">
               {suggestions.map((suggestion, index) => (
                 <button
                   key={`${suggestion}-${index}`}
                   type="button"
                   disabled={!canUseQuickMessage}
                   className={cn(
-                    "shrink-0 rounded-lg border bg-background px-3 py-1 text-xs text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50",
+                    "shrink-0 rounded-full border border-border/70 bg-background/90 px-3 py-1.5 text-xs text-foreground/80 transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50",
                   )}
                   onClick={() => {
                     handleSuggestionSelect(suggestion);
@@ -544,13 +644,13 @@ function ChatInputInner({
           ) : null}
 
           {attachments.length > 0 ? (
-            <div className="flex flex-wrap gap-2 px-2 pt-1">
+            <div className="flex flex-wrap gap-2 px-1 pt-1">
               {attachments.map((part, index) => {
                 const key = `${part.type}-${index}`;
                 return (
                   <div
                     key={key}
-                    className="group inline-flex max-w-[220px] items-center gap-1 rounded-full border bg-background/80 px-2 py-1 text-xs"
+                    className="group inline-flex max-w-[220px] items-center gap-1.5 rounded-2xl border border-border/70 bg-background/75 px-2.5 py-1.5 text-xs shadow-sm"
                   >
                     {part.type === "image" ? (
                       <img
@@ -609,11 +709,11 @@ function ChatInputInner({
               }}
             placeholder={placeholder}
             disabled={!ready || disabled}
-            className="min-h-[60px] max-h-[200px] resize-none border-0 bg-transparent dark:bg-transparent p-2 text-sm shadow-none focus-visible:ring-0"
-            rows={2}
+            className="min-h-[1.75rem] max-h-[240px] resize-none border-0 bg-transparent px-1 py-0.5 text-[15px] leading-7 shadow-none focus-visible:ring-0 dark:bg-transparent"
+            rows={1}
           />
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex min-w-0 items-center gap-1">
+          <div className="flex items-end justify-between gap-3 pt-1">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
               <DropdownMenu
                 open={uploadMenuOpen}
                 onOpenChange={setUploadMenuOpen}
@@ -638,7 +738,7 @@ function ChatInputInner({
                     variant="ghost"
                     size="icon"
                     disabled={!canUpload}
-                    className="size-8 rounded-full text-muted-foreground hover:text-foreground"
+                    className="size-9 rounded-full border border-border/60 bg-background/65 text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
                   >
                     <Plus
                       className={cn(
@@ -694,7 +794,6 @@ function ChatInputInner({
               <ModelList disabled={!canSwitchModel} className="max-w-64" />
               <SearchPickerButton disabled={!canSwitchModel} />
               <ReasoningPickerButton disabled={!canSwitchModel} />
-              <McpPickerButton disabled={!canSwitchModel} />
               <InjectionPickerButton disabled={!canSwitchModel} />
               <QuickMessageButton
                 quickMessages={quickMessages}
@@ -709,23 +808,23 @@ function ChatInputInner({
               disabled={actionDisabled}
               size="icon"
               className={cn(
-                "size-9 rounded-full shadow-sm",
+                "size-11 rounded-full shadow-lg",
                 isGenerating && !submitting
                   ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
                   : "bg-primary text-primary-foreground hover:bg-primary/90",
               )}
             >
               {submitting || uploading ? (
-                <LoaderCircle className="size-4 animate-spin" />
+                <LoaderCircle className="size-4.5 animate-spin" />
               ) : isGenerating ? (
-                <Square className="size-4" />
+                <Square className="size-4.5" />
               ) : (
-                <ArrowUp className="size-4" />
+                <ArrowUp className="size-4.5" />
               )}
             </Button>
           </div>
         </div>
-        <p className="mt-2 text-center text-xs text-muted-foreground">
+        <p className="mt-2 text-center text-[11px] text-muted-foreground">
           {sendHint}
         </p>
         {error ? (
@@ -767,7 +866,7 @@ function QuickMessageButton({
           variant="ghost"
           size="icon"
           disabled={disabled}
-          className="size-8 rounded-full text-muted-foreground hover:text-foreground"
+          className="size-9 rounded-full border border-border/60 bg-background/80 text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
         >
           <Zap className="size-4" />
         </Button>

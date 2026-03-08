@@ -41,10 +41,11 @@ fun Uri.isAllowedWebMediaUri(context: Context): Boolean {
             file.isInside(context.filesDir) || file.isInside(context.cacheDir)
         }.getOrDefault(false)
 
-        "content" -> {
+        "content" -> !authority.isNullOrBlank()
+
+        "android.resource" -> {
             val authorityValue = authority ?: return false
-            authorityValue == "${context.packageName}.fileprovider" ||
-                authorityValue == context.packageName
+            authorityValue == context.packageName
         }
 
         else -> false
@@ -90,6 +91,20 @@ fun openAllowedWebMedia(context: Context, uri: Uri): WebMediaContent? {
                 inputStream = inputStream,
                 contentType = mimeType,
                 fileName = fileName
+            )
+        }
+
+        "android.resource" -> {
+            val inputStream = context.contentResolver.openInputStream(uri) ?: return null
+            val mimeType = context.contentResolver.getType(uri)
+                ?.let { ContentType.parse(it) }
+                ?: URLConnection.guessContentTypeFromName(uri.lastPathSegment.orEmpty())
+                    ?.let { ContentType.parse(it) }
+                ?: ContentType.Application.OctetStream
+            WebMediaContent(
+                inputStream = inputStream,
+                contentType = mimeType,
+                fileName = uri.lastPathSegment
             )
         }
 

@@ -120,15 +120,26 @@ class SpontaneousMessagingTest {
         val parsed = SpontaneousMessaging.parseResponse(
             """
             Here you go:
-            {"send":true,"reason":"timely","title":"Checking in","content":"Hey, I was thinking about you."}
+            {"send":true,"reason":"timely","relation":"recent_chat","title":"Checking in","content":"Hey, I was thinking about you."}
             """.trimIndent()
         )
 
         assertNotNull(parsed)
         assertTrue(parsed!!.shouldSend)
         assertEquals("timely", parsed.reason)
+        assertEquals(SpontaneousMessageRelation.RECENT_CHAT, parsed.relation)
         assertEquals("Checking in", parsed.title)
         assertEquals("Hey, I was thinking about you.", parsed.content)
+    }
+
+    @Test
+    fun parseResponseLeavesRelationNullWhenValueIsUnknown() {
+        val parsed = SpontaneousMessaging.parseResponse(
+            """{"send":true,"reason":"timely","relation":"maybe","content":"Hi"}"""
+        )
+
+        assertNotNull(parsed)
+        assertNull(parsed!!.relation)
     }
 
     @Test

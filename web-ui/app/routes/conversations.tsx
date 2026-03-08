@@ -15,7 +15,6 @@ import {
 } from "~/components/extended/conversation";
 import { ChatInput } from "~/components/input/chat-input";
 import { ChatMessage } from "~/components/message/chat-message";
-import { Button } from "~/components/ui/button";
 import { Drawer, DrawerContent } from "~/components/ui/drawer";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "~/components/ui/resizable";
 import { TypingIndicator } from "~/components/ui/typing-indicator";
@@ -23,8 +22,6 @@ import { SidebarInset, SidebarProvider, SidebarTrigger } from "~/components/ui/s
 import { useIsMobile } from "~/hooks/use-mobile";
 import { toConversationSummaryUpdate, useConversationList } from "~/hooks/use-conversation-list";
 import { useCurrentAssistant } from "~/hooks/use-current-assistant";
-import { useCurrentModel } from "~/hooks/use-current-model";
-import { getAssistantDisplayName, getModelDisplayName } from "~/lib/display";
 import { convertConversationToMarkdown, downloadMarkdown } from "~/lib/export-markdown";
 import { cn } from "~/lib/utils";
 import api, { sse } from "~/services/api";
@@ -47,7 +44,6 @@ import {
   type UIMessagePart,
 } from "~/types";
 import { MessageSquare } from "lucide-react";
-import Logo from "~/components/logo";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -468,27 +464,37 @@ function useDraftInputController({
     [draftKey, removeDraftPart],
   );
 
-  const handleSubmit = React.useCallback(async () => {
+  const submitCurrentDraft = React.useCallback(async (options?: {
+    beforeSend?: (conversationId: string) => Promise<void>;
+  }) => {
     if (!draftKey) return;
 
     const parts = getSubmitParts(draftKey);
     if (parts.length === 0) return;
 
     if (activeId) {
+      await options?.beforeSend?.(activeId);
       await api.post<{ status: string }>(`conversations/${activeId}/messages`, { parts });
       clearDraft(draftKey);
-      return;
+      return activeId;
     }
 
-    const conversationId = uuidv4();
+    const response = await api.post<{ id: string; assistantId: string }>("conversations", {});
+    const conversationId = response.id;
     setHomeDraftId(createHomeDraftId());
 
+    await options?.beforeSend?.(conversationId);
     await api.post<{ status: string }>(`conversations/${conversationId}/messages`, { parts });
     clearDraft(draftKey);
 
     navigate(`/c/${conversationId}`);
     refreshList();
+    return conversationId;
   }, [activeId, clearDraft, draftKey, getSubmitParts, navigate, refreshList, setHomeDraftId]);
+
+  const handleSubmit = React.useCallback(async () => {
+    await submitCurrentDraft();
+  }, [submitCurrentDraft]);
 
   const replaceDraft = React.useCallback(
     (text: string, parts: UIMessagePart[]) => {
@@ -518,6 +524,7 @@ function useDraftInputController({
     handleAddInputParts,
     handleRemoveInputPart,
     handleSubmit,
+    submitCurrentDraft,
     replaceDraft,
     clearCurrentDraft,
     getCurrentSubmitParts,
@@ -582,7 +589,11 @@ const ConversationTimeline = React.memo(({
   return (
     <Conversation className="flex-1 min-h-0">
       <ConversationContent
-        className={cn("mx-auto w-full max-w-3xl gap-4 px-4 py-6", contentClassName)}
+        className={cn(
+          "mx-auto w-full max-w-4xl gap-6 px-4 py-8 sm:px-6 lg:px-8",
+          canQuickJump && "lg:pr-20 xl:pr-24",
+          contentClassName,
+        )}
       >
         {!activeId && !isHomeRoute && (
           <ConversationEmptyState
@@ -689,8 +700,7 @@ function ConversationsPageInner() {
   const isMobile = useIsMobile();
   const { panel, closePanel } = useWorkbench();
 
-  const { settings, assistants, currentAssistantId, currentAssistant } = useCurrentAssistant();
-  const { currentModel, currentProvider } = useCurrentModel();
+  const { settings, assistants, currentAssistantId } = useCurrentAssistant();
   const {
     conversations,
     activeId,
@@ -717,6 +727,7 @@ function ConversationsPageInner() {
     handleAddInputParts,
     handleRemoveInputPart,
     handleSubmit,
+    submitCurrentDraft,
     replaceDraft,
     clearCurrentDraft,
     getCurrentSubmitParts,
@@ -729,16 +740,15 @@ function ConversationsPageInner() {
     refreshList,
   });
 
-  const activeConversation = conversations.find((item) => item.id === activeId);
   const chatSuggestions = detail?.chatSuggestions ?? EMPTY_SUGGESTIONS;
 
   React.useEffect(() => {
     const base = t("conversations.meta.title");
-    document.title = activeConversation?.title ? `${activeConversation.title} - ${base}` : base;
+    document.title = detail?.title ? `${detail.title} - ${base}` : base;
     return () => {
       document.title = base;
     };
-  }, [activeConversation?.title, t]);
+  }, [detail?.title, t]);
   const isNewChat = isHomeRoute && !activeId;
   const showSuggestions =
     Boolean(activeId) && !detailLoading && !detailError && chatSuggestions.length > 0;
@@ -862,6 +872,32 @@ function ConversationsPageInner() {
 
   const handleSend = React.useCallback(async () => {
     if (!editingSession) {
+      const slashToken = inputText.trimStart().split(/\s+/, 1)[0] ?? "";
+      const exactSlashSkill = settings?.modeInjections?.find((skill) => {
+        const hinted =
+          typeof skill.argumentHint === "string" && skill.argumentHint.trim().startsWith("/")
+            ? skill.argumentHint.trim()
+            : `/${skill.name}`;
+        return hinted.toLowerCase() === slashToken.toLowerCase();
+      });
+
+      if (exactSlashSkill) {
+        await submitCurrentDraft({
+          beforeSend: async (conversationId) => {
+            const currentSkillIds =
+              conversationId === activeId ? (detail?.enabledSkillIds ?? []) : [];
+            if (currentSkillIds.includes(exactSlashSkill.id)) {
+              return;
+            }
+
+            await api.post<{ status: string }>(`conversations/${conversationId}/skills`, {
+              skillIds: [...currentSkillIds, exactSlashSkill.id],
+            });
+          },
+        });
+        return;
+      }
+
       await handleSubmit();
       return;
     }
@@ -880,7 +916,17 @@ function ConversationsPageInner() {
 
     setEditingSession(null);
     clearCurrentDraft();
-  }, [activeId, clearCurrentDraft, editingSession, getCurrentSubmitParts, handleSubmit]);
+  }, [
+    activeId,
+    clearCurrentDraft,
+    detail?.enabledSkillIds,
+    editingSession,
+    getCurrentSubmitParts,
+    handleSubmit,
+    inputText,
+    settings?.modeInjections,
+    submitCurrentDraft,
+  ]);
 
   const handleTogglePinConversation = React.useCallback(
     async (conversationId: string) => {
@@ -974,7 +1020,10 @@ function ConversationsPageInner() {
 
   const chatContent = (
     <div
-      className={cn("flex flex-1 flex-col min-h-0 overflow-hidden", isNewChat && "justify-center")}
+      className={cn(
+        "flex min-h-0 flex-1 flex-col overflow-hidden bg-transparent pt-12",
+        isNewChat && "justify-center",
+      )}
     >
       {!isNewChat && (
         <div className="relative flex min-h-0 flex-1">
@@ -997,15 +1046,12 @@ function ConversationsPageInner() {
         </div>
       )}
 
-      <div>
+      <div className="relative z-10 px-3 pb-3 sm:px-4 sm:pb-3.5">
         {isNewChat && (
-          <div className="mb-4 text-center">
-            <div className="mb-3 flex justify-center">
-              <div className="[&>svg]:size-16">
-                <Logo className="size-16 text-primary"/>
-              </div>
-            </div>
-            <p className="text-lg text-muted-foreground">{t("conversations.welcome_prompt")}</p>
+          <div className="mx-auto mb-6 max-w-2xl text-center">
+            <p className="text-balance text-lg text-muted-foreground">
+              {t("conversations.welcome_prompt")}
+            </p>
           </div>
         )}
         <ChatInput
@@ -1064,25 +1110,13 @@ function ConversationsPageInner() {
         onCreateConversation={handleCreateConversation}
         webAuthEnabled={settings?.webServerJwtEnabled === true}
       />
-      <SidebarInset className="flex min-h-svh flex-col overflow-hidden">
-        <div className="flex items-center gap-2 border-b px-4 py-3">
-          <SidebarTrigger />
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm text-muted-foreground">
-              {activeConversation
-                ? activeConversation.title
-                : t("conversations.header.select_conversation")}
-            </div>
-            {currentModel && currentProvider ? (
-              <div className="truncate text-xs text-muted-foreground/80">
-                {`${getAssistantDisplayName(currentAssistant?.name)} / ${getModelDisplayName(currentModel.displayName, currentModel.modelId)} (${currentProvider.name})`}
-              </div>
-            ) : null}
-          </div>
+      <SidebarInset className="flex min-h-svh flex-col overflow-hidden bg-transparent md:bg-card/70">
+        <div className="pointer-events-none absolute top-3 left-3 z-20">
+          <SidebarTrigger className="pointer-events-auto rounded-full bg-background/82 text-foreground/80 shadow-sm backdrop-blur-md hover:bg-muted/90" />
         </div>
 
         {!isMobile ? (
-          <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
+          <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1 bg-transparent">
             <ResizablePanel
               defaultSize={hasWorkbenchPanel ? 64 : 100}
               minSize={40}

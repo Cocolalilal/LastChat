@@ -124,7 +124,12 @@ export function ConversationSearchButton({ onSelect }: ConversationSearchButtonP
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="w-full justify-start" type="button">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-11 w-full justify-start rounded-none border-0 bg-transparent px-3 text-sidebar-foreground shadow-none hover:bg-sidebar-accent/70"
+          type="button"
+        >
           <Search className="size-4" />
           {t("conversation_search.search_conversations")}
         </Button>

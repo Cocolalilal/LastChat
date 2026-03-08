@@ -100,6 +100,7 @@ import me.rerere.rikkahub.ui.theme.RikkahubTheme
 import me.rerere.rikkahub.service.EXTRA_IS_SPONTANEOUS_NOTIFICATION
 import me.rerere.rikkahub.service.EXTRA_SPONTANEOUS_EVENT_ID
 import me.rerere.rikkahub.service.EXTRA_SPONTANEOUS_MESSAGE
+import me.rerere.rikkahub.service.EXTRA_SPONTANEOUS_RELATION
 import okhttp3.OkHttpClient
 import org.koin.android.ext.android.inject
 import me.rerere.rikkahub.utils.fileSizeToString
@@ -149,6 +150,7 @@ private data class SpontaneousNotificationData(
     val conversationId: String?,
     val eventId: String,
     val message: String,
+    val relation: me.rerere.rikkahub.service.SpontaneousMessageRelation,
 )
 
 class RouteActivity : ComponentActivity() {
@@ -506,12 +508,16 @@ class RouteActivity : ComponentActivity() {
         val assistantId = getStringExtra("assistantId") ?: return null
         val eventId = getStringExtra(EXTRA_SPONTANEOUS_EVENT_ID) ?: return null
         val message = getStringExtra(EXTRA_SPONTANEOUS_MESSAGE) ?: return null
+        val relation = me.rerere.rikkahub.service.SpontaneousMessageRelation.fromWireValue(
+            getStringExtra(EXTRA_SPONTANEOUS_RELATION)
+        ) ?: return null
 
         return SpontaneousNotificationData(
             assistantId = assistantId,
             conversationId = getStringExtra("conversationId"),
             eventId = eventId,
             message = message,
+            relation = relation,
         )
     }
 
@@ -567,6 +573,7 @@ class RouteActivity : ComponentActivity() {
     ) {
         val assistantId = runCatching { Uuid.parse(data.assistantId) }.getOrNull() ?: return
         if (data.message.isBlank()) return
+        if (spontaneousMessagingStateStore.isEventConsumed(data.eventId)) return
         val originalConversationId = data.conversationId?.let { raw ->
             runCatching { Uuid.parse(raw) }.getOrNull()
         }
@@ -574,27 +581,44 @@ class RouteActivity : ComponentActivity() {
         settingsStore.updateAssistant(assistantId)
         settingsStore.markAssistantUsed(assistantId)
 
-        val targetConversationId = when {
-            originalConversationId != null && conversationRepo.getConversationById(originalConversationId) != null -> {
-                originalConversationId
-            }
-
-            else -> {
-                val fallbackConversationId = spontaneousMessagingStateStore.getFallbackConversation(data.eventId)
-                if (fallbackConversationId != null && conversationRepo.getConversationById(fallbackConversationId) != null) {
-                    fallbackConversationId
+        val targetConversationId = when (data.relation) {
+            me.rerere.rikkahub.service.SpontaneousMessageRelation.RECENT_CHAT -> {
+                val targetConversation = if (
+                    originalConversationId != null &&
+                    conversationRepo.getConversationById(originalConversationId) != null
+                ) {
+                    chatService.persistSpontaneousAssistantMessage(
+                        assistantId = assistantId,
+                        content = data.message,
+                        conversationId = originalConversationId,
+                    )
                 } else {
-                    val fallbackConversation = chatService.persistSpontaneousAssistantMessage(
+                    chatService.seedSpontaneousDraftConversation(
                         assistantId = assistantId,
                         content = data.message,
                     )
-                    spontaneousMessagingStateStore.rememberFallbackConversation(data.eventId, fallbackConversation.id)
-                    fallbackConversation.id
                 }
+                targetConversation.id
+            }
+
+            me.rerere.rikkahub.service.SpontaneousMessageRelation.UNRELATED -> {
+                chatService.seedSpontaneousDraftConversation(
+                    assistantId = assistantId,
+                    content = data.message,
+                ).id
             }
         }
 
-        navBackStack.navigate(Screen.Chat(targetConversationId.toString()))
+        spontaneousMessagingStateStore.markEventConsumed(data.eventId)
+        val persistenceMode = chatService.getConversationPersistenceMode(targetConversationId)
+        navBackStack.navigate(
+            Screen.Chat(
+                id = targetConversationId.toString(),
+                persistenceMode = persistenceMode.routeValue.takeIf {
+                    persistenceMode != me.rerere.rikkahub.service.ChatPersistenceMode.NORMAL
+                },
+            )
+        )
     }
 
     @Composable
@@ -796,7 +820,8 @@ class RouteActivity : ComponentActivity() {
                             id = Uuid.parse(route.id),
                             text = route.text,
                             files = route.files.map { it.toUri() },
-                            searchQuery = route.searchQuery
+                            searchQuery = route.searchQuery,
+                            persistenceMode = route.persistenceMode,
                         )
                     }
 
@@ -1012,7 +1037,13 @@ class RouteActivity : ComponentActivity() {
 
 sealed interface Screen {
     @Serializable
-    data class Chat(val id: String, val text: String? = null, val files: List<String> = emptyList(), val searchQuery: String? = null) : Screen
+    data class Chat(
+        val id: String,
+        val text: String? = null,
+        val files: List<String> = emptyList(),
+        val searchQuery: String? = null,
+        val persistenceMode: String? = null,
+    ) : Screen
 
     @Serializable
     data class ShareHandler(val text: String, val files: List<String> = emptyList()) : Screen

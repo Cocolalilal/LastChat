@@ -50,7 +50,6 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuAction,
@@ -66,6 +65,7 @@ import {
 } from "~/components/theme-provider";
 import { ConversationSearchButton } from "~/components/conversation-search-button";
 import { CustomThemeDialog } from "~/components/custom-theme-dialog";
+import Logo from "~/components/logo";
 import { getAssistantDisplayName } from "~/lib/display";
 import { clearWebAuthToken } from "~/services/api";
 import type { AssistantAvatar, AssistantProfile, AssistantTag, ConversationListDto } from "~/types";
@@ -264,6 +264,7 @@ const ConversationListRow = React.memo(({
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <SidebarMenuButton
           isActive={isActive}
+          className="h-auto min-h-11 rounded-2xl px-3 py-2.5 text-[13px] leading-tight"
           onClick={() => onSelect(conversation.id)}
           onContextMenu={(event) => {
             if (!hasMenuAction) return;
@@ -291,6 +292,7 @@ const ConversationListRow = React.memo(({
             <DropdownMenuTrigger asChild>
               <SidebarMenuAction
                 showOnHover
+                className="top-2.5 right-2 rounded-xl"
                 aria-label={t("conversation_sidebar.conversation_actions")}
                 title={t("conversation_sidebar.conversation_actions")}
                 disabled={pendingAction !== null}
@@ -523,8 +525,6 @@ export const ConversationSidebar = React.memo(({
   error,
   hasMore,
   loadMore,
-  userName,
-  userAvatar,
   assistants,
   assistantTags,
   currentAssistantId,
@@ -643,41 +643,29 @@ export const ConversationSidebar = React.memo(({
 
   return (
     <Sidebar collapsible="offcanvas" variant="sidebar">
-      <SidebarHeader>
-        <div className="flex items-center gap-3 rounded-lg px-2.5 py-2.5">
-          <UIAvatar
-            size="default"
-            name={userName}
-            avatar={userAvatar}
-            className="ring-1 ring-sidebar-border/70"
-          />
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium leading-none">{userName}</div>
-            <div className="mt-1 truncate text-xs text-muted-foreground">
-              {t("conversation_sidebar.welcome_back")}
-            </div>
-          </div>
-        </div>
+      <SidebarHeader className="items-start gap-2 px-3 pt-3 pb-0">
+        <Logo className="size-10 shrink-0" />
       </SidebarHeader>
       <SidebarContent className="min-h-0">
         <SidebarGroup>
-          <div className="space-y-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start"
-              onClick={onCreateConversation}
-            >
-              <Plus className="size-4" />
-              {t("conversation_sidebar.new_conversation")}
-            </Button>
+          <div className="pt-3">
+            <div className="overflow-hidden rounded-[1.35rem] border border-sidebar-border/70 bg-sidebar-accent/28 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+              <Button
+                variant="default"
+                size="sm"
+                className="h-11 w-full justify-start rounded-none border-0 border-b border-sidebar-border/70 bg-transparent px-3 text-sidebar-foreground shadow-none hover:bg-sidebar-accent/70"
+                onClick={onCreateConversation}
+              >
+                <Plus className="size-4" />
+                {t("conversation_sidebar.new_conversation")}
+              </Button>
 
-            <ConversationSearchButton onSelect={onSelect} />
+              <ConversationSearchButton onSelect={onSelect} />
+            </div>
           </div>
         </SidebarGroup>
 
         <SidebarGroup className="flex min-h-0 flex-1 flex-col">
-          <SidebarGroupLabel>{t("conversation_sidebar.conversations")}</SidebarGroupLabel>
           <InfiniteScrollArea
             dataLength={conversations.length}
             next={loadMore}
@@ -708,7 +696,7 @@ export const ConversationSidebar = React.memo(({
                 if (listItem.type === "pinned-header") {
                   return (
                     <SidebarMenuItem key="pinned_header">
-                      <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-semibold text-primary">
+                      <div className="flex items-center gap-1.5 px-2 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/55">
                         <Pin className="size-3" />
                         {t("conversation_sidebar.pinned")}
                       </div>
@@ -718,7 +706,7 @@ export const ConversationSidebar = React.memo(({
                 if (listItem.type === "date-header") {
                   return (
                     <SidebarMenuItem key={`date_${listItem.date}`}>
-                      <div className="px-2 py-1.5 text-xs font-semibold text-primary">
+                      <div className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/55">
                         {listItem.label}
                       </div>
                     </SidebarMenuItem>
@@ -772,7 +760,7 @@ export const ConversationSidebar = React.memo(({
           <DialogTrigger asChild>
             <Button
               variant="outline"
-              className="w-full justify-start gap-2 text-foreground"
+              className="h-11 w-full justify-start gap-2 rounded-2xl border-border/70 bg-background/70 text-foreground shadow-sm"
               type="button"
             >
               {currentAssistant ? (
@@ -830,7 +818,7 @@ export const ConversationSidebar = React.memo(({
                       <button
                         key={assistant.id}
                         type="button"
-                        className="flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition hover:bg-muted"
+                        className="flex w-full items-center gap-3 rounded-2xl border border-border/70 bg-background/70 px-3 py-2.5 text-left transition hover:bg-muted"
                         onClick={() => void handleAssistantSelect(assistant.id)}
                         disabled={switchingAssistantId !== null}
                       >
@@ -868,7 +856,7 @@ export const ConversationSidebar = React.memo(({
           onSave={handleCustomThemeSave}
         />
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 px-1 py-1">
           {webAuthEnabled && (
             <Button
               variant="outline"
@@ -966,15 +954,6 @@ export const ConversationSidebar = React.memo(({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-
-          <a
-            href="https://rikka-ai.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="ml-auto text-xs font-normal text-foreground/80 hover:text-foreground transition-colors"
-          >
-            RikkaHub
-          </a>
         </div>
       </SidebarFooter>
     </Sidebar>

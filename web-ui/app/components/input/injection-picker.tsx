@@ -51,6 +51,17 @@ function getLorebooks(source: unknown): LorebookProfile[] {
   );
 }
 
+function getSkillCommand(item: Pick<ModeInjectionProfile, "argumentHint" | "name">): string {
+  if (typeof item.argumentHint === "string") {
+    const hinted = item.argumentHint.trim();
+    if (hinted.startsWith("/")) {
+      return hinted;
+    }
+  }
+
+  return item.name.trim() ? `/${item.name.trim()}` : "/skill";
+}
+
 export function InjectionPickerButton({ disabled = false, className }: InjectionPickerButtonProps) {
   const { t } = useTranslation("input");
   const { settings, currentAssistant } = useCurrentAssistant();
@@ -202,8 +213,8 @@ export function InjectionPickerButton({ disabled = false, className }: Injection
           size="sm"
           disabled={!canUse || updateInjectionsMutation.isPending}
           className={cn(
-            "h-8 rounded-full px-2 text-muted-foreground hover:text-foreground",
-            selectedCount > 0 && "text-primary hover:bg-primary/10",
+            "h-9 rounded-full border border-border/60 bg-background/80 px-2.5 text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground",
+            selectedCount > 0 && "border-primary/20 bg-primary/10 text-primary hover:bg-primary/20",
             className,
           )}
         >
@@ -291,14 +302,17 @@ export function InjectionPickerButton({ disabled = false, className }: Injection
                             }}
                           />
                         )}
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-medium">
-                            {getDisplayName(item.name, t("injection.unnamed_mode"))}
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium">
+                          {getDisplayName(item.name, t("injection.unnamed_mode"))}
+                        </div>
+                        <div className="text-muted-foreground mt-0.5 text-xs">
+                          {getSkillCommand(item)}
+                        </div>
+                        {item.enabled === false ? (
+                          <div className="text-muted-foreground mt-0.5 text-xs">
+                            {t("injection.disabled")}
                           </div>
-                          {item.enabled === false ? (
-                            <div className="text-muted-foreground mt-0.5 text-xs">
-                              {t("injection.disabled")}
-                            </div>
                           ) : null}
                         </div>
                       </label>

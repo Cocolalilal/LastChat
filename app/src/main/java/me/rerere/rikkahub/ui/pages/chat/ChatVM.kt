@@ -43,6 +43,7 @@ import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.replaceRegexes
 import me.rerere.rikkahub.data.repository.ConversationRepository
+import me.rerere.rikkahub.service.ChatPersistenceMode
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.ui.hooks.writeStringPreference
 import me.rerere.rikkahub.utils.UiState
@@ -74,6 +75,11 @@ class ChatVM(
         chatService
             .getGenerationJobStateFlow(_conversationId)
             .stateIn(viewModelScope, SharingStarted.Lazily, null)
+
+    val conversationPersistenceMode: StateFlow<ChatPersistenceMode> =
+        chatService
+            .getConversationPersistenceModeFlow(_conversationId)
+            .stateIn(viewModelScope, SharingStarted.Lazily, ChatPersistenceMode.NORMAL)
 
     val conversationJobs = chatService
         .getConversationJobs()
@@ -303,7 +309,11 @@ class ChatVM(
      * @param answer 是否触发消息生成，如果为false，则仅添加消息到消息列表中
      * @param isTemporaryChat 是否为临时对话（不保存历史、不使用记忆）
      */
-    fun handleMessageSend(content: List<UIMessagePart>, answer: Boolean = true, isTemporaryChat: Boolean = false) {
+    fun handleMessageSend(
+        content: List<UIMessagePart>,
+        answer: Boolean = true,
+        persistenceMode: ChatPersistenceMode = ChatPersistenceMode.NORMAL,
+    ) {
         if (content.isEmptyInputMessage()) return
 
         val assistant = settings.value.assistants.find { it.id == settings.value.assistantId }
@@ -327,7 +337,12 @@ class ChatVM(
             content
         }
 
-        chatService.sendMessage(_conversationId, processedContent, answer, isTemporaryChat)
+        chatService.sendMessage(_conversationId, processedContent, answer, persistenceMode)
+    }
+
+    fun applyRoutePersistenceMode(mode: ChatPersistenceMode?) {
+        if (mode == null) return
+        chatService.ensureConversationPersistenceMode(_conversationId, mode)
     }
 
     fun handleMessageEdit(parts: List<UIMessagePart>, messageId: Uuid) {

@@ -68,6 +68,11 @@ data class EditMessageRequest(
 )
 
 @Serializable
+data class UpdateConversationSkillsRequest(
+    val skillIds: List<String>
+)
+
+@Serializable
 data class ForkConversationRequest(
     val messageId: String
 )
@@ -189,6 +194,7 @@ data class ConversationDto(
     val assistantId: String,
     val title: String,
     val messages: List<MessageNodeDto>,
+    val enabledSkillIds: List<String>,
     val truncateIndex: Int,
     val chatSuggestions: List<String>,
     val isPinned: Boolean,
@@ -340,6 +346,7 @@ data class WebModeInjectionDto(
     val id: String,
     val name: String,
     val description: String = "",
+    val argumentHint: String? = null,
     val enabled: Boolean = true,
 )
 
@@ -585,6 +592,7 @@ fun Conversation.toDto(
     assistantId = assistantId.toString(),
     title = title.ifBlank { "New chat" },
     messages = messageNodes.map { it.toDto(settings, context) },
+    enabledSkillIds = enabledModeIds.map(Uuid::toString),
     truncateIndex = truncateIndex,
     chatSuggestions = chatSuggestions,
     isPinned = isPinned,
@@ -753,6 +761,7 @@ private fun Skill.toWebModeInjectionDto(): WebModeInjectionDto {
         id = id.toString(),
         name = name.ifBlank { description.ifBlank { "Skill" } },
         description = description,
+        argumentHint = argumentHint,
         enabled = enabled,
     )
 }
@@ -872,7 +881,10 @@ private fun Avatar.toWebAvatarDto(context: Context): WebAvatarDto? {
         Avatar.Dummy -> null
         is Avatar.Emoji -> WebAvatarDto(type = "emoji", content = content)
         is Avatar.Image -> WebAvatarDto(type = "image", url = url.toWebAssetUrl(context))
-        is Avatar.Resource -> null
+        is Avatar.Resource -> WebAvatarDto(
+            type = "image",
+            url = "android.resource://${context.packageName}/${id}".toWebAssetUrl(context),
+        )
     }
 }
 
