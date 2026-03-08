@@ -103,6 +103,26 @@ import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 import kotlin.uuid.Uuid
 
+internal fun hasConversationMessages(conversation: Conversation): Boolean {
+    return conversation.messageNodes.isNotEmpty()
+}
+
+internal fun shouldShowNewChatContent(
+    isTemporaryChat: Boolean,
+    hasConversationMessages: Boolean,
+    hasAnyPresetMessages: Boolean,
+    showNewChatContent: Boolean,
+    hasTextInput: Boolean,
+    isKeyboardOpen: Boolean,
+): Boolean {
+    return !isTemporaryChat &&
+        !hasConversationMessages &&
+        !hasAnyPresetMessages &&
+        showNewChatContent &&
+        !hasTextInput &&
+        !isKeyboardOpen
+}
+
 @Composable
 fun ChatPage(
     id: Uuid,
@@ -204,9 +224,9 @@ fun ChatPage(
     )
 
     val chatListState = rememberLazyListState()
-    LaunchedEffect(vm) {
-        if(!vm.chatListInitialized) {
-            chatListState.scrollToItem(chatListState.layoutInfo.totalItemsCount)
+    LaunchedEffect(conversation.messageNodes.size) {
+        if (!vm.chatListInitialized && conversation.messageNodes.isNotEmpty()) {
+            chatListState.scrollToItem(conversation.messageNodes.lastIndex)
             vm.chatListInitialized = true
         }
     }
@@ -524,15 +544,13 @@ private fun ChatPageContent(
                         },
                     )
 
-                // Temporary chat overlay - shown when no user messages and temporary
-                // (ignores preset messages from assistant)
-                val hasUserSentMessages = conversation.messageNodes.any { it.role == me.rerere.ai.core.MessageRole.USER }
+                val hasConversationContent = hasConversationMessages(conversation)
                 val hasAnyPresetMessages = currentAssistant.presetMessages.isNotEmpty()
                 val effectiveDisplaySetting = setting.getEffectiveDisplaySetting(currentAssistant)
                 
                 // Temporary chat overlay
                 androidx.compose.animation.AnimatedVisibility(
-                    visible = isTemporaryChat && !hasUserSentMessages && !hasAnyPresetMessages,
+                    visible = isTemporaryChat && !hasConversationContent && !hasAnyPresetMessages,
                     enter = androidx.compose.animation.fadeIn(),
                     exit = androidx.compose.animation.fadeOut(),
                     modifier = Modifier.align(Alignment.Center)
@@ -557,8 +575,6 @@ private fun ChatPageContent(
                     }
                 }
                 
-                // New chat customization - shown when NOT temporary, no user messages, and no preset messages
-                // Only show if header or content is not NONE
                 val headerStyle = effectiveDisplaySetting.newChatHeaderStyle
                 val contentStyle = effectiveDisplaySetting.newChatContentStyle
                 val showNewChatContent = headerStyle != me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.NONE || contentStyle != me.rerere.rikkahub.data.datastore.NewChatContentStyle.NONE
@@ -568,7 +584,14 @@ private fun ChatPageContent(
                 
                 // Hide new chat content when keyboard is open or text/media is in input
                 val hasTextInput = inputState.textContent.text.isNotEmpty() || inputState.messageContent.isNotEmpty()
-                val shouldShowNewChatContent = !isTemporaryChat && !hasUserSentMessages && !hasAnyPresetMessages && showNewChatContent && !hasTextInput && !isKeyboardOpen
+                val shouldShowNewChatContent = shouldShowNewChatContent(
+                    isTemporaryChat = isTemporaryChat,
+                    hasConversationMessages = hasConversationContent,
+                    hasAnyPresetMessages = hasAnyPresetMessages,
+                    showNewChatContent = showNewChatContent,
+                    hasTextInput = hasTextInput,
+                    isKeyboardOpen = isKeyboardOpen,
+                )
                 
                 // State for assistant picker triggered from header avatar
                 var showHeaderAssistantPicker by remember { mutableStateOf(false) }
@@ -659,7 +682,7 @@ private fun ChatPageContent(
 
                 // Gradient behind floating toolbar - hidden when showing new chat content
                 androidx.compose.animation.AnimatedVisibility(
-                    visible = hasUserSentMessages || hasAnyPresetMessages || isTemporaryChat || !showNewChatContent,
+                    visible = hasConversationContent || hasAnyPresetMessages || isTemporaryChat || !showNewChatContent,
                     enter = androidx.compose.animation.fadeIn(),
                     exit = androidx.compose.animation.fadeOut(),
                     modifier = Modifier.align(Alignment.BottomCenter)

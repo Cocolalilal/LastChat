@@ -28,6 +28,16 @@
       "no_message_description": "This conversation does not have any messages yet"
     },
     "welcome_prompt": "How can I help you?",
+    "greeting": {
+      "early_morning": "Rise and shine!",
+      "morning": "Good Morning!",
+      "lunch": "Lunch time!",
+      "afternoon": "Good Afternoon!",
+      "evening": "Good Evening!",
+      "late_evening": "Winding down?",
+      "night": "Good Night!",
+      "early_hours": "Still up? Get some rest"
+    },
     "user": {
       "default_name": "User"
     }

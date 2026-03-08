@@ -659,7 +659,8 @@ private fun McpCommonOptionsConfigure(
                 },
                 label = { Text(stringResource(R.string.setting_mcp_page_name)) },
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text(stringResource(R.string.setting_mcp_page_name_placeholder)) }
+                placeholder = { Text(stringResource(R.string.setting_mcp_page_name_placeholder)) },
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
             )
         }
 
@@ -761,7 +762,8 @@ private fun McpCommonOptionsConfigure(
                             is McpServerConfig.StreamableHTTPServer -> stringResource(R.string.setting_mcp_page_streamable_http_url_placeholder)
                         }
                     )
-                }
+                },
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
             )
         }
 
@@ -810,7 +812,8 @@ private fun McpCommonOptionsConfigure(
                                 },
                                 label = { Text(stringResource(R.string.setting_mcp_page_header_name)) },
                                 modifier = Modifier.fillMaxWidth(),
-                                placeholder = { Text(stringResource(R.string.setting_mcp_page_header_name_placeholder)) }
+                                placeholder = { Text(stringResource(R.string.setting_mcp_page_header_name_placeholder)) },
+                                shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                             )
                             Spacer(Modifier.height(8.dp))
                             OutlinedTextField(
@@ -834,7 +837,8 @@ private fun McpCommonOptionsConfigure(
                                 },
                                 label = { Text(stringResource(R.string.setting_mcp_page_header_value)) },
                                 modifier = Modifier.fillMaxWidth(),
-                                placeholder = { Text(stringResource(R.string.setting_mcp_page_header_value_placeholder)) }
+                                placeholder = { Text(stringResource(R.string.setting_mcp_page_header_value_placeholder)) },
+                                shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                             )
                         }
                         IconButton(onClick = {
@@ -1049,7 +1053,8 @@ private fun McpImportModal(
                             color = MaterialTheme.colorScheme.error,
                         )
                     }
-                }
+                },
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),

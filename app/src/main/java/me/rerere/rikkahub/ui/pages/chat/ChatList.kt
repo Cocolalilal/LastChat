@@ -683,7 +683,7 @@ private fun SharedTransitionScope.ChatListPreview(
                 }
             },
             singleLine = true,
-            shape = CircleShape,
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
             maxLines = 1,
         )
 

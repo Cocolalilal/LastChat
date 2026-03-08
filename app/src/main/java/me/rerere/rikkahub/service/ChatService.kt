@@ -57,10 +57,6 @@ import me.rerere.rikkahub.data.ai.GenerationChunk
 import me.rerere.rikkahub.data.ai.GenerationHandler
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.tools.LocalTools
-import me.rerere.rikkahub.data.ai.transformers.Base64ImageToLocalFileTransformer
-import me.rerere.rikkahub.data.ai.transformers.DocumentAsPromptTransformer
-import me.rerere.rikkahub.data.ai.transformers.OcrTransformer
-import me.rerere.rikkahub.data.ai.transformers.PlaceholderTransformer
 import me.rerere.rikkahub.data.ai.transformers.RegexOutputTransformer
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
 import me.rerere.rikkahub.data.ai.transformers.ThinkTagTransformer
@@ -90,23 +86,6 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlin.uuid.Uuid
 
 private const val TAG = "ChatService"
-
-private val inputTransformers by lazy {
-    listOf(
-        PlaceholderTransformer,
-        me.rerere.rikkahub.data.ai.transformers.UnsupportedFileTransformer,
-        DocumentAsPromptTransformer,
-        OcrTransformer,
-    )
-}
-
-private val outputTransformers by lazy {
-    listOf(
-        ThinkTagTransformer,
-        Base64ImageToLocalFileTransformer,
-        RegexOutputTransformer,
-    )
-}
 
 class ChatService(
     private val context: Application,
@@ -855,10 +834,10 @@ class ChatService(
                     emptyList()
                 },
                 inputTransformers = buildList {
-                    addAll(inputTransformers)
+                    addAll(defaultChatInputTransformers)
                     add(templateTransformer)
                 },
-                outputTransformers = outputTransformers,
+                outputTransformers = defaultChatOutputTransformers,
                 tools = buildList {
                     // Check if we should use built-in search instead of external tools
                     // Built-in search is used when:

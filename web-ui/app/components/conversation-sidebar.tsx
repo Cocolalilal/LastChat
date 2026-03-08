@@ -113,8 +113,8 @@ const COLOR_THEME_OPTIONS: Array<{
     labelKey: "color_mono",
   },
   {
-    value: "bubblegum",
-    labelKey: "color_bubblegum",
+    value: "caffeinated",
+    labelKey: "color_caffeinated",
   },
   {
     value: "custom",
@@ -126,6 +126,9 @@ const LANGUAGE_OPTIONS = [
   { value: "zh-CN", label: "简体中文" },
   { value: "en-US", label: "English" },
 ] as const;
+
+const SIDEBAR_ACTION_BUTTON_CLASSNAME =
+  "h-11 w-full justify-start gap-2 rounded-[var(--radius-card)] border-sidebar-border/80 bg-sidebar-accent/45 px-3 text-sidebar-foreground shadow-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground";
 
 type ConversationListItem =
   | { type: "pinned-header" }
@@ -264,7 +267,7 @@ const ConversationListRow = React.memo(({
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <SidebarMenuButton
           isActive={isActive}
-          className="h-auto min-h-11 rounded-2xl px-3 py-2.5 text-[13px] leading-tight"
+          className="h-auto min-h-11 rounded-[var(--radius-card)] px-3 py-2.5 text-[13px] leading-tight"
           onClick={() => onSelect(conversation.id)}
           onContextMenu={(event) => {
             if (!hasMenuAction) return;
@@ -292,7 +295,7 @@ const ConversationListRow = React.memo(({
             <DropdownMenuTrigger asChild>
               <SidebarMenuAction
                 showOnHover
-                className="top-2.5 right-2 rounded-xl"
+                className="top-2.5 right-2 rounded-[var(--radius-card-inner)]"
                 aria-label={t("conversation_sidebar.conversation_actions")}
                 title={t("conversation_sidebar.conversation_actions")}
                 disabled={pendingAction !== null}
@@ -643,29 +646,30 @@ export const ConversationSidebar = React.memo(({
 
   return (
     <Sidebar collapsible="offcanvas" variant="sidebar">
-      <SidebarHeader className="items-start gap-2 px-3 pt-3 pb-0">
+      <SidebarHeader className="items-start gap-2 px-2 pt-2 pb-0.5">
         <Logo className="size-10 shrink-0" />
       </SidebarHeader>
       <SidebarContent className="min-h-0">
-        <SidebarGroup>
-          <div className="pt-3">
-            <div className="overflow-hidden rounded-[1.35rem] border border-sidebar-border/70 bg-sidebar-accent/28 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
-              <Button
-                variant="default"
-                size="sm"
-                className="h-11 w-full justify-start rounded-none border-0 border-b border-sidebar-border/70 bg-transparent px-3 text-sidebar-foreground shadow-none hover:bg-sidebar-accent/70"
-                onClick={onCreateConversation}
-              >
-                <Plus className="size-4" />
-                {t("conversation_sidebar.new_conversation")}
-              </Button>
+        <SidebarGroup className="px-2 pt-0.5 pb-0.5">
+          <div className="flex flex-col gap-1">
+            <Button
+              variant="outline"
+              size="sm"
+              className={SIDEBAR_ACTION_BUTTON_CLASSNAME}
+              onClick={onCreateConversation}
+            >
+              <Plus className="size-4" />
+              {t("conversation_sidebar.new_conversation")}
+            </Button>
 
-              <ConversationSearchButton onSelect={onSelect} />
-            </div>
+            <ConversationSearchButton
+              onSelect={onSelect}
+              className={SIDEBAR_ACTION_BUTTON_CLASSNAME}
+            />
           </div>
         </SidebarGroup>
 
-        <SidebarGroup className="flex min-h-0 flex-1 flex-col">
+        <SidebarGroup className="flex min-h-0 flex-1 flex-col px-2 pt-0.5 pb-0">
           <InfiniteScrollArea
             dataLength={conversations.length}
             next={loadMore}
@@ -747,7 +751,7 @@ export const ConversationSidebar = React.memo(({
           )}
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter>
+      <SidebarFooter className="px-2 pt-1.5 pb-2">
         <Dialog
           open={pickerOpen}
           onOpenChange={(open) => {
@@ -760,7 +764,7 @@ export const ConversationSidebar = React.memo(({
           <DialogTrigger asChild>
             <Button
               variant="outline"
-              className="h-11 w-full justify-start gap-2 rounded-2xl border-border/70 bg-background/70 text-foreground shadow-sm"
+              className="h-11 w-full justify-start gap-2 rounded-[var(--radius-card)] border-sidebar-border/80 bg-sidebar-accent/45 text-sidebar-foreground shadow-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
               type="button"
             >
               {currentAssistant ? (
@@ -778,11 +782,11 @@ export const ConversationSidebar = React.memo(({
               )}
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-h-[80svh] max-w-xl overflow-hidden p-0">
-            <DialogHeader className="border-b px-6 py-4">
+          <DialogContent className="max-h-[80svh] max-w-xl overflow-hidden border-border bg-popover p-4">
+            <DialogHeader className="px-1 pt-0 pb-1">
               <DialogTitle>{t("conversation_sidebar.select_assistant")}</DialogTitle>
             </DialogHeader>
-            <div className="space-y-4 px-6 py-4">
+            <div className="space-y-3 overflow-hidden px-1 pb-1">
               {assistantTags.length > 0 && (
                 <div className="flex flex-wrap gap-2">
                   {assistantTags.map((tag) => {
@@ -793,6 +797,7 @@ export const ConversationSidebar = React.memo(({
                         type="button"
                         size="sm"
                         variant={selected ? "default" : "outline"}
+                        className={!selected ? "bg-background hover:bg-accent" : undefined}
                         onClick={() => toggleTag(tag.id)}
                       >
                         {tag.name}
@@ -808,43 +813,45 @@ export const ConversationSidebar = React.memo(({
                 </div>
               )}
 
-              <ScrollArea className="h-[380px]">
-                <div className="space-y-2">
-                  {filteredAssistants.map((assistant) => {
-                    const selected = assistant.id === currentAssistantId;
-                    const switching = switchingAssistantId === assistant.id;
-                    const displayName = getAssistantDisplayName(assistant.name);
-                    return (
-                      <button
-                        key={assistant.id}
-                        type="button"
-                        className="flex w-full items-center gap-3 rounded-2xl border border-border/70 bg-background/70 px-3 py-2.5 text-left transition hover:bg-muted"
-                        onClick={() => void handleAssistantSelect(assistant.id)}
-                        disabled={switchingAssistantId !== null}
-                      >
-                        <UIAvatar size="sm" name={displayName} avatar={assistant.avatar} />
-                        <span className="min-w-0 flex-1 truncate text-sm">{displayName}</span>
-                        {selected && !switching && (
-                          <Badge variant="secondary" className="gap-1">
-                            <Check className="size-3" />
-                            {t("conversation_sidebar.current")}
-                          </Badge>
-                        )}
-                        {switching && (
-                          <Badge variant="secondary" className="text-xs">
-                            {t("conversation_sidebar.switching")}
-                          </Badge>
-                        )}
-                      </button>
-                    );
-                  })}
-                  {filteredAssistants.length === 0 && (
-                    <div className="rounded-md border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
-                      {t("conversation_sidebar.no_assistants_by_tag")}
-                    </div>
-                  )}
-                </div>
-              </ScrollArea>
+              <div className="overflow-hidden rounded-[var(--radius-card)] border border-border/70 bg-muted/30 p-2">
+                <ScrollArea className="h-[380px]">
+                  <div className="space-y-2">
+                    {filteredAssistants.map((assistant) => {
+                      const selected = assistant.id === currentAssistantId;
+                      const switching = switchingAssistantId === assistant.id;
+                      const displayName = getAssistantDisplayName(assistant.name);
+                      return (
+                        <button
+                          key={assistant.id}
+                          type="button"
+                          className="flex w-full items-center gap-3 rounded-[var(--radius-card-inner)] border border-border/70 bg-background px-3 py-2.5 text-left transition hover:bg-accent"
+                          onClick={() => void handleAssistantSelect(assistant.id)}
+                          disabled={switchingAssistantId !== null}
+                        >
+                          <UIAvatar size="sm" name={displayName} avatar={assistant.avatar} />
+                          <span className="min-w-0 flex-1 truncate text-sm">{displayName}</span>
+                          {selected && !switching && (
+                            <Badge variant="secondary" className="gap-1">
+                              <Check className="size-3" />
+                              {t("conversation_sidebar.current")}
+                            </Badge>
+                          )}
+                          {switching && (
+                            <Badge variant="secondary" className="text-xs">
+                              {t("conversation_sidebar.switching")}
+                            </Badge>
+                          )}
+                        </button>
+                      );
+                    })}
+                    {filteredAssistants.length === 0 && (
+                      <div className="rounded-[var(--radius-card-inner)] border border-dashed border-border px-3 py-8 text-center text-sm text-muted-foreground">
+                        {t("conversation_sidebar.no_assistants_by_tag")}
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
+              </div>
             </div>
           </DialogContent>
         </Dialog>
@@ -861,7 +868,7 @@ export const ConversationSidebar = React.memo(({
             <Button
               variant="outline"
               size="icon-sm"
-              className="text-foreground"
+              className="border-sidebar-border/80 bg-transparent text-sidebar-foreground shadow-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
               type="button"
               onClick={handleWebLogout}
               aria-label="Clear web session"
@@ -878,7 +885,7 @@ export const ConversationSidebar = React.memo(({
               <Button
                 variant="outline"
                 size="icon-sm"
-                className="text-foreground"
+                className="border-sidebar-border/80 bg-transparent text-sidebar-foreground shadow-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 type="button"
                 aria-label={t("conversation_sidebar.theme_mode_label", {
                   label: t(`conversation_sidebar.${currentThemeOption.labelKey}`),
@@ -916,7 +923,7 @@ export const ConversationSidebar = React.memo(({
               <Button
                 variant="outline"
                 size="icon-sm"
-                className="text-foreground"
+                className="border-sidebar-border/80 bg-transparent text-sidebar-foreground shadow-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 type="button"
                 aria-label={t("conversation_sidebar.theme_color_label", {
                   label: t(`conversation_sidebar.${currentColorThemeOption.labelKey}`),

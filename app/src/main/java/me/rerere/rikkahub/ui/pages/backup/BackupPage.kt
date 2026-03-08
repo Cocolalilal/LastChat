@@ -229,7 +229,8 @@ private fun WebDavPage(
                         value = webDavConfig.url,
                         onValueChange = { updateWebDavConfig(webDavConfig.copy(url = it.trim())) },
                        // Placeholder = { Text("https://example.com/dav") },
-                        singleLine = true
+                        singleLine = true,
+                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField
                     )
                 }
                 FormItem(
@@ -245,7 +246,8 @@ private fun WebDavPage(
                                 )
                             )
                         },
-                        singleLine = true
+                        singleLine = true,
+                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField
                     )
                 }
                 FormItem(
@@ -266,7 +268,8 @@ private fun WebDavPage(
                                 Icon(imageVector = image, null)
                             }
                         },
-                        singleLine = true
+                        singleLine = true,
+                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField
                     )
                 }
                 FormItem(
@@ -276,7 +279,8 @@ private fun WebDavPage(
                         modifier = Modifier.fillMaxWidth(),
                         value = webDavConfig.path,
                         onValueChange = { updateWebDavConfig(webDavConfig.copy(path = it.trim())) },
-                        singleLine = true
+                        singleLine = true,
+                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField
                     )
                 }
             }

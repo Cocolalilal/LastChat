@@ -213,8 +213,8 @@ export function InjectionPickerButton({ disabled = false, className }: Injection
           size="sm"
           disabled={!canUse || updateInjectionsMutation.isPending}
           className={cn(
-            "h-9 rounded-full border border-border/60 bg-background/80 px-2.5 text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground",
-            selectedCount > 0 && "border-primary/20 bg-primary/10 text-primary hover:bg-primary/20",
+            "h-9 rounded-full border border-border/70 bg-muted/70 px-2.5 text-foreground shadow-none hover:bg-accent hover:text-accent-foreground",
+            selectedCount > 0 && "border-primary/20 bg-primary/10 text-primary hover:bg-primary/18",
             className,
           )}
         >
@@ -232,7 +232,7 @@ export function InjectionPickerButton({ disabled = false, className }: Injection
       </PopoverTrigger>
 
       <PopoverContent align="end" className="w-[min(92vw,26rem)] gap-0 p-0">
-        <PopoverHeader className="border-b px-6 py-4">
+        <PopoverHeader className="px-6 pt-4 pb-2">
           <PopoverTitle>{t("injection.title")}</PopoverTitle>
           <PopoverDescription>{t("injection.description")}</PopoverDescription>
         </PopoverHeader>
@@ -240,14 +240,14 @@ export function InjectionPickerButton({ disabled = false, className }: Injection
         <div className="space-y-4 px-4 py-4">
           <PickerErrorAlert error={error} />
 
-          <div className="bg-muted inline-flex rounded-full p-1">
+          <div className="inline-flex rounded-full border border-border/70 bg-muted/45 p-1">
             <button
               type="button"
               className={cn(
                 "rounded-full px-3 py-1 text-xs transition",
                 activeTab === "mode"
                   ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground",
+                  : "text-muted-foreground hover:bg-accent",
               )}
               onClick={() => {
                 setActiveTab("mode");
@@ -262,7 +262,7 @@ export function InjectionPickerButton({ disabled = false, className }: Injection
                 "rounded-full px-3 py-1 text-xs transition",
                 activeTab === "lorebook"
                   ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground",
+                  : "text-muted-foreground hover:bg-accent",
               )}
               onClick={() => {
                 setActiveTab("lorebook");
@@ -273,111 +273,113 @@ export function InjectionPickerButton({ disabled = false, className }: Injection
             </button>
           </div>
 
-          <ScrollArea className="h-[16rem] pr-3">
-            {activeTab === "mode" ? (
-              modeInjections.length > 0 ? (
-                <div className="space-y-2">
-                  {modeInjections.map((item) => {
-                    const checked = selectedModeInjectionIds.includes(item.id);
-                    const switching =
-                      updateInjectionsMutation.isPending &&
-                      updateInjectionsMutation.variables?.key === `mode:${item.id}`;
+          <div className="overflow-hidden rounded-[var(--radius-card)] border border-border/70 bg-muted/30 p-2">
+            <ScrollArea className="h-[16rem] pr-3">
+                {activeTab === "mode" ? (
+                  modeInjections.length > 0 ? (
+                    <div className="space-y-2">
+                      {modeInjections.map((item) => {
+                        const checked = selectedModeInjectionIds.includes(item.id);
+                        const switching =
+                          updateInjectionsMutation.isPending &&
+                          updateInjectionsMutation.variables?.key === `mode:${item.id}`;
 
-                    return (
+                        return (
+                        <label
+                          key={item.id}
+                          className={cn(
+                              "flex cursor-pointer items-center gap-3 rounded-[var(--radius-card-inner)] border border-border/70 bg-background px-3 py-3 transition hover:bg-accent",
+                              checked && "border-primary/25 bg-primary/10",
+                            )}
+                          >
+                            {switching ? (
+                              <LoaderCircle className="size-4 animate-spin" />
+                            ) : (
+                              <Checkbox
+                                checked={checked}
+                                disabled={disabled || updateInjectionsMutation.isPending}
+                                onCheckedChange={(nextChecked) => {
+                                  handleToggleModeInjection(item.id, Boolean(nextChecked));
+                                }}
+                              />
+                            )}
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-medium">
+                                {getDisplayName(item.name, t("injection.unnamed_mode"))}
+                              </div>
+                              <div className="text-muted-foreground mt-0.5 text-xs">
+                                {getSkillCommand(item)}
+                              </div>
+                              {item.enabled === false ? (
+                                <div className="text-muted-foreground mt-0.5 text-xs">
+                                  {t("injection.disabled")}
+                                </div>
+                              ) : null}
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="rounded-md border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
+                      {t("injection.empty_mode")}
+                    </div>
+                  )
+                ) : lorebooks.length > 0 ? (
+                  <div className="space-y-2">
+                    {lorebooks.map((item) => {
+                      const checked = selectedLorebookIds.includes(item.id);
+                      const switching =
+                        updateInjectionsMutation.isPending &&
+                        updateInjectionsMutation.variables?.key === `lorebook:${item.id}`;
+
+                      return (
                       <label
                         key={item.id}
                         className={cn(
-                          "flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-3 transition",
-                          checked && "border-primary bg-primary/5",
-                        )}
+                            "flex cursor-pointer items-center gap-3 rounded-[var(--radius-card-inner)] border border-border/70 bg-background px-3 py-3 transition hover:bg-accent",
+                            checked && "border-primary/25 bg-primary/10",
+                          )}
                       >
-                        {switching ? (
-                          <LoaderCircle className="size-4 animate-spin" />
-                        ) : (
-                          <Checkbox
-                            checked={checked}
-                            disabled={disabled || updateInjectionsMutation.isPending}
-                            onCheckedChange={(nextChecked) => {
-                              handleToggleModeInjection(item.id, Boolean(nextChecked));
-                            }}
-                          />
-                        )}
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-medium">
-                          {getDisplayName(item.name, t("injection.unnamed_mode"))}
-                        </div>
-                        <div className="text-muted-foreground mt-0.5 text-xs">
-                          {getSkillCommand(item)}
-                        </div>
-                        {item.enabled === false ? (
-                          <div className="text-muted-foreground mt-0.5 text-xs">
-                            {t("injection.disabled")}
+                          {switching ? (
+                            <LoaderCircle className="size-4 animate-spin" />
+                          ) : (
+                            <Checkbox
+                              checked={checked}
+                              disabled={disabled || updateInjectionsMutation.isPending}
+                              onCheckedChange={(nextChecked) => {
+                                handleToggleLorebook(item.id, Boolean(nextChecked));
+                              }}
+                            />
+                          )}
+
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-medium">
+                              {getDisplayName(item.name, t("injection.unnamed_lorebook"))}
+                            </div>
+                            {typeof item.description === "string" &&
+                            item.description.trim().length > 0 ? (
+                              <div className="text-muted-foreground mt-0.5 line-clamp-2 text-xs">
+                                {item.description}
+                              </div>
+                            ) : null}
+                            {item.enabled === false ? (
+                              <div className="text-muted-foreground mt-0.5 text-xs">
+                                {t("injection.disabled")}
+                              </div>
+                            ) : null}
                           </div>
-                          ) : null}
-                        </div>
-                      </label>
-                    );
-                  })}
-                </div>
-              ) : (
+                        </label>
+                      );
+                    })}
+                  </div>
+                ) : (
                 <div className="rounded-md border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
-                  {t("injection.empty_mode")}
+                  {t("injection.empty_lorebook")}
                 </div>
-              )
-            ) : lorebooks.length > 0 ? (
-              <div className="space-y-2">
-                {lorebooks.map((item) => {
-                  const checked = selectedLorebookIds.includes(item.id);
-                  const switching =
-                    updateInjectionsMutation.isPending &&
-                    updateInjectionsMutation.variables?.key === `lorebook:${item.id}`;
-
-                  return (
-                    <label
-                      key={item.id}
-                      className={cn(
-                        "flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-3 transition",
-                        checked && "border-primary bg-primary/5",
-                      )}
-                    >
-                      {switching ? (
-                        <LoaderCircle className="size-4 animate-spin" />
-                      ) : (
-                        <Checkbox
-                          checked={checked}
-                          disabled={disabled || updateInjectionsMutation.isPending}
-                          onCheckedChange={(nextChecked) => {
-                            handleToggleLorebook(item.id, Boolean(nextChecked));
-                          }}
-                        />
-                      )}
-
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-medium">
-                          {getDisplayName(item.name, t("injection.unnamed_lorebook"))}
-                        </div>
-                        {typeof item.description === "string" &&
-                        item.description.trim().length > 0 ? (
-                          <div className="text-muted-foreground mt-0.5 line-clamp-2 text-xs">
-                            {item.description}
-                          </div>
-                        ) : null}
-                        {item.enabled === false ? (
-                          <div className="text-muted-foreground mt-0.5 text-xs">
-                            {t("injection.disabled")}
-                          </div>
-                        ) : null}
-                      </div>
-                    </label>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="rounded-md border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
-                {t("injection.empty_lorebook")}
-              </div>
-            )}
-          </ScrollArea>
+              )}
+            </ScrollArea>
+          </div>
         </div>
       </PopoverContent>
     </Popover>

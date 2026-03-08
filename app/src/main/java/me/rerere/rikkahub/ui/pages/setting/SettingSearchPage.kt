@@ -934,7 +934,8 @@ private fun TavilyOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -985,7 +986,8 @@ private fun ExaOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 }
@@ -1010,7 +1012,8 @@ fun ZhipuOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 }
@@ -1081,7 +1084,8 @@ private fun SearXNGOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -1099,7 +1103,8 @@ private fun SearXNGOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -1117,7 +1122,8 @@ private fun SearXNGOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -1135,7 +1141,8 @@ private fun SearXNGOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -1153,7 +1160,8 @@ private fun SearXNGOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 }
@@ -1177,7 +1185,8 @@ private fun SearchLinkUpOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -1228,7 +1237,8 @@ private fun BraveOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 }
@@ -1253,7 +1263,8 @@ private fun MetasoOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 }
@@ -1277,7 +1288,8 @@ private fun OllamaOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 }
@@ -1301,7 +1313,8 @@ private fun PerplexityOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -1320,7 +1333,8 @@ private fun PerplexityOptions(
                 )
             },
             modifier = Modifier.fillMaxWidth(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 }
@@ -1344,7 +1358,8 @@ private fun GrokOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -1365,7 +1380,8 @@ private fun GrokOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 }
@@ -1389,7 +1405,8 @@ private fun FirecrawlOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 }
@@ -1413,7 +1430,8 @@ private fun JinaOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 }
@@ -1437,7 +1455,8 @@ private fun BochaOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -1482,7 +1501,8 @@ private fun NanoGPTOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 

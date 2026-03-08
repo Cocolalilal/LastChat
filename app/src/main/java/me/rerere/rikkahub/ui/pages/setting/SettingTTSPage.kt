@@ -692,7 +692,8 @@ private fun TtsFilterRuleEditDialog(
                     modifier = Modifier.fillMaxWidth(),
                     supportingText = {
                         Text("Text wrapped like ${pattern}text${pattern} will be filtered")
-                    }
+                    },
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                 )
                 
                 // Mode selector

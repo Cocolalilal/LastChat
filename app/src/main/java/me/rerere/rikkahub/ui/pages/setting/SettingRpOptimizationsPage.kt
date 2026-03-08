@@ -423,7 +423,8 @@ private fun RpStyleRuleDialog(
                                 Text("Enter any pattern")
                             }
                         }
-                    }
+                    },
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                 )
                 
                 OutlinedTextField(
@@ -454,7 +455,8 @@ private fun RpStyleRuleDialog(
                                 .clip(CircleShape)
                                 .background(color)
                         )
-                    }
+                    },
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                 )
                 
                 // Color presets row

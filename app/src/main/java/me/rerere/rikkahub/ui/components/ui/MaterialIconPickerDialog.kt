@@ -73,7 +73,7 @@ fun MaterialIconPickerDialog(
                             }
                         }
                     } else null,
-                    shape = RoundedCornerShape(50)
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField
                 )
 
                 LazyVerticalGrid(

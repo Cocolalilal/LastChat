@@ -659,7 +659,8 @@ private fun ConversationItem(
                         OutlinedTextField(
                             value = editedTitle,
                             onValueChange = { editedTitle = it },
-                            singleLine = true
+                            singleLine = true,
+                            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                         )
                     },
                     confirmButton = {

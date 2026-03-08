@@ -6,6 +6,23 @@
     "deep_thinking": "Deep Thinking",
     "thinking_seconds": "Thought for {{seconds}} seconds"
   },
+  "activity": {
+    "waiting": "Thinking...",
+    "replying": "Replying",
+    "reasoning_live": "Reasoning {{duration}}",
+    "reasoning_done": "Reasoned {{duration}}",
+    "multiple": "{{count}} activities",
+    "timeline_title": "Activity Timeline",
+    "timeline_description": "{{count}} activity step(s)",
+    "type": {
+      "reasoning": "Reasoned",
+      "search": "Searched web",
+      "python": "Ran Python",
+      "skill": "Used skills",
+      "mcp": "Used MCP",
+      "tool_other": "Used tools"
+    }
+  },
   "chat_message": {
     "copy_image": "Image",
     "copy_video": "Video",

@@ -3,7 +3,7 @@ import { Brain, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import Markdown from "~/components/markdown/markdown";
-import type { ReasoningPart as UIReasoningPart } from "~/types";
+import type { DisplaySetting, ReasoningPart as UIReasoningPart } from "~/types";
 import Think from "~/assets/think.svg?react";
 import { serverNow } from "~/lib/utils";
 
@@ -13,6 +13,7 @@ import { ControlledChainOfThoughtStep } from "../chain-of-thought";
 
 interface ReasoningStepPartProps {
   reasoning: UIReasoningPart;
+  displaySetting?: DisplaySetting | null;
   isFirst?: boolean;
   isLast?: boolean;
 }
@@ -38,10 +39,15 @@ function formatDuration(createdAt?: string, finishedAt?: string | null): number 
   return Math.round(seconds * 10) / 10;
 }
 
-export function ReasoningStepPart({ reasoning, isFirst, isLast }: ReasoningStepPartProps) {
+export function ReasoningStepPart({
+  reasoning,
+  displaySetting,
+  isFirst,
+  isLast,
+}: ReasoningStepPartProps) {
   const loading = reasoning.finishedAt == null;
   const { t } = useTranslation("message");
-  const displaySetting = useSettingsStore((state) => state.settings?.displaySetting);
+  const globalDisplaySetting = useSettingsStore((state) => state.settings?.displaySetting);
   const [expandState, setExpandState] = React.useState<ReasoningCardState>(
     ReasoningCardState.Collapsed,
   );
@@ -49,7 +55,7 @@ export function ReasoningStepPart({ reasoning, isFirst, isLast }: ReasoningStepP
 
   React.useEffect(() => {
     if (loading) {
-      if (displaySetting?.showThinkingContent) {
+      if (globalDisplaySetting?.showThinkingContent) {
         setExpandState((state) =>
           state === ReasoningCardState.Collapsed ? ReasoningCardState.Preview : state,
         );
@@ -59,11 +65,11 @@ export function ReasoningStepPart({ reasoning, isFirst, isLast }: ReasoningStepP
 
     setExpandState((state) => {
       if (state === ReasoningCardState.Collapsed) return state;
-      return (displaySetting?.autoCloseThinking ?? true)
+      return (globalDisplaySetting?.autoCloseThinking ?? true)
         ? ReasoningCardState.Collapsed
         : ReasoningCardState.Expanded;
     });
-  }, [loading, reasoning.reasoning, displaySetting?.showThinkingContent, displaySetting?.autoCloseThinking]);
+  }, [loading, reasoning.reasoning, globalDisplaySetting?.showThinkingContent, globalDisplaySetting?.autoCloseThinking]);
 
   React.useEffect(() => {
     if (loading && expandState === ReasoningCardState.Preview && contentRef.current) {
@@ -127,7 +133,12 @@ export function ReasoningStepPart({ reasoning, isFirst, isLast }: ReasoningStepP
           ref={contentRef}
           className={preview ? "styled-scrollbar relative max-h-24 overflow-y-auto" : undefined}
         >
-          <Markdown content={reasoning.reasoning} className="text-xs" isAnimating={loading} />
+          <Markdown
+            content={reasoning.reasoning}
+            className="text-xs"
+            displaySetting={displaySetting}
+            isAnimating={loading}
+          />
         </div>
       </ControlledChainOfThoughtStep>
     </div>

@@ -88,7 +88,8 @@ fun SettingProviderBalanceOption(
                     onValueChange = { onEdit(balanceOption.copy(apiPath = it)) },
                     label = { Text(stringResource(R.string.setting_provider_page_balance_api_path)) },
                     isError = !balanceOption.apiPath.matches(ApiPathRegex),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                 )
                 OutlinedTextField(
                     value = balanceOption.resultPath,
@@ -96,7 +97,8 @@ fun SettingProviderBalanceOption(
                     label = { Text(stringResource(R.string.setting_provider_page_balance_json_key)) },
                     isError = !isJsonExprValid(balanceOption.resultPath),
                     modifier = Modifier.fillMaxWidth(),
-                    textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
+                    textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                 )
                 IconButton(
                     onClick = {

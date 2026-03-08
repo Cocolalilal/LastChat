@@ -1,7 +1,6 @@
 package me.rerere.rikkahub
 
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -48,11 +47,8 @@ import me.rerere.rikkahub.ui.components.ui.AppToasterHost
 import me.rerere.rikkahub.ui.components.ui.rememberAppToasterState
 import kotlinx.serialization.Serializable
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import me.rerere.highlight.Highlighter
 import me.rerere.highlight.LocalHighlighter
 import me.rerere.rikkahub.data.datastore.SpontaneousMessagingStateStore
@@ -95,55 +91,23 @@ import me.rerere.rikkahub.ui.pages.webview.WebViewPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAndroidIntegrationPage
 import me.rerere.rikkahub.ui.pages.setting.SettingUICustomizationPage
 import me.rerere.rikkahub.ui.pages.setting.SettingFontsPage
+import me.rerere.rikkahub.share.ResolvedSharePayload
+import me.rerere.rikkahub.share.readResolvedSharePayload
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.theme.RikkahubTheme
 import me.rerere.rikkahub.service.EXTRA_IS_SPONTANEOUS_NOTIFICATION
 import me.rerere.rikkahub.service.EXTRA_SPONTANEOUS_EVENT_ID
 import me.rerere.rikkahub.service.EXTRA_SPONTANEOUS_MESSAGE
 import me.rerere.rikkahub.service.EXTRA_SPONTANEOUS_RELATION
+import me.rerere.rikkahub.ui.activity.QuickAskContinuationData
+import me.rerere.rikkahub.ui.activity.buildQuickAskMessageParts
+import me.rerere.rikkahub.ui.activity.readQuickAskContinuationData
 import okhttp3.OkHttpClient
 import org.koin.android.ext.android.inject
 import me.rerere.rikkahub.utils.fileSizeToString
-import me.rerere.rikkahub.utils.base64Encode
-import me.rerere.rikkahub.utils.createChatFilesByContents
-import me.rerere.rikkahub.utils.createChatTextFile
-import me.rerere.search.SearchService
-import org.jsoup.Jsoup
 import kotlin.uuid.Uuid
 
 private const val TAG = "RouteActivity"
-private const val MAX_SHARED_WEBPAGE_CHARS = 16_000
-private val SHARED_URL_REGEX = Regex("""(?i)\b((?:https?://|www\.)[^\s<>()]+)""")
-
-/**
- * Data class to hold text selection intent data for navigation
- */
-data class TextSelectionData(
-    val navigateTo: String?,
-    val selectedText: String?,
-    val aiResponse: String?,
-    val userPrompt: String?,
-    val selectionAssistantId: String?
-)
-
-private data class ShareIntentData(
-    val text: String,
-    val subject: String?,
-    val mimeType: String?,
-    val streamUris: List<String>,
-)
-
-private data class SharedUrlMatch(
-    val raw: String,
-    val normalized: String,
-)
-
-private data class ScrapedWebsiteContent(
-    val url: String,
-    val title: String?,
-    val description: String?,
-    val content: String,
-)
 
 private data class SpontaneousNotificationData(
     val assistantId: String,
@@ -152,6 +116,18 @@ private data class SpontaneousNotificationData(
     val message: String,
     val relation: me.rerere.rikkahub.service.SpontaneousMessageRelation,
 )
+
+internal fun resolveSpontaneousNotificationRelation(
+    relationExtra: String?,
+    conversationId: String?,
+): me.rerere.rikkahub.service.SpontaneousMessageRelation {
+    return me.rerere.rikkahub.service.SpontaneousMessageRelation.fromWireValue(relationExtra)
+        ?: if (conversationId.isNullOrBlank()) {
+            me.rerere.rikkahub.service.SpontaneousMessageRelation.UNRELATED
+        } else {
+            me.rerere.rikkahub.service.SpontaneousMessageRelation.RECENT_CHAT
+        }
+}
 
 class RouteActivity : ComponentActivity() {
     private val highlighter by inject<Highlighter>()
@@ -162,10 +138,10 @@ class RouteActivity : ComponentActivity() {
     private val conversationRepo by inject<me.rerere.rikkahub.data.repository.ConversationRepository>()
     private var navStack by mutableStateOf<NavHostController?>(null)
     private var pendingAssistantId by mutableStateOf<String?>(null)
-    private var pendingTextSelection by mutableStateOf<TextSelectionData?>(null)
+    private var pendingTextSelection by mutableStateOf<QuickAskContinuationData?>(null)
     private var pendingConversationId by mutableStateOf<String?>(null)
     private var pendingSpontaneousNotification by mutableStateOf<SpontaneousNotificationData?>(null)
-    private var pendingShareIntent by mutableStateOf<ShareIntentData?>(null)
+    private var pendingShareIntent by mutableStateOf<ResolvedSharePayload?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -193,21 +169,8 @@ class RouteActivity : ComponentActivity() {
             pendingSpontaneousNotification = spontaneousNotification
         }
         
-        // Check for text selection intent
-        val navigateTo = intent?.getStringExtra("navigate_to")
-        val continueConversation = intent?.getBooleanExtra("continue_conversation", false) ?: false
-        if (continueConversation) {
-            pendingTextSelection = TextSelectionData(
-                navigateTo = navigateTo,
-                selectedText = intent?.getStringExtra("selected_text"),
-                aiResponse = intent?.getStringExtra("ai_response"),
-                userPrompt = intent?.getStringExtra("user_prompt"),
-                selectionAssistantId = intent?.getStringExtra("selection_assistant_id")
-            )
-        }
-        if (intent?.action == Intent.ACTION_SEND || intent?.action == Intent.ACTION_SEND_MULTIPLE) {
-            pendingShareIntent = intent.toShareIntentData()
-        }
+        pendingTextSelection = intent?.readQuickAskContinuationData()
+        pendingShareIntent = intent?.readResolvedSharePayload()
         
         setContent {
             val navStack = rememberNavController()
@@ -272,233 +235,6 @@ class RouteActivity : ComponentActivity() {
             window.isNavigationBarContrastEnforced = false
         }
     }
-    
-    // AssistantShortcutHandler removed - shortcuts now handled directly in onCreate/onNewIntent
-
-    private fun Intent?.toShareIntentData(): ShareIntentData {
-        if (this == null) {
-            return ShareIntentData(
-                text = "",
-                subject = null,
-                mimeType = null,
-                streamUris = emptyList()
-            )
-        }
-
-        val sharedText = runCatching {
-            getStringExtra(Intent.EXTRA_TEXT)
-                ?: getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
-                ?: getStringExtra(Intent.EXTRA_HTML_TEXT)
-                ?: ""
-        }.getOrElse {
-            android.util.Log.w(TAG, "Failed to parse shared text extra", it)
-            ""
-        }
-        val sharedSubject = runCatching {
-            getStringExtra(Intent.EXTRA_SUBJECT)?.takeIf { it.isNotBlank() }
-        }.getOrElse {
-            android.util.Log.w(TAG, "Failed to parse shared subject extra", it)
-            null
-        }
-        val sharedStreamUris = runCatching {
-            buildList {
-                @Suppress("DEPRECATION")
-                getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.toString()?.let(::add)
-                @Suppress("DEPRECATION")
-                getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
-                    ?.map(Uri::toString)
-                    ?.let(::addAll)
-                getStringExtra(Intent.EXTRA_STREAM)?.takeIf { it.isNotBlank() }?.let(::add)
-                clipData?.let { clip ->
-                    for (index in 0 until clip.itemCount) {
-                        clip.getItemAt(index).uri?.toString()?.let(::add)
-                    }
-                }
-            }.distinct()
-        }.getOrElse {
-            android.util.Log.w(TAG, "Failed to parse shared stream extras", it)
-            emptyList()
-        }
-
-        return ShareIntentData(
-            text = sharedText,
-            subject = sharedSubject,
-            mimeType = type,
-            streamUris = sharedStreamUris
-        )
-    }
-
-    private suspend fun resolveShareIntentData(shareData: ShareIntentData): ShareIntentData {
-        return withContext(Dispatchers.IO) {
-            val copiedStreamUris = if (shareData.streamUris.isEmpty()) {
-                emptyList()
-            } else {
-                createChatFilesByContents(shareData.streamUris.map { it.toUri() }).map(Uri::toString)
-            }
-            val scrapedWebsite = if (copiedStreamUris.isEmpty()) {
-                scrapeWebsiteShare(shareData)
-            } else {
-                null
-            }
-
-            val baseText = shareData.text.ifBlank { shareData.subject.orEmpty() }
-            if (scrapedWebsite == null) {
-                shareData.copy(
-                    text = baseText,
-                    streamUris = copiedStreamUris
-                )
-            } else {
-                shareData.copy(
-                    text = scrapedWebsite.first,
-                    streamUris = copiedStreamUris + scrapedWebsite.second
-                )
-            }
-        }
-    }
-
-    private suspend fun scrapeWebsiteShare(shareData: ShareIntentData): Pair<String, String>? {
-        val sharedUrl = findSharedUrlMatch(shareData.text) ?: return null
-        val scrapedPage = scrapeWebsiteContent(sharedUrl.normalized) ?: return null
-        val cleanedText = shareData.text
-            .replace(sharedUrl.raw, "")
-            .lineSequence()
-            .map(String::trim)
-            .filter(String::isNotBlank)
-            .joinToString("\n")
-        val fileName = buildSharedWebpageFileName(
-            title = scrapedPage.title,
-            url = scrapedPage.url
-        )
-        val localFile = createChatTextFile(
-            fileName = fileName,
-            content = buildSharedWebpageDocument(scrapedPage)
-        )
-        return cleanedText to localFile.toString()
-    }
-
-    private suspend fun scrapeWebsiteContent(url: String): ScrapedWebsiteContent? {
-        val settings = settingsStore.settingsFlow.value
-        val selectedSearchOptions = settings.searchServices.getOrElse(
-            index = settings.searchServiceSelected,
-            defaultValue = { me.rerere.search.SearchServiceOptions.DEFAULT }
-        )
-        val searchService = SearchService.getService(selectedSearchOptions)
-
-        if (searchService.scrapingParameters != null) {
-            runCatching {
-                val scrapedResult = searchService.scrape(
-                    params = buildJsonObject {
-                        put("url", url)
-                    },
-                    commonOptions = settings.searchCommonOptions,
-                    serviceOptions = selectedSearchOptions,
-                ).getOrThrow()
-                scrapedResult.urls.firstOrNull { it.content.isNotBlank() }?.let { page ->
-                    return ScrapedWebsiteContent(
-                        url = page.url,
-                        title = page.metadata?.title,
-                        description = page.metadata?.description,
-                        content = limitSharedWebpageContent(page.content)
-                    )
-                }
-            }.onFailure {
-                android.util.Log.w(TAG, "Configured scraper failed for shared URL: $url", it)
-            }
-        }
-
-        return runCatching {
-            val document = Jsoup.connect(url)
-                .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-                .timeout(15_000)
-                .get()
-            val description = document.selectFirst(
-                "meta[name=description], meta[property=og:description]"
-            )?.attr("content")?.trim()?.takeIf { it.isNotBlank() }
-            val mainContent = document.selectFirst("main, article, [role=main]") ?: document.body()
-            val blocks = mainContent
-                .select("h1, h2, h3, h4, h5, h6, p, li, pre, blockquote")
-                .eachText()
-                .map(String::trim)
-                .filter(String::isNotBlank)
-            val textContent = if (blocks.isNotEmpty()) {
-                blocks.joinToString("\n\n")
-            } else {
-                mainContent.text()
-            }.trim()
-
-            if (textContent.isBlank()) {
-                null
-            } else {
-                ScrapedWebsiteContent(
-                    url = url,
-                    title = document.title().takeIf { it.isNotBlank() },
-                    description = description,
-                    content = limitSharedWebpageContent(textContent)
-                )
-            }
-        }.getOrElse {
-            android.util.Log.w(TAG, "Fallback scrape failed for shared URL: $url", it)
-            null
-        }
-    }
-
-    private fun findSharedUrlMatch(text: String): SharedUrlMatch? {
-        val rawMatch = SHARED_URL_REGEX.find(text)?.groupValues?.getOrNull(1)
-            ?.trimEnd('.', ',', ';', ':', ')', ']', '>', '"', '\'')
-            ?.takeIf { it.isNotBlank() }
-            ?: return null
-        val normalized = if (rawMatch.startsWith("http://", ignoreCase = true) ||
-            rawMatch.startsWith("https://", ignoreCase = true)
-        ) {
-            rawMatch
-        } else {
-            "https://$rawMatch"
-        }
-        return SharedUrlMatch(raw = rawMatch, normalized = normalized)
-    }
-
-    private fun buildSharedWebpageDocument(page: ScrapedWebsiteContent): String {
-        return buildString {
-            page.title?.let {
-                append("# ")
-                append(it)
-                append("\n\n")
-            }
-            append("Source: ")
-            append(page.url)
-            append("\n\n")
-            page.description?.let {
-                append(it)
-                append("\n\n")
-            }
-            append(page.content)
-        }.trim()
-    }
-
-    private fun buildSharedWebpageFileName(title: String?, url: String): String {
-        val host = Uri.parse(url).host
-            ?.replace(Regex("[^A-Za-z0-9]+"), "-")
-            ?.trim('-')
-            ?.lowercase()
-            ?.takeIf { it.isNotBlank() }
-            ?: "webpage"
-        val titlePart = title
-            ?.replace(Regex("[^A-Za-z0-9]+"), "-")
-            ?.trim('-')
-            ?.lowercase()
-            ?.take(24)
-            ?.takeIf { it.isNotBlank() }
-        val baseName = listOfNotNull("shared-page", host, titlePart).joinToString("-")
-        return "$baseName.md"
-    }
-
-    private fun limitSharedWebpageContent(content: String): String {
-        if (content.length <= MAX_SHARED_WEBPAGE_CHARS) {
-            return content
-        }
-        return content.take(MAX_SHARED_WEBPAGE_CHARS) +
-            "\n\n[Shared webpage content truncated by LastChat.]"
-    }
 
     private fun Intent?.toSpontaneousNotificationData(): SpontaneousNotificationData? {
         if (this == null || !getBooleanExtra(EXTRA_IS_SPONTANEOUS_NOTIFICATION, false)) {
@@ -508,13 +244,15 @@ class RouteActivity : ComponentActivity() {
         val assistantId = getStringExtra("assistantId") ?: return null
         val eventId = getStringExtra(EXTRA_SPONTANEOUS_EVENT_ID) ?: return null
         val message = getStringExtra(EXTRA_SPONTANEOUS_MESSAGE) ?: return null
-        val relation = me.rerere.rikkahub.service.SpontaneousMessageRelation.fromWireValue(
-            getStringExtra(EXTRA_SPONTANEOUS_RELATION)
-        ) ?: return null
+        val conversationId = getStringExtra("conversationId")
+        val relation = resolveSpontaneousNotificationRelation(
+            relationExtra = getStringExtra(EXTRA_SPONTANEOUS_RELATION),
+            conversationId = conversationId,
+        )
 
         return SpontaneousNotificationData(
             assistantId = assistantId,
-            conversationId = getStringExtra("conversationId"),
+            conversationId = conversationId,
             eventId = eventId,
             message = message,
             relation = relation,
@@ -527,25 +265,19 @@ class RouteActivity : ComponentActivity() {
         LaunchedEffect(navBackStack, shareData) {
             val currentShareData = shareData ?: return@LaunchedEffect
             pendingShareIntent = null
-            val resolvedShareData = runCatching {
-                resolveShareIntentData(currentShareData)
-            }.getOrElse { throwable ->
-                android.util.Log.e(TAG, "Share preprocessing failed", throwable)
-                currentShareData
-            }
             runCatching {
                 navBackStack.navigate(
                     Screen.ShareHandler(
-                        text = resolvedShareData.text,
-                        files = resolvedShareData.streamUris
+                        text = currentShareData.text,
+                        files = currentShareData.attachmentUris()
                     )
                 )
             }.onFailure { throwable ->
                 android.util.Log.e(TAG, "Share navigation failed", throwable)
                 navBackStack.navigate(
                     Screen.ShareHandler(
-                        text = resolvedShareData.text,
-                        files = resolvedShareData.streamUris
+                        text = currentShareData.text,
+                        files = currentShareData.attachmentUris()
                     )
                 )
             }
@@ -634,22 +366,19 @@ class RouteActivity : ComponentActivity() {
                     // Create a new conversation with pre-existing messages
                     val conversationId = Uuid.random()
                     
-                    // Create user message with selected text
-                    val userContent = buildString {
-                        if (!data.selectedText.isNullOrBlank()) {
-                            append(data.selectedText)
-                        }
-                        if (!data.userPrompt.isNullOrBlank()) {
-                            append("\n\n")
-                            append(data.userPrompt)
-                        }
-                    }
-                    
                     val messages = mutableListOf<me.rerere.rikkahub.data.model.MessageNode>()
-                    
-                    // Add user message if there's content
-                    if (userContent.isNotBlank()) {
-                        val userMessage = me.rerere.ai.ui.UIMessage.user(userContent.trim())
+
+                    val userParts = buildQuickAskMessageParts(
+                        text = data.text,
+                        attachments = data.attachments,
+                        customPrompt = data.userPrompt
+                    )
+
+                    if (userParts.isNotEmpty()) {
+                        val userMessage = me.rerere.ai.ui.UIMessage(
+                            role = me.rerere.ai.core.MessageRole.USER,
+                            parts = userParts
+                        )
                         messages.add(me.rerere.rikkahub.data.model.MessageNode.of(userMessage))
                     }
                     
@@ -662,7 +391,7 @@ class RouteActivity : ComponentActivity() {
                     
                     if (messages.isNotEmpty()) {
                         // Use the assistant from text selection config if available
-                        val assistantId = data.selectionAssistantId?.takeIf { it.isNotBlank() }?.let { 
+                        val assistantId = data.assistantId?.takeIf { it.isNotBlank() }?.let {
                             try { Uuid.parse(it) } catch (e: Exception) { null }
                         } ?: settings.assistantId
                         
@@ -691,9 +420,8 @@ class RouteActivity : ComponentActivity() {
         setIntent(intent)
         android.util.Log.d(TAG, "onNewIntent called")
         android.util.Log.d(TAG, "Intent extras: conversationId=${intent.getStringExtra("conversationId")}, assistantId=${intent.getStringExtra("assistantId")}")
-        if (intent.action == Intent.ACTION_SEND || intent.action == Intent.ACTION_SEND_MULTIPLE) {
-            pendingShareIntent = intent.toShareIntentData()
-        }
+        pendingShareIntent = intent.readResolvedSharePayload()
+        pendingTextSelection = intent.readQuickAskContinuationData() ?: pendingTextSelection
 
         intent.toSpontaneousNotificationData()?.let { notification ->
             pendingSpontaneousNotification = notification

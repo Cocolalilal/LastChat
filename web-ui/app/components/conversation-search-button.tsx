@@ -1,7 +1,7 @@
 import * as React from "react";
 
 import dayjs from "dayjs";
-import { Circle, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "~/components/ui/button";
@@ -12,11 +12,13 @@ import {
   DialogTrigger,
 } from "~/components/ui/dialog";
 import { ScrollArea } from "~/components/ui/scroll-area";
+import { cn } from "~/lib/utils";
 import api from "~/services/api";
 import type { MessageSearchResultDto } from "~/types";
 
 export interface ConversationSearchButtonProps {
   onSelect: (id: string) => void;
+  className?: string;
 }
 
 function SnippetText({ snippet }: { snippet: string }) {
@@ -63,7 +65,10 @@ function formatRelativeTime(updateAt: number, t: (key: string) => string): strin
   }).format(native);
 }
 
-export function ConversationSearchButton({ onSelect }: ConversationSearchButtonProps) {
+export function ConversationSearchButton({
+  onSelect,
+  className,
+}: ConversationSearchButtonProps) {
   const { t } = useTranslation();
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
@@ -125,86 +130,95 @@ export function ConversationSearchButton({ onSelect }: ConversationSearchButtonP
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button
-          variant="ghost"
+          variant="outline"
           size="sm"
-          className="h-11 w-full justify-start rounded-none border-0 bg-transparent px-3 text-sidebar-foreground shadow-none hover:bg-sidebar-accent/70"
+          className={cn(
+            "h-11 w-full justify-start rounded-[var(--radius-card)] border-sidebar-border/80 bg-sidebar-accent/45 px-3 text-sidebar-foreground shadow-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+            className,
+          )}
           type="button"
         >
           <Search className="size-4" />
           {t("conversation_search.search_conversations")}
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[80svh] max-w-xl overflow-hidden p-0">
+      <DialogContent className="max-h-[80svh] max-w-xl overflow-hidden border-border bg-popover p-1.5">
         <DialogTitle className="sr-only">
           {t("conversation_search.search_conversations")}
         </DialogTitle>
 
-        <div className="flex items-center gap-2 border-b px-4 py-3">
-          <Search className="size-4 shrink-0 text-muted-foreground" />
-          <input
-            className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-            }}
-            placeholder={t("conversation_search.input_placeholder")}
-            autoFocus
-          />
-        </div>
-
-        <ScrollArea className="h-[420px]">
-          <div className="p-2">
-            {searching ? (
-              <div className="px-2 py-6 text-center text-sm text-muted-foreground">
-                {t("conversation_search.searching")}
-              </div>
-            ) : null}
-
-            {!searching && error ? (
-              <div className="px-2 py-6 text-center text-sm text-destructive">{error}</div>
-            ) : null}
-
-            {!searching && !error && query.trim().length === 0 ? (
-              <div className="px-2 py-6 text-center text-sm text-muted-foreground">
-                {t("conversation_search.type_to_start")}
-              </div>
-            ) : null}
-
-            {!searching && !error && query.trim().length > 0 && results.length === 0 ? (
-              <div className="px-2 py-6 text-center text-sm text-muted-foreground">
-                {t("conversation_search.no_results")}
-              </div>
-            ) : null}
-
-            {!searching &&
-              !error &&
-              results.map((item) => (
-                <button
-                  key={`${item.conversationId}-${item.messageId}`}
-                  type="button"
-                  className="flex w-full items-start gap-3 rounded-md px-2 py-2 text-left transition hover:bg-muted"
-                  onClick={() => {
-                    onSelect(item.conversationId);
-                    setOpen(false);
-                  }}
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-sm font-medium">
-                        {item.title || t("conversation_search.unnamed_conversation")}
-                      </span>
-                      <span className="shrink-0 text-xs text-muted-foreground">
-                        {formatRelativeTime(item.updateAt, t)}
-                      </span>
-                    </div>
-                    <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
-                      <SnippetText snippet={item.snippet} />
-                    </p>
-                  </div>
-                </button>
-              ))}
+        <div className="flex max-h-[calc(80svh-0.75rem)] flex-col overflow-hidden rounded-[var(--radius-panel-inner)] border border-border/70 bg-background/95">
+          <div className="flex items-center gap-2 border-b border-border/70 px-4 py-3">
+            <Search className="size-4 shrink-0 text-muted-foreground" />
+            <input
+              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+              }}
+              placeholder={t("conversation_search.input_placeholder")}
+              autoFocus
+            />
           </div>
-        </ScrollArea>
+
+          <div className="min-h-0 flex-1 overflow-hidden p-2">
+            <div className="h-full overflow-hidden rounded-[var(--radius-card)] border border-border/70 bg-muted/35 p-1.5">
+              <ScrollArea className="h-[420px]">
+                <div className="p-1">
+                  {searching ? (
+                    <div className="px-2 py-6 text-center text-sm text-muted-foreground">
+                      {t("conversation_search.searching")}
+                    </div>
+                  ) : null}
+
+                  {!searching && error ? (
+                    <div className="px-2 py-6 text-center text-sm text-destructive">{error}</div>
+                  ) : null}
+
+                  {!searching && !error && query.trim().length === 0 ? (
+                    <div className="px-2 py-6 text-center text-sm text-muted-foreground">
+                      {t("conversation_search.type_to_start")}
+                    </div>
+                  ) : null}
+
+                  {!searching && !error && query.trim().length > 0 && results.length === 0 ? (
+                    <div className="px-2 py-6 text-center text-sm text-muted-foreground">
+                      {t("conversation_search.no_results")}
+                    </div>
+                  ) : null}
+
+                  {!searching &&
+                    !error &&
+                    results.map((item) => (
+                      <button
+                        key={`${item.conversationId}-${item.messageId}`}
+                        type="button"
+                        className="flex w-full items-start gap-3 rounded-[var(--radius-card-inner)] border border-transparent bg-background px-3 py-2.5 text-left transition hover:border-border/70 hover:bg-accent"
+                        onClick={() => {
+                          onSelect(item.conversationId);
+                          setOpen(false);
+                        }}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="truncate text-sm font-medium">
+                              {item.title || t("conversation_search.unnamed_conversation")}
+                            </span>
+                            <span className="shrink-0 text-xs text-muted-foreground">
+                              {formatRelativeTime(item.updateAt, t)}
+                            </span>
+                          </div>
+                          <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                            <SnippetText snippet={item.snippet} />
+                          </p>
+                        </div>
+                      </button>
+                    ))}
+                </div>
+              </ScrollArea>
+            </div>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   );

@@ -1,7 +1,7 @@
 import * as React from "react";
 
 import { useMutation } from "@tanstack/react-query";
-import { ChevronDown, Lightbulb, LightbulbOff, LoaderCircle, Sparkles } from "lucide-react";
+import { ChevronDown, Lightbulb, LightbulbCircle, LoaderCircle, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { useCurrentAssistant } from "~/hooks/use-current-assistant";
@@ -176,7 +176,7 @@ export function ReasoningPickerButton({ disabled = false, className }: Reasoning
           size="sm"
           disabled={!canUse || loading}
           className={cn(
-            "h-9 rounded-full border border-border/60 bg-background/80 px-3 text-sm font-normal text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground",
+            "h-9 rounded-full border border-border/70 bg-muted/70 px-3 text-sm font-normal text-foreground shadow-none hover:bg-accent hover:text-accent-foreground",
             className,
           )}
         >
@@ -192,15 +192,15 @@ export function ReasoningPickerButton({ disabled = false, className }: Reasoning
       </PopoverTrigger>
 
       <PopoverContent align="end" className="w-[min(92vw,24rem)] gap-0 p-0">
-        <PopoverHeader className="border-b px-6 py-4">
+        <PopoverHeader className="px-6 pt-4 pb-2">
           <PopoverTitle>{t("reasoning.title")}</PopoverTitle>
           <PopoverDescription>{t("reasoning.description")}</PopoverDescription>
         </PopoverHeader>
 
-        <div className="max-h-[70svh] space-y-3 overflow-y-auto px-4 py-4">
+        <div className="max-h-[70svh] space-y-4 overflow-y-auto px-4 py-4">
           <PickerErrorAlert error={error} />
 
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-3 gap-2 rounded-[var(--radius-card)] border border-border/70 bg-muted/35 p-2">
             {reasoningPresets.map((preset) => {
               const selected = preset.key === currentLevel;
               const switching =
@@ -215,6 +215,7 @@ export function ReasoningPickerButton({ disabled = false, className }: Reasoning
                   variant={selected ? "default" : "outline"}
                   className={cn(
                     "h-8 w-full justify-start rounded-full px-2 text-xs",
+                    !selected && "bg-background hover:bg-accent",
                     selected && "shadow-none",
                   )}
                   disabled={disabled || loading}
@@ -227,7 +228,7 @@ export function ReasoningPickerButton({ disabled = false, className }: Reasoning
                   }}
                 >
                   {preset.key === "OFF" ? (
-                    <LightbulbOff className="size-3.5" />
+                    <LightbulbCircle className="size-3.5" />
                   ) : preset.key === "AUTO" ? (
                     <Sparkles className="size-3.5" />
                   ) : (
@@ -242,14 +243,14 @@ export function ReasoningPickerButton({ disabled = false, className }: Reasoning
             })}
           </div>
 
-          <div className="text-muted-foreground h-4 truncate text-xs">
+          <div className="text-muted-foreground h-4 truncate px-1 text-xs">
             {currentPreset.description}
           </div>
 
-          <div className="space-y-2 px-1 py-1">
+          <div className="space-y-2 rounded-[var(--radius-card)] border border-border/70 bg-muted/40 px-3 py-3">
             <button
               type="button"
-              className="hover:bg-muted flex h-8 w-full items-center justify-between rounded-md px-2 text-left text-xs font-medium transition"
+              className="flex h-8 w-full items-center justify-between rounded-[var(--radius-card-inner)] px-2 text-left text-xs font-medium transition hover:bg-accent"
               onClick={() => {
                 setCustomExpanded((prev) => !prev);
               }}
@@ -264,7 +265,7 @@ export function ReasoningPickerButton({ disabled = false, className }: Reasoning
               <>
                 <div className="flex items-center gap-2">
                   <Input
-                    className="h-8"
+                    className="h-8 border-border/70 bg-background"
                     value={customValue}
                     onChange={(event) => {
                       setCustomValue(event.target.value);

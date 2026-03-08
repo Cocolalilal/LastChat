@@ -612,7 +612,7 @@
   <string name="setting_tts_page_voice_name_placeholder">Kore</string>
   <string name="settings">设置</string>
   <string name="share">分享</string>
-  <string name="share_handler_page_title">选择一个助手处理分享</string>
+  <string name="share_handler_page_title">与角色分享</string>
   <string name="shortcut_take_picture">拍照提问</string>
   <string name="silicon_flow_built_in_models">* 已内置硅基流动免费模型，无需API Key即可使用，如果需要更强大的模型，请自行申请和配置自己的API Key。</string>
   <string name="silicon_flow_description">**全球领先的 AI 能力提供商，加速 AGI 普惠人类。**</string>

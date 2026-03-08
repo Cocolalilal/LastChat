@@ -186,6 +186,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         },
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 10,
+                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                     )
                     TextButton(
                         onClick = {
@@ -282,7 +283,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                             )
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        maxLines = 8
+                        maxLines = 8,
+                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                     )
                     TextButton(
                         onClick = {
@@ -375,7 +377,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                             )
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        maxLines = 8
+                        maxLines = 8,
+                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                     )
                     TextButton(
                         onClick = {
@@ -543,6 +546,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         },
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 10,
+                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                     )
                     TextButton(
                         onClick = {

@@ -612,7 +612,7 @@
   <string name="setting_tts_page_voice_name_placeholder">Коре</string>
   <string name="settings">Настройки</string>
   <string name="share">Поделиться</string>
-  <string name="share_handler_page_title">Выбрать ассистента</string>
+  <string name="share_handler_page_title">Поделиться с персонажем</string>
   <string name="shortcut_take_picture">Сделать фото и спросить</string>
   <string name="silicon_flow_built_in_models">* Встроенные бесплатные модели Silicon Flow доступны без ключа API. Для использования более мощных моделей получите и настройте собственный ключ API.</string>
   <string name="silicon_flow_description">**Ведущий мировой поставщик ИИ-возможностей, ускоряющий AGI на благо человечества.**</string>

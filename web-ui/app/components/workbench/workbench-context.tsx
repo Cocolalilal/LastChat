@@ -4,6 +4,7 @@ export interface WorkbenchPanel {
   type: string;
   title: string;
   payload: Record<string, unknown>;
+  preferredDesktopSize?: number | string;
 }
 
 interface WorkbenchContextValue {

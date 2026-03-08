@@ -84,9 +84,9 @@ function ModelOptionRow({
       tabIndex={disabled ? -1 : 0}
       aria-disabled={disabled}
       className={cn(
-        "hover:bg-muted flex w-full items-center gap-2 rounded-md border px-2.5 py-1.5 text-left transition",
+        "flex w-full items-center gap-2 rounded-[var(--radius-card-inner)] border border-border/70 bg-background/90 px-2.5 py-1.5 text-left transition hover:bg-accent",
         disabled && "pointer-events-none opacity-60",
-        selected && "border-primary bg-primary/5",
+        selected && "border-primary/25 bg-primary/10",
       )}
       onClick={() => {
         if (disabled) {
@@ -352,7 +352,7 @@ export function ModelList({ disabled = false, className, onChanged }: ModelListP
           variant="ghost"
           size="sm"
           className={cn(
-            "h-9 rounded-full border border-border/60 bg-background/80 px-2.5 text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground sm:max-w-64 sm:justify-start sm:gap-2",
+            "h-9 rounded-full border border-border/70 bg-muted/70 px-2.5 text-foreground shadow-none hover:bg-accent hover:text-accent-foreground sm:max-w-64 sm:justify-start sm:gap-2",
             className,
           )}
           disabled={disabled || !currentAssistant}
@@ -371,14 +371,14 @@ export function ModelList({ disabled = false, className, onChanged }: ModelListP
       </PopoverTrigger>
 
       <PopoverContent align="end" className="w-[min(96vw,30rem)] gap-0 p-0">
-        <PopoverHeader className="border-b px-4 py-3">
+        <PopoverHeader className="px-4 pt-4 pb-2">
           <PopoverTitle className="text-sm">{t("model_list.title")}</PopoverTitle>
           <PopoverDescription className="text-xs">
             {t("model_list.description")}
           </PopoverDescription>
         </PopoverHeader>
 
-        <div className="space-y-2 px-3 py-3">
+        <div className="space-y-3 px-3 py-3">
           <div className="relative">
             <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2" />
             <Input
@@ -387,7 +387,7 @@ export function ModelList({ disabled = false, className, onChanged }: ModelListP
                 setSearchKeywords(event.target.value);
               }}
               placeholder={t("model_list.search_placeholder")}
-              className="h-8 pl-7 text-xs"
+              className="h-8 border-border/70 bg-muted/45 pl-7 text-xs"
             />
           </div>
 
@@ -399,73 +399,77 @@ export function ModelList({ disabled = false, className, onChanged }: ModelListP
 
           <div className="h-[24rem]">
             {sections.length === 0 && favoriteModels.length === 0 ? (
-              <div className="rounded-md border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
+              <div className="rounded-[var(--radius-card)] border border-dashed border-border px-3 py-8 text-center text-sm text-muted-foreground">
                 {t("model_list.empty")}
               </div>
             ) : (
-              <div className="flex h-full min-h-0 flex-col gap-2">
-                <ScrollArea className="max-h-20 w-full">
-                  <div className="flex flex-wrap items-center gap-1.5 pb-1">
-                    {favoriteModels.length > 0 && (
-                      <button
-                        type="button"
-                        className={cn(
-                          "bg-muted/60 hover:bg-muted inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition",
-                          isFavoriteSectionSelected && "border-primary bg-primary/10 text-primary",
-                        )}
-                        onClick={() => {
-                          setSelectedProviderId(FAVORITE_SECTION_ID);
-                        }}
-                      >
-                        <Heart className={cn("size-3", isFavoriteSectionSelected && "fill-current")} />
-                        <span>{t("model_list.favorites")}</span>
-                      </button>
-                    )}
-
-                    {sections.map((section) => {
-                      const selected = section.providerId === selectedProviderId;
-                      return (
+              <div className="flex h-full min-h-0 flex-col gap-3">
+                <div className="overflow-hidden rounded-[var(--radius-card)] border border-border/70 bg-muted/45 p-2">
+                  <ScrollArea className="max-h-20 w-full">
+                    <div className="flex flex-wrap items-center gap-1.5 pb-1">
+                      {favoriteModels.length > 0 && (
                         <button
-                          key={section.providerId}
                           type="button"
                           className={cn(
-                            "bg-muted/60 hover:bg-muted inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition",
-                            selected && "border-primary bg-primary/10 text-primary",
+                            "inline-flex items-center gap-1 rounded-full border border-border/70 bg-background px-2.5 py-1 text-xs transition hover:bg-accent",
+                            isFavoriteSectionSelected && "border-primary/25 bg-primary/10 text-primary",
                           )}
                           onClick={() => {
-                            setSelectedProviderId(section.providerId);
+                            setSelectedProviderId(FAVORITE_SECTION_ID);
                           }}
                         >
-                          <AIIcon
-                            name={section.providerName}
-                            size={12}
-                            className="bg-transparent"
-                            imageClassName="h-full w-full"
-                          />
-                          <span className="truncate">{section.providerName}</span>
+                          <Heart className={cn("size-3", isFavoriteSectionSelected && "fill-current")} />
+                          <span>{t("model_list.favorites")}</span>
                         </button>
-                      );
-                    })}
-                  </div>
-                </ScrollArea>
+                      )}
 
-                <ScrollArea className="min-h-0 flex-1 rounded-md border">
-                  <div className="space-y-1 p-1.5">
-                    {displayedModels.map((model) => (
-                      <ModelOptionRow
-                        key={model.id}
-                        model={model}
-                        selected={model.id === currentModelId}
-                        updating={model.id === updatingModelId}
-                        favorite={favoriteModelIdSet.has(model.id)}
-                        disabled={disabled || updatingModelId !== null}
-                        onSelect={handleSelectModel}
-                        onToggleFavorite={handleToggleFavorite}
-                        t={t}
-                      />
-                    ))}
-                  </div>
-                </ScrollArea>
+                      {sections.map((section) => {
+                        const selected = section.providerId === selectedProviderId;
+                        return (
+                          <button
+                            key={section.providerId}
+                            type="button"
+                            className={cn(
+                              "inline-flex items-center gap-1 rounded-full border border-border/70 bg-background px-2.5 py-1 text-xs transition hover:bg-accent",
+                              selected && "border-primary/25 bg-primary/10 text-primary",
+                            )}
+                            onClick={() => {
+                              setSelectedProviderId(section.providerId);
+                            }}
+                          >
+                            <AIIcon
+                              name={section.providerName}
+                              size={12}
+                              className="bg-transparent"
+                              imageClassName="h-full w-full"
+                            />
+                            <span className="truncate">{section.providerName}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </ScrollArea>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-hidden rounded-[var(--radius-card)] border border-border/70 bg-muted/30 p-2">
+                  <ScrollArea className="h-full min-h-0">
+                    <div className="space-y-1">
+                      {displayedModels.map((model) => (
+                        <ModelOptionRow
+                          key={model.id}
+                          model={model}
+                          selected={model.id === currentModelId}
+                          updating={model.id === updatingModelId}
+                          favorite={favoriteModelIdSet.has(model.id)}
+                          disabled={disabled || updatingModelId !== null}
+                          onSelect={handleSelectModel}
+                          onToggleFavorite={handleToggleFavorite}
+                          t={t}
+                        />
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </div>
               </div>
             )}
           </div>

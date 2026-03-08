@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -45,6 +46,7 @@ fun DocumentChip(
     fileName: String,
     mimeType: String?,
     modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(20.dp),
     onRemove: (() -> Unit)? = null
 ) {
     val icon = getFileIcon(fileName, mimeType)
@@ -54,7 +56,7 @@ fun DocumentChip(
             modifier = Modifier
                 .height(40.dp)
                 .widthIn(min = 60.dp, max = 160.dp),
-            shape = RoundedCornerShape(20.dp),
+            shape = shape,
             tonalElevation = 4.dp
         ) {
             Row(

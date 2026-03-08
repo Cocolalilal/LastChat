@@ -1,7 +1,12 @@
 import * as React from "react";
+import {
+  AnimatePresence,
+  motion,
+} from "motion/react";
 import { ChevronDown, ChevronRight, ChevronUp } from "lucide-react";
 
 import { Card } from "~/components/ui/card";
+import { getChatLayoutTransition, useChatReducedMotion } from "~/lib/chat-motion";
 import { cn } from "~/lib/utils";
 
 interface ChainOfThoughtProps<T> extends React.ComponentProps<typeof Card> {
@@ -47,30 +52,41 @@ function ChainOfThought<T>({
   ...props
 }: ChainOfThoughtProps<T>) {
   const [expanded, setExpanded] = React.useState(false);
+  const reducedMotion = useChatReducedMotion();
   const canCollapse = steps.length > collapsedVisibleCount;
   const visibleSteps = expanded || !canCollapse ? steps : steps.slice(-collapsedVisibleCount);
   const hiddenCount = Math.max(steps.length - collapsedVisibleCount, 0);
 
   return (
     <Card
-      className={cn("gap-0 px-2 py-2 bg-muted/50 border-muted shadow-none", className)}
+      className={cn(
+        "gap-0 rounded-[var(--radius-card)] border-border bg-card px-2 py-2 shadow-none",
+        className,
+      )}
       {...props}
     >
       {canCollapse && (
-        <button
+        <motion.button
           type="button"
-          className="text-primary hover:bg-muted/60 focus-visible:ring-ring/50 mb-1 flex w-full items-center gap-2 rounded-md px-1 py-1 text-left text-sm outline-none focus-visible:ring-[3px]"
+          className="mb-1 flex w-full items-center gap-2 rounded-[var(--radius-card-inner)] px-2 py-1.5 text-left text-sm text-primary outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
           onClick={() => setExpanded((prev) => !prev)}
+          whileHover={reducedMotion ? undefined : { x: 1 }}
+          whileTap={reducedMotion ? undefined : { scale: 0.99 }}
         >
           <span className="flex w-6 items-center justify-center">
-            {expanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+            <motion.span
+              animate={{ rotate: expanded ? 180 : 0 }}
+              transition={getChatLayoutTransition(reducedMotion)}
+            >
+              <ChevronDown className="size-4" />
+            </motion.span>
           </span>
           <span>
             {expanded
               ? collapseLabel
               : (showMoreLabel?.(hiddenCount) ?? `Show ${hiddenCount} more steps`)}
           </span>
-        </button>
+        </motion.button>
       )}
 
       <div>
@@ -138,6 +154,7 @@ function ChainOfThoughtStepContent({
   isFirst,
   isLast,
 }: ChainOfThoughtStepContentProps) {
+  const reducedMotion = useChatReducedMotion();
   const hasContent = Boolean(children);
   const clickable = Boolean(onClick || hasContent);
 
@@ -158,8 +175,8 @@ function ChainOfThoughtStepContent({
   );
 
   const stepClassName = cn(
-    "flex w-full gap-2 rounded-md",
-    clickable && "hover:bg-muted/60 focus-within:ring-ring/50 focus-within:ring-[3px]",
+    "flex w-full gap-2 rounded-[var(--radius-card-inner)]",
+    clickable && "hover:bg-accent focus-within:ring-[3px] focus-within:ring-ring/50",
   );
 
   const iconContent = icon ? (
@@ -206,16 +223,29 @@ function ChainOfThoughtStepContent({
           </div>
         )}
 
-        {hasContent && (
-          <div
-            className="grid transition-all duration-200 ease-out"
-            style={{ gridTemplateRows: contentVisible ? "1fr" : "0fr" }}
-          >
-            <div className="overflow-hidden">
+        <AnimatePresence initial={false}>
+          {hasContent && contentVisible ? (
+            <motion.div
+              initial={reducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, y: -4 }}
+              animate={{
+                opacity: 1,
+                height: "auto",
+                y: 0,
+                transition: reducedMotion
+                  ? { duration: 0.01 }
+                  : {
+                      opacity: { duration: 0.16, ease: "easeOut" },
+                      height: getChatLayoutTransition(false),
+                      y: getChatLayoutTransition(false),
+                    },
+              }}
+              exit={reducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, y: -4, transition: { duration: 0.12 } }}
+              className="overflow-hidden"
+            >
               <div className="px-1 pb-2 pt-1">{children}</div>
-            </div>
-          </div>
-        )}
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
       </div>
     </div>
   );

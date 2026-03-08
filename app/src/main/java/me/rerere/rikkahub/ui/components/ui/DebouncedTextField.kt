@@ -14,6 +14,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.TextStyle
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.delay
+import me.rerere.rikkahub.ui.theme.AppShapes
 
 /**
  * A text field that debounces updates to external state while maintaining
@@ -100,6 +101,7 @@ fun DebouncedTextField(
         placeholder = placeholder?.let { { Text(it) } },
         singleLine = singleLine,
         minLines = minLines,
-        maxLines = maxLines
+        maxLines = maxLines,
+        shape = AppShapes.InputField
     )
 }

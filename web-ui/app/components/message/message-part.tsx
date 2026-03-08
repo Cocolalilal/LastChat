@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 
-import type { ReasoningPart, ToolPart, UIMessagePart } from "~/types";
+import type { DisplaySetting, ReasoningPart, ToolPart, UIMessagePart } from "~/types";
 
 import { ChainOfThought } from "./chain-of-thought";
 import { AudioPart } from "./parts/audio-part";
@@ -65,6 +65,7 @@ export function groupMessageParts(parts: UIMessagePart[]): MessagePartBlock[] {
 
 interface MessagePartsProps {
   parts: UIMessagePart[];
+  displaySetting?: DisplaySetting | null;
   loading?: boolean;
   onToolApproval?: (toolCallId: string, approved: boolean, reason: string, answer?: string) => void | Promise<void>;
   onClickCitation?: (id: string) => void;
@@ -72,13 +73,21 @@ interface MessagePartsProps {
 
 function renderContentPart(
   part: UIMessagePart,
+  displaySetting: DisplaySetting | null | undefined,
   t: (key: string, options?: Record<string, unknown>) => string,
-  loading?: boolean,
+  _loading?: boolean,
   onClickCitation?: (id: string) => void,
 ) {
   switch (part.type) {
     case "text":
-      return <TextPart text={part.text} isAnimating={loading} onClickCitation={onClickCitation} />;
+      return (
+        <TextPart
+          text={part.text}
+          displaySetting={displaySetting}
+          isAnimating={false}
+          onClickCitation={onClickCitation}
+        />
+      );
     case "image":
       return <ImagePart url={part.url} />;
     case "video":
@@ -89,7 +98,11 @@ function renderContentPart(
       return <DocumentPart url={part.url} fileName={part.fileName} mime={part.mime} />;
     case "reasoning":
       return (
-        <ReasoningFallbackPart reasoning={part.reasoning} isFinished={part.finishedAt != null} />
+        <ReasoningFallbackPart
+          reasoning={part.reasoning}
+          displaySetting={displaySetting}
+          isFinished={part.finishedAt != null}
+        />
       );
     case "tool":
       return (
@@ -100,6 +113,7 @@ function renderContentPart(
 
 export const MessageParts = React.memo(({
   parts,
+  displaySetting,
   loading = false,
   onToolApproval,
   onClickCitation,
@@ -128,6 +142,7 @@ export const MessageParts = React.memo(({
                   return (
                     <ReasoningStepPart
                       key={stepKey}
+                      displaySetting={displaySetting}
                       reasoning={step.reasoning}
                       isFirst={isFirst}
                       isLast={isLast}
@@ -139,6 +154,7 @@ export const MessageParts = React.memo(({
                 return (
                   <ToolStepPart
                     key={stepKey}
+                    displaySetting={displaySetting}
                     tool={step.tool}
                     loading={loading && step.tool.output.length === 0}
                     onToolApproval={onToolApproval}
@@ -153,7 +169,7 @@ export const MessageParts = React.memo(({
 
         return (
           <React.Fragment key={`content-${block.index}`}>
-            {renderContentPart(block.part, t, loading, onClickCitation)}
+            {renderContentPart(block.part, displaySetting, t, loading, onClickCitation)}
           </React.Fragment>
         );
       })}
@@ -163,15 +179,23 @@ export const MessageParts = React.memo(({
 
 interface MessagePartProps {
   part: UIMessagePart;
+  displaySetting?: DisplaySetting | null;
   loading?: boolean;
   onToolApproval?: (toolCallId: string, approved: boolean, reason: string, answer?: string) => void | Promise<void>;
   onClickCitation?: (id: string) => void;
 }
 
-export function MessagePart({ part, loading, onToolApproval, onClickCitation }: MessagePartProps) {
+export function MessagePart({
+  part,
+  displaySetting,
+  loading,
+  onToolApproval,
+  onClickCitation,
+}: MessagePartProps) {
   return (
     <MessageParts
       parts={[part]}
+      displaySetting={displaySetting}
       loading={loading}
       onToolApproval={onToolApproval}
       onClickCitation={onClickCitation}

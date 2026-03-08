@@ -212,6 +212,7 @@ fun AssistantPromptSubPage(
                             maxHeightInLines = 10,
                         ),
                         textStyle = MaterialTheme.typography.bodySmall,
+                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                     )
 
                     if (isFullScreen) {

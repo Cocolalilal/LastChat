@@ -166,8 +166,8 @@ export function SearchPickerButton({ disabled = false, className }: SearchPicker
           size="sm"
           disabled={!canUse || loading}
           className={cn(
-            "h-9 rounded-full border border-border/60 bg-background/80 px-2.5 text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground",
-            checked && "border-primary/20 bg-primary/10 text-primary hover:bg-primary/20",
+            "h-9 rounded-full border border-border/70 bg-muted/70 px-2.5 text-foreground shadow-none hover:bg-accent hover:text-accent-foreground",
+            checked && "border-primary/20 bg-primary/10 text-primary hover:bg-primary/18",
             className,
           )}
         >
@@ -192,7 +192,7 @@ export function SearchPickerButton({ disabled = false, className }: SearchPicker
       </PopoverTrigger>
 
       <PopoverContent align="end" className="w-[min(92vw,28rem)] gap-0 p-0">
-        <PopoverHeader className="border-b px-6 py-4">
+        <PopoverHeader className="px-6 pt-4 pb-2">
           <PopoverTitle>{t("search.title")}</PopoverTitle>
           <PopoverDescription>{t("search.description")}</PopoverDescription>
         </PopoverHeader>
@@ -201,8 +201,8 @@ export function SearchPickerButton({ disabled = false, className }: SearchPicker
           <PickerErrorAlert error={error} />
 
           {isGeminiModel(currentModel) ? (
-            <div className="flex items-center gap-3 rounded-lg border px-3 py-3">
-              <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted">
+            <div className="flex items-center gap-3 rounded-[var(--radius-card)] border border-border/70 bg-muted/40 px-3 py-3">
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-background">
                 <Search className="size-4" />
               </div>
               <div className="min-w-0 flex-1">
@@ -222,8 +222,8 @@ export function SearchPickerButton({ disabled = false, className }: SearchPicker
 
           {!builtInSearchEnabled ? (
             <>
-              <div className="flex items-center gap-3 rounded-lg border px-3 py-3">
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted">
+              <div className="flex items-center gap-3 rounded-[var(--radius-card)] border border-border/70 bg-muted/40 px-3 py-3">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-background">
                   <Earth className="size-4" />
                 </div>
                 <div className="min-w-0 flex-1">
@@ -242,58 +242,60 @@ export function SearchPickerButton({ disabled = false, className }: SearchPicker
                 />
               </div>
 
-              <ScrollArea className="h-[16rem] pr-3">
-                {settings?.searchServices?.length ? (
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {settings.searchServices.map((service, index) => {
-                      const selected = index === settings.searchServiceSelected;
-                      const switching =
-                        selectServiceMutation.isPending &&
-                        selectServiceMutation.variables?.index === index;
+              <div className="overflow-hidden rounded-[var(--radius-card)] border border-border/70 bg-muted/30 p-2">
+                <ScrollArea className="h-[16rem] pr-3">
+                  {settings?.searchServices?.length ? (
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {settings.searchServices.map((service, index) => {
+                        const selected = index === settings.searchServiceSelected;
+                        const switching =
+                          selectServiceMutation.isPending &&
+                          selectServiceMutation.variables?.index === index;
 
-                      return (
-                        <button
-                          key={service.id}
-                          type="button"
-                          className={cn(
-                            "hover:bg-muted flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition",
-                            selected && "border-primary bg-primary/5",
-                          )}
-                          disabled={disabled || loading}
-                          onClick={() => {
-                            if (!canUse || !settings || index === settings.searchServiceSelected)
-                              return;
-                            selectServiceMutation.mutate({ index });
-                          }}
-                        >
-                          <AIIcon
-                            name={getServiceLabel(service, t)}
-                            size={20}
-                            className="bg-transparent"
-                            imageClassName="h-full w-full"
-                          />
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate text-sm font-medium">
-                              {getServiceLabel(service, t)}
+                        return (
+                          <button
+                            key={service.id}
+                            type="button"
+                            className={cn(
+                              "flex w-full items-center gap-3 rounded-[var(--radius-card-inner)] border border-border/70 bg-background px-3 py-2 text-left transition hover:bg-accent",
+                              selected && "border-primary/25 bg-primary/10",
+                            )}
+                            disabled={disabled || loading}
+                            onClick={() => {
+                              if (!canUse || !settings || index === settings.searchServiceSelected)
+                                return;
+                              selectServiceMutation.mutate({ index });
+                            }}
+                          >
+                            <AIIcon
+                              name={getServiceLabel(service, t)}
+                              size={20}
+                              className="bg-transparent"
+                              imageClassName="h-full w-full"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-sm font-medium">
+                                {getServiceLabel(service, t)}
+                              </div>
+                              <div className="text-muted-foreground truncate text-xs">
+                                {getServiceType(service) ?? t("search.unknown")}
+                              </div>
                             </div>
-                            <div className="text-muted-foreground truncate text-xs">
-                              {getServiceType(service) ?? t("search.unknown")}
-                            </div>
-                          </div>
-                          {switching ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="rounded-md border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
-                    {t("search.empty")}
-                  </div>
-                )}
-              </ScrollArea>
+                            {switching ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="rounded-md border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
+                      {t("search.empty")}
+                    </div>
+                  )}
+                </ScrollArea>
+              </div>
             </>
           ) : (
-            <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-primary">
+            <div className="rounded-[var(--radius-card)] border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-primary">
               {t("search.builtin_notice")}
             </div>
           )}

@@ -81,6 +81,12 @@ fun ToolCallItem(
     loading: Boolean = false,
 ) {
     var showResult by remember { mutableStateOf(false) }
+    val pythonSummary = remember(toolName, arguments, content) {
+        buildPythonToolSummary(arguments = arguments, content = content)
+    }
+    val sandboxFileSummary = remember(toolName, arguments, content) {
+        buildSandboxFileToolSummary(toolName = toolName, arguments = arguments, content = content)
+    }
     Surface(
         modifier = Modifier.animateContentSize(),
         onClick = {
@@ -212,16 +218,12 @@ fun ToolCallItem(
                 }
                 // Python tool output preview
                 if (toolName == "eval_python" && content != null && !loading) {
-                    val contentObj = content as? JsonObject
-                    val result = contentObj?.get("result")?.jsonPrimitiveOrNull?.contentOrNull
-                    val stdout = contentObj?.get("stdout")?.jsonPrimitiveOrNull?.contentOrNull
-                    val error = contentObj?.get("error")?.jsonPrimitiveOrNull?.contentOrNull
-                    val previewText = error ?: result ?: stdout
+                    val previewText = pythonSummary?.previewText
                     if (!previewText.isNullOrBlank()) {
                         Text(
-                            text = previewText.take(100) + if (previewText.length > 100) "…" else "",
+                            text = previewText.take(100) + if (previewText.length > 100) "..." else "",
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (error != null) MaterialTheme.colorScheme.error 
+                            color = if (pythonSummary?.error != null) MaterialTheme.colorScheme.error
                                    else MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
@@ -229,15 +231,10 @@ fun ToolCallItem(
                     }
                 }
                 // File operation result preview
-                if (toolName in listOf("write_sandbox_file", "read_sandbox_file", "list_sandbox_files") && content != null && !loading) {
-                    val contentObj = content as? JsonObject
-                    val uri = contentObj?.get("uri")?.jsonPrimitiveOrNull?.contentOrNull
-                    val files = contentObj?.get("files")?.jsonArray
-                    val success = contentObj?.get("success")?.jsonPrimitiveOrNull?.contentOrNull
+                if (toolName in SANDBOX_FILE_TOOLS && content != null && !loading) {
                     val previewText = when {
-                        uri != null -> uri.substringAfterLast("/")
-                        files != null -> "${files.size} files"
-                        success != null -> if (success == "true") "✓" else "✗"
+                        sandboxFileSummary?.fileCount != null -> "${sandboxFileSummary.fileCount} files"
+                        sandboxFileSummary?.previewText != null -> sandboxFileSummary.previewText
                         else -> null
                     }
                     if (previewText != null) {

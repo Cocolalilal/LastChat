@@ -41,7 +41,7 @@ export function ChatMessageAnnotationsRow({
   return (
     <div
       className={cn(
-        "flex w-full flex-wrap items-center gap-2 px-1",
+        "flex w-full flex-wrap items-center gap-2",
         alignRight ? "justify-end" : "justify-start",
       )}
     >
@@ -54,7 +54,7 @@ export function ChatMessageAnnotationsRow({
             href={annotation.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-background px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+            className="inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-popover px-2 py-1 text-xs text-popover-foreground/80 transition-colors hover:border-primary/40 hover:text-foreground"
             title={annotation.url || label}
           >
             <span className="max-w-[220px] truncate">{label}</span>

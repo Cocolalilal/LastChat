@@ -353,7 +353,8 @@ fun SettingWebPage(
                             isError = portText.toIntOrNull()?.let { it !in 1024..65535 } == true,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(min = 58.dp)
+                                .heightIn(min = 58.dp),
+                            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                         )
                     }
 

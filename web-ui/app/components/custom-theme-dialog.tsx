@@ -51,40 +51,42 @@ export function CustomThemeDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85svh] max-w-3xl overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="max-h-[85svh] max-w-3xl overflow-hidden border-border bg-popover p-4">
+        <DialogHeader className="px-1 pt-0 pb-1">
           <DialogTitle>{t("custom_theme_dialog.title")}</DialogTitle>
           <DialogDescription>{t("custom_theme_dialog.description")}</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <div className="text-sm font-medium">{t("custom_theme_dialog.theme_variables")}</div>
-            <Textarea
-              value={cssDraft}
-              onChange={(event) => {
-                setCssDraft(event.target.value);
-              }}
-              placeholder={t("custom_theme_dialog.theme_placeholder")}
-              rows={CUSTOM_THEME_EDITOR_ROWS}
-              className="field-sizing-fixed h-56 max-h-56 overflow-y-auto font-mono text-xs"
-            />
-          </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-1 py-1">
+          <div className="space-y-3">
+            <div className="space-y-2 rounded-[var(--radius-card)] border border-border/70 bg-muted/35 p-3">
+              <div className="text-sm font-medium">{t("custom_theme_dialog.theme_variables")}</div>
+              <Textarea
+                value={cssDraft}
+                onChange={(event) => {
+                  setCssDraft(event.target.value);
+                }}
+                placeholder={t("custom_theme_dialog.theme_placeholder")}
+                rows={CUSTOM_THEME_EDITOR_ROWS}
+                className="field-sizing-fixed h-56 max-h-56 overflow-y-auto rounded-[var(--radius-card-inner)] border-border/70 bg-background font-mono text-xs"
+              />
+            </div>
 
-          <div className="text-sm text-muted-foreground">
-            {t("custom_theme_dialog.tip")}{" "}
-            <a
-              href="https://tweakcn.com/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-primary hover:underline"
-            >
-              https://tweakcn.com/
-            </a>
+            <div className="rounded-[var(--radius-card)] border border-border/70 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+              {t("custom_theme_dialog.tip")}{" "}
+              <a
+                href="https://tweakcn.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:underline"
+              >
+                https://tweakcn.com/
+              </a>
+            </div>
           </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="px-1 pt-2 pb-0">
           <Button
             type="button"
             variant="outline"

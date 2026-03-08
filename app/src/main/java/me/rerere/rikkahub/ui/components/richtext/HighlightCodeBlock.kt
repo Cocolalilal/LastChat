@@ -2,15 +2,15 @@ package me.rerere.rikkahub.ui.components.richtext
 
 import android.content.ClipData
 import android.net.Uri
-import androidx.activity.compose.ManagedActivityResultLauncher
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -26,21 +26,16 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.foundation.layout.offset
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -81,7 +76,6 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -93,6 +87,8 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.ui.context.LocalSettings
+import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.AtomOneDarkPalette
 import me.rerere.rikkahub.ui.theme.AtomOneLightPalette
@@ -100,6 +96,7 @@ import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.base64Encode
 import kotlin.time.Clock
 
+private const val COLLAPSED_PEEK_MAX_HEIGHT = 108
 private const val PREVIEW_MAX_HEIGHT = 200
 private const val FADE_HEIGHT = 48f
 
@@ -130,6 +127,14 @@ fun HighlightCodeBlock(
     val context = LocalContext.current
     val settings = LocalSettings.current
     val effectiveDisplay = settings.getEffectiveDisplaySetting()
+    val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
+    val colorScheme = MaterialTheme.colorScheme
+    val shellColor = colorScheme.surfaceContainerHigh
+    val headerColor = colorScheme.surfaceContainerHighest
+    val bodyColor = colorScheme.surfaceContainerLow
+    val footerColor = bodyColor
+    val outlineColor = colorScheme.outline.copy(alpha = 0.18f)
+    val actionTextColor = colorScheme.onSurfaceVariant
     
     // Get code font from settings
     val codeFontFamily = me.rerere.rikkahub.ui.theme.rememberFontFamilyFromConfig(effectiveDisplay.fontSettings.codeFont)
@@ -147,6 +152,11 @@ fun HighlightCodeBlock(
         )
     }
     val autoWrap = effectiveDisplay.codeBlockAutoWrap
+    val footerText = if (expandState.expanded) {
+        stringResource(id = R.string.code_block_collapse)
+    } else {
+        stringResource(id = R.string.code_block_expand)
+    }
 
     // Auto-scroll to bottom when generating (like reasoning card)
     LaunchedEffect(code, completeCodeBlock, expandState) {
@@ -169,9 +179,8 @@ fun HighlightCodeBlock(
         }
     }
 
-    // Get display name for the language
-    val languageDisplayName = remember(language) {
-        getLanguageDisplayName(language)
+    val languageLabel = remember(language) {
+        getLanguageDisplayName(language).lowercase()
     }
 
     fun toggle() {
@@ -191,13 +200,13 @@ fun HighlightCodeBlock(
 
     Surface(
         modifier = modifier,
-        shape = AppShapes.MessageBubbleInner, // Optical roundness inside message bubbles (20dp - 12dp = 8dp)
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = AppShapes.CardMedium,
+        color = shellColor,
+        contentColor = colorScheme.onSurface,
+        border = BorderStroke(1.dp, outlineColor),
     ) {
         Column(
             modifier = Modifier
-                .padding(12.dp)
                 .clipToBounds()
                 .animateContentSize(
                     animationSpec = spring(
@@ -207,186 +216,332 @@ fun HighlightCodeBlock(
                 ),
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
-            // Header row: language label left, action icons right
-            Row(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 4.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                    .background(headerColor)
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
             ) {
-                // Left side: language label
-                Text(
-                    text = language.lowercase(),
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                
-                // Spacer to push icons to the right
-                Spacer(modifier = Modifier.weight(1f))
-                
-                // Copy icon
-                IconButton(
-                    onClick = {
-                        scope.launch {
-                            clipboardManager.setClipEntry(ClipEntry(ClipData.newPlainText("code", code)))
-                        }
-                    },
-                    modifier = Modifier.size(28.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.ContentCopy,
-                        contentDescription = stringResource(id = R.string.code_block_copy),
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                
-                // Download icon
-                IconButton(
-                    onClick = {
+                CodeBlockHeader(
+                    languageLabel = languageLabel,
+                    showPreview = language.lowercase() == "html",
+                    actionTextColor = actionTextColor,
+                    onSave = {
                         val extension = getFileExtension(language)
                         createDocumentLauncher.launch(
                             "code_${Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())}.$extension"
                         )
                     },
-                    modifier = Modifier.size(28.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Download,
-                        contentDescription = stringResource(id = R.string.chat_page_save),
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                
-                // Play icon (HTML only)
-                if (language.lowercase() == "html") {
-                    IconButton(
-                        onClick = {
-                            navController.navigate(Screen.WebView(content = code.base64Encode()))
-                        },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.PlayArrow,
-                            contentDescription = stringResource(id = R.string.code_block_preview),
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-            }
-
-            // Code content with fade gradients (only when expanded/preview)
-            if (expandState.expanded) {
-                val textStyle = LocalTextStyle.current.merge(style)
-                
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .let {
-                            if (expandState == CodeBlockState.Preview) {
-                                it
-                                    .graphicsLayer { alpha = 0.99f }
-                                    .drawWithCache {
-                                        val brush = Brush.verticalGradient(
-                                            startY = 0f,
-                                            endY = size.height,
-                                            colorStops = arrayOf(
-                                                0.0f to Color.Transparent,
-                                                (FADE_HEIGHT / size.height).coerceIn(0f, 0.3f) to Color.Black,
-                                                (1 - FADE_HEIGHT / size.height).coerceIn(0.7f, 1f) to Color.Black,
-                                                1.0f to Color.Transparent
-                                            )
-                                        )
-                                        onDrawWithContent {
-                                            drawContent()
-                                            drawRect(
-                                                brush = brush,
-                                                size = Size(size.width, size.height),
-                                                blendMode = BlendMode.DstIn
-                                            )
-                                        }
-                                    }
-                                    .heightIn(max = PREVIEW_MAX_HEIGHT.dp)
-                                    .verticalScroll(verticalScrollState)
-                            } else {
-                                it // Full expanded - no height limit
-                            }
+                    onCopy = {
+                        scope.launch {
+                            clipboardManager.setClipEntry(ClipEntry(ClipData.newPlainText("code", code)))
                         }
-                ) {
-                    SelectionContainer {
-                        HighlightText(
-                            code = code,
-                            language = language,
-                            modifier = Modifier
-                                .then(
-                                    if (autoWrap) Modifier
-                                    else Modifier.horizontalScroll(horizontalScrollState)
-                                ),
-                            fontSize = textStyle.fontSize,
-                            lineHeight = textStyle.lineHeight,
-                            colors = colorPalette,
-                            overflow = TextOverflow.Visible,
-                            softWrap = autoWrap,
-                            fontFamily = codeFontFamily
-                        )
-                    }
-                }
+                    },
+                    onPreview = {
+                        navController.navigate(Screen.WebView(content = code.base64Encode()))
+                    },
+                    hapticsEnabled = settings.displaySetting.enableUIHaptics
+                )
             }
 
-            // Bottom expand/collapse bar
-            HorizontalDivider(
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
-                thickness = 0.5.dp,
-                modifier = Modifier.padding(top = if (expandState.expanded) 8.dp else 0.dp)
-            )
-            
-            val bottomInteractionSource = remember { MutableInteractionSource() }
-            val isBottomPressed by bottomInteractionSource.collectIsPressedAsState()
-            val bottomScale by animateFloatAsState(
-                targetValue = if (isBottomPressed) 0.97f else 1f,
-                animationSpec = spring(dampingRatio = 0.4f, stiffness = 400f),
-                label = "bottom_scale"
-            )
-            
-            Row(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .graphicsLayer {
-                        scaleX = bottomScale
-                        scaleY = bottomScale
-                    }
-                    .clickable(
-                        onClick = { toggle() },
-                        indication = LocalIndication.current,
-                        interactionSource = bottomInteractionSource
-                    )
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
+                    .background(bodyColor)
+                    .padding(horizontal = 14.dp, vertical = 12.dp)
             ) {
-                Icon(
-                    imageVector = if (expandState.expanded) {
-                        Icons.Rounded.ExpandLess
-                    } else {
-                        Icons.Rounded.ExpandMore
-                    },
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                CodeBlockText(
+                    code = code,
+                    language = language,
+                    expandState = expandState,
+                    autoWrap = autoWrap,
+                    horizontalScrollState = horizontalScrollState,
+                    verticalScrollState = verticalScrollState,
+                    colorPalette = colorPalette,
+                    codeFontFamily = codeFontFamily,
+                    style = style
                 )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = if (expandState.expanded) "Collapse" else "Expand",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(footerColor)
+            ) {
+                CodeBlockFooter(
+                    expanded = expandState.expanded,
+                    footerText = footerText,
+                    onToggle = {
+                        haptics.perform(HapticPattern.Pop)
+                        toggle()
+                    }
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun CodeBlockHeader(
+    languageLabel: String,
+    showPreview: Boolean,
+    actionTextColor: Color,
+    onSave: () -> Unit,
+    onCopy: () -> Unit,
+    onPreview: () -> Unit,
+    hapticsEnabled: Boolean,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(28.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            Text(
+                text = languageLabel,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Medium,
+                color = actionTextColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Row(
+            modifier = Modifier.height(28.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            CodeBlockHeaderActions(
+                showPreview = showPreview,
+                actionTextColor = actionTextColor,
+                onSave = onSave,
+                onCopy = onCopy,
+                onPreview = onPreview,
+                hapticsEnabled = hapticsEnabled
+            )
+        }
+    }
+}
+
+@Composable
+private fun CodeBlockHeaderActions(
+    showPreview: Boolean,
+    actionTextColor: Color,
+    onSave: () -> Unit,
+    onCopy: () -> Unit,
+    onPreview: () -> Unit,
+    hapticsEnabled: Boolean,
+) {
+    CodeBlockActionButton(
+        icon = Icons.Rounded.Download,
+        onClick = onSave,
+        contentDescription = stringResource(id = R.string.chat_page_save),
+        tint = actionTextColor,
+        hapticsEnabled = hapticsEnabled
+    )
+    CodeBlockActionButton(
+        icon = Icons.Rounded.ContentCopy,
+        onClick = onCopy,
+        contentDescription = stringResource(id = R.string.code_block_copy),
+        tint = actionTextColor,
+        hapticsEnabled = hapticsEnabled
+    )
+    if (showPreview) {
+        CodeBlockActionButton(
+            icon = Icons.Rounded.PlayArrow,
+            onClick = onPreview,
+            contentDescription = stringResource(id = R.string.code_block_preview),
+            tint = MaterialTheme.colorScheme.primary,
+            hapticsEnabled = hapticsEnabled
+        )
+    }
+}
+
+@Composable
+private fun CodeBlockActionButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+    contentDescription: String,
+    tint: Color,
+    hapticsEnabled: Boolean,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.85f else 1f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        label = "code_action_scale"
+    )
+    val haptics = rememberPremiumHaptics(enabled = hapticsEnabled)
+
+    Box(
+        modifier = Modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .size(28.dp)
+            .clip(AppShapes.ButtonPill)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current
+            ) {
+                haptics.perform(HapticPattern.Pop)
+                onClick()
+            }
+            .semantics { role = Role.Button },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(16.dp),
+            tint = tint
+        )
+    }
+}
+
+@Composable
+private fun CodeBlockText(
+    code: String,
+    language: String,
+    expandState: CodeBlockState,
+    autoWrap: Boolean,
+    horizontalScrollState: androidx.compose.foundation.ScrollState,
+    verticalScrollState: androidx.compose.foundation.ScrollState,
+    colorPalette: me.rerere.highlight.HighlightTextColorPalette,
+    codeFontFamily: FontFamily?,
+    style: TextStyle?,
+) {
+    val textStyle = LocalTextStyle.current.merge(style)
+    val previewLikeState = expandState != CodeBlockState.Expanded
+    val maxHeight = when (expandState) {
+        CodeBlockState.Collapsed -> COLLAPSED_PEEK_MAX_HEIGHT
+        CodeBlockState.Preview -> PREVIEW_MAX_HEIGHT
+        CodeBlockState.Expanded -> null
+    }
+
+    val contentModifier = Modifier
+        .fillMaxWidth()
+        .let {
+            when {
+                maxHeight != null && expandState == CodeBlockState.Preview -> {
+                    it
+                        .codePeekMask(fadeTop = true, fadeBottom = true)
+                        .heightIn(max = maxHeight.dp)
+                        .verticalScroll(verticalScrollState)
+                }
+                maxHeight != null -> {
+                    it
+                        .codePeekMask(fadeTop = false, fadeBottom = true)
+                        .heightIn(max = maxHeight.dp)
+                }
+                else -> it
+            }
+        }
+
+    Column(modifier = contentModifier) {
+        SelectionContainer {
+            HighlightText(
+                code = code,
+                language = language,
+                modifier = Modifier.then(
+                    if (autoWrap || previewLikeState && expandState == CodeBlockState.Collapsed) {
+                        Modifier
+                    } else {
+                        Modifier.horizontalScroll(horizontalScrollState)
+                    }
+                ),
+                fontSize = textStyle.fontSize,
+                lineHeight = textStyle.lineHeight,
+                colors = colorPalette,
+                overflow = TextOverflow.Visible,
+                softWrap = autoWrap || expandState == CodeBlockState.Collapsed,
+                fontFamily = codeFontFamily ?: FontFamily.Monospace
+            )
+        }
+    }
+}
+
+@Composable
+private fun CodeBlockFooter(
+    expanded: Boolean,
+    footerText: String,
+    onToggle: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.85f else 1f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        label = "code_footer_scale"
+    )
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
+                onClick = onToggle
+            )
+            .padding(vertical = 12.dp)
+            .semantics { role = Role.Button },
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = footerText,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+private fun Modifier.codePeekMask(
+    fadeTop: Boolean,
+    fadeBottom: Boolean,
+): Modifier = graphicsLayer { alpha = 0.99f }.drawWithCache {
+    val fadeFraction = (FADE_HEIGHT / size.height).coerceIn(0f, 0.45f)
+    val colorStops = buildList {
+        add(0f to if (fadeTop) Color.Transparent else Color.Black)
+        if (fadeTop) add(fadeFraction to Color.Black)
+        if (fadeBottom) add((1f - fadeFraction).coerceIn(0f, 1f) to Color.Black)
+        add(1f to if (fadeBottom) Color.Transparent else Color.Black)
+    }.toTypedArray()
+
+    val brush = Brush.verticalGradient(
+        colorStops = colorStops,
+        startY = 0f,
+        endY = size.height
+    )
+
+    onDrawWithContent {
+        drawContent()
+        drawRect(
+            brush = brush,
+            size = Size(size.width, size.height),
+            blendMode = BlendMode.DstIn
+        )
     }
 }
 

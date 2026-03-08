@@ -41,6 +41,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
@@ -130,6 +131,15 @@ enum class ActivityType {
     SKILL,
     MCP,
     TOOL_OTHER
+}
+
+private fun ActivityType.toTestTag(): String = when (this) {
+    ActivityType.REASONING -> "activity_pill_reasoning"
+    ActivityType.SEARCH -> "activity_pill_search"
+    ActivityType.PYTHON -> "activity_pill_python"
+    ActivityType.SKILL -> "activity_pill_skill"
+    ActivityType.MCP -> "activity_pill_mcp"
+    ActivityType.TOOL_OTHER -> "activity_pill_tool_other"
 }
 
 /**
@@ -591,12 +601,14 @@ private fun SinglePill(
     position: PillPosition,
     connectsToBubbleBelow: Boolean,
     modifier: Modifier = Modifier,
+    testTag: String? = null,
     isLoading: Boolean = false,
     content: @Composable () -> Unit
 ) {
     Surface(
         modifier = modifier
             .height(PILL_HEIGHT)
+            .then(if (testTag != null) Modifier.testTag(testTag) else Modifier)
             .animateContentSize(spring(dampingRatio = 0.7f, stiffness = 300f)),
         shape = getCornerRadii(position, connectsToBubbleBelow),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -639,6 +651,7 @@ private fun ReasoningPill(
         onClick = onClick,
         position = position,
         connectsToBubbleBelow = connectsToBubbleBelow,
+        testTag = ActivityType.REASONING.toTestTag(),
         isLoading = isLive
     ) {
         Icon(
@@ -680,6 +693,7 @@ private fun ToolUsePill(
         onClick = onClick,
         position = position,
         connectsToBubbleBelow = connectsToBubbleBelow,
+        testTag = type.toTestTag(),
         isLoading = isLive
     ) {
         Icon(
@@ -711,7 +725,8 @@ private fun ExpandedActivityPill(
     SinglePill(
         onClick = onClick,
         position = position,
-        connectsToBubbleBelow = connectsToBubbleBelow
+        connectsToBubbleBelow = connectsToBubbleBelow,
+        testTag = item.type.toTestTag()
     ) {
         Icon(
             imageVector = item.type.getIcon(),
@@ -769,7 +784,8 @@ private fun CompactActivityPill(
         onClick = onClick,
         position = position,
         connectsToBubbleBelow = connectsToBubbleBelow,
-        modifier = modifier
+        modifier = modifier,
+        testTag = item.type.toTestTag()
     ) {
         Icon(
             imageVector = item.type.getIcon(),

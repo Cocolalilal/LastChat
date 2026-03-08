@@ -14,7 +14,6 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -31,6 +30,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -46,7 +46,6 @@ import androidx.compose.material.icons.rounded.Summarize
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalAbsoluteTonalElevation
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -64,22 +63,27 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.ui.activity.QuickAskAttachment
 import me.rerere.rikkahub.ui.activity.QuickAction
 import me.rerere.rikkahub.ui.activity.TextSelectionState
 import me.rerere.rikkahub.ui.activity.TextSelectionVM
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
+import me.rerere.rikkahub.ui.components.ui.DocumentChip
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 @Composable
@@ -133,13 +137,13 @@ fun TextSelectionSheet(
                         .fillMaxWidth()
                         .imePadding()
                         .navigationBarsPadding()
-                        .padding(16.dp)
+                    .padding(16.dp)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
                             onClick = {} // Consume click to prevent dismissing
                         ),
-                    shape = RoundedCornerShape(40.dp),
+                    shape = QuickAskOuterShape,
                     color = if (amoledMode && isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerLow,
                     tonalElevation = 8.dp
                 ) {
@@ -158,6 +162,7 @@ fun TextSelectionSheet(
                             is TextSelectionState.ActionSelection -> {
                                 ActionSelectionContent(
                                     selectedText = viewModel.selectedText,
+                                    attachments = viewModel.inputData.attachments,
                                     onActionSelected = { viewModel.onActionSelected(it) },
                                     onDismiss = onDismiss
                                 )
@@ -201,6 +206,7 @@ fun TextSelectionSheet(
 @Composable
 private fun ActionSelectionContent(
     selectedText: String,
+    attachments: List<QuickAskAttachment>,
     onActionSelected: (QuickAction) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -218,61 +224,72 @@ private fun ActionSelectionContent(
             modifier = Modifier.padding(start = 8.dp)
         )
 
-        // Selected text preview
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh
-        ) {
-            Text(
-                text = selectedText,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(12.dp)
-            )
+        if (selectedText.isNotBlank()) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = QuickAskInnerShape,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh
+            ) {
+                Text(
+                    text = selectedText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(12.dp)
+                )
+            }
+        }
+
+        attachments.forEach { attachment ->
+            if (attachment.mimeType?.startsWith("image/") == true) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = QuickAskInnerShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh
+                ) {
+                    AsyncImage(
+                        model = attachment.uri,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 180.dp)
+                    )
+                }
+            } else {
+                DocumentChip(
+                    fileName = attachment.fileName,
+                    mimeType = attachment.mimeType,
+                    shape = QuickAskInnerShape
+                )
+            }
         }
 
         // Action buttons grid (2x2)
+        val quickActions = listOf(
+            Triple(Icons.Rounded.Translate, stringResource(R.string.text_selection_translate), QuickAction.TRANSLATE),
+            Triple(Icons.Rounded.Lightbulb, stringResource(R.string.text_selection_explain), QuickAction.EXPLAIN),
+            Triple(Icons.Rounded.Summarize, stringResource(R.string.text_selection_summarize), QuickAction.SUMMARIZE),
+            Triple(Icons.Rounded.AutoAwesome, stringResource(R.string.text_selection_ask), QuickAction.CUSTOM)
+        )
+        val rows = quickActions.chunked(2)
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                QuickActionButton(
-                    modifier = Modifier.weight(1f),
-                    icon = Icons.Rounded.Translate,
-                    label = stringResource(R.string.text_selection_translate),
-                    shape = RoundedCornerShape(topStart = 24.dp, topEnd = 10.dp, bottomStart = 10.dp, bottomEnd = 10.dp),
-                    onClick = { onActionSelected(QuickAction.TRANSLATE) }
-                )
-                QuickActionButton(
-                    modifier = Modifier.weight(1f),
-                    icon = Icons.Rounded.Lightbulb,
-                    label = stringResource(R.string.text_selection_explain),
-                    shape = RoundedCornerShape(topStart = 10.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp),
-                    onClick = { onActionSelected(QuickAction.EXPLAIN) }
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                QuickActionButton(
-                    modifier = Modifier.weight(1f),
-                    icon = Icons.Rounded.Summarize,
-                    label = stringResource(R.string.text_selection_summarize),
-                    shape = RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 10.dp),
-                    onClick = { onActionSelected(QuickAction.SUMMARIZE) }
-                )
-                QuickActionButton(
-                    modifier = Modifier.weight(1f),
-                    icon = Icons.Rounded.AutoAwesome,
-                    label = stringResource(R.string.text_selection_ask),
-                    shape = RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 10.dp, bottomEnd = 24.dp),
-                    onClick = { onActionSelected(QuickAction.CUSTOM) }
-                )
+            rows.forEachIndexed { rowIndex, rowActions ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    rowActions.forEachIndexed { colIndex, (icon, label, action) ->
+                        val isLastOdd = rowIndex == rows.lastIndex && rowActions.size == 1
+                        QuickActionButton(
+                            modifier = Modifier.weight(if (isLastOdd) 2f else 1f),
+                            icon = icon,
+                            label = label,
+                            shape = quickAskGroupedButtonShape(rowIndex, colIndex, rows.size, rowActions.size),
+                            onClick = { onActionSelected(action) }
+                        )
+                    }
+                }
             }
         }
     }
@@ -288,11 +305,12 @@ private fun QuickActionButton(
 ) {
     val amoledMode by rememberAmoledDarkMode()
     val isDarkMode = LocalDarkMode.current
+    val haptics = rememberPremiumHaptics()
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.95f else 1f,
-        animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
+        targetValue = if (isPressed) 0.85f else 1f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
         label = "button_scale"
     )
 
@@ -303,11 +321,18 @@ private fun QuickActionButton(
                 .graphicsLayer {
                     scaleX = scale
                     scaleY = scale
+                }
+                .clip(shape)
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null
+                ) {
+                    haptics.perform(HapticPattern.Pop)
+                    onClick()
                 },
             shape = shape,
             color = if (amoledMode && isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
             tonalElevation = if (amoledMode && isDarkMode) 0.dp else 6.dp,
-            onClick = onClick
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 20.dp),
@@ -349,10 +374,14 @@ private fun CustomPromptContent(
         Row(
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack, modifier = Modifier.size(32.dp)) {
+            TactileIconButton(
+                onClick = onBack,
+                contentDescription = stringResource(R.string.back),
+                modifier = Modifier.size(32.dp)
+            ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                    contentDescription = stringResource(R.string.back),
+                    contentDescription = null,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -372,15 +401,16 @@ private fun CustomPromptContent(
             placeholder = {
                 Text(stringResource(R.string.text_selection_custom_placeholder))
             },
-            shape = RoundedCornerShape(20.dp),
+            shape = QuickAskInnerShape,
             trailingIcon = {
-                IconButton(
+                TactileIconButton(
                     onClick = onSubmit,
-                    enabled = prompt.isNotBlank()
+                    enabled = prompt.isNotBlank(),
+                    contentDescription = stringResource(R.string.send)
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.Send,
-                        contentDescription = stringResource(R.string.send),
+                        contentDescription = null,
                         tint = if (prompt.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
                     )
                 }
@@ -435,10 +465,14 @@ private fun ResultContent(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack, modifier = Modifier.size(32.dp)) {
+                TactileIconButton(
+                    onClick = onBack,
+                    contentDescription = stringResource(R.string.back),
+                    modifier = Modifier.size(32.dp)
+                ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = stringResource(R.string.back),
+                        contentDescription = null,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -459,10 +493,14 @@ private fun ResultContent(
             }
             
             if (isStreaming) {
-                IconButton(onClick = onStop, modifier = Modifier.size(32.dp)) {
+                TactileIconButton(
+                    onClick = onStop,
+                    contentDescription = stringResource(R.string.stop),
+                    modifier = Modifier.size(32.dp)
+                ) {
                     Icon(
                         imageVector = Icons.Rounded.Stop,
-                        contentDescription = stringResource(R.string.stop),
+                        contentDescription = null,
                         tint = MaterialTheme.colorScheme.error,
                         modifier = Modifier.size(20.dp)
                     )
@@ -475,7 +513,7 @@ private fun ResultContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 80.dp, max = 300.dp),
-            shape = RoundedCornerShape(16.dp),
+            shape = QuickAskInnerShape,
             color = MaterialTheme.colorScheme.surfaceContainerHigh
         ) {
             Box(
@@ -505,9 +543,9 @@ private fun ResultContent(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 // Copy button
-                Surface(
+                TactileActionSurface(
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = QuickAskInnerShape,
                     color = MaterialTheme.colorScheme.primaryContainer,
                     onClick = {
                         clipboardManager.setText(AnnotatedString(responseText))
@@ -536,9 +574,9 @@ private fun ResultContent(
 
                 // Continue in app button - hide for translate action
                 if (!isTranslate) {
-                    Surface(
+                    TactileActionSurface(
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(16.dp),
+                        shape = QuickAskInnerShape,
                         color = MaterialTheme.colorScheme.secondaryContainer,
                         onClick = onContinueInApp
                     ) {
@@ -586,8 +624,8 @@ private fun ErrorContent(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.error
         )
-        Surface(
-            shape = RoundedCornerShape(12.dp),
+        TactileActionSurface(
+            shape = QuickAskInnerShape,
             color = MaterialTheme.colorScheme.errorContainer,
             onClick = onRetry
         ) {
@@ -598,5 +636,86 @@ private fun ErrorContent(
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
             )
         }
+    }
+}
+
+@Composable
+private fun TactileIconButton(
+    onClick: () -> Unit,
+    contentDescription: String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    content: @Composable () -> Unit,
+) {
+    val haptics = rememberPremiumHaptics()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed && enabled) 0.85f else 1f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        label = "icon_button_scale"
+    )
+
+    Box(
+        modifier = modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(CircleShape)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                enabled = enabled
+            ) {
+                haptics.perform(HapticPattern.Pop)
+                onClick()
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier.size(32.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun TactileActionSurface(
+    modifier: Modifier = Modifier,
+    shape: Shape,
+    color: Color,
+    onClick: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val haptics = rememberPremiumHaptics()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.85f else 1f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        label = "action_surface_scale"
+    )
+
+    Surface(
+        modifier = modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(shape)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null
+            ) {
+                haptics.perform(HapticPattern.Pop)
+                onClick()
+            },
+        shape = shape,
+        color = color
+    ) {
+        content()
     }
 }

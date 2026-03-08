@@ -1,7 +1,7 @@
 import * as React from "react";
 import type { ComponentProps, CSSProperties, HTMLAttributes } from "react";
 
-import { Check, Copy, Download } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Copy, Download } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   bundledLanguages,
@@ -28,6 +28,8 @@ const MAX_SHIKI_CODE_LENGTH = 12000;
 const SHIKI_CACHE_LIMIT = 200;
 const SHIKI_THEME_LIGHT = "catppuccin-latte";
 const SHIKI_THEME_DARK = "catppuccin-mocha";
+const COLLAPSED_PEEK_MAX_HEIGHT = 108;
+const PREVIEW_MAX_HEIGHT = 200;
 
 interface KeyedToken {
   key: string;
@@ -48,10 +50,14 @@ interface TokenizedCode {
 type CodeBlockProps = HTMLAttributes<HTMLDivElement> & {
   code: string;
   language: string;
+  isIncomplete?: boolean;
+  autoCollapse?: boolean;
   onPreview?: () => void;
   showLineNumbers?: boolean;
   wrapLines?: boolean;
 };
+
+type CodeBlockState = "collapsed" | "preview" | "expanded";
 
 interface CodeBlockContextType {
   code: string;
@@ -362,7 +368,11 @@ const CodeBlockBody = React.memo(
 
     return (
       <pre
-        className={cn("m-0 p-3 text-sm", wrapLines ? "whitespace-pre-wrap" : "whitespace-pre", className)}
+        className={cn(
+          "m-0 p-3 text-sm",
+          wrapLines ? "whitespace-pre-wrap break-words" : "whitespace-pre",
+          className,
+        )}
         style={preStyle}
       >
         <code
@@ -425,16 +435,21 @@ export function CodeBlockActions({ className, ...props }: HTMLAttributes<HTMLDiv
 export function CodeBlockContent({
   code,
   language,
+  state,
   showLineNumbers = false,
   wrapLines = false,
+  bodyRef,
 }: {
   code: string;
   language: BundledLanguage | null;
+  state: CodeBlockState;
   showLineNumbers?: boolean;
   wrapLines?: boolean;
+  bodyRef?: React.RefObject<HTMLDivElement | null>;
 }) {
   const rawTokens = React.useMemo(() => createRawTokens(code), [code]);
   const shouldHighlight = Boolean(language) && code.length <= MAX_SHIKI_CODE_LENGTH;
+  const shouldWrap = wrapLines || state === "collapsed";
 
   const [tokenized, setTokenized] = React.useState<TokenizedCode>(() => {
     if (!shouldHighlight || !language) {
@@ -475,12 +490,19 @@ export function CodeBlockContent({
   }, [code, language, rawTokens, shouldHighlight]);
 
   return (
-    <div className={cn("code-block-content relative", wrapLines ? "overflow-y-auto overflow-x-hidden" : "overflow-auto")}>
+    <div
+      ref={bodyRef}
+      className={cn(
+        "code-block-content relative",
+        shouldWrap ? "overflow-y-auto overflow-x-hidden" : "overflow-auto",
+      )}
+      data-code-block-state={state}
+    >
       <CodeBlockBody
         className="dark:!bg-[var(--shiki-dark-bg)] dark:!text-[var(--shiki-dark)]"
         showLineNumbers={showLineNumbers}
         tokenized={tokenized}
-        wrapLines={wrapLines}
+        wrapLines={shouldWrap}
       />
     </div>
   );
@@ -684,26 +706,99 @@ export function CodeBlock({
   className,
   code,
   language,
+  isIncomplete = false,
+  autoCollapse = true,
   onPreview,
   showLineNumbers = false,
   wrapLines = false,
   ...props
 }: CodeBlockProps) {
+  const { t } = useTranslation("markdown");
   const displayLanguage = language || "text";
+  const languageLabel = displayLanguage.toLowerCase();
   const previewLanguage = React.useMemo(() => getCodePreviewLanguage(language), [language]);
   const canPreview = Boolean(onPreview && previewLanguage);
   const shikiLanguage = React.useMemo(() => resolveShikiLanguage(language), [language]);
+  const bodyRef = React.useRef<HTMLDivElement>(null);
   const contextValue = React.useMemo(
     () => ({ code, language: displayLanguage }),
     [code, displayLanguage],
   );
+  const [state, setState] = React.useState<CodeBlockState>(() => {
+    if (isIncomplete) {
+      return "preview";
+    }
+    return autoCollapse ? "collapsed" : "expanded";
+  });
+  const previousIncompleteRef = React.useRef(isIncomplete);
+  const previousAutoCollapseRef = React.useRef(autoCollapse);
+
+  React.useEffect(() => {
+    setState((current) => {
+      const wasIncomplete = previousIncompleteRef.current;
+      const previousAutoCollapse = previousAutoCollapseRef.current;
+
+      previousIncompleteRef.current = isIncomplete;
+      previousAutoCollapseRef.current = autoCollapse;
+
+      if (isIncomplete) {
+        return current === "expanded" ? "expanded" : "preview";
+      }
+
+      if (wasIncomplete) {
+        return current === "expanded" ? "expanded" : autoCollapse ? "collapsed" : "expanded";
+      }
+
+      if (previousAutoCollapse !== autoCollapse && current !== "expanded") {
+        return autoCollapse ? "collapsed" : "expanded";
+      }
+
+      return current;
+    });
+  }, [autoCollapse, isIncomplete]);
+
+  React.useEffect(() => {
+    if (!isIncomplete || state !== "preview") {
+      return;
+    }
+
+    const element = bodyRef.current;
+    if (!element) {
+      return;
+    }
+
+    element.scrollTop = element.scrollHeight;
+  }, [code, isIncomplete, state]);
+
+  const toggleState = React.useCallback(() => {
+    setState((current) => {
+      if (isIncomplete) {
+        return current === "expanded" ? "preview" : "expanded";
+      }
+      return current === "collapsed" ? "expanded" : "collapsed";
+    });
+  }, [isIncomplete]);
+
+  const isExpanded = state === "expanded";
+  const maxHeight =
+    state === "collapsed"
+      ? COLLAPSED_PEEK_MAX_HEIGHT
+      : state === "preview"
+        ? PREVIEW_MAX_HEIGHT
+        : null;
 
   return (
     <CodeBlockContext.Provider value={contextValue}>
-      <CodeBlockContainer className={className} language={displayLanguage} {...props}>
+      <CodeBlockContainer
+        className={className}
+        data-code-block-state={state}
+        data-incomplete={isIncomplete || undefined}
+        language={displayLanguage}
+        {...props}
+      >
         <CodeBlockHeader>
           <CodeBlockTitle>
-            <CodeBlockLanguage>{displayLanguage}</CodeBlockLanguage>
+            <CodeBlockLanguage>{languageLabel}</CodeBlockLanguage>
           </CodeBlockTitle>
           <CodeBlockActions>
             {canPreview && onPreview && <CodeBlockPreviewButton onPreview={onPreview} />}
@@ -711,7 +806,30 @@ export function CodeBlock({
             <CodeBlockCopyButton />
           </CodeBlockActions>
         </CodeBlockHeader>
-        <CodeBlockContent code={code} language={shikiLanguage} showLineNumbers={showLineNumbers} wrapLines={wrapLines} />
+        <div
+          className="code-block-body-shell"
+          data-code-block-state={state}
+          style={maxHeight != null ? { maxHeight: `${maxHeight}px` } : undefined}
+        >
+          <CodeBlockContent
+            bodyRef={bodyRef}
+            code={code}
+            language={shikiLanguage}
+            state={state}
+            showLineNumbers={showLineNumbers}
+            wrapLines={wrapLines}
+          />
+          {state !== "expanded" ? <div aria-hidden className="code-block-fade" /> : null}
+        </div>
+        <button
+          aria-expanded={isExpanded}
+          className="code-block-footer"
+          onClick={toggleState}
+          type="button"
+        >
+          {isExpanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+          <span>{isExpanded ? t("code_block.collapse") : t("code_block.expand")}</span>
+        </button>
       </CodeBlockContainer>
     </CodeBlockContext.Provider>
   );

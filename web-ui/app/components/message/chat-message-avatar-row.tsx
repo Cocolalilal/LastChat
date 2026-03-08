@@ -2,14 +2,14 @@ import { useTranslation } from "react-i18next";
 
 import { AIIcon } from "~/components/ui/ai-icon";
 import { UIAvatar } from "~/components/ui/ui-avatar";
-import { useSettingsStore } from "~/stores";
-import type { AssistantProfile, MessageDto, ProviderModel } from "~/types";
+import type { AssistantProfile, DisplaySetting, MessageDto, ProviderModel } from "~/types";
 
 export interface ChatMessageAvatarRowProps {
   message: MessageDto;
   hasMessageContent: boolean;
   loading: boolean;
   assistant?: AssistantProfile | null;
+  displaySetting?: DisplaySetting | null;
   model?: ProviderModel | null;
 }
 
@@ -28,10 +28,10 @@ export function ChatMessageAvatarRow({
   hasMessageContent,
   loading,
   assistant,
+  displaySetting,
   model,
 }: ChatMessageAvatarRowProps) {
   const { t, i18n } = useTranslation(["common", "page"]);
-  const displaySetting = useSettingsStore((state) => state.settings?.displaySetting);
 
   if (!hasMessageContent) {
     return null;
@@ -40,30 +40,10 @@ export function ChatMessageAvatarRow({
   const createdAtLabel = formatMessageTimestamp(message.createdAt, i18n.language);
 
   if (message.role === "USER") {
-    if (!displaySetting?.showUserAvatar) {
-      return null;
-    }
-
-    const userName =
-      displaySetting.userNickname.trim() ||
-      t("page:conversations.user.default_name", { defaultValue: "User" });
-
-    return (
-      <div className="flex w-full justify-end px-1">
-        <div className="flex items-center gap-2 rounded-full bg-transparent px-1">
-          <div className="min-w-0 text-right">
-            <div className="truncate text-[13px] font-medium text-foreground/85">{userName}</div>
-            {createdAtLabel ? (
-              <div className="truncate text-[11px] text-muted-foreground">{createdAtLabel}</div>
-            ) : null}
-          </div>
-          <UIAvatar name={userName} avatar={displaySetting.userAvatar} className="size-9" />
-        </div>
-      </div>
-    );
+    return null;
   }
 
-  if (message.role !== "ASSISTANT" || !model) {
+  if (message.role !== "ASSISTANT") {
     return null;
   }
 
@@ -76,18 +56,24 @@ export function ChatMessageAvatarRow({
   const useAssistantAvatar = assistant?.useAssistantAvatar === true;
   const defaultAssistantName = t("common:quick_jump.role_assistant", { defaultValue: "Assistant" });
   const assistantName = assistant?.name?.trim() || defaultAssistantName;
-  const modelName = model.displayName.trim() || model.modelId.trim() || defaultAssistantName;
+  const modelName =
+    model?.displayName.trim() || model?.modelId.trim() || defaultAssistantName;
   const title = useAssistantAvatar ? assistantName : modelName;
+  const canRenderIcon = useAssistantAvatar ? Boolean(assistant) : Boolean(model);
+  const canRenderName = Boolean(title);
+  if ((!showModelIcon || !canRenderIcon) && (!showModelName || !canRenderName)) {
+    return null;
+  }
 
   return (
-    <div className="flex w-full justify-start px-1">
-      <div className="flex min-w-0 items-center gap-2 rounded-full bg-transparent px-1">
-        {showModelIcon ? (
+    <div className="flex w-full justify-start">
+      <div className="flex min-w-0 items-center gap-2 rounded-full bg-transparent">
+        {showModelIcon && canRenderIcon ? (
           useAssistantAvatar ? (
             <UIAvatar name={assistantName} avatar={assistant?.avatar} className="size-9" />
           ) : (
             <AIIcon
-              name={model.modelId}
+              name={model?.modelId ?? modelName}
               size={34}
               loading={loading}
               className="bg-secondary/90"
@@ -95,7 +81,7 @@ export function ChatMessageAvatarRow({
             />
           )
         ) : null}
-        {showModelName ? (
+        {showModelName && canRenderName ? (
           <div className="min-w-0">
             <div className="truncate text-[13px] font-medium text-foreground/85">{title}</div>
             {createdAtLabel ? (

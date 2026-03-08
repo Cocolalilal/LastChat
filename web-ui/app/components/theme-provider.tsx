@@ -1,15 +1,15 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 export type ThemeMode = "dark" | "light" | "system";
 export type Theme = ThemeMode;
-export type ColorTheme = "default" | "claude" | "t3-chat" | "mono" | "bubblegum" | "custom";
+export type ColorTheme = "default" | "claude" | "t3-chat" | "mono" | "caffeinated" | "custom";
 
 export const COLOR_THEMES: ColorTheme[] = [
   "default",
   "claude",
   "t3-chat",
   "mono",
-  "bubblegum",
+  "caffeinated",
   "custom",
 ];
 
@@ -35,6 +35,7 @@ type ThemeProviderState = {
   setTheme: (theme: ThemeMode) => void;
   colorTheme: ColorTheme;
   setColorTheme: (theme: ColorTheme) => void;
+  resolvedMode: "light" | "dark";
   customThemeCss: CustomThemeCss;
   setCustomThemeCss: (theme: CustomThemeCss) => void;
 };
@@ -42,6 +43,7 @@ type ThemeProviderState = {
 const initialState: ThemeProviderState = {
   theme: "system",
   colorTheme: "default",
+  resolvedMode: "light",
   customThemeCss: {
     light: "",
     dark: "",
@@ -57,8 +59,11 @@ function isThemeMode(value: string | null): value is ThemeMode {
   return value === "light" || value === "dark" || value === "system";
 }
 
-function isColorTheme(value: string | null): value is ColorTheme {
-  return !!value && COLOR_THEMES.includes(value as ColorTheme);
+function normalizeColorTheme(value: string | null): ColorTheme | null {
+  if (value === "bubblegum") {
+    return "caffeinated";
+  }
+  return value && COLOR_THEMES.includes(value as ColorTheme) ? (value as ColorTheme) : null;
 }
 
 function removeBlacklistedCss(value: string): string {
@@ -125,8 +130,8 @@ export function ThemeProvider({
   });
 
   const [colorTheme, setColorTheme] = useState<ColorTheme>(() => {
-    const stored = localStorage.getItem(colorThemeStorageKey);
-    return isColorTheme(stored) ? stored : defaultColorTheme;
+    const stored = normalizeColorTheme(localStorage.getItem(colorThemeStorageKey));
+    return stored ?? defaultColorTheme;
   });
 
   const [customThemeCss, setCustomThemeCss] = useState<CustomThemeCss>(() => ({
@@ -134,37 +139,37 @@ export function ThemeProvider({
     dark: localStorage.getItem(customThemeDarkStorageKey) ?? "",
   }));
 
+  const [prefersDark, setPrefersDark] = useState(() =>
+    typeof window !== "undefined"
+      ? window.matchMedia("(prefers-color-scheme: dark)").matches
+      : false,
+  );
+
   useEffect(() => {
-    const root = window.document.documentElement;
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-
-    const applyMode = (mode: ThemeMode) => {
-      root.classList.remove("light", "dark");
-
-      if (mode === "system") {
-        root.classList.add(mediaQuery.matches ? "dark" : "light");
-        return;
-      }
-
-      root.classList.add(mode);
-    };
-
-    applyMode(theme);
-
-    if (theme !== "system") {
-      return;
-    }
-
     const onSystemThemeChange = () => {
-      applyMode("system");
+      setPrefersDark(mediaQuery.matches);
     };
 
+    onSystemThemeChange();
     mediaQuery.addEventListener("change", onSystemThemeChange);
-
     return () => {
       mediaQuery.removeEventListener("change", onSystemThemeChange);
     };
-  }, [theme]);
+  }, []);
+
+  const resolvedMode = useMemo<"light" | "dark">(() => {
+    if (theme === "system") {
+      return prefersDark ? "dark" : "light";
+    }
+    return theme;
+  }, [prefersDark, theme]);
+
+  useEffect(() => {
+    const root = window.document.documentElement;
+    root.classList.remove("light", "dark");
+    root.classList.add(resolvedMode);
+  }, [resolvedMode]);
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -195,6 +200,7 @@ export function ThemeProvider({
   const value = {
     theme,
     colorTheme,
+    resolvedMode,
     customThemeCss,
     setTheme: (theme: ThemeMode) => {
       localStorage.setItem(storageKey, theme);

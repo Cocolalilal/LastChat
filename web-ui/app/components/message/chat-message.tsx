@@ -18,9 +18,9 @@ import {
   Zap,
 } from "lucide-react";
 
-import { useSettingsStore } from "~/stores";
 import type {
   AssistantProfile,
+  DisplaySetting,
   MessageDto,
   MessageNodeDto,
   ProviderModel,
@@ -29,6 +29,7 @@ import type {
 } from "~/types";
 
 import { copyTextToClipboard } from "~/lib/clipboard";
+import { CHAT_USER_BUBBLE_MAX_WIDTH_CLASSNAME } from "~/lib/chat-layout";
 import { convertMessageToMarkdown, downloadMarkdown } from "~/lib/export-markdown";
 import { cn } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
@@ -48,6 +49,7 @@ interface ChatMessageProps {
   loading?: boolean;
   isLastMessage?: boolean;
   assistant?: AssistantProfile | null;
+  displaySetting?: DisplaySetting | null;
   model?: ProviderModel | null;
   onEdit?: (message: MessageDto) => void | Promise<void>;
   onRegenerate?: (messageId: string) => void | Promise<void>;
@@ -227,7 +229,7 @@ function buildCitationUrlMap(parts: UIMessagePart[]): Map<string, string> {
   return map;
 }
 
-const ChatMessageActionsRow = React.memo(({
+export const ChatMessageActionsRow = React.memo(({
   node,
   message,
   loading,
@@ -332,7 +334,7 @@ const ChatMessageActionsRow = React.memo(({
   return (
     <div
       className={cn(
-        "flex w-full items-center gap-1 px-1 opacity-75 transition-opacity hover:opacity-100",
+        "flex w-full items-center gap-1 opacity-75 transition-opacity hover:opacity-100",
         alignRight ? "justify-end" : "justify-start",
       )}
     >
@@ -477,15 +479,16 @@ const ChatMessageActionsRow = React.memo(({
   );
 });
 
-const ChatMessageNerdLineRow = React.memo(({
+export const ChatMessageNerdLineRow = React.memo(({
   message,
   alignRight,
+  displaySetting,
 }: {
   message: MessageDto;
   alignRight: boolean;
+  displaySetting?: DisplaySetting | null;
 }) => {
   const { t } = useTranslation("message");
-  const displaySetting = useSettingsStore((state) => state.settings?.displaySetting);
 
   if (!displaySetting?.showTokenUsage || !message.usage) {
     return null;
@@ -497,7 +500,7 @@ const ChatMessageNerdLineRow = React.memo(({
   return (
     <div
       className={cn(
-        "flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[11px] text-muted-foreground/45",
+        "flex w-full flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground/45",
         alignRight ? "justify-end" : "justify-start",
       )}
     >
@@ -517,6 +520,7 @@ export const ChatMessage = React.memo(({
   loading = false,
   isLastMessage = false,
   assistant,
+  displaySetting,
   model,
   onEdit,
   onRegenerate,
@@ -540,31 +544,41 @@ export const ChatMessage = React.memo(({
 
   return (
     <div
-      className={cn("flex flex-col gap-3", isUser ? "items-end" : "items-start")}
+      className={cn("flex flex-col gap-2.5", isUser ? "items-end" : "items-start")}
       data-message-role={message.role.toLowerCase()}
       data-message-loading={loading || undefined}
     >
-      <div className="flex w-full flex-col gap-2">
+      <div className="flex w-full flex-col gap-1.5">
         <ChatMessageAvatarRow
           message={message}
           hasMessageContent={hasMessageContent}
           loading={loading}
           assistant={assistant}
+          displaySetting={displaySetting}
           model={model}
         />
 
-        <div className={cn("flex w-full", isUser ? "justify-end" : "justify-start")}>
+        <div
+          className={cn(
+            "flex w-full",
+            isUser ? "justify-end" : "justify-start",
+          )}
+        >
           <div
             data-message-bubble
             className={cn(
               "flex flex-col gap-2 text-sm",
               isUser
-                ? "max-w-[78%] rounded-[1.6rem] border border-border/70 bg-card px-4 py-3.5 shadow-sm"
-                : "w-full rounded-[1.75rem] bg-transparent px-0 py-0",
+                ? cn(
+                    CHAT_USER_BUBBLE_MAX_WIDTH_CLASSNAME,
+                    "rounded-[var(--radius-bubble)] border border-primary/10 bg-primary px-4 py-3.5 text-primary-foreground shadow-sm",
+                  )
+                : "w-full rounded-[var(--radius-bubble)] bg-transparent px-0 py-0",
             )}
           >
             <MessageParts
               parts={message.parts}
+              displaySetting={displaySetting}
               loading={loading}
               onToolApproval={onToolApproval}
               onClickCitation={handleClickCitation}
@@ -591,7 +605,11 @@ export const ChatMessage = React.memo(({
 
       <ChatMessageAnnotationsRow annotations={message.annotations} alignRight={isUser} />
 
-      <ChatMessageNerdLineRow message={message} alignRight={isUser} />
+      <ChatMessageNerdLineRow
+        message={message}
+        alignRight={isUser}
+        displaySetting={displaySetting}
+      />
     </div>
   );
 });

@@ -151,6 +151,7 @@ fun ProviderConfigure(
                     Text(stringResource(id = R.string.setting_provider_page_name))
                 },
                 modifier = Modifier.weight(1f),
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
             )
         }
 
@@ -365,7 +366,8 @@ private fun ColumnScope.ProviderConfigureOpenAI(
         label = {
             Text(stringResource(id = R.string.setting_provider_page_api_base_url))
         },
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
     )
 
     if (!provider.useResponseApi) {
@@ -392,7 +394,8 @@ private fun ColumnScope.ProviderConfigureOpenAI(
                 Text(stringResource(id = R.string.setting_provider_page_api_path))
             },
             modifier = Modifier.fillMaxWidth(),
-            enabled = !provider.builtIn
+            enabled = !provider.builtIn,
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -468,7 +471,8 @@ private fun ColumnScope.ProviderConfigureClaude(
         label = {
             Text(stringResource(id = R.string.setting_provider_page_api_base_url))
         },
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
     )
 }
 
@@ -543,7 +547,8 @@ private fun ColumnScope.ProviderConfigureGoogle(
                 {
                     Text("The base URL usually ends with `/v1beta`")
                 }
-            } else null
+            } else null,
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     } else {
         // Local state for all Vertex AI text fields with debouncing
@@ -594,7 +599,8 @@ private fun ColumnScope.ProviderConfigureGoogle(
             label = {
                 Text(stringResource(id = R.string.setting_provider_page_service_account_email))
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
         OutlinedTextField(
             value = localPrivateKey,
@@ -606,6 +612,7 @@ private fun ColumnScope.ProviderConfigureGoogle(
             maxLines = 6,
             minLines = 3,
             textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
         OutlinedTextField(
             value = localLocation,
@@ -614,7 +621,8 @@ private fun ColumnScope.ProviderConfigureGoogle(
                 // https://cloud.google.com/vertex-ai/generative-ai/docs/learn/locations#available-regions
                 Text(stringResource(id = R.string.setting_provider_page_location))
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
         OutlinedTextField(
             value = localProjectId,
@@ -622,7 +630,8 @@ private fun ColumnScope.ProviderConfigureGoogle(
             label = {
                 Text(stringResource(id = R.string.setting_provider_page_project_id))
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 }

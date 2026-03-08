@@ -137,8 +137,8 @@ export function McpPickerButton({ disabled = false, className }: McpPickerButton
           size="sm"
           disabled={!canUse || updateMcpMutation.isPending}
           className={cn(
-            "h-9 rounded-full border border-border/60 bg-background/80 px-2.5 text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground",
-            selectedEnabledCount > 0 && "border-primary/20 bg-primary/10 text-primary hover:bg-primary/20",
+            "h-9 rounded-full border border-border/70 bg-muted/70 px-2.5 text-foreground shadow-none hover:bg-accent hover:text-accent-foreground",
+            selectedEnabledCount > 0 && "border-primary/20 bg-primary/10 text-primary hover:bg-primary/18",
             className,
           )}
         >
@@ -156,72 +156,74 @@ export function McpPickerButton({ disabled = false, className }: McpPickerButton
       </PopoverTrigger>
 
       <PopoverContent align="end" className="w-[min(92vw,22rem)] gap-0 p-0">
-        <PopoverHeader className="border-b px-3 py-2.5">
+        <PopoverHeader className="px-3 pt-3 pb-2">
           <PopoverTitle className="text-sm">{t("mcp.title")}</PopoverTitle>
           <PopoverDescription className="text-[11px]">
             {t("mcp.description")}
           </PopoverDescription>
         </PopoverHeader>
 
-        <div className="space-y-2 px-2.5 py-2.5">
+        <div className="space-y-3 px-2.5 py-2.5">
           <PickerErrorAlert error={error} />
 
-          <ScrollArea className="h-[32vh] pr-1.5">
-            {enabledServers.length > 0 ? (
-              <div className="space-y-1">
-                {enabledServers.map((server) => {
-                  const selected = selectedServerIdSet.has(server.id);
-                  const switching =
-                    updateMcpMutation.isPending &&
-                    updateMcpMutation.variables?.serverId === server.id;
-                  const tools = getEnabledToolsCount(server.commonOptions?.tools);
+          <div className="overflow-hidden rounded-[var(--radius-card)] border border-border/70 bg-muted/30 p-2">
+            <ScrollArea className="h-[32vh] pr-1.5">
+              {enabledServers.length > 0 ? (
+                <div className="space-y-1">
+                  {enabledServers.map((server) => {
+                    const selected = selectedServerIdSet.has(server.id);
+                    const switching =
+                      updateMcpMutation.isPending &&
+                      updateMcpMutation.variables?.serverId === server.id;
+                    const tools = getEnabledToolsCount(server.commonOptions?.tools);
 
-                  return (
-                    <div
-                      key={server.id}
-                      className={cn(
-                        "flex items-center gap-1.5 rounded-md border px-2 py-1.5 transition",
-                        selected && "border-primary bg-primary/5",
-                      )}
-                    >
-                      <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted">
-                        {switching ? (
-                          <LoaderCircle className="size-3 animate-spin" />
-                        ) : (
-                          <Terminal className="size-3" />
+                    return (
+                      <div
+                        key={server.id}
+                        className={cn(
+                          "flex items-center gap-1.5 rounded-[var(--radius-card-inner)] border border-border/70 bg-background px-2 py-1.5 transition",
+                          selected && "border-primary/25 bg-primary/10",
                         )}
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-[11px] font-medium leading-tight">
-                          {getDisplayName(server.commonOptions?.name, t("mcp.unnamed_server"))}
+                      >
+                        <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted/70">
+                          {switching ? (
+                            <LoaderCircle className="size-3 animate-spin" />
+                          ) : (
+                            <Terminal className="size-3" />
+                          )}
                         </div>
-                        <div className="text-muted-foreground text-[10px] leading-tight">
-                          {t("mcp.tools_enabled", {
-                            enabled: tools.enabled,
-                            total: tools.total,
-                          })}
-                        </div>
-                      </div>
 
-                      <Switch
-                        size="sm"
-                        checked={selected}
-                        disabled={disabled || updateMcpMutation.isPending}
-                        onCheckedChange={(nextChecked) => {
-                          handleToggleServer(server.id, nextChecked);
-                        }}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="rounded-md border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
-                {t("mcp.empty")}
-              </div>
-            )}
-          </ScrollArea>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-[11px] font-medium leading-tight">
+                            {getDisplayName(server.commonOptions?.name, t("mcp.unnamed_server"))}
+                          </div>
+                          <div className="text-muted-foreground text-[10px] leading-tight">
+                            {t("mcp.tools_enabled", {
+                              enabled: tools.enabled,
+                              total: tools.total,
+                            })}
+                          </div>
+                        </div>
+
+                        <Switch
+                          size="sm"
+                          checked={selected}
+                          disabled={disabled || updateMcpMutation.isPending}
+                          onCheckedChange={(nextChecked) => {
+                            handleToggleServer(server.id, nextChecked);
+                          }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-md border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
+                  {t("mcp.empty")}
+                </div>
+              )}
+            </ScrollArea>
+          </div>
         </div>
       </PopoverContent>
     </Popover>

@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import me.rerere.rikkahub.ui.theme.AppShapes
 
 @Composable
 fun SecureOutlinedTextField(
@@ -42,6 +43,7 @@ fun SecureOutlinedTextField(
         } else {
             PasswordVisualTransformation()
         },
+        shape = AppShapes.InputField,
         trailingIcon = {
             IconButton(onClick = { visible = !visible }) {
                 Icon(

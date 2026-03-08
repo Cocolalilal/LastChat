@@ -1,14 +1,20 @@
 import * as React from "react";
 import { ChevronDown, ChevronRight, Brain } from "lucide-react";
 import Markdown from "~/components/markdown/markdown";
+import type { DisplaySetting } from "~/types";
 import Think from "~/assets/think.svg?react";
 
 interface ReasoningPartProps {
   reasoning: string;
+  displaySetting?: DisplaySetting | null;
   isFinished?: boolean;
 }
 
-export function ReasoningPart({ reasoning, isFinished = true }: ReasoningPartProps) {
+export function ReasoningPart({
+  reasoning,
+  displaySetting,
+  isFinished = true,
+}: ReasoningPartProps) {
   const [expanded, setExpanded] = React.useState(false);
 
   if (!reasoning) return null;
@@ -25,7 +31,7 @@ export function ReasoningPart({ reasoning, isFinished = true }: ReasoningPartPro
       </button>
       {expanded && (
         <div className="border-t border-muted px-3 py-2 text-sm text-muted-foreground">
-          <Markdown content={reasoning} />
+          <Markdown content={reasoning} displaySetting={displaySetting} />
         </div>
       )}
     </div>

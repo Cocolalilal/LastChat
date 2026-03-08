@@ -139,7 +139,8 @@ function SidebarProvider({
             } as React.CSSProperties
           }
           className={cn(
-            "group/sidebar-wrapper flex min-h-svh w-full bg-transparent",
+            "group/sidebar-wrapper flex min-h-svh w-full bg-background transition-[padding,background-color] duration-300 ease-out",
+            state === "expanded" ? "md:bg-sidebar md:p-1.5" : "md:bg-background md:p-0",
             className
           )}
           {...props}
@@ -187,7 +188,7 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="bg-sidebar/96 text-sidebar-foreground w-(--sidebar-width) border-l border-sidebar-border p-0 shadow-2xl backdrop-blur-xl [&>button]:hidden"
+          className="bg-sidebar text-sidebar-foreground w-(--sidebar-width) border-l border-sidebar-border p-0 shadow-2xl backdrop-blur-xl [&>button]:hidden"
           style={
             {
               "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
@@ -207,36 +208,25 @@ function Sidebar({
 
   return (
     <div
-      className="group peer text-sidebar-foreground hidden md:block"
+      className="group peer hidden min-h-0 text-sidebar-foreground md:flex"
       data-state={state}
       data-collapsible={state === "collapsed" ? collapsible : ""}
       data-variant={variant}
       data-side={side}
       data-slot="sidebar"
     >
-      {/* This is what handles the sidebar gap on desktop */}
-      <div
-        data-slot="sidebar-gap"
-        className={cn(
-          "relative w-[calc(var(--sidebar-width)+0.75rem)] bg-transparent transition-[width] duration-300 ease-out",
-          "group-data-[collapsible=offcanvas]:w-0",
-          "group-data-[side=right]:rotate-180",
-          variant === "floating" || variant === "inset"
-            ? "group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+0.75rem)]"
-            : "group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+0.75rem)]"
-        )}
-      />
       <div
         data-slot="sidebar-container"
         className={cn(
-          "fixed inset-y-3 z-10 hidden h-[calc(100svh-1.5rem)] w-(--sidebar-width) transition-[left,right,width] duration-300 ease-out md:flex",
+          "hidden shrink-0 overflow-hidden transition-[width,padding,opacity] duration-300 ease-out md:flex",
+          "w-(--sidebar-width) group-data-[collapsible=icon]:w-(--sidebar-width-icon)",
+          "group-data-[collapsible=offcanvas]:pointer-events-none group-data-[collapsible=offcanvas]:w-0 group-data-[collapsible=offcanvas]:opacity-0",
           side === "left"
-            ? "left-3 group-data-[collapsible=offcanvas]:left-[calc((var(--sidebar-width)+0.75rem)*-1)]"
-            : "right-3 group-data-[collapsible=offcanvas]:right-[calc((var(--sidebar-width)+0.75rem)*-1)]",
-          // Adjust the padding for floating and inset variants.
+            ? "md:pr-1.5 group-data-[collapsible=offcanvas]:md:pr-0"
+            : "md:pl-1.5 group-data-[collapsible=offcanvas]:md:pl-0",
           variant === "floating" || variant === "inset"
-            ? "p-0 group-data-[collapsible=icon]:w-(--sidebar-width-icon)"
-            : "p-0 group-data-[collapsible=icon]:w-(--sidebar-width-icon)",
+            ? "group-data-[collapsible=icon]:md:w-[calc(var(--sidebar-width-icon)+0.375rem)]"
+            : "",
           className
         )}
         {...props}
@@ -245,8 +235,8 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
           className={cn(
-            "flex h-full w-full flex-col overflow-hidden bg-transparent",
-            variant === "sidebar" ? "rounded-none border-0 shadow-none" : "rounded-[1rem] border-0 shadow-none",
+            "flex h-full w-full flex-col overflow-hidden rounded-[var(--radius-panel)] bg-sidebar text-sidebar-foreground",
+            variant !== "sidebar" && "border border-sidebar-border/70 shadow-lg",
           )}
         >
           {children}
@@ -307,16 +297,35 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
   )
 }
 
-function SidebarInset({ className, ...props }: React.ComponentProps<"main">) {
+function SidebarInset({
+  className,
+  children,
+  ...props
+}: React.ComponentProps<"main">) {
+  const { state } = useSidebar()
+
   return (
     <main
       data-slot="sidebar-inset"
       className={cn(
-        "bg-background relative flex w-full flex-1 flex-col md:my-2 md:mr-2 md:min-h-[calc(100svh-1rem)] md:overflow-hidden md:rounded-[0.85rem] md:border md:border-border/55 md:shadow-lg peer-data-[collapsible=offcanvas]:md:ml-2",
+        "relative flex min-h-svh min-w-0 flex-1 overflow-hidden bg-background transition-[padding,background-color] duration-300 ease-out md:min-h-0 md:rounded-[var(--radius-panel)]",
+        state === "expanded"
+          ? "md:bg-sidebar md:p-[var(--chat-frame-size)]"
+          : "md:bg-transparent md:p-0",
         className
       )}
       {...props}
-    />
+    >
+      <div
+        data-slot="sidebar-inset-inner"
+        className={cn(
+          "relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background transition-[border-color,box-shadow] duration-300 ease-out md:rounded-[var(--radius-panel-inner)] md:border",
+          state === "expanded" ? "md:border-sidebar-border/80" : "md:border-transparent",
+        )}
+      >
+        {children}
+      </div>
+    </main>
   )
 }
 

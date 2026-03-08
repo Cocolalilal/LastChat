@@ -464,7 +464,8 @@ fun ChatDrawerContent(
                     onValueChange = onUpdate,
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    placeholder = { Text(stringResource(R.string.chat_page_nickname_placeholder)) }
+                    placeholder = { Text(stringResource(R.string.chat_page_nickname_placeholder)) },
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField
                 )
             },
             confirmButton = {

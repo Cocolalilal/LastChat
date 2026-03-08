@@ -138,8 +138,8 @@ export function ConversationQuickJump({ items }: ConversationQuickJumpProps) {
   }
 
   return (
-    <div className="pointer-events-none absolute inset-y-0 left-1/2 z-20 hidden w-full max-w-4xl -translate-x-1/2 lg:block">
-      <div className="pointer-events-auto absolute top-1/2 right-3 -translate-y-1/2 xl:-right-8">
+    <div className="pointer-events-none absolute inset-y-0 right-2 z-20 hidden lg:block xl:right-3">
+      <div className="pointer-events-auto absolute top-1/2 right-0 -translate-y-1/2">
         <div className="flex flex-col items-start gap-1">
           {items.map((item, index) => {
             const isActive = activeMessageId === item.id;

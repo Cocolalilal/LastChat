@@ -27,8 +27,8 @@ import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.datastore.DisplaySetting
 import me.rerere.rikkahub.data.datastore.Settings
-import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.model.AssistantUISettings
 import me.rerere.rikkahub.data.model.AssistantSearchMode
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Conversation
@@ -330,6 +330,24 @@ data class WebDisplaySettingDto(
 )
 
 @Serializable
+data class WebAssistantUiSettingsDto(
+    val showUserAvatar: Boolean? = null,
+    val showAssistantAvatar: Boolean? = null,
+    val showAssistantBubbles: Boolean? = null,
+    val showTokenUsage: Boolean? = null,
+    val autoCloseThinking: Boolean? = null,
+    val showMessageJumper: Boolean? = null,
+    val messageJumperOnLeft: Boolean? = null,
+    val fontSizeRatio: Float? = null,
+    val codeBlockAutoWrap: Boolean? = null,
+    val codeBlockAutoCollapse: Boolean? = null,
+    val showContextStacks: Boolean? = null,
+    val newChatHeaderStyle: String? = null,
+    val newChatContentStyle: String? = null,
+    val newChatShowAvatar: Boolean? = null,
+)
+
+@Serializable
 data class WebAssistantTagDto(
     val id: String,
     val name: String,
@@ -369,6 +387,7 @@ data class WebAssistantDto(
     val name: String,
     val avatar: WebAvatarDto? = null,
     val useAssistantAvatar: Boolean = false,
+    val uiSettings: WebAssistantUiSettingsDto = WebAssistantUiSettingsDto(),
     val tags: List<String> = emptyList(),
     val quickMessages: List<WebQuickMessageDto> = emptyList(),
 )
@@ -549,7 +568,7 @@ fun Settings.toWebSettingsDto(context: Context): WebSettingsDto {
         dynamicColor = dynamicColor,
         themeId = themeId,
         developerMode = developerMode,
-        displaySetting = getEffectiveDisplaySetting(currentAssistant).toWebDisplaySetting(context),
+        displaySetting = displaySetting.toWebDisplaySetting(context),
         enableWebSearch = currentSearchMode is AssistantSearchMode.Provider,
         favoriteModels = favoriteModels.map(Uuid::toString),
         chatModelId = chatModelId.toString(),
@@ -744,8 +763,28 @@ internal fun Assistant.toWebAssistantDto(context: Context): WebAssistantDto {
         name = name.ifBlank { "Assistant" },
         avatar = avatar.toWebAvatarDto(context),
         useAssistantAvatar = useAssistantAvatar,
+        uiSettings = uiSettings.toWebAssistantUiSettingsDto(),
         tags = tags.map(Uuid::toString),
         quickMessages = quickMessages.map(QuickMessage::toWebQuickMessageDto),
+    )
+}
+
+private fun AssistantUISettings.toWebAssistantUiSettingsDto(): WebAssistantUiSettingsDto {
+    return WebAssistantUiSettingsDto(
+        showUserAvatar = showUserAvatar,
+        showAssistantAvatar = showAssistantAvatar,
+        showAssistantBubbles = showAssistantBubbles,
+        showTokenUsage = showTokenUsage,
+        autoCloseThinking = autoCloseThinking,
+        showMessageJumper = showMessageJumper,
+        messageJumperOnLeft = messageJumperOnLeft,
+        fontSizeRatio = fontSizeRatio,
+        codeBlockAutoWrap = codeBlockAutoWrap,
+        codeBlockAutoCollapse = codeBlockAutoCollapse,
+        showContextStacks = showContextStacks,
+        newChatHeaderStyle = newChatHeaderStyle?.name,
+        newChatContentStyle = newChatContentStyle?.name,
+        newChatShowAvatar = newChatShowAvatar,
     )
 }
 

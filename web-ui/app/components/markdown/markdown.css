@@ -109,19 +109,26 @@
 
 /* Code Block with Header */
 .markdown .code-block {
-  @apply my-4 rounded-lg border border-border overflow-hidden;
+  @apply my-4 overflow-hidden rounded-[1.5rem] border border-border/70;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 92%, transparent), color-mix(in srgb, var(--card) 98%, transparent));
+  box-shadow:
+    0 20px 50px color-mix(in srgb, var(--foreground) 6%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--background) 70%, transparent);
 }
 
 .code-block-header {
-  @apply flex items-center justify-between px-3 py-0.5 bg-muted/50 border-b border-border;
+  @apply flex items-center justify-between gap-3 border-b border-border/70 px-3 py-2;
+  background: color-mix(in srgb, var(--muted) 58%, var(--card));
 }
 
 .code-block-language {
-  @apply text-xs text-muted-foreground;
+  @apply text-xs font-medium text-muted-foreground;
+  letter-spacing: 0.04em;
 }
 
 .code-block-copy {
-  @apply flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5 rounded hover:bg-muted;
+  @apply flex items-center gap-1 rounded-full px-2 py-1 text-xs text-muted-foreground transition-all duration-150 hover:bg-muted/80 hover:text-foreground active:scale-[0.85];
 }
 
 .code-block-actions {
@@ -129,20 +136,53 @@
 }
 
 .code-block-copy:active {
-  @apply scale-95;
+  @apply scale-[0.85];
+}
+
+.markdown .code-block-body-shell {
+  @apply relative w-full overflow-hidden;
+  background: color-mix(in srgb, var(--card) 35%, var(--background));
+}
+
+.markdown .code-block-body-shell[data-code-block-state="preview"] {
+  @apply overflow-hidden;
+}
+
+.markdown .code-block-body-shell[data-code-block-state="collapsed"] {
+  @apply overflow-hidden;
+}
+
+.markdown .code-block-fade {
+  @apply pointer-events-none absolute inset-x-0 bottom-0;
+  height: 48px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--card) 0%, transparent) 0%,
+    color-mix(in srgb, var(--card) 88%, transparent) 65%,
+    color-mix(in srgb, var(--card) 100%, transparent) 100%
+  );
 }
 
 /* Code Block body */
 .markdown .code-block-content {
-  @apply overflow-x-auto;
+  @apply relative;
 }
 
 .markdown .code-block-content pre {
-  @apply !m-0 !rounded-none !border-0 p-3 text-sm;
+  @apply !m-0 !rounded-none !border-0 bg-transparent px-3.5 py-3 text-sm;
 }
 
 .markdown .code-block-content pre code {
   @apply bg-transparent p-0 font-mono leading-relaxed;
+}
+
+.markdown .code-block-footer {
+  @apply flex w-full items-center justify-center gap-1.5 border-t border-border/70 px-3 py-3 text-sm font-medium text-muted-foreground transition-all duration-150 hover:bg-muted/35 hover:text-foreground active:scale-[0.985];
+  background: color-mix(in srgb, var(--card) 48%, var(--background));
+}
+
+.markdown .code-block-footer svg {
+  @apply shrink-0;
 }
 
 /* Legacy Code - Block (fallback) */

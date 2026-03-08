@@ -8,6 +8,7 @@ export interface DisplaySetting {
   showUserAvatar: boolean;
   showModelIcon?: boolean;
   showModelName: boolean;
+  showAssistantBubbles?: boolean;
   showTokenUsage: boolean;
   showThinkingContent: boolean;
   autoCloseThinking: boolean;
@@ -19,6 +20,12 @@ export interface DisplaySetting {
   fontSizeRatio: number;
   pasteLongTextAsFile: boolean;
   pasteLongTextThreshold: number;
+  showMessageJumper?: boolean;
+  messageJumperOnLeft?: boolean;
+  showContextStacks?: boolean;
+  newChatHeaderStyle?: string;
+  newChatContentStyle?: string;
+  newChatShowAvatar?: boolean;
   [key: string]: unknown;
 }
 
@@ -37,6 +44,24 @@ export interface AssistantAvatar {
 export interface AssistantQuickMessage {
   title: string;
   content: string;
+}
+
+export interface AssistantUISettings {
+  showUserAvatar?: boolean | null;
+  showAssistantAvatar?: boolean | null;
+  showAssistantBubbles?: boolean | null;
+  showTokenUsage?: boolean | null;
+  autoCloseThinking?: boolean | null;
+  showMessageJumper?: boolean | null;
+  messageJumperOnLeft?: boolean | null;
+  fontSizeRatio?: number | null;
+  codeBlockAutoWrap?: boolean | null;
+  codeBlockAutoCollapse?: boolean | null;
+  showContextStacks?: boolean | null;
+  newChatHeaderStyle?: string | null;
+  newChatContentStyle?: string | null;
+  newChatShowAvatar?: boolean | null;
+  [key: string]: unknown;
 }
 
 export interface ModeInjectionProfile {
@@ -66,6 +91,7 @@ export interface AssistantProfile {
   name: string;
   avatar?: AssistantAvatar;
   useAssistantAvatar?: boolean;
+  uiSettings?: AssistantUISettings;
   tags: string[];
   quickMessages?: AssistantQuickMessage[];
   [key: string]: unknown;

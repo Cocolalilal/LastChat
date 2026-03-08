@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useTranslation } from "react-i18next";
-import { Streamdown } from "streamdown";
+import { Streamdown, useIsCodeFenceIncomplete } from "streamdown";
 import { cjk } from "@streamdown/cjk";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -9,7 +9,7 @@ import rehypeRaw from "rehype-raw";
 import { cn } from "~/lib/utils";
 import { getCodePreviewLanguage } from "~/components/workbench/code-preview-language";
 import { useOptionalWorkbench } from "~/components/workbench/workbench-context";
-import { useSettingsStore } from "~/stores";
+import type { DisplaySetting } from "~/types";
 import { CodeBlock } from "./code-block";
 import "katex/dist/katex.min.css";
 import "./markdown.css";
@@ -63,6 +63,7 @@ type MarkdownProps = {
   onClickCitation?: (id: string) => void;
   allowCodePreview?: boolean;
   isAnimating?: boolean;
+  displaySetting?: DisplaySetting | null;
 };
 
 function getNodeText(node: React.ReactNode): string {
@@ -81,10 +82,10 @@ export default function Markdown({
   onClickCitation,
   allowCodePreview = true,
   isAnimating = false,
+  displaySetting,
 }: MarkdownProps) {
   const { t } = useTranslation("markdown");
   const workbench = useOptionalWorkbench();
-  const displaySetting = useSettingsStore((state) => state.settings?.displaySetting);
   const processedContent = React.useMemo(() => preProcess(content), [content]);
   const handlePreviewCode = React.useCallback(
     (language: string, code: string) => {
@@ -98,6 +99,7 @@ export default function Markdown({
         title: t("markdown.code_preview_title", {
           language: previewLanguage.toUpperCase(),
         }),
+        preferredDesktopSize: "40%",
         payload: {
           language: previewLanguage,
           code,
@@ -107,47 +109,56 @@ export default function Markdown({
     [allowCodePreview, t, workbench],
   );
 
+  function MarkdownCode(componentProps: Record<string, unknown> & { children?: React.ReactNode }) {
+    const { className, children, ...props } = componentProps;
+    const isIncomplete = useIsCodeFenceIncomplete();
+    const codeClassName = typeof className === "string" ? className : "";
+    const match = /language-([A-Za-z0-9_-]+)/.exec(codeClassName);
+    const code = String(children).replace(/\n$/, "");
+    const isBlock = code.includes("\n");
+
+    if (match || isBlock || isIncomplete) {
+      const language = match?.[1] || "";
+      return (
+        <CodeBlock
+          language={language}
+          code={code}
+          autoCollapse={displaySetting?.codeBlockAutoCollapse ?? true}
+          isIncomplete={isIncomplete}
+          showLineNumbers={displaySetting?.showLineNumbers ?? false}
+          wrapLines={displaySetting?.codeBlockAutoWrap ?? false}
+          onPreview={
+            allowCodePreview && workbench
+              ? () => {
+                  handlePreviewCode(language, code);
+                }
+              : undefined
+          }
+        />
+      );
+    }
+
+    return (
+      <code className="inline-code" {...props}>
+        {children}
+      </code>
+    );
+  }
+
   return (
     <div className={cn("markdown", className)}>
       <Streamdown
+        mode={isAnimating ? "streaming" : "static"}
+        parseIncompleteMarkdown={isAnimating}
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex, rehypeRaw]}
         plugins={{ cjk: cjk }}
-        animated={{ animation: "fadeIn", sep: 'word', duration: 150 }}
+        animated={{ animation: "fadeIn", sep: "word", duration: 120 }}
         isAnimating={isAnimating}
-        controls={{code: false, mermaid: false}}
+        controls={{ code: false, mermaid: false }}
         components={{
           pre: ({ children }) => <>{children}</>,
-          code: ({ className, children, ...props }) => {
-            const match = /language-([A-Za-z0-9_-]+)/.exec(className || "");
-            const code = String(children).replace(/\n$/, "");
-            const isBlock = code.includes("\n");
-
-            if (match || isBlock) {
-              const language = match?.[1] || "";
-              return (
-                <CodeBlock
-                  language={language}
-                  code={code}
-                  showLineNumbers={displaySetting?.showLineNumbers ?? false}
-                  wrapLines={displaySetting?.codeBlockAutoWrap ?? false}
-                  onPreview={
-                    allowCodePreview && workbench
-                      ? () => {
-                          handlePreviewCode(language, code);
-                        }
-                      : undefined
-                  }
-                />
-              );
-            }
-
-            return (
-              <code className="inline-code" {...props}>
-                {children}
-              </code>
-            );
-          },
+          code: MarkdownCode as never,
           a: ({ href, children, ...props }) => {
             const childText = getNodeText(children).trim();
 

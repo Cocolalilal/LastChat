@@ -612,7 +612,7 @@
   <string name="setting_tts_page_voice_name_placeholder">Kore</string>
   <string name="settings">設定</string>
   <string name="share">共有</string>
-  <string name="share_handler_page_title">共有を処理するアシスタントを選択</string>
+  <string name="share_handler_page_title">キャラクターと共有</string>
   <string name="shortcut_take_picture">写真で質問</string>
   <string name="silicon_flow_built_in_models">* Silicon Flowの無料モデルが内蔵されており、API Keyなしで使用できます。より強力なモデルが必要な場合は、独自のAPI Keyを申請・設定してください。</string>
   <string name="silicon_flow_description">**世界をリードするAI能力プロバイダー、AGIの普及を加速して人類に貢献。**</string>

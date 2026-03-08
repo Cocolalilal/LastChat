@@ -25,6 +25,9 @@
     ],
     "baseUrl": ".",
     "paths": {
+      "lucide-react": [
+        "./app/lib/material-icons"
+      ],
       "~/*": [
         "./app/*"
       ]

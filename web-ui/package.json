@@ -12,6 +12,7 @@
     "fmt:check": "oxfmt app --check"
   },
   "dependencies": {
+    "@material-symbols/svg-400": "^0.40.2",
     "@react-router/node": "7.13.0",
     "@react-router/serve": "7.13.0",
     "@streamdown/cjk": "^1.0.2",

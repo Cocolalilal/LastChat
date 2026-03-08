@@ -1,4 +1,8 @@
 import * as React from "react";
+import {
+  AnimatePresence,
+  motion,
+} from "motion/react";
 
 import { useNavigate, useParams } from "react-router";
 
@@ -6,6 +10,7 @@ import {
   ConversationQuickJump,
   getConversationMessageAnchorId,
 } from "~/components/conversation-quick-jump";
+import { ConversationGreeting } from "~/components/conversation-greeting";
 import { ConversationSidebar } from "~/components/conversation-sidebar";
 import {
   Conversation,
@@ -14,6 +19,7 @@ import {
   ConversationScrollButton,
 } from "~/components/extended/conversation";
 import { ChatInput } from "~/components/input/chat-input";
+import { AssistantTurnMessage } from "~/components/message/assistant-turn-message";
 import { ChatMessage } from "~/components/message/chat-message";
 import { Drawer, DrawerContent } from "~/components/ui/drawer";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "~/components/ui/resizable";
@@ -22,7 +28,18 @@ import { SidebarInset, SidebarProvider, SidebarTrigger } from "~/components/ui/s
 import { useIsMobile } from "~/hooks/use-mobile";
 import { toConversationSummaryUpdate, useConversationList } from "~/hooks/use-conversation-list";
 import { useCurrentAssistant } from "~/hooks/use-current-assistant";
+import { resolveEffectiveDisplaySetting } from "~/lib/chat-appearance";
+import {
+  getChatLayoutTransition,
+  getChatLiftVariants,
+  useChatReducedMotion,
+} from "~/lib/chat-motion";
 import { convertConversationToMarkdown, downloadMarkdown } from "~/lib/export-markdown";
+import {
+  groupSelectedNodesIntoTurns,
+  type SelectedNodeMessage,
+} from "~/lib/message-turns";
+import { CHAT_COLUMN_CLASSNAME, CHAT_PAGE_PADDING_CLASSNAME } from "~/lib/chat-layout";
 import { cn } from "~/lib/utils";
 import api, { sse } from "~/services/api";
 import { useChatInputStore, useAppStore } from "~/stores";
@@ -55,10 +72,6 @@ type ConversationStreamEvent =
   | ConversationNodeUpdateEventDto
   | ConversationErrorEventDto;
 
-interface SelectedNodeMessage {
-  node: MessageNodeDto;
-  message: MessageNodeDto["messages"][number];
-}
 type ConversationSummaryUpdater = (update: ReturnType<typeof toConversationSummaryUpdate>) => void;
 
 const EDIT_DRAFT_ATTACHMENT_MARK = "__from_message_attachment";
@@ -540,6 +553,7 @@ const ConversationTimeline = React.memo(({
   isGenerating,
   settings,
   conversationAssistantId,
+  displaySetting,
   contentClassName,
   onEdit,
   onDelete,
@@ -556,6 +570,7 @@ const ConversationTimeline = React.memo(({
   isGenerating: boolean;
   settings: Settings | null;
   conversationAssistantId: string | null;
+  displaySetting: Settings["displaySetting"] | null;
   contentClassName?: string;
   onEdit: (message: MessageDto) => void | Promise<void>;
   onDelete: (messageId: string) => Promise<void>;
@@ -565,8 +580,7 @@ const ConversationTimeline = React.memo(({
   onToolApproval: (toolCallId: string, approved: boolean, reason: string, answer?: string) => Promise<void>;
 }) => {
   const { t } = useTranslation("page");
-  const canQuickJump =
-    Boolean(activeId) && !detailLoading && !detailError && selectedNodeMessages.length > 1;
+  const reducedMotion = useChatReducedMotion();
   const assistant = React.useMemo(() => {
     if (!settings || !conversationAssistantId) return null;
     return settings.assistants.find((item) => item.id === conversationAssistantId) ?? null;
@@ -585,16 +599,72 @@ const ConversationTimeline = React.memo(({
 
     return map;
   }, [settings]);
+  const displayTurns = React.useMemo(
+    () => groupSelectedNodesIntoTurns(selectedNodeMessages),
+    [selectedNodeMessages],
+  );
+  const canQuickJump =
+    Boolean(activeId) && !detailLoading && !detailError && displayTurns.length > 1;
+  const showTrailingTypingIndicator =
+    Boolean(activeId) &&
+    !detailLoading &&
+    !detailError &&
+    isGenerating &&
+    (displayTurns.length === 0 || displayTurns[displayTurns.length - 1]?.kind !== "assistant");
+  const [newlyAppendedTurnIds, setNewlyAppendedTurnIds] = React.useState<Set<string>>(new Set());
+  const hasSeededTurnIdsRef = React.useRef(false);
+  const seenTurnIdsRef = React.useRef<Set<string>>(new Set());
+
+  React.useEffect(() => {
+    hasSeededTurnIdsRef.current = false;
+    seenTurnIdsRef.current = new Set();
+    setNewlyAppendedTurnIds(new Set());
+  }, [activeId]);
+
+  React.useEffect(() => {
+    const nextIds = displayTurns.map((turn) => turn.id);
+    if (!hasSeededTurnIdsRef.current) {
+      seenTurnIdsRef.current = new Set(nextIds);
+      hasSeededTurnIdsRef.current = true;
+      return;
+    }
+
+    const appendedIds = nextIds.filter((id) => !seenTurnIdsRef.current.has(id));
+    seenTurnIdsRef.current = new Set(nextIds);
+    if (appendedIds.length === 0) return;
+
+    setNewlyAppendedTurnIds(new Set(appendedIds));
+    const timeoutId = window.setTimeout(() => {
+      setNewlyAppendedTurnIds((prev) => {
+        const next = new Set(prev);
+        appendedIds.forEach((id) => next.delete(id));
+        return next;
+      });
+    }, reducedMotion ? 20 : 700);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [displayTurns, reducedMotion]);
+  const getTurnPreview = React.useCallback(
+    (turn: ReturnType<typeof groupSelectedNodesIntoTurns>[number]) =>
+      getQuickJumpPreview(
+        turn.kind === "assistant"
+          ? { ...turn.displayMessage, parts: turn.allParts, annotations: turn.annotations }
+          : turn.message,
+        t,
+      ),
+    [t],
+  );
 
   return (
     <Conversation className="flex-1 min-h-0">
-      <ConversationContent
-        className={cn(
-          "mx-auto w-full max-w-4xl gap-6 px-4 py-8 sm:px-6 lg:px-8",
-          canQuickJump && "lg:pr-20 xl:pr-24",
-          contentClassName,
-        )}
-      >
+        <ConversationContent
+          className={cn(
+            CHAT_COLUMN_CLASSNAME,
+            CHAT_PAGE_PADDING_CLASSNAME,
+            "gap-6 py-8",
+            contentClassName,
+          )}
+        >
         {!activeId && !isHomeRoute && (
           <ConversationEmptyState
             icon={<MessageSquare className="size-10" />}
@@ -614,7 +684,7 @@ const ConversationTimeline = React.memo(({
             description={detailError}
           />
         )}
-        {!detailLoading && !detailError && activeId && selectedNodeMessages.length === 0 && (
+        {!detailLoading && !detailError && activeId && displayTurns.length === 0 && (
           <ConversationEmptyState
             icon={<MessageSquare className="size-10" />}
             title={t("conversations.empty_state.no_message_title")}
@@ -624,45 +694,92 @@ const ConversationTimeline = React.memo(({
         {!detailLoading &&
           !detailError &&
           activeId &&
-          selectedNodeMessages.map(({ node, message }, index) => {
+          displayTurns.map((turn, index) => {
+            const message = turn.kind === "assistant" ? turn.displayMessage : turn.message;
             const model = message.modelId ? (modelById.get(message.modelId) ?? null) : null;
+            const turnLoading =
+              isGenerating && index === displayTurns.length - 1 && turn.kind === "assistant";
+            const shouldAnimateOnMount = newlyAppendedTurnIds.has(turn.id);
 
             return (
-              <div
-                key={message.id}
-                id={getConversationMessageAnchorId(message.id)}
+              <motion.div
+                key={turn.id}
+                layout="position"
+                id={getConversationMessageAnchorId(turn.anchorMessageId)}
                 className="scroll-mt-24"
+                variants={getChatLiftVariants(reducedMotion, 12)}
+                initial={shouldAnimateOnMount ? "initial" : false}
+                animate="animate"
+                exit="exit"
+                transition={getChatLayoutTransition(reducedMotion)}
               >
-                <ChatMessage
-                  node={node}
-                  message={message}
-                  loading={isGenerating && index === selectedNodeMessages.length - 1}
-                  isLastMessage={index === selectedNodeMessages.length - 1}
-                  assistant={assistant}
-                  model={model}
-                  onEdit={onEdit}
-                  onDelete={onDelete}
-                  onFork={onFork}
-                  onRegenerate={onRegenerate}
-                  onSelectBranch={onSelectBranch}
-                  onToolApproval={onToolApproval}
-                />
-              </div>
+                {turn.kind === "assistant" ? (
+                  <AssistantTurnMessage
+                    turn={turn}
+                    loading={turnLoading}
+                    displaySetting={displaySetting}
+                    assistant={assistant}
+                    model={model}
+                    onEdit={onEdit}
+                    onDelete={onDelete}
+                    onFork={onFork}
+                    onRegenerate={onRegenerate}
+                    onSelectBranch={onSelectBranch}
+                    onToolApproval={onToolApproval}
+                  />
+                ) : (
+                  <ChatMessage
+                    node={turn.node}
+                    message={turn.message}
+                    loading={false}
+                    isLastMessage={index === displayTurns.length - 1}
+                    displaySetting={displaySetting}
+                    assistant={assistant}
+                    model={model}
+                    onEdit={onEdit}
+                    onDelete={onDelete}
+                    onFork={onFork}
+                    onRegenerate={onRegenerate}
+                    onSelectBranch={onSelectBranch}
+                    onToolApproval={onToolApproval}
+                  />
+                )}
+              </motion.div>
             );
           })}
-        {!detailLoading && !detailError && activeId && isGenerating && (
-          <div className="flex items-start py-2">
-            <TypingIndicator className="px-1 py-2" />
-          </div>
-        )}
+        <AnimatePresence initial={false}>
+          {showTrailingTypingIndicator ? (
+            <motion.div
+              key="trailing-typing-indicator"
+              layout="position"
+              initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 10, scale: 0.985 }}
+              animate={{
+                opacity: 1,
+                y: 0,
+                scale: 1,
+                transition: reducedMotion
+                  ? { duration: 0.01 }
+                  : {
+                      opacity: { duration: 0.16, ease: "easeOut" },
+                      y: getChatLayoutTransition(false),
+                      scale: getChatLayoutTransition(false),
+                    },
+              }}
+              exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 8, transition: { duration: 0.12 } }}
+              className="flex items-start py-2"
+            >
+              <TypingIndicator className="py-2" />
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
       </ConversationContent>
 
       {canQuickJump ? (
         <ConversationQuickJump
-          items={selectedNodeMessages.map(({ message }) => ({
-            id: message.id,
-            role: message.role,
-            preview: getQuickJumpPreview(message, t),
+          items={displayTurns.map((turn) => ({
+            id: turn.anchorMessageId,
+            role: turn.kind === "assistant" ? turn.displayMessage.role : turn.message.role,
+            preview: getTurnPreview(turn),
           }))}
         />
       ) : null}
@@ -741,6 +858,16 @@ function ConversationsPageInner() {
   });
 
   const chatSuggestions = detail?.chatSuggestions ?? EMPTY_SUGGESTIONS;
+  const conversationAssistant = React.useMemo(() => {
+    if (!settings || !detail?.assistantId) {
+      return null;
+    }
+    return settings.assistants.find((assistant) => assistant.id === detail.assistantId) ?? null;
+  }, [detail?.assistantId, settings]);
+  const effectiveDisplaySetting = React.useMemo(
+    () => resolveEffectiveDisplaySetting(settings?.displaySetting, conversationAssistant),
+    [conversationAssistant, settings?.displaySetting],
+  );
 
   React.useEffect(() => {
     const base = t("conversations.meta.title");
@@ -1013,15 +1140,18 @@ function ConversationsPageInner() {
 
     if (hasWorkbenchPanel) {
       workbenchPanel.expand();
+      if (panel?.preferredDesktopSize != null) {
+        workbenchPanel.resize(panel.preferredDesktopSize);
+      }
     } else {
       workbenchPanel.collapse();
     }
-  }, [hasWorkbenchPanel, isMobile]);
+  }, [hasWorkbenchPanel, isMobile, panel]);
 
   const chatContent = (
     <div
       className={cn(
-        "flex min-h-0 flex-1 flex-col overflow-hidden bg-transparent pt-12",
+        "flex min-h-0 flex-1 flex-col overflow-hidden bg-background pt-12",
         isNewChat && "justify-center",
       )}
     >
@@ -1036,6 +1166,7 @@ function ConversationsPageInner() {
             isGenerating={detail?.isGenerating ?? false}
             settings={settings}
             conversationAssistantId={detail?.assistantId ?? null}
+            displaySetting={effectiveDisplaySetting}
             onEdit={handleStartEdit}
             onDelete={handleDeleteMessage}
             onFork={handleForkMessage}
@@ -1046,11 +1177,11 @@ function ConversationsPageInner() {
         </div>
       )}
 
-      <div className="relative z-10 px-3 pb-3 sm:px-4 sm:pb-3.5">
+      <div className={cn("relative z-10 pb-3 sm:pb-3.5", CHAT_PAGE_PADDING_CLASSNAME)}>
         {isNewChat && (
           <div className="mx-auto mb-6 max-w-2xl text-center">
-            <p className="text-balance text-lg text-muted-foreground">
-              {t("conversations.welcome_prompt")}
+            <p className="text-lg text-muted-foreground">
+              <ConversationGreeting />
             </p>
           </div>
         )}
@@ -1110,13 +1241,13 @@ function ConversationsPageInner() {
         onCreateConversation={handleCreateConversation}
         webAuthEnabled={settings?.webServerJwtEnabled === true}
       />
-      <SidebarInset className="flex min-h-svh flex-col overflow-hidden bg-transparent md:bg-card/70">
-        <div className="pointer-events-none absolute top-3 left-3 z-20">
-          <SidebarTrigger className="pointer-events-auto rounded-full bg-background/82 text-foreground/80 shadow-sm backdrop-blur-md hover:bg-muted/90" />
+      <SidebarInset className="flex min-h-svh flex-col">
+        <div className="pointer-events-none absolute top-1.5 left-1.5 z-20">
+          <SidebarTrigger className="pointer-events-auto rounded-full border border-border/70 bg-background/90 text-foreground shadow-sm backdrop-blur hover:bg-accent" />
         </div>
 
         {!isMobile ? (
-          <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1 bg-transparent">
+          <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1 bg-background">
             <ResizablePanel
               defaultSize={hasWorkbenchPanel ? 64 : 100}
               minSize={40}

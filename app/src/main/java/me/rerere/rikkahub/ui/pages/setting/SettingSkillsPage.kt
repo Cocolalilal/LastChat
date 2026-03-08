@@ -56,6 +56,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -68,6 +69,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -297,25 +299,41 @@ fun SkillsPageContent(
 ) {
     val context = LocalContext.current
     val toaster = LocalToaster.current
+    val density = LocalDensity.current
 
     var draggingIndex by remember { mutableStateOf(-1) }
-    var dragOffset by remember { mutableStateOf(0f) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
     var isUnlocked by remember { mutableStateOf(false) }
+    var neighborsUnlocked by remember { mutableStateOf(false) }
+    var orderedSkills by remember { mutableStateOf(settings.skills) }
+    var isReordering by remember { mutableStateOf(false) }
+    var awaitingPersistedOrder by remember { mutableStateOf(false) }
+    val canDelete = orderedSkills.size > 1
 
-    val reorderableState = rememberReorderableLazyListState(listState) { from, to ->
-        val fromIndex = from.index - 1
-        val toIndex = to.index - 1
-        if (fromIndex !in settings.skills.indices || toIndex !in 0..settings.skills.size) {
-            return@rememberReorderableLazyListState
+    LaunchedEffect(settings.skills, isReordering) {
+        if (!isReordering) {
+            if (awaitingPersistedOrder && settings.skills.map { it.id } != orderedSkills.map { it.id }) {
+                return@LaunchedEffect
+            }
+            awaitingPersistedOrder = false
+            orderedSkills = settings.skills
         }
-        val reordered = settings.skills.toMutableList().apply {
-            add(toIndex, removeAt(fromIndex))
-        }
-        vm.updateSettings(settings.copy(skills = reordered))
-        haptics.perform(HapticPattern.Pop)
     }
 
-    val isBannerDismissed = settings.dismissedBanners.contains("skills_banner")
+    if (dragOffset == 0f && neighborsUnlocked) {
+        neighborsUnlocked = false
+    }
+
+    val reorderableState = rememberReorderableLazyListState(listState) { from, to ->
+        val fromIndex = from.index
+        val toIndex = to.index
+        if (fromIndex !in orderedSkills.indices || toIndex !in 0..orderedSkills.size) {
+            return@rememberReorderableLazyListState
+        }
+        orderedSkills = orderedSkills.toMutableList().apply {
+            add(toIndex, removeAt(fromIndex))
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
@@ -326,24 +344,7 @@ fun SkillsPageContent(
             contentPadding = contentPadding + PaddingValues(16.dp) + PaddingValues(bottom = 45.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            if (!isBannerDismissed) {
-                item(key = "description") {
-                    DismissibleBannerCard(
-                        title = stringResource(R.string.skills_page_description_title),
-                        description = stringResource(R.string.skills_page_description_text),
-                        onDismiss = {
-                            vm.updateSettings(
-                                settings.copy(
-                                    dismissedBanners = settings.dismissedBanners + "skills_banner"
-                                )
-                            )
-                        }
-                    )
-                    Spacer(Modifier.height(8.dp))
-                }
-            }
-
-            if (settings.skills.isEmpty()) {
+            if (orderedSkills.isEmpty()) {
                 item(key = "empty") {
                     Card(
                         colors = CardDefaults.cardColors(
@@ -386,89 +387,114 @@ fun SkillsPageContent(
                 }
             } else {
                 itemsIndexed(
-                    items = settings.skills,
+                    items = orderedSkills,
                     key = { _, skill -> skill.id }
                 ) { index, skill ->
                     val position = when {
-                        settings.skills.size == 1 -> ItemPosition.ONLY
+                        orderedSkills.size == 1 -> ItemPosition.ONLY
                         index == 0 -> ItemPosition.FIRST
-                        index == settings.skills.lastIndex -> ItemPosition.LAST
+                        index == orderedSkills.lastIndex -> ItemPosition.LAST
                         else -> ItemPosition.MIDDLE
                     }
 
-                    val neighborOffset = when {
-                        draggingIndex == -1 -> 0f
-                        index == draggingIndex - 1 && isUnlocked -> dragOffset * 0.15f
-                        index == draggingIndex + 1 && isUnlocked -> dragOffset * 0.15f
-                        else -> 0f
+                    val thresholdPx = with(density) { 35.dp.toPx() }
+                    if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
+                        neighborsUnlocked = true
+                    }
+
+                    val shouldNeighborFollow = draggingIndex >= 0 &&
+                        draggingIndex != index &&
+                        !isUnlocked &&
+                        !neighborsUnlocked
+
+                    val neighborOffset = if (shouldNeighborFollow) {
+                        when (kotlin.math.abs(index - draggingIndex)) {
+                            1 -> dragOffset * 0.35f
+                            2 -> dragOffset * 0.12f
+                            else -> 0f
+                        }
+                    } else {
+                        0f
                     }
 
                     ReorderableItem(
                         state = reorderableState,
                         key = skill.id
                     ) { isDragging ->
-                        PhysicsSwipeToDelete(
-                            position = position,
-                            deleteEnabled = true,
-                            neighborOffset = neighborOffset,
-                            onDragProgress = { offset, unlocked ->
-                                draggingIndex = index
-                                dragOffset = offset
-                                isUnlocked = unlocked
-                            },
-                            onDragEnd = {
-                                if (draggingIndex == index) {
-                                    draggingIndex = -1
-                                    dragOffset = 0f
-                                }
-                            },
-                            onDelete = {
-                                val deletedSkill = skill
-                                vm.updateSettings(
-                                    settings.copy(skills = settings.skills.filter { it.id != skill.id })
-                                )
-                                toaster.show(
-                                    message = context.getString(
-                                        R.string.skills_page_deleted,
-                                        skill.name.ifEmpty { context.getString(R.string.skills_page_unnamed) }
-                                    ),
-                                    action = ToastAction(
-                                        label = context.getString(R.string.undo),
-                                        onClick = {
-                                            vm.updateSettings(
-                                                settings.copy(
-                                                    skills = settings.skills.toMutableList().apply {
-                                                        add(index.coerceAtMost(size), deletedSkill)
-                                                    }
+                        androidx.compose.runtime.key(canDelete) {
+                            PhysicsSwipeToDelete(
+                                position = position,
+                                deleteEnabled = canDelete,
+                                neighborOffset = neighborOffset,
+                                onDragProgress = { offset, unlocked ->
+                                    draggingIndex = index
+                                    dragOffset = offset
+                                    isUnlocked = unlocked
+                                },
+                                onDragEnd = {
+                                    if (draggingIndex == index) {
+                                        draggingIndex = -1
+                                        dragOffset = 0f
+                                    }
+                                },
+                                onDelete = {
+                                    val deletedSkill = skill
+                                    vm.updateSettings(
+                                        settings.copy(skills = settings.skills.filter { it.id != skill.id })
+                                    )
+                                    toaster.show(
+                                        message = context.getString(
+                                            R.string.skills_page_deleted,
+                                            skill.name.ifEmpty { context.getString(R.string.skills_page_unnamed) }
+                                        ),
+                                        action = ToastAction(
+                                            label = context.getString(R.string.undo),
+                                            onClick = {
+                                                vm.updateSettings(
+                                                    settings.copy(
+                                                        skills = settings.skills.toMutableList().apply {
+                                                            add(index.coerceAtMost(size), deletedSkill)
+                                                        }
+                                                    )
                                                 )
+                                            }
+                                        )
+                                    )
+                                },
+                                modifier = Modifier
+                                    .scale(if (isDragging) 0.95f else 1f)
+                                    .fillMaxWidth()
+                            ) {
+                                SkillCard(
+                                    skill = skill,
+                                    position = position,
+                                    onEdit = { onEditSkill(skill) },
+                                    dragHandle = {
+                                        IconButton(
+                                            onClick = {},
+                                            modifier = Modifier.longPressDraggableHandle(
+                                                onDragStarted = {
+                                                    isReordering = true
+                                                    haptics.perform(HapticPattern.Pop)
+                                                },
+                                                onDragStopped = {
+                                                    isReordering = false
+                                                    if (orderedSkills.map { it.id } != settings.skills.map { it.id }) {
+                                                        awaitingPersistedOrder = true
+                                                        vm.updateSettings(settings.copy(skills = orderedSkills))
+                                                    }
+                                                    haptics.perform(HapticPattern.Thud)
+                                                }
+                                            )
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.DragIndicator,
+                                                contentDescription = stringResource(R.string.drag_to_reorder)
                                             )
                                         }
-                                    )
-                                )
-                            },
-                            modifier = Modifier
-                                .scale(if (isDragging) 0.95f else 1f)
-                                .fillMaxWidth()
-                        ) {
-                            SkillCard(
-                                skill = skill,
-                                position = position,
-                                onEdit = { onEditSkill(skill) },
-                                dragHandle = {
-                                    IconButton(
-                                        onClick = {},
-                                        modifier = Modifier.longPressDraggableHandle(
-                                            onDragStarted = { haptics.perform(HapticPattern.Pop) },
-                                            onDragStopped = { haptics.perform(HapticPattern.Thud) }
-                                        )
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.DragIndicator,
-                                            contentDescription = stringResource(R.string.drag_to_reorder)
-                                        )
                                     }
-                                }
-                            )
+                                )
+                            }
                         }
                     }
                 }
@@ -679,9 +705,9 @@ fun SkillEditorSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
-                .padding(bottom = 32.dp),
+                .padding(bottom = 32.dp)
+                .fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Row(
@@ -695,6 +721,196 @@ fun SkillEditorSheet(
                     ),
                     style = MaterialTheme.typography.titleLarge
                 )
+            }
+
+            Column(
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                FormItem(label = { Text(stringResource(R.string.skills_page_name)) }) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            onClick = { showIconPicker = true },
+                            modifier = Modifier.size(56.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.tertiaryContainer
+                        ) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = ModeIcons.getIcon(icon ?: "category"),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(28.dp),
+                                    tint = MaterialTheme.colorScheme.onTertiaryContainer
+                                )
+                            }
+                        }
+
+                        OutlinedTextField(
+                            value = name,
+                            onValueChange = {
+                                name = it.lowercase()
+                                    .filter { c -> c.isLetterOrDigit() || c == '-' || c == '_' }
+                                    .take(64)
+                            },
+                            modifier = Modifier.weight(1f),
+                            placeholder = { Text(stringResource(R.string.skills_page_name_placeholder)) },
+                            singleLine = true,
+                            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace)
+                        )
+                    }
+                }
+
+                if (showIconPicker) {
+                    MaterialIconPickerDialog(
+                        onDismiss = { showIconPicker = false },
+                        onIconSelected = { selectedIcon ->
+                            icon = selectedIcon
+                            showIconPicker = false
+                        }
+                    )
+                }
+
+                FormItem(label = { Text(stringResource(R.string.skills_page_description)) }) {
+                    OutlinedTextField(
+                        value = description,
+                        onValueChange = { description = it.take(1024) },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text(stringResource(R.string.skills_page_description_placeholder)) },
+                        minLines = 2,
+                        maxLines = 4,
+                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                    )
+                }
+
+                FormItem(label = { Text(stringResource(R.string.skills_page_instructions)) }) {
+                    OutlinedTextField(
+                        value = instructions,
+                        onValueChange = { instructions = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(200.dp),
+                        placeholder = { Text(stringResource(R.string.skills_page_instructions_placeholder)) },
+                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(
+                            fontFamily = FontFamily.Monospace,
+                            lineHeight = 20.sp
+                        )
+                    )
+                }
+
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (LocalDarkMode.current) {
+                            MaterialTheme.colorScheme.surfaceContainerLow
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainerHighest
+                        }
+                    ),
+                    shape = AppShapes.CardLarge
+                ) {
+                    Column {
+                        ListItem(
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            headlineContent = { Text(stringResource(R.string.skills_page_available_for_all_characters)) },
+                            supportingContent = { Text(stringResource(R.string.skills_page_available_for_characters_desc)) },
+                            trailingContent = {
+                                HapticSwitch(
+                                    checked = autonomousForAllAssistants,
+                                    onCheckedChange = { checked ->
+                                        autonomousForAllAssistants = checked
+                                        if (checked) autonomousAssistantIds = emptySet()
+                                    }
+                                )
+                            }
+                        )
+                        AnimatedVisibility(visible = !autonomousForAllAssistants) {
+                            Column(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                assistants.forEach { assistant ->
+                                    val enabledForAssistant = autonomousAssistantIds.contains(assistant.id)
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        UIAvatar(
+                                            value = assistant.avatar,
+                                            name = assistant.name.ifBlank { "Character" },
+                                            modifier = Modifier.size(32.dp),
+                                        )
+                                        Text(
+                                            text = assistant.name.ifBlank { "Character" },
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            modifier = Modifier.weight(1f),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        HapticSwitch(
+                                            checked = enabledForAssistant,
+                                            onCheckedChange = { checked ->
+                                                autonomousAssistantIds = if (checked) {
+                                                    autonomousAssistantIds + assistant.id
+                                                } else {
+                                                    autonomousAssistantIds - assistant.id
+                                                }
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (LocalDarkMode.current) {
+                            MaterialTheme.colorScheme.surfaceContainerLow
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainerHighest
+                        }
+                    ),
+                    shape = AppShapes.CardLarge
+                ) {
+                    Column {
+                        ListItem(
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            headlineContent = { Text(stringResource(R.string.skills_page_argument_hint)) },
+                            supportingContent = {
+                                OutlinedTextField(
+                                    value = argumentHint,
+                                    onValueChange = { argumentHint = it.take(64) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    placeholder = { Text(stringResource(R.string.skills_page_argument_hint_placeholder)) },
+                                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                                    singleLine = true
+                                )
+                            }
+                        )
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (isEditing) {
                         TextButton(onClick = { showExportDialog = true }) {
@@ -733,183 +949,6 @@ fun SkillEditorSheet(
                             fontWeight = FontWeight.Bold
                         )
                     }
-                }
-            }
-
-            FormItem(label = { Text(stringResource(R.string.skills_page_name)) }) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        onClick = { showIconPicker = true },
-                        modifier = Modifier.size(56.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.tertiaryContainer
-                    ) {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = ModeIcons.getIcon(icon ?: "category"),
-                                contentDescription = null,
-                                modifier = Modifier.size(28.dp),
-                                tint = MaterialTheme.colorScheme.onTertiaryContainer
-                            )
-                        }
-                    }
-
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = {
-                            name = it.lowercase()
-                                .filter { c -> c.isLetterOrDigit() || c == '-' || c == '_' }
-                                .take(64)
-                        },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text(stringResource(R.string.skills_page_name_placeholder)) },
-                        singleLine = true,
-                        shape = AppShapes.CardLarge,
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace)
-                    )
-                }
-            }
-
-            if (showIconPicker) {
-                MaterialIconPickerDialog(
-                    onDismiss = { showIconPicker = false },
-                    onIconSelected = { selectedIcon ->
-                        icon = selectedIcon
-                        showIconPicker = false
-                    }
-                )
-            }
-
-            FormItem(label = { Text(stringResource(R.string.skills_page_description)) }) {
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it.take(1024) },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text(stringResource(R.string.skills_page_description_placeholder)) },
-                    minLines = 2,
-                    maxLines = 4,
-                    shape = AppShapes.CardLarge
-                )
-            }
-
-            FormItem(label = { Text(stringResource(R.string.skills_page_instructions)) }) {
-                OutlinedTextField(
-                    value = instructions,
-                    onValueChange = { instructions = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp),
-                    placeholder = { Text(stringResource(R.string.skills_page_instructions_placeholder)) },
-                    shape = AppShapes.CardLarge,
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(
-                        fontFamily = FontFamily.Monospace,
-                        lineHeight = 20.sp
-                    )
-                )
-            }
-
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = if (LocalDarkMode.current) {
-                        MaterialTheme.colorScheme.surfaceContainerLow
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainerHighest
-                    }
-                ),
-                shape = AppShapes.CardLarge
-            ) {
-                Column {
-                    ListItem(
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                        headlineContent = { Text(stringResource(R.string.skills_page_available_for_all_characters)) },
-                        supportingContent = { Text(stringResource(R.string.skills_page_available_for_characters_desc)) },
-                        trailingContent = {
-                            HapticSwitch(
-                                checked = autonomousForAllAssistants,
-                                onCheckedChange = { checked ->
-                                    autonomousForAllAssistants = checked
-                                    if (checked) autonomousAssistantIds = emptySet()
-                                }
-                            )
-                        }
-                    )
-                    AnimatedVisibility(visible = !autonomousForAllAssistants) {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            assistants.forEach { assistant ->
-                                val enabledForAssistant = autonomousAssistantIds.contains(assistant.id)
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    UIAvatar(
-                                        value = assistant.avatar,
-                                        name = assistant.name.ifBlank { "Character" },
-                                        modifier = Modifier.size(32.dp),
-                                    )
-                                    Text(
-                                        text = assistant.name.ifBlank { "Character" },
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        modifier = Modifier.weight(1f),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    HapticSwitch(
-                                        checked = enabledForAssistant,
-                                        onCheckedChange = { checked ->
-                                            autonomousAssistantIds = if (checked) {
-                                                autonomousAssistantIds + assistant.id
-                                            } else {
-                                                autonomousAssistantIds - assistant.id
-                                            }
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = if (LocalDarkMode.current) {
-                        MaterialTheme.colorScheme.surfaceContainerLow
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainerHighest
-                    }
-                ),
-                shape = AppShapes.CardLarge
-            ) {
-                Column {
-                    ListItem(
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                        headlineContent = { Text(stringResource(R.string.skills_page_argument_hint)) },
-                        supportingContent = {
-                            OutlinedTextField(
-                                value = argumentHint,
-                                onValueChange = { argumentHint = it.take(64) },
-                                modifier = Modifier.fillMaxWidth(),
-                                placeholder = { Text(stringResource(R.string.skills_page_argument_hint_placeholder)) },
-                                shape = AppShapes.CardLarge,
-                                singleLine = true
-                            )
-                        }
-                    )
                 }
             }
         }

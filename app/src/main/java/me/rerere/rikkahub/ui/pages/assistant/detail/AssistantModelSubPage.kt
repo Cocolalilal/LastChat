@@ -291,7 +291,8 @@ fun AssistantModelSubPage(
                         modifier = Modifier.width(100.dp),
                         placeholder = { Text("Auto") },
                         singleLine = true,
-                        textStyle = MaterialTheme.typography.bodySmall
+                        textStyle = MaterialTheme.typography.bodySmall,
+                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                     )
                 }
             )

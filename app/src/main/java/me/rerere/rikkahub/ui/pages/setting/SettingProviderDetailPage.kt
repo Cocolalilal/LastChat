@@ -928,7 +928,8 @@ private fun ModelSettingsForm(
                                     Text(stringResource(R.string.setting_provider_page_model_id_placeholder))
                                 }
                             },
-                            enabled = !isEdit
+                            enabled = !isEdit,
+                            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                         )
 
                         // Display name with icon picker
@@ -965,7 +966,8 @@ private fun ModelSettingsForm(
                                     if (!isEdit) {
                                         Text(stringResource(R.string.setting_provider_page_model_display_name_placeholder))
                                     }
-                                }
+                                },
+                                shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                             )
                         }
 
@@ -1403,6 +1405,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     label = { Text(stringResource(R.string.setting_provider_page_filter_placeholder)) },
                     modifier = Modifier.fillMaxWidth(),
                     placeholder = { Text(stringResource(R.string.setting_provider_page_filter_example)) },
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                 )
             }
         }
@@ -1702,6 +1705,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     placeholder = {
                         Text(stringResource(R.string.setting_provider_page_filter_example))
                     },
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                 )
             }
         }
