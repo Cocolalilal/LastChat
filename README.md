@@ -33,7 +33,7 @@ This project aims to provide a privacy-focused and highly personalized AI chat e
 
 ### Advanced AI Capabilities
 *   **Multi-Provider Support**: Provider presets make it easier to get up and running. There's support for custom providers too!
-*   **RAG Memory**: Features a sophisticated **Vector-Based Long-Term Memory** system. Assistants can "remember" details from past conversations using embeddings.
+*   **RAG Memory**: Features a RAG-based memory system. Assistants can "remember" details from past conversations using embeddings.
 *   **Multi-Modal Inputs**: Interact using Text, Images, Video, and Audio.
 
 ### Tools & Integrations
