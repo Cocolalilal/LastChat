@@ -166,48 +166,4 @@ class ActivityTimelineParsingTest {
         assertEquals(0, focus.scrollIndex)
     }
 
-    @Test
-    fun buildTimelineEntries_addsLiveReplyEntryWhenRequested() {
-        val entries = buildTimelineEntries(
-            parts = listOf(
-                UIMessagePart.ToolCall(
-                    toolCallId = "search-1",
-                    toolName = "search_web",
-                    arguments = """{"query":"kotlin"}"""
-                ),
-                UIMessagePart.ToolResult(
-                    toolCallId = "search-1",
-                    toolName = "search_web",
-                    arguments = buildJsonObject { put("query", "kotlin") },
-                    content = buildJsonObject { put("answer", "Kotlin result") }
-                ),
-                UIMessagePart.Text("Draft answer")
-            ),
-            includeLiveReply = true
-        )
-
-        val replyEntry = entries.last() as TimelineEntry.Reply
-        assertEquals("reply_live", replyEntry.id)
-        assertEquals("Draft answer", replyEntry.content)
-        assertTrue(replyEntry.isInProgress)
-    }
-
-    @Test
-    fun buildInitialTimelineFocus_usesLiveReplyWhenNoReasoningOrTool() {
-        val entries = listOf(
-            TimelineEntry.Reply(
-                id = "reply_live",
-                content = "Draft answer",
-                isInProgress = true
-            )
-        )
-
-        val focus = buildInitialTimelineFocus(
-            entries = entries,
-            openRequest = TimelineOpenRequest(openMode = TimelineOpenMode.FocusCurrent)
-        )
-
-        assertEquals(setOf("reply_live"), focus.expandedEntryIds)
-        assertEquals(0, focus.scrollIndex)
-    }
 }

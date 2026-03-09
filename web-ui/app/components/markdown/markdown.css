@@ -157,9 +157,9 @@
   height: 48px;
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--card) 0%, transparent) 0%,
-    color-mix(in srgb, var(--card) 88%, transparent) 65%,
-    color-mix(in srgb, var(--card) 100%, transparent) 100%
+    color-mix(in srgb, var(--code-block-bg, var(--card)) 0%, transparent) 0%,
+    color-mix(in srgb, var(--code-block-bg, var(--card)) 88%, transparent) 65%,
+    color-mix(in srgb, var(--code-block-bg, var(--card)) 100%, transparent) 100%
   );
 }
 

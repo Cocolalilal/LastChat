@@ -62,36 +62,36 @@ fun AssistantToolsSubPage(
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    var pendingDeviceControlAccess by remember {
+    var pendingNotificationAccess by remember {
         mutableStateOf(PermissionChecker.MissingFeatureAccess())
     }
-    var showDeviceControlAccessDialog by remember { mutableStateOf(false) }
+    var showNotificationAccessDialog by remember { mutableStateOf(false) }
 
-    val deviceControlSettingsLauncher = rememberLauncherForActivityResult(
+    val notificationSettingsLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {
-        val remainingAccess = PermissionChecker.getMissingDeviceControlAccess(context)
-        pendingDeviceControlAccess = remainingAccess
-        showDeviceControlAccessDialog = remainingAccess.specialAccesses.isNotEmpty()
+        val remainingAccess = PermissionChecker.getMissingNotificationAccess(context)
+        pendingNotificationAccess = remainingAccess
+        showNotificationAccessDialog = remainingAccess.specialAccesses.isNotEmpty()
     }
 
-    val deviceControlPermissionLauncher = rememberLauncherForActivityResult(
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) {
-        val remainingAccess = PermissionChecker.getMissingDeviceControlAccess(context)
-        pendingDeviceControlAccess = remainingAccess
-        showDeviceControlAccessDialog = remainingAccess.specialAccesses.isNotEmpty()
+        val remainingAccess = PermissionChecker.getMissingNotificationAccess(context)
+        pendingNotificationAccess = remainingAccess
+        showNotificationAccessDialog = remainingAccess.specialAccesses.isNotEmpty()
     }
 
-    fun requestDeviceControlAccess() {
-        val missingAccess = PermissionChecker.getMissingDeviceControlAccess(context)
-        pendingDeviceControlAccess = missingAccess
+    fun requestNotificationAccess() {
+        val missingAccess = PermissionChecker.getMissingNotificationAccess(context)
+        pendingNotificationAccess = missingAccess
         when {
             missingAccess.runtimePermissions.isNotEmpty() -> {
-                deviceControlPermissionLauncher.launch(missingAccess.runtimePermissions.toTypedArray())
+                notificationPermissionLauncher.launch(missingAccess.runtimePermissions.toTypedArray())
             }
             missingAccess.specialAccesses.isNotEmpty() -> {
-                showDeviceControlAccessDialog = true
+                showNotificationAccessDialog = true
             }
         }
     }
@@ -181,20 +181,20 @@ fun AssistantToolsSubPage(
                 }
             )
             
-            // Device Control
+            // Notifications
             SettingGroupItem(
-                title = "Device Control",
-                subtitle = "Notifications, apps, alarms, reminders",
+                title = "Notifications",
+                subtitle = "Notifications, notification reading, scheduled follow-ups",
                 trailing = {
                     HapticSwitch(
-                        checked = assistant.localTools.contains(LocalToolOption.DeviceControl),
+                        checked = assistant.localTools.contains(LocalToolOption.Notifications),
                         onCheckedChange = { enabled ->
                             if (enabled) {
-                                val newLocalTools = assistant.localTools + LocalToolOption.DeviceControl
+                                val newLocalTools = assistant.localTools + LocalToolOption.Notifications
                                 onUpdate(assistant.copy(localTools = newLocalTools))
-                                requestDeviceControlAccess()
+                                requestNotificationAccess()
                             } else {
-                                val newLocalTools = assistant.localTools - LocalToolOption.DeviceControl
+                                val newLocalTools = assistant.localTools - LocalToolOption.Notifications
                                 onUpdate(assistant.copy(localTools = newLocalTools))
                             }
                         }
@@ -313,14 +313,14 @@ fun AssistantToolsSubPage(
         }
     }
 
-    if (showDeviceControlAccessDialog && pendingDeviceControlAccess.specialAccesses.isNotEmpty()) {
+    if (showNotificationAccessDialog && pendingNotificationAccess.specialAccesses.isNotEmpty()) {
         AlertDialog(
-            onDismissRequest = { showDeviceControlAccessDialog = false },
-            title = { Text("Device Control Access") },
+            onDismissRequest = { showNotificationAccessDialog = false },
+            title = { Text("Notification Access") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Enable the remaining access below so the full Device Control toolset works reliably:")
-                    PermissionChecker.getFeatureAccessDescriptions(pendingDeviceControlAccess).forEach { description ->
+                    Text("Enable the remaining access below so notification tools and scheduled follow-ups work reliably:")
+                    PermissionChecker.getFeatureAccessDescriptions(pendingNotificationAccess).forEach { description ->
                         Text("- $description", style = MaterialTheme.typography.bodySmall)
                     }
                 }
@@ -328,9 +328,9 @@ fun AssistantToolsSubPage(
             confirmButton = {
                 Button(
                     onClick = {
-                        showDeviceControlAccessDialog = false
-                        val nextAccess = pendingDeviceControlAccess.specialAccesses.firstOrNull() ?: return@Button
-                        deviceControlSettingsLauncher.launch(
+                        showNotificationAccessDialog = false
+                        val nextAccess = pendingNotificationAccess.specialAccesses.firstOrNull() ?: return@Button
+                        notificationSettingsLauncher.launch(
                             PermissionChecker.createSpecialAccessIntent(nextAccess)
                         )
                     }
@@ -340,7 +340,7 @@ fun AssistantToolsSubPage(
             },
             dismissButton = {
                 TextButton(
-                    onClick = { showDeviceControlAccessDialog = false }
+                    onClick = { showNotificationAccessDialog = false }
                 ) {
                     Text("Not now")
                 }

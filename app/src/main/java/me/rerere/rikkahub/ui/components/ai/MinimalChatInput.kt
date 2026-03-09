@@ -169,6 +169,7 @@ fun MinimalChatInput(
     onNavigateToLorebook: (String) -> Unit = {},
     onRefreshContext: suspend () -> ChatService.ContextRefreshResult = { ChatService.ContextRefreshResult(false, errorMessage = "Not configured") },
     onDeleteFile: (Uri) -> Unit = {},
+    bottomAccessory: @Composable (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val toaster = LocalToaster.current
@@ -498,6 +499,8 @@ fun MinimalChatInput(
                     }  // Column ends
                 }  // Surface ends
             }  // Row ends
+
+            bottomAccessory?.invoke()
         }  // Column ends
     }  // Box ends
     

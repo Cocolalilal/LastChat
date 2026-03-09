@@ -527,12 +527,12 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
             title = { Text("Permissions Required") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Your restored backup includes features that need additional access:")
+                    Text("Your restored backup includes notification features that need additional access:")
                     PermissionChecker.getFeatureAccessDescriptions(pendingFeatureAccess).forEach { description ->
                         val desc = description
-                        Text("• $desc", style = MaterialTheme.typography.bodySmall)
+                        Text("- $desc", style = MaterialTheme.typography.bodySmall)
                     }
-                    Text("Grant or enable them for full functionality.", style = MaterialTheme.typography.bodySmall)
+                    Text("Grant or enable them so notifications and scheduled follow-ups work properly.", style = MaterialTheme.typography.bodySmall)
                 }
             },
             confirmButton = {
@@ -1021,12 +1021,12 @@ private fun ImportExportPage(
             title = { Text("Permissions Required") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Your restored backup includes features that need additional access:")
+                    Text("Your restored backup includes notification features that need additional access:")
                     PermissionChecker.getFeatureAccessDescriptions(pendingFeatureAccess).forEach { description ->
                         val desc = description
-                        Text("• $desc", style = MaterialTheme.typography.bodySmall)
+                        Text("- $desc", style = MaterialTheme.typography.bodySmall)
                     }
-                    Text("Grant or enable them for full functionality.", style = MaterialTheme.typography.bodySmall)
+                    Text("Grant or enable them so notifications and scheduled follow-ups work properly.", style = MaterialTheme.typography.bodySmall)
                 }
             },
             confirmButton = {
@@ -1110,13 +1110,13 @@ private fun BackupDialog(
                                     style = MaterialTheme.typography.labelMedium
                                 )
                                 if (it.sanitization.skippedRows > 0) {
-                                    Text("• Removed ${it.sanitization.skippedRows} corrupt/invalid items")
+                                    Text("- Removed ${it.sanitization.skippedRows} corrupt/invalid items")
                                 }
                                 if (it.settingsCleanup.totalIssuesFixed > 0) {
-                                    Text("• Fixed ${it.settingsCleanup.totalIssuesFixed} setting issues")
+                                    Text("- Fixed ${it.settingsCleanup.totalIssuesFixed} setting issues")
                                 }
                                 if (it.settingsCleanup.unsupportedZipEntriesBytes > 0) {
-                                    Text("• Cleaned ${it.settingsCleanup.unsupportedZipEntriesBytes.fileSizeToString()} of junk data")
+                                    Text("- Cleaned ${it.settingsCleanup.unsupportedZipEntriesBytes.fileSizeToString()} of junk data")
                                 }
                             }
                         }

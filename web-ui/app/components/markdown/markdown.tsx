@@ -20,6 +20,12 @@ const INLINE_LATEX_REGEX = /\\\((.+?)\\\)/g;
 const BLOCK_LATEX_REGEX = /\\\[(.+?)\\\]/gs;
 const CODE_BLOCK_REGEX = /```[\s\S]*?```|`[^`\n]*`/g;
 
+type IncompleteFence = {
+  contentBeforeFence: string;
+  code: string;
+  language: string;
+};
+
 // Preprocess markdown content
 function preProcess(content: string): string {
   // Find all code block positions
@@ -57,6 +63,32 @@ function preProcess(content: string): string {
   return result;
 }
 
+function extractTrailingIncompleteFence(content: string): IncompleteFence | null {
+  const fenceMatches = [...content.matchAll(/```/g)];
+  if (fenceMatches.length === 0 || fenceMatches.length % 2 === 0) {
+    return null;
+  }
+
+  const lastFence = fenceMatches.at(-1);
+  const lastFenceIndex = lastFence?.index;
+  if (lastFenceIndex == null) {
+    return null;
+  }
+
+  const trailingFence = content.slice(lastFenceIndex);
+  const headerMatch = /^```([^\n`]*)\n?/.exec(trailingFence);
+  if (!headerMatch) {
+    return null;
+  }
+
+  const codeStart = lastFenceIndex + headerMatch[0].length;
+  return {
+    contentBeforeFence: content.slice(0, lastFenceIndex),
+    code: content.slice(codeStart),
+    language: headerMatch[1]?.trim() ?? "",
+  };
+}
+
 type MarkdownProps = {
   content: string;
   className?: string;
@@ -87,6 +119,11 @@ export default function Markdown({
   const { t } = useTranslation("markdown");
   const workbench = useOptionalWorkbench();
   const processedContent = React.useMemo(() => preProcess(content), [content]);
+  const trailingIncompleteFence = React.useMemo(
+    () => (isAnimating ? extractTrailingIncompleteFence(processedContent) : null),
+    [isAnimating, processedContent],
+  );
+  const streamdownContent = trailingIncompleteFence?.contentBeforeFence ?? processedContent;
   const handlePreviewCode = React.useCallback(
     (language: string, code: string) => {
       if (!allowCodePreview || !workbench) return;
@@ -147,64 +184,82 @@ export default function Markdown({
 
   return (
     <div className={cn("markdown", className)}>
-      <Streamdown
-        mode={isAnimating ? "streaming" : "static"}
-        parseIncompleteMarkdown={isAnimating}
-        remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeKatex, rehypeRaw]}
-        plugins={{ cjk: cjk }}
-        animated={{ animation: "fadeIn", sep: "word", duration: 120 }}
-        isAnimating={isAnimating}
-        controls={{ code: false, mermaid: false }}
-        components={{
-          pre: ({ children }) => <>{children}</>,
-          code: MarkdownCode as never,
-          a: ({ href, children, ...props }) => {
-            const childText = getNodeText(children).trim();
+      {streamdownContent.length > 0 ? (
+        <Streamdown
+          mode={isAnimating ? "streaming" : "static"}
+          parseIncompleteMarkdown={isAnimating}
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={[rehypeKatex, rehypeRaw]}
+          plugins={{ cjk: cjk }}
+          isAnimating={isAnimating}
+          controls={{ code: false, mermaid: false }}
+          components={{
+            pre: ({ children }) => <>{children}</>,
+            code: MarkdownCode as never,
+            a: ({ href, children, ...props }) => {
+              const childText = getNodeText(children).trim();
 
-            // Citation format: [citation,domain](id)
-            if (childText.startsWith("citation,")) {
-              const domain = childText.substring("citation,".length);
-              const id = (href || "").trim();
+              // Citation format: [citation,domain](id)
+              if (childText.startsWith("citation,")) {
+                const domain = childText.substring("citation,".length);
+                const id = (href || "").trim();
 
-              if (id.length === 6) {
-                return (
-                  <span
-                    className="citation-badge"
-                    onClick={() => onClickCitation?.(id)}
-                    title={domain}
-                  >
-                    {domain}
-                  </span>
-                );
+                if (id.length === 6) {
+                  return (
+                    <span
+                      className="citation-badge"
+                      onClick={() => onClickCitation?.(id)}
+                      title={domain}
+                    >
+                      {domain}
+                    </span>
+                  );
+                }
+
+                if (href) {
+                  return (
+                    <a
+                      className="citation-badge"
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={domain}
+                      {...props}
+                    >
+                      {domain}
+                    </a>
+                  );
+                }
               }
 
-              if (href) {
-                return (
-                  <a
-                    className="citation-badge"
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title={domain}
-                    {...props}
-                  >
-                    {domain}
-                  </a>
-                );
-              }
-            }
-
-            return (
-              <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
-                {children}
-              </a>
-            );
-          },
-        }}
-      >
-        {processedContent}
-      </Streamdown>
+              return (
+                <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
+                  {children}
+                </a>
+              );
+            },
+          }}
+        >
+          {streamdownContent}
+        </Streamdown>
+      ) : null}
+      {trailingIncompleteFence ? (
+        <CodeBlock
+          language={trailingIncompleteFence.language}
+          code={trailingIncompleteFence.code}
+          autoCollapse={displaySetting?.codeBlockAutoCollapse ?? true}
+          isIncomplete
+          showLineNumbers={displaySetting?.showLineNumbers ?? false}
+          wrapLines={displaySetting?.codeBlockAutoWrap ?? false}
+          onPreview={
+            allowCodePreview && workbench
+              ? () => {
+                  handlePreviewCode(trailingIncompleteFence.language, trailingIncompleteFence.code);
+                }
+              : undefined
+          }
+        />
+      ) : null}
     </div>
   );
 }

@@ -30,6 +30,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bookmark
@@ -194,6 +196,33 @@ private const val TIMELINE_PANEL_ANIMATION_MS = 220
 private const val TIMELINE_ENTRY_ANIMATION_MS = 180
 private const val TIMELINE_MAX_HEIGHT_DP = 360
 
+private fun buildEntryFollowSignature(entry: TimelineEntry): String {
+    return when (entry) {
+        is TimelineEntry.Reasoning -> entry.content
+        is TimelineEntry.ToolCall -> buildString {
+            append(entry.resultText.orEmpty())
+            append('|')
+            append(entry.argumentsText)
+            append('|')
+            append(entry.resultJson?.toString().orEmpty())
+            append('|')
+            append(entry.argumentsJson?.toString().orEmpty())
+            append('|')
+            append(entry.isLoading)
+        }
+        is TimelineEntry.MemoryAction -> buildString {
+            append(entry.content.orEmpty())
+            append('|')
+            append(entry.previousContent.orEmpty())
+            append('|')
+            append(entry.memoryId ?: -1)
+            append('|')
+            append(entry.isLoading)
+        }
+        is TimelineEntry.Reply -> entry.content
+    }
+}
+
 private fun parseSkillNames(value: JsonElement?): List<String> {
     val array = value as? JsonArray ?: return emptyList()
     return array.mapNotNull { item ->
@@ -351,11 +380,7 @@ private fun findCurrentEntryIndex(entries: List<TimelineEntry>): Int? {
         }
     }
     if (toolIndex >= 0) return toolIndex
-
-    val replyIndex = entries.indexOfLast { entry ->
-        entry is TimelineEntry.Reply && entry.isInProgress
-    }
-    return replyIndex.takeIf { it >= 0 }
+    return null
 }
 
 internal fun buildInitialTimelineFocus(
@@ -432,8 +457,26 @@ internal fun ActivityTimelinePanel(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val haptics = rememberPremiumHaptics()
+    var autoFollowCurrentEntry by remember { mutableStateOf(false) }
     val timelineScrollLock = remember {
         object : NestedScrollConnection {
+            override fun onPreScroll(
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                if (source == NestedScrollSource.UserInput && available.y != 0f) {
+                    autoFollowCurrentEntry = false
+                }
+                return Offset.Zero
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                if (available.y != 0f) {
+                    autoFollowCurrentEntry = false
+                }
+                return Velocity.Zero
+            }
+
             override fun onPostScroll(
                 consumed: Offset,
                 available: Offset,
@@ -501,6 +544,9 @@ internal fun ActivityTimelinePanel(
     var deleteTarget by remember { mutableStateOf<MemoryDeleteTarget?>(null) }
     var deletedMemoryIds by remember { mutableStateOf(setOf<Int>()) }
     val entryIds = remember(entries) { entries.map { it.id } }
+    val currentEntryId = remember(entries) {
+        findCurrentEntryIndex(entries)?.let { entries[it].id }
+    }
 
     LaunchedEffect(entryIds) {
         val memoryIds = entries.filterIsInstance<TimelineEntry.MemoryAction>()
@@ -517,6 +563,7 @@ internal fun ActivityTimelinePanel(
     LaunchedEffect(initialOpenRequest) {
         val initialFocus = buildInitialTimelineFocus(entries, initialOpenRequest)
         expandedEntryIds = initialFocus.expandedEntryIds
+        autoFollowCurrentEntry = initialOpenRequest?.openMode == TimelineOpenMode.FocusCurrent
 
         val scrollIndex = initialFocus.scrollIndex
         if (scrollIndex != null) {
@@ -609,7 +656,10 @@ internal fun ActivityTimelinePanel(
                                     resolvedMemoryActions.revertMemory(id, content)
                                 }
                             },
-                            canRestore = assistantId != null
+                            canRestore = assistantId != null,
+                            followLiveContent = autoFollowCurrentEntry &&
+                                currentEntryId != null &&
+                                currentEntryId == entry.id
                         )
                     }
                 }
@@ -701,6 +751,7 @@ private fun TimelineEntryItem(
     onRestoreMemory: (String) -> Unit,
     onRevertMemory: (Int, String) -> Unit,
     canRestore: Boolean,
+    followLiveContent: Boolean,
     modifier: Modifier = Modifier
 ) {
     val hasExpandableContent = when (entry) {
@@ -724,6 +775,9 @@ private fun TimelineEntryItem(
         entry is TimelineEntry.MemoryAction -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
         else -> MaterialTheme.colorScheme.surfaceContainerLow
     }
+
+    val followSignature = remember(entry) { buildEntryFollowSignature(entry) }
+    val bringIntoViewRequester = remember { BringIntoViewRequester() }
 
     Row(
         modifier = modifier
@@ -867,6 +921,12 @@ private fun TimelineEntryItem(
                                     onRevertMemory = onRevertMemory,
                                     canRestore = canRestore
                                 )
+                                Spacer(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(1.dp)
+                                        .bringIntoViewRequester(bringIntoViewRequester)
+                                )
                             }
                         } else {
                             TimelinePreview(entry = entry)
@@ -876,6 +936,12 @@ private fun TimelineEntryItem(
                     TimelinePreview(entry = entry)
                 }
             }
+        }
+    }
+
+    LaunchedEffect(expanded, followLiveContent, followSignature) {
+        if (expanded && followLiveContent) {
+            bringIntoViewRequester.bringIntoView()
         }
     }
 }
@@ -1204,6 +1270,7 @@ private fun PythonTimelineDetails(entry: TimelineEntry.ToolCall) {
             }
         }
     }
+
 }
 
 @Composable

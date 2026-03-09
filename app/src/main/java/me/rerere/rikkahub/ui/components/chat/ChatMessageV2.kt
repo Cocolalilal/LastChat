@@ -195,13 +195,6 @@ fun List<MessageNode>.groupIntoTurns(): List<MessageTurnGroup> {
  * Build timeline entries from message parts.
  */
 internal fun buildTimelineEntries(parts: List<UIMessagePart>): List<TimelineEntry> {
-    return buildTimelineEntries(parts = parts, includeLiveReply = false)
-}
-
-internal fun buildTimelineEntries(
-    parts: List<UIMessagePart>,
-    includeLiveReply: Boolean
-): List<TimelineEntry> {
     val entries = mutableListOf<TimelineEntry>()
     val memoryTools = setOf("create_memory", "edit_memory", "delete_memory")
     
@@ -247,31 +240,7 @@ internal fun buildTimelineEntries(
         }
     }
 
-    if (includeLiveReply) {
-        val liveReplyContent = buildLiveReplyContent(parts)
-        if (liveReplyContent.isNotBlank()) {
-            entries.add(
-                TimelineEntry.Reply(
-                    id = "reply_live",
-                    content = liveReplyContent,
-                    isInProgress = true
-                )
-            )
-        }
-    }
-    
     return entries
-}
-
-private fun buildLiveReplyContent(parts: List<UIMessagePart>): String {
-    val lastToolIndex = parts.indexOfLast { it is UIMessagePart.ToolCall || it is UIMessagePart.ToolResult }
-    return parts
-        .drop(lastToolIndex + 1)
-        .filterIsInstance<UIMessagePart.Text>()
-        .map { it.text.trim() }
-        .filter { it.isNotBlank() }
-        .joinToString(separator = "\n\n")
-        .trim()
 }
 
 private fun buildMemoryTimelineEntry(
@@ -446,6 +415,7 @@ fun ChatMessageTurn(
     onEditLorebookEntry: ((me.rerere.ai.ui.UsedLorebookEntry) -> Unit)? = null,
     onModeClick: ((me.rerere.ai.ui.UsedMode) -> Unit)? = null,
     onMemoryClick: ((me.rerere.ai.ui.UsedMemory) -> Unit)? = null,
+    onExpandedStreamingCodeBlockChanged: (() -> Unit)? = null,
 ) {
     val settings = LocalSettings.current
     val effectiveDisplay = settings.getEffectiveDisplaySetting(assistant)
@@ -471,10 +441,7 @@ fun ChatMessageTurn(
     val isTimelineLive = loading && isLastTurn
     
     // Timeline entries from all parts - computed fresh to avoid stale data
-    val timelineEntries = buildTimelineEntries(
-        parts = group.allParts,
-        includeLiveReply = isTimelineLive && activityState == ActivityState.Replying
-    )
+    val timelineEntries = buildTimelineEntries(parts = group.allParts)
 
     // Actions should target the visible assistant content node instead of blindly using lastNode,
     // because the last node in a turn can be a tool node.
@@ -554,6 +521,7 @@ fun ChatMessageTurn(
                     onEditLorebookEntry = onEditLorebookEntry,
                     onModeClick = onModeClick,
                     onMemoryClick = onMemoryClick,
+                    onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
                     modifier = modifier
                 )
             }
@@ -772,6 +740,7 @@ private fun AssistantMessageTurn(
     onEditLorebookEntry: ((me.rerere.ai.ui.UsedLorebookEntry) -> Unit)?,
     onModeClick: ((me.rerere.ai.ui.UsedMode) -> Unit)?,
     onMemoryClick: ((me.rerere.ai.ui.UsedMemory) -> Unit)?,
+    onExpandedStreamingCodeBlockChanged: (() -> Unit)?,
     modifier: Modifier = Modifier
 ) {
     val settings = LocalSettings.current
@@ -948,6 +917,7 @@ private fun AssistantMessageTurn(
                             scope = AssistantAffectScope.ASSISTANT,
                             visual = true,
                         ),
+                        onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
                         onClickCitation = { id -> onCitationClick(id) }
                     )
                 }
@@ -1033,6 +1003,7 @@ private fun AssistantMessageTurn(
                         scope = AssistantAffectScope.ASSISTANT,
                         visual = true,
                     ),
+                    onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
                     onClickCitation = { id -> onCitationClick(id) },
                     modifier = Modifier.clickable { handleBubbleClick() }
                 )

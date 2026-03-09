@@ -75,7 +75,7 @@ function renderContentPart(
   part: UIMessagePart,
   displaySetting: DisplaySetting | null | undefined,
   t: (key: string, options?: Record<string, unknown>) => string,
-  _loading?: boolean,
+  loading?: boolean,
   onClickCitation?: (id: string) => void,
 ) {
   switch (part.type) {
@@ -84,7 +84,7 @@ function renderContentPart(
         <TextPart
           text={part.text}
           displaySetting={displaySetting}
-          isAnimating={false}
+          isAnimating={loading}
           onClickCitation={onClickCitation}
         />
       );

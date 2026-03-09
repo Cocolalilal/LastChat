@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
@@ -121,6 +122,27 @@ internal fun shouldShowNewChatContent(
         showNewChatContent &&
         !hasTextInput &&
         !isKeyboardOpen
+}
+
+internal fun chatTopBarPlacement(settings: Settings): ChatToolbarPlacement {
+    return if (settings.displaySetting.chatToolbarAtBottom) {
+        ChatToolbarPlacement.Bottom
+    } else {
+        ChatToolbarPlacement.Top
+    }
+}
+
+internal fun chatListTopPadding(placement: ChatToolbarPlacement): androidx.compose.ui.unit.Dp {
+    return if (placement == ChatToolbarPlacement.Top) 72.dp else 16.dp
+}
+
+internal fun chatListBottomPadding(placement: ChatToolbarPlacement): androidx.compose.ui.unit.Dp {
+    return if (placement == ChatToolbarPlacement.Bottom) 204.dp else 140.dp
+}
+
+internal enum class ChatToolbarPlacement {
+    Top,
+    Bottom
 }
 
 @Composable
@@ -333,7 +355,7 @@ private fun ChatPageContent(
     var showRegenerateConfirmDialog by rememberSaveable { mutableStateOf(false) }
     var pendingRegenerateMessage by rememberSaveable { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
     val currentAssistant = setting.getCurrentAssistant()
-    val topMessagePadding = 72.dp
+    val toolbarPlacement = chatTopBarPlacement(setting)
     
     // Auto-scroll to first matching message when opened from search
     LaunchedEffect(initialSearchQuery, conversation.messageNodes) {
@@ -373,30 +395,34 @@ private fun ChatPageContent(
         ) {
             AssistantBackground(setting = setting)
             Scaffold(
-                topBar = {
-                    TopBar(
-                        settings = setting,
-                        conversation = conversation,
-                        bigScreen = bigScreen,
-                        drawerState = drawerState,
-                        previewMode = previewMode,
-                        isTemporaryChat = isTemporaryChat,
-                        onNewChat = {
-                            // Temporary chats are not persisted, so just navigate to new chat
-                            navigateToChatPage(navController)
-                        },
-                        onClickMenu = {
-                            previewMode = !previewMode
-                        },
-                        onUpdateSettings = { newSettings ->
-                            vm.updateSettings(newSettings)
-                        },
-                        onToggleTemporaryChat = {
-                            if (conversationPersistenceMode != ChatPersistenceMode.PERSIST_ON_REPLY) {
-                                manualTemporaryChat = !manualTemporaryChat
+                topBar = if (toolbarPlacement == ChatToolbarPlacement.Top) {
+                    {
+                        ChatToolbar(
+                            placement = ChatToolbarPlacement.Top,
+                            settings = setting,
+                            conversation = conversation,
+                            bigScreen = bigScreen,
+                            drawerState = drawerState,
+                            previewMode = previewMode,
+                            isTemporaryChat = isTemporaryChat,
+                            onNewChat = {
+                                navigateToChatPage(navController)
+                            },
+                            onClickMenu = {
+                                previewMode = !previewMode
+                            },
+                            onUpdateSettings = { newSettings ->
+                                vm.updateSettings(newSettings)
+                            },
+                            onToggleTemporaryChat = {
+                                if (conversationPersistenceMode != ChatPersistenceMode.PERSIST_ON_REPLY) {
+                                    manualTemporaryChat = !manualTemporaryChat
+                                }
                             }
-                        }
-                    )
+                        )
+                    }
+                } else {
+                    {}
                 },
                 // Input is rendered manually at the bottom of the screen
                 containerColor = Color.Transparent,
@@ -407,7 +433,10 @@ private fun ChatPageContent(
                         .fillMaxSize()
                 ) {
                     ChatList(
-                        innerPadding = PaddingValues(top = topMessagePadding, bottom = 140.dp),
+                        innerPadding = PaddingValues(
+                            top = chatListTopPadding(toolbarPlacement),
+                            bottom = chatListBottomPadding(toolbarPlacement)
+                        ),
                         conversation = conversation,
                         state = chatListState,
                         loading = loadingJob != null,
@@ -692,12 +721,22 @@ private fun ChatPageContent(
                             .fillMaxWidth()
                             .height(200.dp)
                             .background(
-                                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.Transparent,
-                                        MaterialTheme.colorScheme.background.copy(alpha = 0.85f)
+                                brush = if (toolbarPlacement == ChatToolbarPlacement.Bottom) {
+                                    androidx.compose.ui.graphics.Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color.Transparent,
+                                            MaterialTheme.colorScheme.background.copy(alpha = 0.6f),
+                                            MaterialTheme.colorScheme.background.copy(alpha = 0.92f)
+                                        )
                                     )
-                                )
+                                } else {
+                                    androidx.compose.ui.graphics.Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color.Transparent,
+                                            MaterialTheme.colorScheme.background.copy(alpha = 0.85f)
+                                        )
+                                    )
+                                }
                             )
                     )
                 }
@@ -811,6 +850,33 @@ private fun ChatPageContent(
                     },
                     onRefreshContext = { vm.refreshContext() },
                     onDeleteFile = { vm.deleteFile(it) },
+                    bottomAccessory = if (toolbarPlacement == ChatToolbarPlacement.Bottom) {
+                        {
+                            ChatToolbar(
+                                placement = ChatToolbarPlacement.Bottom,
+                                settings = setting,
+                                conversation = conversation,
+                                bigScreen = bigScreen,
+                                drawerState = drawerState,
+                                previewMode = previewMode,
+                                isTemporaryChat = isTemporaryChat,
+                                onNewChat = {
+                                    navigateToChatPage(navController)
+                                },
+                                onClickMenu = {
+                                    previewMode = !previewMode
+                                },
+                                onUpdateSettings = { newSettings ->
+                                    vm.updateSettings(newSettings)
+                                },
+                                onToggleTemporaryChat = {
+                                    if (conversationPersistenceMode != ChatPersistenceMode.PERSIST_ON_REPLY) {
+                                        manualTemporaryChat = !manualTemporaryChat
+                                    }
+                                }
+                            )
+                        }
+                    } else null,
                 )
                 }
             }
@@ -827,7 +893,8 @@ private data class TopBarActionState(
 )
 
 @Composable
-private fun TopBar(
+private fun ChatToolbar(
+    placement: ChatToolbarPlacement,
     settings: Settings,
     conversation: Conversation,
     drawerState: DrawerState,
@@ -844,7 +911,6 @@ private fun TopBar(
     val topContainerBorder = BorderStroke(1.dp, MaterialTheme.colorScheme.background)
     val buttonShape = RoundedCornerShape(999.dp)
     val topPillSize = 48.dp
-    val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     // State for assistant picker - must be at function level for proper recomposition
     var showAssistantPicker by remember { mutableStateOf(false) }
     val currentAssistant = settings.getCurrentAssistant()
@@ -861,26 +927,34 @@ private fun TopBar(
         modifier = Modifier
             .fillMaxWidth()
     ) {
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .height(120.dp)
-                .background(
-                    brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.background.copy(alpha = 0.95f),
-                            Color.Transparent
+        if (placement == ChatToolbarPlacement.Top) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .height(120.dp)
+                    .background(
+                        brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                            colors = listOf(
+                                MaterialTheme.colorScheme.background.copy(alpha = 0.95f),
+                                Color.Transparent
+                            )
                         )
                     )
-                )
-        )
+            )
+        }
 
         Row(
             modifier = Modifier
-                .statusBarsPadding()
+                .then(
+                    if (placement == ChatToolbarPlacement.Top) {
+                        Modifier.statusBarsPadding()
+                    } else {
+                        Modifier
+                    }
+                )
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (!bigScreen) {
@@ -901,7 +975,7 @@ private fun TopBar(
                 }
             }
 
-            androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+            Spacer(Modifier.weight(1f))
 
             val topPillScale by androidx.compose.animation.core.animateFloatAsState(
                 targetValue = if (animateTopPillIn) 1f else 0.88f,

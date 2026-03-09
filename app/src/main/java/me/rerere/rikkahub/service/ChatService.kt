@@ -87,6 +87,17 @@ import kotlin.uuid.Uuid
 
 private const val TAG = "ChatService"
 
+internal fun shouldPreserveInMemoryConversation(
+    conversation: Conversation?,
+    persistenceMode: ChatPersistenceMode,
+): Boolean {
+    return conversation != null &&
+        (
+            conversation.messageNodes.isNotEmpty() ||
+                persistenceMode != ChatPersistenceMode.NORMAL
+            )
+}
+
 class ChatService(
     private val context: Application,
     private val appScope: AppScope,
@@ -261,14 +272,14 @@ class ChatService(
     // 初始化对话
     suspend fun initializeConversation(conversationId: Uuid) {
         val inMemoryConversation = conversations[conversationId]?.value
-        if (inMemoryConversation != null &&
-            (
-                inMemoryConversation.messageNodes.isNotEmpty() ||
-                    getConversationPersistenceMode(conversationId) != ChatPersistenceMode.NORMAL
-                )
+        if (shouldPreserveInMemoryConversation(
+                conversation = inMemoryConversation,
+                persistenceMode = getConversationPersistenceMode(conversationId),
+            )
         ) {
-            updateConversation(conversationId, inMemoryConversation)
-            settingsStore.updateAssistant(inMemoryConversation.assistantId)
+            val preservedConversation = inMemoryConversation ?: return
+            updateConversation(conversationId, preservedConversation)
+            settingsStore.updateAssistant(preservedConversation.assistantId)
             return
         }
 

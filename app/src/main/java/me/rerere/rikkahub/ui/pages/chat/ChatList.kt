@@ -427,6 +427,20 @@ private fun SharedTransitionScope.ChatListNormal(
                                 )
                             },
                             showRegenerate = showRegenerate,
+                            onExpandedStreamingCodeBlockChanged = if (loading && isLastTurn) {
+                                {
+                                    if (!userScrolledUp) {
+                                        scope.launch {
+                                            val targetIndex = state.layoutInfo.totalItemsCount - 1
+                                            if (targetIndex >= 0) {
+                                                state.animateScrollToItem(targetIndex)
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                null
+                            },
                         )
                     }
                     // Show truncate indicator if any node in this group is at the truncate point

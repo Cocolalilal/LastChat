@@ -32,13 +32,13 @@ object PermissionChecker {
      * Permission requirements for different features
      */
     enum class FeaturePermission(val permissions: List<String>, val description: String) {
-        DEVICE_CONTROL(
+        NOTIFICATIONS(
             buildList {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     add(Manifest.permission.POST_NOTIFICATIONS)
                 }
             },
-            "Notifications for Device Control tools"
+            "Notifications for notification tools"
         ),
         LOCATION(
             listOf(Manifest.permission.ACCESS_COARSE_LOCATION),
@@ -58,8 +58,8 @@ object PermissionChecker {
         val specialAccesses = mutableSetOf<SpecialAccess>()
 
         for (assistant in assistants) {
-            if (assistant.localTools.contains(LocalToolOption.DeviceControl)) {
-                requiredPermissions.addAll(FeaturePermission.DEVICE_CONTROL.permissions)
+            if (assistant.localTools.contains(LocalToolOption.Notifications)) {
+                requiredPermissions.addAll(FeaturePermission.NOTIFICATIONS.permissions)
                 if (!hasNotificationListenerAccess(context)) {
                     specialAccesses.add(SpecialAccess.NotificationListener)
                 }
@@ -88,10 +88,10 @@ object PermissionChecker {
     }
 
     /**
-     * Check missing access specifically for Device Control onboarding.
+     * Check missing access specifically for notification tool onboarding.
      */
-    fun getMissingDeviceControlAccess(context: Context): MissingFeatureAccess {
-        val runtimePermissions = FeaturePermission.DEVICE_CONTROL.permissions.filter { permission ->
+    fun getMissingNotificationAccess(context: Context): MissingFeatureAccess {
+        val runtimePermissions = FeaturePermission.NOTIFICATIONS.permissions.filter { permission ->
             ActivityCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED
         }
         val specialAccesses = buildList {
@@ -145,7 +145,7 @@ object PermissionChecker {
     fun getPermissionDescriptions(permissions: List<String>): List<String> {
         return permissions.mapNotNull { permission ->
             when (permission) {
-                Manifest.permission.POST_NOTIFICATIONS -> "Send notifications (for Device Control tools)"
+                Manifest.permission.POST_NOTIFICATIONS -> "Send notifications (for notification tools)"
                 Manifest.permission.ACCESS_COARSE_LOCATION -> "Approximate location (for {{location}} placeholder)"
                 Manifest.permission.ACCESS_FINE_LOCATION -> "Precise location"
                 Manifest.permission.CAMERA -> "Camera access"

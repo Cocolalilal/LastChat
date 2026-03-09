@@ -99,6 +99,7 @@ import me.rerere.rikkahub.service.EXTRA_IS_SPONTANEOUS_NOTIFICATION
 import me.rerere.rikkahub.service.EXTRA_SPONTANEOUS_EVENT_ID
 import me.rerere.rikkahub.service.EXTRA_SPONTANEOUS_MESSAGE
 import me.rerere.rikkahub.service.EXTRA_SPONTANEOUS_RELATION
+import me.rerere.rikkahub.service.ChatPersistenceMode
 import me.rerere.rikkahub.ui.activity.QuickAskContinuationData
 import me.rerere.rikkahub.ui.activity.buildQuickAskMessageParts
 import me.rerere.rikkahub.ui.activity.readQuickAskContinuationData
@@ -109,12 +110,18 @@ import kotlin.uuid.Uuid
 
 private const val TAG = "RouteActivity"
 
-private data class SpontaneousNotificationData(
+internal data class SpontaneousNotificationData(
     val assistantId: String,
     val conversationId: String?,
     val eventId: String,
     val message: String,
     val relation: me.rerere.rikkahub.service.SpontaneousMessageRelation,
+)
+
+internal data class ResolvedSpontaneousChatTarget(
+    val conversationId: Uuid,
+    val persistenceMode: ChatPersistenceMode,
+    val assistantId: Uuid,
 )
 
 internal fun resolveSpontaneousNotificationRelation(
@@ -129,6 +136,82 @@ internal fun resolveSpontaneousNotificationRelation(
         }
 }
 
+internal suspend fun resolveSpontaneousNotificationTarget(
+    data: SpontaneousNotificationData,
+    isEventConsumed: (String) -> Boolean,
+    updateAssistantSelection: suspend (Uuid) -> Unit,
+    hasConversation: suspend (Uuid) -> Boolean,
+    appendToConversation: suspend (Uuid, String, Uuid) -> Uuid?,
+    seedDraftConversation: suspend (Uuid, String) -> Uuid?,
+    markEventConsumed: (String) -> Unit,
+): ResolvedSpontaneousChatTarget? {
+    val assistantId = runCatching { Uuid.parse(data.assistantId) }.getOrNull() ?: return null
+    val message = data.message.trim()
+    if (message.isBlank() || isEventConsumed(data.eventId)) return null
+
+    updateAssistantSelection(assistantId)
+
+    val originalConversationId = data.conversationId?.let { raw ->
+        runCatching { Uuid.parse(raw) }.getOrNull()
+    }
+
+    val target = when (data.relation) {
+        me.rerere.rikkahub.service.SpontaneousMessageRelation.RECENT_CHAT -> {
+            val existingConversationId = if (
+                originalConversationId != null &&
+                hasConversation(originalConversationId)
+            ) {
+                appendToConversation(assistantId, message, originalConversationId)
+            } else {
+                null
+            }
+            val conversationId = existingConversationId
+                ?: seedDraftConversation(assistantId, message)
+                ?: return null
+            ResolvedSpontaneousChatTarget(
+                conversationId = conversationId,
+                persistenceMode = if (existingConversationId != null) {
+                    ChatPersistenceMode.NORMAL
+                } else {
+                    ChatPersistenceMode.PERSIST_ON_REPLY
+                },
+                assistantId = assistantId,
+            )
+        }
+
+        me.rerere.rikkahub.service.SpontaneousMessageRelation.UNRELATED -> {
+            val conversationId = seedDraftConversation(assistantId, message) ?: return null
+            ResolvedSpontaneousChatTarget(
+                conversationId = conversationId,
+                persistenceMode = ChatPersistenceMode.PERSIST_ON_REPLY,
+                assistantId = assistantId,
+            )
+        }
+    }
+
+    markEventConsumed(data.eventId)
+    return target
+}
+
+internal fun determineInitialChatScreen(
+    defaultScreen: Screen.Chat,
+    deepLinkedConversationId: String?,
+    spontaneousTarget: ResolvedSpontaneousChatTarget?,
+): Screen.Chat {
+    return when {
+        spontaneousTarget != null -> spontaneousTarget.toScreen()
+        !deepLinkedConversationId.isNullOrBlank() -> Screen.Chat(id = deepLinkedConversationId)
+        else -> defaultScreen
+    }
+}
+
+private fun ResolvedSpontaneousChatTarget.toScreen(): Screen.Chat {
+    return Screen.Chat(
+        id = conversationId.toString(),
+        persistenceMode = persistenceMode.routeValue.takeIf { persistenceMode != ChatPersistenceMode.NORMAL },
+    )
+}
+
 class RouteActivity : ComponentActivity() {
     private val highlighter by inject<Highlighter>()
     private val okHttpClient by inject<OkHttpClient>()
@@ -137,11 +220,11 @@ class RouteActivity : ComponentActivity() {
     private val chatService by inject<me.rerere.rikkahub.service.ChatService>()
     private val conversationRepo by inject<me.rerere.rikkahub.data.repository.ConversationRepository>()
     private var navStack by mutableStateOf<NavHostController?>(null)
-    private var pendingAssistantId by mutableStateOf<String?>(null)
     private var pendingTextSelection by mutableStateOf<QuickAskContinuationData?>(null)
     private var pendingConversationId by mutableStateOf<String?>(null)
-    private var pendingSpontaneousNotification by mutableStateOf<SpontaneousNotificationData?>(null)
+    private var pendingResolvedSpontaneousTarget by mutableStateOf<ResolvedSpontaneousChatTarget?>(null)
     private var pendingShareIntent by mutableStateOf<ResolvedSharePayload?>(null)
+    private var initialChatScreen by mutableStateOf<Screen.Chat?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -161,24 +244,24 @@ class RouteActivity : ComponentActivity() {
                 .onFailure { android.util.Log.e(TAG, "increment app launches failed", it) }
         }
         
-        // Store intent data - will be processed AFTER composition is ready
         val spontaneousNotification = intent.toSpontaneousNotificationData()
         val intentAssistantId = if (spontaneousNotification == null) intent?.getStringExtra("assistantId") else null
         val intentConversationId = if (spontaneousNotification == null) intent?.getStringExtra("conversationId") else null
-        if (spontaneousNotification != null) {
-            pendingSpontaneousNotification = spontaneousNotification
-        }
-        
         pendingTextSelection = intent?.readQuickAskContinuationData()
         pendingShareIntent = intent?.readResolvedSharePayload()
-        
+        lifecycleScope.launch {
+            initialChatScreen = determineInitialChatScreen(
+                defaultScreen = defaultStartScreen(),
+                deepLinkedConversationId = intentConversationId,
+                spontaneousTarget = spontaneousNotification?.let { resolveSpontaneousChatTarget(it) },
+            )
+        }
+
         setContent {
             val navStack = rememberNavController()
             this.navStack = navStack
-            ShareHandler(navStack)
-            TextSelectionHandler(navStack)
-            NotificationHandler(navStack)
             RikkahubTheme {
+                val startScreen = initialChatScreen
                 setSingletonImageLoaderFactory { context ->
                     ImageLoader.Builder(context)
                         .crossfade(true)
@@ -199,7 +282,18 @@ class RouteActivity : ComponentActivity() {
                         }
                         .build()
                 }
-                AppRoutes(navStack)
+                if (startScreen == null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background)
+                    )
+                } else {
+                    ShareHandler(navStack)
+                    TextSelectionHandler(navStack)
+                    NotificationHandler(navStack)
+                    AppRoutes(navStack, startScreen)
+                }
             }
         }
         
@@ -225,15 +319,25 @@ class RouteActivity : ComponentActivity() {
                 }
             }
         }
-        if (intentConversationId != null) {
-            pendingConversationId = intentConversationId
-        }
     }
 
     private fun disableNavigationBarContrast() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             window.isNavigationBarContrastEnforced = false
         }
+    }
+
+    private fun defaultStartScreen(): Screen.Chat {
+        return Screen.Chat(
+            id = if (readBooleanPreference("create_new_conversation_on_start", true)) {
+                Uuid.random().toString()
+            } else {
+                readStringPreference(
+                    "lastConversationId",
+                    Uuid.random().toString()
+                ) ?: Uuid.random().toString()
+            }
+        )
     }
 
     private fun Intent?.toSpontaneousNotificationData(): SpontaneousNotificationData? {
@@ -286,12 +390,12 @@ class RouteActivity : ComponentActivity() {
 
     @Composable
     private fun NotificationHandler(navBackStack: NavHostController) {
-        val spontaneousData = pendingSpontaneousNotification
+        val spontaneousTarget = pendingResolvedSpontaneousTarget
         val conversationIdStr = pendingConversationId
-        LaunchedEffect(spontaneousData, conversationIdStr) {
-            if (spontaneousData != null) {
-                pendingSpontaneousNotification = null
-                navigateToSpontaneousNotification(navBackStack, spontaneousData)
+        LaunchedEffect(spontaneousTarget, conversationIdStr) {
+            if (spontaneousTarget != null) {
+                pendingResolvedSpontaneousTarget = null
+                navBackStack.navigate(spontaneousTarget.toScreen())
             } else if (conversationIdStr != null) {
                 pendingConversationId = null
                 navBackStack.navigate(Screen.Chat(conversationIdStr))
@@ -299,57 +403,33 @@ class RouteActivity : ComponentActivity() {
         }
     }
 
-    private suspend fun navigateToSpontaneousNotification(
-        navBackStack: NavHostController,
+    private suspend fun resolveSpontaneousChatTarget(
         data: SpontaneousNotificationData,
-    ) {
-        val assistantId = runCatching { Uuid.parse(data.assistantId) }.getOrNull() ?: return
-        if (data.message.isBlank()) return
-        if (spontaneousMessagingStateStore.isEventConsumed(data.eventId)) return
-        val originalConversationId = data.conversationId?.let { raw ->
-            runCatching { Uuid.parse(raw) }.getOrNull()
-        }
-
-        settingsStore.updateAssistant(assistantId)
-        settingsStore.markAssistantUsed(assistantId)
-
-        val targetConversationId = when (data.relation) {
-            me.rerere.rikkahub.service.SpontaneousMessageRelation.RECENT_CHAT -> {
-                val targetConversation = if (
-                    originalConversationId != null &&
-                    conversationRepo.getConversationById(originalConversationId) != null
-                ) {
-                    chatService.persistSpontaneousAssistantMessage(
-                        assistantId = assistantId,
-                        content = data.message,
-                        conversationId = originalConversationId,
-                    )
-                } else {
-                    chatService.seedSpontaneousDraftConversation(
-                        assistantId = assistantId,
-                        content = data.message,
-                    )
-                }
-                targetConversation.id
-            }
-
-            me.rerere.rikkahub.service.SpontaneousMessageRelation.UNRELATED -> {
+    ): ResolvedSpontaneousChatTarget? {
+        return resolveSpontaneousNotificationTarget(
+            data = data,
+            isEventConsumed = spontaneousMessagingStateStore::isEventConsumed,
+            updateAssistantSelection = { assistantId ->
+                settingsStore.updateAssistant(assistantId)
+                settingsStore.markAssistantUsed(assistantId)
+            },
+            hasConversation = { conversationId ->
+                conversationRepo.getConversationById(conversationId) != null
+            },
+            appendToConversation = { assistantId, message, conversationId ->
+                chatService.persistSpontaneousAssistantMessage(
+                    assistantId = assistantId,
+                    content = message,
+                    conversationId = conversationId,
+                ).id
+            },
+            seedDraftConversation = { assistantId, message ->
                 chatService.seedSpontaneousDraftConversation(
                     assistantId = assistantId,
-                    content = data.message,
+                    content = message,
                 ).id
-            }
-        }
-
-        spontaneousMessagingStateStore.markEventConsumed(data.eventId)
-        val persistenceMode = chatService.getConversationPersistenceMode(targetConversationId)
-        navBackStack.navigate(
-            Screen.Chat(
-                id = targetConversationId.toString(),
-                persistenceMode = persistenceMode.routeValue.takeIf {
-                    persistenceMode != me.rerere.rikkahub.service.ChatPersistenceMode.NORMAL
-                },
-            )
+            },
+            markEventConsumed = spontaneousMessagingStateStore::markEventConsumed,
         )
     }
 
@@ -424,7 +504,15 @@ class RouteActivity : ComponentActivity() {
         pendingTextSelection = intent.readQuickAskContinuationData() ?: pendingTextSelection
 
         intent.toSpontaneousNotificationData()?.let { notification ->
-            pendingSpontaneousNotification = notification
+            lifecycleScope.launch {
+                resolveSpontaneousChatTarget(notification)?.let { target ->
+                    if (navStack == null) {
+                        initialChatScreen = target.toScreen()
+                    } else {
+                        pendingResolvedSpontaneousTarget = target
+                    }
+                }
+            }
             return
         }
         
@@ -461,7 +549,7 @@ class RouteActivity : ComponentActivity() {
     }
 
     @Composable
-    fun AppRoutes(navBackStack: NavHostController) {
+    fun AppRoutes(navBackStack: NavHostController, startDestination: Screen.Chat) {
         val toastState = rememberAppToasterState()
         val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
         val tts = rememberCustomTtsState()
@@ -507,16 +595,7 @@ class RouteActivity : ComponentActivity() {
                     modifier = Modifier
                         .fillMaxSize()
                         .background(MaterialTheme.colorScheme.background),
-                    startDestination = Screen.Chat(
-                        id = if (readBooleanPreference("create_new_conversation_on_start", true)) {
-                            Uuid.random().toString()
-                        } else {
-                            readStringPreference(
-                                "lastConversationId",
-                                Uuid.random().toString()
-                            ) ?: Uuid.random().toString()
-                        }
-                    ),
+                    startDestination = startDestination,
                     navController = navBackStack,
                     enterTransition = { 
                         slideInHorizontally(

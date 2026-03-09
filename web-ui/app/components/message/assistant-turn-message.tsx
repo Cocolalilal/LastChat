@@ -148,6 +148,7 @@ export function AssistantTurnMessage({
   const citationUrlMap = React.useMemo(() => buildCitationUrlMap(turn.allParts), [turn.allParts]);
   const statsMessage = React.useMemo(() => buildStatsMessage(turn), [turn]);
   const hasMessageContent = turn.contentParts.some(hasRenderableContentPart) || activityState.type !== "hidden";
+  const allowLayoutAnimation = !loading;
   const latestToolActivityType = React.useMemo(
     () => {
       const latestToolEntry = [...timelineEntries]
@@ -171,13 +172,13 @@ export function AssistantTurnMessage({
 
   return (
     <motion.div
-      layout
+      layout={allowLayoutAnimation}
       transition={getChatLayoutTransition(reducedMotion)}
       className="flex flex-col gap-2.5"
       data-message-role="assistant"
       data-message-loading={loading || undefined}
     >
-      <motion.div layout className="flex w-full flex-col gap-1.5">
+      <motion.div layout={allowLayoutAnimation} className="flex w-full flex-col gap-1.5">
         <ChatMessageAvatarRow
           message={turn.displayMessage}
           hasMessageContent={hasMessageContent}
@@ -191,7 +192,7 @@ export function AssistantTurnMessage({
           {activityState.type === "waiting" ? (
             <motion.div
               key="assistant-waiting"
-              layout
+              layout={allowLayoutAnimation}
               initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -4, transition: { duration: 0.12 } }}
@@ -205,7 +206,7 @@ export function AssistantTurnMessage({
           {activityState.type !== "hidden" && activityState.type !== "waiting" ? (
             <motion.div
               key="assistant-activity-pill"
-              layout
+              layout={allowLayoutAnimation}
               initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -4, transition: { duration: 0.12 } }}
@@ -243,9 +244,9 @@ export function AssistantTurnMessage({
         />
 
         {turn.contentParts.some(hasRenderableContentPart) ? (
-          <motion.div layout className="flex w-full justify-start">
+          <motion.div layout={allowLayoutAnimation} className="flex w-full justify-start">
             <motion.div
-              layout
+              layout={allowLayoutAnimation}
               data-message-bubble
               className={cn(
                 "flex w-full flex-col gap-2 rounded-[var(--radius-bubble)] bg-transparent px-0 py-0 text-sm",

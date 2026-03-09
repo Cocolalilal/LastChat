@@ -5,8 +5,10 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
@@ -43,11 +45,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,10 +65,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -76,6 +82,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -97,13 +104,56 @@ import me.rerere.rikkahub.utils.base64Encode
 import kotlin.time.Clock
 
 private const val COLLAPSED_PEEK_MAX_HEIGHT = 108
-private const val PREVIEW_MAX_HEIGHT = 200
 private const val FADE_HEIGHT = 48f
+internal const val CODE_BLOCK_BODY_TAG = "code_block_body"
+internal const val CODE_BLOCK_FOOTER_TAG = "code_block_footer"
 
 enum class CodeBlockState(val expanded: Boolean) {
     Collapsed(false),
-    Preview(true),
+    Preview(false),
     Expanded(true)
+}
+
+internal enum class CodeBlockFooterAction {
+    Expand,
+    Collapse
+}
+
+internal fun initialCodeBlockState(
+    autoCollapse: Boolean,
+    completeCodeBlock: Boolean,
+): CodeBlockState = when {
+    !completeCodeBlock -> CodeBlockState.Preview
+    autoCollapse -> CodeBlockState.Collapsed
+    else -> CodeBlockState.Expanded
+}
+
+internal fun codeBlockFooterAction(expandState: CodeBlockState): CodeBlockFooterAction {
+    return if (expandState == CodeBlockState.Expanded) {
+        CodeBlockFooterAction.Collapse
+    } else {
+        CodeBlockFooterAction.Expand
+    }
+}
+
+internal fun codeBlockMaxHeight(expandState: CodeBlockState): Int? {
+    return when (expandState) {
+        CodeBlockState.Collapsed,
+        CodeBlockState.Preview -> COLLAPSED_PEEK_MAX_HEIGHT
+        CodeBlockState.Expanded -> null
+    }
+}
+
+internal fun updatePreviewAutoFollowPaused(
+    currentlyPaused: Boolean,
+    isAtBottom: Boolean,
+    scrollDelta: Int,
+    userScrollInProgress: Boolean,
+    programmaticScrollInProgress: Boolean,
+): Boolean = when {
+    isAtBottom -> false
+    userScrollInProgress && !programmaticScrollInProgress && scrollDelta < 0 -> true
+    else -> currentlyPaused
 }
 
 @Composable
@@ -112,6 +162,7 @@ fun HighlightCodeBlock(
     language: String,
     modifier: Modifier = Modifier,
     completeCodeBlock: Boolean = true,
+    onExpandedStreamingContentChanged: (() -> Unit)? = null,
     style: TextStyle? = TextStyle(
         fontSize = 12.sp,
         lineHeight = 16.sp,
@@ -123,7 +174,7 @@ fun HighlightCodeBlock(
     val verticalScrollState = rememberScrollState()
     val clipboardManager = LocalClipboard.current
     val scope = rememberCoroutineScope()
-    val navController = LocalNavController.current
+    val navController = if (language.lowercase() == "html") LocalNavController.current else null
     val context = LocalContext.current
     val settings = LocalSettings.current
     val effectiveDisplay = settings.getEffectiveDisplaySetting()
@@ -144,24 +195,73 @@ fun HighlightCodeBlock(
     // When complete: Collapsed (banner) or Expanded (auto-collapse setting)
     var expandState by remember(effectiveDisplay.codeBlockAutoCollapse, completeCodeBlock) {
         mutableStateOf(
-            when {
-                !completeCodeBlock -> CodeBlockState.Preview // Still generating - show preview
-                effectiveDisplay.codeBlockAutoCollapse -> CodeBlockState.Collapsed
-                else -> CodeBlockState.Expanded
-            }
+            initialCodeBlockState(
+                autoCollapse = effectiveDisplay.codeBlockAutoCollapse,
+                completeCodeBlock = completeCodeBlock
+            )
         )
     }
+    var previewAutoFollowPaused by remember(completeCodeBlock, expandState) { mutableStateOf(false) }
+    var programmaticScrollInProgress by remember { mutableStateOf(false) }
+    var previousScrollValue by remember(completeCodeBlock, expandState) { mutableIntStateOf(0) }
+    var previousCodeLength by remember { mutableIntStateOf(0) }
     val autoWrap = effectiveDisplay.codeBlockAutoWrap
-    val footerText = if (expandState.expanded) {
+    val footerAction = codeBlockFooterAction(expandState)
+    val footerText = if (footerAction == CodeBlockFooterAction.Collapse) {
         stringResource(id = R.string.code_block_collapse)
     } else {
         stringResource(id = R.string.code_block_expand)
     }
 
-    // Auto-scroll to bottom when generating (like reasoning card)
-    LaunchedEffect(code, completeCodeBlock, expandState) {
+    LaunchedEffect(expandState, completeCodeBlock) {
+        if (completeCodeBlock || expandState != CodeBlockState.Preview) {
+            previewAutoFollowPaused = false
+            previousScrollValue = verticalScrollState.value
+        }
+    }
+
+    LaunchedEffect(expandState, completeCodeBlock, verticalScrollState) {
         if (!completeCodeBlock && expandState == CodeBlockState.Preview) {
-            verticalScrollState.animateScrollTo(verticalScrollState.maxValue)
+            snapshotFlow {
+                Triple(
+                    verticalScrollState.value,
+                    verticalScrollState.maxValue,
+                    verticalScrollState.isScrollInProgress
+                )
+            }.collect { (scrollValue, maxValue, isScrollInProgress) ->
+                val isAtBottom = scrollValue >= maxValue
+                previewAutoFollowPaused = updatePreviewAutoFollowPaused(
+                    currentlyPaused = previewAutoFollowPaused,
+                    isAtBottom = isAtBottom,
+                    scrollDelta = scrollValue - previousScrollValue,
+                    userScrollInProgress = isScrollInProgress,
+                    programmaticScrollInProgress = programmaticScrollInProgress
+                )
+                previousScrollValue = scrollValue
+            }
+        }
+    }
+
+    LaunchedEffect(code, completeCodeBlock, expandState, previewAutoFollowPaused) {
+        val codeGrew = code.length > previousCodeLength
+        previousCodeLength = code.length
+        if (!codeGrew || completeCodeBlock) {
+            return@LaunchedEffect
+        }
+
+        when (expandState) {
+            CodeBlockState.Preview -> {
+                if (!previewAutoFollowPaused) {
+                    programmaticScrollInProgress = true
+                    try {
+                        verticalScrollState.animateScrollTo(verticalScrollState.maxValue)
+                    } finally {
+                        programmaticScrollInProgress = false
+                    }
+                }
+            }
+            CodeBlockState.Expanded -> onExpandedStreamingContentChanged?.invoke()
+            CodeBlockState.Collapsed -> Unit
         }
     }
 
@@ -209,9 +309,9 @@ fun HighlightCodeBlock(
             modifier = Modifier
                 .clipToBounds()
                 .animateContentSize(
-                    animationSpec = spring(
-                        dampingRatio = 0.7f,
-                        stiffness = 300f
+                    animationSpec = tween(
+                        durationMillis = 180,
+                        easing = LinearOutSlowInEasing
                     )
                 ),
             verticalArrangement = Arrangement.spacedBy(0.dp)
@@ -238,7 +338,7 @@ fun HighlightCodeBlock(
                         }
                     },
                     onPreview = {
-                        navController.navigate(Screen.WebView(content = code.base64Encode()))
+                        navController?.navigate(Screen.WebView(content = code.base64Encode()))
                     },
                     hapticsEnabled = settings.displaySetting.enableUIHaptics
                 )
@@ -271,6 +371,7 @@ fun HighlightCodeBlock(
                 CodeBlockFooter(
                     expanded = expandState.expanded,
                     footerText = footerText,
+                    footerAction = footerAction,
                     onToggle = {
                         haptics.perform(HapticPattern.Pop)
                         toggle()
@@ -422,13 +523,10 @@ private fun CodeBlockText(
 ) {
     val textStyle = LocalTextStyle.current.merge(style)
     val previewLikeState = expandState != CodeBlockState.Expanded
-    val maxHeight = when (expandState) {
-        CodeBlockState.Collapsed -> COLLAPSED_PEEK_MAX_HEIGHT
-        CodeBlockState.Preview -> PREVIEW_MAX_HEIGHT
-        CodeBlockState.Expanded -> null
-    }
+    val maxHeight = codeBlockMaxHeight(expandState)
 
     val contentModifier = Modifier
+        .testTag(CODE_BLOCK_BODY_TAG)
         .fillMaxWidth()
         .let {
             when {
@@ -474,6 +572,7 @@ private fun CodeBlockText(
 private fun CodeBlockFooter(
     expanded: Boolean,
     footerText: String,
+    footerAction: CodeBlockFooterAction,
     onToggle: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -486,6 +585,7 @@ private fun CodeBlockFooter(
 
     Row(
         modifier = Modifier
+            .testTag(CODE_BLOCK_FOOTER_TAG)
             .fillMaxWidth()
             .graphicsLayer {
                 scaleX = scale
@@ -497,7 +597,10 @@ private fun CodeBlockFooter(
                 onClick = onToggle
             )
             .padding(vertical = 12.dp)
-            .semantics { role = Role.Button },
+            .semantics {
+                role = Role.Button
+                stateDescription = footerAction.name
+            },
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {

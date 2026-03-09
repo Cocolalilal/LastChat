@@ -138,6 +138,18 @@ fun SettingUICustomizationPage(vm: SettingVM = koinViewModel()) {
                     title = stringResource(R.string.setting_page_chat_settings)
                 ) {
                     SettingGroupItem(
+                        title = "Move Chat Toolbar to Bottom",
+                        subtitle = "Place the chat toolbar below the minimal message input bar",
+                        trailing = {
+                            HapticSwitch(
+                                checked = displaySetting.chatToolbarAtBottom,
+                                onCheckedChange = {
+                                    updateDisplaySetting(displaySetting.copy(chatToolbarAtBottom = it))
+                                }
+                            )
+                        }
+                    )
+                    SettingGroupItem(
                         title = "Show Character Avatar",
                         subtitle = "Show the character's avatar before messages",
                         trailing = {

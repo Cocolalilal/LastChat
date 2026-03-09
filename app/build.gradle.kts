@@ -16,6 +16,10 @@ plugins {
     alias(libs.plugins.chaquopy)
 }
 
+val enableReleaseShrinker = providers.gradleProperty("lastchat.release.minify")
+    .map(String::toBoolean)
+    .orElse(false)
+
 val webUiDir = rootProject.file("web-ui")
 val webUiBuildDir = File(webUiDir, "build/client")
 
@@ -112,11 +116,10 @@ android {
             } else {
                 signingConfig = signingConfigs.getByName("debug")
             }
-            // Leave release shrinking off until the startup crash is traced to a
-            // specific keep-rule gap. Resource shrinking stays off because the app
-            // and embedded web UI load assets indirectly at runtime.
-            isMinifyEnabled = false
-            isShrinkResources = false
+            // Shrinking stays opt-in so it can be verified against runtime-only
+            // loading paths before becoming the default release behavior.
+            isMinifyEnabled = enableReleaseShrinker.get()
+            isShrinkResources = enableReleaseShrinker.get()
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -147,6 +150,18 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+    packaging {
+        resources {
+            excludes += setOf(
+                "META-INF/DEPENDENCIES",
+                "META-INF/LICENSE*",
+                "META-INF/NOTICE*",
+                "META-INF/AL2.0",
+                "META-INF/LGPL2.1",
+                "META-INF/*.kotlin_module"
+            )
+        }
     }
     androidResources {
         generateLocaleConfig = true

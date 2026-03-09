@@ -704,7 +704,7 @@ const ConversationTimeline = React.memo(({
             return (
               <motion.div
                 key={turn.id}
-                layout="position"
+                layout={turnLoading ? false : "position"}
                 id={getConversationMessageAnchorId(turn.anchorMessageId)}
                 className="scroll-mt-24"
                 variants={getChatLiftVariants(reducedMotion, 12)}

@@ -184,6 +184,7 @@ export function getToolDisplayName(toolName: string): string {
 
 export function buildTimelineEntries(parts: UIMessagePart[]): TimelineEntry[] {
   const entries: TimelineEntry[] = [];
+  const toolEntryIndexById = new Map<string, number>();
 
   parts.forEach((part, index) => {
     if (part.type === "reasoning") {
@@ -197,14 +198,26 @@ export function buildTimelineEntries(parts: UIMessagePart[]): TimelineEntry[] {
     }
 
     if (part.type === "tool") {
-      entries.push({
+      const entry: TimelineEntry = {
         id: part.toolCallId || `tool-${index}`,
         type: "tool",
         tool: part,
         activityType: categorizeToolName(part.toolName),
         displayName: getToolDisplayName(part.toolName),
         isLoading: part.output.length === 0,
-      });
+      };
+
+      const toolCallId = part.toolCallId?.trim();
+      if (toolCallId) {
+        const existingIndex = toolEntryIndexById.get(toolCallId);
+        if (existingIndex != null) {
+          entries[existingIndex] = entry;
+          return;
+        }
+        toolEntryIndexById.set(toolCallId, entries.length);
+      }
+
+      entries.push(entry);
     }
   });
 

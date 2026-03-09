@@ -31,7 +31,7 @@ sealed class LocalToolOption {
 
     @Serializable
     @SerialName("device_control")
-    data object DeviceControl : LocalToolOption()
+    data object Notifications : LocalToolOption()
 
     @Serializable
     @SerialName("python_engine")
@@ -386,7 +386,7 @@ class LocalTools(
         )
     }
 
-    fun getDeviceControlTools(assistantId: Uuid, conversationId: Uuid): List<Tool> {
+    fun getNotificationTools(assistantId: Uuid, conversationId: Uuid): List<Tool> {
         return listOf(
             Tool(
                 name = "send_notification",
@@ -454,7 +454,7 @@ class LocalTools(
             ),
             Tool(
                 name = "schedule_message",
-                description = "Schedule a message to be sent by the assistant after a certain delay. Delivery time is approximate and may vary with system battery optimizations.",
+                description = "Schedule a follow-up notification message after a delay. Delivery time is approximate and may vary with Android system optimizations.",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
@@ -476,27 +476,47 @@ class LocalTools(
                         .coerceAtLeast(0L)
                     
                     try {
-                        val currentTime = System.currentTimeMillis()
-                        val targetTime = currentTime + (delayMinutes * 60 * 1000)
-
-                        // Use WorkManager for delayed assistant follow-ups so this tool works
-                        // without the exact alarm special app access.
+                        val createdAt = System.currentTimeMillis()
+                        val scheduledAt = createdAt + (delayMinutes * 60 * 1000)
+                        val uniqueWorkName = me.rerere.rikkahub.service.ScheduledMessageWorkSpec.buildUniqueWorkName(
+                            assistantId = assistantId.toString(),
+                            conversationId = conversationId.toString(),
+                            reason = reason,
+                            scheduledAtMillis = scheduledAt
+                        )
                         val workRequest = androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.ScheduledMessageWorker>()
                             .setInitialDelay(delayMinutes, java.util.concurrent.TimeUnit.MINUTES)
+                            .setBackoffCriteria(
+                                androidx.work.BackoffPolicy.EXPONENTIAL,
+                                30,
+                                java.util.concurrent.TimeUnit.SECONDS
+                            )
+                            .setConstraints(
+                                androidx.work.Constraints.Builder()
+                                    .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
+                                    .build()
+                            )
                             .setInputData(
-                                androidx.work.workDataOf(
-                                    "assistantId" to assistantId.toString(),
-                                    "conversationId" to conversationId.toString(),
-                                    "reason" to reason
+                                me.rerere.rikkahub.service.ScheduledMessageWorkSpec.buildInputData(
+                                    assistantId = assistantId.toString(),
+                                    conversationId = conversationId.toString(),
+                                    reason = reason,
+                                    createdAtMillis = createdAt,
+                                    scheduledAtMillis = scheduledAt
                                 )
                             )
                             .build()
 
-                        androidx.work.WorkManager.getInstance(context).enqueue(workRequest)
+                        androidx.work.WorkManager.getInstance(context).enqueueUniqueWork(
+                            uniqueWorkName,
+                            androidx.work.ExistingWorkPolicy.KEEP,
+                            workRequest
+                        )
                         
                         buildJsonObject { 
                             put("status", "success")
-                            put("scheduled_at", java.time.Instant.ofEpochMilli(targetTime).toString())
+                            put("scheduled_at", java.time.Instant.ofEpochMilli(scheduledAt).toString())
+                            put("work_name", uniqueWorkName)
                         }
                     } catch (e: Exception) {
                         buildJsonObject { put("status", "error: ${e.message}") }
@@ -529,128 +549,6 @@ class LocalTools(
                                 put("time", notification.postTime)
                             }
                         }))
-                    }
-                }
-            ),
-            Tool(
-                name = "open_app",
-                description = "Open an application by package name",
-                parameters = {
-                    InputSchema.Obj(
-                        properties = buildJsonObject {
-                            put("package_name", buildJsonObject {
-                                put("type", "string")
-                                put("description", "Package name of the app to open")
-                            })
-                        },
-                        required = listOf("package_name")
-                    )
-                },
-                execute = {
-                    val packageName = it.jsonObject["package_name"]?.jsonPrimitive?.contentOrNull ?: ""
-                    val pm = context.packageManager
-                    try {
-                        val intent = pm.getLaunchIntentForPackage(packageName)
-                        if (intent != null) {
-                            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                            context.startActivity(intent)
-                            buildJsonObject { put("status", "success") }
-                        } else {
-                            buildJsonObject { put("status", "error: app not found") }
-                        }
-                    } catch (e: Exception) {
-                        buildJsonObject { put("status", "error: ${e.message}") }
-                    }
-                }
-            ),
-            Tool(
-                name = "set_alarm",
-                description = "Set an alarm at a specific time",
-                parameters = {
-                    InputSchema.Obj(
-                        properties = buildJsonObject {
-                            put("hour", buildJsonObject {
-                                put("type", "integer")
-                                put("description", "Hour (0-23)")
-                            })
-                            put("minute", buildJsonObject {
-                                put("type", "integer")
-                                put("description", "Minute (0-59)")
-                            })
-                            put("message", buildJsonObject {
-                                put("type", "string")
-                                put("description", "Alarm label/message")
-                            })
-                        },
-                        required = listOf("hour", "minute")
-                    )
-                },
-                execute = {
-                    val hour = it.jsonObject["hour"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0
-                    val minute = it.jsonObject["minute"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0
-                    val message = it.jsonObject["message"]?.jsonPrimitive?.contentOrNull ?: "Alarm"
-                    
-                    try {
-                        val intent = android.content.Intent(android.provider.AlarmClock.ACTION_SET_ALARM).apply {
-                            putExtra(android.provider.AlarmClock.EXTRA_HOUR, hour)
-                            putExtra(android.provider.AlarmClock.EXTRA_MINUTES, minute)
-                            putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, message)
-                            putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, false)
-                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        context.startActivity(intent)
-                        buildJsonObject { 
-                            put("status", "success")
-                            put("time", "$hour:${minute.toString().padStart(2, '0')}")
-                        }
-                    } catch (e: Exception) {
-                        buildJsonObject { put("status", "error: ${e.message}") }
-                    }
-                }
-            ),
-            Tool(
-                name = "set_reminder",
-                description = "Create a reminder/task",
-                parameters = {
-                    InputSchema.Obj(
-                        properties = buildJsonObject {
-                            put("title", buildJsonObject {
-                                put("type", "string")
-                                put("description", "Reminder title")
-                            })
-                            put("description", buildJsonObject {
-                                put("type", "string")
-                                put("description", "Reminder description")
-                            })
-                            put("time_millis", buildJsonObject {
-                                put("type", "integer")
-                                put("description", "Time in milliseconds since epoch (optional)")
-                            })
-                        },
-                        required = listOf("title")
-                    )
-                },
-                execute = {
-                    val title = it.jsonObject["title"]?.jsonPrimitive?.contentOrNull ?: "Reminder"
-                    val description = it.jsonObject["description"]?.jsonPrimitive?.contentOrNull ?: ""
-                    val timeMillis = it.jsonObject["time_millis"]?.jsonPrimitive?.contentOrNull?.toLongOrNull()
-                    
-                    try {
-                        // Try to use Calendar/Tasks app
-                        val intent = android.content.Intent(android.content.Intent.ACTION_INSERT).apply {
-                            data = android.provider.CalendarContract.Events.CONTENT_URI
-                            putExtra(android.provider.CalendarContract.Events.TITLE, title)
-                            putExtra(android.provider.CalendarContract.Events.DESCRIPTION, description)
-                            if (timeMillis != null) {
-                                putExtra(android.provider.CalendarContract.EXTRA_EVENT_BEGIN_TIME, timeMillis)
-                                putExtra(android.provider.CalendarContract.EXTRA_EVENT_END_TIME, timeMillis + 3600000) // 1 hour duration
-                            }
-                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        context.startActivity(intent)
-                        buildJsonObject { put("status", "success") }
-                    } catch (e: Exception) {
-                        buildJsonObject { put("status", "error: ${e.message}") }
                     }
                 }
             )
@@ -699,8 +597,8 @@ class LocalTools(
         if (options.contains(LocalToolOption.JavascriptEngine)) {
             tools.add(javascriptTool)
         }
-        if (options.contains(LocalToolOption.DeviceControl)) {
-            tools.addAll(getDeviceControlTools(assistantId, conversationId))
+        if (options.contains(LocalToolOption.Notifications)) {
+            tools.addAll(getNotificationTools(assistantId, conversationId))
         }
         // Find Python engine option if present - pass user images for auto-import
         if (options.contains(LocalToolOption.PythonEngine)) {

@@ -1,6 +1,8 @@
 package me.rerere.rikkahub.data.model
 
 import kotlinx.serialization.json.Json
+import me.rerere.rikkahub.data.ai.tools.LocalToolOption
+import me.rerere.rikkahub.utils.JsonInstant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -52,5 +54,35 @@ class AssistantSerializationTest {
         assertEquals(123456789L, decoded.lastNotificationTime)
         assertEquals("Thinking about you.", decoded.lastNotificationContent)
         assertEquals("Use {{history}} and {{memories}}", decoded.spontaneousPrompt)
+    }
+
+    @Test
+    fun legacyDeviceControlLocalToolDeserializesAsNotifications() {
+        val assistant = JsonInstant.decodeFromString<Assistant>(
+            """
+            {
+              "id": "00000000-0000-0000-0000-000000000011",
+              "name": "Legacy Notifications Assistant",
+              "localTools": [{"type": "device_control"}]
+            }
+            """.trimIndent()
+        )
+
+        assertTrue(assistant.localTools.contains(LocalToolOption.Notifications))
+    }
+
+    @Test
+    fun notificationsLocalToolRoundTripsThroughSerialization() {
+        val assistant = Assistant(
+            id = Uuid.parse("00000000-0000-0000-0000-000000000012"),
+            name = "Nova",
+            localTools = listOf(LocalToolOption.Notifications)
+        )
+
+        val encoded = JsonInstant.encodeToString(Assistant.serializer(), assistant)
+        val decoded = JsonInstant.decodeFromString(Assistant.serializer(), encoded)
+
+        assertTrue(encoded.contains("\"device_control\""))
+        assertTrue(decoded.localTools.contains(LocalToolOption.Notifications))
     }
 }

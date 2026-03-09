@@ -2,15 +2,33 @@ import * as React from "react";
 import type { ComponentProps, CSSProperties, HTMLAttributes } from "react";
 
 import { Check, ChevronDown, ChevronUp, Copy, Download } from "lucide-react";
+import { createJavaScriptRegexEngine } from "@shikijs/engine-javascript";
 import { useTranslation } from "react-i18next";
 import {
-  bundledLanguages,
-  createHighlighter,
-  type BundledLanguage,
-  type BundledTheme,
+  createBundledHighlighter,
   type HighlighterGeneric,
   type ThemedToken,
-} from "shiki";
+} from "shiki/core";
+import langBash from "shiki/dist/langs/bash.mjs";
+import langC from "shiki/dist/langs/c.mjs";
+import langCpp from "shiki/dist/langs/cpp.mjs";
+import langCsharp from "shiki/dist/langs/csharp.mjs";
+import langCss from "shiki/dist/langs/css.mjs";
+import langDiff from "shiki/dist/langs/diff.mjs";
+import langHtml from "shiki/dist/langs/html.mjs";
+import langJava from "shiki/dist/langs/java.mjs";
+import langJavascript from "shiki/dist/langs/javascript.mjs";
+import langJson from "shiki/dist/langs/json.mjs";
+import langKotlin from "shiki/dist/langs/kotlin.mjs";
+import langMarkdown from "shiki/dist/langs/markdown.mjs";
+import langPython from "shiki/dist/langs/python.mjs";
+import langSql from "shiki/dist/langs/sql.mjs";
+import langTsx from "shiki/dist/langs/tsx.mjs";
+import langTypescript from "shiki/dist/langs/typescript.mjs";
+import langXml from "shiki/dist/langs/xml.mjs";
+import langYaml from "shiki/dist/langs/yaml.mjs";
+import themeCatppuccinLatte from "shiki/dist/themes/catppuccin-latte.mjs";
+import themeCatppuccinMocha from "shiki/dist/themes/catppuccin-mocha.mjs";
 
 import { getCodePreviewLanguage } from "~/components/workbench/code-preview-language";
 import { Button } from "~/components/ui/button";
@@ -30,6 +48,75 @@ const SHIKI_THEME_LIGHT = "catppuccin-latte";
 const SHIKI_THEME_DARK = "catppuccin-mocha";
 const COLLAPSED_PEEK_MAX_HEIGHT = 108;
 const PREVIEW_MAX_HEIGHT = 200;
+
+const SHIKI_LANGUAGES = {
+  bash: async () => langBash,
+  c: async () => langC,
+  cpp: async () => langCpp,
+  csharp: async () => langCsharp,
+  css: async () => langCss,
+  diff: async () => langDiff,
+  html: async () => langHtml,
+  java: async () => langJava,
+  javascript: async () => langJavascript,
+  json: async () => langJson,
+  kotlin: async () => langKotlin,
+  markdown: async () => langMarkdown,
+  python: async () => langPython,
+  sql: async () => langSql,
+  tsx: async () => langTsx,
+  typescript: async () => langTypescript,
+  xml: async () => langXml,
+  yaml: async () => langYaml,
+} as const;
+
+const SHIKI_THEMES = {
+  [SHIKI_THEME_LIGHT]: async () => themeCatppuccinLatte,
+  [SHIKI_THEME_DARK]: async () => themeCatppuccinMocha,
+} as const;
+
+type ShikiLanguage = keyof typeof SHIKI_LANGUAGES;
+type ShikiTheme = keyof typeof SHIKI_THEMES;
+
+const SHIKI_LANGUAGE_ALIASES: Record<string, ShikiLanguage> = {
+  bash: "bash",
+  c: "c",
+  "c++": "cpp",
+  cpp: "cpp",
+  cs: "csharp",
+  csharp: "csharp",
+  css: "css",
+  diff: "diff",
+  htm: "html",
+  html: "html",
+  java: "java",
+  javascript: "javascript",
+  js: "javascript",
+  json: "json",
+  jsonc: "json",
+  kt: "kotlin",
+  kts: "kotlin",
+  kotlin: "kotlin",
+  markdown: "markdown",
+  md: "markdown",
+  py: "python",
+  python: "python",
+  sh: "bash",
+  shell: "bash",
+  sql: "sql",
+  ts: "typescript",
+  tsx: "tsx",
+  typescript: "typescript",
+  xml: "xml",
+  yaml: "yaml",
+  yml: "yaml",
+};
+
+const createHighlighter = createBundledHighlighter<ShikiLanguage, ShikiTheme>({
+  langs: SHIKI_LANGUAGES,
+  themes: SHIKI_THEMES,
+  engine: () => createJavaScriptRegexEngine(),
+});
 
 interface KeyedToken {
   key: string;
@@ -109,30 +196,26 @@ function toDownloadFileName(language: string): string {
 }
 
 const highlighterCache = new Map<
-  BundledLanguage,
-  Promise<HighlighterGeneric<BundledLanguage, BundledTheme>>
+  ShikiLanguage,
+  Promise<HighlighterGeneric<ShikiLanguage, ShikiTheme>>
 >();
 const resolvedHighlighters = new Map<
-  BundledLanguage,
-  HighlighterGeneric<BundledLanguage, BundledTheme>
+  ShikiLanguage,
+  HighlighterGeneric<ShikiLanguage, ShikiTheme>
 >();
 const tokensCache = new Map<string, TokenizedCode>();
 const subscribers = new Map<string, Set<(result: TokenizedCode) => void>>();
 
-function resolveShikiLanguage(language: string): BundledLanguage | null {
+function resolveShikiLanguage(language: string): ShikiLanguage | null {
   const normalized = language.trim().toLowerCase();
   if (!normalized) {
     return null;
   }
 
-  if (!Object.prototype.hasOwnProperty.call(bundledLanguages, normalized)) {
-    return null;
-  }
-
-  return normalized as BundledLanguage;
+  return SHIKI_LANGUAGE_ALIASES[normalized] ?? null;
 }
 
-function getTokensCacheKey(code: string, language: BundledLanguage): string {
+function getTokensCacheKey(code: string, language: ShikiLanguage): string {
   return `${language}\u0000${code}`;
 }
 
@@ -159,8 +242,8 @@ function writeTokensToCache(cacheKey: string, tokenized: TokenizedCode): void {
 }
 
 function getHighlighter(
-  language: BundledLanguage,
-): Promise<HighlighterGeneric<BundledLanguage, BundledTheme>> {
+  language: ShikiLanguage,
+): Promise<HighlighterGeneric<ShikiLanguage, ShikiTheme>> {
   const cached = highlighterCache.get(language);
   if (cached) {
     return cached;
@@ -215,7 +298,7 @@ function isUnderline(fontStyle: number | undefined): boolean {
 
 export function highlightCode(
   code: string,
-  language: BundledLanguage,
+  language: ShikiLanguage,
   callback?: (result: TokenizedCode) => void,
 ): TokenizedCode | null {
   const tokensCacheKey = getTokensCacheKey(code, language);
@@ -437,13 +520,15 @@ export function CodeBlockContent({
   language,
   state,
   showLineNumbers = false,
+  showFade = false,
   wrapLines = false,
   bodyRef,
 }: {
   code: string;
-  language: BundledLanguage | null;
+  language: ShikiLanguage | null;
   state: CodeBlockState;
   showLineNumbers?: boolean;
+  showFade?: boolean;
   wrapLines?: boolean;
   bodyRef?: React.RefObject<HTMLDivElement | null>;
 }) {
@@ -497,6 +582,7 @@ export function CodeBlockContent({
         shouldWrap ? "overflow-y-auto overflow-x-hidden" : "overflow-auto",
       )}
       data-code-block-state={state}
+      style={{ "--code-block-bg": tokenized.bg } as CSSProperties}
     >
       <CodeBlockBody
         className="dark:!bg-[var(--shiki-dark-bg)] dark:!text-[var(--shiki-dark)]"
@@ -504,6 +590,7 @@ export function CodeBlockContent({
         tokenized={tokenized}
         wrapLines={shouldWrap}
       />
+      {showFade ? <div aria-hidden className="code-block-fade" /> : null}
     </div>
   );
 }
@@ -817,9 +904,9 @@ export function CodeBlock({
             language={shikiLanguage}
             state={state}
             showLineNumbers={showLineNumbers}
+            showFade={state !== "expanded"}
             wrapLines={wrapLines}
           />
-          {state !== "expanded" ? <div aria-hidden className="code-block-fade" /> : null}
         </div>
         <button
           aria-expanded={isExpanded}

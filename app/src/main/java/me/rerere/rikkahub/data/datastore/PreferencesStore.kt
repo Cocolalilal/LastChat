@@ -737,6 +737,7 @@ data class DisplaySetting(
     val newChatHeaderStyle: NewChatHeaderStyle = NewChatHeaderStyle.GREETING, // Header for empty new chats
     val newChatContentStyle: NewChatContentStyle = NewChatContentStyle.ACTIONS, // Content for empty new chats
     val newChatShowAvatar: Boolean = true, // Show avatar in header (true) or top-right corner (false)
+    val chatToolbarAtBottom: Boolean = false,
 )
 
 @Serializable

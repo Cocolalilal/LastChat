@@ -308,6 +308,7 @@ fun MarkdownBlock(
     content: String,
     modifier: Modifier = Modifier,
     style: TextStyle = LocalTextStyle.current,
+    onExpandedStreamingCodeBlockChanged: (() -> Unit)? = null,
     onClickCitation: (String) -> Unit = {}
 ) {
     // Read rpStyleRules from settings
@@ -346,7 +347,10 @@ fun MarkdownBlock(
             ) {
                 astTree.children.fastForEach { child ->
                     MarkdownNode(
-                        node = child, content = preprocessed, onClickCitation = onClickCitation
+                        node = child,
+                        content = preprocessed,
+                        onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
+                        onClickCitation = onClickCitation
                     )
                 }
             }
@@ -393,6 +397,7 @@ private fun MarkdownNode(
     node: ASTNode,
     content: String,
     modifier: Modifier = Modifier,
+    onExpandedStreamingCodeBlockChanged: (() -> Unit)? = null,
     onClickCitation: (String) -> Unit = {},
     listLevel: Int = 0
 ) {
@@ -401,7 +406,11 @@ private fun MarkdownNode(
         MarkdownElementTypes.MARKDOWN_FILE -> {
             node.children.fastForEach { child ->
                 MarkdownNode(
-                    node = child, content = content, modifier = modifier, onClickCitation = onClickCitation
+                    node = child,
+                    content = content,
+                    modifier = modifier,
+                    onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
+                    onClickCitation = onClickCitation
                 )
             }
         }
@@ -409,7 +418,11 @@ private fun MarkdownNode(
         // 段落
         MarkdownElementTypes.PARAGRAPH -> {
             Paragraph(
-                node = node, content = content, modifier = modifier, onClickCitation = onClickCitation
+                node = node,
+                content = content,
+                modifier = modifier,
+                onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
+                onClickCitation = onClickCitation
             )
         }
 
@@ -434,6 +447,7 @@ private fun MarkdownNode(
                             Paragraph(
                                 node = node,
                                 content = content,
+                                onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
                                 onClickCitation = onClickCitation,
                                 modifier = modifier.padding(vertical = 16.dp),
                                 trim = true,
@@ -450,6 +464,7 @@ private fun MarkdownNode(
                 node = node,
                 content = content,
                 modifier = modifier.padding(vertical = 4.dp),
+                onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
                 onClickCitation = onClickCitation,
                 level = listLevel
             )
@@ -460,6 +475,7 @@ private fun MarkdownNode(
                 node = node,
                 content = content,
                 modifier = modifier.padding(vertical = 4.dp),
+                onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
                 onClickCitation = onClickCitation,
                 level = listLevel
             )
@@ -515,7 +531,10 @@ private fun MarkdownNode(
                         .padding(8.dp)) {
                     node.children.fastForEach { child ->
                         MarkdownNode(
-                            node = child, content = content, onClickCitation = onClickCitation
+                            node = child,
+                            content = content,
+                            onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
+                            onClickCitation = onClickCitation
                         )
                     }
                 }
@@ -647,14 +666,15 @@ private fun MarkdownNode(
 
         MarkdownElementTypes.CODE_BLOCK -> {
             val code = node.getTextInNode(content)
-            HighlightCodeBlock(
-                code = code,
-                language = "plaintext",
-                modifier = Modifier
-                    .padding(bottom = 4.dp)
-                    .fillMaxWidth(),
-                completeCodeBlock = true
-            )
+                HighlightCodeBlock(
+                    code = code,
+                    language = "plaintext",
+                    modifier = Modifier
+                        .padding(bottom = 4.dp)
+                        .fillMaxWidth(),
+                    onExpandedStreamingContentChanged = onExpandedStreamingCodeBlockChanged,
+                    completeCodeBlock = true
+                )
         }
 
         // 代码块
@@ -691,6 +711,7 @@ private fun MarkdownNode(
                     modifier = Modifier
                         .padding(bottom = 4.dp)
                         .fillMaxWidth(),
+                    onExpandedStreamingContentChanged = onExpandedStreamingCodeBlockChanged,
                     completeCodeBlock = hasEnd
                 )
             }
@@ -716,7 +737,11 @@ private fun MarkdownNode(
             // 递归处理其他节点的子节点
             node.children.fastForEach { child ->
                 MarkdownNode(
-                    node = child, content = content, modifier = modifier, onClickCitation = onClickCitation
+                    node = child,
+                    content = content,
+                    modifier = modifier,
+                    onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
+                    onClickCitation = onClickCitation
                 )
             }
         }
@@ -728,6 +753,7 @@ private fun UnorderedListNode(
     node: ASTNode,
     content: String,
     modifier: Modifier = Modifier,
+    onExpandedStreamingCodeBlockChanged: (() -> Unit)? = null,
     onClickCitation: (String) -> Unit = {},
     level: Int = 0
 ) {
@@ -746,6 +772,7 @@ private fun UnorderedListNode(
                     node = child,
                     content = content,
                     bulletText = bulletStyle,
+                    onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
                     onClickCitation = onClickCitation,
                     level = level
                 )
@@ -759,6 +786,7 @@ private fun OrderedListNode(
     node: ASTNode,
     content: String,
     modifier: Modifier = Modifier,
+    onExpandedStreamingCodeBlockChanged: (() -> Unit)? = null,
     onClickCitation: (String) -> Unit = {},
     level: Int = 0
 ) {
@@ -772,6 +800,7 @@ private fun OrderedListNode(
                     node = child,
                     content = content,
                     bulletText = numberText,
+                    onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
                     onClickCitation = onClickCitation,
                     level = level
                 )
@@ -783,7 +812,12 @@ private fun OrderedListNode(
 
 @Composable
 private fun ListItemNode(
-    node: ASTNode, content: String, bulletText: String, onClickCitation: (String) -> Unit = {}, level: Int
+    node: ASTNode,
+    content: String,
+    bulletText: String,
+    onExpandedStreamingCodeBlockChanged: (() -> Unit)? = null,
+    onClickCitation: (String) -> Unit = {},
+    level: Int
 ) {
     Column {
         // 分离列表项的直接内容和嵌套列表
@@ -802,6 +836,7 @@ private fun ListItemNode(
                         MarkdownNode(
                             node = contentChild,
                             content = content,
+                            onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
                             onClickCitation = onClickCitation,
                             listLevel = level,
                         )
@@ -841,6 +876,7 @@ private fun Paragraph(
     node: ASTNode,
     content: String,
     trim: Boolean = false,
+    onExpandedStreamingCodeBlockChanged: (() -> Unit)? = null,
     onClickCitation: (String) -> Unit = {},
     modifier: Modifier,
 ) {
@@ -849,7 +885,10 @@ private fun Paragraph(
         FlowRow(modifier = modifier) {
             node.children.fastForEach { child ->
                 MarkdownNode(
-                    node = child, content = content, onClickCitation = onClickCitation
+                    node = child,
+                    content = content,
+                    onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
+                    onClickCitation = onClickCitation
                 )
             }
         }
