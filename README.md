@@ -33,17 +33,12 @@ This project aims to provide a privacy-focused and highly personalized AI chat e
 
 ### Advanced AI Capabilities
 *   **Multi-Provider Support**: Provider presets make it easier to get up and running. There's support for custom providers too!
-*   **RAG Memory**: Features a sophisticated **Vector-Based Long-Term Memory** system. Assistants can "remember" details from past conversations using embeddings.
+*   **RAG Memory**: Features a RAG-based memory system. Assistants can "remember" details from past conversations using embeddings.
 *   **Multi-Modal Inputs**: Interact using Text, Images, Video, and Audio.
 
 ### Tools & Integrations
 *   **Python**: Built-in **Python Engine** (Chaquopy)
 *   **JavaScript**: Built-in **JavaScript Engine** (QuickJS)
-*   **Local Device Control**: The AI can interact with your device if you want:
-    *   Send notifications
-    *   Launch apps
-    *   Read notifications
-    *   Set alarms/reminders
 *   **Web Search**: Integrated web search capabilities to fetch real-time information.
 *   **MCP**: Support for MCP servers.
 
@@ -51,7 +46,6 @@ This project aims to provide a privacy-focused and highly personalized AI chat e
 *   **Multiple Personas**: Create, manage, and switch between unlimited custom assistants.
 *   **Tagging System**: Organize assistants with custom tags.
 *   **Import/Export**: Easily share or backup your assistant configurations.
-*   **Global Settings**: Centralized management for memory consolidation and background behaviors.
 
 ### Modern & Fluid UI
 *   **Material You**: The app was designed with Material You 3 Expressive in mind.
@@ -59,7 +53,6 @@ This project aims to provide a privacy-focused and highly personalized AI chat e
 
 ### Additional Modules
 *   **Image Generation**: Dedicated interface for generating images using supported models.
-*   **Translator**: A specialized mode for text translation.
 *   **Text-to-Speech (TTS)**: Supports system TTS or other providers.
 
 ### Privacy & Data
@@ -76,7 +69,6 @@ This project aims to provide a privacy-focused and highly personalized AI chat e
 
 ## Credits
 *   Original Project: [RikkaHub](https://github.com/re-ovo/RikkaHub)
-*   About page is inspired by [PixelPlayer](https://github.com/theovilardo/PixelPlayer)
 *   Image cropper is an edited version of the image editor found in [LavenderPhotos](https://github.com/kaii-lb/LavenderPhotos)
 *   Made with **AI Agents** based on:
     *   **Claude 4.5 Opus**
