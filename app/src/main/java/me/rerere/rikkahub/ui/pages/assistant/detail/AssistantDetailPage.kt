@@ -32,7 +32,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -57,6 +56,7 @@ import androidx.navigation.compose.rememberNavController
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.ui.components.nav.AppCompactTopBar
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.hooks.heroAnimation
@@ -195,7 +195,7 @@ fun AssistantDetailPage(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
+            AppCompactTopBar(
                 title = {
                     // Show title only on sub-pages, not on home - fade in only, instant exit
                     AnimatedVisibility(

@@ -1,92 +1,136 @@
 # AGENTS.md
 
-## 1. Core Principles & Design Philosophy
+## 1. Product Intent
 
-**App Name:** LastChat (Repo: RikkaHub)
+**App name:** LastChat  
+**Repo name:** RikkaHub
 
-**The "Fidget Toy" Philosophy:**
-LastChat is designed to be a "fidget toy".
--   **Feel:** Interactions must be playful and deeply satisfying.
--   **Tactile Feedback:** High-quality haptics are non-negotiable. Every tap, toggle, and drag must have appropriate feedback.
+LastChat should feel like a polished "fidget toy":
+- Interactions should be playful, tactile, and satisfying.
+- Haptics are part of the product, not decoration.
+- Visual cleanup should come from iterative glow-ups, not broad risky rewrites.
+- Robustness matters as much as polish. Avoid crashes, null mistakes, and brittle UI state.
 
-**Workflow:**
--   **Iterative Polish:** We prefer iterative "glow-ups" of specific components over massive, risky refactors.
--   **Robustness:** The app must be crash-resistant. `NullPointerException` is the enemy.
-
-## 2. Architecture & Codebase Structure
+## 2. Architecture Snapshot
 
 ### Modules
--   `app/`: Main application module. Contains UI (Compose), Core Logic, DI, Data Layers, and Room Database.
--   `ai/`: Abstraction layer for AI providers (OpenAI, Google, Anthropic).
--   `common/`: Shared utilities and extensions.
--   `highlight/`: Syntax highlighting features.
--   `search/`: Search functionality (Exa, Tavily, Zhipu).
--   `tts/`: Text-to-Speech implementation.
+- `app/`: Android app UI, DI, data, Room, settings, and most product logic.
+- `ai/`: AI provider abstraction layer.
+- `common/`: Shared utilities and extensions.
+- `highlight/`: Syntax highlighting.
+- `search/`: Search providers and integration.
+- `tts/`: Text-to-speech implementation.
 
-### Key Technologies
--   **Language:** Kotlin (uses experimental `kotlin.uuid.Uuid`).
--   **UI:** Jetpack Compose (Material You 3 Expressive / Android 16).
--   **Dependency Injection:** Koin.
--   **Database:** Room.
--   **Network:** OkHttp (with SSE support).
--   **Serialization:** Kotlinx Serialization.
+### Core stack
+- Kotlin with experimental `kotlin.uuid.Uuid`
+- Jetpack Compose
+- Material 3 Expressive / Android 16 design direction
+- Koin
+- Room
+- OkHttp / SSE
+- Kotlinx Serialization
 
-## 3. Coding Standards & Best Practices
+## 3. Engineering Rules
 
-### Performance & Concurrency
--   **I/O Operations:** MUST be explicitly executed on `Dispatchers.IO`.
-    -   *Crucial:* `AppScope` defaults to `Dispatchers.Default`. Do not block the main thread or the default dispatcher with I/O.
--   **Compose Optimization:**
-    -   **Lists:** Never pass mutable collections (`SnapshotStateList`) directly to `LazyColumn` items. Use `derivedStateOf` to pass simple, immutable states (e.g., `Boolean`) to prevent unnecessary recompositions.
--   **AI Context:** Prioritize token economy and vector memory efficiency. Use caching.
+### Performance and concurrency
+- Run I/O explicitly on `Dispatchers.IO`.
+- `AppScope` defaults to `Dispatchers.Default`; do not block it with file, database, or network I/O.
+- In Compose lists, do not pass mutable collections like `SnapshotStateList` directly into item content if a smaller immutable derived value will do.
+- Prefer cache reuse over recomputing expensive AI, embedding, or formatting state.
 
-### Robustness & Safety
--   **JSON Handling:**
-    -   **STRICTLY PROHIBITED:** Non-null assertions (`!!`) on JSON elements.
-    -   **REQUIRED:** Use safe type checks (`is JsonArray`, `jsonPrimitiveOrNull`).
--   **State Management:**
-    -   When updating `StateFlow` in services (e.g., `ChatService`), **snapshot** the current value into a local variable before applying complex transformations to avoid race conditions.
+### Robustness and state
+- Never use `!!` on JSON content.
+- Use safe JSON checks such as `is JsonArray`, `jsonPrimitiveOrNull`, and explicit null handling.
+- When updating `StateFlow` from services, snapshot the current value first before doing multi-step transforms.
+- Keep UI state deterministic. Avoid hidden visual branches that make equivalent surfaces behave differently.
 
 ### Serialization
--   Use `me.rerere.rikkahub.utils.JsonInstant` (or `JsonInstantPretty`).
-    -   *Note:* It ignores unknown keys but **does not** apply snake_case strategies. Field mapping must be manual for external APIs.
+- Use `me.rerere.rikkahub.utils.JsonInstant` or `JsonInstantPretty`.
+- These serializers ignore unknown keys but do not apply snake_case automatically. Map external API fields manually.
 
-## 4. UI/UX Guidelines
+## 4. Stabilized UI System
 
-### Design Language
--   **Standard:** Material You 3 Expressive / Android 16.
--   **Shapes:** Adhere strictly to `me.rerere.rikkahub.ui.theme.AppShapes`:
-    -   **Cards:** `AppShapes.CardLarge` (28.dp), `AppShapes.CardMedium` (24.dp).
-    -   **Buttons:** `AppShapes.ButtonPill` (50%).
+This repo now has a stabilized shared UI layer. New UI work should adopt it instead of creating local one-off styling.
 
-### Haptics (Critical)
--   **Library:** Use the custom `PremiumHaptics` wrapper.
-    -   `import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics`
-    -   `import me.rerere.rikkahub.ui.hooks.HapticPattern`
--   **Usage:**
-    -   **Do not** use `LocalHapticFeedback`.
-    -   **Interactive Elements:** Buttons (like `BackButton`) must scale down to `0.85f` on press and trigger `HapticPattern.Pop`.
-    -   **Patterns:**
-        -   Click/Toggle: `HapticPattern.Pop`
-        -   Heavy Action/Drop: `HapticPattern.Thud`
-        -   Success: `HapticPattern.Success`
+### Source-of-truth primitives
+- Shapes live in `me.rerere.rikkahub.ui.theme.AppShapes`.
+- Grouped list geometry lives in `me.rerere.rikkahub.ui.theme.groupedItemShape(...)` and `groupedItemRadii(...)`.
+- AMOLED-aware surface hierarchy lives in `me.rerere.rikkahub.ui.theme.appSurfaceColor(...)` with `AppSurfaceLevel`.
+- Shared text field wrappers live in `me.rerere.rikkahub.ui.components.ui.Input.kt`:
+  - `AppSearchField(...)`
+  - `AppOutlinedField(...)`
+- Shared compact top bar lives in `me.rerere.rikkahub.ui.components.nav.AppCompactTopBar`.
+- Shared hero top bar lives in `me.rerere.rikkahub.ui.components.nav.OneUITopAppBar`.
+- Shared sheet and dialog shells live in `me.rerere.rikkahub.ui.components.ui.AppSheet.kt`:
+  - `AppModalSheet(...)`
+  - `AppAlertDialog(...)`
+- Shared swipe/group container behavior lives in `me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete`.
 
-### Animation
--   **Default Specs:**
-    -   **Standard spring:** `spring(dampingRatio = 0.5f, stiffness = 400f)`
-    -   **Bouncy/Clicky spring:** `spring(dampingRatio = 0.6f, stiffness = 300f)`
--   **Choose by context:** Use the animation that best fits the interaction (snappy state swaps, ambient fades, heavy motion, etc.).
--   **Guideline:** Prefer physically-plausible motion for tactile interactions, but non-spring timing (including `tween`) is acceptable where it improves clarity and UX for that specific UI region.
+### Page hierarchy and navigation
+- Use `OneUITopAppBar` only for primary destinations and management hubs:
+  settings root, assistant list, provider/search/TTS/skills/lorebook roots, and similar top-level pages.
+- Use `AppCompactTopBar` for detail, tool, and utility screens:
+  webview, backup, developer tools, detail pages, editors, and transient management pages.
+- Do not mix hero and compact bar patterns arbitrarily on visually similar screens.
+- Hero pages should use nested-scroll collapsing behavior.
+- Compact pages should use a single top bar plus content padding from `Scaffold`.
+- Keep edge-to-edge behavior consistent by page type. Do not stack multiple unrelated inset/padding strategies.
 
-## 5. Specific Feature Guidelines
+### Containers, grouped rows, and cards
+- Prefer shared grouped row behavior over custom `RoundedCornerShape(...)` math.
+- If a list behaves like a grouped settings stack, use grouped item shapes and shared surface colors.
+- If a row is swipeable/reorderable, route the shape logic through `PhysicsSwipeToDelete` plus `groupedItemShape(...)`.
+- Avoid equivalent combinations like `Card + ListItem`, `Surface + ListItem`, and raw `Row` implementations unless there is a real behavioral difference.
+- Use `AppShapes.CardLarge`, `CardMedium`, `CardSmall`, `ListItem`, `Tag`, and `ButtonPill` instead of ad hoc radii whenever possible.
 
-### RAG & Embeddings
--   **Persistence:** Embeddings are stored in source entities (`MemoryEntity`, `ChatEpisodeEntity`) **AND** `EmbeddingCacheDAO`.
--   **Sync:** Operations (add/update/delete) must synchronize both stores.
--   **Retrieval:** Always prefer existing entity embeddings over re-computation.
+### Fields, sheets, and dialogs
+- Use `AppSearchField(...)` for search bars and searchable pickers.
+- Use `AppOutlinedField(...)` for standard outlined text entry unless a Material field API requirement makes it impossible.
+- Use `AppModalSheet(...)` for bottom sheets by default.
+- Use `AppAlertDialog(...)` for alerts, confirmations, and lightweight info dialogs by default.
+- Only drop to raw `ModalBottomSheet`, `AlertDialog`, or `OutlinedTextField` when the shared wrapper is missing a required capability. If that happens, extend the shared wrapper instead of creating another local pattern.
 
-## 6. Testing & Operations
--   **Unit Tests:** Place in `src/test`. Cover parsing and logic.
--   **Instrumented Tests:** Place in `src/androidTest`. Cover flows.
--   **Commit Guidelines:** Use Conventional Commits (`feat:`, `fix:`, `chore:`).
--   **Language Support:** Do not submit new languages unless explicitly requested.
+### AMOLED and color hierarchy
+- AMOLED dark mode is a product constraint. Keep the black base dark surface.
+- Preserve hierarchy with `appSurfaceColor(...)` instead of page-by-page `surfaceContainerLow` / `High` / `Highest` decisions.
+- Use dynamic color and expressive color hierarchy when they do not fight the AMOLED baseline.
+
+### Haptics and motion
+- Use `rememberPremiumHaptics` and `HapticPattern`.
+- Do not use `LocalHapticFeedback`.
+- Standard interaction defaults:
+  - Round/icon buttons: press scale `0.85f`, `HapticPattern.Pop`
+  - Standard row/card press: softer spring, still tactile
+  - Drag start: `HapticPattern.Pop`
+  - Drop/heavy destructive action: `HapticPattern.Thud`
+  - Success: `HapticPattern.Success`
+- Default animation specs:
+  - Standard spring: `spring(dampingRatio = 0.5f, stiffness = 400f)`
+  - Clicky spring: `spring(dampingRatio = 0.6f, stiffness = 300f)`
+
+### Material 3 Expressive intent
+- Favor clear hierarchy, strong grouping, large-shape confidence, and obvious primary actions.
+- Preserve the app's playful identity, but do it through shared primitives, not custom per-screen styling.
+- When aligning with Material 3 Expressive, standardize the implementation, not just the colors.
+
+## 5. Feature-Specific Rules
+
+### RAG and embeddings
+- Embeddings are persisted in both source entities (`MemoryEntity`, `ChatEpisodeEntity`) and `EmbeddingCacheDAO`.
+- Add/update/delete flows must keep both stores synchronized.
+- Prefer existing persisted embeddings over recomputation.
+
+## 6. Testing and Maintenance
+
+- Unit tests go in `src/test` and should cover helpers, parsing, and non-UI logic.
+- Instrumented / Compose UI tests go in `src/androidTest` and should cover shared components and user flows.
+- When adding a new shared UI primitive, add at least one regression test for it.
+- When standardizing an existing screen, prefer compile-safe migration plus targeted UI tests over visual-only cleanup.
+- Use Conventional Commits: `feat:`, `fix:`, `chore:`.
+- Do not add new language support unless explicitly requested.
+
+## 7. Practical Defaults for Agents
+
+- Before creating a new UI component, search for an existing shared primitive first.
+- Before adding a new radius, surface color rule, or top bar variant, ask whether `AppShapes`, `appSurfaceColor`, `AppCompactTopBar`, `OneUITopAppBar`, `AppModalSheet`, or `AppAlertDialog` already solve it.
+- When you find old UI that looks the same but is implemented differently, standardize it toward the shared layer instead of preserving both versions.

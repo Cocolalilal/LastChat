@@ -25,7 +25,6 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularWavyProgressIndicator
@@ -34,19 +33,15 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.MultiChoiceSegmentedButtonRow
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -77,10 +72,16 @@ import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.WebDavConfig
 import me.rerere.rikkahub.data.sync.WebDavBackupItem
+import me.rerere.rikkahub.ui.components.nav.AppCompactTopBar
 import me.rerere.rikkahub.ui.components.nav.BackButton
+import me.rerere.rikkahub.ui.components.ui.AppAlertDialog
+import me.rerere.rikkahub.ui.components.ui.AppModalSheet
+import me.rerere.rikkahub.ui.components.ui.AppOutlinedField
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.StickyHeader
 import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.theme.AppSurfaceLevel
+import me.rerere.rikkahub.ui.theme.appSurfaceColor
 import me.rerere.rikkahub.utils.fileSizeToString
 import me.rerere.rikkahub.utils.onError
 import me.rerere.rikkahub.utils.onLoading
@@ -100,7 +101,7 @@ fun BackupPage(vm: BackupVM = koinViewModel()) {
     val scope = rememberCoroutineScope()
     Scaffold(
         topBar = {
-            TopAppBar(
+            AppCompactTopBar(
                 title = {
                     Text(stringResource(R.string.backup_page_title))
                 },
@@ -214,7 +215,7 @@ private fun WebDavPage(
         Card(
             shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
             colors = androidx.compose.material3.CardDefaults.cardColors(
-                containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow else androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh
+                containerColor = appSurfaceColor(AppSurfaceLevel.Container)
             )
         ) {
             Column(
@@ -224,19 +225,17 @@ private fun WebDavPage(
                 FormItem(
                     label = { Text(stringResource(R.string.backup_page_webdav_server_address)) }
                 ) {
-                    OutlinedTextField(
+                    AppOutlinedField(
                         modifier = Modifier.fillMaxWidth(),
                         value = webDavConfig.url,
                         onValueChange = { updateWebDavConfig(webDavConfig.copy(url = it.trim())) },
-                       // Placeholder = { Text("https://example.com/dav") },
                         singleLine = true,
-                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField
                     )
                 }
                 FormItem(
                     label = { Text(stringResource(R.string.backup_page_username)) }
                 ) {
-                    OutlinedTextField(
+                    AppOutlinedField(
                         modifier = Modifier.fillMaxWidth(),
                         value = webDavConfig.username,
                         onValueChange = {
@@ -247,14 +246,13 @@ private fun WebDavPage(
                             )
                         },
                         singleLine = true,
-                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField
                     )
                 }
                 FormItem(
                     label = { Text(stringResource(R.string.backup_page_password)) }
                 ) {
                     var passwordVisible by remember { mutableStateOf(false) }
-                    OutlinedTextField(
+                    AppOutlinedField(
                         modifier = Modifier.fillMaxWidth(),
                         value = webDavConfig.password,
                         onValueChange = { updateWebDavConfig(webDavConfig.copy(password = it)) },
@@ -269,18 +267,16 @@ private fun WebDavPage(
                             }
                         },
                         singleLine = true,
-                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField
                     )
                 }
                 FormItem(
                     label = { Text(stringResource(R.string.backup_page_path)) }
                 ) {
-                    OutlinedTextField(
+                    AppOutlinedField(
                         modifier = Modifier.fillMaxWidth(),
                         value = webDavConfig.path,
                         onValueChange = { updateWebDavConfig(webDavConfig.copy(path = it.trim())) },
                         singleLine = true,
-                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField
                     )
                 }
             }
@@ -289,7 +285,7 @@ private fun WebDavPage(
         Card(
             shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
             colors = androidx.compose.material3.CardDefaults.cardColors(
-                containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow else androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh
+                containerColor = appSurfaceColor(AppSurfaceLevel.Container)
             )
         ) {
             FormItem(
@@ -403,27 +399,21 @@ private fun WebDavPage(
     }
 
     if (showBackupFiles) {
-        ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+        AppModalSheet(
             onDismissRequest = {
                 showBackupFiles = false
             },
-            sheetState = rememberModalBottomSheetState(
-                skipPartiallyExpanded = true
-            ),
+            title = stringResource(R.string.backup_page_webdav_backup_files),
+            showCloseButton = true,
+            maxHeightFraction = 0.8f,
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .fillMaxHeight(0.8f)
-                    .padding(16.dp),
+                    .fillMaxHeight(),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(
-                    stringResource(R.string.backup_page_webdav_backup_files),
-                    modifier = Modifier.fillMaxWidth()
-                )
                 val backupItems by vm.webDavBackupItems.collectAsStateWithLifecycle()
                 backupItems.onSuccess {
                     LazyColumn(
@@ -518,7 +508,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
 
     // Permission explanation dialog
     if (showPermissionDialog) {
-        AlertDialog(
+        AppAlertDialog(
             onDismissRequest = {
                 // User dismissed - proceed without permissions
                 showPermissionDialog = false
@@ -1012,7 +1002,7 @@ private fun ImportExportPage(
 
     // Permission explanation dialog
     if (showPermissionDialog) {
-        AlertDialog(
+        AppAlertDialog(
             onDismissRequest = {
                 // User dismissed - proceed without permissions
                 showPermissionDialog = false
@@ -1089,7 +1079,7 @@ private fun BackupDialog(
     result: me.rerere.rikkahub.data.sync.WebdavSync.RestoreResult?,
     onConfirm: () -> Unit
 ) {
-    AlertDialog(
+    AppAlertDialog(
         onDismissRequest = {}, // Disallow dismissing by clicking outside
         title = { Text(stringResource(R.string.backup_page_restart_app)) },
         text = { 

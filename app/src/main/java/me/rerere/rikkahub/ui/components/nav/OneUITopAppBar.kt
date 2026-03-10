@@ -30,6 +30,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.ui.theme.AppSurfaceLevel
+import me.rerere.rikkahub.ui.theme.appSurfaceColor
 
 /**
  * Samsung One UI-style large collapsible app bar with centered title.
@@ -106,7 +108,7 @@ fun OneUITopAppBar(
         modifier = modifier
             .fillMaxWidth()
             .height(currentHeight)
-            .background(MaterialTheme.colorScheme.surface)
+            .background(appSurfaceColor(AppSurfaceLevel.Flat))
     ) {
         // Status bar spacer
         Spacer(modifier = Modifier.height(statusBarHeight))
@@ -116,7 +118,7 @@ fun OneUITopAppBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(navBarHeight)
-                .padding(horizontal = 4.dp),
+                .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -131,7 +133,8 @@ fun OneUITopAppBar(
                         style = MaterialTheme.typography.titleLarge.copy(
                             fontWeight = FontWeight.Bold
                         ),
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = collapsedTitleAlpha)
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = collapsedTitleAlpha),
+                        maxLines = 1,
                     )
                 }
             }
@@ -156,7 +159,7 @@ fun OneUITopAppBar(
             ) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.displaySmall.copy(
+                    style = MaterialTheme.typography.headlineLarge.copy(
                         fontWeight = FontWeight.Bold,
                         fontSize = 32.sp,
                         lineHeight = 38.sp

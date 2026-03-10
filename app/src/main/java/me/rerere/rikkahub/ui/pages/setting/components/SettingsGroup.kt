@@ -1,7 +1,5 @@
 package me.rerere.rikkahub.ui.pages.setting.components
 
-import me.rerere.rikkahub.ui.theme.LocalDarkMode
-
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -14,7 +12,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material3.Icon
@@ -32,6 +29,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.AppSurfaceLevel
+import me.rerere.rikkahub.ui.theme.appSurfaceColor
 
 @Composable
 fun SettingsGroup(
@@ -52,7 +52,7 @@ fun SettingsGroup(
         Column(
             modifier = Modifier
                 .padding(horizontal = 16.dp)
-                .clip(RoundedCornerShape(24.dp)),
+                .clip(AppShapes.CardMedium),
             verticalArrangement = Arrangement.spacedBy(4.dp),
             content = content
         )
@@ -85,8 +85,8 @@ fun SettingGroupItem(
             }
         },
         enabled = onClick != null,
-        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
-        shape = RoundedCornerShape(10.dp),
+        color = appSurfaceColor(AppSurfaceLevel.ContainerHigh),
+        shape = AppShapes.ListItem,
         interactionSource = interactionSource,
         modifier = Modifier
             .fillMaxWidth()
@@ -150,12 +150,8 @@ fun SettingGroupInputItem(
     content: @Composable ColumnScope.() -> Unit
 ) {
     Surface(
-        color = if (LocalDarkMode.current) {
-            MaterialTheme.colorScheme.surfaceContainerLow
-        } else {
-            MaterialTheme.colorScheme.surfaceContainerHighest
-        },
-        shape = RoundedCornerShape(10.dp),
+        color = appSurfaceColor(AppSurfaceLevel.ContainerHigh),
+        shape = AppShapes.ListItem,
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(

@@ -1,7 +1,5 @@
 package me.rerere.rikkahub.ui.components.ui
 
-import me.rerere.rikkahub.ui.theme.LocalDarkMode
-
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -56,6 +54,9 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.theme.AppSurfaceLevel
+import me.rerere.rikkahub.ui.theme.appSurfaceColor
+import me.rerere.rikkahub.ui.theme.groupedItemRadii
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 
@@ -161,14 +162,13 @@ fun PhysicsSwipeToDelete(
     val itemRadiusPx = with(density) { itemCornerRadius.toPx() }
     
     // Animate base radii when position changes
-    val targetTopRadius = when (position) {
-        ItemPosition.ONLY, ItemPosition.FIRST -> groupRadiusPx
-        ItemPosition.MIDDLE, ItemPosition.LAST -> itemRadiusPx
-    }
-    val targetBottomRadius = when (position) {
-        ItemPosition.ONLY, ItemPosition.LAST -> groupRadiusPx
-        ItemPosition.MIDDLE, ItemPosition.FIRST -> itemRadiusPx
-    }
+    val baseRadii = groupedItemRadii(
+        position = position,
+        groupRadius = groupCornerRadius,
+        itemRadius = itemCornerRadius,
+    )
+    val targetTopRadius = with(density) { baseRadii.topStart.toPx() }
+    val targetBottomRadius = with(density) { baseRadii.bottomStart.toPx() }
     
     val animatedTopRadius by androidx.compose.animation.core.animateFloatAsState(
         targetValue = targetTopRadius,
@@ -203,8 +203,7 @@ fun PhysicsSwipeToDelete(
     }
     
     // Background color
-    val backgroundColor = MaterialTheme.colorScheme.surfaceContainerLowest
-    val fadeColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+    val fadeColor = appSurfaceColor(AppSurfaceLevel.Container)
     
     Box(
         modifier = modifier
@@ -234,7 +233,7 @@ fun PhysicsSwipeToDelete(
                             isUnlocked = false
                         }
                     },
-                    containerColor = MaterialTheme.colorScheme.surface,
+                    containerColor = appSurfaceColor(AppSurfaceLevel.Flat),
                     alpha = (offsetX.value.absoluteValue / unlockThresholdPx).coerceIn(0f, 1f)
                 ) {
                     Icon(

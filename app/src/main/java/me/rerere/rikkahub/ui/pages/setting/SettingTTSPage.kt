@@ -27,14 +27,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.surfaceColorAtElevation
@@ -69,6 +66,8 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.DEFAULT_SYSTEM_TTS_ID
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
+import me.rerere.rikkahub.ui.components.ui.AppModalSheet
+import me.rerere.rikkahub.ui.components.ui.AppSearchField
 import me.rerere.rikkahub.ui.components.ui.AutoProviderIcon
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
@@ -96,6 +95,7 @@ import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.theme.AppSurfaceLevel
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.layout.wrapContentWidth
@@ -104,10 +104,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.material3.Surface
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Warning
 import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.appSurfaceColor
+import me.rerere.rikkahub.ui.theme.groupedItemShape
 import me.rerere.rikkahub.ui.components.ui.ToastType
 
 @Composable
@@ -348,13 +348,15 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
         val tts = LocalTTSState.current
         val scope = rememberCoroutineScope()
 
-        ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+        AppModalSheet(
             onDismissRequest = {
                 editingProvider = null
             },
             sheetState = bottomSheetState,
             sheetGesturesEnabled = false,
+            title = stringResource(R.string.setting_tts_page_edit_provider),
+            showCloseButton = true,
+            maxHeightFraction = 0.8f,
             dragHandle = {
                 IconButton(
                     onClick = {
@@ -371,8 +373,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp)
-                    .fillMaxHeight(0.8f),
+                    .fillMaxHeight(),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Row(
@@ -380,10 +381,6 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = stringResource(R.string.setting_tts_page_edit_provider),
-                        style = MaterialTheme.typography.headlineSmall
-                    )
                     IconButton(
                         onClick = {
                             scope.launch {
@@ -470,11 +467,12 @@ private fun TtsTextFilterSettingsDialog(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     
-    ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+    AppModalSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         sheetGesturesEnabled = false,
+        title = "Text Filter Rules",
+        maxHeightFraction = 0.85f,
         dragHandle = {
             IconButton(
                 onClick = {
@@ -490,8 +488,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+                .fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Header
@@ -512,7 +509,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
             // Description
             androidx.compose.material3.Card(
                 colors = androidx.compose.material3.CardDefaults.cardColors(
-                    containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+                    containerColor = appSurfaceColor(AppSurfaceLevel.ContainerHigh)
                 ),
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
             ) {
@@ -806,13 +803,15 @@ private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
         
         val scope = rememberCoroutineScope()
         
-        ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+        AppModalSheet(
             onDismissRequest = {
                 showBottomSheet = false
             },
             sheetState = bottomSheetState,
             sheetGesturesEnabled = false,
+            title = stringResource(R.string.setting_tts_page_add_provider),
+            showCloseButton = true,
+            maxHeightFraction = 0.85f,
             dragHandle = {
                 IconButton(
                     onClick = {
@@ -829,36 +828,15 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .fillMaxHeight(0.85f)
+                    .fillMaxHeight()
                     .clipToBounds()
             ) {
-                // Title
-                Text(
-                    text = stringResource(R.string.setting_tts_page_add_provider),
-                    style = MaterialTheme.typography.headlineSmall,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 16.dp)
-                )
-                
                 // Search bar
-                OutlinedTextField(
+                AppSearchField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
                     placeholder = { Text(stringResource(R.string.setting_provider_page_search_placeholder)) },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = AppShapes.SearchField,
-                    singleLine = true,
-                    leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                    trailingIcon = if (searchQuery.isNotEmpty()) {
-                        {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Rounded.Close, contentDescription = "Clear")
-                            }
-                        }
-                    } else null
                 )
                 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -874,13 +852,6 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                             index == 0 -> ItemPosition.FIRST
                             index == filteredPresets.lastIndex -> ItemPosition.LAST
                             else -> ItemPosition.MIDDLE
-                        }
-                        
-                        val shape = when (position) {
-                            ItemPosition.FIRST -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
-                            ItemPosition.LAST -> RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
-                            ItemPosition.MIDDLE -> RoundedCornerShape(10.dp)
-                            ItemPosition.ONLY -> RoundedCornerShape(24.dp)
                         }
                         
                         androidx.compose.material3.Surface(
@@ -899,8 +870,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 showBottomSheet = false
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            shape = shape,
-                            color = if (LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                            shape = groupedItemShape(position),
+                            color = appSurfaceColor(AppSurfaceLevel.Container)
                         ) {
                             Row(
                                 modifier = Modifier

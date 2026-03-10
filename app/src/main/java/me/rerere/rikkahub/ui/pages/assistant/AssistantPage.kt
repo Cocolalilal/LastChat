@@ -22,23 +22,17 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -84,6 +78,9 @@ import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.FormItem
+import me.rerere.rikkahub.ui.components.ui.AppModalSheet
+import me.rerere.rikkahub.ui.components.ui.AppOutlinedField
+import me.rerere.rikkahub.ui.components.ui.AppSearchField
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.components.ui.Tooltip
@@ -109,6 +106,9 @@ import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.heroAnimation
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.AppSurfaceLevel
+import me.rerere.rikkahub.ui.theme.appSurfaceColor
 import me.rerere.rikkahub.utils.AssistantExportImport
 import kotlinx.coroutines.launch
 import androidx.compose.material.icons.rounded.Upload
@@ -218,23 +218,13 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                 .consumeWindowInsets(it),
         ) {
             // Search bar
-            OutlinedTextField(
+            AppSearchField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
                 placeholder = { Text(stringResource(R.string.assistant_page_search_placeholder)) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 12.dp),
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.SearchField,
-                singleLine = true,
-                leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                trailingIcon = if (searchQuery.isNotEmpty()) {
-                    {
-                        IconButton(onClick = { searchQuery = "" }) {
-                            Icon(Icons.Rounded.Close, contentDescription = "Clear")
-                        }
-                    }
-                } else null
             )
             
             // Tag filter row - only show when there are tags
@@ -431,19 +421,18 @@ fun AssistantCreationSheet(
     onImportClick: () -> Unit,
 ) {
     state.EditStateContent { assistant, update ->
-        ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+        AppModalSheet(
             onDismissRequest = {
                 state.dismiss()
             },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            title = stringResource(R.string.assistant_page_add),
+            showCloseButton = true,
+            maxHeightFraction = 0.7f,
             dragHandle = {},
-            sheetGesturesEnabled = false
+            sheetGesturesEnabled = false,
         ) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 32.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Column(
@@ -456,7 +445,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                             Text(stringResource(R.string.assistant_page_name))
                         },
                     ) {
-                        OutlinedTextField(
+                        AppOutlinedField(
                             value = assistant.name, onValueChange = {
                                 update(
                                     assistant.copy(
@@ -465,7 +454,6 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 )
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField
                         )
                     }
 
@@ -513,11 +501,12 @@ private fun AssistantItemContent(
     onCopy: () -> Unit,
     dragHandle: @Composable () -> Unit
 ) {
+    val rowContainerColor = appSurfaceColor(AppSurfaceLevel.Container)
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(0.dp))
-            .background(if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh)
+            .background(rowContainerColor)
             .clickable {
                 haptics.perform(HapticPattern.Pop)
                 onClick()
@@ -568,7 +557,7 @@ private fun AssistantItemContent(
                             assistant.tags.fastForEach { tagId ->
                                 val tag = settings.assistantTags.find { it.id == tagId } ?: return@fastForEach
                                 Surface(
-                                    shape = RoundedCornerShape(50),
+                                    shape = AppShapes.Tag,
                                     color = MaterialTheme.colorScheme.tertiaryContainer,
                                 ) {
                                     Text(
@@ -589,7 +578,7 @@ private fun AssistantItemContent(
                                 brush = Brush.horizontalGradient(
                                     colors = listOf(
                                         Color.Transparent,
-                                        if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                                        rowContainerColor
                                     )
                                 )
                             )
