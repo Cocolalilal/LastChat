@@ -157,7 +157,7 @@ export function clearWebAuthToken(): void {
 export function onWebAuthRequired(
   listener: (detail: WebAuthRequiredEventDetail) => void,
 ): () => void {
-  if (!isBrowser()) return () => {};
+  if (!isBrowser()) return () => { };
 
   const handler = (event: Event) => {
     const customEvent = event as CustomEvent<WebAuthRequiredEventDetail>;
@@ -185,7 +185,7 @@ export function isWebAuthLocked(): boolean {
 export function onWebAuthStateChange(
   listener: (detail: WebAuthStateChangeDetail) => void,
 ): () => void {
-  if (!isBrowser()) return () => {};
+  if (!isBrowser()) return () => { };
 
   const handler = (event: Event) => {
     const customEvent = event as CustomEvent<WebAuthStateChangeDetail>;

@@ -572,7 +572,7 @@ internal fun ActivityTimelinePanel(
     }
 
     Surface(
-        shape = AppShapes.CardLarge,
+        shape = AppShapes.InputField,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = modifier
             .fillMaxWidth()

@@ -77,10 +77,10 @@ function TimelineDetail({
         transition: reducedMotion
           ? { duration: 0.01 }
           : {
-              opacity: { duration: CHAT_MOTION_DURATION.fast, ease: "easeOut" },
-              height: getChatLayoutTransition(false),
-              y: getChatLayoutTransition(false),
-            },
+            opacity: { duration: CHAT_MOTION_DURATION.fast, ease: "easeOut" },
+            height: getChatLayoutTransition(false),
+            y: getChatLayoutTransition(false),
+          },
       }}
       exit={reducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, y: -4, transition: { duration: 0.12 } }}
       className="overflow-hidden border-t border-border bg-secondary/35"
@@ -140,17 +140,16 @@ export function ActivityTimeline({
             transition: reducedMotion
               ? { duration: 0.01 }
               : {
-                  opacity: getChatFadeTransition(false),
-                  height: getChatLayoutTransition(false),
-                  y: getChatLayoutTransition(false),
-                },
+                opacity: getChatFadeTransition(false),
+                height: getChatLayoutTransition(false),
+                y: getChatLayoutTransition(false),
+              },
           }}
           exit={reducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, y: -6, transition: { duration: 0.14 } }}
           aria-hidden={!open}
           className="overflow-hidden"
         >
           <motion.div
-            layout
             className="space-y-3 rounded-[var(--radius-card)] border border-border bg-card px-4 py-4"
           >
             <div>
@@ -185,7 +184,6 @@ export function ActivityTimeline({
                 return (
                   <motion.div
                     key={entry.id}
-                    layout
                     initial={initialAnimation}
                     animate={{
                       opacity: 1,
@@ -194,10 +192,10 @@ export function ActivityTimeline({
                       transition: reducedMotion
                         ? { duration: 0.01 }
                         : {
-                            opacity: { duration: CHAT_MOTION_DURATION.fast, delay: index * CHAT_MOTION_DURATION.stagger },
-                            y: { ...getChatLayoutTransition(false), delay: index * CHAT_MOTION_DURATION.stagger },
-                            scale: { ...getChatLayoutTransition(false), delay: index * CHAT_MOTION_DURATION.stagger },
-                          },
+                          opacity: { duration: CHAT_MOTION_DURATION.fast, delay: index * CHAT_MOTION_DURATION.stagger },
+                          y: { ...getChatLayoutTransition(false), delay: index * CHAT_MOTION_DURATION.stagger },
+                          scale: { ...getChatLayoutTransition(false), delay: index * CHAT_MOTION_DURATION.stagger },
+                        },
                     }}
                     className="overflow-hidden rounded-[var(--radius-card-inner)] border border-border/80 bg-background"
                   >
@@ -245,7 +243,6 @@ export function ActivityTimeline({
               return (
                 <motion.div
                   key={entry.id}
-                  layout
                   initial={initialAnimation}
                   animate={{
                     opacity: 1,
@@ -254,10 +251,10 @@ export function ActivityTimeline({
                     transition: reducedMotion
                       ? { duration: 0.01 }
                       : {
-                          opacity: { duration: CHAT_MOTION_DURATION.fast, delay: index * CHAT_MOTION_DURATION.stagger },
-                          y: { ...getChatLayoutTransition(false), delay: index * CHAT_MOTION_DURATION.stagger },
-                          scale: { ...getChatLayoutTransition(false), delay: index * CHAT_MOTION_DURATION.stagger },
-                        },
+                        opacity: { duration: CHAT_MOTION_DURATION.fast, delay: index * CHAT_MOTION_DURATION.stagger },
+                        y: { ...getChatLayoutTransition(false), delay: index * CHAT_MOTION_DURATION.stagger },
+                        scale: { ...getChatLayoutTransition(false), delay: index * CHAT_MOTION_DURATION.stagger },
+                      },
                   }}
                   className="overflow-hidden rounded-[var(--radius-card-inner)] border border-border/80 bg-background"
                 >

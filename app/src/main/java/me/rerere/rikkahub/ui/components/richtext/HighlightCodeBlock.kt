@@ -300,7 +300,7 @@ fun HighlightCodeBlock(
 
     Surface(
         modifier = modifier,
-        shape = AppShapes.CardMedium,
+        shape = AppShapes.InputField,
         color = shellColor,
         contentColor = colorScheme.onSurface,
         border = BorderStroke(1.dp, outlineColor),

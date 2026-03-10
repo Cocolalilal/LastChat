@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Slider
@@ -110,109 +109,114 @@ fun AssistantAdvancedSubPage(
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically(),
             ) {
-                val frequencyHours = frequencySlider.roundToInt().coerceIn(1, 24)
                 val scheduleStartHour = scheduleSelection.startHour
-
-                Column(
-                    modifier = Modifier.padding(top = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                SettingGroupInputItem(
+                    title = "Delivery schedule",
+                    subtitle = "Choose when spontaneous messages are allowed and how often they can happen."
                 ) {
-                    SettingGroupInputItem(
-                        title = "Delivery schedule",
-                        subtitle = "Choose when spontaneous messages are allowed and how often they can happen."
+                    Text(
+                        text = buildSpontaneousWindowSummary(scheduleSelection),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Tag {
+                            Text("Starts ${formatHourLabel(scheduleStartHour)}")
+                        }
+                        Tag(type = TagType.SUCCESS) {
+                            Text(buildSpontaneousScheduleStatusLabel(scheduleSelection))
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Tag(type = TagType.INFO) {
+                            Text("Ends ${formatScheduleEndLabel(scheduleSelection)}")
+                        }
+                    }
+                    RangeSlider(
+                        value = scheduleSelection.toSliderValues(),
+                        onValueChange = { newRange ->
+                            scheduleSelection = normalizeSpontaneousScheduleSelection(
+                                rawStart = newRange.start.roundToInt(),
+                                rawEnd = newRange.endInclusive.roundToInt(),
+                            )
+                        },
+                        onValueChangeFinished = {
+                            val (newStartHour, newEndHour) =
+                                spontaneousScheduleSelectionToHours(scheduleSelection)
+                            if (
+                                newStartHour != assistant.notificationStartHour ||
+                                newEndHour != assistant.notificationEndHour
+                            ) {
+                                haptics.perform(HapticPattern.Selection)
+                                onUpdate(
+                                    assistant.copy(
+                                        notificationStartHour = newStartHour,
+                                        notificationEndHour = newEndHour,
+                                    )
+                                )
+                            }
+                        },
+                        valueRange = SPONTANEOUS_SCHEDULE_SLIDER_MIN.toFloat()..
+                            SPONTANEOUS_SCHEDULE_SLIDER_MAX.toFloat(),
+                        steps = SPONTANEOUS_SCHEDULE_SLIDER_STEPS,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Text(
-                            text = buildSpontaneousWindowSummary(scheduleSelection),
-                            style = MaterialTheme.typography.bodyMedium,
+                            text = "12 AM",
+                            style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Tag {
-                                Text("Starts ${formatHourLabel(scheduleStartHour)}")
-                            }
-                            Tag(type = TagType.SUCCESS) {
-                                Text(buildSpontaneousScheduleStatusLabel(scheduleSelection))
-                            }
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Tag(type = TagType.INFO) {
-                                Text("Ends ${formatScheduleEndLabel(scheduleSelection)}")
-                            }
-                        }
-                        RangeSlider(
-                            value = scheduleSelection.toSliderValues(),
-                            onValueChange = { newRange ->
-                                scheduleSelection = normalizeSpontaneousScheduleSelection(
-                                    rawStart = newRange.start.roundToInt(),
-                                    rawEnd = newRange.endInclusive.roundToInt(),
-                                )
-                            },
-                            onValueChangeFinished = {
-                                val (newStartHour, newEndHour) =
-                                    spontaneousScheduleSelectionToHours(scheduleSelection)
-                                if (
-                                    newStartHour != assistant.notificationStartHour ||
-                                    newEndHour != assistant.notificationEndHour
-                                ) {
-                                    haptics.perform(HapticPattern.Selection)
-                                    onUpdate(
-                                        assistant.copy(
-                                            notificationStartHour = newStartHour,
-                                            notificationEndHour = newEndHour,
-                                        )
-                                    )
-                                }
-                            },
-                            valueRange = SPONTANEOUS_SCHEDULE_SLIDER_MIN.toFloat()..
-                                SPONTANEOUS_SCHEDULE_SLIDER_MAX.toFloat(),
-                            steps = SPONTANEOUS_SCHEDULE_SLIDER_STEPS,
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            Text(
-                                text = "12 AM",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Text(
-                                text = "11 PM next day",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
                         Text(
-                            text = "Drag the right handle past midnight for overnight windows. A full 24-hour span means all day.",
-                            style = MaterialTheme.typography.bodySmall,
+                            text = "11 PM next day",
+                            style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        HorizontalDivider()
-                        SpontaneousSliderSection(
-                            title = "Minimum gap",
-                            valueLabel = formatFrequencyLabel(frequencyHours),
-                            description = "Minimum cooldown between spontaneous messages from this character.",
-                            sliderValue = frequencySlider,
-                            onSliderValueChange = { frequencySlider = it.roundToInt().toFloat() },
-                            onSliderValueFinished = {
-                                val newFrequency = frequencySlider.roundToInt().coerceIn(1, 24)
-                                if (newFrequency != assistant.notificationFrequencyHours) {
-                                    haptics.perform(HapticPattern.Selection)
-                                    onUpdate(assistant.copy(notificationFrequencyHours = newFrequency))
-                                }
-                            },
-                            valueRange = 1f..24f,
-                            steps = 22,
-                            startLabel = "1h",
-                            endLabel = "24h",
                         )
                     }
+                    Text(
+                        text = "Drag the right handle past midnight for overnight windows. A full 24-hour span means all day.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            AnimatedVisibility(
+                visible = assistant.enableSpontaneous,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically(),
+            ) {
+                val frequencyHours = frequencySlider.roundToInt().coerceIn(1, 24)
+                SettingGroupInputItem(
+                    title = "Minimum gap",
+                    subtitle = "Minimum cooldown between spontaneous messages from this character.",
+                ) {
+                    SpontaneousSliderSection(
+                        title = "Minimum gap",
+                        valueLabel = formatFrequencyLabel(frequencyHours),
+                        description = "Minimum cooldown between spontaneous messages from this character.",
+                        sliderValue = frequencySlider,
+                        onSliderValueChange = { frequencySlider = it.roundToInt().toFloat() },
+                        onSliderValueFinished = {
+                            val newFrequency = frequencySlider.roundToInt().coerceIn(1, 24)
+                            if (newFrequency != assistant.notificationFrequencyHours) {
+                                haptics.perform(HapticPattern.Selection)
+                                onUpdate(assistant.copy(notificationFrequencyHours = newFrequency))
+                            }
+                        },
+                        valueRange = 1f..24f,
+                        steps = 22,
+                        startLabel = "1h",
+                        endLabel = "24h",
+                    )
                 }
             }
         }

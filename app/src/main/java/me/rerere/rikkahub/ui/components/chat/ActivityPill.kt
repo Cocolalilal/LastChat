@@ -469,7 +469,7 @@ private fun AnimatedSinglePill(
 @Composable
 private fun ReasoningContent(startTimeMs: Long, isLive: Boolean) {
     var elapsedMs by remember { mutableLongStateOf(0L) }
-    
+
     if (isLive) {
         LaunchedEffect(startTimeMs) {
             while (isActive) {
@@ -478,17 +478,17 @@ private fun ReasoningContent(startTimeMs: Long, isLive: Boolean) {
             }
         }
     }
-    
+
     Icon(
         imageVector = Icons.Rounded.Lightbulb,
         contentDescription = null,
         modifier = Modifier.size(18.dp),
-        tint = MaterialTheme.colorScheme.secondary
+        tint = MaterialTheme.colorScheme.onSurfaceVariant
     )
     Text(
         text = "Reasoning",
         style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.secondary,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = if (isLive) Modifier.shimmer(true) else Modifier
     )
     Text(
@@ -505,17 +505,17 @@ private fun ReasoningContent(startTimeMs: Long, isLive: Boolean) {
 @Composable
 private fun ToolUseContent(toolName: String, displayName: String, isLive: Boolean) {
     val type = categorizeToolName(toolName)
-    
+
     Icon(
         imageVector = type.getIcon(),
         contentDescription = null,
         modifier = Modifier.size(18.dp),
-        tint = MaterialTheme.colorScheme.secondary
+        tint = MaterialTheme.colorScheme.onSurfaceVariant
     )
     Text(
         text = displayName,
         style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.secondary,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = if (isLive) Modifier.shimmer(true) else Modifier
     )
 }
@@ -531,7 +531,7 @@ private fun ExpandedActivityContent(item: ActivityItem) {
         modifier = Modifier.size(18.dp),
         tint = MaterialTheme.colorScheme.onSurfaceVariant
     )
-    
+
     val text = when (item.type) {
         ActivityType.REASONING -> {
             if (item.durationMs != null) {
@@ -546,7 +546,7 @@ private fun ExpandedActivityContent(item: ActivityItem) {
         ActivityType.MCP -> "MCP"
         ActivityType.TOOL_OTHER -> "Used tool"
     }
-    
+
     Text(
         text = text,
         style = MaterialTheme.typography.labelMedium,
@@ -658,12 +658,12 @@ private fun ReasoningPill(
             imageVector = Icons.Rounded.Lightbulb,
             contentDescription = null,
             modifier = Modifier.size(18.dp),
-            tint = MaterialTheme.colorScheme.secondary
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
             text = "Reasoning",
             style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.secondary,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = if (isLive) Modifier.shimmer(true) else Modifier
         )
         Text(
@@ -700,12 +700,12 @@ private fun ToolUsePill(
             imageVector = type.getIcon(),
             contentDescription = null,
             modifier = Modifier.size(18.dp),
-            tint = MaterialTheme.colorScheme.secondary
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
             text = displayName,
             style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.secondary,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = if (isLive) Modifier.shimmer(true) else Modifier
         )
     }

@@ -170,6 +170,7 @@ fun MinimalChatInput(
     onRefreshContext: suspend () -> ChatService.ContextRefreshResult = { ChatService.ContextRefreshResult(false, errorMessage = "Not configured") },
     onDeleteFile: (Uri) -> Unit = {},
     bottomAccessory: @Composable (() -> Unit)? = null,
+    bottomPadding: androidx.compose.ui.unit.Dp = 24.dp,
 ) {
     val context = LocalContext.current
     val toaster = LocalToaster.current
@@ -258,7 +259,7 @@ fun MinimalChatInput(
             modifier = Modifier
                 .imePadding()
                 .navigationBarsPadding()
-                .padding(bottom = 24.dp, start = 16.dp, end = 16.dp),
+                .padding(bottom = bottomPadding, start = 16.dp, end = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // Media preview row

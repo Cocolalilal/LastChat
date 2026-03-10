@@ -422,7 +422,21 @@ private fun ChatPageContent(
                         )
                     }
                 } else {
-                    {}
+                    {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .statusBarsPadding()
+                                .background(
+                                    brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                                        colors = listOf(
+                                            MaterialTheme.colorScheme.background.copy(alpha = 0.95f),
+                                            Color.Transparent
+                                        )
+                                    )
+                                )
+                        )
+                    }
                 },
                 // Input is rendered manually at the bottom of the screen
                 containerColor = Color.Transparent,
@@ -877,6 +891,7 @@ private fun ChatPageContent(
                             )
                         }
                     } else null,
+                    bottomPadding = if (toolbarPlacement == ChatToolbarPlacement.Bottom) 12.dp else 24.dp,
                 )
                 }
             }
@@ -954,7 +969,10 @@ private fun ChatToolbar(
                     }
                 )
                 .fillMaxWidth()
-                .padding(vertical = 8.dp),
+                .padding(
+                    vertical = if (placement == ChatToolbarPlacement.Top) 8.dp else 0.dp,
+                    horizontal = if (placement == ChatToolbarPlacement.Top) 16.dp else 0.dp
+                ),
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (!bigScreen) {

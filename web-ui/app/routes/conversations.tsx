@@ -43,7 +43,6 @@ import { CHAT_COLUMN_CLASSNAME, CHAT_PAGE_PADDING_CLASSNAME } from "~/lib/chat-l
 import { cn } from "~/lib/utils";
 import api, { sse } from "~/services/api";
 import { useChatInputStore, useAppStore } from "~/stores";
-import { WorkbenchHost } from "~/components/workbench/workbench-host";
 import {
   useWorkbench,
   useWorkbenchController,
@@ -78,6 +77,14 @@ const EDIT_DRAFT_ATTACHMENT_MARK = "__from_message_attachment";
 const EDIT_DRAFT_SOURCE_INDEX = "__from_message_source_index";
 const EMPTY_INPUT_ATTACHMENTS: UIMessagePart[] = [];
 const EMPTY_SUGGESTIONS: string[] = [];
+const LazyWorkbenchHost = React.lazy(async () => {
+  const module = await import("~/components/workbench/workbench-host");
+  return { default: module.WorkbenchHost };
+});
+
+function WorkbenchHostFallback({ className }: { className?: string }) {
+  return <div className={cn("min-h-0 flex-1 bg-background/60", className)} aria-hidden />;
+}
 
 interface EditDraft {
   text: string;
@@ -1268,7 +1275,9 @@ function ConversationsPageInner() {
               className="flex min-h-0 flex-col"
             >
               {panel ? (
-                <WorkbenchHost panel={panel} onClose={closePanel} className="border-l-0" />
+                <React.Suspense fallback={<WorkbenchHostFallback className="border-l border-border/60" />}>
+                  <LazyWorkbenchHost panel={panel} onClose={closePanel} className="border-l-0" />
+                </React.Suspense>
               ) : null}
             </ResizablePanel>
           </ResizablePanelGroup>
@@ -1287,7 +1296,9 @@ function ConversationsPageInner() {
             direction="bottom"
           >
             <DrawerContent className="h-[85vh] max-h-[85vh]">
-              <WorkbenchHost panel={panel} onClose={closePanel} className="border-l-0" />
+              <React.Suspense fallback={<WorkbenchHostFallback />}>
+                <LazyWorkbenchHost panel={panel} onClose={closePanel} className="border-l-0" />
+              </React.Suspense>
             </DrawerContent>
           </Drawer>
         ) : null}
