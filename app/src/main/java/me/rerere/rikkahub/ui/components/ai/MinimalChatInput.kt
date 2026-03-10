@@ -136,7 +136,6 @@ import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.utils.createChatFilesByContents
-import me.rerere.rikkahub.utils.getFileNameFromUri
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
 import java.io.File
 import kotlin.uuid.Uuid
@@ -775,49 +774,29 @@ private fun MinimalPickerContent(
     ) { selectedUris ->
         if (selectedUris.isNotEmpty()) {
             val isPythonEnabled = assistant.localTools.any { it is LocalToolOption.PythonEngine }
-            val images = mutableListOf<android.net.Uri>()
-            val documents = mutableListOf<me.rerere.ai.ui.UIMessagePart.Document>()
-            
-            selectedUris.forEach { uri ->
-                val mimeType = context.contentResolver.getType(uri) ?: ""
-                val fileName = context.getFileNameFromUri(uri) ?: "file"
-                
-                // Allow if Python is enabled OR it's a generally supported type (Images/Text/PDF)
-                // Strict check for "Native" support usually implies Images, but app allows Text/PDF too.
-                val isSupported = mimeType.startsWith("image/") || 
-                                  mimeType.startsWith("text/") || 
-                                  mimeType == "application/pdf"
-                                  
-                if (!isPythonEnabled && !isSupported) {
-                     toaster.show("Unsupported file type: $fileName (Enable Python tool to use this file)")
-                     return@forEach
+            scope.launch {
+                val importedFiles = withContext(Dispatchers.IO) {
+                    context.prepareImportedPickerFiles(
+                        selectedUris = selectedUris,
+                        isPythonEnabled = isPythonEnabled,
+                    )
                 }
 
-                when {
-                    mimeType.startsWith("image/") -> {
-                        images.add(uri)
-                    }
-                    else -> {
-                        // Non-image files become Documents
-                        val localUri = context.createChatFilesByContents(listOf(uri))[0]
-                        documents.add(
-                            me.rerere.ai.ui.UIMessagePart.Document(
-                                url = localUri.toString(),
-                                fileName = fileName,
-                                mime = mimeType.ifEmpty { "application/octet-stream" }
-                            )
-                        )
-                    }
+                importedFiles.unsupportedFileNames.forEach { fileName ->
+                    toaster.show("Unsupported file type: $fileName (Enable Python tool to use this file)")
                 }
+                importedFiles.failedFileNames.forEach { fileName ->
+                    toaster.show("Couldn't add file: $fileName")
+                }
+
+                if (importedFiles.imageUris.isNotEmpty()) {
+                    state.addImages(importedFiles.imageUris)
+                }
+                if (importedFiles.documents.isNotEmpty()) {
+                    state.addFiles(importedFiles.documents)
+                }
+                onDismiss()
             }
-            
-            if (images.isNotEmpty()) {
-                state.addImages(context.createChatFilesByContents(images))
-            }
-            if (documents.isNotEmpty()) {
-                state.addFiles(documents)
-            }
-            onDismiss()
         }
     }
     

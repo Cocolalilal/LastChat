@@ -1,6 +1,8 @@
 package me.rerere.rikkahub.ui.components.chat
 
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import me.rerere.ai.ui.UIMessagePart
@@ -164,6 +166,34 @@ class ActivityTimelineParsingTest {
 
         assertEquals(setOf("memory-1"), focus.expandedEntryIds)
         assertEquals(0, focus.scrollIndex)
+    }
+
+    @Test
+    fun getSkillChangeSummary_readsStructuredActivatedAndDisabledLists() {
+        val entry = TimelineEntry.ToolCall(
+            id = "skills-1",
+            toolName = "manage_skills",
+            displayName = "Manage skills",
+            argumentsText = """{"operation":"set"}""",
+            resultText = null,
+            argumentsJson = buildJsonObject {
+                put("operation", "set")
+            },
+            resultJson = buildJsonObject {
+                put("activated", buildJsonArray {
+                    add(buildJsonObject { put("name", "Search") })
+                    add(buildJsonObject { put("id", "search-fallback") })
+                })
+                put("disabled", buildJsonArray {
+                    add(JsonPrimitive("Code"))
+                })
+            }
+        )
+
+        val summary = getSkillChangeSummary(entry)
+
+        assertEquals(listOf("Search", "search-fallback"), summary.activated)
+        assertEquals(listOf("Code"), summary.disabled)
     }
 
 }

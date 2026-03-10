@@ -1,0 +1,438 @@
+package me.rerere.rikkahub.data.datastore
+
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
+import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.ProviderSetting
+import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
+import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
+import me.rerere.rikkahub.data.ai.prompts.DEFAULT_OCR_PROMPT
+import me.rerere.rikkahub.data.ai.prompts.DEFAULT_SUGGESTION_PROMPT
+import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TITLE_PROMPT
+import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TRANSLATION_PROMPT
+import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.model.AssistantSearchMode
+import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.data.model.Lorebook
+import me.rerere.rikkahub.data.model.Mode
+import me.rerere.rikkahub.data.model.Skill
+import me.rerere.rikkahub.data.model.Tag
+import me.rerere.rikkahub.data.model.TextSelectionConfig
+import me.rerere.rikkahub.data.sync.BackupCleanupResult
+import me.rerere.rikkahub.ui.theme.PresetThemes
+import me.rerere.search.SearchCommonOptions
+import me.rerere.search.SearchServiceOptions
+import me.rerere.tts.provider.TTSProviderSetting
+import kotlin.uuid.Uuid
+
+@Serializable
+data class Settings(
+    @Transient
+    val init: Boolean = false,
+    val dynamicColor: Boolean = true,
+    val themeId: String = PresetThemes[0].id,
+    val developerMode: Boolean = false,
+    val enableRagLogging: Boolean = false,
+    val displaySetting: DisplaySetting = DisplaySetting(),
+    val enableWebSearch: Boolean = false,
+    val favoriteModels: List<Uuid> = emptyList(),
+    val chatModelId: Uuid = Uuid.random(),
+    val titleModelId: Uuid = Uuid.random(),
+    val summarizerModelId: Uuid? = null,
+    val imageGenerationModelId: Uuid = Uuid.random(),
+    val titlePrompt: String = DEFAULT_TITLE_PROMPT,
+    val translateModeId: Uuid = Uuid.random(),
+    val translatePrompt: String = DEFAULT_TRANSLATION_PROMPT,
+    val suggestionModelId: Uuid = Uuid.random(),
+    val suggestionPrompt: String = DEFAULT_SUGGESTION_PROMPT,
+    val learningModePrompt: String = DEFAULT_LEARNING_MODE_PROMPT,
+    val ocrModelId: Uuid = Uuid.random(),
+    val ocrPrompt: String = DEFAULT_OCR_PROMPT,
+    val embeddingModelId: Uuid = Uuid.random(),
+    val assistantId: Uuid = DEFAULT_ASSISTANT_ID,
+    val providers: List<ProviderSetting> = DEFAULT_PROVIDERS,
+    val assistants: List<Assistant> = DEFAULT_ASSISTANTS,
+    val assistantTags: List<Tag> = emptyList(),
+    val providerTags: List<Tag> = emptyList(),
+    val recentlyUsedAssistants: List<Uuid> = emptyList(),
+    val searchServices: List<SearchServiceOptions> = listOf(SearchServiceOptions.DEFAULT),
+    val searchCommonOptions: SearchCommonOptions = SearchCommonOptions(),
+    val searchServiceSelected: Int = 0,
+    val mcpServers: List<McpServerConfig> = emptyList(),
+    val webDavConfig: WebDavConfig = WebDavConfig(),
+    val ttsProviders: List<TTSProviderSetting> = DEFAULT_TTS_PROVIDERS,
+    val selectedTTSProviderId: Uuid = DEFAULT_SYSTEM_TTS_ID,
+    val webServerEnabled: Boolean = false,
+    val webServerPort: Int = 8080,
+    val webServerJwtEnabled: Boolean = false,
+    val webServerAccessPassword: String = "",
+    val webServerBackgroundSetupShown: Boolean = false,
+    val consolidationWorkerIntervalMinutes: Int = 15,
+    val consolidationRequiresDeviceIdle: Boolean = false,
+    val modes: List<Mode> = emptyList(),
+    val lorebooks: List<Lorebook> = emptyList(),
+    val skills: List<Skill> = emptyList(),
+    val dismissedBanners: Set<String> = emptySet(),
+    val textSelectionConfig: TextSelectionConfig = TextSelectionConfig(),
+) {
+    companion object {
+        fun dummy() = Settings(init = true)
+    }
+}
+
+@Serializable
+data class RpStyleRule(
+    val id: String = kotlin.uuid.Uuid.random().toString(),
+    val pattern: String = "*",
+    val colorHex: String = "#808080",
+    val enabled: Boolean = true
+)
+
+@Serializable
+data class TtsTextFilterRule(
+    val id: String = kotlin.uuid.Uuid.random().toString(),
+    val pattern: String = "*",
+    val mode: TtsFilterMode = TtsFilterMode.SKIP,
+    val enabled: Boolean = true
+)
+
+@Serializable
+enum class TtsFilterMode {
+    SKIP,
+    ONLY_READ
+}
+
+@Serializable
+enum class FontSource {
+    System,
+    SystemCode,
+    Custom
+}
+
+@Serializable
+data class FontAxis(
+    val tag: String,
+    val name: String,
+    val minValue: Float,
+    val maxValue: Float,
+    val defaultValue: Float,
+    val currentValue: Float = defaultValue
+)
+
+@Serializable
+data class FontFeature(
+    val tag: String,
+    val name: String,
+    val enabled: Boolean = true
+)
+
+@Serializable
+data class FontConfig(
+    val fontSource: FontSource = FontSource.System,
+    val customFontPath: String? = null,
+    val customFontName: String? = null,
+    val weight: Float = 400f,
+    val width: Float = 100f,
+    val roundness: Float = 100f,
+    val grade: Float = 0f,
+    val slant: Float = 0f,
+    val fontSize: Float = 1.0f,
+    val lineHeight: Float = 1.0f,
+    val letterSpacing: Float = 0f,
+    val customAxes: List<FontAxis> = emptyList(),
+    val features: List<FontFeature> = emptyList()
+) {
+    companion object {
+        val DEFAULT_EXPRESSIVE = FontConfig(
+            fontSource = FontSource.System,
+            roundness = 100f
+        )
+        val DEFAULT_NORMAL = FontConfig(
+            fontSource = FontSource.System,
+            roundness = 0f
+        )
+        val DEFAULT_CODE = FontConfig(
+            fontSource = FontSource.SystemCode,
+            roundness = 0f,
+            weight = 400f
+        )
+    }
+}
+
+@Serializable
+data class FontSettings(
+    val useSameFontForHeadersAndContent: Boolean = false,
+    val headerFont: FontConfig = FontConfig.DEFAULT_EXPRESSIVE,
+    val contentFont: FontConfig = FontConfig.DEFAULT_EXPRESSIVE,
+    val codeFont: FontConfig = FontConfig.DEFAULT_CODE
+)
+
+@Serializable
+data class DisplaySetting(
+    val userAvatar: Avatar = Avatar.Dummy,
+    val userNickname: String = "",
+    val showUserAvatar: Boolean = true,
+    val showModelIcon: Boolean = true,
+    val showModelName: Boolean = true,
+    val showAssistantBubbles: Boolean = true,
+    val showTokenUsage: Boolean = false,
+    val autoCloseThinking: Boolean = true,
+    val showUpdates: Boolean = false,
+    val checkForUpdates: Boolean = true,
+    val showMessageJumper: Boolean = false,
+    val messageJumperOnLeft: Boolean = false,
+    val fontSizeRatio: Float = 1.0f,
+    val fontSettings: FontSettings = FontSettings(),
+    val enableMessageGenerationHapticEffect: Boolean = false,
+    val enableUIHaptics: Boolean = true,
+    val skipCropImage: Boolean = false,
+    val enableNotificationOnMessageGeneration: Boolean = false,
+    val codeBlockAutoWrap: Boolean = false,
+    val codeBlockAutoCollapse: Boolean = true,
+    val rpStyleRules: List<RpStyleRule> = emptyList(),
+    val ttsTextFilterRules: List<TtsTextFilterRule> = emptyList(),
+    val providerViewMode: ProviderViewMode = ProviderViewMode.LIST,
+    val showContextStacks: Boolean = false,
+    val newChatHeaderStyle: NewChatHeaderStyle = NewChatHeaderStyle.GREETING,
+    val newChatContentStyle: NewChatContentStyle = NewChatContentStyle.ACTIONS,
+    val newChatShowAvatar: Boolean = true,
+    val chatToolbarAtBottom: Boolean = false,
+)
+
+@Serializable
+enum class NewChatHeaderStyle {
+    NONE,
+    GREETING,
+    BIG_ICON
+}
+
+@Serializable
+enum class NewChatContentStyle {
+    NONE,
+    TEMPLATES,
+    ACTIONS
+}
+
+internal fun Settings.normalizeWebServerSettings(): Settings {
+    return copy(
+        webServerPort = webServerPort.coerceIn(1024, 65535),
+        webServerJwtEnabled = webServerJwtEnabled && webServerAccessPassword.isNotBlank(),
+    )
+}
+
+@Serializable
+enum class ProviderViewMode {
+    LIST,
+    GRID
+}
+
+@Serializable
+data class WebDavConfig(
+    val url: String = "",
+    val username: String = "",
+    val password: String = "",
+    val path: String = "lastchat_backups",
+    val items: List<BackupItem> = listOf(
+        BackupItem.DATABASE,
+        BackupItem.FILES
+    ),
+) {
+    @Serializable
+    enum class BackupItem {
+        DATABASE,
+        FILES,
+    }
+}
+
+internal fun Settings.migrateAssistantSummarizerToGlobal(): Settings {
+    val selectedAssistantSummarizer = assistants.find { it.id == assistantId }?.summarizerModelId
+    val legacySummarizerModelId = summarizerModelId
+        ?: selectedAssistantSummarizer
+        ?: assistants.firstNotNullOfOrNull { it.summarizerModelId }
+    val clearedAssistants = assistants.map { assistant ->
+        if (assistant.summarizerModelId != null) {
+            assistant.copy(summarizerModelId = null)
+        } else {
+            assistant
+        }
+    }
+
+    return if (legacySummarizerModelId != summarizerModelId || clearedAssistants != assistants) {
+        copy(
+            summarizerModelId = legacySummarizerModelId,
+            assistants = clearedAssistants
+        )
+    } else {
+        this
+    }
+}
+
+fun Settings.isNotConfigured() = providers.all { it.models.isEmpty() }
+
+fun Settings.findModelById(uuid: Uuid): Model? {
+    return providers.findModelById(uuid)
+}
+
+fun List<ProviderSetting>.findModelById(uuid: Uuid): Model? {
+    forEach { setting ->
+        setting.models.forEach { model ->
+            if (model.id == uuid) {
+                return model
+            }
+        }
+    }
+    return null
+}
+
+fun Settings.getCurrentChatModel(): Model? {
+    return findModelById(getCurrentAssistant().chatModelId ?: chatModelId)
+}
+
+fun Settings.getCurrentAssistant(): Assistant {
+    return assistants.find { it.id == assistantId } ?: assistants.first()
+}
+
+fun Settings.getAssistantById(id: Uuid): Assistant? {
+    return assistants.find { it.id == id }
+}
+
+fun Settings.getEffectiveDisplaySetting(assistant: Assistant? = null): DisplaySetting {
+    val ui = (assistant ?: getCurrentAssistant()).uiSettings
+    return displaySetting.copy(
+        showUserAvatar = ui.showUserAvatar ?: displaySetting.showUserAvatar,
+        showModelIcon = ui.showAssistantAvatar ?: displaySetting.showModelIcon,
+        showAssistantBubbles = ui.showAssistantBubbles ?: displaySetting.showAssistantBubbles,
+        showTokenUsage = ui.showTokenUsage ?: displaySetting.showTokenUsage,
+        autoCloseThinking = ui.autoCloseThinking ?: displaySetting.autoCloseThinking,
+        showMessageJumper = ui.showMessageJumper ?: displaySetting.showMessageJumper,
+        messageJumperOnLeft = ui.messageJumperOnLeft ?: displaySetting.messageJumperOnLeft,
+        fontSizeRatio = ui.fontSizeRatio ?: displaySetting.fontSizeRatio,
+        codeBlockAutoWrap = ui.codeBlockAutoWrap ?: displaySetting.codeBlockAutoWrap,
+        codeBlockAutoCollapse = ui.codeBlockAutoCollapse ?: displaySetting.codeBlockAutoCollapse,
+        showContextStacks = ui.showContextStacks ?: displaySetting.showContextStacks,
+        newChatHeaderStyle = ui.newChatHeaderStyle ?: displaySetting.newChatHeaderStyle,
+        newChatContentStyle = ui.newChatContentStyle ?: displaySetting.newChatContentStyle,
+        newChatShowAvatar = ui.newChatShowAvatar ?: displaySetting.newChatShowAvatar,
+    )
+}
+
+fun Settings.getSelectedTTSProvider(): TTSProviderSetting? {
+    return selectedTTSProviderId.let { id ->
+        ttsProviders.find { it.id == id }
+    } ?: ttsProviders.firstOrNull()
+}
+
+fun Model.findProvider(
+    providers: List<ProviderSetting>,
+    checkOverwrite: Boolean = true
+): ProviderSetting? {
+    val provider = findModelProviderFromList(providers) ?: return null
+    val providerOverwrite = providerOverwrite
+    if (checkOverwrite && providerOverwrite != null) {
+        return providerOverwrite.copyProvider(proxy = provider.proxy, models = emptyList())
+    }
+    return provider
+}
+
+private fun Model.findModelProviderFromList(providers: List<ProviderSetting>): ProviderSetting? {
+    providers.forEach { setting ->
+        setting.models.forEach { model ->
+            if (model.id == id) {
+                return setting
+            }
+        }
+    }
+    return null
+}
+
+internal val GEMINI_2_5_FLASH_ID = Uuid.parse("cd2cba9a-3f92-4148-b4c6-4d7a86f7b9c2")
+internal val DEFAULT_ASSISTANT_ID = Uuid.parse("0950e2dc-9bd5-4801-afa3-aa887aa36b4e")
+internal val DEFAULT_ASSISTANTS = listOf(
+    Assistant(
+        id = DEFAULT_ASSISTANT_ID,
+        name = "Generical",
+        avatar = Avatar.Resource(R.drawable.default_generical_pfp),
+        temperature = 0.6f,
+        systemPrompt = """
+            You are the best generic assistant, called {{char}}. {{char}} is a really nice guy. He doesn't use emojis though. Use the search tool when looking for factual info. You can have opinions if the user asks you for one. 
+
+            **Context:
+            - You are currently chatting to {{user}}
+            - You are running on {{model_name}}
+            - Date: {{cur_date}}
+            - Time: {{cur_time}}
+
+            **Additional info:
+            - The UI supports LaTeX rendering
+            - The user is chatting to you trough an app called LastChat
+            - You are an AI/LLM and shouldn't hide this fact
+        """.trimIndent()
+    )
+)
+
+val DEFAULT_SYSTEM_TTS_ID = Uuid.parse("026a01a2-c3a0-4fd5-8075-80e03bdef200")
+internal val DEFAULT_TTS_PROVIDERS = listOf(
+    TTSProviderSetting.SystemTTS(
+        id = DEFAULT_SYSTEM_TTS_ID,
+        name = "",
+    ),
+)
+
+internal val DEFAULT_ASSISTANTS_IDS = DEFAULT_ASSISTANTS.map { it.id }
+
+fun Settings.sanitize(): Pair<Settings, BackupCleanupResult> {
+    var invalidSearchModeCount = 0
+    var orphanedTagReferences = 0
+    var orphanedModelReferences = 0
+
+    val sanitizedAssistants = assistants.map { assistant ->
+        when (val mode = assistant.searchMode) {
+            is AssistantSearchMode.Provider -> {
+                if (mode.index < 0 || mode.index >= searchServices.size) {
+                    invalidSearchModeCount++
+                    assistant.copy(searchMode = AssistantSearchMode.Off)
+                } else {
+                    assistant
+                }
+            }
+
+            else -> assistant
+        }
+    }
+
+    val validTagIds = assistantTags.map { it.id }.toSet()
+    val cleanedAssistants = sanitizedAssistants.map { assistant ->
+        val validTags = assistant.tags.filter { it in validTagIds }
+        if (validTags.size != assistant.tags.size) {
+            orphanedTagReferences += assistant.tags.size - validTags.size
+            assistant.copy(tags = validTags)
+        } else {
+            assistant
+        }
+    }
+
+    val allModelIds = providers.flatMap { it.models.map { model -> model.id } }.toSet()
+    val cleanedFavorites = favoriteModels.filter { it in allModelIds }
+    orphanedModelReferences = favoriteModels.size - cleanedFavorites.size
+
+    val clampedSearchSelected = if (searchServices.isNotEmpty()) {
+        searchServiceSelected.coerceIn(0, searchServices.size - 1)
+    } else {
+        0
+    }
+
+    val cleanedSettings = copy(
+        assistants = cleanedAssistants,
+        favoriteModels = cleanedFavorites,
+        searchServiceSelected = clampedSearchSelected,
+    ).migrateLegacyModesToSkills()
+
+    val result = BackupCleanupResult(
+        invalidSearchModeCount = invalidSearchModeCount,
+        orphanedTagReferences = orphanedTagReferences,
+        orphanedModelReferences = orphanedModelReferences,
+    )
+
+    return cleanedSettings to result
+}
