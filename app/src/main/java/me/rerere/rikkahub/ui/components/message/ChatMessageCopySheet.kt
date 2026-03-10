@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.components.message
+﻿package me.rerere.rikkahub.ui.components.message
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -42,7 +42,7 @@ fun ChatMessageCopySheet(
 ) {
     val context = LocalContext.current
     ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
         onDismissRequest = onDismissRequest,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         sheetGesturesEnabled = false,
@@ -129,3 +129,4 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
         }
     }
 }
+

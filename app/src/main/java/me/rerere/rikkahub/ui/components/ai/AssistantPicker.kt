@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.components.ai
+﻿package me.rerere.rikkahub.ui.components.ai
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateContentSize
@@ -65,12 +65,14 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.rememberAssistantState
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
-import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.ui.theme.groupedItemRadii
+import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 import kotlin.uuid.Uuid
 
 @Composable
@@ -148,14 +150,14 @@ fun AssistantPickerSheet(
     val scope = rememberCoroutineScope()
     val defaultAssistantName = stringResource(R.string.assistant_page_default_assistant)
 
-    // 标签过滤状态
+    // æ ‡ç­¾è¿‡æ»¤çŠ¶æ€
     var selectedTagIds by remember { mutableStateOf(emptySet<Uuid>()) }
     
     // Transition state - which assistant is being switched to (null = not transitioning)
     var transitioningAssistantId by remember { mutableStateOf<Uuid?>(null) }
     val isTransitioning = transitioningAssistantId != null
 
-    // 根据选中的标签过滤助手
+    // æ ¹æ®é€‰ä¸­çš„æ ‡ç­¾è¿‡æ»¤åŠ©æ‰‹
     val filteredAssistants = remember(settings.assistants, selectedTagIds) {
         if (selectedTagIds.isEmpty()) {
             settings.assistants
@@ -166,7 +168,6 @@ fun AssistantPickerSheet(
         }
     }
 
-    val isDarkMode = LocalDarkMode.current
     val haptics = rememberPremiumHaptics()
     
     // State to lock the sheet height to its initial size to prevent jumping animations
@@ -174,7 +175,7 @@ fun AssistantPickerSheet(
     val density = LocalDensity.current
 
     ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+        containerColor = placedSurfaceColor(),
         onDismissRequest = onDismiss,
         sheetState = sheetState,
     ) {
@@ -199,7 +200,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 modifier = Modifier.padding(bottom = 8.dp)
             )
 
-            // 标签过滤器
+            // æ ‡ç­¾è¿‡æ»¤å™¨
             if (settings.assistantTags.isNotEmpty()) {
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -224,7 +225,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
-            // 助手列表
+            // åŠ©æ‰‹åˆ—è¡¨
             val navController = LocalNavController.current
             LazyColumn(
                 modifier = Modifier
@@ -234,28 +235,21 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 itemsIndexed(filteredAssistants, key = { _, item -> item.id }) { index, assistant ->
                     val checked = assistant.id == currentAssistant.id
                     
-                    // Determine position in the list for corner rounding
                     val position = when {
-                        filteredAssistants.size == 1 -> "ONLY"
-                        index == 0 -> "FIRST"
-                        index == filteredAssistants.lastIndex -> "LAST"
-                        else -> "MIDDLE"
+                        filteredAssistants.size == 1 -> ItemPosition.ONLY
+                        index == 0 -> ItemPosition.FIRST
+                        index == filteredAssistants.lastIndex -> ItemPosition.LAST
+                        else -> ItemPosition.MIDDLE
                     }
-                    
-                    // Animated corner radius - selected items animate to fully round
+
+                    val targetRadii = groupedItemRadii(position = position, selected = checked)
                     val topCorner by animateDpAsState(
-                        targetValue = if (checked) 50.dp else when (position) {
-                            "ONLY", "FIRST" -> 24.dp
-                            else -> 10.dp
-                        },
+                        targetValue = targetRadii.topStart,
                         animationSpec = spring(dampingRatio = 0.8f, stiffness = 200f),
                         label = "topCorner"
                     )
                     val bottomCorner by animateDpAsState(
-                        targetValue = if (checked) 50.dp else when (position) {
-                            "ONLY", "LAST" -> 24.dp
-                            else -> 10.dp
-                        },
+                        targetValue = targetRadii.bottomStart,
                         animationSpec = spring(dampingRatio = 0.8f, stiffness = 200f),
                         label = "bottomCorner"
                     )
@@ -273,7 +267,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                             .clip(shape)
                             .background(
                                 color = if (checked) MaterialTheme.colorScheme.primaryContainer 
-                                       else if (isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                                       else placedSurfaceColor()
                             )
                             .clickable(enabled = !isTransitioning) {
                                 if (!checked) {
@@ -405,3 +399,5 @@ private fun AssistantItem(
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
     )
 }
+
+

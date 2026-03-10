@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.pages.assistant.detail
+﻿package me.rerere.rikkahub.ui.pages.assistant.detail
 
 import android.Manifest
 import android.os.Build
@@ -237,7 +237,7 @@ fun AssistantAdvancedSubPage(
         SettingsGroup(title = "Custom Request") {
             androidx.compose.material3.Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
+                color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                 shape = AppShapes.CardMedium
             ) {
                 Column(modifier = Modifier.padding(8.dp)) {
@@ -250,7 +250,7 @@ fun AssistantAdvancedSubPage(
 
             androidx.compose.material3.Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
+                color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                 shape = AppShapes.CardMedium
             ) {
                 Column(modifier = Modifier.padding(8.dp)) {
@@ -441,3 +441,5 @@ private fun buildSpontaneousWindowSummary(selection: SpontaneousScheduleSelectio
         "This character can reach out between $startLabel and $endLabel."
     }
 }
+
+

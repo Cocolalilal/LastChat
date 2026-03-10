@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.pages.setting
+﻿package me.rerere.rikkahub.ui.pages.setting
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -443,7 +443,7 @@ private fun ProviderListView(
                         },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(24.dp),
-                        color = if (isSystemInDarkTheme()) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                        color = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                     ) {
                         Row(
                             modifier = Modifier
@@ -1029,10 +1029,7 @@ private fun ProviderItemContent(
     onClick: () -> Unit
 ) {
     // Define the normal card color (used for both enabled background and disabled border)
-    val normalCardColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
-        MaterialTheme.colorScheme.surfaceContainerLow 
-    else 
-        MaterialTheme.colorScheme.surfaceContainerHigh
+    val normalCardColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
     
     // Disabled cards: transparent background (black in dark mode) with outline
     val disabledBackground = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
@@ -1227,6 +1224,8 @@ private fun ProviderTagsFilterRow(
         }
     }
 }
+
+
 
 
 

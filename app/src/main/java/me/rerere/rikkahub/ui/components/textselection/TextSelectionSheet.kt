@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.components.textselection
+﻿package me.rerere.rikkahub.ui.components.textselection
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -144,7 +144,7 @@ fun TextSelectionSheet(
                             onClick = {} // Consume click to prevent dismissing
                         ),
                     shape = QuickAskOuterShape,
-                    color = if (amoledMode && isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerLow,
+                    color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                     tonalElevation = 8.dp
                 ) {
                     AnimatedContent(
@@ -228,7 +228,7 @@ private fun ActionSelectionContent(
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = QuickAskInnerShape,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh
+                color = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
             ) {
                 Text(
                     text = selectedText,
@@ -246,7 +246,7 @@ private fun ActionSelectionContent(
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = QuickAskInnerShape,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh
+                    color = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                 ) {
                     AsyncImage(
                         model = attachment.uri,
@@ -331,7 +331,7 @@ private fun QuickActionButton(
                     onClick()
                 },
             shape = shape,
-            color = if (amoledMode && isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
+            color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
             tonalElevation = if (amoledMode && isDarkMode) 0.dp else 6.dp,
         ) {
             Row(
@@ -514,7 +514,7 @@ private fun ResultContent(
                 .fillMaxWidth()
                 .heightIn(min = 80.dp, max = 300.dp),
             shape = QuickAskInnerShape,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh
+            color = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
         ) {
             Box(
                 modifier = Modifier
@@ -620,7 +620,7 @@ private fun ErrorContent(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text(
-            text = "⚠️ $message",
+            text = "âš ï¸ $message",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.error
         )
@@ -719,3 +719,5 @@ private fun TactileActionSurface(
         content()
     }
 }
+
+

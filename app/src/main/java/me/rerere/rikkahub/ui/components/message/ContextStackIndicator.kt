@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.components.message
+﻿package me.rerere.rikkahub.ui.components.message
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -330,7 +330,7 @@ private fun LorebookCover(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(6.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            .background(me.rerere.rikkahub.ui.theme.placedSurfaceColor())
             .border(
                 width = 1.dp,
                 color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
@@ -401,3 +401,4 @@ private fun LorebookCover(
         }
     }
 }
+

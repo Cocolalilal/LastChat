@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.components.ai
+﻿package me.rerere.rikkahub.ui.components.ai
 
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
@@ -97,13 +97,16 @@ import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
 import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
+import me.rerere.rikkahub.ui.components.ui.AppSearchField
+import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.ProviderIcon
 import me.rerere.rikkahub.ui.components.ui.ModelIcon
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.components.ui.icons.HeartIcon
 import me.rerere.rikkahub.ui.context.LocalNavController
-import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.ui.theme.groupedItemShape
+import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 import me.rerere.rikkahub.ui.theme.extendColors
 import me.rerere.rikkahub.utils.toDp
 import org.koin.compose.koinInject
@@ -193,7 +196,7 @@ fun ModelSelector(
     if (popup) {
         val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
             onDismissRequest = {
                 popup = false
             },
@@ -281,15 +284,15 @@ internal fun ColumnScope.ModelList(
                 add(ProviderListItem.Header(providerSetting))
                 
                 // Add each model as individual item
-                filteredModels.forEachIndexed { index, model ->
-                    val itemPosition = when {
-                        filteredModels.size == 1 -> ModelItemPosition.SINGLE
-                        index == 0 -> ModelItemPosition.FIRST
-                        index == filteredModels.size - 1 -> ModelItemPosition.LAST
-                        else -> ModelItemPosition.MIDDLE
-                    }
-                    add(ProviderListItem.ModelEntry(
-                        model = model,
+                    filteredModels.forEachIndexed { index, model ->
+                        val itemPosition = when {
+                            filteredModels.size == 1 -> ItemPosition.ONLY
+                            index == 0 -> ItemPosition.FIRST
+                            index == filteredModels.size - 1 -> ItemPosition.LAST
+                            else -> ItemPosition.MIDDLE
+                        }
+                        add(ProviderListItem.ModelEntry(
+                            model = model,
                         provider = providerSetting,
                         position = itemPosition,
                         isFavorite = settings.value.favoriteModels.contains(model.id)
@@ -356,7 +359,7 @@ internal fun ColumnScope.ModelList(
         }
     }
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        // 计算favorite models在列表中的位置偏移
+        // è®¡ç®—favorite modelsåœ¨åˆ—è¡¨ä¸­çš„ä½ç½®åç§»
         var favoriteStartIndex = 0
         if (providers.isEmpty()) {
             favoriteStartIndex = 1 // no providers item
@@ -368,7 +371,7 @@ internal fun ColumnScope.ModelList(
         val fromIndex = from.index - favoriteStartIndex
         val toIndex = to.index - favoriteStartIndex
 
-        // 只处理favorite models范围内的拖拽
+        // åªå¤„ç†favorite modelsèŒƒå›´å†…çš„æ‹–æ‹½
         if (fromIndex >= 0 && toIndex >= 0 &&
             fromIndex < favoriteModels.size && toIndex < favoriteModels.size
         ) {
@@ -408,21 +411,15 @@ internal fun ColumnScope.ModelList(
 
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     
-    OutlinedTextField(
+    AppSearchField(
         value = searchKeywords,
         onValueChange = { searchKeywords = it },
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 16.dp, end = 16.dp, top = 16.dp),
-        leadingIcon = {
-            Icon(Icons.Rounded.Search, null)
-        },
         placeholder = {
             Text(stringResource(R.string.model_list_search_placeholder))
         },
-        maxLines = 1,
-        singleLine = true,
-        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
             imeAction = androidx.compose.ui.text.input.ImeAction.Done
         ),
@@ -615,13 +612,13 @@ internal fun ColumnScope.ModelList(
         }
     }
 
-    // 供应商Badge行
+    // ä¾›åº”å•†Badgeè¡Œ
     val providerBadgeListState = rememberLazyListState()
     LaunchedEffect(lazyListState) {
-        // 当LazyColumn滚动时，LazyRow也跟随滚动
+        // å½“LazyColumnæ»šåŠ¨æ—¶ï¼ŒLazyRowä¹Ÿè·Ÿéšæ»šåŠ¨
         snapshotFlow { lazyListState.firstVisibleItemIndex }
             .distinctUntilChanged()
-            .debounce(100) // 防抖处理
+            .debounce(100) // é˜²æŠ–å¤„ç†
             .collect { index ->
                 if (index > 0) {
                     val currentProvider = providerPositions.entries.findLast {
@@ -668,21 +665,13 @@ internal fun ColumnScope.ModelList(
     }
 }
 
-// Position in a group for determining corner radius
-private enum class ModelItemPosition {
-    FIRST,   // Top rounded (24dp top, 10dp bottom)
-    MIDDLE,  // All corners 10dp
-    LAST,    // Bottom rounded (10dp top, 24dp bottom)
-    SINGLE   // All corners 24dp (only item in group)
-}
-
 // Sealed class for flattened provider list items (enables precise scrolling)
 private sealed class ProviderListItem {
     data class Header(val provider: ProviderSetting) : ProviderListItem()
     data class ModelEntry(
         val model: Model,
         val provider: ProviderSetting,
-        val position: ModelItemPosition,
+        val position: ItemPosition,
         val isFavorite: Boolean
     ) : ProviderListItem()
 }
@@ -697,28 +686,11 @@ private fun ModelItem(
     tail: @Composable RowScope.() -> Unit = {},
     dragHandle: @Composable (RowScope.() -> Unit)? = null,
     inGroup: Boolean = false,
-    position: ModelItemPosition = ModelItemPosition.SINGLE
+    position: ItemPosition = ItemPosition.ONLY
 ) {
     val navController = LocalNavController.current
     val interactionSource = remember { MutableInteractionSource() }
-    
-    // Calculate shape based on position - edges get 24dp, connections get 10dp
-    val itemShape = if (select) {
-        RoundedCornerShape(50.dp)  // Selected items are fully round
-    } else {
-        when (position) {
-            ModelItemPosition.FIRST -> RoundedCornerShape(
-                topStart = 24.dp, topEnd = 24.dp,
-                bottomStart = 10.dp, bottomEnd = 10.dp
-            )
-            ModelItemPosition.MIDDLE -> RoundedCornerShape(10.dp)
-            ModelItemPosition.LAST -> RoundedCornerShape(
-                topStart = 10.dp, topEnd = 10.dp,
-                bottomStart = 24.dp, bottomEnd = 24.dp
-            )
-            ModelItemPosition.SINGLE -> RoundedCornerShape(24.dp)
-        }
-    }
+    val itemShape = groupedItemShape(position = position, selected = select)
     
     if(inGroup) {
         Row(
@@ -728,7 +700,7 @@ private fun ModelItem(
                 .fillMaxWidth()
                 .clip(itemShape)
                 .background(
-                    color = if (select) MaterialTheme.colorScheme.primaryContainer else if (LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    color = if (select) MaterialTheme.colorScheme.primaryContainer else placedSurfaceColor(),
                 )
                 .padding(vertical = 12.dp, horizontal = 16.dp)
         ) {
@@ -791,9 +763,9 @@ private fun ModelItem(
     } else {
         Card(
             modifier = modifier,
-            shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
+            shape = groupedItemShape(position = ItemPosition.ONLY, selected = select),
             colors = CardDefaults.cardColors(
-                containerColor = if (select) MaterialTheme.colorScheme.primaryContainer else if (LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
+                containerColor = if (select) MaterialTheme.colorScheme.primaryContainer else placedSurfaceColor(),
                 contentColor = if (select) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
             )
         ) {
@@ -947,3 +919,5 @@ fun ModelAbilityTag(model: Model) {
         }
     }
 }
+
+

@@ -1,4 +1,4 @@
-@file:OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+﻿@file:OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
 
 package me.rerere.rikkahub.ui.pages.setting
 
@@ -76,8 +76,10 @@ import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
+import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroupCustomItem
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.ui.theme.groupedItemShape
 import me.rerere.rikkahub.utils.FontFileManager
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
@@ -245,7 +247,12 @@ fun SettingFontsPage(vm: SettingVM = koinViewModel()) {
             item {
                 Spacer(Modifier.height(8.dp))
                 SettingsGroup(title = "Preview") {
-                    FontPreviewCard(fontSettings = localFontSettings)
+                    SettingsGroupCustomItem { position ->
+                        FontPreviewCard(
+                            fontSettings = localFontSettings,
+                            shape = groupedItemShape(position)
+                        )
+                    }
                 }
             }
         }
@@ -331,270 +338,264 @@ private fun FontConfigSection(
     }
     
     SettingsGroup(title = title) {
-        // Main item (expandable)
-        Card(
-            colors = CardDefaults.cardColors(
-                containerColor = if (LocalDarkMode.current) 
-                    MaterialTheme.colorScheme.surfaceContainerLow 
-                else 
-                    MaterialTheme.colorScheme.surfaceContainerHigh
-            ),
-            shape = AppShapes.CardLarge,
-            onClick = { expanded = !expanded }
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+        SettingsGroupCustomItem { position ->
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                ),
+                shape = groupedItemShape(position),
+                onClick = { expanded = !expanded }
             ) {
-                // Header row
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = getFontSourceLabel(config),
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Text(
-                            text = subtitle,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    IconButton(onClick = { showResetDialog = true }) {
-                        Icon(
-                            Icons.Rounded.Refresh,
-                            "Reset",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-                
-                // Expanded content
-                AnimatedVisibility(visible = expanded) {
-                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        Spacer(Modifier.height(4.dp))
-                        
-                        // Font Source Selector
-                        Text(
-                            text = "Font Source",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            // Filter sources based on font type
-                            val availableSources = if (isCodeFont) {
-                                listOf(FontSource.SystemCode, FontSource.Custom)
-                            } else {
-                                listOf(FontSource.System, FontSource.Custom)
-                            }
-                            
-                            availableSources.forEach { source ->
-                                val isSelected = config.fontSource == source
-                                OutlinedButton(
-                                    onClick = {
-                                        if (source == FontSource.Custom) {
-                                            fontPicker.launch(arrayOf(
-                                                "font/ttf",
-                                                "font/otf",
-                                                "application/x-font-ttf",
-                                                "application/x-font-otf",
-                                                "application/octet-stream"
-                                            ))
-                                        } else {
-                                            onConfigChange(config.copy(
-                                                fontSource = source,
-                                                roundness = if (source == FontSource.System) 100f else 0f
-                                            ), true) // Persist immediately
-                                        }
-                                    },
-                                    colors = if (isSelected) {
-                                        ButtonDefaults.outlinedButtonColors(
-                                            containerColor = MaterialTheme.colorScheme.primaryContainer
-                                        )
-                                    } else {
-                                        ButtonDefaults.outlinedButtonColors()
-                                    },
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text(
-                                        text = when (source) {
-                                            FontSource.System -> "Default"
-                                            FontSource.SystemCode -> "Default"
-                                            FontSource.Custom -> "Custom"
-                                        },
-                                        style = MaterialTheme.typography.labelMedium
-                                    )
-                                }
-                            }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = getFontSourceLabel(config),
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = subtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
-                        
-                        // Custom font info
-                        if (config.fontSource == FontSource.Custom && config.customFontName != null) {
+                        IconButton(onClick = { showResetDialog = true }) {
+                            Icon(
+                                Icons.Rounded.Refresh,
+                                "Reset",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    AnimatedVisibility(visible = expanded) {
+                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Spacer(Modifier.height(4.dp))
+
+                            Text(
+                                text = "Font Source",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+
                             Row(
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                                    .padding(12.dp)
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = config.customFontName,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                    if (config.customAxes.isNotEmpty()) {
+                                val availableSources = if (isCodeFont) {
+                                    listOf(FontSource.SystemCode, FontSource.Custom)
+                                } else {
+                                    listOf(FontSource.System, FontSource.Custom)
+                                }
+
+                                availableSources.forEach { source ->
+                                    val isSelected = config.fontSource == source
+                                    OutlinedButton(
+                                        onClick = {
+                                            if (source == FontSource.Custom) {
+                                                fontPicker.launch(arrayOf(
+                                                    "font/ttf",
+                                                    "font/otf",
+                                                    "application/x-font-ttf",
+                                                    "application/x-font-otf",
+                                                    "application/octet-stream"
+                                                ))
+                                            } else {
+                                                onConfigChange(
+                                                    config.copy(
+                                                        fontSource = source,
+                                                        roundness = if (source == FontSource.System) 100f else 0f
+                                                    ),
+                                                    true
+                                                )
+                                            }
+                                        },
+                                        colors = if (isSelected) {
+                                            ButtonDefaults.outlinedButtonColors(
+                                                containerColor = MaterialTheme.colorScheme.primaryContainer
+                                            )
+                                        } else {
+                                            ButtonDefaults.outlinedButtonColors()
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    ) {
                                         Text(
-                                            text = "Variable font · ${config.customAxes.size} axes",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            text = when (source) {
+                                                FontSource.System -> "Default"
+                                                FontSource.SystemCode -> "Default"
+                                                FontSource.Custom -> "Custom"
+                                            },
+                                            style = MaterialTheme.typography.labelMedium
                                         )
                                     }
                                 }
-                                IconButton(onClick = {
-                                    config.customFontPath?.let { fontManager.deleteFont(it) }
-                                    onConfigChange(config.copy(
-                                        fontSource = FontSource.System,
-                                        customFontPath = null,
-                                        customFontName = null,
-                                        customAxes = emptyList(),
-                                        features = emptyList()
-                                    ), true)
-                                }) {
-                                    Icon(Icons.Rounded.Delete, "Remove", tint = MaterialTheme.colorScheme.error)
-                                }
                             }
-                        }
-                        
-                        // Variable Font Axes (System fonts or custom with axes)
-                        if (config.fontSource != FontSource.Custom || config.customAxes.isEmpty()) {
-                            // System font axes
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                text = "Font Axes",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            
-                            FontAxisSlider(
-                                label = "Width",
-                                value = config.width,
-                                valueRange = 75f..125f,
-                                steps = 4,
-                                onValueChange = { onConfigChange(config.copy(width = it), false) },
-                                onValueChangeFinished = { onConfigChange(config, true) }
-                            )
-                            
-                            if (config.fontSource == FontSource.System) {
-                                FontAxisSlider(
-                                    label = "Roundness",
-                                    value = config.roundness,
-                                    valueRange = 0f..100f,
-                                    steps = 9,
-                                    onValueChange = { onConfigChange(config.copy(roundness = it), false) },
-                                    onValueChangeFinished = { onConfigChange(config, true) }
-                                )
-                            }
-                        } else {
-                            // Custom font axes
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                text = "Font Axes",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            
-                            config.customAxes.forEach { axis ->
-                                FontAxisSlider(
-                                    label = axis.name,
-                                    value = axis.currentValue,
-                                    valueRange = axis.minValue..axis.maxValue,
-                                    steps = ((axis.maxValue - axis.minValue) / 10).toInt().coerceIn(1, 20),
-                                    onValueChange = { newValue ->
-                                        val updatedAxes = config.customAxes.map {
-                                            if (it.tag == axis.tag) it.copy(currentValue = newValue) else it
-                                        }
-                                        onConfigChange(config.copy(customAxes = updatedAxes), false)
-                                    },
-                                    onValueChangeFinished = { onConfigChange(config, true) }
-                                )
-                            }
-                            
-                            // Typography adjustments only for custom fonts
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                text = "Typography",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            
-                            FontAxisSlider(
-                                label = "Size",
-                                value = config.fontSize,
-                                valueRange = 0.5f..2f,
-                                steps = 14,
-                                formatValue = { "${(it * 100).roundToInt()}%" },
-                                onValueChange = { onConfigChange(config.copy(fontSize = it), false) },
-                                onValueChangeFinished = { onConfigChange(config, true) }
-                            )
-                            
-                            FontAxisSlider(
-                                label = "Letter Spacing",
-                                value = config.letterSpacing,
-                                valueRange = -0.05f..0.1f,
-                                steps = 14,
-                                formatValue = { String.format("%.2f em", it) },
-                                onValueChange = { onConfigChange(config.copy(letterSpacing = it), false) },
-                                onValueChangeFinished = { onConfigChange(config, true) }
-                            )
-                        }
-                        
-                        // OpenType Features (if any)
-                        if (config.features.isNotEmpty()) {
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                text = "OpenType Features",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            
-                            config.features.forEach { feature ->
+
+                            if (config.fontSource == FontSource.Custom && config.customFontName != null) {
                                 Row(
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(me.rerere.rikkahub.ui.theme.placedSurfaceColor())
+                                        .padding(12.dp)
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = feature.name,
-                                            style = MaterialTheme.typography.bodyMedium
+                                            text = config.customFontName,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium
                                         )
-                                        Text(
-                                            text = feature.tag,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        if (config.customAxes.isNotEmpty()) {
+                                            Text(
+                                                text = "Variable font · ${config.customAxes.size} axes",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                    IconButton(onClick = {
+                                        config.customFontPath?.let { fontManager.deleteFont(it) }
+                                        onConfigChange(
+                                            config.copy(
+                                                fontSource = FontSource.System,
+                                                customFontPath = null,
+                                                customFontName = null,
+                                                customAxes = emptyList(),
+                                                features = emptyList()
+                                            ),
+                                            true
+                                        )
+                                    }) {
+                                        Icon(Icons.Rounded.Delete, "Remove", tint = MaterialTheme.colorScheme.error)
+                                    }
+                                }
+                            }
+
+                            if (config.fontSource != FontSource.Custom || config.customAxes.isEmpty()) {
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    text = "Font Axes",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+
+                                FontAxisSlider(
+                                    label = "Width",
+                                    value = config.width,
+                                    valueRange = 75f..125f,
+                                    steps = 4,
+                                    onValueChange = { onConfigChange(config.copy(width = it), false) },
+                                    onValueChangeFinished = { onConfigChange(config, true) }
+                                )
+
+                                if (config.fontSource == FontSource.System) {
+                                    FontAxisSlider(
+                                        label = "Roundness",
+                                        value = config.roundness,
+                                        valueRange = 0f..100f,
+                                        steps = 9,
+                                        onValueChange = { onConfigChange(config.copy(roundness = it), false) },
+                                        onValueChangeFinished = { onConfigChange(config, true) }
+                                    )
+                                }
+                            } else {
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    text = "Font Axes",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+
+                                config.customAxes.forEach { axis ->
+                                    FontAxisSlider(
+                                        label = axis.name,
+                                        value = axis.currentValue,
+                                        valueRange = axis.minValue..axis.maxValue,
+                                        steps = ((axis.maxValue - axis.minValue) / 10).toInt().coerceIn(1, 20),
+                                        onValueChange = { newValue ->
+                                            val updatedAxes = config.customAxes.map {
+                                                if (it.tag == axis.tag) it.copy(currentValue = newValue) else it
+                                            }
+                                            onConfigChange(config.copy(customAxes = updatedAxes), false)
+                                        },
+                                        onValueChangeFinished = { onConfigChange(config, true) }
+                                    )
+                                }
+
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    text = "Typography",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+
+                                FontAxisSlider(
+                                    label = "Size",
+                                    value = config.fontSize,
+                                    valueRange = 0.5f..2f,
+                                    steps = 14,
+                                    formatValue = { "${(it * 100).roundToInt()}%" },
+                                    onValueChange = { onConfigChange(config.copy(fontSize = it), false) },
+                                    onValueChangeFinished = { onConfigChange(config, true) }
+                                )
+
+                                FontAxisSlider(
+                                    label = "Letter Spacing",
+                                    value = config.letterSpacing,
+                                    valueRange = -0.05f..0.1f,
+                                    steps = 14,
+                                    formatValue = { String.format("%.2f em", it) },
+                                    onValueChange = { onConfigChange(config.copy(letterSpacing = it), false) },
+                                    onValueChangeFinished = { onConfigChange(config, true) }
+                                )
+                            }
+
+                            if (config.features.isNotEmpty()) {
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    text = "OpenType Features",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+
+                                config.features.forEach { feature ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = feature.name,
+                                                style = MaterialTheme.typography.bodyMedium
+                                            )
+                                            Text(
+                                                text = feature.tag,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        HapticSwitch(
+                                            checked = feature.enabled,
+                                            onCheckedChange = { enabled ->
+                                                val updatedFeatures = config.features.map {
+                                                    if (it.tag == feature.tag) it.copy(enabled = enabled) else it
+                                                }
+                                                onConfigChange(config.copy(features = updatedFeatures), true)
+                                            }
                                         )
                                     }
-                                    HapticSwitch(
-                                        checked = feature.enabled,
-                                        onCheckedChange = { enabled ->
-                                            val updatedFeatures = config.features.map {
-                                                if (it.tag == feature.tag) it.copy(enabled = enabled) else it
-                                            }
-                                            onConfigChange(config.copy(features = updatedFeatures), true)
-                                        }
-                                    )
                                 }
                             }
                         }
@@ -679,21 +680,21 @@ private fun FontAxisSlider(
 }
 
 @Composable
-private fun FontPreviewCard(fontSettings: FontSettings) {
+private fun FontPreviewCard(
+    fontSettings: FontSettings,
+    shape: androidx.compose.ui.graphics.Shape = AppShapes.CardLarge,
+) {
     // Create actual font families from the font configs
     val headerFontFamily = rememberFontFamilyFromConfig(fontSettings.headerFont)
     val contentFontFamily = rememberFontFamilyFromConfig(fontSettings.contentFont)
     val codeFontFamily = rememberFontFamilyFromConfig(fontSettings.codeFont)
     
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = if (LocalDarkMode.current) 
-                MaterialTheme.colorScheme.surfaceContainerLow 
-            else 
-                MaterialTheme.colorScheme.surfaceContainerHigh
-        ),
-        shape = AppShapes.CardLarge
-    ) {
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+            ),
+            shape = shape
+        ) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -727,7 +728,7 @@ private fun FontPreviewCard(fontSettings: FontSettings) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .background(me.rerere.rikkahub.ui.theme.placedSurfaceColor())
                     .padding(12.dp)
             ) {
                 Text(
@@ -840,3 +841,5 @@ private fun getFontSourceLabel(config: FontConfig): String {
         FontSource.Custom -> config.customFontName ?: "Custom Font"
     }
 }
+
+

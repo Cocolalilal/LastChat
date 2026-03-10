@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.pages.setting
+﻿package me.rerere.rikkahub.ui.pages.setting
 
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
@@ -54,8 +54,11 @@ import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.nav.BackButton
+import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.groupedItemShape
 
 @Composable
 fun SettingAboutPage() {
@@ -127,7 +130,7 @@ fun SettingAboutPage() {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(24.dp)),
+                    .clip(AppShapes.Grouped),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 AboutItem(
@@ -135,6 +138,7 @@ fun SettingAboutPage() {
                     title = "Source Code",
                     subtitle = "GitHub Repository",
                     trailing = Icons.AutoMirrored.Rounded.OpenInNew,
+                    position = ItemPosition.ONLY,
                     onClick = {
                         val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Cocolalilal/LastChat"))
                         context.startActivity(intent)
@@ -158,25 +162,28 @@ fun SettingAboutPage() {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(24.dp)),
+                    .clip(AppShapes.Grouped),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 AboutItem(
                     icon = Icons.Rounded.Android,
                     title = "Android Version",
                     subtitle = "${android.os.Build.VERSION.RELEASE} (SDK ${android.os.Build.VERSION.SDK_INT})",
+                    position = ItemPosition.FIRST,
                     onClick = null
                 )
                 AboutItem(
                     icon = Icons.Rounded.PhoneAndroid,
                     title = "Device",
                     subtitle = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}",
+                    position = ItemPosition.MIDDLE,
                     onClick = null
                 )
                 AboutItem(
                     icon = Icons.Rounded.Memory,
                     title = "Architecture",
                     subtitle = android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "Unknown",
+                    position = ItemPosition.LAST,
                     onClick = null
                 )
             }
@@ -202,6 +209,7 @@ private fun AboutItem(
     title: String,
     subtitle: String? = null,
     trailing: ImageVector? = null,
+    position: ItemPosition = ItemPosition.ONLY,
     onClick: (() -> Unit)?
 ) {
     val haptics = rememberPremiumHaptics()
@@ -222,8 +230,8 @@ private fun AboutItem(
             }
         },
         enabled = onClick != null,
-        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
-        shape = RoundedCornerShape(10.dp),
+        color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+        shape = groupedItemShape(position),
         interactionSource = interactionSource,
         modifier = Modifier
             .fillMaxWidth()
@@ -281,3 +289,5 @@ private fun AboutItem(
         }
     }
 }
+
+

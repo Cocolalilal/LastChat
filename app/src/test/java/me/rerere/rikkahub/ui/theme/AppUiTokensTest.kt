@@ -2,6 +2,7 @@ package me.rerere.rikkahub.ui.theme
 
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
+import me.rerere.rikkahub.ui.components.ui.groupedStackPositionFor
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -11,19 +12,19 @@ class AppUiTokensTest {
     @Test
     fun groupedItemRadii_returnsExpectedCornersForGroupedPositions() {
         assertEquals(
-            GroupedItemRadii(24.dp, 24.dp, 10.dp, 10.dp),
+            GroupedItemRadii(20.dp, 20.dp, 8.dp, 8.dp),
             groupedItemRadii(ItemPosition.FIRST)
         )
         assertEquals(
-            GroupedItemRadii(10.dp, 10.dp, 10.dp, 10.dp),
+            GroupedItemRadii(8.dp, 8.dp, 8.dp, 8.dp),
             groupedItemRadii(ItemPosition.MIDDLE)
         )
         assertEquals(
-            GroupedItemRadii(10.dp, 10.dp, 24.dp, 24.dp),
+            GroupedItemRadii(8.dp, 8.dp, 20.dp, 20.dp),
             groupedItemRadii(ItemPosition.LAST)
         )
         assertEquals(
-            GroupedItemRadii(24.dp, 24.dp, 24.dp, 24.dp),
+            GroupedItemRadii(20.dp, 20.dp, 20.dp, 20.dp),
             groupedItemRadii(ItemPosition.ONLY)
         )
     }
@@ -31,12 +32,18 @@ class AppUiTokensTest {
     @Test
     fun groupedItemRadii_selectedAlwaysUsesPillShape() {
         assertEquals(
-            GroupedItemRadii(30.dp, 30.dp, 30.dp, 30.dp),
+            GroupedItemRadii(50.dp, 50.dp, 50.dp, 50.dp),
             groupedItemRadii(
                 position = ItemPosition.MIDDLE,
                 selected = true,
-                groupRadius = 30.dp,
-                itemRadius = 8.dp,
+            )
+        )
+        assertEquals(
+            GroupedItemRadii(36.dp, 36.dp, 36.dp, 36.dp),
+            groupedItemRadii(
+                position = ItemPosition.MIDDLE,
+                selected = true,
+                selectedRadius = 36.dp,
             )
         )
     }
@@ -59,7 +66,7 @@ class AppUiTokensTest {
             appSurfaceColor(colorScheme, darkTheme = false, level = AppSurfaceLevel.Container)
         )
         assertEquals(
-            Color(0xFF404040),
+            Color(0xFF303030),
             appSurfaceColor(colorScheme, darkTheme = false, level = AppSurfaceLevel.ContainerHigh)
         )
         assertEquals(
@@ -67,8 +74,17 @@ class AppUiTokensTest {
             appSurfaceColor(colorScheme, darkTheme = true, level = AppSurfaceLevel.Container)
         )
         assertEquals(
-            Color(0xFF303030),
+            Color(0xFF202020),
             appSurfaceColor(colorScheme, darkTheme = true, level = AppSurfaceLevel.ContainerHigh)
         )
+    }
+
+    @Test
+    fun groupedStackPositionFor_returnsExpectedSequencePositions() {
+        assertEquals(ItemPosition.ONLY, groupedStackPositionFor(index = 0, count = 0))
+        assertEquals(ItemPosition.ONLY, groupedStackPositionFor(index = 0, count = 1))
+        assertEquals(ItemPosition.FIRST, groupedStackPositionFor(index = 0, count = 3))
+        assertEquals(ItemPosition.MIDDLE, groupedStackPositionFor(index = 1, count = 3))
+        assertEquals(ItemPosition.LAST, groupedStackPositionFor(index = 2, count = 3))
     }
 }

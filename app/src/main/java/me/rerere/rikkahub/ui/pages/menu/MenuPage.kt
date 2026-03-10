@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.pages.menu
+﻿package me.rerere.rikkahub.ui.pages.menu
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -148,9 +148,9 @@ fun MenuPage() {
                         value = formatTokenCount(stats.usageStats.inputTokens),
                         icon = Icons.AutoMirrored.Rounded.Input,
                         containerColor = if (LocalDarkMode.current) {
-                            MaterialTheme.colorScheme.surfaceContainerHigh
+                            me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                         } else {
-                            MaterialTheme.colorScheme.surfaceContainerHighest
+                            me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                         },
                         contentColor = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier
@@ -172,9 +172,9 @@ fun MenuPage() {
                         value = formatTokenCount(stats.usageStats.outputTokens),
                         icon = Icons.Rounded.Output,
                         containerColor = if (LocalDarkMode.current) {
-                            MaterialTheme.colorScheme.surfaceContainerHigh
+                            me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                         } else {
-                            MaterialTheme.colorScheme.surfaceContainerHighest
+                            me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                         },
                         contentColor = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier
@@ -207,9 +207,9 @@ private fun ChatHeatmapCard(
     modifier: Modifier = Modifier
 ) {
     val containerColor = if (LocalDarkMode.current) {
-        MaterialTheme.colorScheme.surfaceContainerLow
+        me.rerere.rikkahub.ui.theme.placedSurfaceColor()
     } else {
-        MaterialTheme.colorScheme.surfaceContainerHigh
+        me.rerere.rikkahub.ui.theme.placedSurfaceColor()
     }
     val contentColor = MaterialTheme.colorScheme.onSurface
     val heatmapBaseColor = MaterialTheme.colorScheme.primary
@@ -627,3 +627,4 @@ private fun formatTokenCount(count: Long): String {
         else -> count.toString()
     }
 }
+

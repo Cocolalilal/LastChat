@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.pages.setting
+﻿package me.rerere.rikkahub.ui.pages.setting
 
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
@@ -40,6 +40,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
+import me.rerere.rikkahub.ui.components.ui.AppFloatingActionButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
@@ -92,9 +93,8 @@ fun SettingRpOptimizationsPage(vm: SettingVM = koinViewModel()) {
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showAddDialog = true },
-                shape = AppShapes.CardLarge
+            AppFloatingActionButton(
+                onClick = { showAddDialog = true }
             ) {
                 Icon(Icons.Rounded.Add, "Add Rule")
             }
@@ -113,7 +113,7 @@ fun SettingRpOptimizationsPage(vm: SettingVM = koinViewModel()) {
             item {
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+                        containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                     ),
                     shape = AppShapes.CardLarge
                 ) {
@@ -187,7 +187,7 @@ fun SettingRpOptimizationsPage(vm: SettingVM = koinViewModel()) {
                 item {
                     Card(
                         colors = CardDefaults.cardColors(
-                            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+                            containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                         ),
                         shape = AppShapes.CardLarge
                     ) {
@@ -240,7 +240,7 @@ fun SettingRpOptimizationsPage(vm: SettingVM = koinViewModel()) {
                 item {
                     Card(
                         colors = CardDefaults.cardColors(
-                            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+                            containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                         ),
                         shape = AppShapes.CardLarge
                     ) {
@@ -320,7 +320,7 @@ private fun RpStyleRuleItem(
 
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+            containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
         ),
         shape = AppShapes.CardLarge,
         onClick = onEdit
@@ -561,4 +561,6 @@ private fun RpStyleRuleDialog(
         }
     )
 }
+
+
 

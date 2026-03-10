@@ -2,10 +2,13 @@ package me.rerere.rikkahub.ui.components.ui
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Book
+import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -69,6 +72,26 @@ class SharedUiComponentsTest {
     }
 
     @Test
+    fun appAlertDialog_rendersTitleMessageAndButtons() {
+        composeRule.setContent {
+            MaterialTheme {
+                AppAlertDialog(
+                    onDismissRequest = {},
+                    title = { Text("Dialog title") },
+                    text = { Text("Dialog body") },
+                    confirmButton = { TextButton(onClick = {}) { Text("Confirm") } },
+                    dismissButton = { TextButton(onClick = {}) { Text("Cancel") } },
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Dialog title").assertExists()
+        composeRule.onNodeWithText("Dialog body").assertExists()
+        composeRule.onNodeWithText("Confirm").assertExists()
+        composeRule.onNodeWithText("Cancel").assertExists()
+    }
+
+    @Test
     fun appCompactTopBar_rendersProvidedTitle() {
         composeRule.setContent {
             MaterialTheme {
@@ -85,5 +108,34 @@ class SharedUiComponentsTest {
 
         composeRule.onNodeWithText("Compact title").assertExists()
         composeRule.onNodeWithContentDescription("Back").assertExists()
+    }
+
+    @Test
+    fun floatingControls_renderOutlinedTabsAndActions() {
+        composeRule.setContent {
+            MaterialTheme {
+                AppFloatingTabBar {
+                    AppFloatingTabButton(
+                        selected = true,
+                        onClick = {},
+                        icon = Icons.Rounded.Category,
+                        contentDescription = "Skills"
+                    )
+                    AppFloatingTabButton(
+                        selected = false,
+                        onClick = {},
+                        icon = Icons.Rounded.Book,
+                        contentDescription = "Lorebooks"
+                    )
+                }
+                AppFloatingActionButton(onClick = {}) {
+                    Icon(Icons.Rounded.Category, contentDescription = "Add")
+                }
+            }
+        }
+
+        composeRule.onNodeWithContentDescription("Skills").assertExists()
+        composeRule.onNodeWithContentDescription("Lorebooks").assertExists()
+        composeRule.onNodeWithContentDescription("Add").assertExists()
     }
 }

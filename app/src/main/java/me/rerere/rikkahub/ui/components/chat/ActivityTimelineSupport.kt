@@ -8,6 +8,7 @@ import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.QuestionAnswer
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -176,6 +177,7 @@ internal fun getTimelineIcon(entry: TimelineEntry): ImageVector {
             "eval_python", "pip_install", "write_sandbox_file",
             "read_sandbox_file", "list_sandbox_files", "delete_sandbox_file" -> Icons.Rounded.Terminal
             "manage_skills" -> Icons.Rounded.Category
+            "ask_user" -> Icons.Rounded.QuestionAnswer
             else -> Icons.Rounded.Build
         }
 
@@ -200,6 +202,7 @@ private fun getLocalizedToolLabel(toolName: String, fallback: String): String {
         "list_sandbox_files" -> stringResource(R.string.chat_message_tool_python_list_files)
         "delete_sandbox_file" -> stringResource(R.string.activity_timeline_tool_delete_file)
         "manage_skills" -> stringResource(R.string.activity_timeline_tool_manage_skills)
+        "ask_user" -> "Question for you"
         else -> fallback
     }
 }

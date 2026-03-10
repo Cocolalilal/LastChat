@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.pages.assistant.detail
+﻿package me.rerere.rikkahub.ui.pages.assistant.detail
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -53,7 +53,7 @@ fun AssistantMemoryConsolidationSubPage(
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
                 colors = CardDefaults.cardColors(
-                    containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                 )
             ) {
                 Column(
@@ -130,7 +130,7 @@ fun AssistantMemoryConsolidationSubPage(
                 Card(
                     shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
                     colors = CardDefaults.cardColors(
-                        containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                        containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                     )
                 ) {
                     Column(
@@ -259,3 +259,5 @@ private fun StatItem(label: String, value: String) {
         )
     }
 }
+
+

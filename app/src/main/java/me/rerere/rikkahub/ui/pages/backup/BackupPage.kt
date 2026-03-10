@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.pages.backup
+﻿package me.rerere.rikkahub.ui.pages.backup
 
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.PermissionChecker
@@ -589,7 +589,7 @@ private fun BackupItemCard(
     Card(
         shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
         colors = androidx.compose.material3.CardDefaults.cardColors(
-            containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow else androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
         )
     ) {
         Column(
@@ -691,10 +691,10 @@ private fun ImportExportPage(
         showRestartDialog = true
     }
 
-    // 导入类型：local 为本地备份，chatbox 为 Chatbox 导入
+    // å¯¼å…¥ç±»åž‹ï¼šlocal ä¸ºæœ¬åœ°å¤‡ä»½ï¼Œchatbox ä¸º Chatbox å¯¼å…¥
     var importType by remember { mutableStateOf("local") }
 
-    // 创建文件保存的launcher
+    // åˆ›å»ºæ–‡ä»¶ä¿å­˜çš„launcher
     val createDocumentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/zip")
     ) { uri ->
@@ -702,10 +702,10 @@ private fun ImportExportPage(
             scope.launch {
                 isExporting = true
                 runCatching {
-                    // 导出文件
+                    // å¯¼å‡ºæ–‡ä»¶
                     val exportFile = vm.exportToFile()
 
-                    // 复制到用户选择的位置
+                    // å¤åˆ¶åˆ°ç”¨æˆ·é€‰æ‹©çš„ä½ç½®
                     withContext(Dispatchers.IO) {
                         context.contentResolver.openOutputStream(targetUri)?.use { outputStream ->
                             FileInputStream(exportFile).use { inputStream ->
@@ -714,7 +714,7 @@ private fun ImportExportPage(
                         }
                     }
 
-                    // 清理临时文件
+                    // æ¸…ç†ä¸´æ—¶æ–‡ä»¶
                     withContext(Dispatchers.IO) {
                         exportFile.delete()
                     }
@@ -735,7 +735,7 @@ private fun ImportExportPage(
         }
     }
 
-    // 创建文件选择的launcher
+    // åˆ›å»ºæ–‡ä»¶é€‰æ‹©çš„launcher
     val openDocumentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -745,7 +745,7 @@ private fun ImportExportPage(
                 runCatching {
                     when (importType) {
                         "local" -> {
-                            // 本地备份导入：处理zip文件
+                            // æœ¬åœ°å¤‡ä»½å¯¼å…¥ï¼šå¤„ç†zipæ–‡ä»¶
                             val tempFile =
                                 File(context.cacheDir, "temp_restore_${System.currentTimeMillis()}.zip")
 
@@ -757,11 +757,11 @@ private fun ImportExportPage(
                                 }
                             }
 
-                            // 从临时文件恢复
+                            // ä»Žä¸´æ—¶æ–‡ä»¶æ¢å¤
                             val result = vm.restoreFromLocalFile(tempFile)
                             restoreResult = result
 
-                            // 清理临时文件
+                            // æ¸…ç†ä¸´æ—¶æ–‡ä»¶
                             withContext(Dispatchers.IO) {
                                 tempFile.delete()
                             }
@@ -850,7 +850,7 @@ private fun ImportExportPage(
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                 colors = androidx.compose.material3.CardDefaults.cardColors(
-                    containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow else androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh
+                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                 ),
                 onClick = {
                     if (!isExporting) {
@@ -889,7 +889,7 @@ private fun ImportExportPage(
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                 colors = androidx.compose.material3.CardDefaults.cardColors(
-                    containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow else androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh
+                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                 ),
                 onClick = {
                     if (!isRestoring) {
@@ -933,7 +933,7 @@ private fun ImportExportPage(
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                 colors = androidx.compose.material3.CardDefaults.cardColors(
-                    containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow else androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh
+                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                 ),
                 onClick = {
                     if (!isRestoring) {
@@ -967,7 +967,7 @@ private fun ImportExportPage(
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                 colors = androidx.compose.material3.CardDefaults.cardColors(
-                    containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow else androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh
+                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                 ),
                 onClick = {
                     if (!isRestoring) {
@@ -1062,7 +1062,7 @@ private fun ImportExportPage(
         )
     }
     
-    // 重启对话框
+    // é‡å¯å¯¹è¯æ¡†
     if (showRestartDialog) {
         val result = restoreResult // Capture immutable for checking
         BackupDialog(
@@ -1123,3 +1123,5 @@ private fun BackupDialog(
         },
     )
 }
+
+

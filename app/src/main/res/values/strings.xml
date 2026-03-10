@@ -63,6 +63,8 @@
     <string name="assistant_page_local_tools_python_engine_desc">Execute Python code with pip packages and file I/O. Supports numpy and Pillow.</string>
     <string name="assistant_page_local_tools_tts_title">Text to Speech</string>
     <string name="assistant_page_local_tools_tts_desc">Let the assistant read text aloud using your selected TTS provider</string>
+    <string name="assistant_page_local_tools_ask_user_title">Ask User</string>
+    <string name="assistant_page_local_tools_ask_user_desc">Allow the assistant to ask you clarification questions inside chat</string>
     <string name="assistant_page_local_tools_python_internet_title">Allow Internet Access</string>
     <string name="assistant_page_local_tools_python_internet_desc">Allow Python code to make network requests</string>
     <string name="assistant_page_manage_memory">Manage Memory (%d)</string>

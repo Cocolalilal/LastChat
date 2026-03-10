@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.pages.assistant.detail
+﻿package me.rerere.rikkahub.ui.pages.assistant.detail
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,7 +37,8 @@ import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.icons.ModeIcons
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.theme.AppShapes
-import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.ui.theme.groupedItemShape
+import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 
 @Composable
 fun AssistantSkillsSubPage(
@@ -87,7 +88,7 @@ fun AssistantSkillsSubPage(
         item(key = "description") {
             Card(
                 colors = CardDefaults.cardColors(
-                    containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+                    containerColor = placedSurfaceColor()
                 ),
                 shape = AppShapes.CardLarge
             ) {
@@ -145,28 +146,12 @@ private fun SkillSelectionCard(
     onClick: () -> Unit,
     onToggle: (Boolean) -> Unit
 ) {
-    val cornerRadius = 28.dp
-    val smallCorner = 8.dp
-    val shape = when (position) {
-        ItemPosition.ONLY -> RoundedCornerShape(cornerRadius)
-        ItemPosition.FIRST -> RoundedCornerShape(
-            topStart = cornerRadius,
-            topEnd = cornerRadius,
-            bottomStart = smallCorner,
-            bottomEnd = smallCorner
-        )
-        ItemPosition.MIDDLE -> RoundedCornerShape(smallCorner)
-        ItemPosition.LAST -> RoundedCornerShape(
-            topStart = smallCorner,
-            topEnd = smallCorner,
-            bottomStart = cornerRadius,
-            bottomEnd = cornerRadius
-        )
-    }
+    val shape = groupedItemShape(position = position, selected = isEnabled)
 
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+            containerColor = if (isEnabled) MaterialTheme.colorScheme.primaryContainer else placedSurfaceColor(),
+            contentColor = if (isEnabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
         ),
         shape = shape,
         onClick = onClick
@@ -221,3 +206,5 @@ private fun SkillSelectionCard(
         }
     }
 }
+
+

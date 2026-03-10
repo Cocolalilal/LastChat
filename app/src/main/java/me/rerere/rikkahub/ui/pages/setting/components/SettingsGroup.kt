@@ -27,11 +27,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import me.rerere.rikkahub.ui.components.ui.GroupedStack
+import me.rerere.rikkahub.ui.components.ui.GroupedStackItem
+import me.rerere.rikkahub.ui.components.ui.ItemPosition
+import me.rerere.rikkahub.ui.components.ui.rememberGroupedStackPosition
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
-import me.rerere.rikkahub.ui.theme.AppShapes
-import me.rerere.rikkahub.ui.theme.AppSurfaceLevel
-import me.rerere.rikkahub.ui.theme.appSurfaceColor
+import me.rerere.rikkahub.ui.theme.groupedItemShape
+import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 
 @Composable
 fun SettingsGroup(
@@ -49,24 +52,26 @@ fun SettingsGroup(
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(start = 16.dp, bottom = 4.dp, top = 0.dp)
         )
-        Column(
-            modifier = Modifier
-                .padding(horizontal = 16.dp)
-                .clip(AppShapes.CardMedium),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-            content = content
-        )
+        GroupedStack {
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                content = content
+            )
+        }
     }
 }
 
 @Composable
 fun SettingGroupItem(
+    position: ItemPosition? = null,
     title: String,
     subtitle: String? = null,
     icon: (@Composable () -> Unit)? = null,
     trailing: @Composable (() -> Unit)? = null,
     onClick: (() -> Unit)? = null
 ) {
+    val resolvedPosition = rememberGroupedStackPosition(position)
     val haptics = rememberPremiumHaptics()
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -85,8 +90,8 @@ fun SettingGroupItem(
             }
         },
         enabled = onClick != null,
-        color = appSurfaceColor(AppSurfaceLevel.ContainerHigh),
-        shape = AppShapes.ListItem,
+        color = placedSurfaceColor(),
+        shape = groupedItemShape(resolvedPosition),
         interactionSource = interactionSource,
         modifier = Modifier
             .fillMaxWidth()
@@ -143,15 +148,17 @@ fun SettingGroupItem(
 
 @Composable
 fun SettingGroupInputItem(
+    position: ItemPosition? = null,
     title: String,
     subtitle: String? = null,
     icon: (@Composable () -> Unit)? = null,
     trailing: @Composable (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val resolvedPosition = rememberGroupedStackPosition(position)
     Surface(
-        color = appSurfaceColor(AppSurfaceLevel.ContainerHigh),
-        shape = AppShapes.ListItem,
+        color = placedSurfaceColor(),
+        shape = groupedItemShape(resolvedPosition),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
@@ -198,4 +205,11 @@ fun SettingGroupInputItem(
             content()
         }
     }
+}
+
+@Composable
+fun SettingsGroupCustomItem(
+    content: @Composable (ItemPosition) -> Unit
+) {
+    GroupedStackItem(content)
 }

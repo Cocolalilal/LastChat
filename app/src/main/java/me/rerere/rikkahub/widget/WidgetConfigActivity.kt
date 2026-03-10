@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.widget
+﻿package me.rerere.rikkahub.widget
 
 import android.appwidget.AppWidgetManager
 import android.content.Intent
@@ -172,7 +172,7 @@ private fun AssistantCard(
             .fillMaxWidth()
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
         )
     ) {
         Row(
@@ -209,3 +209,4 @@ private fun AssistantCard(
         }
     }
 }
+

@@ -401,6 +401,23 @@ class ChatVM(
         }
     }
 
+    fun handleToolApproval(
+        toolCallId: String,
+        approved: Boolean,
+        reason: String = "",
+        answer: String? = null,
+    ) {
+        viewModelScope.launch {
+            chatService.handleToolApproval(
+                conversationId = _conversationId,
+                toolCallId = toolCallId,
+                approved = approved,
+                reason = reason,
+                answer = answer,
+            )
+        }
+    }
+
     suspend fun forkMessage(message: UIMessage): Conversation {
         val node = conversation.value.getMessageNodeByMessage(message)
         val nodes = conversation.value.messageNodes.subList(

@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.components.message
+﻿package me.rerere.rikkahub.ui.components.message
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -58,7 +58,7 @@ fun LanguageSelectionDialog(
     onClearTranslation: () -> Unit = {},
     onDismissRequest: () -> Unit
 ) {
-    // 支持的语言列表
+    // æ”¯æŒçš„è¯­è¨€åˆ—è¡¨
     val languages = remember {
         listOf(
             Locale.SIMPLIFIED_CHINESE,
@@ -73,7 +73,7 @@ fun LanguageSelectionDialog(
         )
     }
 
-    // 语言名称映射函数，原有的 locale.displayName 方法无法获取 emoji
+    // è¯­è¨€åç§°æ˜ å°„å‡½æ•°ï¼ŒåŽŸæœ‰çš„ locale.displayName æ–¹æ³•æ— æ³•èŽ·å– emoji
     @Composable
     fun getLanguageDisplayName(locale: Locale): String {
         return when (locale) {
@@ -91,7 +91,7 @@ fun LanguageSelectionDialog(
     }
 
     ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
         onDismissRequest = onDismissRequest,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     ) {
@@ -101,14 +101,14 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            // 标题
+            // æ ‡é¢˜
             Text(
                 text = stringResource(R.string.translation_language_selection_title),
                 style = MaterialTheme.typography.headlineSmall,
                 modifier = Modifier.fillMaxWidth()
             )
 
-            // 语言列表
+            // è¯­è¨€åˆ—è¡¨
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth()
@@ -209,7 +209,7 @@ fun CollapsibleTranslationText(
                 )
             }
 
-            // 折叠/展开按钮
+            // æŠ˜å /å±•å¼€æŒ‰é’®
             IconButton(
                 onClick = { isCollapsed = !isCollapsed },
                 modifier = Modifier.size(32.dp)
@@ -290,3 +290,4 @@ fun CollapsibleTranslationText(
         }
     }
 }
+

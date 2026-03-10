@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.components.chat
+﻿package me.rerere.rikkahub.ui.components.chat
 
 import android.net.Uri
 import androidx.compose.animation.animateContentSize
@@ -121,7 +121,7 @@ internal fun ActivityTimelineSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     ModalBottomSheet(
-        containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+        containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
         modifier = modifier,
@@ -265,7 +265,7 @@ internal fun ActivityTimelinePanel(
 
     Surface(
         shape = AppShapes.InputField,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
         modifier = modifier
             .fillMaxWidth()
             .testTag("activity_timeline_panel")
@@ -465,7 +465,7 @@ private fun TimelineEntryItem(
     val containerColor = when {
         isMemoryDeleted -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
         entry is TimelineEntry.MemoryAction -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
-        else -> MaterialTheme.colorScheme.surfaceContainerLow
+        else -> me.rerere.rikkahub.ui.theme.placedSurfaceColor()
     }
 
     val followSignature = remember(entry) { buildEntryFollowSignature(entry) }
@@ -804,7 +804,7 @@ private fun SearchTimelineDetails(entry: TimelineEntry.ToolCall) {
 
                 Surface(
                     shape = AppShapes.CardSmall,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                 ) {
                     Column(
                         modifier = Modifier.padding(10.dp),
@@ -865,7 +865,7 @@ private fun ScrapeTimelineDetails(entry: TimelineEntry.ToolCall) {
     if (!content.isNullOrBlank()) {
         Surface(
             shape = AppShapes.CardSmall,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh
+            color = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
         ) {
             Text(
                 text = content.take(800),
@@ -887,7 +887,7 @@ private fun PythonTimelineDetails(entry: TimelineEntry.ToolCall) {
     if (summary.code.isNotBlank()) {
         TimelineDetailBlock(
             label = stringResource(R.string.chat_message_tool_python_code),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
         ) {
             Text(
                 text = summary.code,
@@ -914,7 +914,7 @@ private fun PythonTimelineDetails(entry: TimelineEntry.ToolCall) {
         color = if (!summary.error.isNullOrBlank()) {
             MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
         } else {
-            MaterialTheme.colorScheme.surfaceContainerHigh
+            me.rerere.rikkahub.ui.theme.placedSurfaceColor()
         },
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -1051,7 +1051,7 @@ private fun SkillManagementTimelineDetails(entry: TimelineEntry.ToolCall) {
         )
         Surface(
             shape = AppShapes.CardSmall,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh
+            color = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
         ) {
             Text(
                 text = summary.disabled.joinToString(", "),
@@ -1086,7 +1086,7 @@ private fun GenericToolDetails(entry: TimelineEntry.ToolCall) {
         )
         Surface(
             shape = AppShapes.CardSmall,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh
+            color = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
         ) {
             Text(
                 text = argumentsPretty,
@@ -1105,7 +1105,7 @@ private fun GenericToolDetails(entry: TimelineEntry.ToolCall) {
         )
         Surface(
             shape = AppShapes.CardSmall,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh
+            color = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
         ) {
             Text(
                 text = resultPretty.take(1200),
@@ -1150,7 +1150,7 @@ private fun TimelineFieldRow(
     val resolvedValueColor = valueColor ?: MaterialTheme.colorScheme.onSurfaceVariant
     TimelineDetailBlock(
         label = label,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
     ) {
         Text(
             text = value,
@@ -1292,7 +1292,7 @@ private fun MemoryContentBlock(
     )
     Surface(
         shape = AppShapes.CardSmall,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
         modifier = Modifier.fillMaxWidth()
     ) {
         Text(
@@ -1342,3 +1342,4 @@ private fun TimelineActionButton(
         )
     }
 }
+

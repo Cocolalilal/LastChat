@@ -55,6 +55,7 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppSurfaceLevel
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.appSurfaceColor
 import me.rerere.rikkahub.ui.theme.groupedItemRadii
 import kotlin.math.absoluteValue
@@ -91,8 +92,8 @@ fun PhysicsSwipeToDelete(
     onDelete: () -> Unit,
     deleteEnabled: Boolean = true,
     position: ItemPosition = ItemPosition.ONLY,
-    groupCornerRadius: Dp = 24.dp,
-    itemCornerRadius: Dp = 10.dp,
+    groupCornerRadius: Dp = AppShapes.GroupedOuterRadius,
+    itemCornerRadius: Dp = AppShapes.GroupedInnerRadius,
     neighborOffset: Float = 0f,
     onDragProgress: ((offset: Float, isUnlocked: Boolean) -> Unit)? = null,
     onDragEnd: (() -> Unit)? = null,
@@ -158,8 +159,7 @@ fun PhysicsSwipeToDelete(
     }
     
     // Position-based corner radius with smooth animation on position change and unlock
-    val groupRadiusPx = with(density) { groupCornerRadius.toPx() }
-    val itemRadiusPx = with(density) { itemCornerRadius.toPx() }
+    val selectedRadiusPx = with(density) { AppShapes.GroupedSelectedRadius.toPx() }
     
     // Animate base radii when position changes
     val baseRadii = groupedItemRadii(
@@ -188,10 +188,10 @@ fun PhysicsSwipeToDelete(
             // Only interpolate corners for own unlock progress (not neighbor influence)
             val ownUnlockProgress = if (neighborOffset == 0f) unlockProgress else 0f
             
-            val finalTopStart = animatedTopRadius + (groupRadiusPx - animatedTopRadius) * ownUnlockProgress
-            val finalTopEnd = animatedTopRadius + (groupRadiusPx - animatedTopRadius) * ownUnlockProgress
-            val finalBottomEnd = animatedBottomRadius + (groupRadiusPx - animatedBottomRadius) * ownUnlockProgress
-            val finalBottomStart = animatedBottomRadius + (groupRadiusPx - animatedBottomRadius) * ownUnlockProgress
+            val finalTopStart = animatedTopRadius + (selectedRadiusPx - animatedTopRadius) * ownUnlockProgress
+            val finalTopEnd = animatedTopRadius + (selectedRadiusPx - animatedTopRadius) * ownUnlockProgress
+            val finalBottomEnd = animatedBottomRadius + (selectedRadiusPx - animatedBottomRadius) * ownUnlockProgress
+            val finalBottomStart = animatedBottomRadius + (selectedRadiusPx - animatedBottomRadius) * ownUnlockProgress
             
             RoundedCornerShape(
                 topStart = with(density) { finalTopStart.toDp() },

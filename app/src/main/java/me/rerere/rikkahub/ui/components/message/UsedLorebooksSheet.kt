@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.components.message
+﻿package me.rerere.rikkahub.ui.components.message
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -62,7 +62,7 @@ fun UsedLorebooksSheet(
     val scope = rememberCoroutineScope()
     
     ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
         sheetGesturesEnabled = false,
@@ -140,7 +140,7 @@ private fun UsedLorebookEntryItem(
     Surface(
         onClick = onClick,
         shape = shape,
-        color = if (isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+        color = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
     ) {
         Row(
             modifier = Modifier
@@ -235,7 +235,7 @@ private fun BookCoverItem(
             .width(width)
             .height(height)
             .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            .background(me.rerere.rikkahub.ui.theme.placedSurfaceColor())
             .border(
                 width = 1.dp,
                 color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
@@ -302,3 +302,5 @@ private fun BookCoverItem(
         }
     }
 }
+
+

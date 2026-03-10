@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.pages.assistant.detail
+﻿package me.rerere.rikkahub.ui.pages.assistant.detail
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -80,10 +80,7 @@ fun BackgroundPicker(
 
     // Use Surface with 10dp corners to match SettingsGroup pattern
     androidx.compose.material3.Surface(
-        color = if (isDarkMode) 
-            MaterialTheme.colorScheme.surfaceContainerLow 
-        else 
-            MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
         shape = RoundedCornerShape(10.dp)
     ) {
         Column(
@@ -312,3 +309,5 @@ fun BackgroundPicker(
         )
     }
 }
+
+

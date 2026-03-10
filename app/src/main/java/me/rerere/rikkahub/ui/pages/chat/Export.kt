@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.pages.chat
+﻿package me.rerere.rikkahub.ui.pages.chat
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -117,7 +117,7 @@ fun ChatExportSheet(
 
     if (visible) {
         ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
             onDismissRequest = onDismissRequest,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         ) {
@@ -715,3 +715,4 @@ private fun shareFile(context: Context, uri: Uri, mimeType: String) {
         )
     )
 }
+

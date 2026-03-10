@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.components.ui
+﻿package me.rerere.rikkahub.ui.components.ui
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -90,7 +90,7 @@ fun MaterialIconPickerDialog(
                             onClick = { onIconSelected(name) },
                             modifier = Modifier.size(48.dp),
                             shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh
+                            color = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                         ) {
                             androidx.compose.foundation.layout.Box(
                                 contentAlignment = Alignment.Center
@@ -115,3 +115,4 @@ fun MaterialIconPickerDialog(
         }
     )
 }
+

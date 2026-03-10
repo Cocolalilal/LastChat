@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.pages.imggen
+﻿package me.rerere.rikkahub.ui.pages.imggen
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -567,7 +567,7 @@ private fun FloatingInputBar(
         // Main floating container - no glow
         Surface(
             shape = RoundedCornerShape(cornerRadius),
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
             tonalElevation = 8.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -910,7 +910,7 @@ private fun SettingsBottomSheet(
     onDismiss: () -> Unit
 ) {
     ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         dragHandle = { BottomSheetDefaults.DragHandle() }
@@ -979,3 +979,4 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
         }
     }
 }
+

@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.components.ai
+﻿package me.rerere.rikkahub.ui.components.ai
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
@@ -52,13 +52,13 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import kotlinx.coroutines.launch
 import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.Model
-import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.ai.registry.ModelRegistry
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
+import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.components.ui.ToggleSurface
@@ -66,10 +66,12 @@ import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.pages.setting.SearchAbilityTagLine
 import me.rerere.search.SearchService
 import me.rerere.search.SearchServiceOptions
-import me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode
 import org.koin.compose.koinInject
 
 import androidx.compose.ui.graphics.Shape
+import me.rerere.rikkahub.ui.theme.groupedItemRadii
+import me.rerere.rikkahub.ui.theme.groupedItemShape
+import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 
 @Composable
 fun SearchPickerButton(
@@ -155,7 +157,7 @@ fun SearchPickerButton(
 
     if (showSearchPicker) {
         ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
             onDismissRequest = { showSearchPicker = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ) {
@@ -220,7 +222,7 @@ internal fun SearchPicker(
 ) {
     val navBackStack = LocalNavController.current
 
-    // 模型内置搜索 (only show if model supports it)
+    // æ¨¡åž‹å†…ç½®æœç´¢ (only show if model supports it)
     if (model != null && ModelRegistry.GEMINI_SERIES.match(model.modelId)) {
         BuiltInSearchSetting(
             preferBuiltInSearch = preferBuiltInSearch,
@@ -228,7 +230,7 @@ internal fun SearchPicker(
         )
     }
 
-    // 显示搜索服务选择 (always show, but selection only applies when not using built-in)
+    // æ˜¾ç¤ºæœç´¢æœåŠ¡é€‰æ‹© (always show, but selection only applies when not using built-in)
     AppSearchSettings(
         enableSearch = enableSearch,
         onDismiss = onDismiss,
@@ -252,24 +254,18 @@ private fun AppSearchSettings(
     selectedProviderIndex: Int = -1,
     onUpdateSearchService: (Int) -> Unit
 ) {
-    val amoledMode by rememberAmoledDarkMode()
-    val isDarkMode = LocalDarkMode.current
-    val isAmoled = amoledMode && isDarkMode
-    
     val numProviders = settings.searchServices.size
     
     // Calculate total items for position-based corners
     // Items: Web Search Toggle + all search providers
     val totalItems = 1 + numProviders
-    
-    // Position-based corner shape calculator
-    fun getItemShape(index: Int, totalCount: Int, isSelected: Boolean): RoundedCornerShape {
-        if (isSelected) return RoundedCornerShape(50) // Selected = fully round
+
+    fun itemPosition(index: Int, totalCount: Int): ItemPosition {
         return when {
-            totalCount == 1 -> RoundedCornerShape(24.dp) // Single item
-            index == 0 -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
-            index == totalCount - 1 -> RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
-            else -> RoundedCornerShape(10.dp)
+            totalCount <= 1 -> ItemPosition.ONLY
+            index == 0 -> ItemPosition.FIRST
+            index == totalCount - 1 -> ItemPosition.LAST
+            else -> ItemPosition.MIDDLE
         }
     }
     
@@ -284,9 +280,7 @@ private fun AppSearchSettings(
                 onToggleSearch = onToggleSearch,
                 onDismiss = onDismiss,
                 navBackStack = navBackStack,
-                shape = RoundedCornerShape(24.dp),
-                isAmoled = isAmoled,
-                isDarkMode = isDarkMode
+                position = ItemPosition.ONLY,
             )
         }
         // If 1 provider, show toggle only (no selection needed)
@@ -296,9 +290,7 @@ private fun AppSearchSettings(
                 onToggleSearch = onToggleSearch,
                 onDismiss = onDismiss,
                 navBackStack = navBackStack,
-                shape = RoundedCornerShape(24.dp),
-                isAmoled = isAmoled,
-                isDarkMode = isDarkMode
+                position = ItemPosition.ONLY,
             )
         }
         // If 2 providers, group toggle + providers together
@@ -309,9 +301,7 @@ private fun AppSearchSettings(
                 onToggleSearch = onToggleSearch,
                 onDismiss = onDismiss,
                 navBackStack = navBackStack,
-                shape = getItemShape(0, totalItems, false),
-                isAmoled = isAmoled,
-                isDarkMode = isDarkMode
+                position = itemPosition(0, totalItems),
             )
             // Providers at positions 1-2
             settings.searchServices.forEachIndexed { index, service ->
@@ -320,11 +310,7 @@ private fun AppSearchSettings(
                     service = service,
                     isSelected = isSelected,
                     onClick = { onUpdateSearchService(index) },
-                    shape = getItemShape(index + 1, totalItems, isSelected),
-                    isAmoled = isAmoled,
-                    isDarkMode = isDarkMode,
-                    index = index + 1,
-                    totalCount = totalItems
+                    position = itemPosition(index + 1, totalItems),
                 )
             }
         }
@@ -336,9 +322,7 @@ private fun AppSearchSettings(
                 onToggleSearch = onToggleSearch,
                 onDismiss = onDismiss,
                 navBackStack = navBackStack,
-                shape = getItemShape(0, totalItems, false),
-                isAmoled = isAmoled,
-                isDarkMode = isDarkMode
+                position = itemPosition(0, totalItems),
             )
             // All providers
             settings.searchServices.forEachIndexed { index, service ->
@@ -347,11 +331,7 @@ private fun AppSearchSettings(
                     service = service,
                     isSelected = isSelected,
                     onClick = { onUpdateSearchService(index) },
-                    shape = getItemShape(index + 1, totalItems, isSelected),
-                    isAmoled = isAmoled,
-                    isDarkMode = isDarkMode,
-                    index = index + 1,
-                    totalCount = totalItems
+                    position = itemPosition(index + 1, totalItems),
                 )
             }
         }
@@ -364,18 +344,15 @@ private fun SearchToggleItem(
     onToggleSearch: (Boolean) -> Unit,
     onDismiss: () -> Unit,
     navBackStack: NavHostController,
-    shape: RoundedCornerShape,
-    isAmoled: Boolean,
-    isDarkMode: Boolean
+    position: ItemPosition,
 ) {
-    // Use surfaceContainerHigh for Light Mode consistency
-    val containerColor = if (isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+    val containerColor = placedSurfaceColor()
     val contentColor = MaterialTheme.colorScheme.onSurface
     
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(shape)
+            .clip(groupedItemShape(position = position))
             .background(containerColor)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -408,30 +385,18 @@ private fun SearchProviderItem(
     service: SearchServiceOptions,
     isSelected: Boolean,
     onClick: () -> Unit,
-    shape: RoundedCornerShape,
-    isAmoled: Boolean,
-    isDarkMode: Boolean,
-    index: Int = 0,
-    totalCount: Int = 1
+    position: ItemPosition,
 ) {
     val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
-    
-    // Animated corner radius - selected items animate to fully round
+
+    val targetRadii = groupedItemRadii(position = position, selected = isSelected)
     val topCorner by androidx.compose.animation.core.animateDpAsState(
-        targetValue = if (isSelected) 50.dp else when {
-            totalCount == 1 -> 24.dp
-            index == 0 -> 24.dp
-            else -> 10.dp
-        },
+        targetValue = targetRadii.topStart,
         animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.8f, stiffness = 200f),
         label = "topCorner"
     )
     val bottomCorner by androidx.compose.animation.core.animateDpAsState(
-        targetValue = if (isSelected) 50.dp else when {
-            totalCount == 1 -> 24.dp
-            index == totalCount - 1 -> 24.dp
-            else -> 10.dp
-        },
+        targetValue = targetRadii.bottomStart,
         animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.8f, stiffness = 200f),
         label = "bottomCorner"
     )
@@ -444,10 +409,8 @@ private fun SearchProviderItem(
     // Animated colors for smooth selection transition
     val targetContainerColor = if (isSelected) {
         MaterialTheme.colorScheme.primaryContainer
-    } else if (isDarkMode) {
-        Color.Black
     } else {
-        MaterialTheme.colorScheme.surfaceContainerHigh
+        placedSurfaceColor()
     }
     val targetContentColor = if (isSelected) {
         MaterialTheme.colorScheme.onPrimaryContainer
@@ -497,12 +460,8 @@ private fun BuiltInSearchSetting(
     preferBuiltInSearch: Boolean,
     onTogglePreferBuiltInSearch: (Boolean) -> Unit
 ) {
-    val amoledMode by rememberAmoledDarkMode()
-    val isDarkMode = LocalDarkMode.current
-    val isAmoled = amoledMode && isDarkMode
-    
-    val containerColor = if (isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
-    val contentColor = if (isAmoled) Color.White else MaterialTheme.colorScheme.onSurface
+    val containerColor = placedSurfaceColor()
+    val contentColor = MaterialTheme.colorScheme.onSurface
 
     CompositionLocalProvider(LocalAbsoluteTonalElevation provides 0.dp) {
         val cardElevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
@@ -548,3 +507,5 @@ private fun BuiltInSearchSetting(
         }
     }
 }
+
+

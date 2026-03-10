@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.pages.assistant.detail
+﻿package me.rerere.rikkahub.ui.pages.assistant.detail
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -83,11 +83,16 @@ import androidx.compose.ui.util.fastForEach
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantMemory
+import me.rerere.rikkahub.ui.components.ui.AppOutlinedField
+import me.rerere.rikkahub.ui.components.ui.AppSearchField
+import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.ui.theme.AppShapes
-import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.ui.theme.groupedItemRadii
+import me.rerere.rikkahub.ui.theme.groupedItemShape
+import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 import me.rerere.rikkahub.utils.toLocalString
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
@@ -207,20 +212,20 @@ fun AssistantMemorySettings(
         // Mode Indicator
         MemoryModeIndicator(mode = currentMode)
         
-        // ═══════════════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // SETTINGS GROUP
-        // ═══════════════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         SettingsGroupHeader(title = "Memory Settings")
         
         Column(
-            modifier = Modifier.clip(RoundedCornerShape(24.dp)),
+            modifier = Modifier.clip(AppShapes.Grouped),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             // Master Toggle - Enable Memory (always visible)
             MemorySettingsItem(
                 title = stringResource(R.string.assistant_page_memory),
                 subtitle = stringResource(R.string.assistant_page_memory_desc),
-                position = if (!assistant.enableMemory) "ONLY" else "FIRST",
+                position = if (!assistant.enableMemory) ItemPosition.ONLY else ItemPosition.FIRST,
                 trailing = {
                     HapticSwitch(
                         checked = assistant.enableMemory,
@@ -241,7 +246,7 @@ fun AssistantMemorySettings(
                     title = stringResource(R.string.assistant_page_recent_chats),
                     subtitle = stringResource(R.string.assistant_page_recent_chats_desc),
                     // RAG toggle is always visible below when memory is on, so this is always MIDDLE
-                    position = "MIDDLE",
+                    position = ItemPosition.MIDDLE,
                     trailing = {
                         // Use 0.75f alpha for disabled state - subtle but visible
                         val toggleAlpha by animateFloatAsState(
@@ -273,7 +278,7 @@ fun AssistantMemorySettings(
                 MemorySettingsItem(
                     title = "RAG Memory Retrieval",
                     subtitle = "Smart context-based memory retrieval",
-                    position = if (!assistant.useRagMemoryRetrieval) "LAST" else "MIDDLE",
+                    position = if (!assistant.useRagMemoryRetrieval) ItemPosition.LAST else ItemPosition.MIDDLE,
                     trailing = {
                         HapticSwitch(
                             checked = assistant.useRagMemoryRetrieval,
@@ -301,7 +306,7 @@ fun AssistantMemorySettings(
                 MemorySettingsItem(
                     title = "Advanced Memory",
                     subtitle = "Form episodic memories from conversations",
-                    position = "LAST",
+                    position = ItemPosition.LAST,
                     trailing = {
                         HapticSwitch(
                             checked = assistant.enableMemoryConsolidation,
@@ -323,9 +328,9 @@ fun AssistantMemorySettings(
             }
         }
 
-        // ═══════════════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // RAG SETTINGS (when RAG is enabled)
-        // ═══════════════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         AnimatedVisibility(
             visible = assistant.enableMemory && assistant.useRagMemoryRetrieval,
             enter = fadeIn() + expandVertically(),
@@ -337,9 +342,9 @@ fun AssistantMemorySettings(
             }
         }
 
-        // ═══════════════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // CONSOLIDATION SETTINGS (when consolidation is enabled)
-        // ═══════════════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         AnimatedVisibility(
             visible = assistant.enableMemory && assistant.enableMemoryConsolidation,
             enter = fadeIn() + expandVertically(),
@@ -359,9 +364,9 @@ fun AssistantMemorySettings(
         }
 
 
-        // ═══════════════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // MEMORY STATISTICS (when memory is enabled)
-        // ═══════════════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         AnimatedVisibility(
             visible = assistant.enableMemory,
             enter = fadeIn() + expandVertically(),
@@ -374,9 +379,9 @@ fun AssistantMemorySettings(
             )
         }
 
-        // ═══════════════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // MANAGE MEMORIES (when memory is enabled)
-        // ═══════════════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         AnimatedVisibility(
             visible = assistant.enableMemory,
             enter = fadeIn() + expandVertically(),
@@ -399,9 +404,9 @@ fun AssistantMemorySettings(
             )
         }
 
-        // ═══════════════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // MEMORY DEBUGGER (RAG only)
-        // ═══════════════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         AnimatedVisibility(
             visible = assistant.enableMemory && assistant.useRagMemoryRetrieval && onTestRetrieval != null,
             enter = fadeIn() + expandVertically(),
@@ -435,7 +440,7 @@ private fun SettingsGroupHeader(title: String) {
 private fun MemorySettingsItem(
     title: String,
     subtitle: String? = null,
-    position: String = "MIDDLE", // ONLY, FIRST, MIDDLE, LAST
+    position: ItemPosition = ItemPosition.MIDDLE,
     trailing: @Composable (() -> Unit)? = null,
     onClick: (() -> Unit)? = null
 ) {
@@ -449,19 +454,14 @@ private fun MemorySettingsItem(
         label = "scale"
     )
     
+    val targetRadii = groupedItemRadii(position = position)
     val topCorner by animateDpAsState(
-        targetValue = when (position) {
-            "ONLY", "FIRST" -> 24.dp
-            else -> 10.dp
-        },
+        targetValue = targetRadii.topStart,
         animationSpec = spring(dampingRatio = 0.8f, stiffness = 200f),
         label = "topCorner"
     )
     val bottomCorner by animateDpAsState(
-        targetValue = when (position) {
-            "ONLY", "LAST" -> 24.dp
-            else -> 10.dp
-        },
+        targetValue = targetRadii.bottomStart,
         animationSpec = spring(dampingRatio = 0.8f, stiffness = 200f),
         label = "bottomCorner"
     )
@@ -474,7 +474,7 @@ private fun MemorySettingsItem(
             }
         },
         enabled = onClick != null,
-        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
+        color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
         shape = RoundedCornerShape(
             topStart = topCorner,
             topEnd = topCorner,
@@ -524,7 +524,7 @@ private fun MemorySettingsItem(
 private fun MemoryModeIndicator(mode: MemoryMode) {
     val backgroundColor by animateColorAsState(
         targetValue = if (mode == MemoryMode.OFF)
-            if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+            me.rerere.rikkahub.ui.theme.placedSurfaceColor()
         else
             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
         animationSpec = spring(),
@@ -532,7 +532,7 @@ private fun MemoryModeIndicator(mode: MemoryMode) {
     )
     
     Surface(
-        shape = RoundedCornerShape(24.dp),
+        shape = AppShapes.Grouped,
         color = backgroundColor,
         modifier = Modifier.animateContentSize()
     ) {
@@ -586,13 +586,13 @@ private fun RagSettingsCard(
     onUpdateAssistant: (Assistant) -> Unit
 ) {
     Column(
-        modifier = Modifier.clip(RoundedCornerShape(24.dp)),
+        modifier = Modifier.clip(AppShapes.Grouped),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         // Similarity Threshold
         Surface(
-            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
-            shape = RoundedCornerShape(24.dp)
+            color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+            shape = AppShapes.Grouped
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 var threshold by remember(assistant.ragSimilarityThreshold) {
@@ -671,9 +671,13 @@ private fun ConsolidationSettingsCard(
     onNavigateToSummarizerSettings: () -> Unit = {}
 ) {
     Column(
-        modifier = Modifier.clip(RoundedCornerShape(24.dp)),
+        modifier = Modifier.clip(AppShapes.Grouped),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
+        val warningPosition = ItemPosition.FIRST
+        val delayPosition = if (showSummarizerWarning) ItemPosition.MIDDLE else ItemPosition.FIRST
+        val actionPosition = ItemPosition.LAST
+
         // Warning banner as first item when no summarizer model is set
         AnimatedVisibility(
             visible = showSummarizerWarning,
@@ -683,7 +687,7 @@ private fun ConsolidationSettingsCard(
             Surface(
                 onClick = onNavigateToSummarizerSettings,
                 color = MaterialTheme.colorScheme.errorContainer,
-                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
+                shape = groupedItemShape(warningPosition)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -707,12 +711,8 @@ private fun ConsolidationSettingsCard(
         
         // Consolidation Delay - corners depend on whether warning banner is shown
         Surface(
-            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
-            shape = if (showSummarizerWarning) {
-                RoundedCornerShape(10.dp)
-            } else {
-                RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
-            }
+            color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+            shape = groupedItemShape(delayPosition)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(
@@ -743,8 +743,8 @@ private fun ConsolidationSettingsCard(
 
         // Manual consolidation
         Surface(
-            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
-            shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp, topStart = 10.dp, topEnd = 10.dp)
+            color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+            shape = groupedItemShape(actionPosition)
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
@@ -783,7 +783,7 @@ private fun MemoryStatisticsCard(
     val withEmbeddings = memories.count { it.hasEmbedding }
 
     Surface(
-        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
+        color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
         shape = RoundedCornerShape(24.dp)
     ) {
         Column(
@@ -1007,34 +1007,28 @@ private fun ManageMemoriesSection(
         }
 
         // Search
-        TextField(
+        AppSearchField(
             value = memorySearchQuery,
             onValueChange = onSearchQueryChange,
             modifier = Modifier.fillMaxWidth(),
             placeholder = { Text("Search memories...") },
-            leadingIcon = { Icon(Icons.Rounded.Search, null) },
-            singleLine = true,
-            shape = RoundedCornerShape(16.dp),
-            colors = TextFieldDefaults.colors(
-                focusedIndicatorColor = Color.Transparent,
-                unfocusedIndicatorColor = Color.Transparent
-            )
+            colors = TextFieldDefaults.colors()
         )
 
         // Memory list with animation
         Column(
             modifier = Modifier
-                .clip(RoundedCornerShape(24.dp))
+                .clip(AppShapes.Grouped)
                 .animateContentSize(),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             displayMemories.forEachIndexed { index, memory ->
                 key(memory.id) {
                     val position = when {
-                        displayMemories.size == 1 -> "ONLY"
-                        index == 0 -> "FIRST"
-                        index == displayMemories.size - 1 -> "LAST"
-                        else -> "MIDDLE"
+                        displayMemories.size == 1 -> ItemPosition.ONLY
+                        index == 0 -> ItemPosition.FIRST
+                        index == displayMemories.size - 1 -> ItemPosition.LAST
+                        else -> ItemPosition.MIDDLE
                     }
                     MemoryItem(
                         memory = memory,
@@ -1050,8 +1044,8 @@ private fun ManageMemoriesSection(
             
             if (displayMemories.isEmpty()) {
                 Surface(
-                    color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
-                    shape = RoundedCornerShape(24.dp),
+                    color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+                    shape = AppShapes.Grouped,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
@@ -1074,7 +1068,7 @@ private fun MemoryItem(
     useRagMemoryRetrieval: Boolean = false,
     currentEmbeddingModelId: String = "",
     showType: Boolean = false,
-    position: String = "MIDDLE"
+    position: ItemPosition = ItemPosition.MIDDLE
 ) {
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     val haptics = rememberPremiumHaptics()
@@ -1087,22 +1081,9 @@ private fun MemoryItem(
         label = "scale"
     )
     
-    val topCorner by animateDpAsState(
-        targetValue = when (position) {
-            "ONLY", "FIRST" -> 24.dp
-            else -> 10.dp
-        },
-        animationSpec = spring(dampingRatio = 0.8f, stiffness = 200f),
-        label = "topCorner"
-    )
-    val bottomCorner by animateDpAsState(
-        targetValue = when (position) {
-            "ONLY", "LAST" -> 24.dp
-            else -> 10.dp
-        },
-        animationSpec = spring(dampingRatio = 0.8f, stiffness = 200f),
-        label = "bottomCorner"
-    )
+    val targetRadii = groupedItemRadii(position = position)
+    val topCorner by animateDpAsState(targetValue = targetRadii.topStart, animationSpec = spring(dampingRatio = 0.8f, stiffness = 200f), label = "topCorner")
+    val bottomCorner by animateDpAsState(targetValue = targetRadii.bottomStart, animationSpec = spring(dampingRatio = 0.8f, stiffness = 200f), label = "bottomCorner")
     
     if (showDeleteConfirmation) {
         AlertDialog(
@@ -1133,7 +1114,7 @@ private fun MemoryItem(
     
     Surface(
         onClick = { onEditMemory(memory) },
-        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
+        color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
         shape = RoundedCornerShape(
             topStart = topCorner,
             topEnd = topCorner,
@@ -1229,8 +1210,8 @@ private fun MemoryDebugger(
     val (query, setQuery) = remember { mutableStateOf("") }
 
     Surface(
-        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
-        shape = RoundedCornerShape(24.dp)
+        color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+        shape = AppShapes.Grouped
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -1247,13 +1228,12 @@ private fun MemoryDebugger(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextField(
+                AppOutlinedField(
                     value = query,
                     onValueChange = setQuery,
                     placeholder = { Text("Enter test query...") },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
-                    shape = RoundedCornerShape(10.dp),
                     colors = TextFieldDefaults.colors(
                         focusedIndicatorColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent
@@ -1278,9 +1258,15 @@ private fun MemoryDebugger(
                         fontWeight = FontWeight.Bold
                     )
                     retrievalResults.forEachIndexed { index, (memory, score) ->
+                        val resultPosition = when {
+                            retrievalResults.size == 1 -> ItemPosition.ONLY
+                            index == 0 -> ItemPosition.FIRST
+                            index == retrievalResults.lastIndex -> ItemPosition.LAST
+                            else -> ItemPosition.MIDDLE
+                        }
                         Surface(
-                            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
-                            shape = RoundedCornerShape(10.dp)
+                            color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+                            shape = groupedItemShape(resultPosition)
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Row(
@@ -1309,3 +1295,5 @@ private fun MemoryDebugger(
         }
     }
 }
+
+

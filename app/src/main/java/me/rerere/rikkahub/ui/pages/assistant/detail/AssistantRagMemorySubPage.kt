@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.pages.assistant.detail
+﻿package me.rerere.rikkahub.ui.pages.assistant.detail
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -49,7 +49,7 @@ fun AssistantRagMemorySubPage(
         Card(
             shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
             colors = CardDefaults.cardColors(
-                    containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
             )
         ) {
             FormItem(
@@ -82,7 +82,7 @@ fun AssistantRagMemorySubPage(
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
                 colors = CardDefaults.cardColors(
-                        containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                        containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                 )
             ) {
                 Column(
@@ -128,7 +128,7 @@ fun AssistantRagMemorySubPage(
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
                 colors = CardDefaults.cardColors(
-                        containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                        containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                 )
             ) {
                 Column(
@@ -176,7 +176,7 @@ fun AssistantRagMemorySubPage(
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
                 colors = CardDefaults.cardColors(
-                        containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                        containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                 )
             ) {
                 FormItem(
@@ -225,7 +225,7 @@ private fun MemoryDebugger(
     Card(
         shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
         colors = CardDefaults.cardColors(
-            containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
         )
     ) {
         Column(
@@ -273,7 +273,7 @@ private fun MemoryDebugger(
                     Card(
                         shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
                         colors = CardDefaults.cardColors(
-                            containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+                            containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                         ),
                         modifier = Modifier.padding(vertical = 4.dp)
                     ) {
@@ -328,3 +328,5 @@ private fun MemoryDebugger(
         }
     }
 }
+
+

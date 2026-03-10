@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -31,7 +32,10 @@ import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
+import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroupCustomItem
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
+import me.rerere.rikkahub.ui.theme.groupedItemShape
+import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 import org.koin.androidx.compose.koinViewModel
 
 @Composable
@@ -335,34 +339,46 @@ fun SettingUICustomizationPage(vm: SettingVM = koinViewModel()) {
                 SettingsGroup(
                     title = stringResource(R.string.setting_display_page_font_size_title)
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
-                            .fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Slider(
-                            value = displaySetting.fontSizeRatio,
-                            onValueChange = {
-                                updateDisplaySetting(displaySetting.copy(fontSizeRatio = it))
-                            },
-                            valueRange = 0.5f..2f,
-                            steps = 11,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Text(
-                            text = "${(displaySetting.fontSizeRatio * 100).toInt()}%",
-                        )
+                    SettingsGroupCustomItem { position ->
+                        Surface(
+                            color = placedSurfaceColor(),
+                            shape = groupedItemShape(position),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            androidx.compose.foundation.layout.Column(
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                                        .fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Slider(
+                                        value = displaySetting.fontSizeRatio,
+                                        onValueChange = {
+                                            updateDisplaySetting(displaySetting.copy(fontSizeRatio = it))
+                                        },
+                                        valueRange = 0.5f..2f,
+                                        steps = 11,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = "${(displaySetting.fontSizeRatio * 100).toInt()}%",
+                                    )
+                                }
+                                MarkdownBlock(
+                                    content = stringResource(R.string.setting_display_page_font_size_preview),
+                                    modifier = Modifier.padding(8.dp),
+                                    style = LocalTextStyle.current.copy(
+                                        fontSize = LocalTextStyle.current.fontSize * displaySetting.fontSizeRatio,
+                                        lineHeight = LocalTextStyle.current.lineHeight * displaySetting.fontSizeRatio,
+                                    )
+                                )
+                            }
+                        }
                     }
-                    MarkdownBlock(
-                        content = stringResource(R.string.setting_display_page_font_size_preview),
-                        modifier = Modifier.padding(8.dp),
-                        style = LocalTextStyle.current.copy(
-                            fontSize = LocalTextStyle.current.fontSize * displaySetting.fontSizeRatio,
-                            lineHeight = LocalTextStyle.current.lineHeight * displaySetting.fontSizeRatio,
-                        )
-                    )
                 }
             }
         }

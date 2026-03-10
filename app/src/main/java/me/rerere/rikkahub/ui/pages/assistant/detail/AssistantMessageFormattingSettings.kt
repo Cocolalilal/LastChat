@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.pages.assistant.detail
+﻿package me.rerere.rikkahub.ui.pages.assistant.detail
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
@@ -52,9 +52,9 @@ fun MessageTemplateSettingsCard(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = if (LocalDarkMode.current) {
-            MaterialTheme.colorScheme.surfaceContainerLow
+            me.rerere.rikkahub.ui.theme.placedSurfaceColor()
         } else {
-            MaterialTheme.colorScheme.surfaceContainerHighest
+            me.rerere.rikkahub.ui.theme.placedSurfaceColor()
         },
         shape = RoundedCornerShape(10.dp)
     ) {
@@ -110,9 +110,9 @@ fun MessageRegexSettingsCard(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = if (LocalDarkMode.current) {
-            MaterialTheme.colorScheme.surfaceContainerLow
+            me.rerere.rikkahub.ui.theme.placedSurfaceColor()
         } else {
-            MaterialTheme.colorScheme.surfaceContainerHighest
+            me.rerere.rikkahub.ui.theme.placedSurfaceColor()
         },
         shape = RoundedCornerShape(10.dp)
     ) {
@@ -244,3 +244,4 @@ private fun RegexEditorCard(
         }
     }
 }
+

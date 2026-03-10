@@ -387,7 +387,7 @@ private fun AnimatedSinglePill(
             bottomStart = bottomStartRadius,
             bottomEnd = bottomEndRadius
         ),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
         contentColor = MaterialTheme.colorScheme.onSurface,
         onClick = onClick
     ) {
@@ -611,7 +611,7 @@ private fun SinglePill(
             .then(if (testTag != null) Modifier.testTag(testTag) else Modifier)
             .animateContentSize(spring(dampingRatio = 0.7f, stiffness = 300f)),
         shape = getCornerRadii(position, connectsToBubbleBelow),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
         contentColor = MaterialTheme.colorScheme.onSurface,
         onClick = onClick
     ) {
@@ -891,3 +891,4 @@ data class GroupedCornerRadii(
         )
     }
 }
+

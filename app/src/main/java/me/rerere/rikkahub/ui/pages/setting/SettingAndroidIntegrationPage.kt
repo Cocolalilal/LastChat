@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.pages.setting
+﻿package me.rerere.rikkahub.ui.pages.setting
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -148,7 +148,7 @@ fun SettingAndroidIntegrationPage(
                             // Demo text box
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
-                                color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
+                                color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 androidx.compose.foundation.text.selection.SelectionContainer {
@@ -330,7 +330,7 @@ private fun PreviewCard(
                 .fillMaxWidth()
                 .padding(vertical = 8.dp), // No horizontal padding - edge to edge
             shape = QuickAskOuterShape,
-            color = if (amoledMode && isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerLow,
+            color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
             tonalElevation = 8.dp
         ) {
             Column(
@@ -364,7 +364,7 @@ private fun PreviewCard(
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = QuickAskInnerShape,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh // Same as popup
+                    color = me.rerere.rikkahub.ui.theme.placedSurfaceColor() // Same as popup
                 ) {
                     Text(
                         text = "Selected text preview...",
@@ -425,7 +425,7 @@ private fun PreviewActionButton(
             },
         shape = shape,
         // Use true Color.Black to match popup exactly
-        color = if (isBlack) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
         tonalElevation = if (isBlack) 0.dp else 6.dp,
         onClick = onClick
     ) {
@@ -466,9 +466,7 @@ private fun ActionCard(
     Card(
         onClick = onClick,
         colors = CardDefaults.cardColors(
-            containerColor = if (LocalDarkMode.current) 
-                MaterialTheme.colorScheme.surfaceContainerLow 
-            else MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
         ),
         shape = AppShapes.CardLarge
     ) {
@@ -587,3 +585,5 @@ private fun getIconForName(name: String): ImageVector {
         else -> Icons.Rounded.AutoAwesome
     }
 }
+
+

@@ -28,6 +28,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Slider
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import androidx.compose.material3.Text
@@ -56,7 +57,10 @@ import me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode
 import me.rerere.rikkahub.ui.hooks.rememberSharedPreferenceBoolean
 import me.rerere.rikkahub.ui.pages.setting.components.PresetThemeButtonGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
+import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroupCustomItem
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
+import me.rerere.rikkahub.ui.theme.groupedItemShape
+import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
 
@@ -125,13 +129,21 @@ fun SettingDisplayPage(vm: SettingVM = koinViewModel()) {
                     
                     // Theme picker buttons when dynamic color is off
                     if (!settings.dynamicColor) {
-                        PresetThemeButtonGroup(
-                            themeId = settings.themeId,
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 0.dp, vertical = 8.dp),
-                            onChangeTheme = {
-                                vm.updateSettings(settings.copy(themeId = it))
+                        SettingsGroupCustomItem { position ->
+                            Surface(
+                                color = placedSurfaceColor(),
+                                shape = groupedItemShape(position),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                PresetThemeButtonGroup(
+                                    themeId = settings.themeId,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    onChangeTheme = {
+                                        vm.updateSettings(settings.copy(themeId = it))
+                                    }
+                                )
                             }
-                        )
+                        }
                     }
                     
                     SettingGroupItem(

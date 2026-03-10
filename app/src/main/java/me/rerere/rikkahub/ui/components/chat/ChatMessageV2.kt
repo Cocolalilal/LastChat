@@ -83,6 +83,9 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.ai.core.MessageRole as AIMessageRole
+import me.rerere.ai.ui.ToolApprovalState
+import me.rerere.rikkahub.ui.components.ai.AskUserAnsweredSummaryCard
+import me.rerere.rikkahub.ui.components.ai.toAskUserAnsweredSummaryOrNull
 
 /**
  * Represents a group of consecutive messages from the same role.
@@ -229,10 +232,15 @@ internal fun buildTimelineEntries(parts: List<UIMessagePart>): List<TimelineEntr
                         toolName = part.toolName,
                         displayName = getToolDisplayName(part.toolName),
                         argumentsText = part.arguments.take(200),
-                        resultText = result?.content?.toString()?.take(500),
+                        resultText = when (val approvalState = part.approvalState) {
+                            is ToolApprovalState.Pending -> "Waiting for your answer"
+                            is ToolApprovalState.Denied -> approvalState.reason.ifBlank { "Dismissed by user" }
+                            is ToolApprovalState.Answered -> approvalState.answer.take(500)
+                            else -> result?.content?.toString()?.take(500)
+                        },
                         argumentsJson = argumentsJson,
                         resultJson = resultJson,
-                        isLoading = result == null
+                        isLoading = result == null && part.approvalState !is ToolApprovalState.Pending
                     ))
                 }
             }
@@ -298,6 +306,7 @@ private fun getToolDisplayName(toolName: String): String {
         "edit_memory" -> "Editing memory"
         "delete_memory" -> "Deleting memory"
         "manage_skills" -> "Managing skills"
+        "ask_user" -> "Question for you"
         else -> toolName.replace("_", " ").replaceFirstChar { it.uppercase() }
     }
 }
@@ -775,6 +784,13 @@ private fun AssistantMessageTurn(
             }
         }
     }
+    val askUserSummaries = group.filteredNodes
+        .flatMap { node ->
+            node.currentMessage.parts
+                .filterIsInstance<UIMessagePart.ToolCall>()
+                .mapNotNull { it.toAskUserAnsweredSummaryOrNull() }
+        }
+        .distinctBy { it.toolCallId }
     
     // Consistent spacing between all elements
     val elementSpacing = 4.dp
@@ -1008,6 +1024,10 @@ private fun AssistantMessageTurn(
                     modifier = Modifier.clickable { handleBubbleClick() }
                 )
             }
+        }
+
+        askUserSummaries.forEach { summary ->
+            AskUserAnsweredSummaryCard(summary = summary)
         }
         
         // Token statistics - combined for all messages in group

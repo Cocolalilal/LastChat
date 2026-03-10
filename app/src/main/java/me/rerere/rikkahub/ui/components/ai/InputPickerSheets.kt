@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.components.ai
+﻿package me.rerere.rikkahub.ui.components.ai
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -51,7 +51,8 @@ import me.rerere.rikkahub.ui.components.ui.icons.ModeIcons
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode
-import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.ui.theme.groupedItemShape
+import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 
 @Composable
 internal fun SkillsPickerSheet(
@@ -61,11 +62,6 @@ internal fun SkillsPickerSheet(
     onUpdateConversation: (Conversation) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val amoledMode by rememberAmoledDarkMode()
-    val isDarkMode = LocalDarkMode.current
-    val cornerRadius = 28.dp
-    val smallCorner = 8.dp
-
     val availableSkills = remember(settings.skills) { settings.skills }
     val availableSkillIds = remember(availableSkills) { availableSkills.map { it.id }.toSet() }
     val effectiveEnabledIds = remember(conversation.enabledModeIds, assistant.enabledSkillIds, availableSkillIds) {
@@ -85,7 +81,7 @@ internal fun SkillsPickerSheet(
     val scope = rememberCoroutineScope()
 
     ModalBottomSheet(
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         sheetGesturesEnabled = false,
@@ -133,28 +129,13 @@ internal fun SkillsPickerSheet(
                         else -> ItemPosition.MIDDLE
                     }
 
-                    val shape = when (position) {
-                        ItemPosition.ONLY -> RoundedCornerShape(cornerRadius)
-                        ItemPosition.FIRST -> RoundedCornerShape(
-                            topStart = cornerRadius,
-                            topEnd = cornerRadius,
-                            bottomStart = smallCorner,
-                            bottomEnd = smallCorner
-                        )
+                    val shape = groupedItemShape(position = position, selected = isEnabled)
 
-                        ItemPosition.MIDDLE -> RoundedCornerShape(smallCorner)
-                        ItemPosition.LAST -> RoundedCornerShape(
-                            topStart = smallCorner,
-                            topEnd = smallCorner,
-                            bottomStart = cornerRadius,
-                            bottomEnd = cornerRadius
-                        )
-                    }
-
-                    CompositionLocalProvider(LocalAbsoluteTonalElevation provides if (amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
+                    CompositionLocalProvider(LocalAbsoluteTonalElevation provides 0.dp) {
                         Card(
                             colors = CardDefaults.cardColors(
-                                containerColor = if (amoledMode && isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                                containerColor = if (isEnabled) MaterialTheme.colorScheme.primaryContainer else placedSurfaceColor(),
+                                contentColor = if (isEnabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
                             ),
                             shape = shape
                         ) {
@@ -219,9 +200,6 @@ internal fun LorebooksPickerSheet(
     onNavigateToLorebook: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val amoledMode by rememberAmoledDarkMode()
-    val isDarkMode = LocalDarkMode.current
-
     var localEnabledIds by remember(assistant.id) {
         mutableStateOf(assistant.enabledLorebookIds)
     }
@@ -230,7 +208,7 @@ internal fun LorebooksPickerSheet(
     val scope = rememberCoroutineScope()
 
     ModalBottomSheet(
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         sheetGesturesEnabled = false,
@@ -278,30 +256,13 @@ internal fun LorebooksPickerSheet(
                         else -> ItemPosition.MIDDLE
                     }
 
-                    val cornerRadius = 28.dp
-                    val smallCorner = 8.dp
-                    val shape = when (position) {
-                        ItemPosition.ONLY -> RoundedCornerShape(cornerRadius)
-                        ItemPosition.FIRST -> RoundedCornerShape(
-                            topStart = cornerRadius,
-                            topEnd = cornerRadius,
-                            bottomStart = smallCorner,
-                            bottomEnd = smallCorner
-                        )
+                    val shape = groupedItemShape(position = position, selected = isEnabled)
 
-                        ItemPosition.MIDDLE -> RoundedCornerShape(smallCorner)
-                        ItemPosition.LAST -> RoundedCornerShape(
-                            topStart = smallCorner,
-                            topEnd = smallCorner,
-                            bottomStart = cornerRadius,
-                            bottomEnd = cornerRadius
-                        )
-                    }
-
-                    CompositionLocalProvider(LocalAbsoluteTonalElevation provides if (amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
+                    CompositionLocalProvider(LocalAbsoluteTonalElevation provides 0.dp) {
                         Card(
                             colors = CardDefaults.cardColors(
-                                containerColor = if (amoledMode && isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                                containerColor = if (isEnabled) MaterialTheme.colorScheme.primaryContainer else placedSurfaceColor(),
+                                contentColor = if (isEnabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
                             ),
                             shape = shape,
                             onClick = { onNavigateToLorebook(lorebook.id.toString()) }
@@ -408,3 +369,5 @@ internal fun LorebooksPickerSheet(
         }
     }
 }
+
+

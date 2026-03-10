@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.pages.chat
+﻿package me.rerere.rikkahub.ui.pages.chat
 
 import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.ui.unit.IntOffset
@@ -256,7 +256,7 @@ fun ColumnScope.ConversationList(
                             .fillMaxWidth()
                             .padding(16.dp),
                         shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHighest
+                        color = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                     ) {
                         Text(
                             text = stringResource(id = R.string.chat_page_no_conversations),
@@ -349,7 +349,7 @@ fun ColumnScope.ConversationList(
                     .background(
                         brush = androidx.compose.ui.graphics.Brush.verticalGradient(
                             colors = listOf(
-                                MaterialTheme.colorScheme.surfaceContainerLow,
+                                me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                                 Color.Transparent
                             )
                         )
@@ -368,7 +368,7 @@ fun ColumnScope.ConversationList(
                         brush = androidx.compose.ui.graphics.Brush.verticalGradient(
                             colors = listOf(
                                 Color.Transparent,
-                                MaterialTheme.colorScheme.surfaceContainerLow
+                                me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                             )
                         )
                     )
@@ -546,7 +546,7 @@ private fun ConversationItem(
                 )
             }
 
-            // 置顶图标
+            // ç½®é¡¶å›¾æ ‡
             AnimatedVisibility(conversation.isPinned) {
                 Icon(
                     imageVector = Icons.Rounded.PushPin,
@@ -570,7 +570,7 @@ private fun ConversationItem(
                 expanded = showDropdownMenu,
                 onDismissRequest = { showDropdownMenu = false },
                 shape = RoundedCornerShape(20.dp),
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
             ) {
                 DropdownMenuItem(
                     text = {
@@ -683,3 +683,4 @@ private fun ConversationItem(
         }
     }
 }
+

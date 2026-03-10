@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.pages.setting
+﻿package me.rerere.rikkahub.ui.pages.setting
 
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
@@ -61,6 +61,10 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SwipeToDismissBox
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
+import me.rerere.rikkahub.ui.components.ui.AppFloatingActionButton
+import me.rerere.rikkahub.ui.components.ui.AppFloatingActionColumn
+import me.rerere.rikkahub.ui.components.ui.AppFloatingTabBar
+import me.rerere.rikkahub.ui.components.ui.AppFloatingTabButton
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -232,77 +236,27 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
             )
         },
         bottomBar = {
-            val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
-            // Floating tab bar overlay
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 16.dp)
             ) {
-                // Centered floating tab bar
-                Surface(
-                    modifier = Modifier.align(Alignment.Center),
-                    shape = RoundedCornerShape(28.dp),
-                    color = appSurfaceColor(AppSurfaceLevel.ContainerHigh),
-                    tonalElevation = 6.dp,
-                    shadowElevation = 8.dp
+                AppFloatingTabBar(
+                    modifier = Modifier.align(Alignment.Center)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        // Configuration tab
-                        Box(
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .then(
-                                    if (pager.currentPage == 0) 
-                                        Modifier.background(MaterialTheme.colorScheme.primaryContainer)
-                                    else Modifier.clickable {
-                                        haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Tick)
-                                        scope.launch { pager.animateScrollToPage(0) }
-                                    }
-                                )
-                                .padding(12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Settings,
-                                contentDescription = stringResource(R.string.setting_provider_page_configuration),
-                                tint = if (pager.currentPage == 0) 
-                                    MaterialTheme.colorScheme.onPrimaryContainer 
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                        
-                        // Models tab
-                        Box(
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .then(
-                                    if (pager.currentPage == 1) 
-                                        Modifier.background(MaterialTheme.colorScheme.primaryContainer)
-                                    else Modifier.clickable {
-                                        haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Tick)
-                                        scope.launch { pager.animateScrollToPage(1) }
-                                    }
-                                )
-                                .padding(12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.ViewModule,
-                                contentDescription = stringResource(R.string.setting_provider_page_models),
-                                tint = if (pager.currentPage == 1) 
-                                    MaterialTheme.colorScheme.onPrimaryContainer 
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                        
-                    }
+                    AppFloatingTabButton(
+                        selected = pager.currentPage == 0,
+                        onClick = { scope.launch { pager.animateScrollToPage(0) } },
+                        icon = Icons.Rounded.Settings,
+                        contentDescription = stringResource(R.string.setting_provider_page_configuration),
+                    )
+                    AppFloatingTabButton(
+                        selected = pager.currentPage == 1,
+                        onClick = { scope.launch { pager.animateScrollToPage(1) } },
+                        icon = Icons.Rounded.ViewModule,
+                        contentDescription = stringResource(R.string.setting_provider_page_models),
+                    )
                 }
             }
         }
@@ -381,7 +335,7 @@ private fun SettingProviderConfigPage(
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                 colors = CardDefaults.cardColors(
-                    containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                 )
             ) {
                 ProviderConfigure(
@@ -400,7 +354,7 @@ private fun SettingProviderConfigPage(
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                 colors = CardDefaults.cardColors(
-                    containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                 )
             ) {
                 Column(
@@ -667,7 +621,7 @@ private fun ModelList(
             verticalArrangement = Arrangement.spacedBy(4.dp),
             state = lazyListState
         ) {
-            // 模型列表
+            // æ¨¡åž‹åˆ—è¡¨
             itemsIndexed(providerSetting.models, key = { _, item -> item.id }) { index, item ->
                 val position = when {
                     providerSetting.models.size == 1 -> ItemPosition.ONLY
@@ -909,7 +863,7 @@ private fun ModelSettingsForm(
         ) { page ->
             when (page) {
                 0 -> {
-                    // 基本设置页面
+                    // åŸºæœ¬è®¾ç½®é¡µé¢
                     Column(
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         modifier = Modifier
@@ -1024,7 +978,7 @@ private fun ModelSettingsForm(
                 }
 
                 1 -> {
-                    // 高级设置页面
+                    // é«˜çº§è®¾ç½®é¡µé¢
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
@@ -1134,7 +1088,7 @@ private fun AddModelButton(
         dialogState.currentState?.let { modelState ->
             val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                 onDismissRequest = {
                     dialogState.dismiss()
                 },
@@ -1219,14 +1173,10 @@ private fun ModelPickerFab(
     var showPicker by remember { mutableStateOf(false) }
     val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
     
-    FloatingActionButton(
+    AppFloatingActionButton(
         onClick = { 
             showPicker = true
-            haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Tick)
-        },
-        shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        contentColor = MaterialTheme.colorScheme.onSurface
+        }
     ) {
         Icon(
             Icons.Rounded.Widgets,
@@ -1236,7 +1186,7 @@ private fun ModelPickerFab(
     
     if (showPicker) {
         ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
             onDismissRequest = { showPicker = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ) {
@@ -1337,7 +1287,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         Card(
                             shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                             colors = androidx.compose.material3.CardDefaults.cardColors(
-                                containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                                containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                             )
                         ) {
                             Row(
@@ -1424,12 +1374,10 @@ private fun AddNewModelFab(
     val scope = rememberCoroutineScope()
     val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
     
-    FloatingActionButton(
+    AppFloatingActionButton(
         onClick = { 
             dialogState.open(Model())
-            haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
-        },
-        shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
+        }
     ) {
         Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.setting_provider_page_add_model))
     }
@@ -1438,7 +1386,7 @@ private fun AddNewModelFab(
         dialogState.currentState?.let { modelState ->
             val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                 onDismissRequest = {
                     dialogState.dismiss()
                 },
@@ -1523,7 +1471,7 @@ private fun ModelPicker(
     var showModal by remember { mutableStateOf(false) }
     if (showModal) {
         ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
             onDismissRequest = { showModal = false },
             sheetState = rememberModalBottomSheetState(
                 skipPartiallyExpanded = true
@@ -1630,7 +1578,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         Card(
                             shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                             colors = androidx.compose.material3.CardDefaults.cardColors(
-                                containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                                containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                             )
                         ) {
                             Row(
@@ -1680,7 +1628,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 IconButton(
                                     onClick = {
                                         if (selectedModels.any { model -> model.modelId == it.modelId }) {
-                                            // 从selectedModels中计算出要删除的model，因为删除需要id匹配，而不是ModelId
+                                            // ä»ŽselectedModelsä¸­è®¡ç®—å‡ºè¦åˆ é™¤çš„modelï¼Œå› ä¸ºåˆ é™¤éœ€è¦idåŒ¹é…ï¼Œè€Œä¸æ˜¯ModelId
                                             onModelDeselected(selectedModels.firstOrNull { model -> model.modelId == it.modelId }
                                                 ?: it)
                                         } else {
@@ -1951,7 +1899,7 @@ private fun ModelCard(
         dialogState.currentState?.let { editingModel ->
             val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                 onDismissRequest = {
                     dialogState.dismiss()
                 },
@@ -2041,10 +1989,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(0.dp))
                 .background(
-                    color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
-                        MaterialTheme.colorScheme.surfaceContainerLow 
-                    else 
-                        MaterialTheme.colorScheme.surfaceContainerHigh
+                    color = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                 )
                 .clickable {
                     dialogState.open(model.copy())
@@ -2130,7 +2075,7 @@ private fun BuiltInToolsSettings(
                 modifier = Modifier.fillMaxWidth(),
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                 colors = androidx.compose.material3.CardDefaults.cardColors(
-                    containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                 )
             ) {
                 Row(
@@ -2241,7 +2186,7 @@ private fun ProviderOverrideSettings(
                     editingProvider = parentProvider?.copyProvider(
                         id = Uuid.random(),
                         builtIn = false,
-                        models = emptyList(), // 这里必须设置为空，不然会导致循环依赖JSON
+                        models = emptyList(), // è¿™é‡Œå¿…é¡»è®¾ç½®ä¸ºç©ºï¼Œä¸ç„¶ä¼šå¯¼è‡´å¾ªçŽ¯ä¾èµ–JSON
                         description = {},
                     )
                     showProviderConfig = true
@@ -2257,7 +2202,7 @@ private fun ProviderOverrideSettings(
         // Provider configuration modal
         if (showProviderConfig && editingProvider != null) {
             ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                 onDismissRequest = {
                     showProviderConfig = false
                     editingProvider = null
@@ -2317,3 +2262,5 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
         }
     }
 }
+
+
