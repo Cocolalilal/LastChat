@@ -52,6 +52,7 @@ import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode
 import me.rerere.rikkahub.ui.theme.groupedItemShape
+import me.rerere.rikkahub.ui.theme.nestedSurfaceColor
 import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 
 @Composable
@@ -129,13 +130,13 @@ internal fun SkillsPickerSheet(
                         else -> ItemPosition.MIDDLE
                     }
 
-                    val shape = groupedItemShape(position = position, selected = isEnabled)
+                    val shape = groupedItemShape(position = position)
 
                     CompositionLocalProvider(LocalAbsoluteTonalElevation provides 0.dp) {
                         Card(
                             colors = CardDefaults.cardColors(
-                                containerColor = if (isEnabled) MaterialTheme.colorScheme.primaryContainer else placedSurfaceColor(),
-                                contentColor = if (isEnabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                                containerColor = nestedSurfaceColor(),
+                                contentColor = MaterialTheme.colorScheme.onSurface,
                             ),
                             shape = shape
                         ) {
@@ -151,7 +152,7 @@ internal fun SkillsPickerSheet(
                                     imageVector = ModeIcons.getIcon(skill.icon ?: "category"),
                                     contentDescription = null,
                                     modifier = Modifier.size(24.dp),
-                                    tint = if (isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
 
                                 Column(modifier = Modifier.weight(1f)) {
@@ -256,13 +257,13 @@ internal fun LorebooksPickerSheet(
                         else -> ItemPosition.MIDDLE
                     }
 
-                    val shape = groupedItemShape(position = position, selected = isEnabled)
+                    val shape = groupedItemShape(position = position)
 
                     CompositionLocalProvider(LocalAbsoluteTonalElevation provides 0.dp) {
                         Card(
                             colors = CardDefaults.cardColors(
-                                containerColor = if (isEnabled) MaterialTheme.colorScheme.primaryContainer else placedSurfaceColor(),
-                                contentColor = if (isEnabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                                containerColor = nestedSurfaceColor(),
+                                contentColor = MaterialTheme.colorScheme.onSurface,
                             ),
                             shape = shape,
                             onClick = { onNavigateToLorebook(lorebook.id.toString()) }
@@ -299,7 +300,7 @@ internal fun LorebooksPickerSheet(
                                 }
                                 Surface(
                                     shape = bookShape,
-                                    color = if (isEnabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
                                     modifier = Modifier.size(width = 40.dp, height = 56.dp)
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
@@ -324,7 +325,7 @@ internal fun LorebooksPickerSheet(
                                                 Text(
                                                     text = lorebook.name.take(1).uppercase().ifEmpty { "L" },
                                                     style = MaterialTheme.typography.titleMedium,
-                                                    color = if (isEnabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
                                             }
                                         }

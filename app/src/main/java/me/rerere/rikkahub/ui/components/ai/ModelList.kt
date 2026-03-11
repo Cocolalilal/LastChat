@@ -106,6 +106,7 @@ import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.components.ui.icons.HeartIcon
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.theme.groupedItemShape
+import me.rerere.rikkahub.ui.theme.nestedSurfaceColor
 import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 import me.rerere.rikkahub.ui.theme.extendColors
 import me.rerere.rikkahub.utils.toDp
@@ -423,11 +424,12 @@ internal fun ColumnScope.ModelList(
         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
             imeAction = androidx.compose.ui.text.input.ImeAction.Done
         ),
-        keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-            onDone = {
-                focusManager.clearFocus()
-            }
-        )
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                    onDone = {
+                        focusManager.clearFocus()
+                    }
+        ),
+        style = me.rerere.rikkahub.ui.components.ui.AppSearchFieldStyle.FilledNested
     )
 
 
@@ -700,7 +702,7 @@ private fun ModelItem(
                 .fillMaxWidth()
                 .clip(itemShape)
                 .background(
-                    color = if (select) MaterialTheme.colorScheme.primaryContainer else placedSurfaceColor(),
+                    color = if (select) MaterialTheme.colorScheme.primaryContainer else nestedSurfaceColor(),
                 )
                 .padding(vertical = 12.dp, horizontal = 16.dp)
         ) {
@@ -765,7 +767,7 @@ private fun ModelItem(
             modifier = modifier,
             shape = groupedItemShape(position = ItemPosition.ONLY, selected = select),
             colors = CardDefaults.cardColors(
-                containerColor = if (select) MaterialTheme.colorScheme.primaryContainer else placedSurfaceColor(),
+                containerColor = if (select) MaterialTheme.colorScheme.primaryContainer else nestedSurfaceColor(),
                 contentColor = if (select) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
             )
         ) {

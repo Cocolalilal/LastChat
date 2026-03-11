@@ -31,7 +31,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -141,6 +140,9 @@ import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.AppModalSheet
 import me.rerere.rikkahub.ui.components.ui.AppSearchField
+import me.rerere.rikkahub.ui.components.ui.AppFloatingActionEmphasis
+import me.rerere.rikkahub.ui.components.ui.AppFloatingActionButton
+import me.rerere.rikkahub.ui.components.ui.AppFloatingActionColumn
 import me.rerere.rikkahub.ui.components.ui.AutoProviderIcon
 import me.rerere.rikkahub.ui.components.ui.ProviderIcon
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
@@ -160,7 +162,9 @@ import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.AppSurfaceLevel
 import me.rerere.rikkahub.ui.theme.appSurfaceColor
 import me.rerere.rikkahub.ui.theme.groupedItemShape
+import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 import me.rerere.rikkahub.utils.ImageUtils
+import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -214,25 +218,45 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
                 navigationIcon = {
                     BackButton()
                 },
-                actions = {
-                    ImportProviderButton {
-                        vm.updateSettings(
-                            settings.copy(
-                                providers = listOf(it) + settings.providers
-                            )
-                        )
-                    }
-                    AddButton(
-                        enableHaptics = settings.displaySetting.enableUIHaptics
-                    ) {
-                        vm.updateSettings(
-                            settings.copy(
-                                providers = listOf(it) + settings.providers
-                            )
-                        )
-                    }
-                }
+                actions = {}
             )
+        },
+        floatingActionButton = {
+            AppFloatingActionColumn(
+            ) {
+                ImportProviderButton(
+                    trigger = { open ->
+                        AppFloatingActionButton(
+                            onClick = open,
+                        ) {
+                            Icon(Icons.AutoMirrored.Rounded.Input, contentDescription = "Import provider")
+                        }
+                    }
+                ) {
+                    vm.updateSettings(
+                        settings.copy(
+                            providers = listOf(it) + settings.providers
+                        )
+                    )
+                }
+                AddButton(
+                    enableHaptics = settings.displaySetting.enableUIHaptics,
+                    trigger = { open ->
+                        AppFloatingActionButton(
+                            onClick = open,
+                            emphasis = AppFloatingActionEmphasis.Primary,
+                        ) {
+                            Icon(Icons.Rounded.Add, contentDescription = "Add provider")
+                        }
+                    }
+                ) {
+                    vm.updateSettings(
+                        settings.copy(
+                            providers = listOf(it) + settings.providers
+                        )
+                    )
+                }
+            }
         },
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { innerPadding ->
@@ -381,6 +405,7 @@ private fun ProviderListView(
 ) {
     val lazyListState = rememberLazyListState()
     val density = LocalDensity.current
+    val canScrollForward by remember { derivedStateOf { lazyListState.canScrollForward } }
     
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
         onReorder(from.index, to.index)
@@ -410,14 +435,17 @@ private fun ProviderListView(
         } else null
     }
 
-    LazyColumn(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .imePadding(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-        state = lazyListState,
+            .imePadding()
     ) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp) + PaddingValues(bottom = 116.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            state = lazyListState,
+        ) {
         // Show preset suggestion if no providers match but preset exists
         if (matchingPreset != null) {
             item {
@@ -566,11 +594,34 @@ private fun ProviderListView(
                     }
             }
         }
+        }
+
+        if (canScrollForward) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .background(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                MaterialTheme.colorScheme.background
+                            )
+                        )
+                    )
+            )
+        }
     }
 }
 
 @Composable
 private fun ImportProviderButton(
+    trigger: @Composable ((() -> Unit) -> Unit) = { onOpen ->
+        IconButton(onClick = onOpen) {
+            Icon(Icons.AutoMirrored.Rounded.Input, null)
+        }
+    },
     onAdd: (ProviderSetting) -> Unit
 ) {
     val toaster = LocalToaster.current
@@ -589,12 +640,8 @@ private fun ImportProviderButton(
         }
     }
 
-    IconButton(
-        onClick = {
-            showImportDialog = true
-        }
-    ) {
-        Icon(Icons.AutoMirrored.Rounded.Input, null)
+    trigger {
+        showImportDialog = true
     }
 
     if (showImportDialog) {
@@ -776,6 +823,11 @@ private fun handleImageQRCode(
 @Composable
 private fun AddButton(
     enableHaptics: Boolean,
+    trigger: @Composable ((() -> Unit) -> Unit) = { onOpen ->
+        IconButton(onClick = onOpen) {
+            Icon(Icons.Rounded.Add, "Add")
+        }
+    },
     onAdd: (ProviderSetting) -> Unit
 ) {
     var showBottomSheet by remember { mutableStateOf(false) }
@@ -787,13 +839,9 @@ private fun AddButton(
         onAdd(it)
     }
 
-    IconButton(
-        onClick = {
-            searchQuery = ""
-            showBottomSheet = true
-        }
-    ) {
-        Icon(Icons.Rounded.Add, "Add")
+    trigger {
+        searchQuery = ""
+        showBottomSheet = true
     }
 
     val haptics = rememberPremiumHaptics(enabled = enableHaptics)

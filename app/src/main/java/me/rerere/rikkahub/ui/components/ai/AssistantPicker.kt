@@ -72,6 +72,7 @@ import me.rerere.rikkahub.ui.hooks.rememberAssistantState
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.groupedItemRadii
+import me.rerere.rikkahub.ui.theme.nestedSurfaceColor
 import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 import kotlin.uuid.Uuid
 
@@ -267,7 +268,7 @@ fun AssistantPickerSheet(
                             .clip(shape)
                             .background(
                                 color = if (checked) MaterialTheme.colorScheme.primaryContainer 
-                                       else placedSurfaceColor()
+                                       else nestedSurfaceColor()
                             )
                             .clickable(enabled = !isTransitioning) {
                                 if (!checked) {

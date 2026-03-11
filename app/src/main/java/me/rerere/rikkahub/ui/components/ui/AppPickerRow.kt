@@ -2,7 +2,6 @@ package me.rerere.rikkahub.ui.components.ui
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -26,9 +25,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
-import me.rerere.rikkahub.ui.theme.appOutlinedBorderColor
 import me.rerere.rikkahub.ui.theme.groupedItemShape
-import me.rerere.rikkahub.ui.theme.placedSurfaceColor
+import me.rerere.rikkahub.ui.theme.nestedSurfaceColor
+
+enum class AppPickerRowStyle {
+    FilledNested,
+    FlatTransparent,
+}
 
 @Composable
 fun AppPickerRow(
@@ -37,6 +40,7 @@ fun AppPickerRow(
     subtitle: String,
     modifier: Modifier = Modifier,
     position: ItemPosition? = null,
+    style: AppPickerRowStyle = AppPickerRowStyle.FilledNested,
     onClick: () -> Unit,
     trailing: @Composable (RowScope.() -> Unit)? = null,
 ) {
@@ -62,9 +66,11 @@ fun AppPickerRow(
                 scaleY = scale
             },
         interactionSource = interactionSource,
-        color = placedSurfaceColor(),
+        color = when (style) {
+            AppPickerRowStyle.FilledNested -> nestedSurfaceColor()
+            AppPickerRowStyle.FlatTransparent -> MaterialTheme.colorScheme.surface.copy(alpha = 0f)
+        },
         shape = groupedItemShape(resolvedPosition),
-        border = BorderStroke(1.dp, appOutlinedBorderColor()),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
@@ -86,13 +92,15 @@ fun AppPickerRow(
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (subtitle.isNotBlank()) {
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             trailing?.invoke(this)
         }

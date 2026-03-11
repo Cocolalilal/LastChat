@@ -45,6 +45,7 @@ import me.rerere.rikkahub.data.model.Skill
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.AppFloatingActionButton
+import me.rerere.rikkahub.ui.components.ui.AppFloatingActionEmphasis
 import me.rerere.rikkahub.ui.components.ui.AppFloatingActionColumn
 import me.rerere.rikkahub.ui.components.ui.AppFloatingTabBar
 import me.rerere.rikkahub.ui.components.ui.AppFloatingTabButton
@@ -52,6 +53,7 @@ import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 import me.rerere.rikkahub.utils.LorebookExportImport
 import me.rerere.rikkahub.utils.SkillExportImport
 import org.koin.androidx.compose.koinViewModel
@@ -150,8 +152,7 @@ fun SettingPromptInjectionsPage(
                 }
 
                 AppFloatingActionColumn(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
+                    modifier = Modifier.align(Alignment.BottomEnd)
                 ) {
                     AppFloatingActionButton(
                         onClick = {
@@ -161,6 +162,8 @@ fun SettingPromptInjectionsPage(
                                 lorebookImportLauncher.launch(arrayOf("application/json", "*/*"))
                             }
                         },
+                        containerColor = placedSurfaceColor(),
+                        contentColor = MaterialTheme.colorScheme.onSurface,
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.Input,
@@ -175,7 +178,8 @@ fun SettingPromptInjectionsPage(
                             } else {
                                 showAddLorebookDialog = true
                             }
-                        }
+                        },
+                        emphasis = AppFloatingActionEmphasis.Primary,
                     ) {
                         Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.add))
                     }

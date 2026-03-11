@@ -94,7 +94,8 @@ fun SettingRpOptimizationsPage(vm: SettingVM = koinViewModel()) {
         },
         floatingActionButton = {
             AppFloatingActionButton(
-                onClick = { showAddDialog = true }
+                onClick = { showAddDialog = true },
+                emphasis = me.rerere.rikkahub.ui.components.ui.AppFloatingActionEmphasis.Primary,
             ) {
                 Icon(Icons.Rounded.Add, "Add Rule")
             }

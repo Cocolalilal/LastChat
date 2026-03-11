@@ -19,13 +19,15 @@ fun appSurfaceColor(
 ): Color {
     return when (level) {
         AppSurfaceLevel.Flat -> colorScheme.surface
-        AppSurfaceLevel.Container,
-        AppSurfaceLevel.ContainerHigh -> {
-            if (darkTheme) {
-                colorScheme.surfaceContainerLow
-            } else {
-                colorScheme.surfaceContainerHigh
-            }
+        AppSurfaceLevel.Container -> if (darkTheme) {
+            colorScheme.surfaceContainerLow
+        } else {
+            colorScheme.surfaceContainerHigh
+        }
+        AppSurfaceLevel.ContainerHigh -> if (darkTheme) {
+            colorScheme.surfaceContainerHigh
+        } else {
+            colorScheme.surfaceContainerHighest
         }
     }
 }
@@ -46,6 +48,12 @@ fun appSurfaceColor(
 @ReadOnlyComposable
 fun placedSurfaceColor(): Color {
     return appSurfaceColor(AppSurfaceLevel.Container)
+}
+
+@Composable
+@ReadOnlyComposable
+fun nestedSurfaceColor(): Color {
+    return appSurfaceColor(AppSurfaceLevel.ContainerHigh)
 }
 
 fun appOutlinedBorderColor(

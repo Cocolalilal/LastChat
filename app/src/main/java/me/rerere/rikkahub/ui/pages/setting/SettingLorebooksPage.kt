@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -38,7 +37,6 @@ import androidx.compose.material.icons.rounded.People
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.FloatingToolbarDefaults.ScreenOffset
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -82,6 +80,7 @@ import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.AppFloatingActionButton
+import me.rerere.rikkahub.ui.components.ui.AppFloatingActionEmphasis
 import me.rerere.rikkahub.ui.components.ui.AppFloatingActionColumn
 import me.rerere.rikkahub.ui.components.ui.AppFloatingTabBar
 import me.rerere.rikkahub.ui.components.ui.AppFloatingTabButton
@@ -160,9 +159,7 @@ fun SettingLorebooksPage(vm: SettingVM = koinViewModel()) {
                     .padding(horizontal = 16.dp, vertical = 16.dp)
             ) {
                 AppFloatingTabBar(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .offset(y = -ScreenOffset)
+                    modifier = Modifier.align(Alignment.BottomCenter)
                 ) {
                     AppFloatingTabButton(
                         selected = false,
@@ -184,14 +181,14 @@ fun SettingLorebooksPage(vm: SettingVM = koinViewModel()) {
                 }
 
                 AppFloatingActionColumn(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .offset(y = -ScreenOffset)
+                    modifier = Modifier.align(Alignment.BottomEnd)
                 ) {
                     AppFloatingActionButton(
                         onClick = {
                             importLauncher.launch(arrayOf("application/json", "*/*"))
                         },
+                        containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+                        contentColor = MaterialTheme.colorScheme.onSurface,
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.Input,
@@ -202,7 +199,8 @@ fun SettingLorebooksPage(vm: SettingVM = koinViewModel()) {
                     AppFloatingActionButton(
                         onClick = {
                             showAddDialog = true
-                        }
+                        },
+                        emphasis = AppFloatingActionEmphasis.Primary,
                     ) {
                         Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.add))
                     }

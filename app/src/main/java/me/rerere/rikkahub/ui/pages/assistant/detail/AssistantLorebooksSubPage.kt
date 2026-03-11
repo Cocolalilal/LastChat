@@ -165,12 +165,12 @@ private fun LorebookSelectionCard(
     onClick: () -> Unit,
     onToggle: (Boolean) -> Unit
 ) {
-    val shape = groupedItemShape(position = position, selected = isEnabled)
+    val shape = groupedItemShape(position = position)
     
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = if (isEnabled) MaterialTheme.colorScheme.primaryContainer else placedSurfaceColor(),
-            contentColor = if (isEnabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+            containerColor = placedSurfaceColor(),
+            contentColor = MaterialTheme.colorScheme.onSurface,
         ),
         shape = shape,
         onClick = onClick
@@ -200,7 +200,7 @@ private fun LorebookSelectionCard(
             }
             Surface(
                 shape = bookShape,
-                color = if (isEnabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                color = MaterialTheme.colorScheme.surfaceVariant,
                 modifier = Modifier.size(width = 50.dp, height = 70.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
@@ -224,7 +224,7 @@ private fun LorebookSelectionCard(
                                 Icons.Rounded.Book,
                                 contentDescription = null,
                                 modifier = Modifier.size(28.dp),
-                                tint = if (isEnabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }

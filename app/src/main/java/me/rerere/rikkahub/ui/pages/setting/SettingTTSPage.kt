@@ -42,12 +42,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -68,6 +68,9 @@ import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.AppModalSheet
 import me.rerere.rikkahub.ui.components.ui.AppSearchField
+import me.rerere.rikkahub.ui.components.ui.AppFloatingActionEmphasis
+import me.rerere.rikkahub.ui.components.ui.AppFloatingActionButton
+import me.rerere.rikkahub.ui.components.ui.AppFloatingActionColumn
 import me.rerere.rikkahub.ui.components.ui.AutoProviderIcon
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
@@ -96,7 +99,6 @@ import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppSurfaceLevel
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.ui.text.style.TextOverflow
@@ -108,6 +110,7 @@ import androidx.compose.material.icons.rounded.Warning
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.appSurfaceColor
 import me.rerere.rikkahub.ui.theme.groupedItemShape
+import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 import me.rerere.rikkahub.ui.components.ui.ToastType
 
 @Composable
@@ -137,19 +140,36 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                 navigationIcon = {
                     BackButton()
                 },
-                actions = {
-                    IconButton(onClick = { showFilterSettingsDialog = true }) {
-                        Icon(Icons.Rounded.Settings, contentDescription = "TTS Settings")
-                    }
-                    AddTTSProviderButton {
-                        vm.updateSettings(
-                            settings.copy(
-                                ttsProviders = listOf(it) + settings.ttsProviders
-                            )
-                        )
-                    }
-                }
+                actions = {}
             )
+        },
+        floatingActionButton = {
+            AppFloatingActionColumn {
+                AppFloatingActionButton(
+                    onClick = { showFilterSettingsDialog = true },
+                ) {
+                    Icon(Icons.Rounded.Settings, contentDescription = "TTS Settings")
+                }
+                AddTTSProviderButton(
+                    trigger = { open ->
+                        AppFloatingActionButton(
+                            onClick = open,
+                            emphasis = AppFloatingActionEmphasis.Primary,
+                        ) {
+                            Icon(
+                                Icons.Rounded.Add,
+                                contentDescription = stringResource(R.string.setting_tts_page_add_provider_content_description)
+                            )
+                        }
+                    }
+                ) {
+                    vm.updateSettings(
+                        settings.copy(
+                            ttsProviders = listOf(it) + settings.ttsProviders
+                        )
+                    )
+                }
+            }
         },
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { innerPadding ->
@@ -194,15 +214,20 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
             }
         }
 
-        LazyColumn(
+        val canScrollForward by remember { androidx.compose.runtime.derivedStateOf { lazyListState.canScrollForward } }
+
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .imePadding(),
-            contentPadding = innerPadding + PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-            state = lazyListState
+                .imePadding()
         ) {
-            itemsIndexed(settings.ttsProviders, key = { _, provider -> provider.id }) { index, provider ->
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = innerPadding + PaddingValues(16.dp) + PaddingValues(bottom = 96.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                state = lazyListState
+            ) {
+                itemsIndexed(settings.ttsProviders, key = { _, provider -> provider.id }) { index, provider ->
                 val isSelected = settings.selectedTTSProviderId == provider.id
                 val position = when {
                     settings.ttsProviders.size == 1 -> ItemPosition.ONLY
@@ -239,35 +264,34 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                     key = provider.id,
                     animateItemModifier = Modifier
                 ) { isDragging ->
-                    // Key on isSelected to force complete PhysicsSwipeToDelete recreation when selection changes
-                    key(isSelected) {
-                        PhysicsSwipeToDelete(
-                            position = if (isSelected) ItemPosition.ONLY else position,
-                            groupCornerRadius = if (isSelected) 100.dp else 24.dp, // Pill shape for selected
-                            deleteEnabled = canDelete && !isSelected,
-                            neighborOffset = neighborOffset,
-                            onDragProgress = { offset, unlocked ->
-                                draggingIndex = index
-                                dragOffset = offset
-                                isUnlocked = unlocked
-                            },
-                            onDragEnd = {
-                                if (draggingIndex == index) {
-                                    draggingIndex = -1
-                                    dragOffset = 0f
-                                }
-                            },
-                            onDelete = {
-                                providerToDelete = provider
-                                showDeleteDialog = true
-                            },
-                            modifier = Modifier
-                                .scale(if (isDragging) 0.95f else 1f)
-                                .fillMaxWidth()
-                        ) { _ ->
+                    PhysicsSwipeToDelete(
+                        position = position,
+                        selected = isSelected,
+                        deleteEnabled = canDelete && !isSelected,
+                        neighborOffset = neighborOffset,
+                        onDragProgress = { offset, unlocked ->
+                            draggingIndex = index
+                            dragOffset = offset
+                            isUnlocked = unlocked
+                        },
+                        onDragEnd = {
+                            if (draggingIndex == index) {
+                                draggingIndex = -1
+                                dragOffset = 0f
+                            }
+                        },
+                        onDelete = {
+                            providerToDelete = provider
+                            showDeleteDialog = true
+                        },
+                        modifier = Modifier
+                            .scale(if (isDragging) 0.95f else 1f)
+                            .fillMaxWidth()
+                    ) { shape ->
                         TTSProviderItemContent(
                             provider = provider,
                             isSelected = isSelected,
+                            animatedShape = shape,
                             haptics = haptics,
                             onSelect = {
                                 if (!isSelected) {
@@ -298,8 +322,25 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                             }
                         )
                     }
-                    } // key(isSelected)
                 }
+                }
+            }
+
+            if (canScrollForward) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .background(
+                            brush = Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.Transparent,
+                                        MaterialTheme.colorScheme.background
+                                    )
+                                )
+                            )
+                )
             }
         }
         
@@ -752,19 +793,22 @@ private fun TtsFilterRuleEditDialog(
     )
 }
 @Composable
-private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
+private fun AddTTSProviderButton(
+    trigger: @Composable ((() -> Unit) -> Unit) = { onOpen ->
+        IconButton(onClick = onOpen) {
+            Icon(Icons.Rounded.Add, stringResource(R.string.setting_tts_page_add_provider_content_description))
+        }
+    },
+    onAdd: (TTSProviderSetting) -> Unit
+) {
     var showBottomSheet by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
 
     val haptics = rememberPremiumHaptics()
 
-    IconButton(
-        onClick = {
-            searchQuery = ""
-            showBottomSheet = true
-        }
-    ) {
-        Icon(Icons.Rounded.Add, stringResource(R.string.setting_tts_page_add_provider_content_description))
+    trigger {
+        searchQuery = ""
+        showBottomSheet = true
     }
 
     if (showBottomSheet) {
@@ -957,6 +1001,7 @@ private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
 private fun TTSProviderItemContent(
     provider: TTSProviderSetting,
     isSelected: Boolean,
+    animatedShape: androidx.compose.ui.graphics.Shape,
     haptics: me.rerere.rikkahub.ui.hooks.PremiumHaptics,
     onSelect: () -> Unit,
     onEdit: () -> Unit,
@@ -989,8 +1034,8 @@ private fun TTSProviderItemContent(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(0.dp))
-            .background(backgroundColor)
+            .clip(animatedShape)
+            .background(backgroundColor, animatedShape)
             .clickable {
                 haptics.perform(HapticPattern.Pop)
                 onSelect()
