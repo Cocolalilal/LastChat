@@ -58,8 +58,15 @@ import me.rerere.ai.ui.UsedLorebookEntry
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.rikkahub.ui.components.ui.AppActionMenuContent
+import me.rerere.rikkahub.ui.components.ui.AppActionMenuDestructiveItem
+import me.rerere.rikkahub.ui.components.ui.AppActionMenuItem
+import me.rerere.rikkahub.ui.components.ui.AppPickerRow
+import me.rerere.rikkahub.ui.components.ui.GroupedStack
+import me.rerere.rikkahub.ui.components.ui.GroupedStackItem
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.context.LocalTTSState
+import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 import me.rerere.rikkahub.utils.copyMessageToClipboard
 import me.rerere.rikkahub.utils.toLocalString
 
@@ -211,8 +218,56 @@ fun ChatMessageActionsSheet(
     onWebViewPreview: () -> Unit,
     onDismissRequest: () -> Unit
 ) {
+    data class MessageActionItem(
+        val title: String,
+        val icon: androidx.compose.ui.graphics.vector.ImageVector,
+        val onClick: () -> Unit,
+    )
+
+    val hasTextContent = message.parts.filterIsInstance<UIMessagePart.Text>()
+        .any { it.text.isNotBlank() }
+    val regularActions = buildList {
+        add(
+            MessageActionItem(
+                title = stringResource(R.string.select_and_copy),
+                icon = Icons.Rounded.SelectAll,
+                onClick = onSelectAndCopy,
+            )
+        )
+        if (hasTextContent) {
+            add(
+                MessageActionItem(
+                    title = stringResource(R.string.render_with_webview),
+                    icon = Icons.Rounded.OpenInBrowser,
+                    onClick = onWebViewPreview,
+                )
+            )
+        }
+        add(
+            MessageActionItem(
+                title = stringResource(R.string.edit),
+                icon = Icons.Rounded.Edit,
+                onClick = onEdit,
+            )
+        )
+        add(
+            MessageActionItem(
+                title = stringResource(R.string.share),
+                icon = Icons.Rounded.Share,
+                onClick = onShare,
+            )
+        )
+        add(
+            MessageActionItem(
+                title = stringResource(R.string.create_fork),
+                icon = Icons.AutoMirrored.Rounded.CallSplit,
+                onClick = onFork,
+            )
+        )
+    }
+
     ModalBottomSheet(
-containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+        containerColor = placedSurfaceColor(),
         onDismissRequest = onDismissRequest,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     ) {
@@ -223,191 +278,29 @@ containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // Select and Copy
-            Card(
-                onClick = {
-                    onDismissRequest()
-                    onSelectAndCopy()
-                },
-
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
-                colors = CardDefaults.cardColors(
-                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
-                )
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier
-                        .padding(16.dp)
-                        .fillMaxWidth()
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.SelectAll,
-                        contentDescription = null,
-                        modifier = Modifier.padding(4.dp)
-                    )
-                    Text(
-                        text = stringResource(R.string.select_and_copy),
-                        style = MaterialTheme.typography.titleMedium,
+            AppActionMenuContent(
+                modifier = Modifier.fillMaxWidth(),
+                destructiveAction = {
+                    AppActionMenuDestructiveItem(
+                        icon = Icons.Rounded.Delete,
+                        title = stringResource(R.string.delete),
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            onDismissRequest()
+                            onDelete()
+                        }
                     )
                 }
-            }
-
-            // WebView Preview (only show if message has text content)
-            val hasTextContent = message.parts.filterIsInstance<UIMessagePart.Text>()
-                .any { it.text.isNotBlank() }
-
-            if (hasTextContent) {
-                Card(
-                    onClick = {
-                        onDismissRequest()
-                        onWebViewPreview()
-                    },
-
-                    shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
-                    colors = CardDefaults.cardColors(
-                        containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
-                    )
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        modifier = Modifier
-                            .padding(16.dp)
-                            .fillMaxWidth()
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.OpenInBrowser,
-                            contentDescription = null,
-                            modifier = Modifier.padding(4.dp)
-                        )
-                        Text(
-                            text = stringResource(R.string.render_with_webview),
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                    }
-                }
-            }
-
-            // Edit
-            Card(
-                onClick = {
-                    onDismissRequest()
-                    onEdit()
-                },
-
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
-                colors = CardDefaults.cardColors(
-                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
-                )
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier
-                        .padding(16.dp)
-                        .fillMaxWidth()
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Edit,
-                        contentDescription = null,
-                        modifier = Modifier.padding(4.dp)
-                    )
-                    Text(
-                        text = stringResource(R.string.edit),
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                }
-            }
-
-            // Share
-            Card(
-                onClick = {
-                    onDismissRequest()
-                    onShare()
-                },
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
-                colors = CardDefaults.cardColors(
-                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
-                )
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier
-                        .padding(16.dp)
-                        .fillMaxWidth()
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Share,
-                        contentDescription = null,
-                        modifier = Modifier.padding(4.dp)
-                    )
-                    Text(
-                        text = stringResource(R.string.share),
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                }
-            }
-
-            // Create a Fork
-            Card(
-                onClick = {
-                    onDismissRequest()
-                    onFork()
-                },
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
-                colors = CardDefaults.cardColors(
-                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
-                )
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier
-                        .padding(16.dp)
-                        .fillMaxWidth()
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Rounded.CallSplit,
-                        contentDescription = null,
-                        modifier = Modifier.padding(4.dp)
-                    )
-                    Text(
-                        text = stringResource(R.string.create_fork),
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                }
-            }
-
-            // Delete
-            Card(
-                onClick = {
-                    onDismissRequest()
-                    onDelete()
-                },
-
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer
-                )
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier
-                        .padding(16.dp)
-                        .fillMaxWidth()
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Delete,
-                        contentDescription = null,
-                        modifier = Modifier.padding(4.dp)
-                    )
-                    Text(
-                        text = stringResource(R.string.delete),
-                        style = MaterialTheme.typography.titleMedium,
+                regularActions.forEach { action ->
+                    AppActionMenuItem(
+                        icon = action.icon,
+                        title = action.title,
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            onDismissRequest()
+                            action.onClick()
+                        }
                     )
                 }
             }

@@ -35,6 +35,12 @@ interface ChatEpisodeDAO {
     @Query("DELETE FROM chatepisodeentity WHERE conversation_id = :conversationId")
     suspend fun deleteEpisodeByConversationId(conversationId: String): Int
 
+    @Query("SELECT * FROM chatepisodeentity WHERE conversation_id = :conversationId")
+    suspend fun getEpisodesByConversationId(conversationId: String): List<ChatEpisodeEntity>
+
+    @Query("SELECT * FROM chatepisodeentity WHERE assistant_id = :assistantId AND start_time >= :startTime AND end_time <= :endTime")
+    suspend fun getEpisodesByTimeRange(assistantId: String, startTime: Long, endTime: Long): List<ChatEpisodeEntity>
+
     @Query("SELECT * FROM chatepisodeentity WHERE conversation_id = :conversationId LIMIT 1")
     suspend fun getEpisodeByConversationId(conversationId: String): ChatEpisodeEntity?
 

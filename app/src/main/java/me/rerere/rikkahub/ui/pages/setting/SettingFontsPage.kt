@@ -1,4 +1,4 @@
-﻿@file:OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+@file:OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
 
 package me.rerere.rikkahub.ui.pages.setting
 
@@ -341,7 +341,7 @@ private fun FontConfigSection(
         SettingsGroupCustomItem { position ->
             Card(
                 colors = CardDefaults.cardColors(
-                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                    containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
                 ),
                 shape = groupedItemShape(position),
                 onClick = { expanded = !expanded }
@@ -445,7 +445,7 @@ private fun FontConfigSection(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(8.dp))
-                                        .background(me.rerere.rikkahub.ui.theme.placedSurfaceColor())
+                                        .background(me.rerere.rikkahub.ui.theme.settingsSurfaceColor())
                                         .padding(12.dp)
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
@@ -691,7 +691,7 @@ private fun FontPreviewCard(
     
         Card(
             colors = CardDefaults.cardColors(
-                containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
             ),
             shape = shape
         ) {
@@ -728,7 +728,7 @@ private fun FontPreviewCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(8.dp))
-                    .background(me.rerere.rikkahub.ui.theme.placedSurfaceColor())
+                    .background(me.rerere.rikkahub.ui.theme.settingsSurfaceColor())
                     .padding(12.dp)
             ) {
                 Text(

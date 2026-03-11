@@ -30,8 +30,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MultiChoiceSegmentedButtonRow
 import androidx.compose.material3.OutlinedButton
@@ -81,16 +79,16 @@ import me.rerere.rikkahub.ui.components.ui.AppFloatingTabButton
 import me.rerere.rikkahub.ui.components.ui.AppFloatingOverlayContentBottomPadding
 import me.rerere.rikkahub.ui.components.ui.AppModalSheet
 import me.rerere.rikkahub.ui.components.ui.AppOutlinedField
-import me.rerere.rikkahub.ui.components.ui.FormItem
+import me.rerere.rikkahub.ui.components.ui.AppPickerRow
+import me.rerere.rikkahub.ui.components.ui.AppPickerRowStyle
 import me.rerere.rikkahub.ui.components.ui.StickyHeader
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupInputItem
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroupCustomItem
-import me.rerere.rikkahub.ui.theme.AppSurfaceLevel
-import me.rerere.rikkahub.ui.theme.appSurfaceColor
 import me.rerere.rikkahub.ui.theme.groupedItemShape
+import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 import me.rerere.rikkahub.utils.fileSizeToString
 import me.rerere.rikkahub.utils.onError
 import me.rerere.rikkahub.utils.onLoading
@@ -258,7 +256,7 @@ private fun WebDavPage(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(contentPadding)
-            .padding(16.dp)
+            .padding(vertical = 16.dp)
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -324,20 +322,21 @@ private fun WebDavPage(
 
         SettingsGroup(title = stringResource(R.string.backup_page_backup_items)) {
             SettingsGroupCustomItem { position ->
-                Card(
+                androidx.compose.material3.Surface(
+                    modifier = Modifier.fillMaxWidth(),
                     shape = groupedItemShape(position),
-                    colors = androidx.compose.material3.CardDefaults.cardColors(
-                        containerColor = appSurfaceColor(AppSurfaceLevel.Container)
-                    )
+                    color = placedSurfaceColor(),
                 ) {
-                    FormItem(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
-                        label = {
-                            Text(stringResource(R.string.backup_page_backup_items))
-                        }
+                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
+                        Text(
+                            text = stringResource(R.string.backup_page_backup_items),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
                         MultiChoiceSegmentedButtonRow(
                             modifier = Modifier.fillMaxWidth(),
                         ) {
@@ -372,7 +371,9 @@ private fun WebDavPage(
         }
 
         FlowRow(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
         ) {
             OutlinedButton(
@@ -1041,19 +1042,14 @@ private fun BackupActionItem(
     leading: @Composable () -> Unit,
     onClick: () -> Unit,
 ) {
-    androidx.compose.material3.Surface(
+    AppPickerRow(
+        icon = leading,
+        title = title,
+        subtitle = subtitle,
+        position = position,
+        style = AppPickerRowStyle.PlacedSurface,
         onClick = onClick,
-        shape = groupedItemShape(position),
-        color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        ListItem(
-            headlineContent = { Text(title) },
-            supportingContent = { Text(subtitle) },
-            leadingContent = leading,
-            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        )
-    }
+    )
 }
 
 @Composable

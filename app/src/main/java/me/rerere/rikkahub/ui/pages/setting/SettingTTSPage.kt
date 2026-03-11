@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.pages.setting
+package me.rerere.rikkahub.ui.pages.setting
 
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
@@ -68,6 +68,7 @@ import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.AppModalSheet
 import me.rerere.rikkahub.ui.components.ui.AppSearchField
+import me.rerere.rikkahub.ui.components.ui.AppSearchFieldStyle
 import me.rerere.rikkahub.ui.components.ui.AppFloatingActionEmphasis
 import me.rerere.rikkahub.ui.components.ui.AppFloatingActionButton
 import me.rerere.rikkahub.ui.components.ui.AppFloatingActionColumn
@@ -110,7 +111,8 @@ import androidx.compose.material.icons.rounded.Warning
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.appSurfaceColor
 import me.rerere.rikkahub.ui.theme.groupedItemShape
-import me.rerere.rikkahub.ui.theme.placedSurfaceColor
+import me.rerere.rikkahub.ui.theme.nestedSurfaceColor
+import me.rerere.rikkahub.ui.theme.settingsSurfaceColor
 import me.rerere.rikkahub.ui.components.ui.ToastType
 
 @Composable
@@ -550,7 +552,7 @@ private fun TtsTextFilterSettingsDialog(
             // Description
             androidx.compose.material3.Card(
                 colors = androidx.compose.material3.CardDefaults.cardColors(
-                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                    containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
                 ),
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
             ) {
@@ -575,7 +577,7 @@ private fun TtsTextFilterSettingsDialog(
             if (rules.isEmpty()) {
                 androidx.compose.material3.Card(
                     colors = androidx.compose.material3.CardDefaults.cardColors(
-                        containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                        containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
                     ),
                     shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
                 ) {
@@ -658,7 +660,7 @@ private fun TtsFilterRuleItem(
     
     androidx.compose.material3.Card(
         colors = androidx.compose.material3.CardDefaults.cardColors(
-            containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+            containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
         ),
         shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
         onClick = onEdit
@@ -854,7 +856,7 @@ private fun AddTTSProviderButton(
             sheetState = bottomSheetState,
             sheetGesturesEnabled = false,
             title = stringResource(R.string.setting_tts_page_add_provider),
-            showCloseButton = true,
+            centerTitle = true,
             maxHeightFraction = 0.85f,
             dragHandle = {
                 IconButton(
@@ -881,6 +883,7 @@ private fun AddTTSProviderButton(
                     onValueChange = { searchQuery = it },
                     placeholder = { Text(stringResource(R.string.setting_provider_page_search_placeholder)) },
                     modifier = Modifier.fillMaxWidth(),
+                    style = AppSearchFieldStyle.FilledNested,
                 )
                 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -915,7 +918,7 @@ private fun AddTTSProviderButton(
                             },
                             modifier = Modifier.fillMaxWidth(),
                             shape = groupedItemShape(position),
-                            color = appSurfaceColor(AppSurfaceLevel.Container)
+                            color = nestedSurfaceColor()
                         ) {
                             Row(
                                 modifier = Modifier
@@ -1016,7 +1019,7 @@ private fun TTSProviderItemContent(
         targetValue = if (isSelected) {
             MaterialTheme.colorScheme.primaryContainer
         } else {
-            me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+            me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
         },
         animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
         label = "selectionBackground"

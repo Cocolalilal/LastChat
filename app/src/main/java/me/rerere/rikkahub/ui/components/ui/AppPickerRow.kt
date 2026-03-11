@@ -27,10 +27,13 @@ import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.groupedItemShape
 import me.rerere.rikkahub.ui.theme.nestedSurfaceColor
+import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 
 enum class AppPickerRowStyle {
     FilledNested,
+    PlacedSurface,
     FlatTransparent,
+    Destructive,
 }
 
 @Composable
@@ -53,6 +56,24 @@ fun AppPickerRow(
         label = "picker_row_scale",
     )
     val haptics = rememberPremiumHaptics()
+    val containerColor = when (style) {
+        AppPickerRowStyle.FilledNested -> nestedSurfaceColor()
+        AppPickerRowStyle.PlacedSurface -> placedSurfaceColor()
+        AppPickerRowStyle.FlatTransparent -> MaterialTheme.colorScheme.surface.copy(alpha = 0f)
+        AppPickerRowStyle.Destructive -> MaterialTheme.colorScheme.errorContainer
+    }
+    val titleColor = when (style) {
+        AppPickerRowStyle.Destructive -> MaterialTheme.colorScheme.onErrorContainer
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    val subtitleColor = when (style) {
+        AppPickerRowStyle.Destructive -> MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.78f)
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val rowContentColor = when (style) {
+        AppPickerRowStyle.Destructive -> MaterialTheme.colorScheme.onErrorContainer
+        else -> titleColor
+    }
 
     Surface(
         onClick = {
@@ -66,10 +87,8 @@ fun AppPickerRow(
                 scaleY = scale
             },
         interactionSource = interactionSource,
-        color = when (style) {
-            AppPickerRowStyle.FilledNested -> nestedSurfaceColor()
-            AppPickerRowStyle.FlatTransparent -> MaterialTheme.colorScheme.surface.copy(alpha = 0f)
-        },
+        color = containerColor,
+        contentColor = rowContentColor,
         shape = groupedItemShape(resolvedPosition),
     ) {
         Row(
@@ -90,13 +109,13 @@ fun AppPickerRow(
                 Text(
                     text = title,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = titleColor,
                 )
                 if (subtitle.isNotBlank()) {
                     Text(
                         text = subtitle,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = subtitleColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )

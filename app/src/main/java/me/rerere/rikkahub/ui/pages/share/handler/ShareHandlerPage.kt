@@ -8,13 +8,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -32,7 +29,12 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.nav.AppCompactTopBar
 import me.rerere.rikkahub.ui.components.nav.BackButton
+import me.rerere.rikkahub.ui.components.ui.AppPickerRow
+import me.rerere.rikkahub.ui.components.ui.AppPickerRowStyle
 import me.rerere.rikkahub.ui.components.ui.DocumentChip
+import me.rerere.rikkahub.ui.components.ui.GroupedStack
+import me.rerere.rikkahub.ui.components.ui.GroupedStackItem
+import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.AppSurfaceLevel
@@ -125,33 +127,38 @@ fun ShareHandlerPage(text: String, files: List<String>) {
                 }
             }
 
-            items(settings.assistants) { assistant ->
-                Card(
-                    onClick = {
-                        scope.launch {
-                            vm.updateAssistant(assistant.id)
-                            navigateToChatPage(
-                                navController = navController,
-                                initText = vm.shareText.takeIf { it.isNotBlank() }?.base64Encode(),
-                                initFiles = files.map { it.toUri() }
-                            )
-                        }
-                    },
-                    shape = AppShapes.ListItem,
-                    colors = CardDefaults.cardColors(
-                        containerColor = appSurfaceColor(AppSurfaceLevel.Container)
-                    )
-                ) {
-                    ListItem(
-                        headlineContent = {
-                            Text(
-                                text = assistant.name.ifEmpty {
+            item {
+                GroupedStack {
+                    settings.assistants.forEach { assistant ->
+                        GroupedStackItem {
+                            AppPickerRow(
+                                icon = {
+                                    UIAvatar(
+                                        name = assistant.name.ifEmpty {
+                                            stringResource(R.string.assistant_page_default_assistant)
+                                        },
+                                        value = assistant.avatar,
+                                        modifier = Modifier
+                                    )
+                                },
+                                title = assistant.name.ifEmpty {
                                     stringResource(R.string.assistant_page_default_assistant)
                                 },
-                                maxLines = 1
+                                subtitle = "",
+                                style = AppPickerRowStyle.PlacedSurface,
+                                onClick = {
+                                    scope.launch {
+                                        vm.updateAssistant(assistant.id)
+                                        navigateToChatPage(
+                                            navController = navController,
+                                            initText = vm.shareText.takeIf { it.isNotBlank() }?.base64Encode(),
+                                            initFiles = files.map { it.toUri() }
+                                        )
+                                    }
+                                }
                             )
-                        },
-                    )
+                        }
+                    }
                 }
             }
         }

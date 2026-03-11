@@ -99,6 +99,19 @@ internal fun shouldPreserveInMemoryConversation(
             )
 }
 
+internal fun appendStandaloneAssistantTurn(
+    conversation: Conversation,
+    content: String,
+): Conversation {
+    val trimmedContent = content.trim()
+    require(trimmedContent.isNotBlank()) { "Spontaneous message content cannot be blank" }
+
+    return conversation.copy(
+        messageNodes = conversation.messageNodes + MessageNode.of(UIMessage.assistant(trimmedContent)),
+        updateAt = Instant.now(),
+    )
+}
+
 class ChatService(
     private val context: Application,
     private val appScope: AppScope,
@@ -337,19 +350,15 @@ class ChatService(
         val trimmedContent = content.trim()
         require(trimmedContent.isNotBlank()) { "Spontaneous message content cannot be blank" }
 
-        val assistantMessage = MessageNode.of(UIMessage.assistant(trimmedContent))
         val existingConversation = conversationId?.let { ensureConversationLoaded(it) }
 
         val conversation = if (existingConversation != null) {
-            existingConversation.copy(
-                messageNodes = existingConversation.messageNodes + assistantMessage,
-                updateAt = Instant.now(),
-            )
+            appendStandaloneAssistantTurn(existingConversation, trimmedContent)
         } else {
             Conversation.ofId(
                 id = conversationId ?: Uuid.random(),
                 assistantId = assistantId,
-                messages = listOf(assistantMessage),
+                messages = listOf(MessageNode.of(UIMessage.assistant(trimmedContent))),
             )
         }
 
@@ -869,36 +878,29 @@ class ChatService(
                     getConversationPersistenceMode(conversationId) == ChatPersistenceMode.NORMAL
                 ) {
                     val assistant = settings.getCurrentAssistant()
-                    if (assistant.useRagMemoryRetrieval) {
-                        // RAG mode: retrieve relevant memories based on context
-                        val lastUserMessage = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: ""
-                        
-                        if (settings.enableRagLogging) {
-                            Log.d("RAG", "Query: $lastUserMessage")
-                        }
+                    val lastUserMessage = conversation.currentMessages
+                        .lastOrNull { it.role == MessageRole.USER }
+                        ?.toText()
+                        .orEmpty()
 
-                        if (lastUserMessage.isNotBlank()) {
-                            val results = memoryRepository.retrieveRelevantMemories(
-                                assistantId = settings.assistantId.toString(),
-                                query = lastUserMessage,
-                                limit = 50, // Hardcoded high limit for dynamic context
-                                similarityThreshold = assistant.ragSimilarityThreshold,
-                                includeCore = assistant.ragIncludeCore,
-                                includeEpisodes = assistant.ragIncludeEpisodes
-                            )
-                            if (settings.enableRagLogging) {
-                                Log.d("RAG", "Retrieved ${results.size} memories")
-                                results.forEach { Log.d("RAG", " - [${it.type}] ${it.content.take(50)}...") }
-                            }
-                            results
-                        } else {
-                            if (settings.enableRagLogging) Log.d("RAG", "Empty query, using all memories")
-                            memoryRepository.getMemoriesOfAssistant(settings.assistantId.toString())
-                        }
-                    } else {
-                        // Simple mode: inject all memories
-                        memoryRepository.getMemoriesOfAssistant(settings.assistantId.toString())
+                    if (settings.enableRagLogging) {
+                        Log.d("RAG", "Query: $lastUserMessage")
                     }
+
+                    val results = memoryRepository.resolveConfiguredMemories(
+                        assistantId = assistant.id.toString(),
+                        query = lastUserMessage,
+                        ragEnabled = assistant.useRagMemoryRetrieval,
+                        limit = assistant.ragLimit.coerceAtLeast(1),
+                        similarityThreshold = assistant.ragSimilarityThreshold,
+                        includeCore = assistant.ragIncludeCore,
+                        includeEpisodes = assistant.ragIncludeEpisodes,
+                    )
+                    if (settings.enableRagLogging) {
+                        Log.d("RAG", "Retrieved ${results.size} memories")
+                        results.forEach { Log.d("RAG", " - [${it.type}] ${it.content.take(50)}...") }
+                    }
+                    results
                 } else {
                     emptyList()
                 },

@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.pages.setting
+package me.rerere.rikkahub.ui.pages.setting
 
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
@@ -114,7 +114,7 @@ fun SettingRpOptimizationsPage(vm: SettingVM = koinViewModel()) {
             item {
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                        containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
                     ),
                     shape = AppShapes.CardLarge
                 ) {
@@ -188,7 +188,7 @@ fun SettingRpOptimizationsPage(vm: SettingVM = koinViewModel()) {
                 item {
                     Card(
                         colors = CardDefaults.cardColors(
-                            containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                            containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
                         ),
                         shape = AppShapes.CardLarge
                     ) {
@@ -241,7 +241,7 @@ fun SettingRpOptimizationsPage(vm: SettingVM = koinViewModel()) {
                 item {
                     Card(
                         colors = CardDefaults.cardColors(
-                            containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                            containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
                         ),
                         shape = AppShapes.CardLarge
                     ) {
@@ -321,7 +321,7 @@ private fun RpStyleRuleItem(
 
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+            containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
         ),
         shape = AppShapes.CardLarge,
         onClick = onEdit

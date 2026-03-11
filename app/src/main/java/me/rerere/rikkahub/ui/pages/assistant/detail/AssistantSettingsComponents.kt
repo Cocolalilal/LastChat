@@ -37,7 +37,7 @@ import me.rerere.rikkahub.ui.components.ui.rememberGroupedStackPosition
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.groupedItemShape
-import me.rerere.rikkahub.ui.theme.placedSurfaceColor
+import me.rerere.rikkahub.ui.theme.settingsSurfaceColor
 
 /**
  * PixelPlay-style settings section with title and grouped content.
@@ -103,7 +103,7 @@ fun AssistantSettingsItem(
     )
 
     Surface(
-        color = placedSurfaceColor(),
+        color = settingsSurfaceColor(),
         modifier = Modifier
             .fillMaxWidth()
             .graphicsLayer {

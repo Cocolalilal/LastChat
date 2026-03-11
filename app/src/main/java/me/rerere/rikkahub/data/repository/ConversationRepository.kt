@@ -11,7 +11,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import me.rerere.rikkahub.data.db.dao.ConversationDAO
 import me.rerere.rikkahub.data.db.dao.DailyActivityDAO
+import me.rerere.rikkahub.data.db.dao.EmbeddingCacheDAO
 import me.rerere.rikkahub.data.db.dao.UsageStatsDAO
+import me.rerere.rikkahub.data.db.entity.MemoryType
 import me.rerere.rikkahub.data.db.entity.ConversationEntity
 import me.rerere.rikkahub.data.db.entity.UsageStatsEntity
 import me.rerere.rikkahub.data.model.Conversation
@@ -37,6 +39,7 @@ class ConversationRepository(
     private val context: Context,
     private val conversationDAO: ConversationDAO,
     private val chatEpisodeDAO: me.rerere.rikkahub.data.db.dao.ChatEpisodeDAO,
+    private val embeddingCacheDAO: EmbeddingCacheDAO,
     private val dailyActivityDAO: DailyActivityDAO,
     private val usageStatsDAO: UsageStatsDAO,
 ) {
@@ -171,8 +174,16 @@ class ConversationRepository(
             // Delete the old episode based on conversation ID if possible.
             // If deletion by ID returns 0 (e.g. legacy episode without conversationId),
             // fallback to best-effort deletion based on time range.
+            val episodesByConversationId = chatEpisodeDAO.getEpisodesByConversationId(conversation.id.toString())
+            clearEpisodeEmbeddingCache(episodesByConversationId)
             val deletedCount = chatEpisodeDAO.deleteEpisodeByConversationId(conversation.id.toString())
             if (deletedCount == 0) {
+                val legacyEpisodes = chatEpisodeDAO.getEpisodesByTimeRange(
+                    assistantId = conversation.assistantId.toString(),
+                    startTime = conversation.createAt.toEpochMilli(),
+                    endTime = Long.MAX_VALUE
+                )
+                clearEpisodeEmbeddingCache(legacyEpisodes)
                 chatEpisodeDAO.deleteEpisodeByTimeRange(
                     assistantId = conversation.assistantId.toString(),
                     startTime = conversation.createAt.toEpochMilli(),
@@ -190,6 +201,7 @@ class ConversationRepository(
         conversationDAO.delete(
             conversationToConversationEntity(conversation)
         )
+        clearEpisodeEmbeddingCache(chatEpisodeDAO.getEpisodesByConversationId(conversation.id.toString()))
         chatEpisodeDAO.deleteEpisodeByConversationId(conversation.id.toString())
         if (deleteFiles) {
             context.deleteChatFiles(conversation.files)
@@ -702,6 +714,12 @@ class ConversationRepository(
         val match = raw?.let { ISO_DATE_REGEX.find(it)?.value } ?: return null
         return runCatching { LocalDate.parse(match, DateTimeFormatter.ISO_LOCAL_DATE).format(DateTimeFormatter.ISO_LOCAL_DATE) }
             .getOrNull()
+    }
+
+    private suspend fun clearEpisodeEmbeddingCache(episodes: List<me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity>) {
+        episodes.forEach { episode ->
+            embeddingCacheDAO.deleteByMemoryId(episode.id, MemoryType.EPISODIC)
+        }
     }
 }
 

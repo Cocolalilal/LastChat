@@ -135,19 +135,24 @@ class SpontaneousWorker(
         random: Random,
     ) {
         val assistant = context.assistant
-        val conversation = context.conversation
+        val recentConversation = context.conversation
+        val relation = SpontaneousMessaging.determineRelation(
+            conversation = recentConversation,
+            nowMillis = now,
+        )
+        val promptConversation = recentConversation.takeIf { relation == SpontaneousMessageRelation.RECENT_CHAT }
         val modelId = assistant.backgroundModelId ?: assistant.chatModelId ?: settings.chatModelId
         val model = settings.findModelById(modelId) ?: return
         val provider = model.findProvider(settings.providers) ?: return
         val providerHandler = providerManager.getProviderByType(provider)
 
-        val history = conversation?.currentMessages
+        val history = promptConversation?.currentMessages
             ?.takeLast(10)
             ?.joinToString("\n") { message -> "${message.role}: ${message.toText()}" }
             ?.takeIf { it.isNotBlank() }
             ?: "No previous chat history."
 
-        val memories = resolveMemoryContext(assistant, conversation)
+        val memories = resolveMemoryContext(assistant, promptConversation)
         val lastNotificationContext = assistant.lastNotificationContent
             .takeIf { it.isNotBlank() && now - assistant.lastNotificationTime < 24 * 60 * 60 * 1000L }
             ?.let { content ->
@@ -158,7 +163,7 @@ class SpontaneousWorker(
         val prompt = assistant.spontaneousPrompt.ifBlank {
             buildDefaultPrompt(
                 assistant = assistant,
-                conversation = conversation,
+                relation = relation,
                 history = history,
                 memories = memories,
                 lastNotificationContext = lastNotificationContext,
@@ -186,13 +191,6 @@ class SpontaneousWorker(
             return
         }
 
-        val relation = response.relation ?: return
-        val effectiveRelation = if (conversation == null) {
-            SpontaneousMessageRelation.UNRELATED
-        } else {
-            relation
-        }
-
         val content = response.content?.trim().orEmpty()
         if (content.isBlank()) return
 
@@ -200,15 +198,15 @@ class SpontaneousWorker(
 
         sendNotification(
             assistantId = assistant.id,
-            conversationId = if (effectiveRelation == SpontaneousMessageRelation.RECENT_CHAT) {
-                conversation?.id
+            conversationId = if (relation == SpontaneousMessageRelation.RECENT_CHAT) {
+                promptConversation?.id
             } else {
                 null
             },
             eventId = eventId,
             title = response.title?.takeIf { it.isNotBlank() } ?: assistant.name.ifBlank { applicationContext.getString(R.string.app_name) },
             content = content,
-            relation = effectiveRelation,
+            relation = relation,
         )
 
         settingsStore.update { currentSettings ->
@@ -236,67 +234,53 @@ class SpontaneousWorker(
         conversation: Conversation?,
     ): String {
         val assistantId = assistant.id.toString()
-        val retrievedMemories = if (conversation != null) {
-            val lastUserMessage = conversation.currentMessages
-                .lastOrNull { it.role == MessageRole.USER }
-                ?.toText()
-                .orEmpty()
-            if (lastUserMessage.isNotBlank()) {
-                memoryRepository.retrieveRelevantMemories(
-                    assistantId = assistantId,
-                    query = lastUserMessage,
-                    limit = 5,
-                )
-            } else {
-                memoryRepository.getMemoriesOfAssistant(assistantId).take(5)
-            }
-        } else {
-            memoryRepository.getMemoriesOfAssistant(assistantId).take(5)
+        if (!assistant.enableMemory) {
+            return "No relevant memories."
         }
 
-        val episodicMemories = if (conversation == null && retrievedMemories.size < 5) {
-            memoryRepository.getEpisodeEntitiesOfAssistant(assistantId)
-                .take(5 - retrievedMemories.size)
-                .map { episode ->
-                    me.rerere.rikkahub.data.model.AssistantMemory(
-                        id = -episode.id,
-                        content = episode.content,
-                        type = 1,
-                        hasEmbedding = episode.embedding != null,
-                        embeddingModelId = episode.embeddingModelId,
-                        timestamp = episode.startTime,
-                        significance = episode.significance,
-                    )
-                }
-        } else {
-            emptyList()
-        }
+        val query = conversation?.currentMessages
+            ?.lastOrNull { it.role == MessageRole.USER }
+            ?.toText()
+            .orEmpty()
+        val memories = memoryRepository.resolveConfiguredMemories(
+            assistantId = assistantId,
+            query = query,
+            ragEnabled = assistant.useRagMemoryRetrieval,
+            limit = assistant.ragLimit.coerceAtLeast(1),
+            similarityThreshold = assistant.ragSimilarityThreshold,
+            includeCore = assistant.ragIncludeCore,
+            includeEpisodes = assistant.ragIncludeEpisodes,
+        )
 
-        return (retrievedMemories + episodicMemories)
+        return memories
             .joinToString("\n") { memory -> "- ${memory.content}" }
             .ifBlank { "No relevant memories." }
     }
 
     private fun buildDefaultPrompt(
         assistant: Assistant,
-        conversation: Conversation?,
+        relation: SpontaneousMessageRelation,
         history: String,
         memories: String,
         lastNotificationContext: String,
     ): String {
-        val firstContactInstructions = if (conversation == null) {
+        val relationInstructions = if (relation == SpontaneousMessageRelation.RECENT_CHAT) {
             """
-            There is no existing chat history yet. You may initiate first contact, but only if it feels warm, low-pressure, and genuinely worth saying.
+            This spontaneous message must continue the latest chat thread.
+            Only write something that feels like a direct follow-up to what the user last said.
             """.trimIndent()
         } else {
-            "This should feel like a natural continuation of the relationship, not a forced check-in."
+            """
+            This spontaneous message must stand alone as a fresh assistant-first chat.
+            Do not continue a recent thread or assume the user is awaiting a reply in an existing chat.
+            """.trimIndent()
         }
 
         return """
             You are ${assistant.name}.
             You are considering whether to send the user a spontaneous in-app message.
 
-            $firstContactInstructions
+            $relationInstructions
 
             Recent chat history:
             $history
@@ -309,15 +293,11 @@ class SpontaneousWorker(
             Decide whether to send a spontaneous message right now.
             Only send if it feels timely, affectionate, interesting, or meaningfully connected to prior context.
             Avoid repetitive check-ins, filler, or anything that would feel spammy.
-            Choose `recent_chat` only if the message clearly continues the latest chat.
-            Choose `unrelated` only if it should stand alone as the first assistant message in a fresh chat.
-            ${if (conversation == null) "Because there is no recent chat available, relation must be `unrelated`." else ""}
 
             Return JSON only:
             {
               "send": true or false,
               "reason": "brief internal reason",
-              "relation": "recent_chat" or "unrelated",
               "title": "short notification title",
               "content": "the exact spontaneous assistant message"
             }

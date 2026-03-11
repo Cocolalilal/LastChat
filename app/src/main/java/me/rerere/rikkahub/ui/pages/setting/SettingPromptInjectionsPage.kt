@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.pages.setting
+package me.rerere.rikkahub.ui.pages.setting
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -53,7 +53,7 @@ import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
-import me.rerere.rikkahub.ui.theme.placedSurfaceColor
+import me.rerere.rikkahub.ui.theme.settingsSurfaceColor
 import me.rerere.rikkahub.utils.LorebookExportImport
 import me.rerere.rikkahub.utils.SkillExportImport
 import org.koin.androidx.compose.koinViewModel
@@ -162,7 +162,7 @@ fun SettingPromptInjectionsPage(
                                 lorebookImportLauncher.launch(arrayOf("application/json", "*/*"))
                             }
                         },
-                        containerColor = placedSurfaceColor(),
+                        containerColor = settingsSurfaceColor(),
                         contentColor = MaterialTheme.colorScheme.onSurface,
                     ) {
                         Icon(

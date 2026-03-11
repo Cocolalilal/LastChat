@@ -83,6 +83,7 @@ import androidx.compose.ui.util.fastForEach
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantMemory
+import me.rerere.rikkahub.data.repository.needsEmbeddingRefresh
 import me.rerere.rikkahub.ui.components.ui.AppOutlinedField
 import me.rerere.rikkahub.ui.components.ui.AppSearchField
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
@@ -122,6 +123,16 @@ private enum class MemorySortOrder(val displayName: String) {
     NEWEST_FIRST("Newest First"),
     OLDEST_FIRST("Oldest First"),
     ALPHABETICAL("Alphabetical")
+}
+
+internal fun memoryEmbeddingStatusLabel(
+    memory: AssistantMemory,
+    currentEmbeddingModelId: String,
+    useRagMemoryRetrieval: Boolean,
+): String? {
+    if (!useRagMemoryRetrieval) return null
+    if (!needsEmbeddingRefresh(memory, currentEmbeddingModelId)) return null
+    return if (memory.hasEmbedding) "WRONG MODEL" else "NO EMBEDDING"
 }
 
 @Composable
@@ -1074,6 +1085,12 @@ private fun MemoryItem(
     val haptics = rememberPremiumHaptics()
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
+    val embeddingStatusLabel = memoryEmbeddingStatusLabel(
+        memory = memory,
+        currentEmbeddingModelId = currentEmbeddingModelId,
+        useRagMemoryRetrieval = useRagMemoryRetrieval,
+    )
+    val embeddingNeedsRefresh = embeddingStatusLabel != null
     
     val scale by animateFloatAsState(
         targetValue = if (isPressed) 0.98f else 1f,
@@ -1141,7 +1158,7 @@ private fun MemoryItem(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 // Show type and embedding badges only when needed
-                val showBadges = showType || (useRagMemoryRetrieval && !memory.hasEmbedding)
+                val showBadges = showType || embeddingNeedsRefresh
                 AnimatedVisibility(
                     visible = showBadges,
                     enter = fadeIn() + expandVertically(),
@@ -1165,13 +1182,13 @@ private fun MemoryItem(
                             }
                         }
                         
-                        if (useRagMemoryRetrieval && !memory.hasEmbedding) {
+                        if (embeddingNeedsRefresh) {
                             Surface(
                                 color = MaterialTheme.colorScheme.error,
                                 shape = MaterialTheme.shapes.extraSmall
                             ) {
                                 Text(
-                                    text = "NO EMBEDDING",
+                                    text = embeddingStatusLabel.orEmpty(),
                                     style = MaterialTheme.typography.labelSmall,
                                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
                                     color = Color.White

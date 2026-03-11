@@ -60,7 +60,7 @@ import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroupCustomItem
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import me.rerere.rikkahub.ui.theme.groupedItemShape
-import me.rerere.rikkahub.ui.theme.placedSurfaceColor
+import me.rerere.rikkahub.ui.theme.settingsSurfaceColor
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
 
@@ -131,7 +131,7 @@ fun SettingDisplayPage(vm: SettingVM = koinViewModel()) {
                     if (!settings.dynamicColor) {
                         SettingsGroupCustomItem { position ->
                             Surface(
-                                color = placedSurfaceColor(),
+                                color = settingsSurfaceColor(),
                                 shape = groupedItemShape(position),
                                 modifier = Modifier.fillMaxWidth(),
                             ) {

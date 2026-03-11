@@ -22,6 +22,8 @@ import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Tag
 import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.rikkahub.data.repository.needsEmbeddingRefresh
+import me.rerere.rikkahub.service.buildMemoryConsolidationInputData
 import me.rerere.rikkahub.utils.deleteChatFiles
 import kotlin.uuid.Uuid
 
@@ -95,7 +97,7 @@ class AssistantDetailVM(
         assistant,
         settings
     ) { assistant, settings ->
-        (assistant.embeddingModelId ?: settings.embeddingModelId).toString()
+        (assistant.embeddingModelId ?: settings.embeddingModelId)?.toString().orEmpty()
     }.stateIn(
         scope = viewModelScope, started = SharingStarted.Lazily, initialValue = ""
     )
@@ -264,9 +266,11 @@ class AssistantDetailVM(
     private val _embeddingProgress = MutableStateFlow<EmbeddingProgress?>(null)
     val embeddingProgress = _embeddingProgress.asStateFlow()
 
-    // Check if any memories need embedding (just checks if embedding exists, cache handles model switching)
-    val needsEmbeddingRegeneration: StateFlow<Boolean> = memories.map { memories ->
-        memories.any { memory -> !memory.hasEmbedding }
+    val needsEmbeddingRegeneration: StateFlow<Boolean> = combine(
+        memories,
+        currentEmbeddingModelId
+    ) { memories, currentModelId ->
+        memories.any { memory -> needsEmbeddingRefresh(memory, currentModelId) }
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.Lazily,
@@ -343,7 +347,10 @@ class AssistantDetailVM(
     fun consolidateMemories(isFullScan: Boolean) {
         val request = androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.MemoryConsolidationWorker>()
             .setInputData(
-                androidx.work.workDataOf("FULL_SCAN" to isFullScan)
+                buildMemoryConsolidationInputData(
+                    assistantId = assistantId.toString(),
+                    isFullScan = isFullScan,
+                )
             )
             .build()
         androidx.work.WorkManager.getInstance(context).enqueue(request)

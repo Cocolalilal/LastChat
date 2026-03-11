@@ -57,6 +57,7 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppSurfaceLevel
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.appSurfaceColor
+import me.rerere.rikkahub.ui.theme.GroupedItemRadii
 import me.rerere.rikkahub.ui.theme.groupedItemRadii
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
@@ -167,46 +168,47 @@ fun PhysicsSwipeToDelete(
     }
     
     // Position-based corner radius with smooth animation on position change and unlock
-    val selectedRadiusPx = with(density) { AppShapes.GroupedSelectedRadius.toPx() }
-    
-    // Animate base radii when position changes
-    val baseRadii = groupedItemRadii(
+    val revealProgress by remember {
+        derivedStateOf {
+            if (deleteEnabled && neighborOffset == 0f) unlockProgress else 0f
+        }
+    }
+    val revealRadii = swipeRevealRadii(
         position = position,
         selected = selected,
+        revealProgress = revealProgress,
         groupRadius = groupCornerRadius,
         itemRadius = itemCornerRadius,
     )
-    val targetTopRadius = with(density) { baseRadii.topStart.toPx() }
-    val targetBottomRadius = with(density) { baseRadii.bottomStart.toPx() }
-    
-    val animatedTopRadius by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = targetTopRadius,
+
+    val animatedTopStart by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = with(density) { revealRadii.topStart.toPx() },
         animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
-        label = "topRadius"
+        label = "topStartRadius"
     )
-    val animatedBottomRadius by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = targetBottomRadius,
+    val animatedTopEnd by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = with(density) { revealRadii.topEnd.toPx() },
         animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
-        label = "bottomRadius"
+        label = "topEndRadius"
     )
-    
-    // Calculate shape based on animated position and unlock progress
-    // Only apply unlock progress if this item is being dragged (not neighbor influence)
+    val animatedBottomEnd by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = with(density) { revealRadii.bottomEnd.toPx() },
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
+        label = "bottomEndRadius"
+    )
+    val animatedBottomStart by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = with(density) { revealRadii.bottomStart.toPx() },
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
+        label = "bottomStartRadius"
+    )
+
     val shape by remember {
         derivedStateOf {
-            // Only interpolate corners for own unlock progress (not neighbor influence)
-            val ownUnlockProgress = if (deleteEnabled && neighborOffset == 0f) unlockProgress else 0f
-            
-            val finalTopStart = animatedTopRadius + (selectedRadiusPx - animatedTopRadius) * ownUnlockProgress
-            val finalTopEnd = animatedTopRadius + (selectedRadiusPx - animatedTopRadius) * ownUnlockProgress
-            val finalBottomEnd = animatedBottomRadius + (selectedRadiusPx - animatedBottomRadius) * ownUnlockProgress
-            val finalBottomStart = animatedBottomRadius + (selectedRadiusPx - animatedBottomRadius) * ownUnlockProgress
-            
             RoundedCornerShape(
-                topStart = with(density) { finalTopStart.toDp() },
-                topEnd = with(density) { finalTopEnd.toDp() },
-                bottomEnd = with(density) { finalBottomEnd.toDp() },
-                bottomStart = with(density) { finalBottomStart.toDp() }
+                topStart = with(density) { animatedTopStart.toDp() },
+                topEnd = with(density) { animatedTopEnd.toDp() },
+                bottomEnd = with(density) { animatedBottomEnd.toDp() },
+                bottomStart = with(density) { animatedBottomStart.toDp() }
             )
         }
     }
@@ -387,6 +389,36 @@ fun PhysicsSwipeToDelete(
             content(shape)
         }
     }
+}
+
+internal fun swipeRevealRadii(
+    position: ItemPosition,
+    selected: Boolean,
+    revealProgress: Float,
+    groupRadius: Dp = AppShapes.GroupedOuterRadius,
+    itemRadius: Dp = AppShapes.GroupedInnerRadius,
+    selectedRadius: Dp = AppShapes.GroupedSelectedRadius,
+): GroupedItemRadii {
+    val baseRadii = groupedItemRadii(
+        position = position,
+        selected = selected,
+        groupRadius = groupRadius,
+        itemRadius = itemRadius,
+        selectedRadius = selectedRadius,
+    )
+    if (selected) {
+        return baseRadii
+    }
+
+    val clampedReveal = revealProgress.coerceIn(0f, 1f)
+    fun lerpCorner(start: Dp): Dp = androidx.compose.ui.unit.lerp(start, groupRadius, clampedReveal)
+
+    return GroupedItemRadii(
+        topStart = lerpCorner(baseRadii.topStart),
+        topEnd = lerpCorner(baseRadii.topEnd),
+        bottomEnd = lerpCorner(baseRadii.bottomEnd),
+        bottomStart = lerpCorner(baseRadii.bottomStart),
+    )
 }
 
 /**
