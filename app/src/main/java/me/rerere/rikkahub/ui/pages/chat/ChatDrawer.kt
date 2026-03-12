@@ -76,7 +76,6 @@ import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.ui.components.ai.AssistantPicker
 import me.rerere.rikkahub.ui.components.ui.Greeting
-import me.rerere.rikkahub.ui.components.ui.AppPickerRow
 import me.rerere.rikkahub.ui.components.ui.Tooltip
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.components.ui.UpdateCard
@@ -88,9 +87,8 @@ import me.rerere.rikkahub.ui.hooks.rememberIsPlayStoreVersion
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.ui.modifier.onClick
-import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.theme.AppShapes
-import me.rerere.rikkahub.ui.theme.groupedItemShape
+import me.rerere.rikkahub.ui.theme.nestedSurfaceColor
 import me.rerere.rikkahub.utils.navigateToChatPage
 import me.rerere.rikkahub.utils.toDp
 import org.koin.compose.koinInject
@@ -257,49 +255,62 @@ fun ChatDrawerContent(
                 showConsolidateOption = settings.getCurrentAssistant().enableMemory && settings.getCurrentAssistant().enableMemoryConsolidation,
                 // Imagine + Stats buttons (visibility handled by ConversationList)
                 quickActions = {
-                    // Quick Action Buttons (settings-style grouping)
-                    val itemColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 8.dp),
+                            .padding(horizontal = 8.dp)
+                            .clip(RoundedCornerShape(24.dp)),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         val haptics = rememberPremiumHaptics()
-                        AppPickerRow(
-                            icon = {
+                        Surface(
+                            onClick = {
+                                haptics.perform(HapticPattern.Tick)
+                                navController.navigate(Screen.ImageGen)
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            color = nestedSurfaceColor(),
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
                                 Icon(
                                     imageVector = Icons.Rounded.Image,
                                     contentDescription = null,
                                     modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
-                            },
-                            title = "Imagine",
-                            subtitle = "Generate images and explore ideas visually",
-                            position = ItemPosition.FIRST,
+                                Text("Imagine", style = MaterialTheme.typography.titleMedium)
+                            }
+                        }
+                        Surface(
                             onClick = {
                                 haptics.perform(HapticPattern.Tick)
-                                navController.navigate(Screen.ImageGen)
-                            }
-                        )
-                        AppPickerRow(
-                            icon = {
+                                navController.navigate(Screen.Menu)
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            color = nestedSurfaceColor(),
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
                                 Icon(
                                     imageVector = Icons.Rounded.BarChart,
                                     contentDescription = null,
                                     modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
-                            },
-                            title = "Stats",
-                            subtitle = "Open usage and app activity details",
-                            position = ItemPosition.LAST,
-                            onClick = {
-                                haptics.perform(HapticPattern.Tick)
-                                navController.navigate(Screen.Menu)
+                                Text("Stats", style = MaterialTheme.typography.titleMedium)
                             }
-                        )
+                        }
                     }
                 }
             )
@@ -318,7 +329,7 @@ fun ChatDrawerContent(
             ) {
                 val actionButtonSize = 42.dp
                 val assistantAvatarSize = 30.dp
-                val itemColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                val itemColor = nestedSurfaceColor()
                 val haptics = rememberPremiumHaptics()
                 val assistantName = assistantState.currentAssistant.name.ifEmpty { defaultAssistantName }
 

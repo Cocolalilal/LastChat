@@ -50,6 +50,7 @@ import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.components.ui.ToggleSurface
 import me.rerere.rikkahub.ui.theme.groupedItemShape
+import me.rerere.rikkahub.ui.theme.nestedSurfaceColor
 import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 import org.koin.compose.koinInject
 
@@ -183,10 +184,10 @@ fun McpPicker(
             }
             val selected = server.id in assistant.mcpServers
             Card(
-                shape = groupedItemShape(position = position, selected = selected),
+                shape = groupedItemShape(position = position),
                 colors = CardDefaults.cardColors(
-                    containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else placedSurfaceColor(),
-                    contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                    containerColor = nestedSurfaceColor(),
+                    contentColor = MaterialTheme.colorScheme.onSurface
                 )
             ) {
                 Row(

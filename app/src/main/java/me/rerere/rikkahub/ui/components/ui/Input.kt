@@ -20,9 +20,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.VisualTransformation
 import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.nestedSurfaceColor
+
+enum class AppSearchFieldStyle {
+    Outlined,
+    FilledNested,
+}
 
 @Composable
 fun <T : Number> OutlinedNumberInput(
@@ -121,31 +128,59 @@ fun AppSearchField(
     clearContentDescription: String = "Clear",
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
+    style: AppSearchFieldStyle = AppSearchFieldStyle.Outlined,
     colors: TextFieldColors = OutlinedTextFieldDefaults.colors(),
 ) {
-    AppOutlinedField(
-        value = value,
-        onValueChange = onValueChange,
-        modifier = modifier,
-        enabled = enabled,
-        readOnly = readOnly,
-        placeholder = placeholder,
-        leadingIcon = leadingIcon,
-        trailingIcon = trailingIcon ?: if (value.isNotEmpty()) {
-            {
-                IconButton(onClick = { onValueChange("") }) {
-                    Icon(Icons.Rounded.Close, contentDescription = clearContentDescription)
-                }
+    val resolvedTrailingIcon = trailingIcon ?: if (value.isNotEmpty()) {
+        {
+            IconButton(onClick = { onValueChange("") }) {
+                Icon(Icons.Rounded.Close, contentDescription = clearContentDescription)
             }
-        } else {
-            null
-        },
-        singleLine = true,
-        keyboardOptions = keyboardOptions,
-        keyboardActions = keyboardActions,
-        colors = colors,
-        shape = AppShapes.SearchField,
-    )
+        }
+    } else {
+        null
+    }
+
+    when (style) {
+        AppSearchFieldStyle.Outlined -> AppOutlinedField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = modifier,
+            enabled = enabled,
+            readOnly = readOnly,
+            placeholder = placeholder,
+            leadingIcon = leadingIcon,
+            trailingIcon = resolvedTrailingIcon,
+            singleLine = true,
+            keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions,
+            colors = colors,
+            shape = AppShapes.SearchField,
+        )
+
+        AppSearchFieldStyle.FilledNested -> TextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = modifier,
+            enabled = enabled,
+            readOnly = readOnly,
+            placeholder = placeholder,
+            leadingIcon = leadingIcon,
+            trailingIcon = resolvedTrailingIcon,
+            singleLine = true,
+            keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions,
+            shape = AppShapes.SearchField,
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = nestedSurfaceColor(),
+                unfocusedContainerColor = nestedSurfaceColor(),
+                disabledContainerColor = nestedSurfaceColor(),
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent,
+                disabledIndicatorColor = Color.Transparent,
+            ),
+        )
+    }
 }
 
 @Composable

@@ -32,8 +32,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MultiChoiceSegmentedButtonRow
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
@@ -73,26 +71,29 @@ import me.rerere.rikkahub.data.sync.WebDavBackupItem
 import me.rerere.rikkahub.ui.components.nav.AppCompactTopBar
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.AppAlertDialog
+import me.rerere.rikkahub.ui.components.ui.AppFloatingActionButton
+import me.rerere.rikkahub.ui.components.ui.AppFloatingActionColumn
+import me.rerere.rikkahub.ui.components.ui.AppFloatingControlsOverlay
+import me.rerere.rikkahub.ui.components.ui.AppFloatingTabBar
+import me.rerere.rikkahub.ui.components.ui.AppFloatingTabButton
+import me.rerere.rikkahub.ui.components.ui.AppFloatingOverlayContentBottomPadding
 import me.rerere.rikkahub.ui.components.ui.AppModalSheet
 import me.rerere.rikkahub.ui.components.ui.AppOutlinedField
 import me.rerere.rikkahub.ui.components.ui.AppPickerRow
 import me.rerere.rikkahub.ui.components.ui.AppPickerRowStyle
 import me.rerere.rikkahub.ui.components.ui.StickyHeader
+import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.context.LocalToaster
-<<<<<<< HEAD
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupInputItem
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroupCustomItem
 import me.rerere.rikkahub.ui.theme.groupedItemShape
 import me.rerere.rikkahub.ui.theme.placedSurfaceColor
-=======
-import me.rerere.rikkahub.ui.theme.AppSurfaceLevel
-import me.rerere.rikkahub.ui.theme.appSurfaceColor
->>>>>>> parent of f7993ce (Working on making the UI standardization actually work)
 import me.rerere.rikkahub.utils.fileSizeToString
 import me.rerere.rikkahub.utils.onError
 import me.rerere.rikkahub.utils.onLoading
 import me.rerere.rikkahub.utils.onSuccess
+import me.rerere.rikkahub.utils.plus
 import me.rerere.rikkahub.utils.toLocalDateTime
 import org.koin.androidx.compose.koinViewModel
 import java.io.File
@@ -106,6 +107,9 @@ import kotlin.system.exitProcess
 fun BackupPage(vm: BackupVM = koinViewModel()) {
     val pagerState = rememberPagerState { 2 }
     val scope = rememberCoroutineScope()
+    val toaster = LocalToaster.current
+    val context = LocalContext.current
+    var isBackingUp by remember { mutableStateOf(false) }
     Scaffold(
         topBar = {
             AppCompactTopBar(
@@ -116,48 +120,84 @@ fun BackupPage(vm: BackupVM = koinViewModel()) {
                     BackButton()
                 }
             )
-        },
-        bottomBar = {
-            NavigationBar {
-                NavigationBarItem(
-                    selected = pagerState.currentPage == 0,
-                    icon = {
-                        Icon(Icons.Rounded.CloudSync, null)
-                    },
-                    label = {
-                        Text(stringResource(R.string.backup_page_webdav_backup))
-                    },
-                    onClick = {
-                        scope.launch { pagerState.animateScrollToPage(0) }
-                    },
-                )
-                NavigationBarItem(
-                    selected = pagerState.currentPage == 1,
-                    icon = {
-                        Icon(Icons.Rounded.Folder, null)
-                    },
-                    label = {
-                        Text(stringResource(R.string.backup_page_import_export))
-                    },
-                    onClick = {
-                        scope.launch { pagerState.animateScrollToPage(1) }
-                    },
-                )
-            }
         }
-    ) {
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = it
-        ) { page ->
-            when (page) {
-                0 -> {
-                    WebDavPage(vm)
+    ) { innerPadding ->
+        Box(modifier = Modifier.fillMaxSize()) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = innerPadding
+            ) { page ->
+                when (page) {
+                    0 -> {
+                        WebDavPage(
+                            vm = vm,
+                            contentPadding = PaddingValues(bottom = AppFloatingOverlayContentBottomPadding)
+                        )
+                    }
+
+                    1 -> {
+                        ImportExportPage(
+                            vm = vm,
+                            contentPadding = PaddingValues(bottom = AppFloatingOverlayContentBottomPadding)
+                        )
+                    }
+                }
+            }
+
+            AppFloatingControlsOverlay {
+                AppFloatingTabBar(
+                    modifier = Modifier.align(Alignment.Center)
+                ) {
+                    AppFloatingTabButton(
+                        selected = pagerState.currentPage == 0,
+                        onClick = { scope.launch { pagerState.animateScrollToPage(0) } },
+                        icon = Icons.Rounded.CloudSync,
+                        contentDescription = stringResource(R.string.backup_page_webdav_backup)
+                    )
+                    AppFloatingTabButton(
+                        selected = pagerState.currentPage == 1,
+                        onClick = { scope.launch { pagerState.animateScrollToPage(1) } },
+                        icon = Icons.Rounded.Folder,
+                        contentDescription = stringResource(R.string.backup_page_import_export)
+                    )
                 }
 
-                1 -> {
-                    ImportExportPage(vm)
+                if (pagerState.currentPage == 0) {
+                    AppFloatingActionColumn(
+                        modifier = Modifier.align(Alignment.CenterEnd)
+                    ) {
+                        AppFloatingActionButton(
+                            onClick = {
+                                scope.launch {
+                                    isBackingUp = true
+                                    runCatching {
+                                        vm.backup()
+                                        vm.loadBackupFileItems()
+                                        toaster.show(
+                                            context.getString(R.string.backup_page_backup_success),
+                                            type = ToastType.Success
+                                        )
+                                    }.onFailure {
+                                        it.printStackTrace()
+                                        toaster.show(
+                                            it.message ?: context.getString(R.string.backup_page_unknown_error),
+                                            type = ToastType.Error
+                                        )
+                                    }
+                                    isBackingUp = false
+                                }
+                            }
+                        ) {
+                            if (isBackingUp) {
+                                CircularWavyProgressIndicator(
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            } else {
+                                Icon(Icons.Rounded.CloudUpload, null, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -166,7 +206,8 @@ fun BackupPage(vm: BackupVM = koinViewModel()) {
 
 @Composable
 private fun WebDavPage(
-    vm: BackupVM
+    vm: BackupVM,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val webDavConfig = settings.webDavConfig
@@ -177,7 +218,6 @@ private fun WebDavPage(
     var showRestartDialog by remember { mutableStateOf(false) }
     var restoreResult by remember { mutableStateOf<me.rerere.rikkahub.data.sync.WebdavSync.RestoreResult?>(null) }
     var restoringItemId by remember { mutableStateOf<String?>(null) }
-    var isBackingUp by remember { mutableStateOf(false) }
     
     // Permission handling after restore
     var pendingFeatureAccess by remember {
@@ -215,86 +255,71 @@ private fun WebDavPage(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-<<<<<<< HEAD
             .padding(contentPadding)
             .padding(vertical = 16.dp)
-=======
-            .padding(16.dp)
->>>>>>> parent of f7993ce (Working on making the UI standardization actually work)
             .imePadding(),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Card(
-            shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
-            colors = androidx.compose.material3.CardDefaults.cardColors(
-                containerColor = appSurfaceColor(AppSurfaceLevel.Container)
-            )
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+        SettingsGroup(title = "Connection") {
+            SettingGroupInputItem(
+                title = stringResource(R.string.backup_page_webdav_server_address),
             ) {
-                FormItem(
-                    label = { Text(stringResource(R.string.backup_page_webdav_server_address)) }
-                ) {
-                    AppOutlinedField(
-                        modifier = Modifier.fillMaxWidth(),
-                        value = webDavConfig.url,
-                        onValueChange = { updateWebDavConfig(webDavConfig.copy(url = it.trim())) },
-                        singleLine = true,
-                    )
-                }
-                FormItem(
-                    label = { Text(stringResource(R.string.backup_page_username)) }
-                ) {
-                    AppOutlinedField(
-                        modifier = Modifier.fillMaxWidth(),
-                        value = webDavConfig.username,
-                        onValueChange = {
-                            updateWebDavConfig(
-                                webDavConfig.copy(
-                                    username = it.trim()
-                                )
+                AppOutlinedField(
+                    modifier = Modifier.fillMaxWidth(),
+                    value = webDavConfig.url,
+                    onValueChange = { updateWebDavConfig(webDavConfig.copy(url = it.trim())) },
+                    singleLine = true,
+                )
+            }
+            SettingGroupInputItem(
+                title = stringResource(R.string.backup_page_username),
+            ) {
+                AppOutlinedField(
+                    modifier = Modifier.fillMaxWidth(),
+                    value = webDavConfig.username,
+                    onValueChange = {
+                        updateWebDavConfig(
+                            webDavConfig.copy(
+                                username = it.trim()
                             )
-                        },
-                        singleLine = true,
-                    )
-                }
-                FormItem(
-                    label = { Text(stringResource(R.string.backup_page_password)) }
-                ) {
-                    var passwordVisible by remember { mutableStateOf(false) }
-                    AppOutlinedField(
-                        modifier = Modifier.fillMaxWidth(),
-                        value = webDavConfig.password,
-                        onValueChange = { updateWebDavConfig(webDavConfig.copy(password = it)) },
-                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                        trailingIcon = {
-                            val image = if (passwordVisible)
-                                Icons.Rounded.VisibilityOff
-                            else
-                                Icons.Rounded.Visibility
-                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                                Icon(imageVector = image, null)
-                            }
-                        },
-                        singleLine = true,
-                    )
-                }
-                FormItem(
-                    label = { Text(stringResource(R.string.backup_page_path)) }
-                ) {
-                    AppOutlinedField(
-                        modifier = Modifier.fillMaxWidth(),
-                        value = webDavConfig.path,
-                        onValueChange = { updateWebDavConfig(webDavConfig.copy(path = it.trim())) },
-                        singleLine = true,
-                    )
-                }
+                        )
+                    },
+                    singleLine = true,
+                )
+            }
+            SettingGroupInputItem(
+                title = stringResource(R.string.backup_page_password),
+            ) {
+                var passwordVisible by remember { mutableStateOf(false) }
+                AppOutlinedField(
+                    modifier = Modifier.fillMaxWidth(),
+                    value = webDavConfig.password,
+                    onValueChange = { updateWebDavConfig(webDavConfig.copy(password = it)) },
+                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        val image = if (passwordVisible)
+                            Icons.Rounded.VisibilityOff
+                        else
+                            Icons.Rounded.Visibility
+                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                            Icon(imageVector = image, null)
+                        }
+                    },
+                    singleLine = true,
+                )
+            }
+            SettingGroupInputItem(
+                title = stringResource(R.string.backup_page_path),
+            ) {
+                AppOutlinedField(
+                    modifier = Modifier.fillMaxWidth(),
+                    value = webDavConfig.path,
+                    onValueChange = { updateWebDavConfig(webDavConfig.copy(path = it.trim())) },
+                    singleLine = true,
+                )
             }
         }
 
-<<<<<<< HEAD
         SettingsGroup(title = stringResource(R.string.backup_page_backup_items)) {
             SettingsGroupCustomItem { position ->
                 androidx.compose.material3.Surface(
@@ -337,47 +362,8 @@ private fun WebDavPage(
                                             WebDavConfig.BackupItem.FILES -> stringResource(R.string.backup_page_files)
                                         }
                                     )
-=======
-        Card(
-            shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
-            colors = androidx.compose.material3.CardDefaults.cardColors(
-                containerColor = appSurfaceColor(AppSurfaceLevel.Container)
-            )
-        ) {
-            FormItem(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                label = {
-                    Text(stringResource(R.string.backup_page_backup_items))
-                }
-            ) {
-                MultiChoiceSegmentedButtonRow(
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    WebDavConfig.BackupItem.entries.forEachIndexed { index, item ->
-                        SegmentedButton(
-                            shape = SegmentedButtonDefaults.itemShape(
-                                index = index,
-                                count = WebDavConfig.BackupItem.entries.size
-                            ),
-                            onCheckedChange = {
-                                val newItems = if (it) {
-                                    webDavConfig.items + item
-                                } else {
-                                    webDavConfig.items - item
->>>>>>> parent of f7993ce (Working on making the UI standardization actually work)
                                 }
-                                updateWebDavConfig(webDavConfig.copy(items = newItems))
-                            },
-                            checked = item in webDavConfig.items
-                        ) {
-                            Text(
-                                when (item) {
-                                    WebDavConfig.BackupItem.DATABASE -> stringResource(R.string.backup_page_chat_records)
-                                    WebDavConfig.BackupItem.FILES -> stringResource(R.string.backup_page_files)
-                                }
-                            )
+                            }
                         }
                     }
                 }
@@ -419,40 +405,6 @@ private fun WebDavPage(
                 }
             ) {
                 Text(stringResource(R.string.backup_page_restore))
-            }
-
-            Button(
-                onClick = {
-                    scope.launch {
-                        isBackingUp = true
-                        runCatching {
-                            vm.backup()
-                            vm.loadBackupFileItems()
-                            toaster.show(
-                                context.getString(R.string.backup_page_backup_success),
-                                type = ToastType.Success
-                            )
-                        }.onFailure {
-                            it.printStackTrace()
-                            toaster.show(
-                                it.message ?: context.getString(R.string.backup_page_unknown_error),
-                                type = ToastType.Error
-                            )
-                        }
-                        isBackingUp = false
-                    }
-                },
-                enabled = !isBackingUp
-            ) {
-                if (isBackingUp) {
-                    CircularWavyProgressIndicator(
-                        modifier = Modifier.size(18.dp)
-                    )
-                } else {
-                    Icon(Icons.Rounded.CloudUpload, null, modifier = Modifier.size(18.dp))
-                }
-                Spacer(Modifier.width(8.dp))
-                Text(if (isBackingUp) stringResource(R.string.backup_page_backing_up) else stringResource(R.string.backup_page_backup_now))
             }
         }
     }
@@ -711,7 +663,8 @@ private fun BackupItemCard(
 
 @Composable
 private fun ImportExportPage(
-    vm: BackupVM
+    vm: BackupVM,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
     val toaster = LocalToaster.current
     val scope = rememberCoroutineScope()
@@ -897,7 +850,7 @@ private fun ImportExportPage(
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
-        contentPadding = PaddingValues(16.dp)
+        contentPadding = contentPadding + PaddingValues(16.dp)
     ) {
         stickyHeader {
             StickyHeader {
@@ -906,11 +859,21 @@ private fun ImportExportPage(
         }
 
         item {
-            Card(
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
-                colors = androidx.compose.material3.CardDefaults.cardColors(
-                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
-                ),
+            BackupActionItem(
+                position = ItemPosition.FIRST,
+                title = stringResource(R.string.backup_page_local_backup_export),
+                subtitle = if (isExporting) {
+                    stringResource(R.string.backup_page_exporting)
+                } else {
+                    stringResource(R.string.backup_page_export_desc)
+                },
+                leading = {
+                    if (isExporting) {
+                        CircularWavyProgressIndicator(modifier = Modifier.size(24.dp))
+                    } else {
+                        Icon(Icons.Rounded.FileUpload, null)
+                    }
+                },
                 onClick = {
                     if (!isExporting) {
                         val timestamp = LocalDateTime.now()
@@ -918,68 +881,32 @@ private fun ImportExportPage(
                         createDocumentLauncher.launch("LastChat_backup_$timestamp.zip")
                     }
                 }
-            ) {
-                ListItem(
-                    headlineContent = {
-                        Text(stringResource(R.string.backup_page_local_backup_export))
-                    },
-                    supportingContent = {
-                        Text(
-                            if (isExporting) stringResource(R.string.backup_page_exporting) else stringResource(
-                                R.string.backup_page_export_desc
-                            )
-                        )
-                    },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    leadingContent = {
-                        if (isExporting) {
-                            CircularWavyProgressIndicator(
-                                modifier = Modifier.size(24.dp)
-                            )
-                        } else {
-                            Icon(Icons.Rounded.FileUpload, null)
-                        }
-                    }
-                )
-            }
+            )
         }
 
         item {
-            Card(
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
-                colors = androidx.compose.material3.CardDefaults.cardColors(
-                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
-                ),
+            BackupActionItem(
+                position = ItemPosition.LAST,
+                title = stringResource(R.string.backup_page_local_backup_import),
+                subtitle = if (isRestoring && importType == "local") {
+                    stringResource(R.string.backup_page_importing)
+                } else {
+                    stringResource(R.string.backup_page_import_desc)
+                },
+                leading = {
+                    if (isRestoring && importType == "local") {
+                        CircularWavyProgressIndicator(modifier = Modifier.size(24.dp))
+                    } else {
+                        Icon(Icons.Rounded.SystemUpdateAlt, null)
+                    }
+                },
                 onClick = {
                     if (!isRestoring) {
                         importType = "local"
                         openDocumentLauncher.launch(arrayOf("application/zip"))
                     }
                 }
-            ) {
-                ListItem(
-                    headlineContent = {
-                        Text(stringResource(R.string.backup_page_local_backup_import))
-                    },
-                    supportingContent = {
-                        Text(
-                            if (isRestoring && importType == "local") stringResource(R.string.backup_page_importing) else stringResource(
-                                R.string.backup_page_import_desc
-                            )
-                        )
-                    },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    leadingContent = {
-                        if (isRestoring && importType == "local") {
-                            CircularWavyProgressIndicator(
-                                modifier = Modifier.size(24.dp)
-                            )
-                        } else {
-                            Icon(Icons.Rounded.SystemUpdateAlt, null)
-                        }
-                    }
-                )
-            }
+            )
         }
 
         stickyHeader {
@@ -989,45 +916,38 @@ private fun ImportExportPage(
         }
 
         item {
-            Card(
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
-                colors = androidx.compose.material3.CardDefaults.cardColors(
-                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
-                ),
+            BackupActionItem(
+                position = ItemPosition.FIRST,
+                title = stringResource(R.string.backup_page_import_from_chatbox),
+                subtitle = stringResource(R.string.backup_page_import_chatbox_desc),
+                leading = {
+                    if (isRestoring && importType == "chatbox") {
+                        CircularWavyProgressIndicator(modifier = Modifier.size(24.dp))
+                    } else {
+                        Icon(Icons.Rounded.SystemUpdateAlt, null)
+                    }
+                },
                 onClick = {
                     if (!isRestoring) {
                         importType = "chatbox"
                         openDocumentLauncher.launch(arrayOf("application/json", "text/plain"))
                     }
                 }
-            ) {
-                ListItem(
-                    headlineContent = {
-                        Text(stringResource(R.string.backup_page_import_from_chatbox))
-                    },
-                    supportingContent = {
-                        Text(stringResource(R.string.backup_page_import_chatbox_desc))
-                    },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    leadingContent = {
-                        if (isRestoring && importType == "chatbox") {
-                            CircularWavyProgressIndicator(
-                                modifier = Modifier.size(24.dp)
-                            )
-                        } else {
-                            Icon(Icons.Rounded.SystemUpdateAlt, null)
-                        }
-                    }
-                )
-            }
+            )
         }
 
         item {
-            Card(
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
-                colors = androidx.compose.material3.CardDefaults.cardColors(
-                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
-                ),
+            BackupActionItem(
+                position = ItemPosition.LAST,
+                title = stringResource(R.string.backup_page_import_from_cherry_studio),
+                subtitle = stringResource(R.string.backup_page_import_cherry_studio_desc),
+                leading = {
+                    if (isRestoring && importType == "cherry") {
+                        CircularWavyProgressIndicator(modifier = Modifier.size(24.dp))
+                    } else {
+                        Icon(Icons.Rounded.Folder, null)
+                    }
+                },
                 onClick = {
                     if (!isRestoring) {
                         importType = "cherry"
@@ -1036,26 +956,7 @@ private fun ImportExportPage(
                         )
                     }
                 }
-            ) {
-                ListItem(
-                    headlineContent = {
-                        Text(stringResource(R.string.backup_page_import_from_cherry_studio))
-                    },
-                    supportingContent = {
-                        Text(stringResource(R.string.backup_page_import_cherry_studio_desc))
-                    },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    leadingContent = {
-                        if (isRestoring && importType == "cherry") {
-                            CircularWavyProgressIndicator(
-                                modifier = Modifier.size(24.dp)
-                            )
-                        } else {
-                            Icon(Icons.Rounded.Folder, null)
-                        }
-                    }
-                )
-            }
+            )
         }
     }
 
@@ -1134,7 +1035,6 @@ private fun ImportExportPage(
 }
 
 @Composable
-<<<<<<< HEAD
 private fun BackupActionItem(
     position: ItemPosition,
     title: String,
@@ -1153,8 +1053,6 @@ private fun BackupActionItem(
 }
 
 @Composable
-=======
->>>>>>> parent of f7993ce (Working on making the UI standardization actually work)
 private fun BackupDialog(
     result: me.rerere.rikkahub.data.sync.WebdavSync.RestoreResult?,
     onConfirm: () -> Unit

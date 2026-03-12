@@ -25,7 +25,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material3.Surface
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.rikkahub.ui.theme.nestedSurfaceColor
 import me.rerere.rikkahub.utils.JsonInstant
 import kotlin.io.encoding.Base64
 
@@ -74,13 +76,21 @@ containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                     }
                 }
 
-                QRCode(
-                    value = state.currentProvider?.encodeForShare() ?: "",
+                Surface(
+                    color = nestedSurfaceColor(),
+                    shape = RoundedCornerShape(24.dp),
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
                         .fillMaxWidth()
                         .aspectRatio(1f)
-                )
+                ) {
+                    QRCode(
+                        value = state.currentProvider?.encodeForShare() ?: "",
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(24.dp))
+                            .fillMaxWidth()
+                            .aspectRatio(1f)
+                    )
+                }
             }
         }
     }

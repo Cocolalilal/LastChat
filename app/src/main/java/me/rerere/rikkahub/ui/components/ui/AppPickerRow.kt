@@ -2,7 +2,6 @@ package me.rerere.rikkahub.ui.components.ui
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -26,9 +25,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
-import me.rerere.rikkahub.ui.theme.appOutlinedBorderColor
 import me.rerere.rikkahub.ui.theme.groupedItemShape
-<<<<<<< HEAD
 import me.rerere.rikkahub.ui.theme.nestedSurfaceColor
 import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 
@@ -38,9 +35,6 @@ enum class AppPickerRowStyle {
     FlatTransparent,
     Destructive,
 }
-=======
-import me.rerere.rikkahub.ui.theme.placedSurfaceColor
->>>>>>> parent of f7993ce (Working on making the UI standardization actually work)
 
 @Composable
 fun AppPickerRow(
@@ -49,6 +43,7 @@ fun AppPickerRow(
     subtitle: String,
     modifier: Modifier = Modifier,
     position: ItemPosition? = null,
+    style: AppPickerRowStyle = AppPickerRowStyle.FilledNested,
     onClick: () -> Unit,
     trailing: @Composable (RowScope.() -> Unit)? = null,
 ) {
@@ -92,14 +87,9 @@ fun AppPickerRow(
                 scaleY = scale
             },
         interactionSource = interactionSource,
-<<<<<<< HEAD
         color = containerColor,
         contentColor = rowContentColor,
-=======
-        color = placedSurfaceColor(),
->>>>>>> parent of f7993ce (Working on making the UI standardization actually work)
         shape = groupedItemShape(resolvedPosition),
-        border = BorderStroke(1.dp, appOutlinedBorderColor()),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
@@ -121,7 +111,6 @@ fun AppPickerRow(
                     style = MaterialTheme.typography.bodyLarge,
                     color = titleColor,
                 )
-<<<<<<< HEAD
                 if (subtitle.isNotBlank()) {
                     Text(
                         text = subtitle,
@@ -131,15 +120,6 @@ fun AppPickerRow(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-=======
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
->>>>>>> parent of f7993ce (Working on making the UI standardization actually work)
             }
             trailing?.invoke(this)
         }

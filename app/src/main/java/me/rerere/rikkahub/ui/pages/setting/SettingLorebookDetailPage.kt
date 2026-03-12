@@ -334,7 +334,8 @@ fun SettingLorebookDetailPage(
                 AppFloatingActionButton(
                     onClick = { 
                         showAddEntrySheet = true
-                    }
+                    },
+                    emphasis = me.rerere.rikkahub.ui.components.ui.AppFloatingActionEmphasis.Primary,
                 ) {
                     Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.add))
                 }

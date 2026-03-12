@@ -19,13 +19,15 @@ fun appSurfaceColor(
 ): Color {
     return when (level) {
         AppSurfaceLevel.Flat -> colorScheme.surface
-        AppSurfaceLevel.Container,
-        AppSurfaceLevel.ContainerHigh -> {
-            if (darkTheme) {
-                colorScheme.surfaceContainerLow
-            } else {
-                colorScheme.surfaceContainerHigh
-            }
+        AppSurfaceLevel.Container -> if (darkTheme) {
+            colorScheme.surfaceContainerLow
+        } else {
+            colorScheme.surfaceContainerHigh
+        }
+        AppSurfaceLevel.ContainerHigh -> if (darkTheme) {
+            colorScheme.surfaceContainerHigh
+        } else {
+            colorScheme.surfaceContainerHighest
         }
     }
 }
@@ -48,7 +50,6 @@ fun placedSurfaceColor(): Color {
     return appSurfaceColor(AppSurfaceLevel.Container)
 }
 
-<<<<<<< HEAD
 @Composable
 @ReadOnlyComposable
 fun nestedSurfaceColor(): Color {
@@ -75,8 +76,6 @@ fun settingsSurfaceColor(): Color {
     )
 }
 
-=======
->>>>>>> parent of f7993ce (Working on making the UI standardization actually work)
 fun appOutlinedBorderColor(
     colorScheme: ColorScheme,
 ): Color {

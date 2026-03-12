@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.height
@@ -81,6 +80,8 @@ import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.AppModalSheet
 import me.rerere.rikkahub.ui.components.ui.AppOutlinedField
 import me.rerere.rikkahub.ui.components.ui.AppSearchField
+import me.rerere.rikkahub.ui.components.ui.AppFloatingActionEmphasis
+import me.rerere.rikkahub.ui.components.ui.AppFloatingActionButton
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.components.ui.Tooltip
@@ -109,7 +110,9 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.AppSurfaceLevel
 import me.rerere.rikkahub.ui.theme.appSurfaceColor
+import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 import me.rerere.rikkahub.utils.AssistantExportImport
+import me.rerere.rikkahub.utils.plus
 import kotlinx.coroutines.launch
 import androidx.compose.material.icons.rounded.Upload
 
@@ -198,16 +201,19 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                 navigationIcon = {
                     BackButton()
                 },
-                actions = {
-                    IconButton(
-                        onClick = {
-                            createState.open(Assistant())
-                        }
-                    ) {
-                        Icon(Icons.Rounded.Add, stringResource(R.string.assistant_page_add))
-                    }
-                }
+                actions = {}
             )
+        },
+        floatingActionButton = {
+            AppFloatingActionButton(
+                onClick = { createState.open(Assistant()) },
+                emphasis = AppFloatingActionEmphasis.Primary,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Add,
+                    contentDescription = stringResource(R.string.assistant_page_add)
+                )
+            }
         },
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) {
@@ -259,15 +265,20 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
             
 
             
-            LazyColumn(
+            val canScrollForward by remember { derivedStateOf { lazyListState.canScrollForward } }
+
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .imePadding(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-                state = lazyListState,
+                    .imePadding()
             ) {
-                itemsIndexed(filteredAssistants, key = { _, assistant -> assistant.id }) { index, assistant ->
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp) + PaddingValues(bottom = 96.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    state = lazyListState,
+                ) {
+                    itemsIndexed(filteredAssistants, key = { _, assistant -> assistant.id }) { index, assistant ->
                     val position = when {
                         filteredAssistants.size == 1 -> ItemPosition.ONLY
                         index == 0 -> ItemPosition.FIRST
@@ -375,6 +386,24 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                             }  // end PhysicsSwipeToDelete content
                         }  // key(canDelete)
                     }  // ReorderableItem
+                    }
+                }
+
+                if (canScrollForward) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .background(
+                                brush = Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.Transparent,
+                                        MaterialTheme.colorScheme.background
+                                    )
+                                )
+                            )
+                    )
                 }
             }
             
