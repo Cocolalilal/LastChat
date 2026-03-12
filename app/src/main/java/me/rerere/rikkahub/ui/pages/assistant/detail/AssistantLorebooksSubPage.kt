@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.pages.assistant.detail
+package me.rerere.rikkahub.ui.pages.assistant.detail
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,11 +39,9 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
-import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.theme.AppShapes
-import me.rerere.rikkahub.ui.theme.groupedItemShape
-import me.rerere.rikkahub.ui.theme.placedSurfaceColor
+import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.Screen
 import kotlin.uuid.Uuid
 
@@ -94,7 +92,7 @@ fun AssistantLorebooksSubPage(
             item(key = "description") {
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = placedSurfaceColor()
+                        containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
                     ),
                     shape = AppShapes.CardLarge
                 ) {
@@ -132,10 +130,10 @@ fun AssistantLorebooksSubPage(
                 
                 // Calculate position for connected card styling
                 val position = when {
-                    lorebooks.size == 1 -> ItemPosition.ONLY
-                    index == 0 -> ItemPosition.FIRST
-                    index == lorebooks.lastIndex -> ItemPosition.LAST
-                    else -> ItemPosition.MIDDLE
+                    lorebooks.size == 1 -> me.rerere.rikkahub.ui.components.ui.ItemPosition.ONLY
+                    index == 0 -> me.rerere.rikkahub.ui.components.ui.ItemPosition.FIRST
+                    index == lorebooks.lastIndex -> me.rerere.rikkahub.ui.components.ui.ItemPosition.LAST
+                    else -> me.rerere.rikkahub.ui.components.ui.ItemPosition.MIDDLE
                 }
                 
                 LorebookSelectionCard(
@@ -161,16 +159,29 @@ fun AssistantLorebooksSubPage(
 private fun LorebookSelectionCard(
     lorebook: Lorebook,
     isEnabled: Boolean,
-    position: ItemPosition,
+    position: me.rerere.rikkahub.ui.components.ui.ItemPosition,
     onClick: () -> Unit,
     onToggle: (Boolean) -> Unit
 ) {
-    val shape = groupedItemShape(position = position, selected = isEnabled)
+    // Calculate shape based on position for connected look (matching Lorebooks settings page)
+    val cornerRadius = 28.dp
+    val smallCorner = 8.dp
+    val shape = when (position) {
+        me.rerere.rikkahub.ui.components.ui.ItemPosition.ONLY -> RoundedCornerShape(cornerRadius)
+        me.rerere.rikkahub.ui.components.ui.ItemPosition.FIRST -> RoundedCornerShape(
+            topStart = cornerRadius, topEnd = cornerRadius,
+            bottomStart = smallCorner, bottomEnd = smallCorner
+        )
+        me.rerere.rikkahub.ui.components.ui.ItemPosition.MIDDLE -> RoundedCornerShape(smallCorner)
+        me.rerere.rikkahub.ui.components.ui.ItemPosition.LAST -> RoundedCornerShape(
+            topStart = smallCorner, topEnd = smallCorner,
+            bottomStart = cornerRadius, bottomEnd = cornerRadius
+        )
+    }
     
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = if (isEnabled) MaterialTheme.colorScheme.primaryContainer else placedSurfaceColor(),
-            contentColor = if (isEnabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
         ),
         shape = shape,
         onClick = onClick
@@ -184,16 +195,16 @@ private fun LorebookSelectionCard(
         ) {
             // Book cover or placeholder
             val bookShape = when (position) {
-                ItemPosition.ONLY -> RoundedCornerShape(
+                me.rerere.rikkahub.ui.components.ui.ItemPosition.ONLY -> RoundedCornerShape(
                     topStart = 16.dp, topEnd = 6.dp,
                     bottomStart = 16.dp, bottomEnd = 6.dp
                 )
-                ItemPosition.FIRST -> RoundedCornerShape(
+                me.rerere.rikkahub.ui.components.ui.ItemPosition.FIRST -> RoundedCornerShape(
                     topStart = 16.dp, topEnd = 6.dp,
                     bottomStart = 6.dp, bottomEnd = 6.dp
                 )
-                ItemPosition.MIDDLE -> RoundedCornerShape(6.dp)
-                ItemPosition.LAST -> RoundedCornerShape(
+                me.rerere.rikkahub.ui.components.ui.ItemPosition.MIDDLE -> RoundedCornerShape(6.dp)
+                me.rerere.rikkahub.ui.components.ui.ItemPosition.LAST -> RoundedCornerShape(
                     topStart = 6.dp, topEnd = 6.dp,
                     bottomStart = 16.dp, bottomEnd = 6.dp
                 )
@@ -267,5 +278,3 @@ private fun LorebookSelectionCard(
         }
     }
 }
-
-

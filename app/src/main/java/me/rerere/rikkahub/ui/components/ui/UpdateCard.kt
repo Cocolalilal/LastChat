@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.components.ui
+package me.rerere.rikkahub.ui.components.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -107,7 +107,7 @@ fun UpdateCard(vm: ChatVM) {
                 toaster.show("Download started, check status bar for progress", type = ToastType.Info)
             }
             ModalBottomSheet(
-containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
                 onDismissRequest = { showDetail = false },
                 sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             ) {
@@ -167,4 +167,3 @@ containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
         }
     }
 }
-

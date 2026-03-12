@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.pages.assistant.detail
+package me.rerere.rikkahub.ui.pages.assistant.detail
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -46,9 +46,9 @@ fun AssistantProfileSubPage(
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
-        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+        // ═══════════════════════════════════════════════════════════════════
         // AVATAR SECTION (prominent, centered)
-        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+        // ═══════════════════════════════════════════════════════════════════
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -72,9 +72,9 @@ fun AssistantProfileSubPage(
             )
         }
 
-        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+        // ═══════════════════════════════════════════════════════════════════
         // IDENTITY GROUP
-        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+        // ═══════════════════════════════════════════════════════════════════
         SettingsGroup(title = "Identity") {
             // Name
             SettingGroupItem(
@@ -94,7 +94,10 @@ fun AssistantProfileSubPage(
             // Tags - vertical layout to prevent height growth
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+                color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
+                    MaterialTheme.colorScheme.surfaceContainerLow 
+                else 
+                    MaterialTheme.colorScheme.surfaceContainerHigh,
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
             ) {
                 Column(
@@ -122,9 +125,9 @@ fun AssistantProfileSubPage(
             }
         }
 
-        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+        // ═══════════════════════════════════════════════════════════════════
         // APPEARANCE GROUP
-        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+        // ═══════════════════════════════════════════════════════════════════
         SettingsGroup(title = "Appearance") {
             val hasImageSource = assistant.background != null ||
                 assistant.avatar is Avatar.Image ||
@@ -159,5 +162,3 @@ fun AssistantProfileSubPage(
         }
     }
 }
-
-

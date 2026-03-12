@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.pages.setting
+package me.rerere.rikkahub.ui.pages.setting
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.animation.AnimatedVisibility
@@ -86,8 +86,6 @@ import me.rerere.rikkahub.data.model.ModeAttachment
 import me.rerere.rikkahub.data.model.ModeAttachmentType
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
-import me.rerere.rikkahub.ui.components.ui.AppFloatingActionButton
-import me.rerere.rikkahub.ui.components.ui.AppFloatingActionColumn
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
@@ -317,12 +315,19 @@ fun SettingLorebookDetailPage(
             )
         },
         floatingActionButton = {
-            AppFloatingActionColumn {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 // Toggle assistants FAB - same size as Add, gray like floating toolbar
-                AppFloatingActionButton(
+                FloatingActionButton(
                     onClick = { 
                         showAssistantToggleSheet = true
-                    }
+                        haptics.perform(HapticPattern.Tick)
+                    },
+                    shape = AppShapes.CardLarge,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = MaterialTheme.colorScheme.onSurface
                 ) {
                     Icon(
                         Icons.Rounded.ToggleOn,
@@ -331,10 +336,12 @@ fun SettingLorebookDetailPage(
                 }
                 
                 // Main FAB for add entry
-                AppFloatingActionButton(
+                FloatingActionButton(
                     onClick = { 
                         showAddEntrySheet = true
-                    }
+                        haptics.perform(HapticPattern.Pop)
+                    },
+                    shape = AppShapes.CardLarge
                 ) {
                     Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.add))
                 }
@@ -395,7 +402,7 @@ fun SettingLorebookDetailPage(
                 item(key = "empty") {
                     Card(
                         colors = CardDefaults.cardColors(
-                            containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
                         ),
                         shape = AppShapes.CardLarge
                     ) {
@@ -609,7 +616,7 @@ private fun EntryCard(
     Card(
         onClick = onEdit,
         colors = CardDefaults.cardColors(
-            containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
         ),
         shape = AppShapes.CardLarge
     ) {
@@ -755,7 +762,7 @@ private fun EntryEditorSheet(
     }
     
     ModalBottomSheet(
-containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         sheetGesturesEnabled = false,
@@ -1026,7 +1033,7 @@ private fun LorebookEditorSheet(
     }
     
     ModalBottomSheet(
-containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
         onDismissRequest = onDismiss,
         sheetState = sheetState
     ) {
@@ -1149,7 +1156,7 @@ private fun LorebookEntryAttachmentItem(
         Surface(
             modifier = Modifier.fillMaxSize(),
             shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-            color = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+            color = MaterialTheme.colorScheme.surfaceContainerHigh
         ) {
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -1259,7 +1266,7 @@ private fun AssistantLorebookToggleSheet(
     val scope = rememberCoroutineScope()
     
     ModalBottomSheet(
-containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         sheetGesturesEnabled = false,
@@ -1317,7 +1324,7 @@ containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                 
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                        containerColor = if (LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
                     ),
                     shape = shape
                 ) {
@@ -1360,5 +1367,3 @@ containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
         }
     }
 }
-
-

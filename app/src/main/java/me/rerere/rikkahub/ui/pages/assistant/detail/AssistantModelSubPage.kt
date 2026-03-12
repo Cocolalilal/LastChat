@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.pages.assistant.detail
+package me.rerere.rikkahub.ui.pages.assistant.detail
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -18,6 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
@@ -33,15 +34,11 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.ai.ReasoningButton
-import me.rerere.rikkahub.ui.components.ui.AppOutlinedField
-import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
-import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroupCustomItem
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
-import me.rerere.rikkahub.ui.theme.groupedItemShape
-import me.rerere.rikkahub.ui.theme.placedSurfaceColor
+import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.toFixed
 
 /**
@@ -61,77 +58,79 @@ fun AssistantModelSubPage(
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
-        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+        // ═══════════════════════════════════════════════════════════════════
         // MODELS GROUP
-        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+        // ═══════════════════════════════════════════════════════════════════
         SettingsGroup(title = "Models") {
             // Chat Model (Primary)
-            SettingsGroupCustomItem { position ->
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = placedSurfaceColor(),
-                    shape = groupedItemShape(position)
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = if (LocalDarkMode.current) 
+                    MaterialTheme.colorScheme.surfaceContainerLow 
+                else 
+                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = stringResource(R.string.assistant_page_chat_model),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = stringResource(R.string.assistant_page_chat_model_desc),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        ModelSelector(
-                            modelId = assistant.chatModelId,
-                            providers = providers,
-                            type = ModelType.CHAT,
-                            onSelect = { onUpdate(assistant.copy(chatModelId = it.id)) },
-                        )
-                    }
+                    Text(
+                        text = stringResource(R.string.assistant_page_chat_model),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = stringResource(R.string.assistant_page_chat_model_desc),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    ModelSelector(
+                        modelId = assistant.chatModelId,
+                        providers = providers,
+                        type = ModelType.CHAT,
+                        onSelect = { onUpdate(assistant.copy(chatModelId = it.id)) },
+                    )
                 }
             }
             
             // Background Model
-            SettingsGroupCustomItem { position ->
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = placedSurfaceColor(),
-                    shape = groupedItemShape(position)
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = if (LocalDarkMode.current) 
+                    MaterialTheme.colorScheme.surfaceContainerLow 
+                else 
+                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "Background Model",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "For notifications and background tasks",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        ModelSelector(
-                            modelId = assistant.backgroundModelId,
-                            providers = providers,
-                            type = ModelType.CHAT,
-                            onSelect = { onUpdate(assistant.copy(backgroundModelId = it.id)) },
-                        )
-                    }
+                    Text(
+                        text = "Background Model",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "For notifications and background tasks",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    ModelSelector(
+                        modelId = assistant.backgroundModelId,
+                        providers = providers,
+                        type = ModelType.CHAT,
+                        onSelect = { onUpdate(assistant.copy(backgroundModelId = it.id)) },
+                    )
                 }
             }
             
         }
 
-        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+        // ═══════════════════════════════════════════════════════════════════
         // GENERATION GROUP
-        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+        // ═══════════════════════════════════════════════════════════════════
         SettingsGroup(title = "Generation") {
             // Temperature
             val tempLabel = if (assistant.temperature != null) {
@@ -163,38 +162,39 @@ fun AssistantModelSubPage(
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
-                SettingsGroupCustomItem { position ->
-                    Surface(
-                        color = placedSurfaceColor(),
-                        shape = groupedItemShape(position)
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Slider(
-                                value = assistant.temperature ?: 1.0f,
-                                onValueChange = { onUpdate(assistant.copy(temperature = it.toFixed(2).toFloatOrNull() ?: 0.6f)) },
-                                valueRange = 0f..2f,
-                                steps = 19,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                val currentTemp = assistant.temperature ?: 1.0f
-                                val tagType = when (currentTemp) {
-                                    in 0.0f..0.3f -> TagType.INFO
-                                    in 0.3f..1.0f -> TagType.SUCCESS
-                                    in 1.0f..1.5f -> TagType.WARNING
-                                    else -> TagType.ERROR
-                                }
-                                Tag(type = tagType) {
-                                    Text(when (currentTemp) {
-                                        in 0.0f..0.3f -> stringResource(R.string.assistant_page_strict)
-                                        in 0.3f..1.0f -> stringResource(R.string.assistant_page_balanced)
-                                        in 1.0f..1.5f -> stringResource(R.string.assistant_page_creative)
-                                        else -> stringResource(R.string.assistant_page_chaotic)
-                                    })
-                                }
+                Surface(
+                    color = if (LocalDarkMode.current) 
+                        MaterialTheme.colorScheme.surfaceContainerLow 
+                    else 
+                        MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Slider(
+                            value = assistant.temperature ?: 1.0f,
+                            onValueChange = { onUpdate(assistant.copy(temperature = it.toFixed(2).toFloatOrNull() ?: 0.6f)) },
+                            valueRange = 0f..2f,
+                            steps = 19,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val currentTemp = assistant.temperature ?: 1.0f
+                            val tagType = when (currentTemp) {
+                                in 0.0f..0.3f -> TagType.INFO
+                                in 0.3f..1.0f -> TagType.SUCCESS
+                                in 1.0f..1.5f -> TagType.WARNING
+                                else -> TagType.ERROR
+                            }
+                            Tag(type = tagType) {
+                                Text(when (currentTemp) {
+                                    in 0.0f..0.3f -> stringResource(R.string.assistant_page_strict)
+                                    in 0.3f..1.0f -> stringResource(R.string.assistant_page_balanced)
+                                    in 1.0f..1.5f -> stringResource(R.string.assistant_page_creative)
+                                    else -> stringResource(R.string.assistant_page_chaotic)
+                                })
                             }
                         }
                     }
@@ -221,28 +221,29 @@ fun AssistantModelSubPage(
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
-                SettingsGroupCustomItem { position ->
-                    Surface(
-                        color = placedSurfaceColor(),
-                        shape = groupedItemShape(position)
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Slider(
-                                value = assistant.topP ?: 0.9f,
-                                onValueChange = { onUpdate(assistant.copy(topP = it.toFixed(2).toFloatOrNull() ?: 0.9f)) },
-                                valueRange = 0f..1f,
-                                steps = 9,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
+                Surface(
+                    color = if (LocalDarkMode.current) 
+                        MaterialTheme.colorScheme.surfaceContainerLow 
+                    else 
+                        MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Slider(
+                            value = assistant.topP ?: 0.9f,
+                            onValueChange = { onUpdate(assistant.copy(topP = it.toFixed(2).toFloatOrNull() ?: 0.9f)) },
+                            valueRange = 0f..1f,
+                            steps = 9,
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
                 }
             }
         }
 
-        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+        // ═══════════════════════════════════════════════════════════════════
         // OUTPUT GROUP
-        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+        // ═══════════════════════════════════════════════════════════════════
         SettingsGroup(title = "Output") {
             // Stream Output
             SettingGroupItem(
@@ -281,7 +282,7 @@ fun AssistantModelSubPage(
                 else 
                     stringResource(R.string.assistant_page_max_tokens_no_token_limit),
                 trailing = {
-                    AppOutlinedField(
+                    OutlinedTextField(
                         value = assistant.maxTokens?.toString() ?: "",
                         onValueChange = { text ->
                             val tokens = if (text.isBlank()) null else text.toIntOrNull()?.takeIf { it > 0 }
@@ -290,11 +291,11 @@ fun AssistantModelSubPage(
                         modifier = Modifier.width(100.dp),
                         placeholder = { Text("Auto") },
                         singleLine = true,
+                        textStyle = MaterialTheme.typography.bodySmall,
+                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                     )
                 }
             )
         }
     }
 }
-
-

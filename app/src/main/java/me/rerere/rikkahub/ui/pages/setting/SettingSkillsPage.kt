@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.pages.setting
+package me.rerere.rikkahub.ui.pages.setting
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -85,10 +85,6 @@ import me.rerere.rikkahub.data.model.InjectionPosition
 import me.rerere.rikkahub.data.model.Skill
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
-import me.rerere.rikkahub.ui.components.ui.AppFloatingActionButton
-import me.rerere.rikkahub.ui.components.ui.AppFloatingActionColumn
-import me.rerere.rikkahub.ui.components.ui.AppFloatingTabBar
-import me.rerere.rikkahub.ui.components.ui.AppFloatingTabButton
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
@@ -104,8 +100,6 @@ import me.rerere.rikkahub.ui.hooks.PremiumHaptics
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
-import me.rerere.rikkahub.ui.theme.groupedItemShape
-import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 import me.rerere.rikkahub.utils.SkillExportImport
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
@@ -170,39 +164,72 @@ fun SettingSkillsPage(
                     .navigationBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 16.dp)
             ) {
-                AppFloatingTabBar(
+                Surface(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .offset(y = -ScreenOffset)
+                        .offset(y = -ScreenOffset),
+                    shape = RoundedCornerShape(28.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    tonalElevation = 6.dp,
+                    shadowElevation = 8.dp
                 ) {
-                    AppFloatingTabButton(
-                        selected = true,
-                        onClick = {},
-                        icon = Icons.Rounded.Category,
-                        contentDescription = stringResource(R.string.prompt_injections_page_skills),
-                    )
-                    AppFloatingTabButton(
-                        selected = false,
-                        onClick = {
-                            navController.navigate(Screen.SettingLorebooks) {
-                                popUpTo(Screen.SettingSkills()) { inclusive = true }
-                                launchSingleTop = true
-                            }
-                        },
-                        icon = Icons.Rounded.Book,
-                        contentDescription = stringResource(R.string.prompt_injections_page_lorebooks),
-                    )
+                    Row(
+                        modifier = Modifier.padding(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primaryContainer)
+                                .padding(12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Category,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .clickable {
+                                    haptics.perform(HapticPattern.Tick)
+                                    navController.navigate(Screen.SettingLorebooks) {
+                                        popUpTo(Screen.SettingSkills()) { inclusive = true }
+                                        launchSingleTop = true
+                                    }
+                                }
+                                .padding(12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Book,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
                 }
 
-                AppFloatingActionColumn(
+                Column(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .offset(y = -ScreenOffset)
+                        .offset(y = -ScreenOffset),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    AppFloatingActionButton(
+                    FloatingActionButton(
                         onClick = {
+                            haptics.perform(HapticPattern.Tick)
                             importLauncher.launch(arrayOf("application/json", "text/markdown", "*/*"))
                         },
+                        shape = AppShapes.CardLarge,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.Input,
@@ -210,10 +237,12 @@ fun SettingSkillsPage(
                         )
                     }
 
-                    AppFloatingActionButton(
+                    FloatingActionButton(
                         onClick = {
+                            haptics.perform(HapticPattern.Pop)
                             showAddDialog = true
-                        }
+                        },
+                        shape = AppShapes.CardLarge
                     ) {
                         Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.add))
                     }
@@ -320,9 +349,9 @@ fun SkillsPageContent(
                     Card(
                         colors = CardDefaults.cardColors(
                             containerColor = if (LocalDarkMode.current) {
-                                me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                                MaterialTheme.colorScheme.surfaceContainerLow
                             } else {
-                                me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                                MaterialTheme.colorScheme.surfaceContainerHighest
                             }
                         ),
                         shape = AppShapes.CardLarge
@@ -497,7 +526,11 @@ fun DismissibleBannerCard(
 ) {
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = placedSurfaceColor()
+            containerColor = if (LocalDarkMode.current) {
+                MaterialTheme.colorScheme.surfaceContainerLow
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHighest
+            }
         ),
         shape = AppShapes.CardLarge
     ) {
@@ -543,12 +576,34 @@ private fun SkillCard(
     onEdit: () -> Unit,
     dragHandle: @Composable () -> Unit,
 ) {
-    val shape = groupedItemShape(position = position)
+    val cornerRadius = 28.dp
+    val smallCorner = 8.dp
+    val shape = when (position) {
+        ItemPosition.ONLY -> RoundedCornerShape(cornerRadius)
+        ItemPosition.FIRST -> RoundedCornerShape(
+            topStart = cornerRadius,
+            topEnd = cornerRadius,
+            bottomStart = smallCorner,
+            bottomEnd = smallCorner
+        )
+
+        ItemPosition.MIDDLE -> RoundedCornerShape(smallCorner)
+        ItemPosition.LAST -> RoundedCornerShape(
+            topStart = smallCorner,
+            topEnd = smallCorner,
+            bottomStart = cornerRadius,
+            bottomEnd = cornerRadius
+        )
+    }
 
     Card(
         onClick = onEdit,
         colors = CardDefaults.cardColors(
-            containerColor = placedSurfaceColor()
+            containerColor = if (LocalDarkMode.current) {
+                MaterialTheme.colorScheme.surfaceContainerLow
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHighest
+            }
         ),
         shape = shape
     ) {
@@ -630,7 +685,7 @@ fun SkillEditorSheet(
     }
 
     ModalBottomSheet(
-        containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         sheetGesturesEnabled = false,
@@ -756,9 +811,9 @@ fun SkillEditorSheet(
                 Card(
                     colors = CardDefaults.cardColors(
                         containerColor = if (LocalDarkMode.current) {
-                            me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                            MaterialTheme.colorScheme.surfaceContainerLow
                         } else {
-                            me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                            MaterialTheme.colorScheme.surfaceContainerHighest
                         }
                     ),
                     shape = AppShapes.CardLarge
@@ -789,7 +844,7 @@ fun SkillEditorSheet(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clip(RoundedCornerShape(12.dp))
-                                            .background(me.rerere.rikkahub.ui.theme.placedSurfaceColor())
+                                            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
                                             .padding(horizontal = 12.dp, vertical = 10.dp),
                                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                                         verticalAlignment = Alignment.CenterVertically
@@ -826,9 +881,9 @@ fun SkillEditorSheet(
                 Card(
                     colors = CardDefaults.cardColors(
                         containerColor = if (LocalDarkMode.current) {
-                            me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                            MaterialTheme.colorScheme.surfaceContainerLow
                         } else {
-                            me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                            MaterialTheme.colorScheme.surfaceContainerHighest
                         }
                     ),
                     shape = AppShapes.CardLarge
@@ -953,7 +1008,7 @@ private fun SkillExportDialog(
     }
 
     ModalBottomSheet(
-        containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         onDismissRequest = onDismiss
     ) {
         Column(
@@ -976,9 +1031,9 @@ private fun SkillExportDialog(
                 },
                 colors = CardDefaults.cardColors(
                     containerColor = if (LocalDarkMode.current) {
-                        me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                        MaterialTheme.colorScheme.surfaceContainerLow
                     } else {
-                        me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                        MaterialTheme.colorScheme.surfaceContainerHighest
                     }
                 ),
                 shape = AppShapes.CardLarge
@@ -995,4 +1050,3 @@ private fun SkillExportDialog(
         }
     }
 }
-

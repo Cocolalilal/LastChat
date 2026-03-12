@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.components.message
+package me.rerere.rikkahub.ui.components.message
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
@@ -278,7 +278,7 @@ private fun ToolCallPreviewSheet(
     val memoryId = (content as? JsonObject)?.get("id")?.jsonPrimitiveOrNull?.intOrNull
 
     ModalBottomSheet(
-containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         onDismissRequest = {
             onDismissRequest()
@@ -452,7 +452,7 @@ containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                             )
                             Card(
                                 colors = CardDefaults.cardColors(
-                                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                                 ),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
@@ -474,7 +474,7 @@ containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                                 colors = CardDefaults.cardColors(
                                     containerColor = if (error != null) 
                                         MaterialTheme.colorScheme.errorContainer 
-                                    else me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                                    else MaterialTheme.colorScheme.surfaceContainerLow
                                 ),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
@@ -498,7 +498,7 @@ containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                                         }
                                         if (!result.isNullOrBlank() && result != "null") {
                                             Text(
-                                                text = "â†’ $result",
+                                                text = "→ $result",
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.primary,
                                                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
@@ -627,7 +627,7 @@ containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                                 textAlign = TextAlign.Center
                             )
 
-                            // å¦‚æžœæ˜¯memoryæ“ä½œï¼Œå…è®¸ç”¨æˆ·å¿«é€Ÿåˆ é™¤
+                            // 如果是memory操作，允许用户快速删除
                             if (isMemoryOperation && memoryId != null) {
                                 IconButton(
                                     onClick = {
@@ -688,7 +688,7 @@ containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                             }
                             Card(
                                 colors = CardDefaults.cardColors(
-                                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                                 ),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
@@ -734,7 +734,7 @@ containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                             }
                             Card(
                                 colors = CardDefaults.cardColors(
-                                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                                 ),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
@@ -752,4 +752,3 @@ containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
         },
     )
 }
-

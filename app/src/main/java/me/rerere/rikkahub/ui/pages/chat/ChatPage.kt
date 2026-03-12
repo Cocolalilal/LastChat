@@ -77,7 +77,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import me.rerere.ai.provider.Model
-import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
@@ -86,12 +85,7 @@ import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import me.rerere.rikkahub.data.model.Conversation
-import me.rerere.rikkahub.ui.components.ai.ASK_USER_TOOL_NAME
-import me.rerere.rikkahub.ui.components.ai.AskUserComposerMode
-import me.rerere.rikkahub.ui.components.ai.AskUserComposerStage
 import me.rerere.rikkahub.ui.components.ai.MinimalChatInput
-import me.rerere.rikkahub.ui.components.ai.buildAskUserAnswerPayload
-import me.rerere.rikkahub.ui.components.ai.toAskUserPromptOrNull
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
@@ -150,12 +144,6 @@ internal enum class ChatToolbarPlacement {
     Top,
     Bottom
 }
-
-private data class AskUserDraftSnapshot(
-    val text: String,
-    val messageContent: List<UIMessagePart>,
-    val editingMessage: Uuid?,
-)
 
 @Composable
 fun ChatPage(
@@ -368,112 +356,6 @@ private fun ChatPageContent(
     var pendingRegenerateMessage by rememberSaveable { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
     val currentAssistant = setting.getCurrentAssistant()
     val toolbarPlacement = chatTopBarPlacement(setting)
-    var askUserSessionToolId by remember(conversation.id) { mutableStateOf<String?>(null) }
-    var askUserAnswers by remember(conversation.id) { mutableStateOf<Map<String, String>>(emptyMap()) }
-    var askUserQuestionIndex by remember(conversation.id) { mutableStateOf(0) }
-    var askUserReviewMode by remember(conversation.id) { mutableStateOf(false) }
-    var askUserDraftSnapshot by remember(conversation.id) { mutableStateOf<AskUserDraftSnapshot?>(null) }
-
-    fun restoreAskUserDraft() {
-        askUserDraftSnapshot?.let { snapshot ->
-            inputState.setMessageText(snapshot.text)
-            inputState.messageContent = snapshot.messageContent
-            inputState.editingMessage = snapshot.editingMessage
-        }
-        askUserDraftSnapshot = null
-    }
-
-    fun clearAskUserSession(restoreDraft: Boolean) {
-        if (restoreDraft) {
-            restoreAskUserDraft()
-        }
-        askUserSessionToolId = null
-        askUserAnswers = emptyMap()
-        askUserQuestionIndex = 0
-        askUserReviewMode = false
-    }
-
-    val activeAskUserPrompt = conversation.currentMessages
-        .asReversed()
-        .firstNotNullOfOrNull { message ->
-            message.parts
-                .filterIsInstance<UIMessagePart.ToolCall>()
-                .asReversed()
-                .firstNotNullOfOrNull { toolCall ->
-                    toolCall
-                        .takeIf {
-                            it.toolName == ASK_USER_TOOL_NAME &&
-                                it.approvalState is ToolApprovalState.Pending
-                        }
-                        ?.toAskUserPromptOrNull()
-                }
-        }
-
-    val askUserPrompt = activeAskUserPrompt?.takeIf { it.toolCallId == askUserSessionToolId }
-    val askUserCurrentQuestion = if (!askUserReviewMode) {
-        askUserPrompt?.questions?.getOrNull(askUserQuestionIndex)
-    } else {
-        null
-    }
-    val askUserComposerMode = askUserPrompt?.let { prompt ->
-        if (askUserReviewMode) {
-            AskUserComposerMode(
-                prompt = prompt,
-                stage = AskUserComposerStage.Review,
-                answers = askUserAnswers,
-            )
-        } else {
-            askUserCurrentQuestion?.let { question ->
-                AskUserComposerMode(
-                    prompt = prompt,
-                    stage = AskUserComposerStage.Question(
-                        index = askUserQuestionIndex,
-                        total = prompt.questions.size,
-                        question = question,
-                    ),
-                    answers = askUserAnswers,
-                )
-            }
-        }
-    }
-
-    LaunchedEffect(activeAskUserPrompt?.toolCallId) {
-        if (activeAskUserPrompt != null) {
-            if (askUserSessionToolId != activeAskUserPrompt.toolCallId) {
-                askUserSessionToolId = activeAskUserPrompt.toolCallId
-                askUserAnswers = emptyMap()
-                askUserQuestionIndex = 0
-                askUserReviewMode = false
-                askUserDraftSnapshot = AskUserDraftSnapshot(
-                    text = inputState.textContent.text.toString(),
-                    messageContent = inputState.messageContent,
-                    editingMessage = inputState.editingMessage,
-                )
-            }
-        } else if (askUserSessionToolId != null) {
-            clearAskUserSession(restoreDraft = true)
-        }
-    }
-
-    LaunchedEffect(askUserPrompt?.toolCallId, askUserQuestionIndex, askUserReviewMode) {
-        if (askUserPrompt == null) return@LaunchedEffect
-        inputState.messageContent = emptyList()
-        inputState.editingMessage = null
-        val nextText = if (askUserReviewMode) {
-            ""
-        } else {
-            val question = askUserCurrentQuestion ?: return@LaunchedEffect
-            val storedAnswer = askUserAnswers[question.id].orEmpty()
-            if (question.options.contains(storedAnswer)) {
-                ""
-            } else {
-                storedAnswer
-            }
-        }
-        if (inputState.textContent.text.toString() != nextText) {
-            inputState.setMessageText(nextText)
-        }
-    }
     
     // Auto-scroll to first matching message when opened from search
     LaunchedEffect(initialSearchQuery, conversation.messageNodes) {
@@ -628,7 +510,7 @@ private fun ChatPageContent(
                                 oldNode.selectIndex != newNode.selectIndex &&
                                 oldNode.role != me.rerere.ai.core.MessageRole.USER
 
-                            if (isVersionSwitch) {
+                            if (isVersionSwitch && oldNode != null) {
                                 val nodeIndex = conversation.messageNodes.indexOf(oldNode)
 
                                 // Get the versionTag of the newly selected message
@@ -880,7 +762,6 @@ private fun ChatPageContent(
                     settings = setting,
                     conversation = conversation,
                     mcpManager = vm.mcpManager,
-                    askUserMode = askUserComposerMode,
                     chatSuggestions = conversation.chatSuggestions,
                     onClickSuggestion = { suggestion ->
                         if (currentChatModel != null) {
@@ -898,58 +779,6 @@ private fun ChatPageContent(
                     onCancelClick = {
                         loadingJob?.cancel()
                     },
-                    onAskUserOptionSelect = { option ->
-                        val prompt = askUserPrompt ?: return@MinimalChatInput
-                        val question = askUserCurrentQuestion ?: return@MinimalChatInput
-                        askUserAnswers = askUserAnswers + (question.id to option)
-                        if (askUserQuestionIndex >= prompt.questions.lastIndex) {
-                            askUserReviewMode = true
-                        } else {
-                            askUserQuestionIndex += 1
-                        }
-                    },
-                    onAskUserDismiss = {
-                        val toolCallId = askUserSessionToolId ?: return@MinimalChatInput
-                        clearAskUserSession(restoreDraft = true)
-                        vm.handleToolApproval(
-                            toolCallId = toolCallId,
-                            approved = false,
-                            reason = "dismissed by user",
-                        )
-                    },
-                    onAskUserBack = {
-                        if (askUserReviewMode) {
-                            askUserReviewMode = false
-                        } else if (askUserQuestionIndex > 0) {
-                            askUserQuestionIndex -= 1
-                        }
-                    },
-                    onAskUserPrimaryAction = {
-                        val prompt = askUserPrompt ?: return@MinimalChatInput
-                        if (askUserReviewMode) {
-                            val toolCallId = askUserSessionToolId ?: return@MinimalChatInput
-                            val payload = buildAskUserAnswerPayload(askUserAnswers)
-                            clearAskUserSession(restoreDraft = true)
-                            vm.handleToolApproval(
-                                toolCallId = toolCallId,
-                                approved = true,
-                                answer = payload,
-                            )
-                            return@MinimalChatInput
-                        }
-
-                        val question = askUserCurrentQuestion ?: return@MinimalChatInput
-                        val typedAnswer = inputState.textContent.text.toString().trim()
-                        if (typedAnswer.isBlank()) {
-                            return@MinimalChatInput
-                        }
-                        askUserAnswers = askUserAnswers + (question.id to typedAnswer)
-                        if (askUserQuestionIndex >= prompt.questions.lastIndex) {
-                            askUserReviewMode = true
-                        } else {
-                            askUserQuestionIndex += 1
-                        }
-                    },
                     enableSearch = enableWebSearch,
                     onToggleSearch = {
                         if (enableWebSearch) {
@@ -962,9 +791,6 @@ private fun ChatPageContent(
                         }
                     },
                     onSendClick = {
-                        if (askUserComposerMode != null) {
-                            return@MinimalChatInput
-                        }
                         if (inputState.isEditing()) {
                             vm.handleMessageEdit(
                                 parts = inputState.getContents(),
@@ -986,9 +812,6 @@ private fun ChatPageContent(
                         inputState.clearInput()
                     },
                     onLongSendClick = {
-                        if (askUserComposerMode != null) {
-                            return@MinimalChatInput
-                        }
                         if (inputState.isEditing()) {
                             vm.handleMessageEdit(
                                 parts = inputState.getContents(),
@@ -1099,7 +922,7 @@ private fun ChatToolbar(
     onToggleTemporaryChat: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
-    val topContainerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+    val topContainerColor = MaterialTheme.colorScheme.surfaceContainer
     val topContainerBorder = BorderStroke(1.dp, MaterialTheme.colorScheme.background)
     val buttonShape = RoundedCornerShape(999.dp)
     val topPillSize = 48.dp

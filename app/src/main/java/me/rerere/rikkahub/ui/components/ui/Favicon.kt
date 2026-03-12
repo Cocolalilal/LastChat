@@ -38,7 +38,7 @@ fun Favicon(
         modifier = modifier
             .size(20.dp)
             .clip(shape)
-            .background(me.rerere.rikkahub.ui.theme.placedSurfaceColor()),
+            .background(MaterialTheme.colorScheme.surfaceContainer),
         contentDescription = null,
         contentScale = ContentScale.Crop,
         placeholder = rememberVectorPainter(Icons.Rounded.Public),

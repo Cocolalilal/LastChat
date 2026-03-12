@@ -29,7 +29,6 @@ import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.registry.ModelRegistry
-import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.handleMessageChunk
@@ -114,14 +113,6 @@ class GenerationHandler(
         var currentEnabledModeIds = enabledModeIds.intersect(allSkillIds)
         var useAssistantDefaults = enabledModeIds.isEmpty()
 
-        fun parseToolArguments(raw: String) = runCatching {
-            json.parseToJsonElement(raw.ifBlank { "{}" })
-        }.getOrElse {
-            Log.w(TAG, "Failed to parse tool arguments, attempting sanitization: ${it.message}")
-            val sanitized = sanitizeToolCallArguments(raw)
-            json.parseToJsonElement(sanitized)
-        }
-
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
 
@@ -174,129 +165,6 @@ class GenerationHandler(
                 addAll(tools)
             }
 
-            val latestToolCalls = messages.lastOrNull()
-                ?.takeIf { it.role == MessageRole.ASSISTANT }
-                ?.getToolCalls()
-                .orEmpty()
-            if (latestToolCalls.isNotEmpty()) {
-                var waitingForApproval = false
-                val updatedToolCalls = latestToolCalls.map { toolCall ->
-                    val toolDef = toolsInternal.find { it.name == toolCall.toolName }
-                    when {
-                        toolDef?.needsApproval == true && toolCall.approvalState is ToolApprovalState.Auto -> {
-                            waitingForApproval = true
-                            toolCall.copy(approvalState = ToolApprovalState.Pending)
-                        }
-
-                        toolCall.approvalState is ToolApprovalState.Pending -> {
-                            waitingForApproval = true
-                            toolCall
-                        }
-
-                        else -> toolCall
-                    }
-                }
-
-                if (updatedToolCalls != latestToolCalls) {
-                    val lastMessage = messages.last()
-                    val updatedParts = lastMessage.parts.map { part ->
-                        if (part is UIMessagePart.ToolCall) {
-                            updatedToolCalls.find { it.toolCallId == part.toolCallId } ?: part
-                        } else {
-                            part
-                        }
-                    }
-                    messages = messages.dropLast(1) + lastMessage.copy(parts = updatedParts)
-                    emit(GenerationChunk.Messages(messages))
-                }
-
-                if (waitingForApproval) {
-                    Log.i(TAG, "generateText: waiting for tool approval")
-                    break
-                }
-
-                val results = arrayListOf<UIMessagePart.ToolResult>()
-                updatedToolCalls.forEach { toolCall ->
-                    when (val approvalState = toolCall.approvalState) {
-                        is ToolApprovalState.Denied -> {
-                            results += UIMessagePart.ToolResult(
-                                toolName = toolCall.toolName,
-                                toolCallId = toolCall.toolCallId,
-                                metadata = toolCall.metadata,
-                                content = buildJsonObject {
-                                    put(
-                                        "error",
-                                        JsonPrimitive(
-                                            "Tool execution denied by user. Reason: ${approvalState.reason.ifBlank { "No reason provided" }}"
-                                        )
-                                    )
-                                },
-                                arguments = parseToolArguments(toolCall.arguments)
-                            )
-                        }
-
-                        is ToolApprovalState.Answered -> {
-                            results += UIMessagePart.ToolResult(
-                                toolName = toolCall.toolName,
-                                toolCallId = toolCall.toolCallId,
-                                metadata = toolCall.metadata,
-                                content = runCatching {
-                                    json.parseToJsonElement(approvalState.answer)
-                                }.getOrElse { JsonPrimitive(approvalState.answer) },
-                                arguments = parseToolArguments(toolCall.arguments)
-                            )
-                        }
-
-                        else -> {
-                            runCatching {
-                                val tool = toolsInternal.find { tool -> tool.name == toolCall.toolName }
-                                    ?: error("Tool ${toolCall.toolName} not found")
-                                val args = parseToolArguments(toolCall.arguments)
-                                Log.i(TAG, "generateText: executing tool ${tool.name} with args: $args")
-                                val result = tool.execute(args)
-                                results += UIMessagePart.ToolResult(
-                                    toolName = toolCall.toolName,
-                                    toolCallId = toolCall.toolCallId,
-                                    content = result,
-                                    arguments = args,
-                                    metadata = toolCall.metadata
-                                )
-                            }.onFailure {
-                                it.printStackTrace()
-                                results += UIMessagePart.ToolResult(
-                                    toolName = toolCall.toolName,
-                                    toolCallId = toolCall.toolCallId,
-                                    metadata = toolCall.metadata,
-                                    content = buildJsonObject {
-                                        put(
-                                            "error",
-                                            JsonPrimitive(buildString {
-                                                append("[${it.javaClass.name}] ${it.message}")
-                                                append("\n${it.stackTraceToString()}")
-                                            })
-                                        )
-                                    },
-                                    arguments = runCatching {
-                                        json.parseToJsonElement(toolCall.arguments)
-                                    }.getOrElse { JsonObject(emptyMap()) }
-                                )
-                            }
-                        }
-                    }
-                }
-
-                if (results.isEmpty()) {
-                    break
-                }
-
-                messages = messages + UIMessage(
-                    role = MessageRole.TOOL,
-                    parts = results
-                )
-                emit(GenerationChunk.Messages(messages))
-                continue
-            }
-
             generateInternal(
                 assistant = assistant,
                 settings = settings,
@@ -347,15 +215,69 @@ class GenerationHandler(
             )
             emit(GenerationChunk.Messages(messages))
 
-            val toolCalls = messages.lastOrNull()
-                ?.takeIf { it.role == MessageRole.ASSISTANT }
-                ?.getToolCalls()
-                .orEmpty()
+            val toolCalls = messages.last().getToolCalls()
             if (toolCalls.isEmpty()) {
                 // no tool calls, break
                 break
             }
-            continue
+            // handle tool calls
+            val results = arrayListOf<UIMessagePart.ToolResult>()
+            toolCalls.forEach { toolCall ->
+                runCatching {
+                    val tool = toolsInternal.find { tool -> tool.name == toolCall.toolName }
+                        ?: error("Tool ${toolCall.toolName} not found")
+                    val args = runCatching {
+                        json.parseToJsonElement(toolCall.arguments.ifBlank { "{}" })
+                    }.getOrElse {
+                        // Handle malformed JSON from model (e.g., multiple objects concatenated)
+                        Log.w(TAG, "Failed to parse tool arguments, attempting sanitization: ${it.message}")
+                        val sanitized = sanitizeToolCallArguments(toolCall.arguments)
+                        json.parseToJsonElement(sanitized)
+                    }
+                    Log.i(TAG, "generateText: executing tool ${tool.name} with args: $args")
+                    val result = tool.execute(args)
+                    results += UIMessagePart.ToolResult(
+                        toolName = toolCall.toolName,
+                        toolCallId = toolCall.toolCallId,
+                        content = result,
+                        arguments = args,
+                        metadata = toolCall.metadata
+                    )
+                }.onFailure {
+                    it.printStackTrace()
+                    results += UIMessagePart.ToolResult(
+                        toolName = toolCall.toolName,
+                        toolCallId = toolCall.toolCallId,
+                        metadata = toolCall.metadata,
+                        content = buildJsonObject {
+                            put(
+                                "error",
+                                JsonPrimitive(buildString {
+                                    append("[${it.javaClass.name}] ${it.message}")
+                                    append("\n${it.stackTraceToString()}")
+                                })
+                            )
+                        },
+                        arguments = runCatching {
+                            json.parseToJsonElement(toolCall.arguments)
+                        }.getOrElse { JsonObject(emptyMap()) }
+                    )
+                }
+            }
+            messages = messages + UIMessage(
+                role = MessageRole.TOOL,
+                parts = results
+            )
+            emit(
+                GenerationChunk.Messages(
+                    messages.transforms(
+                        transformers = outputTransformers,
+                        context = context,
+                        model = model,
+                        assistant = assistant
+                    )
+                )
+            )
         }
 
     }.flowOn(Dispatchers.IO)

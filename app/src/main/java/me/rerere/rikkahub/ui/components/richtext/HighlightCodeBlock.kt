@@ -100,7 +100,6 @@ import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.AtomOneDarkPalette
 import me.rerere.rikkahub.ui.theme.AtomOneLightPalette
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
-import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 import me.rerere.rikkahub.utils.base64Encode
 import kotlin.time.Clock
 
@@ -181,9 +180,9 @@ fun HighlightCodeBlock(
     val effectiveDisplay = settings.getEffectiveDisplaySetting()
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
     val colorScheme = MaterialTheme.colorScheme
-    val shellColor = placedSurfaceColor()
-    val headerColor = shellColor
-    val bodyColor = shellColor
+    val shellColor = colorScheme.surfaceContainerHigh
+    val headerColor = colorScheme.surfaceContainerHighest
+    val bodyColor = colorScheme.surfaceContainerLow
     val footerColor = bodyColor
     val outlineColor = colorScheme.outline.copy(alpha = 0.18f)
     val actionTextColor = colorScheme.onSurfaceVariant

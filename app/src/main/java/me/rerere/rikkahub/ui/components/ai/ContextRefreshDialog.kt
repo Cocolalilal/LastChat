@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.components.ai
+package me.rerere.rikkahub.ui.components.ai
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Spring
@@ -96,7 +96,7 @@ fun ContextRefreshDialog(
         onDismissRequest = { if (state != RefreshDialogState.LOADING) onDismiss() },
         modifier = Modifier.padding(horizontal = 24.dp),  // Padding from screen edges
         shape = RoundedCornerShape(28.dp),
-        containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         title = {
             AnimatedContent(
                 targetState = state,
@@ -361,4 +361,3 @@ fun ContextRefreshDialog(
         }
     )
 }
-

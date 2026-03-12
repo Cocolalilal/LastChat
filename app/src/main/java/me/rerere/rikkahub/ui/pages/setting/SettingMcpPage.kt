@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.pages.setting
+package me.rerere.rikkahub.ui.pages.setting
 
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
@@ -201,7 +201,7 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
             val density = androidx.compose.ui.platform.LocalDensity.current
             val unlockThresholdPx = with(density) { 35.dp.toPx() }
             val fadeProgress = (kotlin.math.abs(dragOffset) / unlockThresholdPx).coerceIn(0f, 1f)
-            val backgroundColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+            val backgroundColor = MaterialTheme.colorScheme.surfaceContainerLowest
             
             Box(modifier = Modifier.fillMaxSize()) {
                 LazyColumn(
@@ -373,7 +373,10 @@ private fun McpServerItem(
         modifier = modifier
     ) { animatedShape ->
         // Define the normal card color (used for both enabled background and disabled border)
-        val normalCardColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+        val normalCardColor = if (LocalDarkMode.current) 
+            MaterialTheme.colorScheme.surfaceContainerLow 
+        else 
+            MaterialTheme.colorScheme.surfaceContainerHigh
         
         // Disabled cards: transparent background (black in dark mode) with outline
         val disabledBackground = if (LocalDarkMode.current) 
@@ -486,7 +489,7 @@ private fun McpServerConfigModal(state: EditState<McpServerConfig>) {
         val scope = rememberCoroutineScope()
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
-containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = {
                 state.dismiss()
             },
@@ -593,7 +596,7 @@ private fun McpCommonOptionsConfigure(
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // å¯ç”¨/ç¦ç”¨å¼€å…³
+        // 启用/禁用开关
         FormItem(
             label = {
                 Text(stringResource(R.string.setting_mcp_page_enable))
@@ -630,7 +633,7 @@ private fun McpCommonOptionsConfigure(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // åç§°è¾“å…¥æ¡†
+        // 名称输入框
         FormItem(
             label = {
                 Text(stringResource(R.string.setting_mcp_page_name))
@@ -663,7 +666,7 @@ private fun McpCommonOptionsConfigure(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // ä¼ è¾“ç±»åž‹é€‰æ‹©
+        // 传输类型选择
         FormItem(
             label = {
                 Text(stringResource(R.string.setting_mcp_page_transport_type))
@@ -723,7 +726,7 @@ private fun McpCommonOptionsConfigure(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // æœåŠ¡å™¨åœ°å€é…ç½®
+        // 服务器地址配置
         FormItem(
             label = {
                 Text(stringResource(R.string.setting_mcp_page_server_url))
@@ -766,7 +769,7 @@ private fun McpCommonOptionsConfigure(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // è¯·æ±‚å¤´é…ç½®
+        // 请求头配置
         FormItem(
             label = {
                 Text(stringResource(R.string.setting_mcp_page_custom_headers))
@@ -911,7 +914,7 @@ private fun McpToolsConfigure(
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                 colors = androidx.compose.material3.CardDefaults.cardColors(
-                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                    containerColor = if (LocalDarkMode.current) androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow else androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh
                 )
             ) {
                 Row(
@@ -1009,7 +1012,7 @@ private fun McpImportModal(
     val parseErrorMessage = stringResource(R.string.setting_mcp_page_import_parse_error)
 
     ModalBottomSheet(
-        containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {
@@ -1081,5 +1084,3 @@ private fun McpImportModal(
         }
     }
 }
-
-

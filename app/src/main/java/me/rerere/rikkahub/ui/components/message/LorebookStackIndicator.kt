@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.components.message
+package me.rerere.rikkahub.ui.components.message
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -148,7 +148,7 @@ private fun BookCover(
         modifier = modifier
             .graphicsLayer { this.alpha = alpha }
             .clip(RoundedCornerShape(6.dp))
-            .background(me.rerere.rikkahub.ui.theme.placedSurfaceColor())
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
             .border(
                 width = 1.dp,
                 color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
@@ -215,4 +215,3 @@ private fun BookCover(
         }
     }
 }
-

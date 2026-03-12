@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.components.ui
+package me.rerere.rikkahub.ui.components.ui
 
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
@@ -36,7 +36,7 @@ fun ShareSheet(
     val context = LocalContext.current
     if (state.isShow) {
         ModalBottomSheet(
-containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = {
                 state.dismiss()
             },
@@ -99,10 +99,10 @@ fun ProviderSetting.encodeForShare(): String {
 fun decodeProviderSetting(value: String): ProviderSetting {
     require(value.startsWith("ai-provider:v1:")) { "Invalid provider setting string" }
 
-    // åŽ»æŽ‰å‰ç¼€
+    // 去掉前缀
     val base64Str = value.removePrefix("ai-provider:v1:")
 
-    // Base64è§£ç 
+    // Base64解码
     val jsonBytes = Base64.decode(base64Str)
     val jsonStr = jsonBytes.decodeToString()
 
@@ -130,4 +130,3 @@ class ShareSheetState {
 fun rememberShareSheetState(): ShareSheetState {
     return ShareSheetState()
 }
-

@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.pages.setting
+package me.rerere.rikkahub.ui.pages.setting
 
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
@@ -509,7 +509,7 @@ private fun TtsTextFilterSettingsDialog(
             // Description
             androidx.compose.material3.Card(
                 colors = androidx.compose.material3.CardDefaults.cardColors(
-                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                    containerColor = appSurfaceColor(AppSurfaceLevel.ContainerHigh)
                 ),
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
             ) {
@@ -534,7 +534,7 @@ private fun TtsTextFilterSettingsDialog(
             if (rules.isEmpty()) {
                 androidx.compose.material3.Card(
                     colors = androidx.compose.material3.CardDefaults.cardColors(
-                        containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                        containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
                     ),
                     shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
                 ) {
@@ -617,7 +617,7 @@ private fun TtsFilterRuleItem(
     
     androidx.compose.material3.Card(
         colors = androidx.compose.material3.CardDefaults.cardColors(
-            containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
         ),
         shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
         onClick = onEdit
@@ -971,7 +971,7 @@ private fun TTSProviderItemContent(
         targetValue = if (isSelected) {
             MaterialTheme.colorScheme.primaryContainer
         } else {
-            me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+            if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
         },
         animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
         label = "selectionBackground"
@@ -1099,6 +1099,4 @@ private fun TTSProviderItemContent(
         dragHandle()
     }
 }
-
-
 

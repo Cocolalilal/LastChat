@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.pages.assistant.detail
+package me.rerere.rikkahub.ui.pages.assistant.detail
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material3.Icon
@@ -30,18 +31,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import me.rerere.rikkahub.ui.components.ui.GroupedStack
-import me.rerere.rikkahub.ui.components.ui.GroupedStackItem
-import me.rerere.rikkahub.ui.components.ui.ItemPosition
-import me.rerere.rikkahub.ui.components.ui.rememberGroupedStackPosition
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
-import me.rerere.rikkahub.ui.theme.groupedItemShape
-import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 
 /**
  * PixelPlay-style settings section with title and grouped content.
- * Items inside are wrapped in a clipped grouped container.
+ * Items inside are wrapped in a clipped 24dp rounded corner container.
  */
 @Composable
 fun AssistantSettingsSection(
@@ -68,22 +63,19 @@ fun AssistantSettingsSection(
             )
         }
         Column(
+            modifier = Modifier.clip(RoundedCornerShape(24.dp)),
             verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            GroupedStack {
-                content()
-            }
-        }
+            content = content
+        )
     }
 }
 
 /**
- * PixelPlay-style settings item with the shared grouped neutral surface.
+ * PixelPlay-style settings item with surfaceVariant background.
  * Features press scale animation and haptic feedback.
  */
 @Composable
 fun AssistantSettingsItem(
-    position: ItemPosition? = null,
     title: String,
     subtitle: String? = null,
     leadingIcon: (@Composable () -> Unit)? = null,
@@ -91,7 +83,6 @@ fun AssistantSettingsItem(
     showChevron: Boolean = false,
     onClick: (() -> Unit)? = null
 ) {
-    val resolvedPosition = rememberGroupedStackPosition(position)
     val haptics = rememberPremiumHaptics()
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -103,14 +94,17 @@ fun AssistantSettingsItem(
     )
 
     Surface(
-        color = placedSurfaceColor(),
+        color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
+            MaterialTheme.colorScheme.surfaceContainerLow 
+        else 
+            MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = Modifier
             .fillMaxWidth()
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(groupedItemShape(resolvedPosition))
+            .clip(RoundedCornerShape(10.dp))
             .then(
                 if (onClick != null) {
                     Modifier.clickable(
@@ -173,11 +167,3 @@ fun AssistantSettingsItem(
         }
     }
 }
-
-@Composable
-fun AssistantSettingsCustomItem(
-    content: @Composable (ItemPosition) -> Unit
-) {
-    GroupedStackItem(content)
-}
-

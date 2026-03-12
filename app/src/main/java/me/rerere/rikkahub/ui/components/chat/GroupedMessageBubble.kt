@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.components.chat
+package me.rerere.rikkahub.ui.components.chat
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -59,8 +59,8 @@ fun GroupedMessageBubble(
 ) {
     val defaultContainerColor = when (role) {
         BubbleRole.USER -> MaterialTheme.colorScheme.primaryContainer
-        BubbleRole.ASSISTANT -> me.rerere.rikkahub.ui.theme.placedSurfaceColor()
-        BubbleRole.ACTIVITY -> me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+        BubbleRole.ASSISTANT -> MaterialTheme.colorScheme.surfaceContainerHigh
+        BubbleRole.ACTIVITY -> MaterialTheme.colorScheme.surfaceContainerHighest
     }
     
     val defaultContentColor = when (role) {
@@ -171,4 +171,3 @@ fun getBubblePosition(index: Int, total: Int): BubblePosition {
         else -> BubblePosition.MIDDLE
     }
 }
-

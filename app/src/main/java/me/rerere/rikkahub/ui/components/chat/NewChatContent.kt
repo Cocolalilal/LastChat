@@ -41,7 +41,6 @@ import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ui.Greeting
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.theme.AppShapes
-import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -219,7 +218,7 @@ private fun TemplateCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val cardColor = placedSurfaceColor()
+    val cardColor = MaterialTheme.colorScheme.surfaceContainer
 
     Card(
         onClick = onClick,
@@ -263,7 +262,7 @@ private fun ActionPill(
     modifier: Modifier = Modifier
 ) {
     val backgroundColor = if (hasBackgroundImage) {
-        placedSurfaceColor()
+        MaterialTheme.colorScheme.surfaceContainer
     } else {
         MaterialTheme.colorScheme.surface
     }

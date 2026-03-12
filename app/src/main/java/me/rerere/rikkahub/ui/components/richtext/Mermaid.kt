@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.components.richtext
+package me.rerere.rikkahub.ui.components.richtext
 
 import android.graphics.BitmapFactory
 import android.util.Base64
@@ -115,7 +115,7 @@ fun Mermaid(
     val jsInterface = remember {
         MermaidInterface(
             onHeightChanged = { height ->
-                // éœ€è¦ä¹˜ä»¥density
+                // 需要乘以density
                 // https://stackoverflow.com/questions/43394498/how-to-get-the-full-height-of-in-android-webview
                 contentHeight = (height * density.density).toInt()
                 mermaidHeightCache.put(code, contentHeight)
@@ -123,7 +123,7 @@ fun Mermaid(
             onExportImage = { base64Image ->
                 runCatching {
                     activity?.let {
-                        // è§£ç Base64å›¾åƒå¹¶ä¿å­˜
+                        // 解码Base64图像并保存
                         try {
                             val imageBytes = Base64.decode(base64Image, Base64.DEFAULT)
                             val bitmap =
@@ -315,7 +315,7 @@ fun Mermaid(
 
     if (preview) {
         ModalBottomSheet(
-containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = {
                 preview = false
             },
@@ -393,7 +393,7 @@ private fun buildMermaidHtml(
     theme: MermaidTheme,
     colorScheme: ColorScheme,
 ): String {
-    // å°† ColorScheme é¢œè‰²è½¬ä¸º HEX å­—ç¬¦ä¸²
+    // 将 ColorScheme 颜色转为 HEX 字符串
     val primaryColor = colorScheme.primaryContainer.toCssHex()
     val secondaryColor = colorScheme.secondaryContainer.toCssHex()
     val tertiaryColor = colorScheme.tertiaryContainer.toCssHex()
@@ -464,19 +464,19 @@ private fun buildMermaidHtml(
                         clusterBkg: '${surface}',
                         clusterBorder: '${primaryColor}',
 
-                        // åºåˆ—å›¾å˜é‡
+                        // 序列图变量
                         actorBorder: '${primaryColor}',
                         actorBkg: '${surface}',
                         actorTextColor: '${onBackground}',
                         actorLineColor: '${primaryColor}',
 
-                        // ç”˜ç‰¹å›¾å˜é‡
+                        // 甘特图变量
                         taskBorderColor: '${primaryColor}',
                         taskBkgColor: '${primaryColor}',
                         taskTextLightColor: '${onPrimary}',
                         taskTextDarkColor: '${onBackground}',
 
-                        // çŠ¶æ€å›¾å˜é‡
+                        // 状态图变量
                         labelColor: '${onBackground}',
                         errorBkgColor: '${errorColor}',
                         errorTextColor: '${onErrorColor}'
@@ -484,13 +484,13 @@ private fun buildMermaidHtml(
               });
 
               function calculateAndSendHeight() {
-                    // èŽ·å–å®žé™…å†…å®¹é«˜åº¦ï¼Œè€ƒè™‘ç¼©æ”¾å› ç´ 
+                    // 获取实际内容高度，考虑缩放因素
                     const contentElement = document.querySelector('.mermaid');
                     const contentBox = contentElement.getBoundingClientRect();
-                    // æ·»åŠ å†…è¾¹è·å’Œä¸€ç‚¹é¢å¤–ç©ºé—´ä»¥ç¡®ä¿å®Œæ•´æ˜¾ç¤º
+                    // 添加内边距和一点额外空间以确保完整显示
                     const height = Math.ceil(contentBox.height) + 20;
 
-                    // å¤„ç†ç§»åŠ¨è®¾å¤‡çš„åˆå§‹ç¼©æ”¾
+                    // 处理移动设备的初始缩放
                     const visualViewportScale = window.visualViewport ? window.visualViewport.scale : 1;
                     console.warn('visualViewportScale', visualViewportScale)
                     const adjustedHeight = Math.ceil(height * visualViewportScale);
@@ -506,10 +506,10 @@ private fun buildMermaidHtml(
                 calculateAndSendHeight();
               });
 
-              // ç›‘å¬çª—å£å¤§å°å˜åŒ–ä»¥é‡æ–°è®¡ç®—é«˜åº¦
+              // 监听窗口大小变化以重新计算高度
               window.addEventListener('resize', calculateAndSendHeight);
 
-              // å¯¼å‡ºSVGä¸ºPNGå›¾åƒ
+              // 导出SVG为PNG图像
               window.exportSvgToPng = function() {
                 try {
                     const svgElement = document.querySelector('.mermaid svg');
@@ -578,4 +578,3 @@ enum class MermaidTheme(val value: String) {
     DEFAULT("default"),
     DARK("dark"),
 }
-

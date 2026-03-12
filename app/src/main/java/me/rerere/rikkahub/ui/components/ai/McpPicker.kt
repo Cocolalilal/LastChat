@@ -1,5 +1,7 @@
-﻿package me.rerere.rikkahub.ui.components.ai
+package me.rerere.rikkahub.ui.components.ai
 
+import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import androidx.compose.ui.graphics.Color
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,8 +51,6 @@ import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.components.ui.ToggleSurface
-import me.rerere.rikkahub.ui.theme.groupedItemShape
-import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 import org.koin.compose.koinInject
 
 @Composable
@@ -112,7 +112,7 @@ fun McpPickerButton(
     }
     if (showMcpPicker) {
         ModalBottomSheet(
-            containerColor = placedSurfaceColor(),
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = { showMcpPicker = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ) {
@@ -167,26 +167,16 @@ fun McpPicker(
     onUpdateAssistant: (Assistant) -> Unit
 ) {
     val mcpManager = koinInject<McpManager>()
-    val visibleServers = servers.fastFilter { it.commonOptions.enable }
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        items(visibleServers) { server ->
+        items(servers.fastFilter { it.commonOptions.enable }) { server ->
             val status by mcpManager.getStatus(server).collectAsStateWithLifecycle(McpStatus.Idle)
-            val index = visibleServers.indexOf(server)
-            val position = when {
-                visibleServers.size == 1 -> me.rerere.rikkahub.ui.components.ui.ItemPosition.ONLY
-                index == 0 -> me.rerere.rikkahub.ui.components.ui.ItemPosition.FIRST
-                index == visibleServers.lastIndex -> me.rerere.rikkahub.ui.components.ui.ItemPosition.LAST
-                else -> me.rerere.rikkahub.ui.components.ui.ItemPosition.MIDDLE
-            }
-            val selected = server.id in assistant.mcpServers
             Card(
-                shape = groupedItemShape(position = position, selected = selected),
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                 colors = CardDefaults.cardColors(
-                    containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else placedSurfaceColor(),
-                    contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                    containerColor = if (LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
                 )
             ) {
                 Row(
@@ -265,5 +255,3 @@ fun McpPicker(
         }
     }
 }
-
-

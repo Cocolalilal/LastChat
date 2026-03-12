@@ -34,14 +34,6 @@ object AppShapes {
     // Dialogs and sheets
     val Dialog = RoundedCornerShape(28.dp)
     val BottomSheet = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
-
-    // Grouped neutral containers
-    val GroupedOuterRadius = 20.dp
-    val GroupedInnerRadius = 8.dp
-    val Grouped = RoundedCornerShape(GroupedOuterRadius)
-    val GroupedInner = RoundedCornerShape(GroupedInnerRadius)
-    val GroupedSelectedRadius = 50.dp
-    val GroupedSelected = RoundedCornerShape(50)
     
     // Small elements
     val Avatar = RoundedCornerShape(50)               // Circular avatars
@@ -49,19 +41,9 @@ object AppShapes {
     val Indicator = RoundedCornerShape(8.dp)
     
     // List items
-    val ListItem = RoundedCornerShape(GroupedOuterRadius)
-    val ListItemFirst = RoundedCornerShape(
-        topStart = GroupedOuterRadius,
-        topEnd = GroupedOuterRadius,
-        bottomStart = GroupedInnerRadius,
-        bottomEnd = GroupedInnerRadius,
-    )
-    val ListItemLast = RoundedCornerShape(
-        topStart = GroupedInnerRadius,
-        topEnd = GroupedInnerRadius,
-        bottomStart = GroupedOuterRadius,
-        bottomEnd = GroupedOuterRadius,
-    )
+    val ListItem = RoundedCornerShape(16.dp)
+    val ListItemFirst = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+    val ListItemLast = RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp)
     
     // Optical roundness for nested elements inside cards
     // Formula: outer radius - padding = inner radius
@@ -102,16 +84,15 @@ data class GroupedItemRadii(
 fun groupedItemRadii(
     position: ItemPosition,
     selected: Boolean = false,
-    groupRadius: Dp = AppShapes.GroupedOuterRadius,
-    itemRadius: Dp = AppShapes.GroupedInnerRadius,
-    selectedRadius: Dp = AppShapes.GroupedSelectedRadius,
+    groupRadius: Dp = 24.dp,
+    itemRadius: Dp = 10.dp,
 ): GroupedItemRadii {
     if (selected) {
         return GroupedItemRadii(
-            topStart = selectedRadius,
-            topEnd = selectedRadius,
-            bottomEnd = selectedRadius,
-            bottomStart = selectedRadius,
+            topStart = groupRadius,
+            topEnd = groupRadius,
+            bottomEnd = groupRadius,
+            bottomStart = groupRadius,
         )
     }
 
@@ -146,20 +127,14 @@ fun groupedItemRadii(
 fun groupedItemShape(
     position: ItemPosition,
     selected: Boolean = false,
-    groupRadius: Dp = AppShapes.GroupedOuterRadius,
-    itemRadius: Dp = AppShapes.GroupedInnerRadius,
-    selectedRadius: Dp = AppShapes.GroupedSelectedRadius,
+    groupRadius: Dp = 24.dp,
+    itemRadius: Dp = 10.dp,
 ): RoundedCornerShape {
-    if (selected) {
-        return AppShapes.GroupedSelected
-    }
-
     val radii = groupedItemRadii(
         position = position,
         selected = selected,
         groupRadius = groupRadius,
         itemRadius = itemRadius,
-        selectedRadius = selectedRadius,
     )
     return RoundedCornerShape(
         topStart = radii.topStart,

@@ -119,8 +119,6 @@ fun AppSearchField(
     enabled: Boolean = true,
     readOnly: Boolean = false,
     clearContentDescription: String = "Clear",
-    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
-    keyboardActions: KeyboardActions = KeyboardActions.Default,
     colors: TextFieldColors = OutlinedTextFieldDefaults.colors(),
 ) {
     AppOutlinedField(
@@ -141,8 +139,6 @@ fun AppSearchField(
             null
         },
         singleLine = true,
-        keyboardOptions = keyboardOptions,
-        keyboardActions = keyboardActions,
         colors = colors,
         shape = AppShapes.SearchField,
     )

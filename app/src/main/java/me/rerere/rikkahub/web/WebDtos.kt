@@ -24,7 +24,6 @@ import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageAnnotation
-import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.datastore.DisplaySetting
 import me.rerere.rikkahub.data.datastore.Settings
@@ -712,7 +711,6 @@ fun List<WebMessagePartDto>.toUiMessageParts(): List<UIMessagePart> {
                         toolCallId = part.toolCallId,
                         toolName = part.toolName,
                         arguments = part.input,
-                        approvalState = part.approvalState.toUiApprovalState(),
                         metadata = part.metadata.stripFileId(),
                     )
                 )
@@ -982,22 +980,16 @@ private fun List<UIMessagePart>.toWebMessageParts(context: Context): List<WebMes
 
             is UIMessagePart.ToolCall -> {
                 val results = toolResults[part.toolCallId].orEmpty()
-                val approvalState = part.approvalState
                 handledToolIds += part.toolCallId
                 WebMessagePartDto.Tool(
                     toolCallId = part.toolCallId,
                     toolName = part.toolName,
                     input = part.arguments,
                     output = results.flatMap { it.content.toWebToolOutputParts() },
-                    approvalState = when (approvalState) {
-                        is ToolApprovalState.Auto -> {
-                            if (results.isNotEmpty()) ToolApprovalStateDto.Approved else ToolApprovalStateDto.Auto
-                        }
-
-                        is ToolApprovalState.Pending -> ToolApprovalStateDto.Pending
-                        is ToolApprovalState.Approved -> ToolApprovalStateDto.Approved
-                        is ToolApprovalState.Denied -> ToolApprovalStateDto.Denied(approvalState.reason)
-                        is ToolApprovalState.Answered -> ToolApprovalStateDto.Answered(approvalState.answer)
+                    approvalState = if (results.isNotEmpty()) {
+                        ToolApprovalStateDto.Approved
+                    } else {
+                        ToolApprovalStateDto.Auto
                     },
                     metadata = (part.metadata ?: results.firstOrNull()?.metadata).stripFileId(),
                 )
@@ -1068,16 +1060,6 @@ private fun List<WebMessagePartDto>.toToolResultContent(): JsonElement {
             JsonInstant.encodeToJsonElement(WebMessagePartDto.serializer(), part)
         }
     )
-}
-
-private fun ToolApprovalStateDto.toUiApprovalState(): ToolApprovalState {
-    return when (this) {
-        ToolApprovalStateDto.Auto -> ToolApprovalState.Auto
-        ToolApprovalStateDto.Pending -> ToolApprovalState.Pending
-        ToolApprovalStateDto.Approved -> ToolApprovalState.Approved
-        is ToolApprovalStateDto.Denied -> ToolApprovalState.Denied(reason)
-        is ToolApprovalStateDto.Answered -> ToolApprovalState.Answered(answer)
-    }
 }
 
 private fun parseJsonElementOrPrimitive(value: String): JsonElement {

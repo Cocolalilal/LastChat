@@ -1,7 +1,9 @@
-﻿package me.rerere.rikkahub.ui.pages.setting
+package me.rerere.rikkahub.ui.pages.setting
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,14 +16,18 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Input
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.Category
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -44,14 +50,11 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.model.Skill
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
-import me.rerere.rikkahub.ui.components.ui.AppFloatingActionButton
-import me.rerere.rikkahub.ui.components.ui.AppFloatingActionColumn
-import me.rerere.rikkahub.ui.components.ui.AppFloatingTabBar
-import me.rerere.rikkahub.ui.components.ui.AppFloatingTabButton
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.utils.LorebookExportImport
 import me.rerere.rikkahub.utils.SkillExportImport
 import org.koin.androidx.compose.koinViewModel
@@ -132,35 +135,94 @@ fun SettingPromptInjectionsPage(
                     .navigationBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 16.dp)
             ) {
-                AppFloatingTabBar(
-                    modifier = Modifier.align(Alignment.BottomCenter)
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter),
+                    shape = RoundedCornerShape(28.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    tonalElevation = 6.dp,
+                    shadowElevation = 8.dp
                 ) {
-                    AppFloatingTabButton(
-                        selected = pagerState.currentPage == 0,
-                        onClick = { scope.launch { pagerState.animateScrollToPage(0) } },
-                        icon = Icons.Rounded.Category,
-                        contentDescription = stringResource(R.string.prompt_injections_page_skills),
-                    )
-                    AppFloatingTabButton(
-                        selected = pagerState.currentPage == 1,
-                        onClick = { scope.launch { pagerState.animateScrollToPage(1) } },
-                        icon = Icons.Rounded.Book,
-                        contentDescription = stringResource(R.string.prompt_injections_page_lorebooks),
-                    )
+                    Row(
+                        modifier = Modifier.padding(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .then(
+                                    if (pagerState.currentPage == 0) {
+                                        Modifier.background(MaterialTheme.colorScheme.primaryContainer)
+                                    } else {
+                                        Modifier.clickable {
+                                            haptics.perform(HapticPattern.Tick)
+                                            scope.launch { pagerState.animateScrollToPage(0) }
+                                        }
+                                    }
+                                )
+                                .padding(12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Category,
+                                contentDescription = null,
+                                tint = if (pagerState.currentPage == 0) {
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .then(
+                                    if (pagerState.currentPage == 1) {
+                                        Modifier.background(MaterialTheme.colorScheme.primaryContainer)
+                                    } else {
+                                        Modifier.clickable {
+                                            haptics.perform(HapticPattern.Tick)
+                                            scope.launch { pagerState.animateScrollToPage(1) }
+                                        }
+                                    }
+                                )
+                                .padding(12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Book,
+                                contentDescription = null,
+                                tint = if (pagerState.currentPage == 1) {
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
                 }
 
-                AppFloatingActionColumn(
+                Column(
                     modifier = Modifier
-                        .align(Alignment.BottomEnd)
+                        .align(Alignment.BottomEnd),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    AppFloatingActionButton(
+                    FloatingActionButton(
                         onClick = {
+                            haptics.perform(HapticPattern.Tick)
                             if (pagerState.currentPage == 0) {
                                 skillImportLauncher.launch(arrayOf("application/json", "text/markdown", "*/*"))
                             } else {
                                 lorebookImportLauncher.launch(arrayOf("application/json", "*/*"))
                             }
                         },
+                        shape = AppShapes.CardLarge,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.Input,
@@ -168,14 +230,16 @@ fun SettingPromptInjectionsPage(
                         )
                     }
 
-                    AppFloatingActionButton(
+                    FloatingActionButton(
                         onClick = {
+                            haptics.perform(HapticPattern.Pop)
                             if (pagerState.currentPage == 0) {
                                 showAddSkillDialog = true
                             } else {
                                 showAddLorebookDialog = true
                             }
-                        }
+                        },
+                        shape = AppShapes.CardLarge
                     ) {
                         Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.add))
                     }
@@ -250,4 +314,3 @@ fun SettingPromptInjectionsPage(
         )
     }
 }
-

@@ -43,7 +43,6 @@ import me.rerere.ai.core.Tool
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.TextGenerationParams
-import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.finishReasoning
@@ -534,66 +533,10 @@ class ChatService(
         reason: String,
         answer: String?,
     ) {
-        val currentConversation = ensureConversationLoaded(conversationId) ?: return
-        val trimmedAnswer = answer?.trim()?.takeIf { it.isNotEmpty() }
-        val approvalState = when {
-            trimmedAnswer != null -> ToolApprovalState.Answered(trimmedAnswer)
-            approved -> ToolApprovalState.Approved
-            else -> ToolApprovalState.Denied(reason.ifBlank { "dismissed by user" })
-        }
-
-        val updatedConversation = currentConversation.copy(
-            messageNodes = currentConversation.messageNodes.map { node ->
-                node.copy(
-                    messages = node.messages.map { message ->
-                        val updatedParts = message.parts.map { part ->
-                            when {
-                                part is UIMessagePart.ToolCall && part.toolCallId == toolCallId -> {
-                                    part.copy(approvalState = approvalState)
-                                }
-
-                                else -> part
-                            }
-                        }
-                        message.copy(parts = updatedParts)
-                    }
-                )
-            },
-            updateAt = Instant.now(),
+        Log.w(
+            TAG,
+            "handleToolApproval is not implemented for web yet: conversationId=$conversationId toolCallId=$toolCallId approved=$approved reason=$reason answer=${answer?.take(32)}"
         )
-        val updatedToolExists = updatedConversation.messageNodes.any { node ->
-            node.messages.any { message ->
-                message.parts.any { part ->
-                    part is UIMessagePart.ToolCall &&
-                        part.toolCallId == toolCallId &&
-                        part.approvalState == approvalState
-                }
-            }
-        }
-        if (!updatedToolExists) return
-        saveConversation(conversationId, updatedConversation)
-
-        getGenerationJob(conversationId)?.cancel()
-        val job = appScope.launch {
-            try {
-                handleMessageComplete(
-                    conversationId = conversationId,
-                    suppressCompletionNotification = true,
-                )
-                _generationDoneFlow.emit(conversationId)
-            } catch (e: Exception) {
-                e.printStackTrace()
-                _errorFlow.emit(e)
-            }
-        }
-        setGenerationJob(conversationId, job)
-        job.invokeOnCompletion {
-            setGenerationJob(conversationId, null)
-            appScope.launch {
-                delay(500)
-                checkAllConversationsReferences()
-            }
-        }
     }
 
     fun sendMessage(
@@ -834,10 +777,10 @@ class ChatService(
         var firstTokenTime: Long? = null
 
         runCatching {
-            val conversationSnapshot = getConversationFlow(conversationId).value
+            val conversation = getConversationFlow(conversationId).value
 
             // reset suggestions
-            updateConversation(conversationId, conversationSnapshot.copy(chatSuggestions = emptyList()))
+            updateConversation(conversationId, conversation.copy(chatSuggestions = emptyList()))
 
             // Check if model supports tools when external tools are configured
             val assistant = settings.getCurrentAssistant()
@@ -850,7 +793,6 @@ class ChatService(
 
             // check invalid messages
             checkInvalidMessages(conversationId)
-            val conversation = getConversationFlow(conversationId).value
 
             // start generating
             generationHandler.generateText(
@@ -1215,12 +1157,7 @@ class ChatService(
         messagesNodes = messagesNodes.mapIndexed { index, node ->
             val next = if (index < messagesNodes.size - 1) messagesNodes[index + 1] else null
             if (node.currentMessage.hasPart<UIMessagePart.ToolCall>()) {
-                val hasResolvableApprovalState = node.currentMessage.parts
-                    .filterIsInstance<UIMessagePart.ToolCall>()
-                    .any { toolCall ->
-                        toolCall.approvalState !is ToolApprovalState.Auto
-                    }
-                if (!hasResolvableApprovalState && next?.currentMessage?.hasPart<UIMessagePart.ToolResult>() != true) {
+                if (next?.currentMessage?.hasPart<UIMessagePart.ToolResult>() != true) {
                     return@mapIndexed node.copy(
                         messages = node.messages.filter { it.id != node.currentMessage.id },
                         selectIndex = node.selectIndex - 1

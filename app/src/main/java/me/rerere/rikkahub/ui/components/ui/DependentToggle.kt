@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.components.ui
+package me.rerere.rikkahub.ui.components.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -44,7 +44,10 @@ fun DependentToggle(
     Card(
         shape = AppShapes.CardMedium,
         colors = CardDefaults.cardColors(
-            containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+            containerColor = if (LocalDarkMode.current) 
+                MaterialTheme.colorScheme.surfaceContainerLow 
+            else 
+                MaterialTheme.colorScheme.surfaceContainerHigh
         ),
         modifier = modifier.alpha(alpha)
     ) {
@@ -72,7 +75,7 @@ fun DependentToggle(
                 }
                 if (!enabled && dependencyReason != null) {
                     Text(
-                        text = "âš ï¸ $dependencyReason",
+                        text = "⚠️ $dependencyReason",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.error
                     )
@@ -86,5 +89,3 @@ fun DependentToggle(
         }
     }
 }
-
-

@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.pages.assistant.detail
+package me.rerere.rikkahub.ui.pages.assistant.detail
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -103,9 +103,9 @@ fun AssistantToolsSubPage(
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
-        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+        // ═══════════════════════════════════════════════════════════════════
         // SEARCH GROUP
-        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+        // ═══════════════════════════════════════════════════════════════════
         SettingsGroup(title = "Search") {
             // Build options list for Select
             val currentSearchMode = assistant.searchMode
@@ -158,9 +158,9 @@ fun AssistantToolsSubPage(
             )
         }
 
-        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+        // ═══════════════════════════════════════════════════════════════════
         // LOCAL TOOLS GROUP
-        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+        // ═══════════════════════════════════════════════════════════════════
         SettingsGroup(title = stringResource(R.string.assistant_page_tab_local_tools)) {
             // JavaScript Engine
             SettingGroupItem(
@@ -239,29 +239,11 @@ fun AssistantToolsSubPage(
                     )
                 }
             )
-
-            SettingGroupItem(
-                title = stringResource(R.string.assistant_page_local_tools_ask_user_title),
-                subtitle = stringResource(R.string.assistant_page_local_tools_ask_user_desc),
-                trailing = {
-                    HapticSwitch(
-                        checked = assistant.localTools.contains(LocalToolOption.AskUser),
-                        onCheckedChange = { enabled ->
-                            val newLocalTools = if (enabled) {
-                                assistant.localTools + LocalToolOption.AskUser
-                            } else {
-                                assistant.localTools - LocalToolOption.AskUser
-                            }
-                            onUpdate(assistant.copy(localTools = newLocalTools))
-                        }
-                    )
-                }
-            )
         }
 
-        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+        // ═══════════════════════════════════════════════════════════════════
         // MCP GROUP (only show if servers configured)
-        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+        // ═══════════════════════════════════════════════════════════════════
         if (mcpServerConfigs.isNotEmpty()) {
             var showMcpPicker by remember { mutableStateOf(false) }
             val mcpManager = koinInject<McpManager>()
@@ -286,7 +268,7 @@ fun AssistantToolsSubPage(
 
             if (showMcpPicker) {
                 ModalBottomSheet(
-                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     onDismissRequest = { showMcpPicker = false },
                     sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
                 ) {
@@ -366,4 +348,3 @@ fun AssistantToolsSubPage(
         )
     }
 }
-

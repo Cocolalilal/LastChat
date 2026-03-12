@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.components.message
+package me.rerere.rikkahub.ui.components.message
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -82,7 +82,7 @@ fun ContextSourcesSheet(
     val sortedEntries = remember(entries) { entries.sortedByDescending { it.priority } }
     
     ModalBottomSheet(
-containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
         sheetGesturesEnabled = false,
@@ -219,7 +219,7 @@ private fun ModeItem(
     Surface(
         onClick = onClick,
         shape = shape,
-        color = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+        color = if (isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
     ) {
         Row(
             modifier = Modifier
@@ -321,7 +321,7 @@ private fun MemoryItem(
     Surface(
         onClick = onClick,
         shape = shape,
-        color = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+        color = if (isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
     ) {
         Row(
             modifier = Modifier
@@ -440,7 +440,7 @@ private fun LorebookEntryItem(
     Surface(
         onClick = onClick,
         shape = shape,
-        color = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+        color = if (isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
     ) {
         Row(
             modifier = Modifier
@@ -455,7 +455,7 @@ private fun LorebookEntryItem(
                     .width(45.dp)
                     .height(60.dp)
                     .clip(coverShape)
-                    .background(me.rerere.rikkahub.ui.theme.placedSurfaceColor())
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
                     .border(
                         width = 1.dp,
                         color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
@@ -547,5 +547,3 @@ private fun LorebookEntryItem(
         }
     }
 }
-
-

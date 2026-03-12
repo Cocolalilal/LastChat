@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.components.ui
+package me.rerere.rikkahub.ui.components.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -433,13 +433,13 @@ private fun getToastColors(type: ToastType): Triple<Color, Color, ImageVector?> 
     return when (type) {
         ToastType.Normal -> if(LocalDarkMode.current) {
             Triple(
-                me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+                MaterialTheme.colorScheme.surfaceContainerLow,
                 MaterialTheme.colorScheme.onSurface,
                 null
             )
         } else {
             Triple(
-                me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+                MaterialTheme.colorScheme.surfaceContainerHigh,
                 MaterialTheme.colorScheme.onSurface,
                 null
             )
@@ -466,5 +466,4 @@ private fun getToastColors(type: ToastType): Triple<Color, Color, ImageVector?> 
         )
     }
 }
-
 

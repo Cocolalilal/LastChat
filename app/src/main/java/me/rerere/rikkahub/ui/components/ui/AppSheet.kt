@@ -110,6 +110,6 @@ fun AppAlertDialog(
         confirmButton = confirmButton,
         dismissButton = dismissButton,
         shape = AppShapes.Dialog,
-        containerColor = appSurfaceColor(AppSurfaceLevel.Container),
+        containerColor = appSurfaceColor(AppSurfaceLevel.ContainerHigh),
     )
 }

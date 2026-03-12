@@ -40,10 +40,6 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("tts")
     data object Tts : LocalToolOption()
-
-    @Serializable
-    @SerialName("ask_user")
-    data object AskUser : LocalToolOption()
 }
 
 class LocalTools(
@@ -122,49 +118,6 @@ class LocalTools(
                         }
                     }
                 }
-            }
-        )
-    }
-
-    val askUserTool by lazy {
-        Tool(
-            name = "ask_user",
-            description = "Ask the user one or more clarification questions. The answers are returned as a JSON object keyed by question id.",
-            parameters = {
-                InputSchema.Obj(
-                    properties = buildJsonObject {
-                        put("questions", buildJsonObject {
-                            put("type", "array")
-                            put("description", "List of questions to ask the user")
-                            put("items", buildJsonObject {
-                                put("type", "object")
-                                put("properties", buildJsonObject {
-                                    put("id", buildJsonObject {
-                                        put("type", "string")
-                                        put("description", "Unique identifier for the question")
-                                    })
-                                    put("question", buildJsonObject {
-                                        put("type", "string")
-                                        put("description", "Question text shown to the user")
-                                    })
-                                    put("options", buildJsonObject {
-                                        put("type", "array")
-                                        put("description", "Optional suggested answers the user can tap")
-                                        put("items", buildJsonObject {
-                                            put("type", "string")
-                                        })
-                                    })
-                                })
-                                put("required", JsonArray(listOf(JsonPrimitive("id"), JsonPrimitive("question"))))
-                            })
-                        })
-                    },
-                    required = listOf("questions")
-                )
-            },
-            needsApproval = true,
-            execute = {
-                error("ask_user should be handled by the approval flow")
             }
         )
     }
@@ -653,9 +606,6 @@ class LocalTools(
         }
         if (options.contains(LocalToolOption.Tts)) {
             tools.add(ttsTool)
-        }
-        if (options.contains(LocalToolOption.AskUser)) {
-            tools.add(askUserTool)
         }
         return tools
     }

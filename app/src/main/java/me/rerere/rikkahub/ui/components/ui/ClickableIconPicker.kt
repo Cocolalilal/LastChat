@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.components.ui
+package me.rerere.rikkahub.ui.components.ui
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -26,6 +26,7 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -45,10 +46,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.hooks.rememberAvatarShape
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
-import me.rerere.rikkahub.ui.theme.groupedItemShape
 import me.rerere.rikkahub.utils.ImageUtils
 
 // Common LobeHub provider slugs for quick selection
@@ -175,8 +174,8 @@ fun ClickableIconPicker(
                             imagePickerLauncher.launch("image/*")
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = groupedItemShape(ItemPosition.FIRST),
-                        color = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh
                     ) {
                         androidx.compose.foundation.layout.Row(
                             modifier = Modifier.padding(16.dp),
@@ -195,8 +194,8 @@ fun ClickableIconPicker(
                             showLobeHubSearch = true
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = groupedItemShape(ItemPosition.LAST),
-                        color = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh
                     ) {
                         androidx.compose.foundation.layout.Row(
                             modifier = Modifier.padding(16.dp),
@@ -274,12 +273,14 @@ private fun LobeHubIconSearchDialog(
             Column(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                AppSearchField(
+                OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
                     placeholder = { Text(stringResource(R.string.setting_provider_page_search_placeholder)) },
                     modifier = Modifier.fillMaxWidth(),
-                    leadingIcon = { Icon(Icons.Rounded.Search, null) }
+                    singleLine = true,
+                    leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField
                 )
                 
                 LazyVerticalGrid(
@@ -321,7 +322,7 @@ private fun LobeHubIconItem(
         onClick = onSelect,
         modifier = Modifier.size(56.dp),
         shape = RoundedCornerShape(10.dp),
-        color = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+        color = MaterialTheme.colorScheme.surfaceContainerHigh
     ) {
         AsyncImage(
             model = url,
@@ -333,4 +334,3 @@ private fun LobeHubIconItem(
         )
     }
 }
-

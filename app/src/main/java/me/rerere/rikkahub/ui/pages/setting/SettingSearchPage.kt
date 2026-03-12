@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.pages.setting
+package me.rerere.rikkahub.ui.pages.setting
 
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
@@ -97,7 +97,6 @@ import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
-import me.rerere.rikkahub.ui.theme.groupedItemShape
 import me.rerere.rikkahub.utils.plus
 import me.rerere.search.SearchCommonOptions
 import me.rerere.search.SearchService
@@ -195,19 +194,19 @@ val SEARCH_SERVICE_PRESETS = listOf(
         hasScraping = true
     ),
     SearchServicePreset(
-        name = "æ™ºè°±",
+        name = "智谱",
         description = "Zhipu AI web search",
         optionsClass = SearchServiceOptions.ZhipuOptions::class,
         hasScraping = false
     ),
     SearchServicePreset(
-        name = "ç§˜å¡”",
+        name = "秘塔",
         description = "Metaso Chinese search engine",
         optionsClass = SearchServiceOptions.MetasoOptions::class,
         hasScraping = false
     ),
     SearchServicePreset(
-        name = "åšæŸ¥",
+        name = "博查",
         description = "Bocha search with summary",
         optionsClass = SearchServiceOptions.BochaOptions::class,
         hasScraping = false
@@ -458,7 +457,7 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
         var currentService by remember(service) { mutableStateOf(service) }
 
         ModalBottomSheet(
-containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = {
                 editingService = null
             },
@@ -644,7 +643,7 @@ private fun AddSearchServiceButton(
         val scope = androidx.compose.runtime.rememberCoroutineScope()
         
         ModalBottomSheet(
-containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = {
                 showBottomSheet = false
             },
@@ -743,6 +742,13 @@ containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                                 else -> ItemPosition.MIDDLE
                             }
                             
+                            val shape = when (position) {
+                                ItemPosition.FIRST -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
+                                ItemPosition.LAST -> RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
+                                ItemPosition.MIDDLE -> RoundedCornerShape(10.dp)
+                                ItemPosition.ONLY -> RoundedCornerShape(24.dp)
+                            }
+                            
                             Surface(
                                 onClick = {
                                     haptics.perform(HapticPattern.Pop)
@@ -751,8 +757,8 @@ containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                                     showBottomSheet = false
                                 },
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = groupedItemShape(position = position),
-                                color = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                                shape = shape,
+                                color = if (LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
                             ) {
                                 Row(
                                     modifier = Modifier
@@ -817,7 +823,7 @@ private fun SearchServiceItemContent(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(0.dp))
-            .background(me.rerere.rikkahub.ui.theme.placedSurfaceColor())
+            .background(if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest)
             .clickable {
                 haptics.perform(HapticPattern.Pop)
                 onClick()
@@ -872,7 +878,7 @@ private fun SearchServiceItemContent(
                             brush = Brush.horizontalGradient(
                                 colors = listOf(
                                     Color.Transparent,
-                                    me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                                    if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
                                 )
                             )
                         )
@@ -1602,5 +1608,3 @@ private fun NanoGPTOptions(
         }
     )
 }
-
-

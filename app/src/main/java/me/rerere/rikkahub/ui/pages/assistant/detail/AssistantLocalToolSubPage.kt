@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.pages.assistant.detail
+package me.rerere.rikkahub.ui.pages.assistant.detail
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -62,7 +62,7 @@ fun AssistantLocalToolSubPage(
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // JavaScript å¼•æ“Žå·¥å…·å¡ç‰‡
+        // JavaScript 引擎工具卡片
         LocalToolCard(
             title = stringResource(R.string.assistant_page_local_tools_javascript_engine_title),
             description = stringResource(R.string.assistant_page_local_tools_javascript_engine_desc),
@@ -118,20 +118,6 @@ fun AssistantLocalToolSubPage(
                 onUpdate(assistant.copy(localTools = newLocalTools))
             }
         )
-
-        LocalToolCard(
-            title = stringResource(R.string.assistant_page_local_tools_ask_user_title),
-            description = stringResource(R.string.assistant_page_local_tools_ask_user_desc),
-            isEnabled = assistant.localTools.contains(LocalToolOption.AskUser),
-            onToggle = { enabled ->
-                val newLocalTools = if (enabled) {
-                    assistant.localTools + LocalToolOption.AskUser
-                } else {
-                    assistant.localTools - LocalToolOption.AskUser
-                }
-                onUpdate(assistant.copy(localTools = newLocalTools))
-            }
-        )
     }
 
     if (showNotificationAccessDialog && pendingNotificationAccess.specialAccesses.isNotEmpty()) {
@@ -181,7 +167,7 @@ private fun LocalToolCard(
     Card(
         shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
         colors = androidx.compose.material3.CardDefaults.cardColors(
-            containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+            containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow else androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh
         )
     ) {
         FormItem(
@@ -208,6 +194,4 @@ private fun LocalToolCard(
         )
     }
 }
-
-
 

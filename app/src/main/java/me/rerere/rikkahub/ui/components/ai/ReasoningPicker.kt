@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.components.ai
+package me.rerere.rikkahub.ui.components.ai
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -47,19 +47,16 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.ToggleSurface
 import me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.material3.IconButton
-import me.rerere.rikkahub.ui.theme.AppShapes
-import me.rerere.rikkahub.ui.theme.groupedItemRadii
-import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 
 @Composable
 fun ReasoningButton(
@@ -117,9 +114,12 @@ fun ReasoningPicker(
     onUpdateReasoningTokens: (Int) -> Unit,
 ) {
     val currentLevel = ReasoningLevel.fromBudgetTokens(reasoningTokens)
-
+    val amoledMode by rememberAmoledDarkMode()
+    val isDarkMode = LocalDarkMode.current
+    val isAmoled = amoledMode && isDarkMode
+    
     ModalBottomSheet(
-        containerColor = placedSurfaceColor(),
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
         onDismissRequest = {
             onDismissRequest()
         },
@@ -142,6 +142,7 @@ fun ReasoningPicker(
                     subtitle = stringResource(id = R.string.reasoning_off_desc),
                     onClick = { onUpdateReasoningTokens(0) },
                     position = ItemPosition.FIRST,
+                    isAmoled = isAmoled
                 )
                 ReasoningOptionItem(
                     selected = currentLevel == ReasoningLevel.AUTO,
@@ -150,6 +151,7 @@ fun ReasoningPicker(
                     subtitle = stringResource(id = R.string.reasoning_auto_desc),
                     onClick = { onUpdateReasoningTokens(-1) },
                     position = ItemPosition.LAST,
+                    isAmoled = isAmoled
                 )
             }
             
@@ -167,6 +169,7 @@ fun ReasoningPicker(
                     subtitle = stringResource(id = R.string.reasoning_light_desc),
                     onClick = { onUpdateReasoningTokens(1024) },
                     position = ItemPosition.FIRST,
+                    isAmoled = isAmoled
                 )
                 ReasoningOptionItem(
                     selected = currentLevel == ReasoningLevel.MEDIUM,
@@ -175,6 +178,7 @@ fun ReasoningPicker(
                     subtitle = stringResource(id = R.string.reasoning_medium_desc),
                     onClick = { onUpdateReasoningTokens(16_000) },
                     position = ItemPosition.MIDDLE,
+                    isAmoled = isAmoled
                 )
                 ReasoningOptionItem(
                     selected = currentLevel == ReasoningLevel.HIGH,
@@ -183,10 +187,19 @@ fun ReasoningPicker(
                     subtitle = stringResource(id = R.string.reasoning_heavy_desc),
                     onClick = { onUpdateReasoningTokens(32_000) },
                     position = ItemPosition.LAST,
+                    isAmoled = isAmoled
                 )
             }
         }
     }
+}
+
+// Position in a group for determining corner radius
+private enum class ItemPosition {
+    FIRST,   // Top rounded (24dp top, 10dp bottom)
+    MIDDLE,  // All corners 10dp
+    LAST,    // Bottom rounded (10dp top, 24dp bottom)
+    SINGLE   // All corners 24dp (only item in group)
 }
 
 // Matches SettingGroupItem layout exactly but with selection support
@@ -197,18 +210,25 @@ private fun ReasoningOptionItem(
     title: String,
     subtitle: String,
     onClick: () -> Unit,
-    position: ItemPosition = ItemPosition.ONLY,
+    position: ItemPosition = ItemPosition.SINGLE,
+    isAmoled: Boolean  // Only use Color.Black when actually in OLED mode
 ) {
     val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
-
-    val targetRadii = groupedItemRadii(position = position, selected = selected)
+    
+    // Animated corner radius - selected items animate to fully round
     val topCorner by androidx.compose.animation.core.animateDpAsState(
-        targetValue = targetRadii.topStart,
+        targetValue = if (selected) 50.dp else when (position) {
+            ItemPosition.FIRST, ItemPosition.SINGLE -> 24.dp
+            else -> 10.dp
+        },
         animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.8f, stiffness = 200f),
         label = "topCorner"
     )
     val bottomCorner by androidx.compose.animation.core.animateDpAsState(
-        targetValue = targetRadii.bottomStart,
+        targetValue = if (selected) 50.dp else when (position) {
+            ItemPosition.LAST, ItemPosition.SINGLE -> 24.dp
+            else -> 10.dp
+        },
         animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.8f, stiffness = 200f),
         label = "bottomCorner"
     )
@@ -224,7 +244,7 @@ private fun ReasoningOptionItem(
             .fillMaxWidth()
             .clip(itemShape)
             .background(
-                color = if (selected) MaterialTheme.colorScheme.primaryContainer else placedSurfaceColor()
+                color = if (selected) MaterialTheme.colorScheme.primaryContainer else if (isAmoled) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
             )
             .clickable {
                 haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
@@ -269,14 +289,18 @@ private fun ReasoningLevelCard(
     shape: Shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
     containerColor: Color? = null
 ) {
-    val defaultContainerColor = placedSurfaceColor()
+    val amoledMode by rememberAmoledDarkMode()
+    val isDarkMode = LocalDarkMode.current
+    val isAmoled = amoledMode && isDarkMode
+    
+    val defaultContainerColor = if (isAmoled) Color.Black else MaterialTheme.colorScheme.surfaceContainer
     val resolvedContainerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else (containerColor ?: defaultContainerColor)
-
-    val defaultContentColor = MaterialTheme.colorScheme.onSurface
+    
+    val defaultContentColor = if (isAmoled) Color.White else MaterialTheme.colorScheme.onSurface
     val resolvedContentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else defaultContentColor
-
-    val elevation = 0.dp
-    val tonalElevation = 0.dp
+    
+    val elevation = if (isAmoled) 0.dp else 6.dp
+    val tonalElevation = if (isAmoled) 0.dp else LocalAbsoluteTonalElevation.current
 
     CompositionLocalProvider(LocalAbsoluteTonalElevation provides tonalElevation) {
         val cardElevation = CardDefaults.cardElevation(defaultElevation = elevation)
@@ -284,7 +308,8 @@ private fun ReasoningLevelCard(
             containerColor = resolvedContainerColor,
             contentColor = resolvedContentColor
         )
-        val resolvedShape = if (selected) AppShapes.GroupedSelected else RoundedCornerShape(AppShapes.GroupedInnerRadius)
+        // Selected items are completely round, non-selected use 10.dp corners
+        val resolvedShape = if (selected) RoundedCornerShape(50) else RoundedCornerShape(10.dp)
         Card(
             onClick = onClick,
             modifier = modifier,
@@ -331,5 +356,3 @@ private fun ReasoningPickerPreview() {
         )
     }
 }
-
-

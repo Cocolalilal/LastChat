@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.pages.setting
+package me.rerere.rikkahub.ui.pages.setting
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -81,10 +81,6 @@ import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
-import me.rerere.rikkahub.ui.components.ui.AppFloatingActionButton
-import me.rerere.rikkahub.ui.components.ui.AppFloatingActionColumn
-import me.rerere.rikkahub.ui.components.ui.AppFloatingTabBar
-import me.rerere.rikkahub.ui.components.ui.AppFloatingTabButton
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
@@ -159,39 +155,75 @@ fun SettingLorebooksPage(vm: SettingVM = koinViewModel()) {
                     .navigationBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 16.dp)
             ) {
-                AppFloatingTabBar(
+                // Centered floating tab bar
+                Surface(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .offset(y = -ScreenOffset)
+                        .offset(y = -ScreenOffset),
+                    shape = RoundedCornerShape(28.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    tonalElevation = 6.dp,
+                    shadowElevation = 8.dp
                 ) {
-                    AppFloatingTabButton(
-                        selected = false,
-                        onClick = {
-                            navController.navigate(Screen.SettingSkills()) {
-                                popUpTo(Screen.SettingLorebooks) { inclusive = true }
-                                launchSingleTop = true
-                            }
-                        },
-                        icon = Icons.Rounded.Category,
-                        contentDescription = stringResource(R.string.prompt_injections_page_skills),
-                    )
-                    AppFloatingTabButton(
-                        selected = true,
-                        onClick = {},
-                        icon = Icons.Rounded.Book,
-                        contentDescription = stringResource(R.string.prompt_injections_page_lorebooks),
-                    )
+                    Row(
+                        modifier = Modifier.padding(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        // Skills tab
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .clickable {
+                                    haptics.perform(HapticPattern.Tick)
+                                    navController.navigate(Screen.SettingSkills()) {
+                                        popUpTo(Screen.SettingLorebooks) { inclusive = true }
+                                        launchSingleTop = true
+                                    }
+                                }
+                                .padding(12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Category,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        
+                        // Lorebooks tab (selected)
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primaryContainer)
+                                .padding(12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Book,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
                 }
 
-                AppFloatingActionColumn(
+                Column(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .offset(y = -ScreenOffset)
+                        .offset(y = -ScreenOffset),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    AppFloatingActionButton(
+                    FloatingActionButton(
                         onClick = {
+                            haptics.perform(HapticPattern.Tick)
                             importLauncher.launch(arrayOf("application/json", "*/*"))
                         },
+                        shape = AppShapes.CardLarge,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.Input,
@@ -199,10 +231,12 @@ fun SettingLorebooksPage(vm: SettingVM = koinViewModel()) {
                         )
                     }
 
-                    AppFloatingActionButton(
+                    FloatingActionButton(
                         onClick = {
                             showAddDialog = true
-                        }
+                            haptics.perform(HapticPattern.Pop)
+                        },
+                        shape = AppShapes.CardLarge
                     ) {
                         Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.add))
                     }
@@ -295,9 +329,9 @@ fun LorebooksPageContent(
                     Card(
                         colors = CardDefaults.cardColors(
                             containerColor = if (LocalDarkMode.current) {
-                                me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                                MaterialTheme.colorScheme.surfaceContainerLow
                             } else {
-                                me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                                MaterialTheme.colorScheme.surfaceContainerHighest
                             }
                         ),
                         shape = AppShapes.CardLarge
@@ -471,7 +505,7 @@ private fun LorebookCard(
     Card(
         onClick = onClick,
         colors = CardDefaults.cardColors(
-            containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
         ),
         shape = AppShapes.CardLarge
     ) {
@@ -590,7 +624,7 @@ internal fun LorebookCreatorSheet(
     }
     
     ModalBottomSheet(
-containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
         onDismissRequest = onDismiss,
         sheetState = sheetState
     ) {
@@ -702,5 +736,3 @@ containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
         }
     }
 }
-
-

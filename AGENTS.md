@@ -56,7 +56,6 @@ This repo now has a stabilized shared UI layer. New UI work should adopt it inst
 - Shapes live in `me.rerere.rikkahub.ui.theme.AppShapes`.
 - Grouped list geometry lives in `me.rerere.rikkahub.ui.theme.groupedItemShape(...)` and `groupedItemRadii(...)`.
 - AMOLED-aware surface hierarchy lives in `me.rerere.rikkahub.ui.theme.appSurfaceColor(...)` with `AppSurfaceLevel`.
-- Neutral placed surfaces should use `me.rerere.rikkahub.ui.theme.placedSurfaceColor()`.
 - Shared text field wrappers live in `me.rerere.rikkahub.ui.components.ui.Input.kt`:
   - `AppSearchField(...)`
   - `AppOutlinedField(...)`
@@ -79,13 +78,10 @@ This repo now has a stabilized shared UI layer. New UI work should adopt it inst
 
 ### Containers, grouped rows, and cards
 - Prefer shared grouped row behavior over custom `RoundedCornerShape(...)` math.
-- Neutral placed surfaces should resolve through one token only: `placedSurfaceColor()`.
 - If a list behaves like a grouped settings stack, use grouped item shapes and shared surface colors.
 - If a row is swipeable/reorderable, route the shape logic through `PhysicsSwipeToDelete` plus `groupedItemShape(...)`.
 - Avoid equivalent combinations like `Card + ListItem`, `Surface + ListItem`, and raw `Row` implementations unless there is a real behavioral difference.
 - Use `AppShapes.CardLarge`, `CardMedium`, `CardSmall`, `ListItem`, `Tag`, and `ButtonPill` instead of ad hoc radii whenever possible.
-- Grouped neutral rows use `20.dp` outer corners and `8.dp` inner corners.
-- Selected grouped rows should animate from grouped corners into a fully rounded pill.
 
 ### Fields, sheets, and dialogs
 - Use `AppSearchField(...)` for search bars and searchable pickers.

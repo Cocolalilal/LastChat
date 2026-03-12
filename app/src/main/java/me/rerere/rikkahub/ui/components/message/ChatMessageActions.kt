@@ -1,4 +1,4 @@
-﻿
+
 package me.rerere.rikkahub.ui.components.message
 
 import androidx.compose.foundation.LocalIndication
@@ -89,7 +89,7 @@ fun ColumnScope.ChatMessageActionButtons(
 
     LaunchedEffect(isPendingDelete) {
         if (isPendingDelete) {
-            delay(3000) // 3ç§’åŽè‡ªåŠ¨å–æ¶ˆ
+            delay(3000) // 3秒后自动取消
             isPendingDelete = false
         }
     }
@@ -212,7 +212,7 @@ fun ChatMessageActionsSheet(
     onDismissRequest: () -> Unit
 ) {
     ModalBottomSheet(
-containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
         onDismissRequest = onDismissRequest,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     ) {
@@ -232,7 +232,7 @@ containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
 
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
                 colors = CardDefaults.cardColors(
-                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                    containerColor = if(me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
                 )
             ) {
                 Row(
@@ -267,7 +267,7 @@ containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
 
                     shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
                     colors = CardDefaults.cardColors(
-                        containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                        containerColor = if(me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
                     )
                 ) {
                     Row(
@@ -299,7 +299,7 @@ containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
 
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
                 colors = CardDefaults.cardColors(
-                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                    containerColor = if(me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
                 )
             ) {
                 Row(
@@ -329,7 +329,7 @@ containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                 },
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
                 colors = CardDefaults.cardColors(
-                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                    containerColor = if(me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
                 )
             ) {
                 Row(
@@ -359,7 +359,7 @@ containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                 },
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
                 colors = CardDefaults.cardColors(
-                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                    containerColor = if(me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
                 )
             ) {
                 Row(
@@ -422,5 +422,3 @@ containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
         }
     }
 }
-
-
