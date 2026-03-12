@@ -14,8 +14,11 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,9 +34,7 @@ import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Refresh
-import me.rerere.rikkahub.ui.components.nav.AppCompactTopBar
 import me.rerere.rikkahub.ui.components.nav.BackButton
-import me.rerere.rikkahub.ui.components.ui.AppModalSheet
 import me.rerere.rikkahub.ui.components.webview.WebView
 import me.rerere.rikkahub.ui.components.webview.rememberWebViewState
 import me.rerere.rikkahub.utils.base64Decode
@@ -60,6 +61,7 @@ fun WebViewPage(url: String, content: String) {
 
     var showDropdown by remember { mutableStateOf(false) }
     var showConsoleSheet by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState()
 
     BackHandler(state.canGoBack) {
         state.goBack()
@@ -67,7 +69,7 @@ fun WebViewPage(url: String, content: String) {
 
     Scaffold(
         topBar = {
-            AppCompactTopBar(
+            TopAppBar(
                 title = {
                     Text(
                         text = state.pageTitle?.takeIf { it.isNotEmpty() } ?: state.currentUrl
@@ -126,25 +128,32 @@ fun WebViewPage(url: String, content: String) {
                 }
             )
         }
-    ) { innerPadding ->
+    ) {
         WebView(
             state = state,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
+                .padding(it),
         )
     }
 
     if (showConsoleSheet) {
-        AppModalSheet(
+        ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = { showConsoleSheet = false },
-            title = "Console Logs",
-            showCloseButton = true,
-            maxHeightFraction = 0.85f,
+            sheetState = sheetState
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
             ) {
+                Text(
+                    text = "Console Logs",
+                    style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+
                 SelectionContainer {
                     LazyColumn {
                         items(state.consoleMessages) { message ->

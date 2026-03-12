@@ -139,8 +139,6 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.ProviderViewMode
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
-import me.rerere.rikkahub.ui.components.ui.AppModalSheet
-import me.rerere.rikkahub.ui.components.ui.AppSearchField
 import me.rerere.rikkahub.ui.components.ui.AutoProviderIcon
 import me.rerere.rikkahub.ui.components.ui.ProviderIcon
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
@@ -157,9 +155,6 @@ import me.rerere.rikkahub.ui.pages.setting.components.PROVIDER_PRESETS
 import me.rerere.rikkahub.ui.pages.setting.components.ProviderConfigure
 import me.rerere.rikkahub.ui.pages.setting.components.toProviderSetting
 import me.rerere.rikkahub.ui.theme.AppShapes
-import me.rerere.rikkahub.ui.theme.AppSurfaceLevel
-import me.rerere.rikkahub.ui.theme.appSurfaceColor
-import me.rerere.rikkahub.ui.theme.groupedItemShape
 import me.rerere.rikkahub.utils.ImageUtils
 import org.koin.androidx.compose.koinViewModel
 import sh.calvin.reorderable.ReorderableItem
@@ -247,13 +242,23 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
             
             // Search bar at top with view mode toggle
             // Search bar
-            AppSearchField(
+            OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
                 placeholder = { Text(stringResource(R.string.setting_provider_page_search_placeholder)) },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.SearchField,
+                singleLine = true,
+                leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                trailingIcon = if (searchQuery.isNotEmpty()) {
+                    {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(Icons.Rounded.Close, contentDescription = "Clear")
+                        }
+                    }
+                } else null
             )
             
             // Tag filter row - only show when there are tags
@@ -352,11 +357,21 @@ private fun SearchBarWithToggle(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        AppSearchField(
+        OutlinedTextField(
             value = searchQuery,
             onValueChange = onSearchQueryChange,
             placeholder = { Text(stringResource(R.string.setting_provider_page_search_placeholder)) },
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f),
+            shape = AppShapes.SearchField,
+            singleLine = true,
+            leadingIcon = { Icon(Icons.Rounded.Search, null) },
+            trailingIcon = if (searchQuery.isNotEmpty()) {
+                {
+                    IconButton(onClick = { onSearchQueryChange("") }) {
+                        Icon(Icons.Rounded.Close, contentDescription = "Clear")
+                    }
+                }
+            } else null
         )
         IconButton(onClick = onToggleViewMode) {
             Icon(
@@ -803,15 +818,13 @@ private fun AddButton(
         val bottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         val scope = rememberCoroutineScope()
         
-        AppModalSheet(
+        ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = {
                 showBottomSheet = false
             },
             sheetState = bottomSheetState,
             sheetGesturesEnabled = false,
-            title = stringResource(R.string.setting_provider_page_choose_provider),
-            showCloseButton = true,
-            maxHeightFraction = 0.85f,
             dragHandle = {
                 IconButton(
                     onClick = {
@@ -828,15 +841,36 @@ private fun AddButton(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .fillMaxHeight()
+                    .padding(horizontal = 16.dp)
+                    .fillMaxHeight(0.85f)
                     .clipToBounds()
             ) {
+                // Title
+                Text(
+                    text = stringResource(R.string.setting_provider_page_choose_provider),
+                    style = MaterialTheme.typography.headlineSmall,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp)
+                )
+                
                 // Search bar
-                AppSearchField(
+                OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
                     placeholder = { Text(stringResource(R.string.setting_provider_page_search_placeholder)) },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = AppShapes.SearchField,
+                    singleLine = true,
+                    leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                    trailingIcon = if (searchQuery.isNotEmpty()) {
+                        {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Rounded.Close, contentDescription = "Clear")
+                            }
+                        }
+                    } else null
                 )
                 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -890,7 +924,7 @@ private fun AddButton(
                             colors = CardDefaults.cardColors(
                                 containerColor = MaterialTheme.colorScheme.primaryContainer
                             ),
-                            shape = AppShapes.CardMedium
+                            shape = RoundedCornerShape(24.dp)
                         ) {
                             Row(
                                 modifier = Modifier
@@ -931,6 +965,13 @@ private fun AddButton(
                             else -> ItemPosition.MIDDLE
                         }
                         
+                        val shape = when (position) {
+                            ItemPosition.FIRST -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
+                            ItemPosition.LAST -> RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
+                            ItemPosition.MIDDLE -> RoundedCornerShape(10.dp)
+                            ItemPosition.ONLY -> RoundedCornerShape(24.dp)
+                        }
+                        
                         Surface(
                             onClick = {
                                 haptics.perform(HapticPattern.Pop)
@@ -939,8 +980,8 @@ private fun AddButton(
                                 showBottomSheet = false
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            shape = groupedItemShape(position),
-                            color = appSurfaceColor(AppSurfaceLevel.Container)
+                            shape = shape,
+                            color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
                         ) {
                             Row(
                                 modifier = Modifier

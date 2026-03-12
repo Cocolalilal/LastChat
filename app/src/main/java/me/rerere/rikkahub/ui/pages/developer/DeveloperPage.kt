@@ -14,6 +14,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
@@ -24,8 +25,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Description
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.ai.AILogging
-import me.rerere.rikkahub.ui.components.nav.AppCompactTopBar
-import me.rerere.rikkahub.ui.components.nav.BackButton
 import org.koin.androidx.compose.koinViewModel
 
 @Composable
@@ -34,14 +33,13 @@ fun DeveloperPage(vm: DeveloperVM = koinViewModel()) {
     val scope = rememberCoroutineScope()
     Scaffold(
         topBar = {
-            AppCompactTopBar(
+            TopAppBar(
                 title = {
                     Text(
                         text = "Developer Page",
                         maxLines = 1,
                     )
-                },
-                navigationIcon = { BackButton() }
+                }
             )
         },
         bottomBar = {

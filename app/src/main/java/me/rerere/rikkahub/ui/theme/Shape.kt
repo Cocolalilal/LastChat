@@ -3,8 +3,6 @@ package me.rerere.rikkahub.ui.theme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Shapes
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.Dp
-import me.rerere.rikkahub.ui.components.ui.ItemPosition
 
 /**
  * M3 Expressive Shape System
@@ -71,76 +69,6 @@ object AppShapes {
         topEnd = 20.dp,
         bottomStart = 6.dp,
         bottomEnd = 20.dp
-    )
-}
-
-data class GroupedItemRadii(
-    val topStart: Dp,
-    val topEnd: Dp,
-    val bottomEnd: Dp,
-    val bottomStart: Dp,
-)
-
-fun groupedItemRadii(
-    position: ItemPosition,
-    selected: Boolean = false,
-    groupRadius: Dp = 24.dp,
-    itemRadius: Dp = 10.dp,
-): GroupedItemRadii {
-    if (selected) {
-        return GroupedItemRadii(
-            topStart = groupRadius,
-            topEnd = groupRadius,
-            bottomEnd = groupRadius,
-            bottomStart = groupRadius,
-        )
-    }
-
-    return when (position) {
-        ItemPosition.ONLY -> GroupedItemRadii(
-            topStart = groupRadius,
-            topEnd = groupRadius,
-            bottomEnd = groupRadius,
-            bottomStart = groupRadius,
-        )
-        ItemPosition.FIRST -> GroupedItemRadii(
-            topStart = groupRadius,
-            topEnd = groupRadius,
-            bottomEnd = itemRadius,
-            bottomStart = itemRadius,
-        )
-        ItemPosition.MIDDLE -> GroupedItemRadii(
-            topStart = itemRadius,
-            topEnd = itemRadius,
-            bottomEnd = itemRadius,
-            bottomStart = itemRadius,
-        )
-        ItemPosition.LAST -> GroupedItemRadii(
-            topStart = itemRadius,
-            topEnd = itemRadius,
-            bottomEnd = groupRadius,
-            bottomStart = groupRadius,
-        )
-    }
-}
-
-fun groupedItemShape(
-    position: ItemPosition,
-    selected: Boolean = false,
-    groupRadius: Dp = 24.dp,
-    itemRadius: Dp = 10.dp,
-): RoundedCornerShape {
-    val radii = groupedItemRadii(
-        position = position,
-        selected = selected,
-        groupRadius = groupRadius,
-        itemRadius = itemRadius,
-    )
-    return RoundedCornerShape(
-        topStart = radii.topStart,
-        topEnd = radii.topEnd,
-        bottomEnd = radii.bottomEnd,
-        bottomStart = radii.bottomStart,
     )
 }
 

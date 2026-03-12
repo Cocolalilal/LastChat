@@ -10,12 +10,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -30,13 +30,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.ui.components.nav.AppCompactTopBar
-import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.DocumentChip
 import me.rerere.rikkahub.ui.context.LocalNavController
-import me.rerere.rikkahub.ui.theme.AppShapes
-import me.rerere.rikkahub.ui.theme.AppSurfaceLevel
-import me.rerere.rikkahub.ui.theme.appSurfaceColor
 import me.rerere.rikkahub.utils.base64Encode
 import me.rerere.rikkahub.utils.getFileNameFromUri
 import me.rerere.rikkahub.utils.getFileMimeType
@@ -70,11 +65,10 @@ fun ShareHandlerPage(text: String, files: List<String>) {
     }
     Scaffold(
         topBar = {
-            AppCompactTopBar(
+            TopAppBar(
                 title = {
                     Text(stringResource(R.string.share_handler_page_title))
-                },
-                navigationIcon = { BackButton() }
+                }
             )
         }
     ) {
@@ -84,12 +78,7 @@ fun ShareHandlerPage(text: String, files: List<String>) {
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             item {
-                Card(
-                    shape = AppShapes.CardLarge,
-                    colors = CardDefaults.cardColors(
-                        containerColor = appSurfaceColor(AppSurfaceLevel.Container)
-                    )
-                ) {
+                Card {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -126,7 +115,7 @@ fun ShareHandlerPage(text: String, files: List<String>) {
             }
 
             items(settings.assistants) { assistant ->
-                Card(
+                Surface(
                     onClick = {
                         scope.launch {
                             vm.updateAssistant(assistant.id)
@@ -137,10 +126,8 @@ fun ShareHandlerPage(text: String, files: List<String>) {
                             )
                         }
                     },
-                    shape = AppShapes.ListItem,
-                    colors = CardDefaults.cardColors(
-                        containerColor = appSurfaceColor(AppSurfaceLevel.Container)
-                    )
+                    tonalElevation = 4.dp,
+                    shape = MaterialTheme.shapes.medium
                 ) {
                     ListItem(
                         headlineContent = {
