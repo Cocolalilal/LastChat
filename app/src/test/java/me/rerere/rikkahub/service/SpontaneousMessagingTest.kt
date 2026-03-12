@@ -1,15 +1,11 @@
 package me.rerere.rikkahub.service
 
-import me.rerere.ai.ui.UIMessage
-import me.rerere.rikkahub.data.model.Conversation
-import me.rerere.rikkahub.data.model.MessageNode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.time.Instant
 import kotlin.random.Random
 import kotlin.uuid.Uuid
 
@@ -120,97 +116,30 @@ class SpontaneousMessagingTest {
     }
 
     @Test
-    fun determineRelationUsesRecentUserAwaitingReplyConversation() {
-        val now = Instant.parse("2026-03-11T12:00:00Z")
-        val conversation = Conversation(
-            id = Uuid.random(),
-            assistantId = Uuid.random(),
-            messageNodes = listOf(MessageNode.of(UIMessage.user("Hey"))),
-            updateAt = now.minusSeconds(60 * 60),
-        )
-
-        assertEquals(
-            SpontaneousMessageRelation.RECENT_CHAT,
-            SpontaneousMessaging.determineRelation(
-                conversation = conversation,
-                nowMillis = now.toEpochMilli(),
-            )
-        )
-    }
-
-    @Test
-    fun determineRelationUsesUnrelatedWhenAssistantSpokeLast() {
-        val now = Instant.parse("2026-03-11T12:00:00Z")
-        val conversation = Conversation(
-            id = Uuid.random(),
-            assistantId = Uuid.random(),
-            messageNodes = listOf(MessageNode.of(UIMessage.assistant("Hey there"))),
-            updateAt = now.minusSeconds(60 * 60),
-        )
-
-        assertEquals(
-            SpontaneousMessageRelation.UNRELATED,
-            SpontaneousMessaging.determineRelation(
-                conversation = conversation,
-                nowMillis = now.toEpochMilli(),
-            )
-        )
-    }
-
-    @Test
-    fun determineRelationUsesUnrelatedWhenConversationIsStale() {
-        val now = Instant.parse("2026-03-11T12:00:00Z")
-        val conversation = Conversation(
-            id = Uuid.random(),
-            assistantId = Uuid.random(),
-            messageNodes = listOf(MessageNode.of(UIMessage.user("Still there?"))),
-            updateAt = now.minusSeconds(25 * 60 * 60),
-        )
-
-        assertEquals(
-            SpontaneousMessageRelation.UNRELATED,
-            SpontaneousMessaging.determineRelation(
-                conversation = conversation,
-                nowMillis = now.toEpochMilli(),
-            )
-        )
-    }
-
-    @Test
-    fun determineRelationUsesUnrelatedWithoutConversation() {
-        assertEquals(
-            SpontaneousMessageRelation.UNRELATED,
-            SpontaneousMessaging.determineRelation(
-                conversation = null,
-                nowMillis = Instant.parse("2026-03-11T12:00:00Z").toEpochMilli(),
-            )
-        )
-    }
-
-    @Test
     fun parseResponseReadsJsonWithSurroundingText() {
         val parsed = SpontaneousMessaging.parseResponse(
             """
             Here you go:
-            {"send":true,"reason":"timely","title":"Checking in","content":"Hey, I was thinking about you."}
+            {"send":true,"reason":"timely","relation":"recent_chat","title":"Checking in","content":"Hey, I was thinking about you."}
             """.trimIndent()
         )
 
         assertNotNull(parsed)
         assertTrue(parsed!!.shouldSend)
         assertEquals("timely", parsed.reason)
+        assertEquals(SpontaneousMessageRelation.RECENT_CHAT, parsed.relation)
         assertEquals("Checking in", parsed.title)
         assertEquals("Hey, I was thinking about you.", parsed.content)
     }
 
     @Test
-    fun parseResponseIgnoresUnknownRelationField() {
+    fun parseResponseLeavesRelationNullWhenValueIsUnknown() {
         val parsed = SpontaneousMessaging.parseResponse(
             """{"send":true,"reason":"timely","relation":"maybe","content":"Hi"}"""
         )
 
         assertNotNull(parsed)
-        assertEquals("Hi", parsed!!.content)
+        assertNull(parsed!!.relation)
     }
 
     @Test

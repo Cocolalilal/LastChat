@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
@@ -48,7 +49,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -378,7 +378,11 @@ fun MinimalChatInput(
             Row(
                 verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .animateContentSize(
+                        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f)
+                    )
             ) {
                 androidx.compose.animation.AnimatedVisibility(
                     visible = !isAskUserMode,
@@ -446,7 +450,6 @@ fun MinimalChatInput(
                     "confirm",
                 )
                 val inputEndPadding = if (isExpandedAction) 76.dp else 48.dp
-                val inputVerticalPadding = if (isAskUserMode) 12.dp else 8.dp
 
                 Surface(
                     shape = RoundedCornerShape(24.dp),
@@ -530,8 +533,8 @@ fun MinimalChatInput(
                                     contentPadding = androidx.compose.foundation.layout.PaddingValues(
                                         start = 16.dp,
                                         end = inputEndPadding,
-                                        top = inputVerticalPadding,
-                                        bottom = inputVerticalPadding
+                                        top = 8.dp,
+                                        bottom = 8.dp
                                     )
                                 )
 
@@ -558,13 +561,9 @@ fun MinimalChatInput(
                                         },
                                         shape = if (isExpandedAction) RoundedCornerShape(18.dp) else CircleShape,
                                         color = actionContainerColor,
-                                        modifier = if (isExpandedAction) {
-                                            Modifier
-                                                .height(40.dp)
-                                                .defaultMinSize(minWidth = 40.dp)
-                                        } else {
-                                            Modifier.size(40.dp)
-                                        }
+                                        modifier = Modifier
+                                            .height(40.dp)
+                                            .defaultMinSize(minWidth = 40.dp)
                                     ) {
                                         Box(
                                             modifier = Modifier
@@ -582,7 +581,7 @@ fun MinimalChatInput(
                                                         Icon(
                                                             imageVector = Icons.Rounded.Stop,
                                                             contentDescription = null,
-                                                            modifier = Modifier.size(22.dp),
+                                                            modifier = Modifier.size(18.dp),
                                                             tint = MaterialTheme.colorScheme.onErrorContainer
                                                         )
                                                     }
@@ -590,7 +589,7 @@ fun MinimalChatInput(
                                                         Icon(
                                                             imageVector = Icons.Rounded.ArrowUpward,
                                                             contentDescription = null,
-                                                            modifier = Modifier.size(22.dp),
+                                                            modifier = Modifier.size(18.dp),
                                                             tint = MaterialTheme.colorScheme.onPrimary
                                                         )
                                                     }
@@ -625,14 +624,14 @@ fun MinimalChatInput(
                                                     }
                                                     "model" -> {
                                                         Box(
-                                                            modifier = Modifier.size(30.dp),
+                                                            modifier = Modifier.size(40.dp),
                                                             contentAlignment = Alignment.Center
                                                         ) {
                                                             if (activeChatModel != null) {
                                                                 me.rerere.rikkahub.ui.components.ui.ModelIcon(
                                                                     model = activeChatModel,
                                                                     provider = activeProvider,
-                                                                    modifier = Modifier.fillMaxSize(),
+                                                                    modifier = Modifier.size(28.dp),
                                                                     color = Color.Transparent,
                                                                 )
                                                             } else {

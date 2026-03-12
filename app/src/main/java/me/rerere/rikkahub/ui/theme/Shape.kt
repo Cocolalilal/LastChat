@@ -37,7 +37,7 @@ object AppShapes {
     val BottomSheet = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
 
     // Grouped neutral containers
-    val GroupedOuterRadius = 24.dp
+    val GroupedOuterRadius = 28.dp
     val GroupedInnerRadius = 8.dp
     val Grouped = RoundedCornerShape(GroupedOuterRadius)
     val GroupedInner = RoundedCornerShape(GroupedInnerRadius)
@@ -66,11 +66,8 @@ object AppShapes {
     
     // Optical roundness for nested elements inside cards
     // Formula: outer radius - padding = inner radius
-    // CardLarge (28dp) with 16dp padding -> 12dp inner
     // CardLarge (28dp) with 12dp padding -> 16dp inner
     // CardLarge (28dp) with 8dp padding -> 20dp inner
-    val CardLargeInner16Radius = 12.dp
-    val CardLargeInner16 = RoundedCornerShape(CardLargeInner16Radius)
     val CardLargeInner12 = RoundedCornerShape(16.dp)  // For 12dp padding inside CardLarge
     val CardLargeInner8 = RoundedCornerShape(20.dp)   // For 8dp padding inside CardLarge
     val CardMediumInner12 = RoundedCornerShape(12.dp) // For 12dp padding inside CardMedium

@@ -84,7 +84,7 @@ This repo now has a stabilized shared UI layer. New UI work should adopt it inst
 - If a row is swipeable/reorderable, route the shape logic through `PhysicsSwipeToDelete` plus `groupedItemShape(...)`.
 - Avoid equivalent combinations like `Card + ListItem`, `Surface + ListItem`, and raw `Row` implementations unless there is a real behavioral difference.
 - Use `AppShapes.CardLarge`, `CardMedium`, `CardSmall`, `ListItem`, `Tag`, and `ButtonPill` instead of ad hoc radii whenever possible.
-- Grouped neutral rows use `24.dp` outer corners and `8.dp` inner corners.
+- Grouped neutral rows use `20.dp` outer corners and `8.dp` inner corners.
 - Selected grouped rows should animate from grouped corners into a fully rounded pill.
 
 ### Fields, sheets, and dialogs

@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.pages.setting
+﻿package me.rerere.rikkahub.ui.pages.setting
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -140,7 +140,6 @@ import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.AppModalSheet
 import me.rerere.rikkahub.ui.components.ui.AppSearchField
-import me.rerere.rikkahub.ui.components.ui.AppSearchFieldStyle
 import me.rerere.rikkahub.ui.components.ui.AppFloatingActionEmphasis
 import me.rerere.rikkahub.ui.components.ui.AppFloatingActionButton
 import me.rerere.rikkahub.ui.components.ui.AppFloatingActionColumn
@@ -163,8 +162,7 @@ import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.AppSurfaceLevel
 import me.rerere.rikkahub.ui.theme.appSurfaceColor
 import me.rerere.rikkahub.ui.theme.groupedItemShape
-import me.rerere.rikkahub.ui.theme.nestedSurfaceColor
-import me.rerere.rikkahub.ui.theme.settingsSurfaceColor
+import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 import me.rerere.rikkahub.utils.ImageUtils
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
@@ -473,7 +471,7 @@ private fun ProviderListView(
                         },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(24.dp),
-                        color = me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
+                        color = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                     ) {
                         Row(
                             modifier = Modifier
@@ -860,7 +858,7 @@ private fun AddButton(
             sheetState = bottomSheetState,
             sheetGesturesEnabled = false,
             title = stringResource(R.string.setting_provider_page_choose_provider),
-            centerTitle = true,
+            showCloseButton = true,
             maxHeightFraction = 0.85f,
             dragHandle = {
                 IconButton(
@@ -886,8 +884,7 @@ private fun AddButton(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
                     placeholder = { Text(stringResource(R.string.setting_provider_page_search_placeholder)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    style = AppSearchFieldStyle.FilledNested,
+                    modifier = Modifier.fillMaxWidth()
                 )
                 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -991,7 +988,7 @@ private fun AddButton(
                             },
                             modifier = Modifier.fillMaxWidth(),
                             shape = groupedItemShape(position),
-                            color = nestedSurfaceColor()
+                            color = appSurfaceColor(AppSurfaceLevel.Container)
                         ) {
                             Row(
                                 modifier = Modifier
@@ -1080,7 +1077,7 @@ private fun ProviderItemContent(
     onClick: () -> Unit
 ) {
     // Define the normal card color (used for both enabled background and disabled border)
-    val normalCardColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
+    val normalCardColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
     
     // Disabled cards: transparent background (black in dark mode) with outline
     val disabledBackground = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 

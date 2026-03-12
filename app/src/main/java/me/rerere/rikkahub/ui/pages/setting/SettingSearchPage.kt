@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.pages.setting
+﻿package me.rerere.rikkahub.ui.pages.setting
 
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
@@ -89,8 +89,6 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
-import me.rerere.rikkahub.ui.components.ui.AppSearchField
-import me.rerere.rikkahub.ui.components.ui.AppSearchFieldStyle
 import me.rerere.rikkahub.ui.components.ui.AppFloatingActionEmphasis
 import me.rerere.rikkahub.ui.components.ui.AppFloatingActionButton
 import me.rerere.rikkahub.ui.components.ui.AppFloatingActionColumn
@@ -104,9 +102,7 @@ import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.groupedItemShape
-import me.rerere.rikkahub.ui.theme.nestedSurfaceColor
 import me.rerere.rikkahub.ui.theme.placedSurfaceColor
-import me.rerere.rikkahub.ui.theme.settingsSurfaceColor
 import me.rerere.rikkahub.utils.plus
 import me.rerere.search.SearchCommonOptions
 import me.rerere.search.SearchService
@@ -501,7 +497,7 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
         var currentService by remember(service) { mutableStateOf(service) }
 
         ModalBottomSheet(
-containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor(),
+containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
             onDismissRequest = {
                 editingService = null
             },
@@ -688,7 +684,7 @@ private fun AddSearchServiceButton(
         val scope = androidx.compose.runtime.rememberCoroutineScope()
         
         ModalBottomSheet(
-            containerColor = placedSurfaceColor(),
+containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
             onDismissRequest = {
                 showBottomSheet = false
             },
@@ -725,12 +721,21 @@ private fun AddSearchServiceButton(
                 )
                 
                 // Search bar
-                AppSearchField(
+                OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
                     placeholder = { Text(stringResource(R.string.setting_provider_page_search_placeholder)) },
                     modifier = Modifier.fillMaxWidth(),
-                    style = AppSearchFieldStyle.FilledNested,
+                    shape = AppShapes.SearchField,
+                    singleLine = true,
+                    leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                    trailingIcon = if (searchQuery.isNotEmpty()) {
+                        {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Rounded.Close, contentDescription = "Clear")
+                            }
+                        }
+                    } else null
                 )
                 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -787,7 +792,7 @@ private fun AddSearchServiceButton(
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = groupedItemShape(position = position),
-                                color = nestedSurfaceColor()
+                                color = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                             ) {
                                 Row(
                                     modifier = Modifier
@@ -852,7 +857,7 @@ private fun SearchServiceItemContent(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(0.dp))
-            .background(me.rerere.rikkahub.ui.theme.settingsSurfaceColor())
+            .background(me.rerere.rikkahub.ui.theme.placedSurfaceColor())
             .clickable {
                 haptics.perform(HapticPattern.Pop)
                 onClick()
@@ -907,7 +912,7 @@ private fun SearchServiceItemContent(
                             brush = Brush.horizontalGradient(
                                 colors = listOf(
                                     Color.Transparent,
-                                    me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
+                                    me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                                 )
                             )
                         )

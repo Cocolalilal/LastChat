@@ -1,7 +1,6 @@
 package me.rerere.rikkahub.ui.components.ui
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -23,7 +22,6 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.AppSurfaceLevel
@@ -39,7 +37,6 @@ fun AppModalSheet(
     maxHeightFraction: Float? = null,
     sheetGesturesEnabled: Boolean = true,
     showCloseButton: Boolean = false,
-    centerTitle: Boolean = false,
     dragHandle: @Composable (() -> Unit)? = null,
     contentPadding: PaddingValues = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
     horizontalAlignment: Alignment.Horizontal = Alignment.Start,
@@ -69,45 +66,21 @@ fun AppModalSheet(
             horizontalAlignment = horizontalAlignment,
         ) {
             if (title != null || showCloseButton) {
-                if (centerTitle) {
-                    Box(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (title != null) {
-                            Text(
-                                text = title,
-                                style = MaterialTheme.typography.headlineSmall,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
-                        if (showCloseButton) {
-                            IconButton(
-                                onClick = onDismissRequest,
-                                modifier = Modifier.align(Alignment.CenterEnd),
-                            ) {
-                                Icon(Icons.Rounded.Close, contentDescription = "Close")
-                            }
-                        }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (title != null) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.headlineSmall,
+                            modifier = Modifier.weight(1f),
+                        )
                     }
-                } else {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        if (title != null) {
-                            Text(
-                                text = title,
-                                style = MaterialTheme.typography.headlineSmall,
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                        if (showCloseButton) {
-                            IconButton(onClick = onDismissRequest) {
-                                Icon(Icons.Rounded.Close, contentDescription = "Close")
-                            }
+                    if (showCloseButton) {
+                        IconButton(onClick = onDismissRequest) {
+                            Icon(Icons.Rounded.Close, contentDescription = "Close")
                         }
                     }
                 }

@@ -56,26 +56,6 @@ fun nestedSurfaceColor(): Color {
     return appSurfaceColor(AppSurfaceLevel.ContainerHigh)
 }
 
-fun settingsSurfaceColor(
-    colorScheme: ColorScheme,
-    darkTheme: Boolean,
-): Color {
-    return if (darkTheme) {
-        colorScheme.surfaceContainer
-    } else {
-        colorScheme.surfaceContainerHighest
-    }
-}
-
-@Composable
-@ReadOnlyComposable
-fun settingsSurfaceColor(): Color {
-    return settingsSurfaceColor(
-        colorScheme = MaterialTheme.colorScheme,
-        darkTheme = LocalDarkMode.current,
-    )
-}
-
 fun appOutlinedBorderColor(
     colorScheme: ColorScheme,
 ): Color {

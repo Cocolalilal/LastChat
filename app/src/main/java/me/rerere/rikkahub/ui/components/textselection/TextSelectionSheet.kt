@@ -85,8 +85,6 @@ import me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
-import me.rerere.rikkahub.ui.theme.nestedSurfaceColor
-import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 
 @Composable
 fun TextSelectionSheet(
@@ -146,7 +144,7 @@ fun TextSelectionSheet(
                             onClick = {} // Consume click to prevent dismissing
                         ),
                     shape = QuickAskOuterShape,
-                    color = placedSurfaceColor(),
+                    color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                     tonalElevation = 8.dp
                 ) {
                     AnimatedContent(
@@ -230,7 +228,7 @@ private fun ActionSelectionContent(
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = QuickAskInnerShape,
-                color = nestedSurfaceColor()
+                color = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
             ) {
                 Text(
                     text = selectedText,
@@ -248,7 +246,7 @@ private fun ActionSelectionContent(
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = QuickAskInnerShape,
-                    color = nestedSurfaceColor()
+                    color = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                 ) {
                     AsyncImage(
                         model = attachment.uri,
@@ -333,7 +331,7 @@ private fun QuickActionButton(
                     onClick()
                 },
             shape = shape,
-            color = nestedSurfaceColor(),
+            color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
             tonalElevation = if (amoledMode && isDarkMode) 0.dp else 6.dp,
         ) {
             Row(
@@ -516,7 +514,7 @@ private fun ResultContent(
                 .fillMaxWidth()
                 .heightIn(min = 80.dp, max = 300.dp),
             shape = QuickAskInnerShape,
-            color = nestedSurfaceColor()
+            color = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
         ) {
             Box(
                 modifier = Modifier

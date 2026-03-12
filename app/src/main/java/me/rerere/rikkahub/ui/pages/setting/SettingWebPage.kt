@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.pages.setting
+﻿package me.rerere.rikkahub.ui.pages.setting
 
 import android.Manifest
 import android.content.Context
@@ -261,7 +261,7 @@ fun SettingWebPage(
             item {
                 Card(
                     shape = AppShapes.CardLarge,
-                    colors = CardDefaults.cardColors(containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor()),
+                    colors = CardDefaults.cardColors(containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()),
                     modifier = Modifier
                         .padding(horizontal = 16.dp, vertical = 0.dp)
                         .padding(bottom = 12.dp)
@@ -274,7 +274,7 @@ fun SettingWebPage(
                                 brush = Brush.verticalGradient(
                                     colors = listOf(
                                         MaterialTheme.colorScheme.primaryContainer,
-                                        me.rerere.rikkahub.ui.theme.settingsSurfaceColor(),
+                                        me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                                     )
                                 )
                             )

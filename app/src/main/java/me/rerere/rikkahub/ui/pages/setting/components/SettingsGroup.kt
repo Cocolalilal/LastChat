@@ -34,7 +34,7 @@ import me.rerere.rikkahub.ui.components.ui.rememberGroupedStackPosition
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.groupedItemShape
-import me.rerere.rikkahub.ui.theme.settingsSurfaceColor
+import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 
 @Composable
 fun SettingsGroup(
@@ -90,7 +90,7 @@ fun SettingGroupItem(
             }
         },
         enabled = onClick != null,
-        color = settingsSurfaceColor(),
+        color = placedSurfaceColor(),
         shape = groupedItemShape(resolvedPosition),
         interactionSource = interactionSource,
         modifier = Modifier
@@ -157,7 +157,7 @@ fun SettingGroupInputItem(
 ) {
     val resolvedPosition = rememberGroupedStackPosition(position)
     Surface(
-        color = settingsSurfaceColor(),
+        color = placedSurfaceColor(),
         shape = groupedItemShape(resolvedPosition),
         modifier = Modifier.fillMaxWidth()
     ) {

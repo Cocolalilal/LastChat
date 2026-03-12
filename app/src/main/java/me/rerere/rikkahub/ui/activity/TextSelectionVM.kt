@@ -236,11 +236,16 @@ class TextSelectionVM(
         if (!assistant.enableMemory) {
             return emptyList()
         }
-        val results = memoryRepository.resolveConfiguredMemories(
+        if (!assistant.useRagMemoryRetrieval) {
+            return memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
+        }
+        if (queryText.isBlank()) {
+            return memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
+        }
+        val results = memoryRepository.retrieveRelevantMemories(
             assistantId = assistant.id.toString(),
             query = queryText,
-            ragEnabled = assistant.useRagMemoryRetrieval,
-            limit = assistant.ragLimit.coerceAtLeast(1),
+            limit = 50,
             similarityThreshold = assistant.ragSimilarityThreshold,
             includeCore = assistant.ragIncludeCore,
             includeEpisodes = assistant.ragIncludeEpisodes

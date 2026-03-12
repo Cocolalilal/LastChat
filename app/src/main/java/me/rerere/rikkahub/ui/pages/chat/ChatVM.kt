@@ -45,7 +45,6 @@ import me.rerere.rikkahub.data.model.replaceRegexes
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.service.ChatPersistenceMode
 import me.rerere.rikkahub.service.ChatService
-import me.rerere.rikkahub.service.buildMemoryConsolidationInputData
 import me.rerere.rikkahub.ui.hooks.writeStringPreference
 import me.rerere.rikkahub.utils.UiState
 import me.rerere.rikkahub.utils.UpdateChecker
@@ -678,9 +677,8 @@ class ChatVM(
             // Trigger a consolidation run with specific conversation ID
             val request = androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.MemoryConsolidationWorker>()
                 .setInputData(
-                    buildMemoryConsolidationInputData(
-                        assistantId = conversation.assistantId.toString(),
-                        forceConversationId = conversation.id.toString(),
+                    androidx.work.workDataOf(
+                        "FORCE_CONVERSATION_ID" to conversation.id.toString()
                     )
                 )
                 .build()

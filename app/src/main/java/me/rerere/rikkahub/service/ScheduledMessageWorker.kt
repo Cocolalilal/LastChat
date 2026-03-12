@@ -70,16 +70,13 @@ class ScheduledMessageWorker(
             // Prepare context
             val history = conversation.currentMessages.takeLast(10).joinToString("\n") { "${it.role}: ${it.toText()}" }
             
+            // RAG Retrieval
             val lastUserMessage = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: ""
-            val memories = if (assistant.enableMemory) {
-                memoryRepository.resolveConfiguredMemories(
+            val memories = if (lastUserMessage.isNotBlank()) {
+                memoryRepository.retrieveRelevantMemories(
                     assistantId = assistant.id.toString(),
                     query = lastUserMessage,
-                    ragEnabled = assistant.useRagMemoryRetrieval,
-                    limit = assistant.ragLimit.coerceAtLeast(1),
-                    similarityThreshold = assistant.ragSimilarityThreshold,
-                    includeCore = assistant.ragIncludeCore,
-                    includeEpisodes = assistant.ragIncludeEpisodes,
+                    limit = 5
                 )
             } else {
                 emptyList()

@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.pages.setting
+﻿package me.rerere.rikkahub.ui.pages.setting
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -187,7 +187,7 @@ fun SettingLorebooksPage(vm: SettingVM = koinViewModel()) {
                         onClick = {
                             importLauncher.launch(arrayOf("application/json", "*/*"))
                         },
-                        containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor(),
+                        containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                         contentColor = MaterialTheme.colorScheme.onSurface,
                     ) {
                         Icon(
@@ -293,9 +293,9 @@ fun LorebooksPageContent(
                     Card(
                         colors = CardDefaults.cardColors(
                             containerColor = if (LocalDarkMode.current) {
-                                me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
+                                me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                             } else {
-                                me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
+                                me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                             }
                         ),
                         shape = AppShapes.CardLarge
@@ -469,7 +469,7 @@ private fun LorebookCard(
     Card(
         onClick = onClick,
         colors = CardDefaults.cardColors(
-            containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
+            containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
         ),
         shape = AppShapes.CardLarge
     ) {
@@ -588,7 +588,7 @@ internal fun LorebookCreatorSheet(
     }
     
     ModalBottomSheet(
-containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor(),
+containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
         onDismissRequest = onDismiss,
         sheetState = sheetState
     ) {

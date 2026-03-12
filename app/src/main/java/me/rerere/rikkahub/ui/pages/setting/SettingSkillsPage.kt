@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.pages.setting
+﻿package me.rerere.rikkahub.ui.pages.setting
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -104,7 +104,7 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.theme.groupedItemShape
-import me.rerere.rikkahub.ui.theme.settingsSurfaceColor
+import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 import me.rerere.rikkahub.utils.SkillExportImport
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
@@ -198,7 +198,7 @@ fun SettingSkillsPage(
                         onClick = {
                             importLauncher.launch(arrayOf("application/json", "text/markdown", "*/*"))
                         },
-                        containerColor = settingsSurfaceColor(),
+                        containerColor = placedSurfaceColor(),
                         contentColor = MaterialTheme.colorScheme.onSurface,
                     ) {
                         Icon(
@@ -318,9 +318,9 @@ fun SkillsPageContent(
                     Card(
                         colors = CardDefaults.cardColors(
                             containerColor = if (LocalDarkMode.current) {
-                                me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
+                                me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                             } else {
-                                me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
+                                me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                             }
                         ),
                         shape = AppShapes.CardLarge
@@ -495,7 +495,7 @@ fun DismissibleBannerCard(
 ) {
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = settingsSurfaceColor()
+            containerColor = placedSurfaceColor()
         ),
         shape = AppShapes.CardLarge
     ) {
@@ -546,7 +546,7 @@ private fun SkillCard(
     Card(
         onClick = onEdit,
         colors = CardDefaults.cardColors(
-            containerColor = settingsSurfaceColor()
+            containerColor = placedSurfaceColor()
         ),
         shape = shape
     ) {
@@ -628,7 +628,7 @@ fun SkillEditorSheet(
     }
 
     ModalBottomSheet(
-        containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor(),
+        containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         sheetGesturesEnabled = false,
@@ -754,9 +754,9 @@ fun SkillEditorSheet(
                 Card(
                     colors = CardDefaults.cardColors(
                         containerColor = if (LocalDarkMode.current) {
-                            me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
+                            me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                         } else {
-                            me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
+                            me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                         }
                     ),
                     shape = AppShapes.CardLarge
@@ -787,7 +787,7 @@ fun SkillEditorSheet(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clip(RoundedCornerShape(12.dp))
-                                            .background(me.rerere.rikkahub.ui.theme.settingsSurfaceColor())
+                                            .background(me.rerere.rikkahub.ui.theme.placedSurfaceColor())
                                             .padding(horizontal = 12.dp, vertical = 10.dp),
                                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                                         verticalAlignment = Alignment.CenterVertically
@@ -824,9 +824,9 @@ fun SkillEditorSheet(
                 Card(
                     colors = CardDefaults.cardColors(
                         containerColor = if (LocalDarkMode.current) {
-                            me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
+                            me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                         } else {
-                            me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
+                            me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                         }
                     ),
                     shape = AppShapes.CardLarge
@@ -951,7 +951,7 @@ private fun SkillExportDialog(
     }
 
     ModalBottomSheet(
-        containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor(),
+        containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
         onDismissRequest = onDismiss
     ) {
         Column(
@@ -974,9 +974,9 @@ private fun SkillExportDialog(
                 },
                 colors = CardDefaults.cardColors(
                     containerColor = if (LocalDarkMode.current) {
-                        me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
+                        me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                     } else {
-                        me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
+                        me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                     }
                 ),
                 shape = AppShapes.CardLarge

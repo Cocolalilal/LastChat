@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.pages.setting
+﻿package me.rerere.rikkahub.ui.pages.setting
 
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
@@ -230,7 +230,7 @@ private fun AboutItem(
             }
         },
         enabled = onClick != null,
-        color = me.rerere.rikkahub.ui.theme.settingsSurfaceColor(),
+        color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
         shape = groupedItemShape(position),
         interactionSource = interactionSource,
         modifier = Modifier

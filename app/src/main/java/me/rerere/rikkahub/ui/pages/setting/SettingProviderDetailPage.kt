@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.pages.setting
+﻿package me.rerere.rikkahub.ui.pages.setting
 
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
@@ -335,7 +335,7 @@ private fun SettingProviderConfigPage(
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                 colors = CardDefaults.cardColors(
-                    containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
+                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                 )
             ) {
                 ProviderConfigure(
@@ -354,7 +354,7 @@ private fun SettingProviderConfigPage(
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                 colors = CardDefaults.cardColors(
-                    containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
+                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                 )
             ) {
                 Column(
@@ -1088,7 +1088,7 @@ private fun AddModelButton(
         dialogState.currentState?.let { modelState ->
             val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             ModalBottomSheet(
-containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor(),
+containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                 onDismissRequest = {
                     dialogState.dismiss()
                 },
@@ -1186,7 +1186,7 @@ private fun ModelPickerFab(
     
     if (showPicker) {
         ModalBottomSheet(
-containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor(),
+containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
             onDismissRequest = { showPicker = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ) {
@@ -1287,7 +1287,7 @@ containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor(),
                         Card(
                             shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                             colors = androidx.compose.material3.CardDefaults.cardColors(
-                                containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
+                                containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                             )
                         ) {
                             Row(
@@ -1387,7 +1387,7 @@ private fun AddNewModelFab(
         dialogState.currentState?.let { modelState ->
             val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             ModalBottomSheet(
-containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor(),
+containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                 onDismissRequest = {
                     dialogState.dismiss()
                 },
@@ -1472,7 +1472,7 @@ private fun ModelPicker(
     var showModal by remember { mutableStateOf(false) }
     if (showModal) {
         ModalBottomSheet(
-containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor(),
+containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
             onDismissRequest = { showModal = false },
             sheetState = rememberModalBottomSheetState(
                 skipPartiallyExpanded = true
@@ -1579,7 +1579,7 @@ containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor(),
                         Card(
                             shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                             colors = androidx.compose.material3.CardDefaults.cardColors(
-                                containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
+                                containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                             )
                         ) {
                             Row(
@@ -1900,7 +1900,7 @@ private fun ModelCard(
         dialogState.currentState?.let { editingModel ->
             val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             ModalBottomSheet(
-containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor(),
+containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                 onDismissRequest = {
                     dialogState.dismiss()
                 },
@@ -1990,7 +1990,7 @@ containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor(),
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(0.dp))
                 .background(
-                    color = me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
+                    color = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                 )
                 .clickable {
                     dialogState.open(model.copy())
@@ -2076,7 +2076,7 @@ private fun BuiltInToolsSettings(
                 modifier = Modifier.fillMaxWidth(),
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                 colors = androidx.compose.material3.CardDefaults.cardColors(
-                    containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
+                    containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
                 )
             ) {
                 Row(
@@ -2203,7 +2203,7 @@ private fun ProviderOverrideSettings(
         // Provider configuration modal
         if (showProviderConfig && editingProvider != null) {
             ModalBottomSheet(
-containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor(),
+containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                 onDismissRequest = {
                     showProviderConfig = false
                     editingProvider = null

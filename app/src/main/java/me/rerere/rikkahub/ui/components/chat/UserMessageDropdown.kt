@@ -1,24 +1,24 @@
 package me.rerere.rikkahub.ui.components.chat
 
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.SelectAll
 import androidx.compose.material.icons.rounded.Share
-import androidx.compose.foundation.layout.size
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.DpOffset
-import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.ui.components.ui.AppActionMenuContent
-import me.rerere.rikkahub.ui.components.ui.AppActionMenuDestructiveItem
-import me.rerere.rikkahub.ui.components.ui.AppActionMenuItem
-import me.rerere.rikkahub.ui.theme.AppShapes
-import me.rerere.rikkahub.ui.theme.placedSurfaceColor
+import me.rerere.rikkahub.ui.theme.nestedSurfaceColor
 
 /**
  * Actions available for user messages via long-press.
@@ -50,53 +50,88 @@ fun UserMessageDropdown(
         onDismissRequest = onDismissRequest,
         modifier = modifier,
         offset = offset,
-        shape = AppShapes.CardMedium,
-        containerColor = placedSurfaceColor(),
+        shape = MaterialTheme.shapes.medium,
+        containerColor = nestedSurfaceColor(),
     ) {
-        AppActionMenuContent(
-            destructiveAction = {
-                AppActionMenuDestructiveItem(
-                    icon = Icons.Rounded.Delete,
-                    title = stringResource(R.string.delete),
-                    onClick = {
-                        onAction(UserMessageAction.DELETE)
-                        onDismissRequest()
-                    }
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.copy)) },
+            onClick = {
+                onAction(UserMessageAction.COPY)
+                onDismissRequest()
+            },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Rounded.ContentCopy,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
                 )
             }
-        ) {
-            AppActionMenuItem(
-                icon = Icons.Rounded.ContentCopy,
-                title = stringResource(R.string.copy),
-                onClick = {
-                    onAction(UserMessageAction.COPY)
-                    onDismissRequest()
-                }
-            )
-            AppActionMenuItem(
-                icon = Icons.Rounded.SelectAll,
-                title = stringResource(R.string.select_and_copy),
-                onClick = {
-                    onAction(UserMessageAction.SELECT_TEXT)
-                    onDismissRequest()
-                }
-            )
-            AppActionMenuItem(
-                icon = Icons.Rounded.Edit,
-                title = stringResource(R.string.edit),
-                onClick = {
-                    onAction(UserMessageAction.EDIT)
-                    onDismissRequest()
-                }
-            )
-            AppActionMenuItem(
-                icon = Icons.Rounded.Share,
-                title = stringResource(R.string.share),
-                onClick = {
-                    onAction(UserMessageAction.SHARE)
-                    onDismissRequest()
-                }
-            )
-        }
+        )
+        
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.select_and_copy)) },
+            onClick = {
+                onAction(UserMessageAction.SELECT_TEXT)
+                onDismissRequest()
+            },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Rounded.SelectAll,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        )
+        
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.edit)) },
+            onClick = {
+                onAction(UserMessageAction.EDIT)
+                onDismissRequest()
+            },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Rounded.Edit,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        )
+        
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.share)) },
+            onClick = {
+                onAction(UserMessageAction.SHARE)
+                onDismissRequest()
+            },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Rounded.Share,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        )
+        
+        DropdownMenuItem(
+            text = { 
+                Text(
+                    text = stringResource(R.string.delete),
+                    color = MaterialTheme.colorScheme.error
+                )
+            },
+            onClick = {
+                onAction(UserMessageAction.DELETE)
+                onDismissRequest()
+            },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Rounded.Delete,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.error
+                )
+            }
+        )
     }
 }

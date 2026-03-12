@@ -32,13 +32,11 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import me.rerere.rikkahub.service.MemoryConsolidationWorker
-import me.rerere.rikkahub.service.MEMORY_CONSOLIDATION_WORK_NAME
 import me.rerere.rikkahub.service.SPONTANEOUS_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.service.SPONTANEOUS_WORK_INTERVAL_MINUTES
 import me.rerere.rikkahub.service.SPONTANEOUS_WORK_NAME
 import me.rerere.rikkahub.service.SpontaneousWorker
 import me.rerere.rikkahub.service.WebServerService
-import me.rerere.rikkahub.service.buildMemoryConsolidationInputData
 import java.util.concurrent.TimeUnit
 import org.koin.androidx.workmanager.koin.workManagerFactory
 import org.koin.core.context.startKoin
@@ -99,15 +97,9 @@ class LastChatApp : Application() {
         // Schedule Memory Consolidation Worker dynamically
         get<AppScope>().launch {
             get<SettingsStore>().settingsFlow
-                .map {
-                    Triple(
-                        it.consolidationWorkerIntervalMinutes,
-                        it.consolidationRequiresDeviceIdle,
-                        it.assistantId.toString(),
-                    )
-                }
+                .map { it.consolidationWorkerIntervalMinutes to it.consolidationRequiresDeviceIdle }
                 .distinctUntilChanged()
-                .collect { (interval, idle, assistantId) ->
+                .collect { (interval, idle) ->
                     val constraints = Constraints.Builder()
                         .setRequiredNetworkType(NetworkType.CONNECTED)
                         .apply {
@@ -116,12 +108,11 @@ class LastChatApp : Application() {
                         .build()
 
                     WorkManager.getInstance(this@LastChatApp).enqueueUniquePeriodicWork(
-                        MEMORY_CONSOLIDATION_WORK_NAME,
+                        "memory_consolidation",
                         ExistingPeriodicWorkPolicy.UPDATE,
                         PeriodicWorkRequestBuilder<MemoryConsolidationWorker>(
                             interval.toLong().coerceAtLeast(15), TimeUnit.MINUTES
                         )
-                            .setInputData(buildMemoryConsolidationInputData(assistantId = assistantId))
                             .setConstraints(constraints)
                             .build()
                     )

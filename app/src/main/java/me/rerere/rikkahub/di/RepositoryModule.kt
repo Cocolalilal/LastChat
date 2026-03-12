@@ -8,14 +8,7 @@ import org.koin.dsl.module
 
 val repositoryModule = module {
     single {
-        ConversationRepository(
-            context = get(),
-            conversationDAO = get(),
-            chatEpisodeDAO = get(),
-            embeddingCacheDAO = get(),
-            dailyActivityDAO = get(),
-            usageStatsDAO = get(),
-        )
+        ConversationRepository(get(), get(), get(), get(), get())
     }
 
     single {
@@ -23,12 +16,7 @@ val repositoryModule = module {
     }
 
     single {
-        MemoryRepository(
-            memoryDAO = get(),
-            chatEpisodeDAO = get(),
-            embeddingService = get(),
-            embeddingCacheDAO = get(),
-        )
+        MemoryRepository(get(), get(), get(), get())
     }
 
     single {

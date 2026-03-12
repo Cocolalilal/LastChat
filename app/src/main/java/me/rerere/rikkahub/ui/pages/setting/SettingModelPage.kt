@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.pages.setting
+﻿package me.rerere.rikkahub.ui.pages.setting
 
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
@@ -157,7 +157,7 @@ private fun DefaultTranslationModelSetting(
 
     if (showModal) {
         ModalBottomSheet(
-containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor(),
+containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
             onDismissRequest = {
                 showModal = false
             },
@@ -255,7 +255,7 @@ private fun DefaultSuggestionModelSetting(
 
     if (showModal) {
         ModalBottomSheet(
-containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor(),
+containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
             onDismissRequest = {
                 showModal = false
             },
@@ -349,7 +349,7 @@ private fun DefaultTitleModelSetting(
 
     if (showModal) {
         ModalBottomSheet(
-containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor(),
+containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
             onDismissRequest = {
                 showModal = false
             },
@@ -517,7 +517,7 @@ private fun DefaultOcrModelSetting(
 
     if (showModal) {
         ModalBottomSheet(
-containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor(),
+containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
             onDismissRequest = {
                 showModal = false
             },
@@ -619,7 +619,7 @@ private fun ModelFeatureCard(
         modifier = modifier,
         shape = groupedItemShape(position),
         colors = androidx.compose.material3.CardDefaults.cardColors(
-            containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
+            containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
         )
     ) {
         Column(

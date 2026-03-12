@@ -4,8 +4,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
-import me.rerere.ai.core.MessageRole
-import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
 import kotlin.random.Random
 import kotlin.uuid.Uuid
@@ -42,11 +40,10 @@ data class SpontaneousResponse(
     val reason: String,
     val title: String?,
     val content: String?,
+    val relation: SpontaneousMessageRelation?,
 )
 
 object SpontaneousMessaging {
-    private const val RECENT_CHAT_WINDOW_MILLIS = 24L * 60L * 60L * 1000L
-
     fun isWithinActiveHours(
         currentHour: Int,
         startHour: Int,
@@ -84,22 +81,6 @@ object SpontaneousMessaging {
         return nowMillis + (SPONTANEOUS_WORK_INTERVAL_MINUTES * 60_000L) + jitterMillis
     }
 
-    fun determineRelation(
-        conversation: Conversation?,
-        nowMillis: Long,
-    ): SpontaneousMessageRelation {
-        if (conversation == null) return SpontaneousMessageRelation.UNRELATED
-        if (nowMillis - conversation.updateAt.toEpochMilli() > RECENT_CHAT_WINDOW_MILLIS) {
-            return SpontaneousMessageRelation.UNRELATED
-        }
-        val lastVisibleMessage = conversation.currentMessages.lastOrNull() ?: return SpontaneousMessageRelation.UNRELATED
-        return if (lastVisibleMessage.role == MessageRole.USER) {
-            SpontaneousMessageRelation.RECENT_CHAT
-        } else {
-            SpontaneousMessageRelation.UNRELATED
-        }
-    }
-
     fun parseResponse(text: String): SpontaneousResponse? {
         val jsonPayload = extractJsonObject(text) ?: return null
         val json = runCatching {
@@ -111,6 +92,9 @@ object SpontaneousMessaging {
             reason = json["reason"]?.jsonPrimitiveOrNull?.contentOrNull ?: "",
             title = json["title"]?.jsonPrimitiveOrNull?.contentOrNull,
             content = json["content"]?.jsonPrimitiveOrNull?.contentOrNull,
+            relation = SpontaneousMessageRelation.fromWireValue(
+                json["relation"]?.jsonPrimitiveOrNull?.contentOrNull
+            ),
         )
     }
 
