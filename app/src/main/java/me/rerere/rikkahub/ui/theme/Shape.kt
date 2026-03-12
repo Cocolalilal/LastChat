@@ -2,10 +2,9 @@ package me.rerere.rikkahub.ui.theme
 
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Shapes
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
-import kotlin.math.max
 
 /**
  * M3 Expressive Shape System
@@ -37,7 +36,7 @@ object AppShapes {
     val BottomSheet = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
 
     // Grouped neutral containers
-    val GroupedOuterRadius = 28.dp
+    val GroupedOuterRadius = 20.dp
     val GroupedInnerRadius = 8.dp
     val Grouped = RoundedCornerShape(GroupedOuterRadius)
     val GroupedInner = RoundedCornerShape(GroupedInnerRadius)
@@ -100,18 +99,12 @@ data class GroupedItemRadii(
     val bottomStart: Dp,
 )
 
-enum class GroupedAxis {
-    Vertical,
-    Horizontal,
-}
-
 fun groupedItemRadii(
     position: ItemPosition,
     selected: Boolean = false,
     groupRadius: Dp = AppShapes.GroupedOuterRadius,
     itemRadius: Dp = AppShapes.GroupedInnerRadius,
     selectedRadius: Dp = AppShapes.GroupedSelectedRadius,
-    axis: GroupedAxis = GroupedAxis.Vertical,
 ): GroupedItemRadii {
     if (selected) {
         return GroupedItemRadii(
@@ -129,40 +122,24 @@ fun groupedItemRadii(
             bottomEnd = groupRadius,
             bottomStart = groupRadius,
         )
-        ItemPosition.FIRST -> when (axis) {
-            GroupedAxis.Vertical -> GroupedItemRadii(
-                topStart = groupRadius,
-                topEnd = groupRadius,
-                bottomEnd = itemRadius,
-                bottomStart = itemRadius,
-            )
-            GroupedAxis.Horizontal -> GroupedItemRadii(
-                topStart = groupRadius,
-                topEnd = itemRadius,
-                bottomEnd = itemRadius,
-                bottomStart = groupRadius,
-            )
-        }
+        ItemPosition.FIRST -> GroupedItemRadii(
+            topStart = groupRadius,
+            topEnd = groupRadius,
+            bottomEnd = itemRadius,
+            bottomStart = itemRadius,
+        )
         ItemPosition.MIDDLE -> GroupedItemRadii(
             topStart = itemRadius,
             topEnd = itemRadius,
             bottomEnd = itemRadius,
             bottomStart = itemRadius,
         )
-        ItemPosition.LAST -> when (axis) {
-            GroupedAxis.Vertical -> GroupedItemRadii(
-                topStart = itemRadius,
-                topEnd = itemRadius,
-                bottomEnd = groupRadius,
-                bottomStart = groupRadius,
-            )
-            GroupedAxis.Horizontal -> GroupedItemRadii(
-                topStart = itemRadius,
-                topEnd = groupRadius,
-                bottomEnd = groupRadius,
-                bottomStart = itemRadius,
-            )
-        }
+        ItemPosition.LAST -> GroupedItemRadii(
+            topStart = itemRadius,
+            topEnd = itemRadius,
+            bottomEnd = groupRadius,
+            bottomStart = groupRadius,
+        )
     }
 }
 
@@ -172,7 +149,6 @@ fun groupedItemShape(
     groupRadius: Dp = AppShapes.GroupedOuterRadius,
     itemRadius: Dp = AppShapes.GroupedInnerRadius,
     selectedRadius: Dp = AppShapes.GroupedSelectedRadius,
-    axis: GroupedAxis = GroupedAxis.Vertical,
 ): RoundedCornerShape {
     if (selected) {
         return AppShapes.GroupedSelected
@@ -184,64 +160,6 @@ fun groupedItemShape(
         groupRadius = groupRadius,
         itemRadius = itemRadius,
         selectedRadius = selectedRadius,
-        axis = axis,
-    )
-    return RoundedCornerShape(
-        topStart = radii.topStart,
-        topEnd = radii.topEnd,
-        bottomEnd = radii.bottomEnd,
-        bottomStart = radii.bottomStart,
-    )
-}
-
-fun groupedInsetItemRadii(
-    position: ItemPosition,
-    inset: Dp,
-    selected: Boolean = false,
-    groupRadius: Dp = AppShapes.GroupedOuterRadius,
-    itemRadius: Dp = AppShapes.GroupedInnerRadius,
-    selectedRadius: Dp = AppShapes.GroupedSelectedRadius,
-    axis: GroupedAxis = GroupedAxis.Vertical,
-): GroupedItemRadii {
-    if (selected) {
-        val exposedRadius = max((selectedRadius - inset).value, 0f).dp
-        return GroupedItemRadii(
-            topStart = exposedRadius,
-            topEnd = exposedRadius,
-            bottomEnd = exposedRadius,
-            bottomStart = exposedRadius,
-        )
-    }
-
-    val exposedGroupRadius = max((groupRadius - inset).value, 0f).dp
-    val exposedItemRadius = max((itemRadius - inset).value, 0f).dp
-    return groupedItemRadii(
-        position = position,
-        selected = false,
-        groupRadius = exposedGroupRadius,
-        itemRadius = exposedItemRadius,
-        selectedRadius = selectedRadius,
-        axis = axis,
-    )
-}
-
-fun groupedInsetItemShape(
-    position: ItemPosition,
-    inset: Dp,
-    selected: Boolean = false,
-    groupRadius: Dp = AppShapes.GroupedOuterRadius,
-    itemRadius: Dp = AppShapes.GroupedInnerRadius,
-    selectedRadius: Dp = AppShapes.GroupedSelectedRadius,
-    axis: GroupedAxis = GroupedAxis.Vertical,
-): RoundedCornerShape {
-    val radii = groupedInsetItemRadii(
-        position = position,
-        inset = inset,
-        selected = selected,
-        groupRadius = groupRadius,
-        itemRadius = itemRadius,
-        selectedRadius = selectedRadius,
-        axis = axis,
     )
     return RoundedCornerShape(
         topStart = radii.topStart,

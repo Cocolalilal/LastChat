@@ -52,12 +52,13 @@ import me.rerere.ai.ui.UsedMode
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.ui.components.ui.icons.ModeIcons
-import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
-import me.rerere.rikkahub.ui.theme.groupedItemShape
-import me.rerere.rikkahub.ui.theme.nestedSurfaceColor
 
 private val json = Json { ignoreUnknownKeys = true }
+
+// Corner radius values matching PhysicsSwipeToDelete
+private val groupCornerRadius = 24.dp
+private val itemCornerRadius = 10.dp
 
 /**
  * Bottom sheet displaying all context sources used in a message:
@@ -171,13 +172,18 @@ containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
  * Calculates the corner shape for a grouped item based on position
  */
 private fun getGroupedShape(index: Int, total: Int): RoundedCornerShape {
-    val position = when {
-        total <= 1 -> ItemPosition.ONLY
-        index == 0 -> ItemPosition.FIRST
-        index == total - 1 -> ItemPosition.LAST
-        else -> ItemPosition.MIDDLE
+    return when {
+        total == 1 -> RoundedCornerShape(groupCornerRadius)
+        index == 0 -> RoundedCornerShape(
+            topStart = groupCornerRadius, topEnd = groupCornerRadius,
+            bottomStart = itemCornerRadius, bottomEnd = itemCornerRadius
+        )
+        index == total - 1 -> RoundedCornerShape(
+            topStart = itemCornerRadius, topEnd = itemCornerRadius,
+            bottomStart = groupCornerRadius, bottomEnd = groupCornerRadius
+        )
+        else -> RoundedCornerShape(itemCornerRadius)
     }
-    return groupedItemShape(position)
 }
 
 @Composable
@@ -213,7 +219,7 @@ private fun ModeItem(
     Surface(
         onClick = onClick,
         shape = shape,
-        color = nestedSurfaceColor()
+        color = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
     ) {
         Row(
             modifier = Modifier
@@ -315,7 +321,7 @@ private fun MemoryItem(
     Surface(
         onClick = onClick,
         shape = shape,
-        color = nestedSurfaceColor()
+        color = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
     ) {
         Row(
             modifier = Modifier
@@ -434,7 +440,7 @@ private fun LorebookEntryItem(
     Surface(
         onClick = onClick,
         shape = shape,
-        color = nestedSurfaceColor()
+        color = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
     ) {
         Row(
             modifier = Modifier
@@ -449,7 +455,7 @@ private fun LorebookEntryItem(
                     .width(45.dp)
                     .height(60.dp)
                     .clip(coverShape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .background(me.rerere.rikkahub.ui.theme.placedSurfaceColor())
                     .border(
                         width = 1.dp,
                         color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),

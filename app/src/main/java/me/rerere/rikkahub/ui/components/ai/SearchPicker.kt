@@ -71,7 +71,6 @@ import org.koin.compose.koinInject
 import androidx.compose.ui.graphics.Shape
 import me.rerere.rikkahub.ui.theme.groupedItemRadii
 import me.rerere.rikkahub.ui.theme.groupedItemShape
-import me.rerere.rikkahub.ui.theme.nestedSurfaceColor
 import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 
 @Composable
@@ -347,7 +346,7 @@ private fun SearchToggleItem(
     navBackStack: NavHostController,
     position: ItemPosition,
 ) {
-    val containerColor = nestedSurfaceColor()
+    val containerColor = placedSurfaceColor()
     val contentColor = MaterialTheme.colorScheme.onSurface
     
     Row(
@@ -411,7 +410,7 @@ private fun SearchProviderItem(
     val targetContainerColor = if (isSelected) {
         MaterialTheme.colorScheme.primaryContainer
     } else {
-        nestedSurfaceColor()
+        placedSurfaceColor()
     }
     val targetContentColor = if (isSelected) {
         MaterialTheme.colorScheme.onPrimaryContainer
@@ -461,7 +460,7 @@ private fun BuiltInSearchSetting(
     preferBuiltInSearch: Boolean,
     onTogglePreferBuiltInSearch: (Boolean) -> Unit
 ) {
-    val containerColor = nestedSurfaceColor()
+    val containerColor = placedSurfaceColor()
     val contentColor = MaterialTheme.colorScheme.onSurface
 
     CompositionLocalProvider(LocalAbsoluteTonalElevation provides 0.dp) {

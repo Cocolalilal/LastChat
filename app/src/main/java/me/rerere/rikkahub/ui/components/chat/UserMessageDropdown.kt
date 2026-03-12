@@ -18,7 +18,6 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.SelectAll
 import androidx.compose.material.icons.rounded.Share
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.ui.theme.nestedSurfaceColor
 
 /**
  * Actions available for user messages via long-press.
@@ -51,7 +50,6 @@ fun UserMessageDropdown(
         modifier = modifier,
         offset = offset,
         shape = MaterialTheme.shapes.medium,
-        containerColor = nestedSurfaceColor(),
     ) {
         DropdownMenuItem(
             text = { Text(stringResource(R.string.copy)) },

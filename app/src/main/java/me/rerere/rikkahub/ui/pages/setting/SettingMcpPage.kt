@@ -96,9 +96,6 @@ import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.ai.mcp.McpStatus
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
-import me.rerere.rikkahub.ui.components.ui.AppFloatingActionButton
-import me.rerere.rikkahub.ui.components.ui.AppFloatingActionColumn
-import me.rerere.rikkahub.ui.components.ui.AppFloatingActionEmphasis
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
@@ -154,25 +151,23 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
                 navigationIcon = {
                     BackButton()
                 },
-                actions = {}
+                actions = {
+                    IconButton(
+                        onClick = {
+                            showImportDialog = true
+                        }
+                    ) {
+                        Icon(Icons.Rounded.FileUpload, null)
+                    }
+                    IconButton(
+                        onClick = {
+                            creationState.open(McpServerConfig.SseTransportServer())
+                        }
+                    ) {
+                        Icon(Icons.Rounded.Add, null)
+                    }
+                }
             )
-        },
-        floatingActionButton = {
-            AppFloatingActionColumn {
-                AppFloatingActionButton(
-                    onClick = { showImportDialog = true },
-                ) {
-                    Icon(Icons.Rounded.FileUpload, null)
-                }
-                AppFloatingActionButton(
-                    onClick = {
-                        creationState.open(McpServerConfig.SseTransportServer())
-                    },
-                    emphasis = AppFloatingActionEmphasis.Primary,
-                ) {
-                    Icon(Icons.Rounded.Add, null)
-                }
-            }
         },
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { innerPadding ->

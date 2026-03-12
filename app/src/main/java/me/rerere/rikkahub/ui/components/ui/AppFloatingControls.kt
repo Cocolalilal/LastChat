@@ -5,16 +5,12 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.defaultMinSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -23,7 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -32,7 +27,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
@@ -40,15 +34,7 @@ import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.appOutlinedBorderColor
-import me.rerere.rikkahub.ui.theme.nestedSurfaceColor
 import me.rerere.rikkahub.ui.theme.placedSurfaceColor
-
-val AppFloatingOverlayContentBottomPadding = 112.dp
-
-enum class AppFloatingActionEmphasis {
-    Neutral,
-    Primary,
-}
 
 @Composable
 fun AppFloatingActionColumn(
@@ -70,15 +56,8 @@ fun AppFloatingActionButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     shape: androidx.compose.ui.graphics.Shape = AppShapes.CardLarge,
-    emphasis: AppFloatingActionEmphasis = AppFloatingActionEmphasis.Neutral,
-    containerColor: androidx.compose.ui.graphics.Color = when (emphasis) {
-        AppFloatingActionEmphasis.Primary -> MaterialTheme.colorScheme.primaryContainer
-        AppFloatingActionEmphasis.Neutral -> placedSurfaceColor()
-    },
-    contentColor: androidx.compose.ui.graphics.Color = when (emphasis) {
-        AppFloatingActionEmphasis.Primary -> MaterialTheme.colorScheme.onPrimaryContainer
-        AppFloatingActionEmphasis.Neutral -> MaterialTheme.colorScheme.onSurface
-    },
+    containerColor: androidx.compose.ui.graphics.Color = placedSurfaceColor(),
+    contentColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurface,
     contentPadding: PaddingValues = PaddingValues(16.dp),
     content: @Composable BoxScope.() -> Unit
 ) {
@@ -120,49 +99,13 @@ fun AppFloatingActionButton(
 }
 
 @Composable
-fun BoxScope.AppFloatingControlsOverlay(
-    modifier: Modifier = Modifier,
-    showFade: Boolean = true,
-    fadeHeight: androidx.compose.ui.unit.Dp = 120.dp,
-    backgroundColor: Color = MaterialTheme.colorScheme.background,
-    content: @Composable BoxScope.() -> Unit,
-) {
-    if (showFade) {
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .height(fadeHeight)
-                .background(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Transparent,
-                            backgroundColor,
-                        )
-                    )
-                )
-        )
-    }
-
-    Box(
-        modifier = modifier
-            .align(Alignment.BottomCenter)
-            .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 16.dp)
-    ) {
-        content()
-    }
-}
-
-@Composable
 fun AppFloatingTabBar(
     modifier: Modifier = Modifier,
     content: @Composable RowScope.() -> Unit
 ) {
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(AppShapes.GroupedOuterRadius),
+        shape = RoundedCornerShape(28.dp),
         color = placedSurfaceColor(),
         border = BorderStroke(1.dp, appOutlinedBorderColor()),
         tonalElevation = 6.dp,
@@ -192,6 +135,11 @@ fun RowScope.AppFloatingTabButton(
         label = "floating_tab_scale",
     )
     val haptics = rememberPremiumHaptics()
+    val containerColor = if (selected) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        placedSurfaceColor()
+    }
     val iconColor = if (selected) {
         MaterialTheme.colorScheme.onPrimaryContainer
     } else {
@@ -204,16 +152,19 @@ fun RowScope.AppFloatingTabButton(
             onClick()
         },
         modifier = modifier
+            .weight(1f)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             },
         interactionSource = interactionSource,
         shape = CircleShape,
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+        color = containerColor,
+        border = BorderStroke(1.dp, appOutlinedBorderColor()),
     ) {
         Box(
-            modifier = Modifier.size(48.dp),
+            modifier = Modifier
+                .size(48.dp),
             contentAlignment = Alignment.Center,
         ) {
             Icon(

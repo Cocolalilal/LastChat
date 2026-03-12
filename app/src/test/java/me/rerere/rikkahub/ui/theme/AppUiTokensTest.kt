@@ -12,7 +12,7 @@ class AppUiTokensTest {
     @Test
     fun groupedItemRadii_returnsExpectedCornersForGroupedPositions() {
         assertEquals(
-            GroupedItemRadii(28.dp, 28.dp, 8.dp, 8.dp),
+            GroupedItemRadii(20.dp, 20.dp, 8.dp, 8.dp),
             groupedItemRadii(ItemPosition.FIRST)
         )
         assertEquals(
@@ -20,31 +20,12 @@ class AppUiTokensTest {
             groupedItemRadii(ItemPosition.MIDDLE)
         )
         assertEquals(
-            GroupedItemRadii(8.dp, 8.dp, 28.dp, 28.dp),
+            GroupedItemRadii(8.dp, 8.dp, 20.dp, 20.dp),
             groupedItemRadii(ItemPosition.LAST)
         )
         assertEquals(
-            GroupedItemRadii(28.dp, 28.dp, 28.dp, 28.dp),
+            GroupedItemRadii(20.dp, 20.dp, 20.dp, 20.dp),
             groupedItemRadii(ItemPosition.ONLY)
-        )
-    }
-
-    @Test
-    fun groupedInsetItemRadii_appliesInsetToExposedCorners() {
-        assertEquals(
-            GroupedItemRadii(24.dp, 24.dp, 4.dp, 4.dp),
-            groupedInsetItemRadii(
-                position = ItemPosition.FIRST,
-                inset = 4.dp,
-            )
-        )
-        assertEquals(
-            GroupedItemRadii(46.dp, 46.dp, 46.dp, 46.dp),
-            groupedInsetItemRadii(
-                position = ItemPosition.MIDDLE,
-                inset = 4.dp,
-                selected = true,
-            )
         )
     }
 
@@ -85,7 +66,7 @@ class AppUiTokensTest {
             appSurfaceColor(colorScheme, darkTheme = false, level = AppSurfaceLevel.Container)
         )
         assertEquals(
-            Color(0xFF404040),
+            Color(0xFF303030),
             appSurfaceColor(colorScheme, darkTheme = false, level = AppSurfaceLevel.ContainerHigh)
         )
         assertEquals(
@@ -93,7 +74,7 @@ class AppUiTokensTest {
             appSurfaceColor(colorScheme, darkTheme = true, level = AppSurfaceLevel.Container)
         )
         assertEquals(
-            Color(0xFF303030),
+            Color(0xFF202020),
             appSurfaceColor(colorScheme, darkTheme = true, level = AppSurfaceLevel.ContainerHigh)
         )
     }

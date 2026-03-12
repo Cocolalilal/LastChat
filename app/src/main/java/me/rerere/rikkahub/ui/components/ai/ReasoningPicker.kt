@@ -59,7 +59,6 @@ import kotlinx.coroutines.launch
 import androidx.compose.material3.IconButton
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.groupedItemRadii
-import me.rerere.rikkahub.ui.theme.nestedSurfaceColor
 import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 
 @Composable
@@ -225,7 +224,7 @@ private fun ReasoningOptionItem(
             .fillMaxWidth()
             .clip(itemShape)
             .background(
-                color = if (selected) MaterialTheme.colorScheme.primaryContainer else nestedSurfaceColor()
+                color = if (selected) MaterialTheme.colorScheme.primaryContainer else placedSurfaceColor()
             )
             .clickable {
                 haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
