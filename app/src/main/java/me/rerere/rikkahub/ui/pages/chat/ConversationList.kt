@@ -41,9 +41,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -78,7 +78,6 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Memory
-import androidx.compose.material.icons.rounded.Search
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.model.Conversation
@@ -87,7 +86,6 @@ import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.extendColors
-import me.rerere.rikkahub.ui.theme.nestedSurfaceColor
 import me.rerere.rikkahub.utils.toLocalString
 import java.time.LocalDate
 import java.time.ZoneId
@@ -188,31 +186,16 @@ fun ColumnScope.ConversationList(
                             onSearchExpandedChange(true)
                         }
                     },
-                placeholder = {
-                    Text(stringResource(id = R.string.chat_page_search_placeholder))
-                },
-                singleLine = true,
                 shape = RoundedCornerShape(50),
-                leadingIcon = {
-                    Icon(Icons.Rounded.Search, contentDescription = null)
-                },
-                trailingIcon = if (searchQuery.isNotEmpty()) {
-                    {
-                        IconButton(onClick = { onSearchQueryChange("") }) {
-                            Icon(Icons.Rounded.Close, contentDescription = null)
-                        }
-                    }
-                } else {
-                    null
-                },
                 colors = TextFieldDefaults.colors(
-                    focusedContainerColor = nestedSurfaceColor(),
-                    unfocusedContainerColor = nestedSurfaceColor(),
-                    disabledContainerColor = nestedSurfaceColor(),
                     focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent,
                     disabledIndicatorColor = Color.Transparent,
-                )
+                ),
+                placeholder = {
+                    Text(stringResource(id = R.string.chat_page_search_placeholder))
+                },
+                singleLine = true
             )
         }
 
@@ -587,7 +570,7 @@ private fun ConversationItem(
                 expanded = showDropdownMenu,
                 onDismissRequest = { showDropdownMenu = false },
                 shape = RoundedCornerShape(20.dp),
-                containerColor = nestedSurfaceColor(),
+                containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
             ) {
                 DropdownMenuItem(
                     text = {

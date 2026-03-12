@@ -146,12 +146,12 @@ private fun SkillSelectionCard(
     onClick: () -> Unit,
     onToggle: (Boolean) -> Unit
 ) {
-    val shape = groupedItemShape(position = position)
+    val shape = groupedItemShape(position = position, selected = isEnabled)
 
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = placedSurfaceColor(),
-            contentColor = MaterialTheme.colorScheme.onSurface,
+            containerColor = if (isEnabled) MaterialTheme.colorScheme.primaryContainer else placedSurfaceColor(),
+            contentColor = if (isEnabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
         ),
         shape = shape,
         onClick = onClick
@@ -165,14 +165,14 @@ private fun SkillSelectionCard(
         ) {
             Surface(
                 shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceVariant,
+                color = if (isEnabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
                 modifier = Modifier.size(40.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = ModeIcons.getIcon(skill.icon ?: "category"),
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = if (isEnabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }

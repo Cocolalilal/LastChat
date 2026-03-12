@@ -14,11 +14,14 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.R
+<<<<<<< HEAD
 import me.rerere.rikkahub.ui.components.ui.AppActionMenuContent
 import me.rerere.rikkahub.ui.components.ui.AppActionMenuDestructiveItem
 import me.rerere.rikkahub.ui.components.ui.AppActionMenuItem
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.placedSurfaceColor
+=======
+>>>>>>> parent of f7993ce (Working on making the UI standardization actually work)
 
 /**
  * Actions available for user messages via long-press.
@@ -50,8 +53,12 @@ fun UserMessageDropdown(
         onDismissRequest = onDismissRequest,
         modifier = modifier,
         offset = offset,
+<<<<<<< HEAD
         shape = AppShapes.CardMedium,
         containerColor = placedSurfaceColor(),
+=======
+        shape = MaterialTheme.shapes.medium,
+>>>>>>> parent of f7993ce (Working on making the UI standardization actually work)
     ) {
         AppActionMenuContent(
             destructiveAction = {

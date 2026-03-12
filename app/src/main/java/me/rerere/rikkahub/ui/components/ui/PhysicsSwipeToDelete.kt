@@ -92,7 +92,6 @@ fun PhysicsSwipeToDelete(
     modifier: Modifier = Modifier,
     onDelete: () -> Unit,
     deleteEnabled: Boolean = true,
-    selected: Boolean = false,
     position: ItemPosition = ItemPosition.ONLY,
     groupCornerRadius: Dp = AppShapes.GroupedOuterRadius,
     itemCornerRadius: Dp = AppShapes.GroupedInnerRadius,
@@ -106,7 +105,7 @@ fun PhysicsSwipeToDelete(
     val scope = rememberCoroutineScope()
     
     // Physics parameters - when delete is disabled, make it much harder to move
-    val dragFriction = if (deleteEnabled) 0.6f else 0.06f // Locked rows should barely move
+    val dragFriction = if (deleteEnabled) 0.6f else 0.15f // Item moves at 60% or 15% of finger speed
     val revealDistancePx = with(density) { 140.dp.toPx() }
     val unlockThresholdPx = revealDistancePx * 0.25f // 1/4 of reveal distance = 35dp
     val magneticPullStrength = 0.3f // How strongly item "sticks" before unlock
@@ -127,7 +126,7 @@ fun PhysicsSwipeToDelete(
     
     // Report drag progress for neighbor coordination
     LaunchedEffect(offsetX.value, isUnlocked, isDragging) {
-        if (deleteEnabled && isDragging && !isUnlocked) {
+        if (isDragging && !isUnlocked) {
             onDragProgress?.invoke(offsetX.value, isUnlocked)
         }
     }
@@ -137,10 +136,7 @@ fun PhysicsSwipeToDelete(
     var wasNeighborInfluenced by remember { mutableStateOf(false) }
     
     LaunchedEffect(neighborOffset) {
-        if (!deleteEnabled) {
-            animatedNeighborOffset.snapTo(0f)
-            wasNeighborInfluenced = false
-        } else if (neighborOffset != 0f) {
+        if (neighborOffset != 0f) {
             animatedNeighborOffset.snapTo(neighborOffset)
             wasNeighborInfluenced = true
         } else if (wasNeighborInfluenced) {
@@ -154,11 +150,7 @@ fun PhysicsSwipeToDelete(
     }
     
     // Total offset is own drag + neighbor influence
-    val totalOffset = if (deleteEnabled) {
-        offsetX.value + animatedNeighborOffset.value
-    } else {
-        offsetX.value
-    }
+    val totalOffset = offsetX.value + animatedNeighborOffset.value
     
     // Calculate unlock progress (0 = locked, 1 = unlocked) - only for own drag, not neighbor
     val unlockProgress by remember {
@@ -175,8 +167,11 @@ fun PhysicsSwipeToDelete(
     }
     val revealRadii = swipeRevealRadii(
         position = position,
+<<<<<<< HEAD
         selected = selected,
         revealProgress = revealProgress,
+=======
+>>>>>>> parent of f7993ce (Working on making the UI standardization actually work)
         groupRadius = groupCornerRadius,
         itemRadius = itemCornerRadius,
     )
@@ -204,6 +199,17 @@ fun PhysicsSwipeToDelete(
 
     val shape by remember {
         derivedStateOf {
+<<<<<<< HEAD
+=======
+            // Only interpolate corners for own unlock progress (not neighbor influence)
+            val ownUnlockProgress = if (neighborOffset == 0f) unlockProgress else 0f
+            
+            val finalTopStart = animatedTopRadius + (selectedRadiusPx - animatedTopRadius) * ownUnlockProgress
+            val finalTopEnd = animatedTopRadius + (selectedRadiusPx - animatedTopRadius) * ownUnlockProgress
+            val finalBottomEnd = animatedBottomRadius + (selectedRadiusPx - animatedBottomRadius) * ownUnlockProgress
+            val finalBottomStart = animatedBottomRadius + (selectedRadiusPx - animatedBottomRadius) * ownUnlockProgress
+            
+>>>>>>> parent of f7993ce (Working on making the UI standardization actually work)
             RoundedCornerShape(
                 topStart = with(density) { animatedTopStart.toDp() },
                 topEnd = with(density) { animatedTopEnd.toDp() },
@@ -300,8 +306,8 @@ fun PhysicsSwipeToDelete(
                                     offsetX.animateTo(
                                         targetValue = 0f,
                                         animationSpec = spring(
-                                            dampingRatio = 0.72f,
-                                            stiffness = Spring.StiffnessHigh
+                                            dampingRatio = 0.55f,
+                                            stiffness = Spring.StiffnessMediumLow
                                         )
                                     )
                                 } else if (offsetX.value.absoluteValue > unlockThresholdPx) {
@@ -337,11 +343,8 @@ fun PhysicsSwipeToDelete(
                             isDragging = false
                             scope.launch {
                                 offsetX.animateTo(
-                                    targetValue = if (deleteEnabled && isUnlocked) -revealDistancePx else 0f,
-                                    animationSpec = spring(
-                                        dampingRatio = if (deleteEnabled) 0.6f else 0.72f,
-                                        stiffness = if (deleteEnabled) Spring.StiffnessMedium else Spring.StiffnessHigh
-                                    )
+                                    targetValue = if (isUnlocked) -revealDistancePx else 0f,
+                                    animationSpec = spring(dampingRatio = 0.6f)
                                 )
                             }
                             onDragEnd?.invoke()
@@ -355,7 +358,7 @@ fun PhysicsSwipeToDelete(
                             // Only allow left swipe (negative direction)
                             if (dragAmount < 0 || currentOffset < 0) {
                                 // Apply friction - movement is slower than finger
-                                val friction = if (deleteEnabled && currentOffset.absoluteValue < unlockThresholdPx && !isUnlocked) {
+                                val friction = if (currentOffset.absoluteValue < unlockThresholdPx && !isUnlocked) {
                                     // Extra resistance before unlock threshold (magnetic pull)
                                     dragFriction * (1f - magneticPullStrength * (currentOffset.absoluteValue / unlockThresholdPx))
                                 } else {
@@ -363,10 +366,7 @@ fun PhysicsSwipeToDelete(
                                 }
                                 
                                 newOffset = (currentOffset + dragAmount * friction)
-                                    .coerceIn(
-                                        if (deleteEnabled) -revealDistancePx * 1.2f else -revealDistancePx * 0.18f,
-                                        0f
-                                    )
+                                    .coerceIn(-revealDistancePx * 1.2f, 0f)
                                 
                                 scope.launch {
                                     offsetX.snapTo(newOffset)
@@ -376,9 +376,9 @@ fun PhysicsSwipeToDelete(
                                 val wasUnderThreshold = currentOffset.absoluteValue < unlockThresholdPx
                                 val isOverThreshold = newOffset.absoluteValue >= unlockThresholdPx
                                 
-                                if (deleteEnabled && wasUnderThreshold && isOverThreshold && !isUnlocked) {
+                                if (wasUnderThreshold && isOverThreshold && !isUnlocked) {
                                     haptics.perform(HapticPattern.Pop)
-                                } else if (deleteEnabled && !wasUnderThreshold && !isOverThreshold && currentOffset.absoluteValue > 0) {
+                                } else if (!wasUnderThreshold && !isOverThreshold && currentOffset.absoluteValue > 0) {
                                     haptics.perform(HapticPattern.Tick)
                                 }
                             }

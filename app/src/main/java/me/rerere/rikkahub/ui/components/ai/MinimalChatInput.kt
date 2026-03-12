@@ -104,10 +104,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -131,20 +133,17 @@ import me.rerere.rikkahub.ui.components.ui.permission.PermissionCamera
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionManager
 import me.rerere.rikkahub.ui.components.ui.permission.rememberPermissionState
 import me.rerere.rikkahub.ui.context.LocalSettings
+import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.AppPickerRow
-import me.rerere.rikkahub.ui.components.ui.AppPickerRowStyle
 import me.rerere.rikkahub.ui.components.ui.GroupedStack
 import me.rerere.rikkahub.ui.theme.AppShapes
-import me.rerere.rikkahub.ui.theme.GroupedAxis
 import me.rerere.rikkahub.ui.theme.appOutlinedBorderColor
 import me.rerere.rikkahub.ui.theme.groupedItemShape
-import me.rerere.rikkahub.ui.theme.groupedInsetItemShape
-import me.rerere.rikkahub.ui.theme.nestedSurfaceColor
 import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 import me.rerere.rikkahub.utils.createChatFilesByContents
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
@@ -229,14 +228,19 @@ fun MinimalChatInput(
         }
     }
 
+    // OLED dark mode handling for picker sheet
+    val amoledMode by me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode()
+    val isDarkMode = me.rerere.rikkahub.ui.theme.LocalDarkMode.current
     // Picker sheet styling - optical roundness: outer (40dp) = button corners (24dp) + padding (16dp)
+    // Sheet uses the shared neutral placed surface, buttons inside handle OLED colors.
+    val pickerSheetColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
     val pickerSheetShape = RoundedCornerShape(topStart = 40.dp, topEnd = 40.dp)
     
     // Camera permission - must be in parent, not inside ModalBottomSheet
     val cameraPermission = rememberPermissionState(PermissionCamera)
     
     var showPicker by remember { mutableStateOf(false) }
-    var showModelPicker by remember { mutableStateOf(false) }
+    var isFocused by remember { mutableStateOf(false) }
     val outlineColor = appOutlinedBorderColor()
     val activeChatModel = settings.getCurrentChatModel()
     val activeProvider = activeChatModel?.findProvider(providers = settings.providers)
@@ -249,6 +253,7 @@ fun MinimalChatInput(
     
     // Collapse picker when keyboard opens
     val imeVisible = WindowInsets.isImeVisible
+    val focusManager = LocalFocusManager.current
     LaunchedEffect(imeVisible) {
         if (imeVisible) {
             showPicker = false
@@ -406,6 +411,7 @@ fun MinimalChatInput(
                         }
                     }
                 }
+<<<<<<< HEAD
                 val askUserQuestionStage = askUserMode?.stage as? AskUserComposerStage.Question
                 val askUserCanAdvance = when (askUserMode?.stage) {
                     is AskUserComposerStage.Question -> inputText.trim().isNotBlank()
@@ -448,22 +454,27 @@ fun MinimalChatInput(
                 val inputEndPadding = if (isExpandedAction) 76.dp else 48.dp
                 val inputVerticalPadding = if (isAskUserMode) 12.dp else 8.dp
 
+=======
+                // Text field capsule with embedded action button
+                // Corner radius = 24dp (user confirmed this was correct)
+>>>>>>> parent of f7993ce (Working on making the UI standardization actually work)
                 Surface(
-                    shape = RoundedCornerShape(24.dp),
+                    shape = RoundedCornerShape(24.dp),  // Fixed radius - correct per user
                     color = placedSurfaceColor(),
                     border = BorderStroke(1.dp, outlineColor),
                     modifier = Modifier
                         .weight(1f)
-                        .heightIn(min = 48.dp)
+                        .heightIn(min = 48.dp)  // Matches plus button, allows 4dp padding all around
                 ) {
                     Column(
                         modifier = Modifier.fillMaxWidth()
                     ) {
+                        // Editing indicator - shown when editing a message
                         if (state.isEditing() && !isAskUserMode) {
                             Surface(
-                                color = nestedSurfaceColor(),
-                                shape = RoundedCornerShape(16.dp),
-                                modifier = Modifier.padding(start = 12.dp, top = 10.dp, end = 12.dp, bottom = 4.dp)
+                                color = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+                                shape = RoundedCornerShape(16.dp),  // Optical roundness: 24dp outer - 8dp padding = 16dp
+                                modifier = Modifier.padding(start = 12.dp, top = 10.dp, end = 8.dp, bottom = 4.dp)  // Aligned with text
                             ) {
                                 Row(
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -490,14 +501,15 @@ fun MinimalChatInput(
                                 }
                             }
                         }
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth(),
-                            verticalAlignment = Alignment.Bottom
+                        
+                        // Text input with content receiver for paste + overlaid action button
+                        Box(
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Box(
+                            TextField(
+                                state = state.textContent,
                                 modifier = Modifier
+<<<<<<< HEAD
                                     .weight(1f)
                                     .defaultMinSize(minHeight = 1.dp),
                             ) {
@@ -532,30 +544,91 @@ fun MinimalChatInput(
                                         end = inputEndPadding,
                                         top = inputVerticalPadding,
                                         bottom = inputVerticalPadding
+=======
+                                    .fillMaxWidth()
+                                    .defaultMinSize(minHeight = 1.dp)  // Override internal min height (56dp)
+                                    .focusRequester(state.focusRequester)
+                                    .contentReceiver(receiveContentListener)
+                                    .onFocusChanged { isFocused = it.isFocused },
+                                readOnly = askUserMode?.stage is AskUserComposerStage.Review,
+                                placeholder = {
+                                    Text(
+                                        text = when (askUserMode?.stage) {
+                                            AskUserComposerStage.Review -> "Confirm your answers"
+                                            is AskUserComposerStage.Question -> "Type your own answer"
+                                            null -> "Ask ${assistant.name}"
+                                        },
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+>>>>>>> parent of f7993ce (Working on making the UI standardization actually work)
                                     )
+                                },
+                                lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),  // MultiLine for proper Enter key
+                                colors = TextFieldDefaults.colors().copy(
+                                    unfocusedIndicatorColor = Color.Transparent,
+                                    focusedIndicatorColor = Color.Transparent,
+                                    focusedContainerColor = Color.Transparent,
+                                    unfocusedContainerColor = Color.Transparent,
+                                ),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                    start = 16.dp,
+                                    end = if (isAskUserMode) 88.dp else 48.dp,
+                                    top = 12.dp,
+                                    bottom = 12.dp
                                 )
-
-                                Box(
-                                    modifier = Modifier
-                                        .align(Alignment.BottomEnd)
-                                        .padding(4.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
+                            )
+                            
+                            // Action button - bottom-right, extra bottom padding for visual alignment
+                              Box(
+                                  modifier = Modifier
+                                      .align(Alignment.BottomEnd)
+                                      .padding(start = 4.dp, end = 6.dp, top = 4.dp, bottom = 6.dp)
+                              ) {
+                                val askUserQuestionStage = askUserMode?.stage as? AskUserComposerStage.Question
+                                val askUserCanAdvance = when (askUserMode?.stage) {
+                                    is AskUserComposerStage.Question -> inputText.trim().isNotBlank()
+                                    AskUserComposerStage.Review -> true
+                                    null -> false
+                                }
+                                val currentAction = when {
+                                    state.loading -> "loading"
+                                    askUserMode?.stage is AskUserComposerStage.Review -> "confirm"
+                                    askUserQuestionStage != null -> {
+                                        val isLastQuestion =
+                                            askUserQuestionStage.index == askUserQuestionStage.total - 1
+                                        when {
+                                            askUserCanAdvance && isLastQuestion -> "review"
+                                            askUserCanAdvance -> "next"
+                                            isLastQuestion -> "review_disabled"
+                                            else -> "next_disabled"
+                                        }
+                                    }
+                                    !state.isEmpty() -> "send"
+                                    else -> "picker"
+                                }
+                                
+                                val containerColor by animateColorAsState(
+                                    targetValue = when (currentAction) {
+                                        "loading" -> MaterialTheme.colorScheme.errorContainer
+                                        "send", "next", "review", "confirm" -> MaterialTheme.colorScheme.primary
+                                        "next_disabled", "review_disabled" -> me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+                                        else -> Color.Transparent
+                                    },
+                                    label = "ActionContainerColor"
+                                )
+                                
                                     Surface(
-                                        onClick = {
+                                        onClick = { 
                                             when (currentAction) {
-                                                "send",
-                                                "loading",
-                                                "next",
-                                                "review",
-                                                "confirm" -> sendMessage()
-                                                "model" -> {
+                                                "send", "loading", "next", "review", "confirm" -> sendMessage()
+                                                "picker" -> {
                                                     haptics.perform(HapticPattern.Pop)
+                                                    showPicker = true
                                                     keyboardController?.hide()
-                                                    showModelPicker = true
                                                 }
                                             }
                                         },
+<<<<<<< HEAD
                                         shape = if (isExpandedAction) RoundedCornerShape(18.dp) else CircleShape,
                                         color = actionContainerColor,
                                         modifier = if (isExpandedAction) {
@@ -643,18 +716,97 @@ fun MinimalChatInput(
                                                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                                                 )
                                                             }
+=======
+                                        shape = if (isAskUserMode) RoundedCornerShape(18.dp) else CircleShape,
+                                        color = containerColor,
+                                        modifier = Modifier
+                                            .height(36.dp)
+                                        .defaultMinSize(minWidth = if (isAskUserMode) 74.dp else 36.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                        AnimatedContent(
+                                            targetState = currentAction,
+                                            transitionSpec = { fadeIn() togetherWith fadeOut() },
+                                            label = "ActionContent"
+                                        ) { action ->
+                                            when (action) {
+                                                "loading" -> {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.Stop,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(18.dp),
+                                                        tint = MaterialTheme.colorScheme.onErrorContainer
+                                                    )
+                                                }
+                                                "send" -> {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.ArrowUpward,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(18.dp),
+                                                        tint = MaterialTheme.colorScheme.onPrimary
+                                                    )
+                                                }
+                                                "next", "next_disabled" -> {
+                                                    Text(
+                                                        text = "Next",
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        color = if (currentAction == "next_disabled") {
+                                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                                        } else {
+                                                            MaterialTheme.colorScheme.onPrimary
+                                                        }
+                                                    )
+                                                }
+                                                "review", "review_disabled" -> {
+                                                    Text(
+                                                        text = "Review",
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        color = if (currentAction == "review_disabled") {
+                                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                                        } else {
+                                                            MaterialTheme.colorScheme.onPrimary
+                                                        }
+                                                    )
+                                                }
+                                                "confirm" -> {
+                                                    Text(
+                                                        text = "Confirm",
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        color = MaterialTheme.colorScheme.onPrimary
+                                                    )
+                                                }
+                                                "picker" -> {
+                                                    Box(
+                                                        modifier = Modifier.width(34.dp),
+                                                        contentAlignment = Alignment.CenterEnd
+                                                    ) {
+                                                        if (activeChatModel != null) {
+                                                            me.rerere.rikkahub.ui.components.ui.ModelIcon(
+                                                                model = activeChatModel,
+                                                                provider = activeProvider,
+                                                                modifier = Modifier.size(28.dp),
+                                                                color = Color.Transparent,
+                                                            )
+                                                        } else {
+                                                            Icon(
+                                                                imageVector = Icons.Rounded.ViewModule,
+                                                                contentDescription = stringResource(R.string.setting_model_page_chat_model),
+                                                                modifier = Modifier.size(20.dp),
+                                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            )
+>>>>>>> parent of f7993ce (Working on making the UI standardization actually work)
                                                         }
                                                     }
                                                 }
                                             }
                                         }
-                                    }                               
+                                    }
                                 }
                             }
-                        }
-                    }
-                }
-            }
+                        }  // Box for TextField + Action button ends
+                    }  // Column ends
+                }  // Surface ends
+            }  // Row ends
 
             bottomAccessory?.invoke()
         }  // Column ends
@@ -687,15 +839,6 @@ containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
                 onDismiss = { showPicker = false }
             )
         }
-    }
-
-    if (showModelPicker && !isAskUserMode) {
-        ChatModelPickerSheet(
-            settings = settings,
-            assistant = assistant,
-            onUpdateChatModel = onUpdateChatModel,
-            onDismiss = { showModelPicker = false }
-        )
     }
 }
 
@@ -831,24 +974,10 @@ private fun MinimalPickerContent(
         lastValidProviderIndex.coerceIn(0, (settings.searchServices.size - 1).coerceAtLeast(0))
     }
     
-    // Nested grouped buttons sit inside a 4dp padded shell, so their exposed corners
-    // need inset-adjusted radii to keep the outer roundness optically correct.
-    val uploadButtonInset = 4.dp
-    val leftButtonShape = groupedInsetItemShape(
-        position = ItemPosition.FIRST,
-        inset = uploadButtonInset,
-        axis = GroupedAxis.Horizontal,
-    )
-    val middleButtonShape = groupedInsetItemShape(
-        position = ItemPosition.MIDDLE,
-        inset = uploadButtonInset,
-        axis = GroupedAxis.Horizontal,
-    )
-    val rightButtonShape = groupedInsetItemShape(
-        position = ItemPosition.LAST,
-        inset = uploadButtonInset,
-        axis = GroupedAxis.Horizontal,
-    )
+    // Shared grouped button shapes for the picker actions.
+    val leftButtonShape = groupedItemShape(ItemPosition.FIRST)
+    val middleButtonShape = groupedItemShape(ItemPosition.MIDDLE)
+    val rightButtonShape = groupedItemShape(ItemPosition.LAST)
 
     fun importImages(
         uris: List<Uri>,
@@ -985,10 +1114,11 @@ private fun MinimalPickerContent(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        // File upload buttons - only this cluster stays filled; lower rows stay flat on the sheet.
+        // File upload buttons - grouped with corner shapes (no outer container)
         Surface(
             shape = AppShapes.Grouped,
-            color = Color.Transparent,
+            color = placedSurfaceColor(),
+            border = BorderStroke(1.dp, appOutlinedBorderColor()),
             modifier = Modifier.fillMaxWidth()
         ) {
             Row(
@@ -1207,13 +1337,57 @@ private fun MinimalPickerContent(
         )
     }
     
+    // Model picker sheet - direct ModalBottomSheet (not ModelSelector which shows its own button)
     if (showModelPicker) {
-        ChatModelPickerSheet(
-            settings = settings,
-            assistant = assistant,
-            onUpdateChatModel = onUpdateChatModel,
-            onDismiss = { showModelPicker = false }
-        )
+        val modelPickerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        val filteredProviders = settings.providers.filter { 
+            it.enabled && it.models.any { model -> model.type == me.rerere.ai.provider.ModelType.CHAT }
+        }
+        
+        ModalBottomSheet(
+containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
+            onDismissRequest = { showModelPicker = false },
+            sheetState = modelPickerSheetState,
+            sheetGesturesEnabled = false,
+            dragHandle = {
+                IconButton(
+                    onClick = {
+                        scope.launch {
+                            modelPickerSheetState.hide()
+                            showModelPicker = false
+                        }
+                    }
+                ) {
+                    Icon(Icons.Rounded.KeyboardArrowDown, null)
+                }
+            }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxHeight(0.8f)
+                    .imePadding(),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                ModelList(
+                    currentModel = assistant.chatModelId ?: settings.chatModelId,
+                    providers = filteredProviders,
+                    modelType = me.rerere.ai.provider.ModelType.CHAT,
+                    onSelect = { selectedModel: Model ->
+                        onUpdateChatModel(selectedModel)
+                        scope.launch {
+                            modelPickerSheetState.hide()
+                            showModelPicker = false
+                        }
+                    },
+                    onDismiss = {
+                        scope.launch {
+                            modelPickerSheetState.hide()
+                            showModelPicker = false
+                        }
+                    }
+                )
+            }
+        }
     }
     
     // Skills picker sheet
@@ -1303,65 +1477,6 @@ containerColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor(),
 }
 
 @Composable
-private fun ChatModelPickerSheet(
-    settings: Settings,
-    assistant: Assistant,
-    onUpdateChatModel: (Model) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val scope = rememberCoroutineScope()
-    val modelPickerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val filteredProviders = settings.providers.filter {
-        it.enabled && it.models.any { model -> model.type == me.rerere.ai.provider.ModelType.CHAT }
-    }
-
-    ModalBottomSheet(
-        containerColor = placedSurfaceColor(),
-        onDismissRequest = onDismiss,
-        sheetState = modelPickerSheetState,
-        sheetGesturesEnabled = false,
-        dragHandle = {
-            IconButton(
-                onClick = {
-                    scope.launch {
-                        modelPickerSheetState.hide()
-                        onDismiss()
-                    }
-                }
-            ) {
-                Icon(Icons.Rounded.KeyboardArrowDown, null)
-            }
-        }
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxHeight(0.8f)
-                .imePadding(),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            ModelList(
-                currentModel = assistant.chatModelId ?: settings.chatModelId,
-                providers = filteredProviders,
-                modelType = me.rerere.ai.provider.ModelType.CHAT,
-                onSelect = { selectedModel: Model ->
-                    onUpdateChatModel(selectedModel)
-                    scope.launch {
-                        modelPickerSheetState.hide()
-                        onDismiss()
-                    }
-                },
-                onDismiss = {
-                    scope.launch {
-                        modelPickerSheetState.hide()
-                        onDismiss()
-                    }
-                }
-            )
-        }
-    }
-}
-
-@Composable
 private fun MinimalFileButton(
     icon: ImageVector,
     label: String,
@@ -1439,10 +1554,16 @@ private fun MinimalFileButtonGrouped(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
+    // OLED-aware button color (same as floating toolbar's BigIconTextButton)
+    val amoledMode by me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode()
+    val isDarkMode = me.rerere.rikkahub.ui.theme.LocalDarkMode.current
+    val isAmoled = amoledMode && isDarkMode
+    val buttonColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+    
     Surface(
         onClick = onClick,
         shape = shape,
-        color = nestedSurfaceColor(),
+        color = buttonColor,
         modifier = modifier
     ) {
         Column(
@@ -1474,10 +1595,16 @@ private fun MinimalFileButtonGroupedIconOnly(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
+    // OLED-aware button color (same as floating toolbar's BigIconTextButton)
+    val amoledMode by me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode()
+    val isDarkMode = me.rerere.rikkahub.ui.theme.LocalDarkMode.current
+    val isAmoled = amoledMode && isDarkMode
+    val buttonColor = me.rerere.rikkahub.ui.theme.placedSurfaceColor()
+    
     Surface(
         onClick = onClick,
         shape = shape,
-        color = nestedSurfaceColor(),
+        color = buttonColor,
         modifier = modifier
     ) {
         Box(
@@ -1505,7 +1632,6 @@ private fun MinimalPickerItem(
         icon = icon,
         title = title,
         subtitle = subtitle,
-        style = AppPickerRowStyle.FlatTransparent,
         onClick = onClick,
     )
 }

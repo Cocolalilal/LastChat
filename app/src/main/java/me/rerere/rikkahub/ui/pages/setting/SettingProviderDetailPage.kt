@@ -1377,8 +1377,7 @@ private fun AddNewModelFab(
     AppFloatingActionButton(
         onClick = { 
             dialogState.open(Model())
-        },
-        emphasis = me.rerere.rikkahub.ui.components.ui.AppFloatingActionEmphasis.Primary,
+        }
     ) {
         Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.setting_provider_page_add_model))
     }

@@ -61,9 +61,7 @@ import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.FormItem
-import me.rerere.rikkahub.ui.components.ui.rememberGroupedStackPosition
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
-import me.rerere.rikkahub.ui.theme.groupedItemShape
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
 
@@ -614,10 +612,9 @@ private fun ModelFeatureCard(
     title: @Composable () -> Unit,
     actions: @Composable RowScope.() -> Unit
 ) {
-    val position = rememberGroupedStackPosition()
     Card(
         modifier = modifier,
-        shape = groupedItemShape(position),
+        shape = RoundedCornerShape(10.dp),
         colors = androidx.compose.material3.CardDefaults.cardColors(
             containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor()
         )

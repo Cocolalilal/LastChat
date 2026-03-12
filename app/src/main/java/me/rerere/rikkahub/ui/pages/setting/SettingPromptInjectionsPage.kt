@@ -45,7 +45,6 @@ import me.rerere.rikkahub.data.model.Skill
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.AppFloatingActionButton
-import me.rerere.rikkahub.ui.components.ui.AppFloatingActionEmphasis
 import me.rerere.rikkahub.ui.components.ui.AppFloatingActionColumn
 import me.rerere.rikkahub.ui.components.ui.AppFloatingTabBar
 import me.rerere.rikkahub.ui.components.ui.AppFloatingTabButton
@@ -53,7 +52,10 @@ import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+<<<<<<< HEAD
 import me.rerere.rikkahub.ui.theme.settingsSurfaceColor
+=======
+>>>>>>> parent of f7993ce (Working on making the UI standardization actually work)
 import me.rerere.rikkahub.utils.LorebookExportImport
 import me.rerere.rikkahub.utils.SkillExportImport
 import org.koin.androidx.compose.koinViewModel
@@ -152,7 +154,8 @@ fun SettingPromptInjectionsPage(
                 }
 
                 AppFloatingActionColumn(
-                    modifier = Modifier.align(Alignment.BottomEnd)
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
                 ) {
                     AppFloatingActionButton(
                         onClick = {
@@ -162,8 +165,11 @@ fun SettingPromptInjectionsPage(
                                 lorebookImportLauncher.launch(arrayOf("application/json", "*/*"))
                             }
                         },
+<<<<<<< HEAD
                         containerColor = settingsSurfaceColor(),
                         contentColor = MaterialTheme.colorScheme.onSurface,
+=======
+>>>>>>> parent of f7993ce (Working on making the UI standardization actually work)
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.Input,
@@ -178,8 +184,7 @@ fun SettingPromptInjectionsPage(
                             } else {
                                 showAddLorebookDialog = true
                             }
-                        },
-                        emphasis = AppFloatingActionEmphasis.Primary,
+                        }
                     ) {
                         Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.add))
                     }

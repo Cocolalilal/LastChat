@@ -59,7 +59,6 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -89,11 +88,14 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
+<<<<<<< HEAD
 import me.rerere.rikkahub.ui.components.ui.AppSearchField
 import me.rerere.rikkahub.ui.components.ui.AppSearchFieldStyle
 import me.rerere.rikkahub.ui.components.ui.AppFloatingActionEmphasis
 import me.rerere.rikkahub.ui.components.ui.AppFloatingActionButton
 import me.rerere.rikkahub.ui.components.ui.AppFloatingActionColumn
+=======
+>>>>>>> parent of f7993ce (Working on making the UI standardization actually work)
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.OutlinedNumberInput
@@ -104,9 +106,12 @@ import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.groupedItemShape
+<<<<<<< HEAD
 import me.rerere.rikkahub.ui.theme.nestedSurfaceColor
 import me.rerere.rikkahub.ui.theme.placedSurfaceColor
 import me.rerere.rikkahub.ui.theme.settingsSurfaceColor
+=======
+>>>>>>> parent of f7993ce (Working on making the UI standardization actually work)
 import me.rerere.rikkahub.utils.plus
 import me.rerere.search.SearchCommonOptions
 import me.rerere.search.SearchService
@@ -231,7 +236,6 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
     
     // State for editing a service
     var editingService by remember { mutableStateOf<SearchServiceOptions?>(null) }
-    var showCommonOptions by remember { mutableStateOf(false) }
     
     // Move lazyListState outside for canScroll detection
     val lazyListState = rememberLazyListState()
@@ -260,40 +264,44 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
                 navigationIcon = {
                     BackButton()
                 },
-                actions = {}
-            )
-        },
-        floatingActionButton = {
-            AppFloatingActionColumn {
-                AppFloatingActionButton(
-                    onClick = { showCommonOptions = true },
-                ) {
-                    Icon(
-                        Icons.Rounded.Settings,
-                        contentDescription = stringResource(R.string.setting_page_search_common_options)
-                    )
-                }
-                AddSearchServiceButton(
-                    enableHaptics = settings.displaySetting.enableUIHaptics,
-                    trigger = { open ->
-                        AppFloatingActionButton(
-                            onClick = open,
-                            emphasis = AppFloatingActionEmphasis.Primary,
-                        ) {
-                            Icon(
-                                Icons.Rounded.Add,
-                                contentDescription = stringResource(R.string.setting_page_search_add_provider)
-                            )
+                actions = {
+                    var showCommonOptions by remember { mutableStateOf(false) }
+                    IconButton(
+                        onClick = {
+                            showCommonOptions = true
                         }
-                    }
-                ) { newService ->
-                    vm.updateSettings(
-                        settings.copy(
-                            searchServices = listOf(newService) + settings.searchServices
+                    ) {
+                        Icon(
+                            Icons.Rounded.Settings,
+                            contentDescription = stringResource(R.string.setting_page_search_common_options)
                         )
-                    )
+                    }
+
+                    AddSearchServiceButton(
+                        enableHaptics = settings.displaySetting.enableUIHaptics
+                    ) { newService ->
+                        vm.updateSettings(
+                            settings.copy(
+                                searchServices = listOf(newService) + settings.searchServices
+                            )
+                        )
+                    }
+                    
+                    if (showCommonOptions) {
+                        CommonOptionsDialog(
+                            settings = settings,
+                            onDismissRequest = { showCommonOptions = false },
+                            onUpdate = { options ->
+                                vm.updateSettings(
+                                    settings.copy(
+                                        searchCommonOptions = options
+                                    )
+                                )
+                            }
+                        )
+                    }
                 }
-            }
+            )
         },
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) {
@@ -321,20 +329,15 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
         var showDeleteDialog by remember { mutableStateOf(false) }
         var serviceToDelete by remember { mutableStateOf<SearchServiceOptions?>(null) }
 
-        val canScrollForward by remember { derivedStateOf { lazyListState.canScrollForward } }
-
-        Box(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .imePadding()
+                .imePadding(),
+            contentPadding = it + PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            state = lazyListState
         ) {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = it + PaddingValues(16.dp) + PaddingValues(bottom = 96.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-                state = lazyListState
-            ) {
-                itemsIndexed(settings.searchServices, key = { _, service -> service.id }) { index, service ->
+            itemsIndexed(settings.searchServices, key = { _, service -> service.id }) { index, service ->
                 val position = when {
                     settings.searchServices.size == 1 -> ItemPosition.ONLY
                     index == 0 -> ItemPosition.FIRST
@@ -422,24 +425,6 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
                         }
                     }
                 }
-                }
-            }
-
-            if (canScrollForward) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .height(48.dp)
-                        .background(
-                            brush = Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.Transparent,
-                                        MaterialTheme.colorScheme.background
-                                    )
-                                )
-                            )
-                )
             }
         }
         
@@ -475,20 +460,6 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
                     }) {
                         Text(stringResource(R.string.confirm))
                     }
-                }
-            )
-        }
-        
-        if (showCommonOptions) {
-            CommonOptionsDialog(
-                settings = settings,
-                onDismissRequest = { showCommonOptions = false },
-                onUpdate = { options ->
-                    vm.updateSettings(
-                        settings.copy(
-                            searchCommonOptions = options
-                        )
-                    )
                 }
             )
         }
@@ -666,19 +637,18 @@ containerColor = me.rerere.rikkahub.ui.theme.settingsSurfaceColor(),
 @Composable
 private fun AddSearchServiceButton(
     enableHaptics: Boolean,
-    trigger: @Composable ((() -> Unit) -> Unit) = { onOpen ->
-        IconButton(onClick = onOpen) {
-            Icon(Icons.Rounded.Add, stringResource(R.string.setting_page_search_add_provider))
-        }
-    },
     onAdd: (SearchServiceOptions) -> Unit
 ) {
     var showBottomSheet by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
 
-    trigger {
-        searchQuery = ""
-        showBottomSheet = true
+    IconButton(
+        onClick = {
+            searchQuery = ""
+            showBottomSheet = true
+        }
+    ) {
+        Icon(Icons.Rounded.Add, stringResource(R.string.setting_page_search_add_provider))
     }
 
     val haptics = rememberPremiumHaptics(enabled = enableHaptics)

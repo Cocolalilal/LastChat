@@ -14,7 +14,11 @@ class AppUiTokensTest {
     @Test
     fun groupedItemRadii_returnsExpectedCornersForGroupedPositions() {
         assertEquals(
+<<<<<<< HEAD
             GroupedItemRadii(24.dp, 24.dp, 8.dp, 8.dp),
+=======
+            GroupedItemRadii(20.dp, 20.dp, 8.dp, 8.dp),
+>>>>>>> parent of f7993ce (Working on making the UI standardization actually work)
             groupedItemRadii(ItemPosition.FIRST)
         )
         assertEquals(
@@ -22,16 +26,25 @@ class AppUiTokensTest {
             groupedItemRadii(ItemPosition.MIDDLE)
         )
         assertEquals(
+<<<<<<< HEAD
             GroupedItemRadii(8.dp, 8.dp, 24.dp, 24.dp),
             groupedItemRadii(ItemPosition.LAST)
         )
         assertEquals(
             GroupedItemRadii(24.dp, 24.dp, 24.dp, 24.dp),
+=======
+            GroupedItemRadii(8.dp, 8.dp, 20.dp, 20.dp),
+            groupedItemRadii(ItemPosition.LAST)
+        )
+        assertEquals(
+            GroupedItemRadii(20.dp, 20.dp, 20.dp, 20.dp),
+>>>>>>> parent of f7993ce (Working on making the UI standardization actually work)
             groupedItemRadii(ItemPosition.ONLY)
         )
     }
 
     @Test
+<<<<<<< HEAD
     fun groupedInsetItemRadii_appliesInsetToExposedCorners() {
         assertEquals(
             GroupedItemRadii(20.dp, 20.dp, 4.dp, 4.dp),
@@ -51,6 +64,8 @@ class AppUiTokensTest {
     }
 
     @Test
+=======
+>>>>>>> parent of f7993ce (Working on making the UI standardization actually work)
     fun groupedItemRadii_selectedAlwaysUsesPillShape() {
         assertEquals(
             GroupedItemRadii(50.dp, 50.dp, 50.dp, 50.dp),
@@ -88,7 +103,7 @@ class AppUiTokensTest {
             appSurfaceColor(colorScheme, darkTheme = false, level = AppSurfaceLevel.Container)
         )
         assertEquals(
-            Color(0xFF404040),
+            Color(0xFF303030),
             appSurfaceColor(colorScheme, darkTheme = false, level = AppSurfaceLevel.ContainerHigh)
         )
         assertEquals(
@@ -96,7 +111,7 @@ class AppUiTokensTest {
             appSurfaceColor(colorScheme, darkTheme = true, level = AppSurfaceLevel.Container)
         )
         assertEquals(
-            Color(0xFF303030),
+            Color(0xFF202020),
             appSurfaceColor(colorScheme, darkTheme = true, level = AppSurfaceLevel.ContainerHigh)
         )
         assertEquals(
