@@ -183,10 +183,8 @@ export function AssistantTurnMessage({
         <ChatMessageAvatarRow
           message={turn.displayMessage}
           hasMessageContent={hasMessageContent}
-          loading={loading}
           assistant={assistant}
           displaySetting={displaySetting}
-          model={model}
         />
 
         <AnimatePresence initial={false} mode="popLayout">

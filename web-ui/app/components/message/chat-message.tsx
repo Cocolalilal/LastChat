@@ -552,10 +552,8 @@ export const ChatMessage = React.memo(({
         <ChatMessageAvatarRow
           message={message}
           hasMessageContent={hasMessageContent}
-          loading={loading}
           assistant={assistant}
           displaySetting={displaySetting}
-          model={model}
         />
 
         <div

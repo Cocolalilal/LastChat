@@ -1,16 +1,13 @@
 import { useTranslation } from "react-i18next";
 
-import { AIIcon } from "~/components/ui/ai-icon";
 import { UIAvatar } from "~/components/ui/ui-avatar";
-import type { AssistantProfile, DisplaySetting, MessageDto, ProviderModel } from "~/types";
+import type { AssistantProfile, DisplaySetting, MessageDto } from "~/types";
 
 export interface ChatMessageAvatarRowProps {
   message: MessageDto;
   hasMessageContent: boolean;
-  loading: boolean;
   assistant?: AssistantProfile | null;
   displaySetting?: DisplaySetting | null;
-  model?: ProviderModel | null;
 }
 
 function formatMessageTimestamp(createdAt: string, locale?: string): string | null {
@@ -26,10 +23,8 @@ function formatMessageTimestamp(createdAt: string, locale?: string): string | nu
 export function ChatMessageAvatarRow({
   message,
   hasMessageContent,
-  loading,
   assistant,
   displaySetting,
-  model,
 }: ChatMessageAvatarRowProps) {
   const { t, i18n } = useTranslation(["common", "page"]);
 
@@ -53,14 +48,11 @@ export function ChatMessageAvatarRow({
     return null;
   }
 
-  const useAssistantAvatar = assistant?.useAssistantAvatar === true;
   const defaultAssistantName = t("common:quick_jump.role_assistant", { defaultValue: "Assistant" });
   const assistantName = assistant?.name?.trim() || defaultAssistantName;
-  const modelName =
-    model?.displayName.trim() || model?.modelId.trim() || defaultAssistantName;
-  const title = useAssistantAvatar ? assistantName : modelName;
-  const canRenderIcon = useAssistantAvatar ? Boolean(assistant) : Boolean(model);
-  const canRenderName = Boolean(title);
+  const title = assistantName;
+  const canRenderIcon = true;
+  const canRenderName = true;
   if ((!showModelIcon || !canRenderIcon) && (!showModelName || !canRenderName)) {
     return null;
   }
@@ -69,17 +61,7 @@ export function ChatMessageAvatarRow({
     <div className="flex w-full justify-start">
       <div className="flex min-w-0 items-center gap-2 rounded-full bg-transparent">
         {showModelIcon && canRenderIcon ? (
-          useAssistantAvatar ? (
-            <UIAvatar name={assistantName} avatar={assistant?.avatar} className="size-9" />
-          ) : (
-            <AIIcon
-              name={model?.modelId ?? modelName}
-              size={34}
-              loading={loading}
-              className="bg-secondary/90"
-              imageClassName="h-[72%] w-[72%]"
-            />
-          )
+          <UIAvatar name={assistantName} avatar={assistant?.avatar} className="size-9" />
         ) : null}
         {showModelName && canRenderName ? (
           <div className="min-w-0">
