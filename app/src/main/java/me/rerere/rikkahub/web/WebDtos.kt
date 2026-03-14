@@ -22,6 +22,7 @@ import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
@@ -38,6 +39,7 @@ import me.rerere.rikkahub.data.model.QuickMessage
 import me.rerere.rikkahub.data.model.Skill
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.JsonInstantPretty
+import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.uuid.Uuid
 import java.net.URLEncoder
@@ -711,6 +713,7 @@ fun List<WebMessagePartDto>.toUiMessageParts(): List<UIMessagePart> {
                         toolCallId = part.toolCallId,
                         toolName = part.toolName,
                         arguments = part.input,
+                        approvalState = part.approvalState.toUiToolApprovalState(),
                         metadata = part.metadata.stripFileId(),
                     )
                 )
@@ -985,11 +988,11 @@ private fun List<UIMessagePart>.toWebMessageParts(context: Context): List<WebMes
                     toolCallId = part.toolCallId,
                     toolName = part.toolName,
                     input = part.arguments,
-                    output = results.flatMap { it.content.toWebToolOutputParts() },
-                    approvalState = if (results.isNotEmpty()) {
+                    output = results.flatMap { it.content.toWebToolOutputParts(context) },
+                    approvalState = if (part.approvalState == ToolApprovalState.Auto && results.isNotEmpty()) {
                         ToolApprovalStateDto.Approved
                     } else {
-                        ToolApprovalStateDto.Auto
+                        part.approvalState.toDto()
                     },
                     metadata = (part.metadata ?: results.firstOrNull()?.metadata).stripFileId(),
                 )
@@ -1004,7 +1007,7 @@ private fun List<UIMessagePart>.toWebMessageParts(context: Context): List<WebMes
                         toolCallId = part.toolCallId,
                         toolName = part.toolName,
                         input = part.arguments.toJsonText(),
-                        output = part.content.toWebToolOutputParts(),
+                        output = part.content.toWebToolOutputParts(context),
                         approvalState = ToolApprovalStateDto.Approved,
                         metadata = part.metadata.stripFileId(),
                     )
@@ -1023,7 +1026,7 @@ private fun UIMessage.finishedAtString(): String? {
     return finishedAt.toLocalDateTime(zone).toString()
 }
 
-private fun JsonElement.toWebToolOutputParts(): List<WebMessagePartDto> {
+private fun JsonElement.toWebToolOutputParts(context: Context): List<WebMessagePartDto> {
     if (this is JsonArray && isNotEmpty()) {
         val decoded = mapNotNull { element ->
             runCatching {
@@ -1035,6 +1038,8 @@ private fun JsonElement.toWebToolOutputParts(): List<WebMessagePartDto> {
         }
     }
 
+    extractStructuredToolOutputParts(context)?.let { return it }
+
     val text = when (this) {
         is JsonPrimitive -> contentOrNull ?: toString()
         else -> JsonInstantPretty.encodeToString(JsonElement.serializer(), this)
@@ -1044,6 +1049,125 @@ private fun JsonElement.toWebToolOutputParts(): List<WebMessagePartDto> {
         emptyList()
     } else {
         listOf(WebMessagePartDto.Text(text = text))
+    }
+}
+
+private fun ToolApprovalState.toDto(): ToolApprovalStateDto {
+    return when (this) {
+        ToolApprovalState.Auto -> ToolApprovalStateDto.Auto
+        ToolApprovalState.Pending -> ToolApprovalStateDto.Pending
+        ToolApprovalState.Approved -> ToolApprovalStateDto.Approved
+        is ToolApprovalState.Denied -> ToolApprovalStateDto.Denied(reason = reason)
+        is ToolApprovalState.Answered -> ToolApprovalStateDto.Answered(answer = answer)
+    }
+}
+
+private fun ToolApprovalStateDto.toUiToolApprovalState(): ToolApprovalState {
+    return when (this) {
+        ToolApprovalStateDto.Auto -> ToolApprovalState.Auto
+        ToolApprovalStateDto.Pending -> ToolApprovalState.Pending
+        ToolApprovalStateDto.Approved -> ToolApprovalState.Approved
+        is ToolApprovalStateDto.Denied -> ToolApprovalState.Denied(reason = reason)
+        is ToolApprovalStateDto.Answered -> ToolApprovalState.Answered(answer = answer)
+    }
+}
+
+private fun JsonElement.extractStructuredToolOutputParts(
+    context: Context,
+): List<WebMessagePartDto>? {
+    val jsonObject = this as? JsonObject ?: return null
+    val fileParts = buildList {
+        addAll(jsonObject["generated_files"].jsonArrayToWebToolParts(context))
+        addAll(jsonObject["files"].jsonArrayToWebToolParts(context))
+        jsonObject.toSingleWebToolPart(context)?.let(::add)
+    }
+
+    if (fileParts.isEmpty()) {
+        return null
+    }
+
+    val textPayload = buildJsonObject {
+        jsonObject.forEach { (key, value) ->
+            if (key != "generated_files" && key != "files" && key != "uri" && key != "markdown_link") {
+                put(key, value)
+            }
+        }
+    }.takeIf { it.isNotEmpty() }
+
+    return buildList {
+        if (textPayload != null) {
+            add(
+                WebMessagePartDto.Text(
+                    text = JsonInstantPretty.encodeToString(JsonObject.serializer(), textPayload)
+                )
+            )
+        }
+        addAll(fileParts)
+    }
+}
+
+private fun JsonElement?.jsonArrayToWebToolParts(context: Context): List<WebMessagePartDto> {
+    val jsonArray = this as? JsonArray ?: return emptyList()
+    return jsonArray.mapNotNull { element ->
+        (element as? JsonObject)?.toSingleWebToolPart(context)
+    }
+}
+
+private fun JsonObject.toSingleWebToolPart(context: Context): WebMessagePartDto? {
+    val uri = get("uri")?.jsonPrimitiveOrNull?.contentOrNull?.takeIf { it.isNotBlank() } ?: return null
+    val resolvedUrl = uri.toWebAssetUrl(
+        context = context,
+        mimeOverride = get("mime")?.jsonPrimitiveOrNull?.contentOrNull,
+        fileName = webToolFileName(),
+    )
+    val mime = get("mime")?.jsonPrimitiveOrNull?.contentOrNull
+        ?: guessMimeFromName(webToolFileName())
+        ?: "application/octet-stream"
+    val fileName = webToolFileName()
+    val isImage = get("is_image")?.jsonPrimitiveOrNull?.contentOrNull == "true" ||
+        mime.startsWith("image/", ignoreCase = true)
+
+    return when {
+        isImage -> WebMessagePartDto.Image(url = resolvedUrl)
+        mime.startsWith("video/", ignoreCase = true) -> WebMessagePartDto.Video(url = resolvedUrl)
+        mime.startsWith("audio/", ignoreCase = true) -> WebMessagePartDto.Audio(url = resolvedUrl)
+        fileName != null -> WebMessagePartDto.Document(
+            url = resolvedUrl,
+            fileName = fileName,
+            mime = mime,
+        )
+        else -> null
+    }
+}
+
+private fun JsonObject.webToolFileName(): String? {
+    return get("name")?.jsonPrimitiveOrNull?.contentOrNull?.takeIf { it.isNotBlank() }
+        ?: get("path")?.jsonPrimitiveOrNull?.contentOrNull?.takeIf { it.isNotBlank() }
+}
+
+private fun guessMimeFromName(fileName: String?): String? {
+    val extension = fileName?.substringAfterLast('.', missingDelimiterValue = "")
+        ?.lowercase()
+        ?.takeIf { it.isNotBlank() }
+        ?: return null
+
+    return when (extension) {
+        "jpg", "jpeg" -> "image/jpeg"
+        "png" -> "image/png"
+        "gif" -> "image/gif"
+        "webp" -> "image/webp"
+        "bmp" -> "image/bmp"
+        "svg" -> "image/svg+xml"
+        "mp4" -> "video/mp4"
+        "webm" -> "video/webm"
+        "mp3" -> "audio/mpeg"
+        "wav" -> "audio/wav"
+        "ogg" -> "audio/ogg"
+        "pdf" -> "application/pdf"
+        "csv" -> "text/csv"
+        "json" -> "application/json"
+        "txt", "log", "md" -> "text/plain"
+        else -> null
     }
 }
 

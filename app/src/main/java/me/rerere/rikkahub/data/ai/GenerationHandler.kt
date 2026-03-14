@@ -20,6 +20,7 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.Tool
+import me.rerere.ai.core.ToolApprovalMode
 import me.rerere.ai.core.merge
 import me.rerere.ai.provider.CustomBody
 import me.rerere.ai.provider.Model
@@ -30,6 +31,7 @@ import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.handleMessageChunk
 import me.rerere.ai.ui.limitContext
@@ -222,17 +224,15 @@ class GenerationHandler(
             }
             // handle tool calls
             val results = arrayListOf<UIMessagePart.ToolResult>()
+            val pendingToolCallIds = mutableSetOf<String>()
             toolCalls.forEach { toolCall ->
                 runCatching {
                     val tool = toolsInternal.find { tool -> tool.name == toolCall.toolName }
                         ?: error("Tool ${toolCall.toolName} not found")
-                    val args = runCatching {
-                        json.parseToJsonElement(toolCall.arguments.ifBlank { "{}" })
-                    }.getOrElse {
-                        // Handle malformed JSON from model (e.g., multiple objects concatenated)
-                        Log.w(TAG, "Failed to parse tool arguments, attempting sanitization: ${it.message}")
-                        val sanitized = sanitizeToolCallArguments(toolCall.arguments)
-                        json.parseToJsonElement(sanitized)
+                    val args = parseToolCallArguments(toolCall.arguments)
+                    if (tool.approvalMode == ToolApprovalMode.RequiresApproval) {
+                        pendingToolCallIds += toolCall.toolCallId
+                        return@runCatching
                     }
                     Log.i(TAG, "generateText: executing tool ${tool.name} with args: $args")
                     val result = tool.execute(args)
@@ -259,10 +259,31 @@ class GenerationHandler(
                             )
                         },
                         arguments = runCatching {
-                            json.parseToJsonElement(toolCall.arguments)
+                            parseToolCallArguments(toolCall.arguments)
                         }.getOrElse { JsonObject(emptyMap()) }
                     )
                 }
+            }
+            if (pendingToolCallIds.isNotEmpty()) {
+                messages = messages.markPendingToolCalls(pendingToolCallIds)
+                emit(GenerationChunk.Messages(messages))
+                if (results.isNotEmpty()) {
+                    messages = messages + UIMessage(
+                        role = MessageRole.TOOL,
+                        parts = results
+                    )
+                    emit(
+                        GenerationChunk.Messages(
+                            messages.transforms(
+                                transformers = outputTransformers,
+                                context = context,
+                                model = model,
+                                assistant = assistant
+                            )
+                        )
+                    )
+                }
+                break
             }
             messages = messages + UIMessage(
                 role = MessageRole.TOOL,
@@ -1399,6 +1420,14 @@ class GenerationHandler(
      * Attempts to sanitize malformed JSON from streamed tool call arguments.
      * Handles cases where the model outputs content after a valid JSON object.
      */
+    private fun parseToolCallArguments(arguments: String) = runCatching {
+        json.parseToJsonElement(arguments.ifBlank { "{}" })
+    }.getOrElse {
+        Log.w(TAG, "Failed to parse tool arguments, attempting sanitization: ${it.message}")
+        val sanitized = sanitizeToolCallArguments(arguments)
+        json.parseToJsonElement(sanitized)
+    }
+
     private fun sanitizeToolCallArguments(arguments: String): String {
         if (arguments.isBlank()) return "{}"
         val trimmed = arguments.trim()
@@ -1429,5 +1458,24 @@ class GenerationHandler(
         // Couldn't find complete object, return empty
         Log.w(TAG, "Could not extract valid JSON object from: $trimmed")
         return "{}"
+    }
+}
+
+private fun List<UIMessage>.markPendingToolCalls(toolCallIds: Set<String>): List<UIMessage> {
+    if (toolCallIds.isEmpty()) return this
+    return mapIndexed { index, message ->
+        if (index != lastIndex) {
+            message
+        } else {
+            message.copy(
+                parts = message.parts.map { part ->
+                    if (part is UIMessagePart.ToolCall && toolCallIds.contains(part.toolCallId)) {
+                        part.copy(approvalState = ToolApprovalState.Pending)
+                    } else {
+                        part
+                    }
+                }
+            )
+        }
     }
 }

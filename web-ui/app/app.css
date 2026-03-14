@@ -640,6 +640,30 @@
   }
 }
 
+[data-message-role="user"] [data-message-bubble] {
+  --markdown-foreground: var(--primary-foreground);
+  --markdown-link: var(--primary-foreground);
+  --markdown-muted-foreground: color-mix(in srgb, var(--primary-foreground) 74%, transparent);
+  --markdown-border: color-mix(in srgb, var(--primary-foreground) 18%, transparent);
+  --markdown-inline-code-background: color-mix(
+    in srgb,
+    var(--primary-foreground) 14%,
+    transparent
+  );
+  --markdown-inline-code-foreground: var(--primary-foreground);
+  --markdown-citation-background: color-mix(
+    in srgb,
+    var(--primary-foreground) 16%,
+    transparent
+  );
+  --markdown-citation-hover-background: color-mix(
+    in srgb,
+    var(--primary-foreground) 24%,
+    transparent
+  );
+  --markdown-citation-foreground: var(--primary-foreground);
+}
+
 /* Global scrollbar style, matching ScrollArea (radix) appearance */
 @layer base {
   * {

@@ -19,7 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Book
-import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material.icons.rounded.TipsAndUpdates
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -36,6 +36,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.model.withAutoSummaryEnabled
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
@@ -97,67 +98,33 @@ fun AssistantContextManagementSubPage(
         // ═══════════════════════════════════════════════════════════════════
         
         SettingsGroup(title = stringResource(R.string.context_message_history_title)) {
-            // Warning banner when message summarization is enabled but no summarizer model is set
-            val needsSummarizerWarning = assistant.enableContextRefresh && !hasSummarizerModelConfigured
+            val needsSummarizerTip = !hasSummarizerModelConfigured
             AnimatedVisibility(
-                visible = needsSummarizerWarning,
+                visible = needsSummarizerTip,
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
-                SummarizerWarningBanner(onClick = onNavigateToSummarizerSettings)
+                SummarizerTipBanner(onClick = onNavigateToSummarizerSettings)
             }
-            
-            // 1. Message summarization toggle (first - enables manual summarization button)
+
             SettingGroupItem(
-                title = "Message summarization",
-                subtitle = "Summarize older messages in conversation",
+                title = "Auto-summarize messages",
+                subtitle = "Automatically summarize when history limit is reached",
                 trailing = {
                     HapticSwitch(
-                        checked = assistant.enableContextRefresh,
+                        checked = assistant.autoRegenerateSummary,
                         onCheckedChange = { enabled ->
-                            onUpdate(assistant.copy(
-                                enableContextRefresh = enabled,
-                                // If disabling, also disable auto-summarize
-                                autoRegenerateSummary = if (!enabled) false else assistant.autoRegenerateSummary
-                            ))
+                            onUpdate(assistant.withAutoSummaryEnabled(enabled))
                         }
                     )
                 },
                 onClick = {
-                    val newEnabled = !assistant.enableContextRefresh
-                    onUpdate(assistant.copy(
-                        enableContextRefresh = newEnabled,
-                        autoRegenerateSummary = if (!newEnabled) false else assistant.autoRegenerateSummary
-                    ))
+                    onUpdate(assistant.withAutoSummaryEnabled(!assistant.autoRegenerateSummary))
                 }
             )
-            
-            // 2. Auto-summarize toggle (only visible when Message summarization is ON)
+
             AnimatedVisibility(
-                visible = assistant.enableContextRefresh,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                SettingGroupItem(
-                    title = "Auto-summarize messages",
-                    subtitle = "Automatically summarize when history limit is reached",
-                    trailing = {
-                        HapticSwitch(
-                            checked = assistant.autoRegenerateSummary,
-                            onCheckedChange = { enabled ->
-                                onUpdate(assistant.copy(autoRegenerateSummary = enabled))
-                            }
-                        )
-                    },
-                    onClick = {
-                        onUpdate(assistant.copy(autoRegenerateSummary = !assistant.autoRegenerateSummary))
-                    }
-                )
-            }
-            
-            // 3. History limit slider (only visible when Auto-summarize is ON)
-            AnimatedVisibility(
-                visible = assistant.enableContextRefresh && assistant.autoRegenerateSummary,
+                visible = assistant.autoRegenerateSummary,
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
@@ -215,13 +182,13 @@ fun AssistantContextManagementSubPage(
 }
 
 @Composable
-private fun SummarizerWarningBanner(
+private fun SummarizerTipBanner(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Surface(
         onClick = onClick,
-        color = MaterialTheme.colorScheme.errorContainer,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = RoundedCornerShape(10.dp),
         modifier = modifier.fillMaxWidth()
     ) {
@@ -231,15 +198,15 @@ private fun SummarizerWarningBanner(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = Icons.Rounded.Warning,
+                imageVector = Icons.Rounded.TipsAndUpdates,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onErrorContainer,
+                tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(20.dp)
             )
             Text(
-                text = stringResource(R.string.setting_model_page_summarizer_missing_banner),
+                text = stringResource(R.string.context_summarizer_model_optional_tip),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onErrorContainer
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }

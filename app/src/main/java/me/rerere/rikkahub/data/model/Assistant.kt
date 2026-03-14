@@ -93,7 +93,7 @@ data class Assistant(
     val enableHistorySummarization: Boolean = false, // Generate summaries of pruned messages
     val maxSearchResultsRetained: Int? = null, // null = keep all, e.g. 2 = keep last 2 search results
     val enableTimeAwareness: Boolean = false, // Inject current time and notable timeline cues into context
-    val enableContextRefresh: Boolean = false, // Show Summarize Messages button in chat input
+    val enableContextRefresh: Boolean = false, // Legacy compatibility field; manual summarization is always available
     val autoRegenerateSummary: Boolean = false, // Automatically summarize when maxHistoryMessages reached
 
     // Memory System Configuration & Stats
@@ -105,6 +105,27 @@ data class Assistant(
     // Per-assistant UI customization (null = use global setting)
     val uiSettings: AssistantUISettings = AssistantUISettings(),
 )
+
+internal const val DEFAULT_AUTO_SUMMARY_HISTORY_LIMIT = 10
+
+internal fun Assistant.canManuallySummarizeConversation(messageCount: Int): Boolean {
+    return messageCount > 2
+}
+
+internal fun Assistant.shouldAutoSummarizeMessages(): Boolean {
+    return autoRegenerateSummary && maxHistoryMessages != null
+}
+
+internal fun Assistant.withAutoSummaryEnabled(enabled: Boolean): Assistant {
+    return if (enabled) {
+        copy(
+            autoRegenerateSummary = true,
+            maxHistoryMessages = maxHistoryMessages ?: DEFAULT_AUTO_SUMMARY_HISTORY_LIMIT
+        )
+    } else {
+        copy(autoRegenerateSummary = false)
+    }
+}
 
 @Serializable
 data class QuickMessage(

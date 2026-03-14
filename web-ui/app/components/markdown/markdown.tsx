@@ -7,6 +7,7 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
 import { cn } from "~/lib/utils";
+import { resolveFileUrl } from "~/lib/files";
 import { getCodePreviewLanguage } from "~/components/workbench/code-preview-language";
 import { useOptionalWorkbench } from "~/components/workbench/workbench-context";
 import type { DisplaySetting } from "~/types";
@@ -198,6 +199,7 @@ export default function Markdown({
             code: MarkdownCode as never,
             a: ({ href, children, ...props }) => {
               const childText = getNodeText(children).trim();
+              const resolvedHref = href ? resolveFileUrl(href) : href;
 
               // Citation format: [citation,domain](id)
               if (childText.startsWith("citation,")) {
@@ -216,11 +218,11 @@ export default function Markdown({
                   );
                 }
 
-                if (href) {
+                if (resolvedHref) {
                   return (
                     <a
                       className="citation-badge"
-                      href={href}
+                      href={resolvedHref}
                       target="_blank"
                       rel="noopener noreferrer"
                       title={domain}
@@ -233,11 +235,18 @@ export default function Markdown({
               }
 
               return (
-                <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
+                <a href={resolvedHref} target="_blank" rel="noopener noreferrer" {...props}>
                   {children}
                 </a>
               );
             },
+            img: ({ src, alt, ...props }) => (
+              <img
+                src={typeof src === "string" ? resolveFileUrl(src) : src}
+                alt={alt ?? ""}
+                {...props}
+              />
+            ),
           }}
         >
           {streamdownContent}

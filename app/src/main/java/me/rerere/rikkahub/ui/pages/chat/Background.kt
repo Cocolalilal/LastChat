@@ -9,13 +9,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import coil3.compose.AsyncImage
-import me.rerere.rikkahub.data.datastore.Settings
-import me.rerere.rikkahub.data.datastore.getCurrentAssistant
+import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 @Composable
-fun AssistantBackground(setting: Settings) {
-    val assistant = setting.getCurrentAssistant()
+fun AssistantBackground(
+    assistant: Assistant,
+) {
     if (assistant.background != null) {
         val scrimAlpha = assistant.backgroundDim.coerceIn(0f, 0.85f)
         val scrimColor = if (LocalDarkMode.current) {

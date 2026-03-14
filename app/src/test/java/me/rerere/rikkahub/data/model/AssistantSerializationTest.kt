@@ -105,4 +105,19 @@ class AssistantSerializationTest {
         assertTrue(encoded.contains("\"device_control\""))
         assertTrue(decoded.localTools.contains(LocalToolOption.Notifications))
     }
+
+    @Test
+    fun characterQuestionsLocalToolRoundTripsThroughSerialization() {
+        val assistant = Assistant(
+            id = Uuid.parse("00000000-0000-0000-0000-000000000013"),
+            name = "Mina",
+            localTools = listOf(LocalToolOption.AskUser)
+        )
+
+        val encoded = JsonInstant.encodeToString(Assistant.serializer(), assistant)
+        val decoded = JsonInstant.decodeFromString(Assistant.serializer(), encoded)
+
+        assertTrue(encoded.contains("\"character_questions\""))
+        assertTrue(decoded.localTools.contains(LocalToolOption.AskUser))
+    }
 }

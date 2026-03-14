@@ -239,6 +239,24 @@ fun AssistantToolsSubPage(
                     )
                 }
             )
+
+            SettingGroupItem(
+                title = stringResource(R.string.assistant_page_local_tools_character_questions_title),
+                subtitle = stringResource(R.string.assistant_page_local_tools_character_questions_desc),
+                trailing = {
+                    HapticSwitch(
+                        checked = assistant.localTools.contains(LocalToolOption.AskUser),
+                        onCheckedChange = { enabled ->
+                            val newLocalTools = if (enabled) {
+                                assistant.localTools + LocalToolOption.AskUser
+                            } else {
+                                assistant.localTools - LocalToolOption.AskUser
+                            }
+                            onUpdate(assistant.copy(localTools = newLocalTools))
+                        }
+                    )
+                }
+            )
         }
 
         // ═══════════════════════════════════════════════════════════════════

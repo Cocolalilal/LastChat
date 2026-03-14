@@ -61,6 +61,7 @@ import kotlinx.serialization.json.longOrNull
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.Model
+import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.model.Assistant
@@ -176,7 +177,7 @@ fun List<MessageNode>.groupIntoTurns(): List<MessageTurnGroup> {
         val logicalRole = getGroupingRole(nodeRole)
         
         // Start a new group if logical role changes
-        if (logicalRole != currentGroupRole && currentGroup.isNotEmpty()) {
+        if (currentGroup.isNotEmpty() && (logicalRole != currentGroupRole || node.forceTurnBreakBefore)) {
             groups.add(MessageTurnGroup(currentGroup.toList(), currentGroupRole!!))
             currentGroup = mutableListOf()
         }
@@ -232,7 +233,7 @@ internal fun buildTimelineEntries(parts: List<UIMessagePart>): List<TimelineEntr
                         resultText = result?.content?.toString()?.take(500),
                         argumentsJson = argumentsJson,
                         resultJson = resultJson,
-                        isLoading = result == null
+                        isLoading = result == null && part.approvalState !is ToolApprovalState.Pending
                     ))
                 }
             }
@@ -297,6 +298,7 @@ private fun getToolDisplayName(toolName: String): String {
         "create_memory" -> "Creating memory"
         "edit_memory" -> "Editing memory"
         "delete_memory" -> "Deleting memory"
+        "ask_user" -> "Asking a question"
         "manage_skills" -> "Managing skills"
         else -> toolName.replace("_", " ").replaceFirstChar { it.uppercase() }
     }

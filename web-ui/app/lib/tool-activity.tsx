@@ -11,15 +11,14 @@ import {
   Globe,
   Image as ImageIcon,
   MessageCircleQuestion,
-  Send,
   Video,
   Wrench,
   X,
 } from "lucide-react";
 
 import Markdown from "~/components/markdown/markdown";
+import { DocumentPart } from "~/components/message/parts/document-part";
 import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
 import { resolveFileUrl } from "~/lib/files";
 import type { DisplaySetting, TextPart as UITextPart, ToolPart as UIToolPart } from "~/types";
 
@@ -43,13 +42,108 @@ export const CLIPBOARD_ACTIONS = {
   WRITE: "write",
 } as const;
 
-export function safeJsonParse(input: string): unknown {
-  if (!input.trim()) return {};
+function tryParseJson(input: string): unknown | undefined {
   try {
     return JSON.parse(input);
   } catch {
-    return {};
+    return undefined;
   }
+}
+
+function extractJsonCodeFence(input: string): string | null {
+  const match = input.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return match?.[1] ?? null;
+}
+
+function extractBalancedJsonSlice(input: string): string | null {
+  if (!input) return null;
+
+  const objectStart = input.indexOf("{");
+  const arrayStart = input.indexOf("[");
+  const startIndex =
+    objectStart === -1
+      ? arrayStart
+      : arrayStart === -1
+        ? objectStart
+        : Math.min(objectStart, arrayStart);
+
+  if (startIndex < 0) return null;
+
+  const stack: string[] = [];
+  let inString = false;
+  let escaping = false;
+
+  for (let index = startIndex; index < input.length; index += 1) {
+    const char = input[index];
+
+    if (escaping) {
+      escaping = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      if (inString) {
+        escaping = true;
+      }
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) {
+      continue;
+    }
+
+    if (char === "{") {
+      stack.push("}");
+      continue;
+    }
+
+    if (char === "[") {
+      stack.push("]");
+      continue;
+    }
+
+    if (char === "}" || char === "]") {
+      if (stack[stack.length - 1] !== char) {
+        return null;
+      }
+
+      stack.pop();
+      if (stack.length === 0) {
+        return input.slice(startIndex, index + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
+export function safeJsonParse(input: string): unknown {
+  const trimmed = input.trim();
+  if (!trimmed) return {};
+
+  const fenced = extractJsonCodeFence(trimmed);
+  const candidates = [
+    trimmed,
+    fenced,
+    extractBalancedJsonSlice(trimmed),
+    fenced ? extractBalancedJsonSlice(fenced) : null,
+  ].filter((candidate, index, values): candidate is string => {
+    return typeof candidate === "string" && candidate.length > 0 && values.indexOf(candidate) === index;
+  });
+
+  for (const candidate of candidates) {
+    const parsed = tryParseJson(candidate);
+    if (parsed !== undefined) {
+      return parsed;
+    }
+  }
+
+  return {};
 }
 
 export function toJsonString(value: unknown): string {
@@ -254,10 +348,27 @@ function ScrapeWebPreview({
   );
 }
 
-interface AskUserQuestion {
+export interface AskUserOption {
+  label: string;
+  description?: string;
+}
+
+export interface AskUserQuestion {
   id: string;
   question: string;
-  options: string[];
+  options: AskUserOption[];
+}
+
+export interface AskUserAnswer {
+  id: string;
+  status: "answered" | "skipped";
+  source?: "option" | "custom";
+  value?: string;
+}
+
+export interface AskUserAnswerPayload {
+  answers: AskUserAnswer[];
+  dismissed: boolean;
 }
 
 export function parseAskUserQuestions(args: unknown): AskUserQuestion[] {
@@ -270,99 +381,150 @@ export function parseAskUserQuestions(args: unknown): AskUserQuestion[] {
         const prompt = typeof record.question === "string" ? record.question : "";
         if (!id || !prompt) return null;
         const options = Array.isArray(record.options)
-          ? record.options.filter((option): option is string => typeof option === "string")
+          ? record.options
+              .map((option) => {
+                if (typeof option === "string") {
+                  const label = option.trim();
+                  return label ? { label } : null;
+                }
+                if (!option || typeof option !== "object" || Array.isArray(option)) {
+                  return null;
+                }
+                const optionRecord = option as Record<string, unknown>;
+                const label = typeof optionRecord.label === "string" ? optionRecord.label.trim() : "";
+                if (!label) return null;
+                const description =
+                  typeof optionRecord.description === "string"
+                    ? optionRecord.description.trim() || undefined
+                    : undefined;
+                return { label, description };
+              })
+              .filter((option): option is AskUserOption => option !== null)
+              .slice(0, 3)
           : [];
         return { id, question: prompt, options };
       })
-      .filter((question): question is AskUserQuestion => question !== null);
+      .filter((question): question is AskUserQuestion => question !== null)
+      .slice(0, 5);
   } catch {
     return [];
   }
 }
 
+export function parseAskUserAnswerPayload(raw: string | null | undefined): AskUserAnswerPayload | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const answersSource = Array.isArray(parsed.answers) ? parsed.answers : [];
+    const answers = answersSource
+      .map((answer) => {
+        if (!answer || typeof answer !== "object" || Array.isArray(answer)) return null;
+        const record = answer as Record<string, unknown>;
+        const id = typeof record.id === "string" ? record.id : "";
+        const status: AskUserAnswer["status"] | null =
+          record.status === "answered" || record.status === "skipped"
+            ? record.status
+            : null;
+        if (!id || !status) return null;
+        const source: AskUserAnswer["source"] =
+          record.source === "option" || record.source === "custom"
+            ? record.source
+            : undefined;
+        const value: AskUserAnswer["value"] =
+          typeof record.value === "string" ? record.value : undefined;
+        const normalized: AskUserAnswer = { id, status };
+        if (source) normalized.source = source;
+        if (value !== undefined) normalized.value = value;
+        return normalized;
+      })
+      .filter((answer): answer is AskUserAnswer => answer !== null);
+
+    return {
+      answers,
+      dismissed: parsed.dismissed === true,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function AskUserToolContent({
   tool,
-  onToolApproval,
   t,
 }: {
   tool: UIToolPart;
-  onToolApproval?: (toolCallId: string, approved: boolean, reason: string, answer?: string) => void | Promise<void>;
   t: TFunction;
 }) {
   const args = React.useMemo(() => safeJsonParse(tool.input), [tool.input]);
   const questions = React.useMemo(() => parseAskUserQuestions(args), [args]);
-  const [answers, setAnswers] = React.useState<Record<string, string>>({});
-  const isPending = tool.approvalState.type === "pending";
-  const isAnswered = tool.approvalState.type === "answered";
-  const allAnswered = questions.length > 0 && questions.every((question) => answers[question.id]?.trim());
-
-  const answeredValues = React.useMemo(() => {
-    if (tool.approvalState.type !== "answered") return {};
-    try {
-      const parsed = JSON.parse(tool.approvalState.answer) as { answers?: Record<string, string> };
-      return parsed.answers ?? {};
-    } catch {
-      return {};
+  const answerPayload = React.useMemo(() => {
+    if (tool.approvalState.type === "answered") {
+      return parseAskUserAnswerPayload(tool.approvalState.answer);
     }
-  }, [tool.approvalState]);
-
-  const handleSubmit = () => {
-    if (!onToolApproval || !allAnswered) return;
-    const payload = JSON.stringify({
-      answers: Object.fromEntries(questions.map((question) => [question.id, answers[question.id] ?? ""])),
-    });
-    void onToolApproval(tool.toolCallId, true, "", payload);
-  };
+    const outputText = tool.output
+      .filter((part): part is UITextPart => part.type === "text")
+      .map((part) => part.text)
+      .join("\n");
+    return parseAskUserAnswerPayload(outputText);
+  }, [tool.approvalState, tool.output]);
+  const answersById = React.useMemo(() => {
+    return new Map(answerPayload?.answers.map((answer) => [answer.id, answer]) ?? []);
+  }, [answerPayload]);
 
   return (
     <div className="space-y-3">
       {questions.map((question) => (
         <div key={question.id} className="space-y-2">
           <div className="text-sm text-foreground">{question.question}</div>
-          {isPending && onToolApproval ? (
-            <>
-              {question.options.length > 0 ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {question.options.map((option) => (
-                    <button
-                      key={option}
-                      type="button"
-                      onClick={() => setAnswers((prev) => ({ ...prev, [question.id]: option }))}
-                      className={
-                        answers[question.id] === option
-                          ? "rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs text-primary"
-                          : "rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground"
-                      }
-                    >
-                      {option}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-              <Input
-                value={answers[question.id] ?? ""}
-                onChange={(event) =>
-                  setAnswers((prev) => ({ ...prev, [question.id]: event.target.value }))
-                }
-                placeholder={question.question}
-                className="text-sm"
-              />
-            </>
-          ) : isAnswered ? (
-            <div className="text-primary text-sm">
-              {answeredValues[question.id] ?? t("tool_part.ask_user_answered")}
+          {question.options.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {question.options.map((option) => {
+                const answer = answersById.get(question.id);
+                const selected = answer?.value === option.label;
+                return (
+                  <span
+                    key={option.label}
+                    className={
+                      selected
+                        ? "rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs text-primary"
+                        : "rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground"
+                    }
+                  >
+                    {option.label}
+                  </span>
+                );
+              })}
             </div>
           ) : null}
+          {(() => {
+            const answer = answersById.get(question.id);
+            if (answer?.status === "answered") {
+              return (
+                <div className="text-primary text-sm">
+                  {answer.value ?? t("tool_part.ask_user_answered")}
+                </div>
+              );
+            }
+            if (answer?.status === "skipped") {
+              return (
+                <div className="text-muted-foreground text-sm">
+                  {t("tool_part.ask_user_skipped")}
+                </div>
+              );
+            }
+            if (tool.approvalState.type === "pending") {
+              return (
+                <div className="text-muted-foreground text-sm">
+                  {t("tool_part.ask_user_waiting")}
+                </div>
+              );
+            }
+            return null;
+          })()}
         </div>
       ))}
-
-      {isPending && onToolApproval ? (
-        <div className="flex justify-end">
-          <Button size="sm" variant="secondary" disabled={!allAnswered} onClick={handleSubmit}>
-            <Send className="mr-1.5 h-3.5 w-3.5" />
-            {t("tool_part.ask_user_submit")}
-          </Button>
-        </div>
+      {answerPayload?.dismissed ? (
+        <div className="text-muted-foreground text-xs">{t("tool_part.ask_user_dismissed")}</div>
       ) : null}
     </div>
   );
@@ -384,7 +546,7 @@ export function ToolDetailContent({
   const isExecuted = tool.output.length > 0;
 
   if (tool.toolName === TOOL_NAMES.ASK_USER) {
-    return <AskUserToolContent tool={tool} onToolApproval={onToolApproval} t={t} />;
+    return <AskUserToolContent tool={tool} t={t} />;
   }
 
   if (tool.toolName === TOOL_NAMES.SEARCH_WEB && isExecuted) {
@@ -445,6 +607,16 @@ export function ToolDetailContent({
             if (part.type === "audio") {
               return <audio key={index} controls className="w-full" src={resolveFileUrl(part.url)} />;
             }
+            if (part.type === "document") {
+              return (
+                <DocumentPart
+                  key={index}
+                  url={part.url}
+                  fileName={part.fileName}
+                  mime={part.mime}
+                />
+              );
+            }
             return null;
           })}
         </div>
@@ -462,8 +634,13 @@ export function ToolPreviewContent({ tool, t }: { tool: UIToolPart; t: TFunction
   const deniedReason =
     tool.approvalState.type === "denied" ? (tool.approvalState.reason ?? "") : "";
   const hasMediaOutput = toolHasMediaOutput(tool);
+  const askUserAnswers =
+    tool.toolName === TOOL_NAMES.ASK_USER && tool.approvalState.type === "answered"
+      ? parseAskUserAnswerPayload(tool.approvalState.answer)
+      : null;
 
   const hasExtraContent =
+    tool.toolName === TOOL_NAMES.ASK_USER ||
     (tool.toolName === TOOL_NAMES.MEMORY &&
       (memoryAction === MEMORY_ACTIONS.CREATE || memoryAction === MEMORY_ACTIONS.EDIT) &&
       Boolean(getStringField(outputContent, "content"))) ||
@@ -477,6 +654,19 @@ export function ToolPreviewContent({ tool, t }: { tool: UIToolPart; t: TFunction
 
   return (
     <div className="space-y-1">
+      {tool.toolName === TOOL_NAMES.ASK_USER ? (
+        <div className="text-muted-foreground text-xs">
+          {tool.approvalState.type === "pending"
+            ? t("tool_part.ask_user_waiting")
+            : tool.approvalState.type === "answered"
+              ? t("tool_part.ask_user_answer_summary", {
+                  answered: askUserAnswers?.answers.filter((answer) => answer.status === "answered").length ?? 0,
+                  skipped: askUserAnswers?.answers.filter((answer) => answer.status === "skipped").length ?? 0,
+                })
+              : getToolPreviewText(tool, t)}
+        </div>
+      ) : null}
+
       {tool.toolName === TOOL_NAMES.MEMORY &&
       (memoryAction === MEMORY_ACTIONS.CREATE || memoryAction === MEMORY_ACTIONS.EDIT) ? (
         <div className="line-clamp-3 text-muted-foreground text-xs">

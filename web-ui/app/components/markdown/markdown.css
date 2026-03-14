@@ -2,7 +2,8 @@
 
 /* Markdown Styles - shadcn inspired */
 .markdown {
-  @apply text-foreground leading-7;
+  @apply leading-7;
+  color: var(--markdown-foreground, var(--foreground));
 }
 
 .markdown > * + * {
@@ -31,7 +32,8 @@
 }
 
 .markdown h6 {
-  @apply scroll-m-20 text-sm font-semibold tracking-tight mt-4 mb-2 text-muted-foreground;
+  @apply scroll-m-20 mt-4 mb-2 text-sm font-semibold tracking-tight;
+  color: var(--markdown-muted-foreground, var(--muted-foreground));
 }
 
 /* Paragraphs */
@@ -45,7 +47,8 @@
 
 /* Links */
 .markdown a {
-  @apply text-primary underline underline-offset-4 hover:text-primary/80 transition-colors;
+  @apply underline underline-offset-4 transition-opacity hover:opacity-80;
+  color: var(--markdown-link, var(--primary));
 }
 
 /* Bold & Italic */
@@ -90,7 +93,9 @@
 
 /* Blockquotes */
 .markdown blockquote {
-  @apply border-l-4 border-border pl-4 py-1 my-4 italic text-muted-foreground;
+  @apply my-4 border-l-4 py-1 pl-4 italic;
+  border-color: var(--markdown-border, var(--border));
+  color: var(--markdown-muted-foreground, var(--muted-foreground));
 }
 
 .markdown blockquote > p {
@@ -104,7 +109,9 @@
 
 /* Code - Inline */
 .markdown .inline-code {
-  @apply relative rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm;
+  @apply relative rounded px-[0.3rem] py-[0.2rem] font-mono text-sm;
+  background-color: var(--markdown-inline-code-background, var(--muted));
+  color: var(--markdown-inline-code-foreground, inherit);
 }
 
 /* Code Block with Header */
@@ -222,12 +229,15 @@
 
 /* Strikethrough (GFM) */
 .markdown del {
-  @apply text-muted-foreground line-through;
+  @apply line-through;
+  color: var(--markdown-muted-foreground, var(--muted-foreground));
 }
 
 /* Footnotes (GFM) */
 .markdown .footnotes {
-  @apply mt-8 pt-4 border-t border-border text-sm text-muted-foreground;
+  @apply mt-8 border-t pt-4 text-sm;
+  border-color: var(--markdown-border, var(--border));
+  color: var(--markdown-muted-foreground, var(--muted-foreground));
 }
 
 .markdown .footnote-ref {
@@ -248,7 +258,8 @@
 }
 
 .markdown dd {
-  @apply ml-6 mt-1 text-muted-foreground;
+  @apply ml-6 mt-1;
+  color: var(--markdown-muted-foreground, var(--muted-foreground));
 }
 
 /* Keyboard Input */
@@ -268,5 +279,14 @@
 
 /* Citation Badge */
 .markdown .citation-badge {
-  @apply inline-flex items-center justify-center rounded-full bg-primary/15 px-1.5 py-1 text-[10px] leading-none font-mono text-primary no-underline cursor-pointer hover:bg-primary/25 transition-colors;
+  @apply inline-flex cursor-pointer items-center justify-center rounded-full px-1.5 py-1 font-mono text-[10px] leading-none no-underline transition-colors;
+  background-color: var(--markdown-citation-background, color-mix(in srgb, var(--primary) 15%, transparent));
+  color: var(--markdown-citation-foreground, var(--primary));
+}
+
+.markdown .citation-badge:hover {
+  background-color: var(
+    --markdown-citation-hover-background,
+    color-mix(in srgb, var(--primary) 25%, transparent)
+  );
 }

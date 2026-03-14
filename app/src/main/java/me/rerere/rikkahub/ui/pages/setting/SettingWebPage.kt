@@ -43,6 +43,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -114,7 +115,7 @@ fun SettingWebPage(
         serverState.phase == WebServerPhase.Stopping
     val canStopServer = serverState.phase == WebServerPhase.Running ||
         serverState.phase == WebServerPhase.Stopping
-    val preferredUrl = serverState.preferredUrl
+    val localDeviceUrl = "http://localhost:${serverState.port}"
     val lanUrl = serverState.address?.let { "http://$it:${serverState.port}" }
     val mdnsUrl = serverState.hostname?.let { "http://$it:${serverState.port}" }
     val batteryOptimizationIgnored = context.isIgnoringBatteryOptimization()
@@ -302,7 +303,7 @@ fun SettingWebPage(
                             }
 
                             WebActionButtons(
-                                showOpenButton = serverState.phase == WebServerPhase.Running && preferredUrl != null,
+                                showOpenButton = serverState.phase == WebServerPhase.Running,
                                 canStopServer = canStopServer,
                                 serverLoading = serverState.isLoading,
                                 onPrimaryClick = {
@@ -320,7 +321,7 @@ fun SettingWebPage(
                                     }
                                 },
                                 onOpenClick = {
-                                    preferredUrl?.let(context::openUrl)
+                                    context.openUrl(localDeviceUrl)
                                 }
                             )
                         }
@@ -600,6 +601,7 @@ private fun WebActionButtons(
                 },
                 icon = if (canStopServer) Icons.Rounded.Stop else Icons.Rounded.PlayArrow,
                 enabled = !serverLoading,
+                loading = serverLoading,
                 hapticPattern = if (canStopServer) HapticPattern.Thud else HapticPattern.Pop,
                 onClick = onPrimaryClick,
                 containerColor = if (canStopServer) {
@@ -623,12 +625,13 @@ private fun WebActionButtons(
 @Composable
 private fun WebActionButton(
     label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: androidx.compose.ui.graphics.vector.ImageVector?,
     enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     containerColor: Color,
     contentColor: Color,
+    loading: Boolean = false,
     hapticPattern: HapticPattern = HapticPattern.Pop,
 ) {
     val haptics = rememberPremiumHaptics()
@@ -665,8 +668,16 @@ private fun WebActionButton(
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(icon, null, modifier = Modifier.size(18.dp))
-            Box(modifier = Modifier.width(10.dp))
+            if (loading) {
+                LoadingIndicator(
+                    modifier = Modifier.size(18.dp),
+                    color = contentColor,
+                )
+                Box(modifier = Modifier.width(10.dp))
+            } else if (icon != null) {
+                Icon(icon, null, modifier = Modifier.size(18.dp))
+                Box(modifier = Modifier.width(10.dp))
+            }
             Text(
                 text = label,
                 style = MaterialTheme.typography.titleMedium,

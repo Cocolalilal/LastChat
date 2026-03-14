@@ -449,6 +449,7 @@ sealed class UIMessagePart {
         val toolCallId: String,
         val toolName: String,
         val arguments: String,
+        val approvalState: ToolApprovalState = ToolApprovalState.Auto,
         override var metadata: JsonObject? = null
     ) : UIMessagePart() {
         fun merge(other: ToolCall): ToolCall {
@@ -456,6 +457,7 @@ sealed class UIMessagePart {
                 toolCallId = toolCallId,
                 toolName = toolName + other.toolName,
                 arguments = arguments + other.arguments,
+                approvalState = other.approvalState.takeUnless { it == ToolApprovalState.Auto } ?: approvalState,
                 metadata = if(other.metadata != null) other.metadata else metadata,
             )
         }
@@ -473,6 +475,33 @@ sealed class UIMessagePart {
     ) : UIMessagePart() {
         override val priority: Int = 0
     }
+}
+
+@Serializable
+sealed class ToolApprovalState {
+    @Serializable
+    @SerialName("auto")
+    data object Auto : ToolApprovalState()
+
+    @Serializable
+    @SerialName("pending")
+    data object Pending : ToolApprovalState()
+
+    @Serializable
+    @SerialName("approved")
+    data object Approved : ToolApprovalState()
+
+    @Serializable
+    @SerialName("denied")
+    data class Denied(
+        val reason: String,
+    ) : ToolApprovalState()
+
+    @Serializable
+    @SerialName("answered")
+    data class Answered(
+        val answer: String,
+    ) : ToolApprovalState()
 }
 
 fun List<UIMessagePart>.toSortedMessageParts(): List<UIMessagePart> {

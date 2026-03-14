@@ -32,15 +32,21 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import kotlinx.coroutines.withContext
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.Tool
+import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.provider.ModelAbility
+import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.UIMessage
@@ -59,7 +65,12 @@ import me.rerere.rikkahub.data.ai.buildSuggestionGenerationParams
 import me.rerere.rikkahub.data.ai.buildSummarizerGenerationParams
 import me.rerere.rikkahub.data.ai.buildTitleGenerationParams
 import me.rerere.rikkahub.data.ai.mcp.McpManager
+import me.rerere.rikkahub.data.ai.tools.ASK_USER_TOOL_NAME
+import me.rerere.rikkahub.data.ai.tools.AskUserAnswerPayload
 import me.rerere.rikkahub.data.ai.tools.LocalTools
+import me.rerere.rikkahub.data.ai.tools.normalizeAskUserAnswerPayload
+import me.rerere.rikkahub.data.ai.tools.parseAskUserQuestionnaire
+import me.rerere.rikkahub.data.ai.tools.toJsonElement
 import me.rerere.rikkahub.data.ai.transformers.RegexOutputTransformer
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
 import me.rerere.rikkahub.data.ai.transformers.ThinkTagTransformer
@@ -68,12 +79,13 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
-import me.rerere.rikkahub.data.datastore.getCurrentChatModel
+import me.rerere.rikkahub.data.datastore.resolveConversationContext
 import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.AssistantSearchMode
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.replaceRegexes
+import me.rerere.rikkahub.data.model.shouldAutoSummarizeMessages
 import me.rerere.rikkahub.data.model.toMessageNode
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
@@ -99,6 +111,244 @@ internal fun shouldPreserveInMemoryConversation(
             conversation.messageNodes.isNotEmpty() ||
                 persistenceMode != ChatPersistenceMode.NORMAL
             )
+}
+
+internal fun normalizeConversation(conversation: Conversation): Conversation {
+    val sanitizedNodes = conversation.messageNodes.mapNotNull { node ->
+        if (node.messages.isEmpty()) {
+            null
+        } else {
+            node.copy(selectIndex = node.selectIndex.coerceIn(0, node.messages.lastIndex))
+        }
+    }
+
+    if (sanitizedNodes.isEmpty()) {
+        return conversation.copy(messageNodes = emptyList())
+    }
+
+    val normalizedNodes = sanitizedNodes.toMutableList()
+    var index = 0
+    while (index < normalizedNodes.size) {
+        if (normalizedNodes[index].role == MessageRole.USER) {
+            index++
+            continue
+        }
+
+        val turnStart = index
+        while (index < normalizedNodes.size && normalizedNodes[index].role != MessageRole.USER) {
+            index++
+        }
+        repairAssistantTurnSelections(normalizedNodes, turnStart, index)
+    }
+
+    return conversation.copy(messageNodes = normalizedNodes)
+}
+
+internal fun selectConversationTurnVersion(
+    conversation: Conversation,
+    nodeId: Uuid,
+    selectIndex: Int,
+): Conversation {
+    val normalizedConversation = normalizeConversation(conversation)
+    val nodeIndex = normalizedConversation.messageNodes.indexOfFirst { it.id == nodeId }
+    if (nodeIndex == -1) {
+        return normalizedConversation
+    }
+
+    val node = normalizedConversation.messageNodes[nodeIndex]
+    val clampedSelectIndex = selectIndex.coerceIn(0, node.messages.lastIndex)
+    if (node.role == MessageRole.USER) {
+        return normalizedConversation.copy(
+            messageNodes = normalizedConversation.messageNodes.mapIndexed { index, current ->
+                if (index == nodeIndex) {
+                    current.copy(selectIndex = clampedSelectIndex)
+                } else {
+                    current
+                }
+            }
+        )
+    }
+
+    val targetTag = node.messages[clampedSelectIndex].versionTag
+    val turnStartIndex = normalizedConversation.messageNodes
+        .subList(0, nodeIndex + 1)
+        .indexOfLast { it.role == MessageRole.USER } + 1
+    val turnEndIndex = normalizedConversation.messageNodes
+        .subList(nodeIndex, normalizedConversation.messageNodes.size)
+        .indexOfFirst { it.role == MessageRole.USER }
+        .let { if (it == -1) normalizedConversation.messageNodes.size else nodeIndex + it }
+    val versionDelta = clampedSelectIndex - node.selectIndex
+
+    val updatedNodes = normalizedConversation.messageNodes.mapIndexed { index, current ->
+        when {
+            index == nodeIndex -> current.copy(selectIndex = clampedSelectIndex)
+            index in turnStartIndex until turnEndIndex && current.role != MessageRole.USER -> {
+                val matchingIndex = current.messages.indexOfLast { it.versionTag == targetTag }
+                val fallbackIndex = if (matchingIndex >= 0) {
+                    matchingIndex
+                } else {
+                    (current.selectIndex + versionDelta).coerceIn(0, current.messages.lastIndex)
+                }
+                current.copy(selectIndex = fallbackIndex)
+            }
+
+            else -> current
+        }
+    }
+
+    return normalizeConversation(
+        normalizedConversation.copy(messageNodes = updatedNodes)
+    )
+}
+
+internal fun buildForkConversationSnapshot(
+    conversation: Conversation,
+    messageId: Uuid,
+    copyAttachmentUrl: (String) -> String,
+    newConversationId: Uuid = Uuid.random(),
+    now: Instant = Instant.now(),
+): Conversation? {
+    val targetNode = conversation.getMessageNodeByMessageId(messageId) ?: return null
+    val targetIndex = conversation.messageNodes.indexOf(targetNode)
+    if (targetIndex < 0) {
+        return null
+    }
+
+    val copiedNodes = conversation.messageNodes
+        .subList(0, targetIndex + 1)
+        .map { node ->
+            node.copy(
+                messages = node.messages.map { message ->
+                    message.copy(
+                        parts = message.parts.map { part ->
+                            when (part) {
+                                is UIMessagePart.Image -> part.copy(url = copyAttachmentUrl(part.url))
+                                is UIMessagePart.Document -> part.copy(url = copyAttachmentUrl(part.url))
+                                is UIMessagePart.Video -> part.copy(url = copyAttachmentUrl(part.url))
+                                is UIMessagePart.Audio -> part.copy(url = copyAttachmentUrl(part.url))
+                                else -> part
+                            }
+                        }
+                    )
+                }
+            )
+        }
+
+    return normalizeConversation(
+        conversation.copy(
+            id = newConversationId,
+            messageNodes = copiedNodes,
+            createAt = now,
+            updateAt = now,
+        )
+    )
+}
+
+private fun repairAssistantTurnSelections(
+    nodes: MutableList<MessageNode>,
+    turnStart: Int,
+    turnEndExclusive: Int,
+) {
+    if (turnStart !in nodes.indices || turnEndExclusive <= turnStart) return
+
+    val turnNodes = nodes.subList(turnStart, turnEndExclusive)
+    val selectedTag = chooseAssistantTurnVersionTag(turnNodes)
+    for (index in turnStart until turnEndExclusive) {
+        val node = nodes[index]
+        nodes[index] = node.copy(selectIndex = findBestMessageIndex(node, selectedTag))
+    }
+}
+
+private fun chooseAssistantTurnVersionTag(turnNodes: List<MessageNode>): String? {
+    val currentTag = turnNodes.firstOrNull()?.currentMessage?.versionTag
+    if (currentTag != null) {
+        return currentTag
+    }
+
+    val candidateTags = linkedSetOf<String?>()
+    turnNodes.forEach { node ->
+        node.messages.asReversed().forEach { message ->
+            candidateTags += message.versionTag
+        }
+    }
+
+    var bestTag: String? = null
+    var bestScore = -1
+    candidateTags.forEach { tag ->
+        val score = turnNodes.count { node ->
+            node.messages.any { it.versionTag == tag }
+        }
+        if (score > bestScore) {
+            bestScore = score
+            bestTag = tag
+        }
+    }
+
+    return bestTag
+}
+
+private fun findBestMessageIndex(node: MessageNode, versionTag: String?): Int {
+    val clampedIndex = node.selectIndex.coerceIn(0, node.messages.lastIndex)
+    if (node.messages[clampedIndex].versionTag == versionTag) {
+        return clampedIndex
+    }
+
+    val matchingIndex = node.messages.indexOfLast { it.versionTag == versionTag }
+    if (matchingIndex >= 0) {
+        return matchingIndex
+    }
+
+    if (versionTag == null) {
+        val legacyIndex = node.messages.indexOfLast { it.versionTag == null }
+        if (legacyIndex >= 0) {
+            return legacyIndex
+        }
+    }
+
+    return clampedIndex
+}
+
+internal fun Conversation.hasPendingToolApprovals(): Boolean {
+    return currentMessages.any { message ->
+        message.getToolCalls().any { it.approvalState is ToolApprovalState.Pending }
+    }
+}
+
+private fun Conversation.findCurrentToolCall(toolCallId: String): UIMessagePart.ToolCall? {
+    return currentMessages
+        .flatMap { it.getToolCalls() }
+        .firstOrNull { it.toolCallId == toolCallId }
+}
+
+private fun Conversation.updateToolApprovalState(
+    toolCallId: String,
+    approvalState: ToolApprovalState,
+): Conversation {
+    val updatedNodes = messageNodes.map { node ->
+        val updatedMessages = node.messages.map { message ->
+            val updatedParts = message.parts.map { part ->
+                if (part is UIMessagePart.ToolCall && part.toolCallId == toolCallId) {
+                    part.copy(approvalState = approvalState)
+                } else {
+                    part
+                }
+            }
+            if (updatedParts == message.parts) {
+                message
+            } else {
+                message.copy(parts = updatedParts)
+            }
+        }
+        if (updatedMessages == node.messages) {
+            node
+        } else {
+            node.copy(messages = updatedMessages)
+        }
+    }
+    return copy(
+        messageNodes = updatedNodes,
+        updateAt = Instant.now(),
+    )
 }
 
 class ChatService(
@@ -282,14 +532,14 @@ class ChatService(
         ) {
             val preservedConversation = inMemoryConversation ?: return
             updateConversation(conversationId, preservedConversation)
-            settingsStore.updateAssistant(preservedConversation.assistantId)
             return
         }
 
-        val conversation = conversationRepo.getConversationById(conversationId)
+        val conversation = withContext(Dispatchers.IO) {
+            conversationRepo.getConversationById(conversationId)
+        }
         if (conversation != null) {
             updateConversation(conversationId, conversation)
-            settingsStore.updateAssistant(conversation.assistantId)
         } else {
             // 新建对话, 并添加预设消息
             val currentSettings = settingsStore.settingsFlowRaw.first()
@@ -339,8 +589,11 @@ class ChatService(
         val trimmedContent = content.trim()
         require(trimmedContent.isNotBlank()) { "Spontaneous message content cannot be blank" }
 
-        val assistantMessage = MessageNode.of(UIMessage.assistant(trimmedContent))
         val existingConversation = conversationId?.let { ensureConversationLoaded(it) }
+        val assistantMessage = MessageNode.of(
+            message = UIMessage.assistant(trimmedContent),
+            forceTurnBreakBefore = existingConversation != null,
+        )
 
         val conversation = if (existingConversation != null) {
             existingConversation.copy(
@@ -360,13 +613,16 @@ class ChatService(
     }
 
     private suspend fun persistConversationToRepository(conversation: Conversation) {
-        if (conversation.title.isBlank() && conversation.messageNodes.isEmpty()) return
+        val normalizedConversation = normalizeConversation(conversation)
+        if (normalizedConversation.title.isBlank() && normalizedConversation.messageNodes.isEmpty()) return
 
         try {
-            if (conversationRepo.getConversationById(conversation.id) == null) {
-                conversationRepo.insertConversation(conversation)
-            } else {
-                conversationRepo.updateConversation(conversation)
+            withContext(Dispatchers.IO) {
+                if (conversationRepo.getConversationById(normalizedConversation.id) == null) {
+                    conversationRepo.insertConversation(normalizedConversation)
+                } else {
+                    conversationRepo.updateConversation(normalizedConversation)
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -375,16 +631,21 @@ class ChatService(
 
     suspend fun getConversationSnapshot(conversationId: Uuid): Conversation? {
         val currentState = conversations[conversationId]?.value
-        return currentState ?: conversationRepo.getConversationById(conversationId)
+        return currentState ?: withContext(Dispatchers.IO) {
+            conversationRepo.getConversationById(conversationId)
+        }?.let(::normalizeConversation)
     }
 
     suspend fun ensureConversationLoaded(conversationId: Uuid): Conversation? {
         val currentState = conversations[conversationId]?.value
         if (currentState != null) return currentState
 
-        val persistedConversation = conversationRepo.getConversationById(conversationId) ?: return null
-        updateConversation(conversationId, persistedConversation)
-        return persistedConversation
+        val persistedConversation = withContext(Dispatchers.IO) {
+            conversationRepo.getConversationById(conversationId)
+        } ?: return null
+        val normalizedConversation = normalizeConversation(persistedConversation)
+        updateConversation(conversationId, normalizedConversation)
+        return normalizedConversation
     }
 
     fun stopGeneration(conversationId: Uuid) {
@@ -449,41 +710,13 @@ class ChatService(
     ): Conversation {
         val currentConversation = ensureConversationLoaded(conversationId)
             ?: return Conversation.ofId(Uuid.random())
-        val targetNode = currentConversation.getMessageNodeByMessageId(messageId)
-            ?: return Conversation.ofId(Uuid.random())
-        val targetIndex = currentConversation.messageNodes.indexOf(targetNode)
-        if (targetIndex < 0) {
-            return Conversation.ofId(Uuid.random())
-        }
-
-        val copiedNodes = withContext(Dispatchers.IO) {
-            currentConversation.messageNodes
-                .subList(0, targetIndex + 1)
-                .map { node ->
-                    node.copy(
-                        messages = node.messages.map { message ->
-                            message.copy(
-                                parts = message.parts.map { part ->
-                                    when (part) {
-                                        is UIMessagePart.Image -> part.copy(url = copyAttachmentUrl(part.url))
-                                        is UIMessagePart.Document -> part.copy(url = copyAttachmentUrl(part.url))
-                                        is UIMessagePart.Video -> part.copy(url = copyAttachmentUrl(part.url))
-                                        is UIMessagePart.Audio -> part.copy(url = copyAttachmentUrl(part.url))
-                                        else -> part
-                                    }
-                                }
-                            )
-                        }
-                    )
-                }
-        }
-
-        val forkConversation = currentConversation.copy(
-            id = Uuid.random(),
-            messageNodes = copiedNodes,
-            createAt = Instant.now(),
-            updateAt = Instant.now(),
-        )
+        val forkConversation = withContext(Dispatchers.IO) {
+            buildForkConversationSnapshot(
+                conversation = currentConversation,
+                messageId = messageId,
+                copyAttachmentUrl = ::copyAttachmentUrl,
+            )
+        } ?: return Conversation.ofId(Uuid.random())
         saveConversation(forkConversation.id, forkConversation)
         return forkConversation
     }
@@ -516,14 +749,11 @@ class ChatService(
         selectIndex: Int,
     ) {
         val currentConversation = ensureConversationLoaded(conversationId) ?: return
-        val updatedConversation = currentConversation.copy(
-            messageNodes = currentConversation.messageNodes.map { node ->
-                if (node.id != nodeId || selectIndex !in node.messages.indices) {
-                    node
-                } else {
-                    node.copy(selectIndex = selectIndex)
-                }
-            },
+        val updatedConversation = selectConversationTurnVersion(
+            conversation = currentConversation,
+            nodeId = nodeId,
+            selectIndex = selectIndex,
+        ).copy(
             updateAt = Instant.now(),
         )
         saveConversation(conversationId, updatedConversation)
@@ -536,10 +766,75 @@ class ChatService(
         reason: String,
         answer: String?,
     ) {
-        Log.w(
-            TAG,
-            "handleToolApproval is not implemented for web yet: conversationId=$conversationId toolCallId=$toolCallId approved=$approved reason=$reason answer=${answer?.take(32)}"
-        )
+        getGenerationJob(conversationId)?.cancel()
+
+        val job = appScope.launch {
+            try {
+                val currentConversation = ensureConversationLoaded(conversationId)
+                    ?: error("Conversation not found")
+                val pendingToolCall = currentConversation.findCurrentToolCall(toolCallId)
+                    ?: error("Tool call $toolCallId not found")
+                if (pendingToolCall.approvalState !is ToolApprovalState.Pending) {
+                    Log.w(TAG, "Ignoring tool approval for non-pending call: $toolCallId")
+                    return@launch
+                }
+
+                val settings = settingsStore.settingsFlow.first()
+                val assistant = settings.assistants.find { it.id == currentConversation.assistantId }
+                    ?: settings.getCurrentAssistant()
+                val modelId = assistant.chatModelId ?: settings.chatModelId
+                val model = settings.findModelById(modelId)
+                    ?: error("Conversation model not found")
+                val tools = buildConversationTools(
+                    settings = settings,
+                    assistant = assistant,
+                    conversation = currentConversation,
+                    model = model,
+                )
+
+                val resolution = createToolApprovalResolution(
+                    toolCall = pendingToolCall,
+                    approved = approved,
+                    reason = reason,
+                    answer = answer,
+                    tools = tools,
+                )
+
+                val updatedConversation = currentConversation
+                    .updateToolApprovalState(
+                        toolCallId = toolCallId,
+                        approvalState = resolution.approvalState,
+                    )
+                    .let { conversationWithApproval ->
+                        conversationWithApproval.updateCurrentMessages(
+                            conversationWithApproval.currentMessages + UIMessage(
+                            role = MessageRole.TOOL,
+                            parts = listOf(resolution.toolResult),
+                        )
+                        )
+                    }
+
+                saveConversation(conversationId, updatedConversation)
+                handleMessageComplete(
+                    conversationId = conversationId,
+                    suppressCompletionNotification = true,
+                )
+
+                _generationDoneFlow.emit(conversationId)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _errorFlow.emit(e)
+            }
+        }
+
+        setGenerationJob(conversationId, job)
+        job.invokeOnCompletion {
+            setGenerationJob(conversationId, null)
+            appScope.launch {
+                delay(500)
+                checkAllConversationsReferences()
+            }
+        }
     }
 
     fun sendMessage(
@@ -581,7 +876,9 @@ class ChatService(
                 }
 
                 // Record daily activity for streak tracking (persists even if chat is deleted)
-                conversationRepo.recordDailyActivity()
+                withContext(Dispatchers.IO) {
+                    conversationRepo.recordDailyActivity()
+                }
 
                 // 开始补全
                 if(answer){
@@ -773,21 +1070,29 @@ class ChatService(
         suppressCompletionNotification: Boolean = false,
     ) {
         val settings = settingsStore.settingsFlow.first()
-        val model = settings.getCurrentChatModel() ?: return
 
         // Track generation start time for tokens/sec calculation
         // Set on first token arrival to exclude TTFT (time to first token) from the calculation
         var firstTokenTime: Long? = null
 
         runCatching {
-            val conversation = getConversationFlow(conversationId).value
+            var conversation = normalizeConversation(getConversationFlow(conversationId).value)
+            val conversationContext = settings.resolveConversationContext(conversation)
+            val assistant = conversationContext.assistant
+            val model = conversationContext.chatModel ?: return
 
             // reset suggestions
             updateConversation(conversationId, conversation.copy(chatSuggestions = emptyList()))
+            conversation = getConversationFlow(conversationId).value
 
             // Check if model supports tools when external tools are configured
-            val assistant = settings.getCurrentAssistant()
-            val hasExternalTools = (assistant.searchMode !is AssistantSearchMode.Off) || mcpManager.getAllAvailableTools().isNotEmpty()
+            val tools = buildConversationTools(
+                settings = settings,
+                assistant = assistant,
+                conversation = conversation,
+                model = model,
+            )
+            val hasExternalTools = tools.isNotEmpty()
             if (!model.abilities.contains(ModelAbility.TOOL)) {
                 if (hasExternalTools) {
                     _errorFlow.emit(IllegalStateException(context.getString(R.string.tools_warning)))
@@ -796,6 +1101,7 @@ class ChatService(
 
             // check invalid messages
             checkInvalidMessages(conversationId)
+            conversation = getConversationFlow(conversationId).value
 
             // start generating
             generationHandler.generateText(
@@ -808,12 +1114,11 @@ class ChatService(
                         it
                     }
                 },
-                assistant = settings.getCurrentAssistant(),
+                assistant = assistant,
                 memories = if (
-                    settings.getCurrentAssistant().enableMemory &&
+                    assistant.enableMemory &&
                     getConversationPersistenceMode(conversationId) == ChatPersistenceMode.NORMAL
                 ) {
-                    val assistant = settings.getCurrentAssistant()
                     if (assistant.useRagMemoryRetrieval) {
                         // RAG mode: retrieve relevant memories based on context
                         val lastUserMessage = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: ""
@@ -824,7 +1129,7 @@ class ChatService(
 
                         if (lastUserMessage.isNotBlank()) {
                             val results = memoryRepository.retrieveRelevantMemories(
-                                assistantId = settings.assistantId.toString(),
+                                assistantId = conversation.assistantId.toString(),
                                 query = lastUserMessage,
                                 limit = 50, // Hardcoded high limit for dynamic context
                                 similarityThreshold = assistant.ragSimilarityThreshold,
@@ -838,11 +1143,11 @@ class ChatService(
                             results
                         } else {
                             if (settings.enableRagLogging) Log.d("RAG", "Empty query, using all memories")
-                            memoryRepository.getMemoriesOfAssistant(settings.assistantId.toString())
+                            memoryRepository.getMemoriesOfAssistant(conversation.assistantId.toString())
                         }
                     } else {
                         // Simple mode: inject all memories
-                        memoryRepository.getMemoriesOfAssistant(settings.assistantId.toString())
+                        memoryRepository.getMemoriesOfAssistant(conversation.assistantId.toString())
                     }
                 } else {
                     emptyList()
@@ -852,55 +1157,7 @@ class ChatService(
                     add(templateTransformer)
                 },
                 outputTransformers = defaultChatOutputTransformers,
-                tools = buildList {
-                    // Check if we should use built-in search instead of external tools
-                    // Built-in search is used when:
-                    // 1. preferBuiltInSearch is enabled on assistant
-                    // 2. Model supports built-in search (Gemini series with search grounding)
-                    val modelSupportsBuiltIn = model.tools.isNotEmpty() || 
-                        me.rerere.ai.registry.ModelRegistry.GEMINI_SERIES.match(model.modelId)
-                    val useBuiltInSearch = assistant.preferBuiltInSearch && modelSupportsBuiltIn
-                    
-                    // Use assistant's searchMode for external tools (only if NOT using built-in)
-                    when (val searchMode = assistant.searchMode) {
-                        is AssistantSearchMode.Provider -> {
-                            // Only add external search tools if NOT using built-in search
-                            if (!useBuiltInSearch) {
-                                addAll(createSearchTool(settings, searchMode.index))
-                            }
-                        }
-                        is AssistantSearchMode.BuiltIn -> {
-                            // Built-in search is handled via model.tools, no external tool needed
-                        }
-                        is AssistantSearchMode.Off -> {
-                            // No search tools
-                        }
-                    }
-                    addAll(localTools.getTools(
-                        options = settings.getCurrentAssistant().localTools,
-                        assistantId = settings.getCurrentAssistant().id,
-                        conversationId = conversation.id,
-                        // Extract image URLs from last user message for Python auto-import
-                        userImageUrls = conversation.currentMessages
-                            .lastOrNull { it.role == MessageRole.USER }
-                            ?.parts
-                            ?.filterIsInstance<me.rerere.ai.ui.UIMessagePart.Image>()
-                            ?.map { it.url }
-                            ?: emptyList()
-                    ))
-                    mcpManager.getAllAvailableTools().forEach { tool ->
-                        add(
-                            Tool(
-                                name = tool.name,
-                                description = tool.description ?: "",
-                                parameters = { tool.inputSchema },
-                                execute = {
-                                    mcpManager.callTool(tool.name, it.jsonObject).truncateLargeJsonText()
-                                },
-                            )
-                        )
-                    }
-                },
+                tools = tools,
                 truncateIndex = conversation.truncateIndex,
                 enabledModeIds = conversation.enabledModeIds,
                 onEnabledModeIdsUpdate = { updatedSkillIds ->
@@ -943,6 +1200,7 @@ class ChatService(
 
                 // Show notification if app is not in foreground
                 if (
+                    !updatedConversation.hasPendingToolApprovals() &&
                     !suppressCompletionNotification &&
                     !isForeground.value &&
                     settings.displaySetting.enableNotificationOnMessageGeneration
@@ -971,6 +1229,9 @@ class ChatService(
         }.onSuccess {
             val finalConversation = getConversationFlow(conversationId).value
             saveConversation(conversationId, finalConversation)
+            if (finalConversation.hasPendingToolApprovals()) {
+                return@onSuccess
+            }
 
             addConversationReference(conversationId) // 添加引用
             appScope.launch {
@@ -978,7 +1239,9 @@ class ChatService(
                     launch {
                         // Fetch fresh conversation from DB to ensure we have the latest state
                         // This matches the manual regeneration pattern which works correctly
-                        val freshConversation = conversationRepo.getConversationById(conversationId)
+                        val freshConversation = withContext(Dispatchers.IO) {
+                            conversationRepo.getConversationById(conversationId)
+                        }
                         if (freshConversation != null) {
                             generateTitle(conversationId, freshConversation)
                         } else {
@@ -999,6 +1262,142 @@ class ChatService(
     }
 
     // 创建搜索工具
+    private data class ToolApprovalResolution(
+        val approvalState: ToolApprovalState,
+        val toolResult: UIMessagePart.ToolResult,
+    )
+
+    private fun buildConversationTools(
+        settings: Settings,
+        assistant: me.rerere.rikkahub.data.model.Assistant,
+        conversation: Conversation,
+        model: Model,
+    ): List<Tool> {
+        return buildList {
+            val modelSupportsBuiltIn = model.tools.isNotEmpty() ||
+                me.rerere.ai.registry.ModelRegistry.GEMINI_SERIES.match(model.modelId)
+            val useBuiltInSearch = assistant.preferBuiltInSearch && modelSupportsBuiltIn
+
+            when (val searchMode = assistant.searchMode) {
+                is AssistantSearchMode.Provider -> {
+                    if (!useBuiltInSearch) {
+                        addAll(createSearchTool(settings, searchMode.index))
+                    }
+                }
+
+                is AssistantSearchMode.BuiltIn -> Unit
+                is AssistantSearchMode.Off -> Unit
+            }
+
+            addAll(
+                localTools.getTools(
+                    options = assistant.localTools,
+                    assistantId = assistant.id,
+                    conversationId = conversation.id,
+                    userImageUrls = conversation.currentMessages
+                        .lastOrNull { it.role == MessageRole.USER }
+                        ?.parts
+                        ?.filterIsInstance<me.rerere.ai.ui.UIMessagePart.Image>()
+                        ?.map { it.url }
+                        ?: emptyList()
+                )
+            )
+
+            mcpManager.getAllAvailableTools().forEach { tool ->
+                add(
+                    Tool(
+                        name = tool.name,
+                        description = tool.description ?: "",
+                        parameters = { tool.inputSchema },
+                        execute = {
+                            mcpManager.callTool(tool.name, it.jsonObject).truncateLargeJsonText()
+                        },
+                    )
+                )
+            }
+        }
+    }
+
+    private suspend fun createToolApprovalResolution(
+        toolCall: UIMessagePart.ToolCall,
+        approved: Boolean,
+        reason: String,
+        answer: String?,
+        tools: List<Tool>,
+    ): ToolApprovalResolution {
+        val parsedArguments = parseToolArguments(toolCall.arguments)
+        if (!approved) {
+            return ToolApprovalResolution(
+                approvalState = ToolApprovalState.Denied(reason = reason),
+                toolResult = UIMessagePart.ToolResult(
+                    toolCallId = toolCall.toolCallId,
+                    toolName = toolCall.toolName,
+                    content = buildJsonObject {
+                        put("denied", true)
+                        if (reason.isNotBlank()) {
+                            put("reason", reason)
+                        }
+                    },
+                    arguments = parsedArguments,
+                    metadata = toolCall.metadata,
+                )
+            )
+        }
+
+        if (toolCall.toolName == ASK_USER_TOOL_NAME) {
+            val questionnaire = parseAskUserQuestionnaire(parsedArguments)
+                ?: error("Invalid ask_user questionnaire")
+            val payload = normalizeAskUserAnswerPayload(
+                questionnaire = questionnaire,
+                rawAnswer = answer,
+            )
+            val payloadJson = payload.toJsonElement()
+            val payloadText = JsonInstantPretty.encodeToString(JsonElement.serializer(), payloadJson)
+            return ToolApprovalResolution(
+                approvalState = ToolApprovalState.Answered(answer = payloadText),
+                toolResult = UIMessagePart.ToolResult(
+                    toolCallId = toolCall.toolCallId,
+                    toolName = toolCall.toolName,
+                    content = payloadJson,
+                    arguments = parsedArguments,
+                    metadata = toolCall.metadata,
+                )
+            )
+        }
+
+        val tool = tools.find { it.name == toolCall.toolName }
+        val result = runCatching {
+            checkNotNull(tool) { "Tool ${toolCall.toolName} not found" }
+            tool.execute(parsedArguments)
+        }.getOrElse { throwable ->
+            buildJsonObject {
+                put(
+                    "error",
+                    "[${throwable.javaClass.simpleName}] ${throwable.message.orEmpty()}".trim()
+                )
+            }
+        }
+
+        return ToolApprovalResolution(
+            approvalState = ToolApprovalState.Approved,
+            toolResult = UIMessagePart.ToolResult(
+                toolCallId = toolCall.toolCallId,
+                toolName = toolCall.toolName,
+                content = result,
+                arguments = parsedArguments,
+                metadata = toolCall.metadata,
+            )
+        )
+    }
+
+    private fun parseToolArguments(arguments: String): JsonElement {
+        return runCatching {
+            JsonInstantPretty.parseToJsonElement(arguments.ifBlank { "{}" })
+        }.getOrElse {
+            JsonPrimitive(arguments)
+        }
+    }
+
     private fun createSearchTool(settings: Settings, providerIndex: Int? = null): Set<Tool> {
         // Use the provided providerIndex (from assistant's searchMode) or fall back to global selection
         val effectiveIndex = providerIndex ?: settings.searchServiceSelected
@@ -1141,22 +1540,10 @@ class ChatService(
 
     // 检查无效消息
     private suspend fun checkInvalidMessages(conversationId: Uuid) {
-        val conversation = getConversationFlow(conversationId).value
+        val conversation = normalizeConversation(getConversationFlow(conversationId).value)
         var messagesNodes = conversation.messageNodes
 
-        // Step 1: 移除空消息节点 (do this FIRST to prevent exceptions)
-        messagesNodes = messagesNodes.filter { it.messages.isNotEmpty() }
-
-        // Step 2: 更新无效的selectIndex (do this BEFORE accessing currentMessage)
-        messagesNodes = messagesNodes.map { node ->
-            if (node.selectIndex !in node.messages.indices) {
-                node.copy(selectIndex = 0)
-            } else {
-                node
-            }
-        }
-
-        // Step 3: 移除无效tool call (now safe to access currentMessage)
+        // Step 1: 移除无效tool call (now safe to access currentMessage)
         messagesNodes = messagesNodes.mapIndexed { index, node ->
             val next = if (index < messagesNodes.size - 1) messagesNodes[index + 1] else null
             if (node.currentMessage.hasPart<UIMessagePart.ToolCall>()) {
@@ -1170,17 +1557,10 @@ class ChatService(
             node
         }
 
-        // Step 4: Final cleanup after tool call removal
-        messagesNodes = messagesNodes.filter { it.messages.isNotEmpty() }
-        messagesNodes = messagesNodes.map { node ->
-            if (node.selectIndex !in node.messages.indices) {
-                node.copy(selectIndex = 0.coerceAtMost(node.messages.lastIndex))
-            } else {
-                node
-            }
-        }
-
-        updateConversation(conversationId, conversation.copy(messageNodes = messagesNodes))
+        updateConversation(
+            conversationId,
+            normalizeConversation(conversation.copy(messageNodes = messagesNodes))
+        )
     }
 
     // 生成标题
@@ -1202,8 +1582,9 @@ class ChatService(
 
         runCatching {
             val settings = settingsStore.settingsFlow.first()
+            val conversationContext = settings.resolveConversationContext(conversation)
             val model =
-                settings.findModelById(settings.titleModelId) ?: settings.getCurrentChatModel()
+                settings.findModelById(settings.titleModelId) ?: conversationContext.chatModel
             if (model == null) {
                 Log.w(TAG, "generateTitle: No model found for titleModelId=${settings.titleModelId} and no current chat model")
                 return
@@ -1238,7 +1619,9 @@ class ChatService(
             )
 
             // 生成完，conversation可能不是最新了，因此需要重新获取
-            conversationRepo.getConversationById(conversation.id)?.let {
+            withContext(Dispatchers.IO) {
+                conversationRepo.getConversationById(conversation.id)
+            }?.let {
                 saveConversation(
                     conversationId,
                     it.copy(title = result.choices[0].message?.toContentText()?.trim() ?: "")
@@ -1253,7 +1636,9 @@ class ChatService(
     suspend fun generateSuggestion(conversationId: Uuid, conversation: Conversation) {
         runCatching {
             val settings = settingsStore.settingsFlow.first()
-            val model = settings.findModelById(settings.suggestionModelId) ?: return
+            val model = settings.findModelById(settings.suggestionModelId)
+                ?: settings.resolveConversationContext(conversation).chatModel
+                ?: return
             val provider = model.findProvider(settings.providers) ?: return
 
             updateConversation(
@@ -1279,7 +1664,9 @@ class ChatService(
                     ?.filter { it.isNotBlank() } ?: emptyList()
 
             // Fetch fresh conversation from DB to avoid overwriting concurrent updates (e.g., title generation)
-            conversationRepo.getConversationById(conversationId)?.let { freshConversation ->
+            withContext(Dispatchers.IO) {
+                conversationRepo.getConversationById(conversationId)
+            }?.let { freshConversation ->
                 saveConversation(
                     conversationId,
                     freshConversation.copy(chatSuggestions = suggestions)
@@ -1299,19 +1686,25 @@ class ChatService(
 
     fun deleteConversation(conversation: Conversation) {
         appScope.launch {
-            val conversationFull = conversationRepo.getConversationById(conversation.id) ?: return@launch
+            val conversationFull = withContext(Dispatchers.IO) {
+                conversationRepo.getConversationById(conversation.id)
+            } ?: return@launch
 
             // Cancel any pending deletion for this conversation
             conversationDeletionJobs[conversation.id]?.cancel()
 
             // Soft delete (DB only, preserve files)
-            conversationRepo.deleteConversation(conversationFull, deleteFiles = false)
+            withContext(Dispatchers.IO) {
+                conversationRepo.deleteConversation(conversationFull, deleteFiles = false)
+            }
             recentlyDeletedConversations[conversation.id] = conversationFull
 
             // Schedule file deletion
             val job = appScope.launch {
                 kotlinx.coroutines.delay(4000)
-                context.deleteChatFiles(conversationFull.files)
+                withContext(Dispatchers.IO) {
+                    context.deleteChatFiles(conversationFull.files)
+                }
                 conversationDeletionJobs.remove(conversation.id)
                 recentlyDeletedConversations.remove(conversation.id)
             }
@@ -1326,7 +1719,9 @@ class ChatService(
         val conversation = recentlyDeletedConversations[conversationId]
         if (conversation != null) {
             appScope.launch {
-                conversationRepo.insertConversation(conversation)
+                withContext(Dispatchers.IO) {
+                    conversationRepo.insertConversation(conversation)
+                }
                 recentlyDeletedConversations.remove(conversationId)
 
                 // Track for fade-in animation
@@ -1467,9 +1862,10 @@ class ChatService(
 
     private suspend fun updateConversation(conversationId: Uuid, conversation: Conversation) {
         if (conversation.id != conversationId) return
-        checkFilesDelete(conversation, getConversationFlow(conversationId).value)
-        conversations.getOrPut(conversationId) { MutableStateFlow(conversation) }.value =
-            conversation
+        val normalizedConversation = normalizeConversation(conversation)
+        checkFilesDelete(normalizedConversation, getConversationFlow(conversationId).value)
+        conversations.getOrPut(conversationId) { MutableStateFlow(normalizedConversation) }.value =
+            normalizedConversation
     }
 
     // 检查文件删除
@@ -1480,7 +1876,9 @@ class ChatService(
             newFiles.none { it == file }
         }
         if (deletedFiles.isNotEmpty()) {
-            context.deleteChatFiles(deletedFiles)
+            withContext(Dispatchers.IO) {
+                context.deleteChatFiles(deletedFiles)
+            }
             Log.w(TAG, "checkFilesDelete: $deletedFiles")
         }
     }
@@ -1501,10 +1899,10 @@ class ChatService(
         settings: Settings
     ) {
         try {
-            val assistant = settings.getCurrentAssistant()
+            val assistant = settings.resolveConversationContext(conversation).assistant
             
-            // Check if auto-summarization is enabled
-            if (!assistant.enableContextRefresh || !assistant.autoRegenerateSummary) {
+            // Check if auto-summarization is enabled and configured with a limit
+            if (!assistant.shouldAutoSummarizeMessages()) {
                 return
             }
             
@@ -1544,9 +1942,12 @@ class ChatService(
     suspend fun summarizeAndRefresh(conversationId: Uuid): ContextRefreshResult = withContext(Dispatchers.IO) {
         try {
             val settings = settingsStore.settingsFlow.first()
-            val assistant = settings.getCurrentAssistant()
-            val conversation = conversationRepo.getConversationById(conversationId)
+            val conversation = normalizeConversation(
+                conversationRepo.getConversationById(conversationId)
                 ?: return@withContext ContextRefreshResult(false, errorMessage = "Conversation not found")
+            )
+            val conversationContext = settings.resolveConversationContext(conversation)
+            val assistant = conversationContext.assistant
 
             // Check for empty messages FIRST before model lookup
             val messages = conversation.currentMessages
@@ -1555,10 +1956,8 @@ class ChatService(
             }
 
             // Get the summarizer model (fall back to chat model)
-            val summarizerModelId = settings.summarizerModelId
-                ?: assistant.chatModelId
-                ?: settings.chatModelId
-            val model = settings.findModelById(summarizerModelId)
+            val model = settings.summarizerModelId?.let(settings::findModelById)
+                ?: conversationContext.chatModel
                 ?: return@withContext ContextRefreshResult(false, errorMessage = "No model configured")
             val provider = model.findProvider(settings.providers)
                 ?: return@withContext ContextRefreshResult(false, errorMessage = "No provider found")
@@ -1687,19 +2086,21 @@ class ChatService(
 
     // 保存对话
     suspend fun saveConversation(conversationId: Uuid, conversation: Conversation) {
+        val normalizedConversation = normalizeConversation(conversation)
+
         // 临时对话不持久化到数据库
         if (getConversationPersistenceMode(conversationId) != ChatPersistenceMode.NORMAL) {
-            updateConversation(conversationId, conversation)
+            updateConversation(conversationId, normalizedConversation)
             return
         }
 
-        val updatedConversation = conversation.copy()
+        val updatedConversation = normalizedConversation.copy()
         // Always update in-memory state (even for empty conversations)
         // This ensures mode toggles work on new chats before first message
         updateConversation(conversationId, updatedConversation)
 
         // Skip database persist for empty conversations (no messages and no title)
-        if (conversation.title.isBlank() && conversation.messageNodes.isEmpty()) return
+        if (updatedConversation.title.isBlank() && updatedConversation.messageNodes.isEmpty()) return
 
         persistConversationToRepository(updatedConversation)
     }

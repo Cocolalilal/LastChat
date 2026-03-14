@@ -6,16 +6,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.core.net.toUri
 import android.net.Uri
+import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import androidx.paging.insertSeparators
 import androidx.paging.map
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,14 +28,16 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.isEmptyInputMessage
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.datastore.ConversationContext
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.data.datastore.getCurrentChatModel
+import me.rerere.rikkahub.data.datastore.resolveConversationContext
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.Avatar
@@ -48,7 +49,6 @@ import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.ui.hooks.writeStringPreference
 import me.rerere.rikkahub.utils.UiState
 import me.rerere.rikkahub.utils.UpdateChecker
-import me.rerere.rikkahub.utils.createChatFilesByContents
 import me.rerere.rikkahub.utils.deleteChatFiles
 import me.rerere.rikkahub.utils.toLocalString
 import java.time.LocalDate
@@ -123,31 +123,44 @@ class ChatVM(
     val settings: StateFlow<Settings> =
         settingsStore.settingsFlow.stateIn(viewModelScope, SharingStarted.Lazily, Settings.dummy())
 
-    // 网络搜索 - 从当前助手的searchMode派生
-    val enableWebSearch = settings.map { settings ->
-        val assistant = settings.assistants.find { it.id == settings.assistantId }
-        when (assistant?.searchMode) {
+    val conversationContext: StateFlow<ConversationContext> =
+        combine(settings, conversation) { currentSettings, currentConversation ->
+            currentSettings.resolveConversationContext(currentConversation)
+        }.stateIn(
+            viewModelScope,
+            SharingStarted.Lazily,
+            Settings.dummy().resolveConversationContext(conversation.value)
+        )
+
+    val conversationAssistant: StateFlow<Assistant> =
+        conversationContext
+            .map { it.assistant }
+            .stateIn(viewModelScope, SharingStarted.Lazily, conversationContext.value.assistant)
+
+    // 网络搜索 - 从当前会话助手的searchMode派生
+    val enableWebSearch = conversationContext.map { context ->
+        when (context.searchMode) {
             is me.rerere.rikkahub.data.model.AssistantSearchMode.Off -> false
             is me.rerere.rikkahub.data.model.AssistantSearchMode.BuiltIn -> true
             is me.rerere.rikkahub.data.model.AssistantSearchMode.Provider -> true
-            null -> false
         }
     }.stateIn(viewModelScope, SharingStarted.Lazily, false)
-    
-    // 获取当前助手的searchMode
-    val currentSearchMode = settings.map { settings ->
-        val assistant = settings.assistants.find { it.id == settings.assistantId }
-        assistant?.searchMode ?: me.rerere.rikkahub.data.model.AssistantSearchMode.Off
-    }.stateIn(viewModelScope, SharingStarted.Lazily, me.rerere.rikkahub.data.model.AssistantSearchMode.Off)
-    
-    // 更新当前助手的searchMode
+
+    // 获取当前会话助手的searchMode
+    val currentSearchMode = conversationContext.map { it.searchMode }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.Lazily,
+            me.rerere.rikkahub.data.model.AssistantSearchMode.Off
+        )
+
+    // 更新当前会话助手的searchMode
     fun updateAssistantSearchMode(searchMode: me.rerere.rikkahub.data.model.AssistantSearchMode) {
         viewModelScope.launch {
             settingsStore.update { settings ->
-                val assistantId = settings.assistantId
                 settings.copy(
                     assistants = settings.assistants.map {
-                        if (it.id == assistantId) {
+                        if (it.id == conversation.value.assistantId) {
                             it.copy(searchMode = searchMode)
                         } else {
                             it
@@ -165,7 +178,7 @@ class ChatVM(
     // 聊天列表 (使用 Paging 分页加载)
     val conversations: Flow<PagingData<ConversationListItem>> =
         combine(
-            settings.map { it.assistantId }.distinctUntilChanged(),
+            conversation.map { it.assistantId }.distinctUntilChanged(),
             _searchQuery
         ) { assistantId, query -> assistantId to query }
             .flatMapLatest { (assistantId, query) ->
@@ -247,9 +260,8 @@ class ChatVM(
     }
 
     // 当前模型
-    val currentChatModel = settings.map { settings ->
-        settings.getCurrentChatModel()
-    }.stateIn(viewModelScope, SharingStarted.Lazily, null)
+    val currentChatModel = conversationContext.map { it.chatModel }
+        .stateIn(viewModelScope, SharingStarted.Lazily, conversationContext.value.chatModel)
 
     // 错误流 (从ChatService获取)
     val errorFlow: SharedFlow<Throwable> = chatService.errorFlow
@@ -276,26 +288,44 @@ class ChatVM(
         val newAvatar = newSettings.displaySetting.userAvatar
 
         if (oldAvatar is Avatar.Image && oldAvatar != newAvatar) {
-            context.deleteChatFiles(listOf(oldAvatar.url.toUri()))
+            withContext(Dispatchers.IO) {
+                context.deleteChatFiles(listOf(oldAvatar.url.toUri()))
+            }
         }
     }
 
-    // 设置聊天模型
-    fun setChatModel(assistant: Assistant, model: Model) {
+    fun updateConversationAssistant(updatedAssistant: Assistant) {
         viewModelScope.launch {
             settingsStore.update { settings ->
                 settings.copy(
                     assistants = settings.assistants.map {
-                        if (it.id == assistant.id) {
-                            it.copy(
-                                chatModelId = model.id
-                            )
+                        if (it.id == updatedAssistant.id) {
+                            updatedAssistant
                         } else {
                             it
                         }
                     })
             }
         }
+    }
+
+    // 设置聊天模型
+    fun setChatModel(model: Model) {
+        val assistant = conversationAssistant.value
+        updateConversationAssistant(
+            assistant.copy(chatModelId = model.id)
+        )
+    }
+
+    fun setSelectedAssistant(assistantId: Uuid) {
+        viewModelScope.launch {
+            settingsStore.updateAssistant(assistantId)
+        }
+    }
+
+    suspend fun createConversationForAssistant(assistantId: Uuid): Conversation {
+        settingsStore.updateAssistant(assistantId)
+        return chatService.createConversation(assistantId)
     }
 
     // Update checker
@@ -316,7 +346,7 @@ class ChatVM(
     ) {
         if (content.isEmptyInputMessage()) return
 
-        val assistant = settings.value.assistants.find { it.id == settings.value.assistantId }
+        val assistant = conversationAssistant.value
         val processedContent = if (assistant != null) {
             content.map { part ->
                 when (part) {
@@ -348,7 +378,7 @@ class ChatVM(
     fun handleMessageEdit(parts: List<UIMessagePart>, messageId: Uuid) {
         if (parts.isEmptyInputMessage()) return
 
-        val assistant = settings.value.assistants.find { it.id == settings.value.assistantId }
+        val assistant = conversationAssistant.value
         val processedParts = if (assistant != null) {
             parts.map { part ->
                 when (part) {
@@ -369,23 +399,26 @@ class ChatVM(
             parts
         }
 
-        val newConversation = conversation.value.copy(
-            messageNodes = conversation.value.messageNodes.map { node ->
-                if (!node.messages.any { it.id == messageId }) {
-                    return@map node // 如果这个node没有这个消息，则不修改
-                }
-                val originalMessage = node.messages.find { it.id == messageId }
-                node.copy(
-                    messages = node.messages + UIMessage(
-                        role = node.role,
-                        parts = processedParts,
-                        versionTag = originalMessage?.versionTag,  // Preserve versionTag for filtering
-                    ), selectIndex = node.messages.size
-                )
-            },
-        )
-        // Use updateConversation to immediately update UI state, then save async
-        updateConversation(newConversation)
+        viewModelScope.launch {
+            chatService.editMessage(_conversationId, messageId, processedParts)
+        }
+    }
+
+    fun handleToolApproval(
+        toolCallId: String,
+        approved: Boolean,
+        reason: String = "",
+        answer: String? = null,
+    ) {
+        viewModelScope.launch {
+            chatService.handleToolApproval(
+                conversationId = _conversationId,
+                toolCallId = toolCallId,
+                approved = approved,
+                reason = reason,
+                answer = answer,
+            )
+        }
     }
 
     fun handleMessageTruncate() {
@@ -402,164 +435,20 @@ class ChatVM(
     }
 
     suspend fun forkMessage(message: UIMessage): Conversation {
-        val node = conversation.value.getMessageNodeByMessage(message)
-        val nodes = conversation.value.messageNodes.subList(
-            0, conversation.value.messageNodes.indexOf(node) + 1
-        ).map { messageNode ->
-            messageNode.copy(
-                messages = messageNode.messages.map { msg ->
-                    msg.copy(
-                        parts = msg.parts.map { part ->
-                            when (part) {
-                                is UIMessagePart.Image -> {
-                                    val url = part.url
-                                    if (url.startsWith("file:")) {
-                                        val copied = context.createChatFilesByContents(
-                                            listOf(url.toUri())
-                                        ).firstOrNull()
-                                        if (copied != null) part.copy(url = copied.toString()) else part
-                                    } else part
-                                }
-
-                                is UIMessagePart.Document -> {
-                                    val url = part.url
-                                    if (url.startsWith("file:")) {
-                                        val copied = context.createChatFilesByContents(
-                                            listOf(url.toUri())
-                                        ).firstOrNull()
-                                        if (copied != null) part.copy(url = copied.toString()) else part
-                                    } else part
-                                }
-
-                                is UIMessagePart.Video -> {
-                                    val url = part.url
-                                    if (url.startsWith("file:")) {
-                                        val copied = context.createChatFilesByContents(
-                                            listOf(url.toUri())
-                                        ).firstOrNull()
-                                        if (copied != null) part.copy(url = copied.toString()) else part
-                                    } else part
-                                }
-
-                                is UIMessagePart.Audio -> {
-                                    val url = part.url
-                                    if (url.startsWith("file:")) {
-                                        val copied = context.createChatFilesByContents(
-                                            listOf(url.toUri())
-                                        ).firstOrNull()
-                                        if (copied != null) part.copy(url = copied.toString()) else part
-                                    } else part
-                                }
-
-                                else -> part
-                            }
-                        }
-                    )
-                }
-            )
-        }
-        val newConversation = Conversation(
-            id = Uuid.random(),
-            assistantId = settings.value.assistantId,
-            messageNodes = nodes
-        )
-        chatService.saveConversation(newConversation.id, newConversation)
-        return newConversation
+        return chatService.forkConversationAtMessage(_conversationId, message.id)
     }
 
-    fun deleteMessage(message: UIMessage) {
-        val relatedMessages = collectRelatedMessages(message)
-        deleteMessageInternal(message)
-        relatedMessages.forEach { deleteMessageInternal(it) }
-        saveConversationAsync()
+    suspend fun deleteMessage(message: UIMessage): Set<Uuid> {
+        val previousNodeIds = conversation.value.messageNodes.map { it.id }.toSet()
+        chatService.deleteMessage(_conversationId, message.id)
+        val updatedNodeIds = conversation.value.messageNodes.map { it.id }.toSet()
+        return previousNodeIds - updatedNodeIds
     }
 
-    private fun deleteMessageInternal(message: UIMessage) {
-        val conversation = conversation.value
-        // Use ID-based lookup instead of object equality to avoid issues after recomposition
-        val node = conversation.getMessageNodeByMessageId(message.id) ?: return
-        val nodeIndex = conversation.messageNodes.indexOf(node)
-        if (nodeIndex == -1) return
-
-        // Get the versionTag from the message being deleted - we'll delete all matching versions
-        val deleteVersionTag = message.versionTag
-
-        // Limit version-tag deletion to the current turn only.
-        // A versionTag can be propagated during streaming, so deleting globally can wipe
-        // later turns and even collapse the whole conversation unexpectedly.
-        val turnStartIndex = conversation.messageNodes
-            .subList(0, nodeIndex + 1)
-            .indexOfLast { it.role == me.rerere.ai.core.MessageRole.USER } + 1
-        val turnEndIndex = conversation.messageNodes
-            .subList(nodeIndex, conversation.messageNodes.size)
-            .indexOfFirst { it.role == me.rerere.ai.core.MessageRole.USER }
-            .let { if (it == -1) conversation.messageNodes.size else nodeIndex + it }
-
-        val newConversation = if (node.messages.size == 1 && deleteVersionTag == null) {
-            // Single message node without versionTag - just remove the node
-            conversation.copy(
-                messageNodes = conversation.messageNodes.filterIndexed { index, _ -> index != nodeIndex })
-        } else {
-            // Delete message(s) by ID or versionTag
-            val updatedNodes = conversation.messageNodes.mapIndexedNotNull { index, n ->
-                // Only delete by versionTag inside the current turn. Outside the turn,
-                // preserve all versions and only match by explicit message ID.
-                val canDeleteByVersionTag =
-                    deleteVersionTag != null &&
-                        index in turnStartIndex until turnEndIndex &&
-                        n.role != me.rerere.ai.core.MessageRole.USER
-
-                val newMessages = n.messages.filter { msg ->
-                    // Keep messages that don't match the delete criteria
-                    if (canDeleteByVersionTag && msg.versionTag == deleteVersionTag) {
-                        false // Delete all messages with this versionTag
-                    } else {
-                        msg.id != message.id // Also delete the original message by ID
-                    }
-                }
-                if (newMessages.isEmpty()) {
-                    null // Remove node entirely if no messages left
-                } else {
-                    val newSelectIndex = if (n.selectIndex >= newMessages.size) {
-                        newMessages.lastIndex
-                    } else {
-                        n.selectIndex
-                    }
-                    n.copy(
-                        messages = newMessages,
-                        selectIndex = newSelectIndex
-                    )
-                }
-            }
-            conversation.copy(messageNodes = updatedNodes)
-        }
+    fun selectMessageNode(nodeId: Uuid, selectIndex: Int) {
         viewModelScope.launch {
-            chatService.saveConversation(_conversationId, newConversation)
+            chatService.selectMessageNode(_conversationId, nodeId, selectIndex)
         }
-    }
-
-    private fun collectRelatedMessages(message: UIMessage): List<UIMessage> {
-        val currentMessages = conversation.value.currentMessages
-        // Use ID-based lookup instead of object equality
-        val index = currentMessages.indexOfFirst { it.id == message.id }
-        if (index == -1) return emptyList()
-
-        val relatedMessages = hashSetOf<UIMessage>()
-        for (i in index - 1 downTo 0) {
-            if (currentMessages[i].hasPart<UIMessagePart.ToolCall>() || currentMessages[i].hasPart<UIMessagePart.ToolResult>()) {
-                relatedMessages.add(currentMessages[i])
-            } else {
-                break
-            }
-        }
-        for (i in index + 1 until currentMessages.size) {
-            if (currentMessages[i].hasPart<UIMessagePart.ToolCall>() || currentMessages[i].hasPart<UIMessagePart.ToolResult>()) {
-                relatedMessages.add(currentMessages[i])
-            } else {
-                break
-            }
-        }
-        return relatedMessages.toList()
     }
 
     /**
@@ -634,28 +523,32 @@ class ChatVM(
     }
 
     fun updatePinnedStatus(conversation: Conversation) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             conversationRepo.togglePinStatus(conversation.id)
         }
     }
 
     fun updateConversationTitle(conversation: Conversation, title: String) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             conversationRepo.updateConversation(conversation.copy(title = title))
         }
     }
 
     fun generateTitle(conversation: Conversation, force: Boolean = false) {
         viewModelScope.launch {
-            val conversationFull = conversationRepo.getConversationById(conversation.id) ?: return@launch
-            chatService.generateTitle(_conversationId, conversationFull, force)
+            val conversationFull = withContext(Dispatchers.IO) {
+                conversationRepo.getConversationById(conversation.id)
+            } ?: return@launch
+            chatService.generateTitle(conversation.id, conversationFull, force)
         }
     }
 
     fun consolidateConversation(conversation: Conversation) {
         viewModelScope.launch {
             // Mark conversation as not consolidated so it will be picked up by the worker
-            conversationRepo.markAsNotConsolidated(conversation.id)
+            withContext(Dispatchers.IO) {
+                conversationRepo.markAsNotConsolidated(conversation.id)
+            }
             
             // Trigger a consolidation run with specific conversation ID
             val request = androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.MemoryConsolidationWorker>()
@@ -671,7 +564,7 @@ class ChatVM(
 
     fun generateSuggestion(conversation: Conversation) {
         viewModelScope.launch {
-            chatService.generateSuggestion(_conversationId, conversation)
+            chatService.generateSuggestion(conversation.id, conversation)
         }
     }
 
@@ -682,7 +575,7 @@ class ChatVM(
     }
 
     fun deleteFile(uri: Uri) {
-        appScope.launch {
+        appScope.launch(Dispatchers.IO) {
             context.deleteChatFiles(listOf(uri))
         }
     }

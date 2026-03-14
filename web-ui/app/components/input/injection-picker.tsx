@@ -29,6 +29,9 @@ import { PickerErrorAlert } from "./picker-error-alert";
 export interface InjectionPickerButtonProps {
   disabled?: boolean;
   className?: string;
+  assistantId?: string | null;
+  conversationId?: string | null;
+  conversationSkillIds?: string[] | null;
 }
 
 function getModeInjections(source: unknown): ModeInjectionProfile[] {
@@ -62,13 +65,27 @@ function getSkillCommand(item: Pick<ModeInjectionProfile, "argumentHint" | "name
   return item.name.trim() ? `/${item.name.trim()}` : "/skill";
 }
 
-export function InjectionPickerButton({ disabled = false, className }: InjectionPickerButtonProps) {
+export function InjectionPickerButton({
+  disabled = false,
+  className,
+  assistantId = null,
+  conversationId = null,
+  conversationSkillIds = null,
+}: InjectionPickerButtonProps) {
   const { t } = useTranslation("input");
   const { settings, currentAssistant } = useCurrentAssistant();
 
+  const assistant = React.useMemo(() => {
+    if (!settings || !assistantId) {
+      return currentAssistant;
+    }
+
+    return settings.assistants.find((item) => item.id === assistantId) ?? currentAssistant;
+  }, [assistantId, currentAssistant, settings]);
+
   const [activeTab, setActiveTab] = React.useState<"mode" | "lorebook">("mode");
 
-  const canUse = Boolean(settings && currentAssistant && !disabled);
+  const canUse = Boolean(settings && assistant && !disabled);
   const { error, setError, popoverProps } = usePickerPopover(canUse);
 
   const modeInjections = React.useMemo(
@@ -83,13 +100,21 @@ export function InjectionPickerButton({ disabled = false, className }: Injection
   );
   const lorebookIdSet = React.useMemo(() => new Set(lorebooks.map((item) => item.id)), [lorebooks]);
 
-  const selectedModeInjectionIds = React.useMemo(
-    () => safeStringArray(currentAssistant?.modeInjectionIds),
-    [currentAssistant?.modeInjectionIds],
+  const assistantModeInjectionIds = React.useMemo(
+    () => safeStringArray(assistant?.modeInjectionIds),
+    [assistant?.modeInjectionIds],
   );
+  const selectedModeInjectionIds = React.useMemo(() => {
+    const currentConversationSkillIds = safeStringArray(conversationSkillIds);
+    if (conversationId && currentConversationSkillIds.length > 0) {
+      return currentConversationSkillIds;
+    }
+
+    return assistantModeInjectionIds;
+  }, [assistantModeInjectionIds, conversationId, conversationSkillIds]);
   const selectedLorebookIds = React.useMemo(
-    () => safeStringArray(currentAssistant?.lorebookIds),
-    [currentAssistant?.lorebookIds],
+    () => safeStringArray(assistant?.lorebookIds),
+    [assistant?.lorebookIds],
   );
 
   const selectedCount = selectedModeInjectionIds.length + selectedLorebookIds.length;
@@ -99,7 +124,7 @@ export function InjectionPickerButton({ disabled = false, className }: Injection
     if (!canUse || !hasData) {
       popoverProps.onOpenChange(false);
     }
-  }, [canUse, hasData]);
+  }, [canUse, hasData, popoverProps]);
 
   React.useEffect(() => {
     if (modeInjections.length === 0 && lorebooks.length > 0) {
@@ -112,7 +137,38 @@ export function InjectionPickerButton({ disabled = false, className }: Injection
     }
   }, [lorebooks.length, modeInjections.length]);
 
-  const updateInjectionsMutation = useMutation({
+  const updateModeInjectionsMutation = useMutation({
+    mutationFn: ({
+      assistantId,
+      modeInjectionIds,
+      lorebookIds,
+      conversationId,
+    }: {
+      assistantId: string;
+      modeInjectionIds: string[];
+      lorebookIds: string[];
+      conversationId?: string | null;
+      key: string;
+    }) => {
+      if (conversationId) {
+        return api.post<{ status: string }>(`conversations/${conversationId}/skills`, {
+          skillIds: modeInjectionIds,
+        });
+      }
+
+      return api.post<{ status: string }>("settings/assistant/injections", {
+        assistantId,
+        modeInjectionIds,
+        lorebookIds,
+      });
+    },
+    onError: (updateError) => {
+      setError(extractErrorMessage(updateError, t("injection.update_failed")));
+    },
+    onSuccess: () => setError(null),
+  });
+
+  const updateLorebooksMutation = useMutation({
     mutationFn: ({
       assistantId,
       modeInjectionIds,
@@ -136,7 +192,7 @@ export function InjectionPickerButton({ disabled = false, className }: Injection
 
   const handleToggleModeInjection = React.useCallback(
     (id: string, checked: boolean) => {
-      if (!canUse || !currentAssistant) return;
+      if (!canUse || !assistant) return;
 
       const nextModeIds = new Set(
         selectedModeInjectionIds.filter((item) => modeInjectionIdSet.has(item)),
@@ -149,29 +205,30 @@ export function InjectionPickerButton({ disabled = false, className }: Injection
         nextModeIds.delete(id);
       }
 
-      updateInjectionsMutation.mutate({
-        assistantId: currentAssistant.id,
+      updateModeInjectionsMutation.mutate({
+        assistantId: assistant.id,
         modeInjectionIds: Array.from(nextModeIds),
         lorebookIds: nextLorebookIds,
+        conversationId,
         key: `mode:${id}`,
       });
     },
     [
+      assistant,
       canUse,
-      currentAssistant,
+      conversationId,
       lorebookIdSet,
       modeInjectionIdSet,
       selectedLorebookIds,
       selectedModeInjectionIds,
-      updateInjectionsMutation,
+      updateModeInjectionsMutation,
     ],
   );
 
   const handleToggleLorebook = React.useCallback(
     (id: string, checked: boolean) => {
-      if (!canUse || !currentAssistant) return;
+      if (!canUse || !assistant) return;
 
-      const nextModeIds = selectedModeInjectionIds.filter((item) => modeInjectionIdSet.has(item));
       const nextLorebookIds = new Set(
         selectedLorebookIds.filter((item) => lorebookIdSet.has(item)),
       );
@@ -182,21 +239,21 @@ export function InjectionPickerButton({ disabled = false, className }: Injection
         nextLorebookIds.delete(id);
       }
 
-      updateInjectionsMutation.mutate({
-        assistantId: currentAssistant.id,
-        modeInjectionIds: nextModeIds,
+      updateLorebooksMutation.mutate({
+        assistantId: assistant.id,
+        modeInjectionIds: assistantModeInjectionIds.filter((item) => modeInjectionIdSet.has(item)),
         lorebookIds: Array.from(nextLorebookIds),
         key: `lorebook:${id}`,
       });
     },
     [
+      assistant,
+      assistantModeInjectionIds,
       canUse,
-      currentAssistant,
       lorebookIdSet,
       modeInjectionIdSet,
       selectedLorebookIds,
-      selectedModeInjectionIds,
-      updateInjectionsMutation,
+      updateLorebooksMutation,
     ],
   );
 
@@ -211,14 +268,14 @@ export function InjectionPickerButton({ disabled = false, className }: Injection
           type="button"
           variant="ghost"
           size="sm"
-          disabled={!canUse || updateInjectionsMutation.isPending}
+          disabled={!canUse || updateModeInjectionsMutation.isPending || updateLorebooksMutation.isPending}
           className={cn(
             "h-9 rounded-full border border-border/70 bg-muted/70 px-2.5 text-foreground shadow-none hover:bg-accent hover:text-accent-foreground",
             selectedCount > 0 && "border-primary/20 bg-primary/10 text-primary hover:bg-primary/18",
             className,
           )}
         >
-          {updateInjectionsMutation.isPending ? (
+          {updateModeInjectionsMutation.isPending || updateLorebooksMutation.isPending ? (
             <LoaderCircle className="size-4 animate-spin" />
           ) : (
             <BookOpen className="size-4" />
@@ -275,94 +332,41 @@ export function InjectionPickerButton({ disabled = false, className }: Injection
 
           <div className="overflow-hidden rounded-[var(--radius-card)] border border-border/70 bg-muted/30 p-2">
             <ScrollArea className="h-[16rem] pr-3">
-                {activeTab === "mode" ? (
-                  modeInjections.length > 0 ? (
-                    <div className="space-y-2">
-                      {modeInjections.map((item) => {
-                        const checked = selectedModeInjectionIds.includes(item.id);
-                        const switching =
-                          updateInjectionsMutation.isPending &&
-                          updateInjectionsMutation.variables?.key === `mode:${item.id}`;
+              {activeTab === "mode" ? (
+                modeInjections.length > 0 ? (
+                  <div className="space-y-2">
+                    {modeInjections.map((item) => {
+                      const checked = selectedModeInjectionIds.includes(item.id);
+                      const switching =
+                        updateModeInjectionsMutation.isPending &&
+                        updateModeInjectionsMutation.variables?.key === `mode:${item.id}`;
 
-                        return (
+                      return (
                         <label
                           key={item.id}
                           className={cn(
-                              "flex cursor-pointer items-center gap-3 rounded-[var(--radius-card-inner)] border border-border/70 bg-background px-3 py-3 transition hover:bg-accent",
-                              checked && "border-primary/25 bg-primary/10",
-                            )}
-                          >
-                            {switching ? (
-                              <LoaderCircle className="size-4 animate-spin" />
-                            ) : (
-                              <Checkbox
-                                checked={checked}
-                                disabled={disabled || updateInjectionsMutation.isPending}
-                                onCheckedChange={(nextChecked) => {
-                                  handleToggleModeInjection(item.id, Boolean(nextChecked));
-                                }}
-                              />
-                            )}
-                            <div className="min-w-0">
-                              <div className="truncate text-sm font-medium">
-                                {getDisplayName(item.name, t("injection.unnamed_mode"))}
-                              </div>
-                              <div className="text-muted-foreground mt-0.5 text-xs">
-                                {getSkillCommand(item)}
-                              </div>
-                              {item.enabled === false ? (
-                                <div className="text-muted-foreground mt-0.5 text-xs">
-                                  {t("injection.disabled")}
-                                </div>
-                              ) : null}
-                            </div>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="rounded-md border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
-                      {t("injection.empty_mode")}
-                    </div>
-                  )
-                ) : lorebooks.length > 0 ? (
-                  <div className="space-y-2">
-                    {lorebooks.map((item) => {
-                      const checked = selectedLorebookIds.includes(item.id);
-                      const switching =
-                        updateInjectionsMutation.isPending &&
-                        updateInjectionsMutation.variables?.key === `lorebook:${item.id}`;
-
-                      return (
-                      <label
-                        key={item.id}
-                        className={cn(
                             "flex cursor-pointer items-center gap-3 rounded-[var(--radius-card-inner)] border border-border/70 bg-background px-3 py-3 transition hover:bg-accent",
                             checked && "border-primary/25 bg-primary/10",
                           )}
-                      >
+                        >
                           {switching ? (
                             <LoaderCircle className="size-4 animate-spin" />
                           ) : (
                             <Checkbox
                               checked={checked}
-                              disabled={disabled || updateInjectionsMutation.isPending}
+                              disabled={disabled || updateModeInjectionsMutation.isPending}
                               onCheckedChange={(nextChecked) => {
-                                handleToggleLorebook(item.id, Boolean(nextChecked));
+                                handleToggleModeInjection(item.id, Boolean(nextChecked));
                               }}
                             />
                           )}
-
                           <div className="min-w-0">
                             <div className="truncate text-sm font-medium">
-                              {getDisplayName(item.name, t("injection.unnamed_lorebook"))}
+                              {getDisplayName(item.name, t("injection.unnamed_mode"))}
                             </div>
-                            {typeof item.description === "string" &&
-                            item.description.trim().length > 0 ? (
-                              <div className="text-muted-foreground mt-0.5 line-clamp-2 text-xs">
-                                {item.description}
-                              </div>
-                            ) : null}
+                            <div className="text-muted-foreground mt-0.5 text-xs">
+                              {getSkillCommand(item)}
+                            </div>
                             {item.enabled === false ? (
                               <div className="text-muted-foreground mt-0.5 text-xs">
                                 {t("injection.disabled")}
@@ -374,6 +378,58 @@ export function InjectionPickerButton({ disabled = false, className }: Injection
                     })}
                   </div>
                 ) : (
+                  <div className="rounded-md border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
+                    {t("injection.empty_mode")}
+                  </div>
+                )
+              ) : lorebooks.length > 0 ? (
+                <div className="space-y-2">
+                  {lorebooks.map((item) => {
+                    const checked = selectedLorebookIds.includes(item.id);
+                    const switching =
+                      updateLorebooksMutation.isPending &&
+                      updateLorebooksMutation.variables?.key === `lorebook:${item.id}`;
+
+                    return (
+                      <label
+                        key={item.id}
+                        className={cn(
+                          "flex cursor-pointer items-center gap-3 rounded-[var(--radius-card-inner)] border border-border/70 bg-background px-3 py-3 transition hover:bg-accent",
+                          checked && "border-primary/25 bg-primary/10",
+                        )}
+                      >
+                        {switching ? (
+                          <LoaderCircle className="size-4 animate-spin" />
+                        ) : (
+                          <Checkbox
+                            checked={checked}
+                            disabled={disabled || updateLorebooksMutation.isPending}
+                            onCheckedChange={(nextChecked) => {
+                              handleToggleLorebook(item.id, Boolean(nextChecked));
+                            }}
+                          />
+                        )}
+
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium">
+                            {getDisplayName(item.name, t("injection.unnamed_lorebook"))}
+                          </div>
+                          {typeof item.description === "string" && item.description.trim().length > 0 ? (
+                            <div className="text-muted-foreground mt-0.5 line-clamp-2 text-xs">
+                              {item.description}
+                            </div>
+                          ) : null}
+                          {item.enabled === false ? (
+                            <div className="text-muted-foreground mt-0.5 text-xs">
+                              {t("injection.disabled")}
+                            </div>
+                          ) : null}
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              ) : (
                 <div className="rounded-md border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
                   {t("injection.empty_lorebook")}
                 </div>

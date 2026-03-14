@@ -118,6 +118,20 @@ fun AssistantLocalToolSubPage(
                 onUpdate(assistant.copy(localTools = newLocalTools))
             }
         )
+
+        LocalToolCard(
+            title = stringResource(R.string.assistant_page_local_tools_character_questions_title),
+            description = stringResource(R.string.assistant_page_local_tools_character_questions_desc),
+            isEnabled = assistant.localTools.contains(LocalToolOption.AskUser),
+            onToggle = { enabled ->
+                val newLocalTools = if (enabled) {
+                    assistant.localTools + LocalToolOption.AskUser
+                } else {
+                    assistant.localTools - LocalToolOption.AskUser
+                }
+                onUpdate(assistant.copy(localTools = newLocalTools))
+            }
+        )
     }
 
     if (showNotificationAccessDialog && pendingNotificationAccess.specialAccesses.isNotEmpty()) {

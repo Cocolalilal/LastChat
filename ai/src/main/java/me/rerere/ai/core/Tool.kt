@@ -13,8 +13,15 @@ data class Tool(
     val description: String,
     val parameters: () -> InputSchema? = { null },
     val systemPrompt: (model: Model, messages: List<UIMessage>) -> String = { _, _ -> "" },
+    val approvalMode: ToolApprovalMode = ToolApprovalMode.Auto,
     val execute: suspend (JsonElement) -> JsonElement
 )
+
+@Serializable
+enum class ToolApprovalMode {
+    Auto,
+    RequiresApproval,
+}
 
 @Serializable
 sealed class InputSchema {

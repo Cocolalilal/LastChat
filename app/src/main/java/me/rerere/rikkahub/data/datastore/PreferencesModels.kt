@@ -14,6 +14,7 @@ import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TRANSLATION_PROMPT
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantSearchMode
 import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.Mode
 import me.rerere.rikkahub.data.model.Skill
@@ -84,6 +85,14 @@ data class Settings(
         fun dummy() = Settings(init = true)
     }
 }
+
+data class ConversationContext(
+    val assistantId: Uuid,
+    val assistant: Assistant,
+    val chatModel: Model?,
+    val searchMode: AssistantSearchMode,
+    val displaySetting: DisplaySetting,
+)
 
 @Serializable
 data class RpStyleRule(
@@ -307,6 +316,21 @@ fun List<ProviderSetting>.findModelById(uuid: Uuid): Model? {
 
 fun Settings.getCurrentChatModel(): Model? {
     return findModelById(getCurrentAssistant().chatModelId ?: chatModelId)
+}
+
+fun Settings.resolveConversationContext(assistantId: Uuid): ConversationContext {
+    val assistant = getAssistantById(assistantId) ?: getCurrentAssistant()
+    return ConversationContext(
+        assistantId = assistant.id,
+        assistant = assistant,
+        chatModel = findModelById(assistant.chatModelId ?: chatModelId),
+        searchMode = assistant.searchMode,
+        displaySetting = getEffectiveDisplaySetting(assistant),
+    )
+}
+
+fun Settings.resolveConversationContext(conversation: Conversation): ConversationContext {
+    return resolveConversationContext(conversation.assistantId)
 }
 
 fun Settings.getCurrentAssistant(): Assistant {

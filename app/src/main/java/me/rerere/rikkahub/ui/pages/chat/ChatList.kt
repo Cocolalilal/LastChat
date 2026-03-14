@@ -563,7 +563,9 @@ private fun SharedTransitionScope.ChatListNormal(
             )
 
             val captureProgress = LocalScrollCaptureInProgress.current
-            val effectiveDisplay = settings.getEffectiveDisplaySetting()
+            val effectiveDisplay = settings.getEffectiveDisplaySetting(
+                settings.getAssistantById(conversation.assistantId)
+            )
 
             // 消息快速跳转
             MessageJumper(

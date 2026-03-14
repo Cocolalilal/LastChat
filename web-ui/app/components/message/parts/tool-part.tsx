@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Loader2, MessageCircleQuestion } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -15,7 +15,6 @@ import {
   getToolIcon,
   getToolTitle,
   safeJsonParse,
-  TOOL_NAMES,
   ToolApprovalActions,
   ToolDetailContent,
   ToolPreviewContent,
@@ -51,32 +50,6 @@ export function ToolPart({
   const Icon = getToolIcon(tool.toolName, getStringField(args, "action"));
   const canOpenDrawer = tool.approvalState.type === "pending" || tool.output.length > 0;
   const previewContent = <ToolPreviewContent tool={tool} t={t} />;
-
-  if (tool.toolName === TOOL_NAMES.ASK_USER) {
-    return (
-      <ControlledChainOfThoughtStep
-        expanded={expanded}
-        onExpandedChange={setExpanded}
-        isFirst={isFirst}
-        isLast={isLast}
-        icon={
-          loading ? (
-            <Loader2 className="h-4 w-4 animate-spin text-primary" />
-          ) : (
-            <MessageCircleQuestion className="h-4 w-4 text-primary" />
-          )
-        }
-        label={<span className="text-foreground line-clamp-2 text-sm font-medium">{title}</span>}
-      >
-        <ToolDetailContent
-          tool={tool}
-          t={t}
-          displaySetting={displaySetting}
-          onToolApproval={onToolApproval}
-        />
-      </ControlledChainOfThoughtStep>
-    );
-  }
 
   return (
     <>

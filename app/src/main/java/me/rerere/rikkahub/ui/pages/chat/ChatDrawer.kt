@@ -2,6 +2,7 @@ package me.rerere.rikkahub.ui.pages.chat
 
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
+import androidx.core.net.toUri
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -63,34 +64,29 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.BarChart
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Conversation
-import me.rerere.rikkahub.data.repository.ConversationRepository
-import me.rerere.rikkahub.ui.components.ai.AssistantPicker
+import me.rerere.rikkahub.service.ChatPersistenceMode
 import me.rerere.rikkahub.ui.components.ui.Greeting
 import me.rerere.rikkahub.ui.components.ui.Tooltip
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.components.ui.UpdateCard
 import me.rerere.rikkahub.ui.hooks.rememberAvatarShape
+import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.HapticPattern
-import me.rerere.rikkahub.ui.hooks.readBooleanPreference
 import me.rerere.rikkahub.ui.hooks.rememberIsPlayStoreVersion
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.ui.modifier.onClick
 import me.rerere.rikkahub.utils.navigateToChatPage
 import me.rerere.rikkahub.utils.toDp
-import org.koin.compose.koinInject
-import kotlin.uuid.Uuid
 import coil3.compose.AsyncImage
 
 @Composable
@@ -99,13 +95,15 @@ fun ChatDrawerContent(
     vm: ChatVM,
     settings: Settings,
     current: Conversation,
+    inputState: ChatInputState,
+    activePersistenceMode: ChatPersistenceMode,
     drawerState: androidx.compose.material3.DrawerState? = null,  // Optional for animated close
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val toaster = me.rerere.rikkahub.ui.context.LocalToaster.current
     val isPlayStore = rememberIsPlayStoreVersion()
-    val repo = koinInject<ConversationRepository>()
+    val currentAssistant = settings.getAssistantById(current.assistantId) ?: settings.getCurrentAssistant()
 
     // Search expansion state - hoisted here so drawer width can animate
     var isSearchExpanded by remember { mutableStateOf(false) }
@@ -199,7 +197,7 @@ fun ChatDrawerContent(
                         style = MaterialTheme.typography.labelMedium.copy(
                             fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
                         ),
-                        assistant = settings.getCurrentAssistant()
+                        assistant = currentAssistant
                     )
                 }
             }
@@ -249,8 +247,8 @@ fun ChatDrawerContent(
                 onPin = {
                     vm.updatePinnedStatus(it)
                 },
-                showUnconsolidatedDot = settings.getCurrentAssistant().enableMemory && settings.getCurrentAssistant().enableMemoryConsolidation,
-                showConsolidateOption = settings.getCurrentAssistant().enableMemory && settings.getCurrentAssistant().enableMemoryConsolidation,
+                showUnconsolidatedDot = currentAssistant.enableMemory && currentAssistant.enableMemoryConsolidation,
+                showConsolidateOption = currentAssistant.enableMemory && currentAssistant.enableMemoryConsolidation,
                 // Imagine + Stats buttons (visibility handled by ConversationList)
                 quickActions = {
                     // Quick Action Buttons (settings-style grouping)
@@ -327,9 +325,24 @@ fun ChatDrawerContent(
                 }
             )
 
-            // Character picker state (manages the bottom sheet)
-            val assistantState = me.rerere.rikkahub.ui.hooks.rememberAssistantState(settings) { newSettings ->
-                vm.updateSettings(newSettings)
+            fun navigateToAssistantConversation(assistant: me.rerere.rikkahub.data.model.Assistant) {
+                scope.launch {
+                    val newConversation = vm.createConversationForAssistant(assistant.id)
+                    val draftNavigation = buildAssistantSwitchNavigation(
+                        conversation = current,
+                        inputText = inputState.textContent.text.toString(),
+                        inputFiles = extractDraftFileUrls(inputState.messageContent),
+                        persistenceMode = activePersistenceMode,
+                    )
+                    drawerState?.close()
+                    navigateToChatPage(
+                        navController = navController,
+                        chatId = newConversation.id,
+                        initText = draftNavigation.initText,
+                        initFiles = draftNavigation.initFiles.map(String::toUri),
+                        persistenceMode = draftNavigation.persistenceMode,
+                    )
+                }
             }
             val defaultAssistantName = stringResource(R.string.assistant_page_default_assistant)
             var showCharacterPicker by remember { mutableStateOf(false) }
@@ -343,7 +356,7 @@ fun ChatDrawerContent(
                 val assistantAvatarSize = 30.dp
                 val itemColor = MaterialTheme.colorScheme.surfaceContainerHighest
                 val haptics = rememberPremiumHaptics()
-                val assistantName = assistantState.currentAssistant.name.ifEmpty { defaultAssistantName }
+                val assistantName = currentAssistant.name.ifEmpty { defaultAssistantName }
 
                 Surface(
                     color = itemColor,
@@ -389,14 +402,13 @@ fun ChatDrawerContent(
                                 .clip(rememberAvatarShape(false))
                                 .clickable {
                                     haptics.perform(HapticPattern.Pop)
-                                    val currentAssistantId = settings.assistantId
-                                    navController.navigate(Screen.AssistantDetail(id = currentAssistantId.toString()))
+                                    navController.navigate(Screen.AssistantDetail(id = currentAssistant.id.toString()))
                                 },
                             contentAlignment = Alignment.Center
                         ) {
                             DrawerAvatarVisual(
                                 name = assistantName,
-                                avatar = assistantState.currentAssistant.avatar,
+                                avatar = currentAssistant.avatar,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -421,25 +433,13 @@ fun ChatDrawerContent(
             if (showCharacterPicker) {
                 me.rerere.rikkahub.ui.components.ai.AssistantPickerSheet(
                     settings = settings,
-                    currentAssistant = assistantState.currentAssistant,
+                    currentAssistant = currentAssistant,
                     onAssistantSelected = { assistant ->
-                        assistantState.setSelectAssistant(assistant)
+                        vm.setSelectedAssistant(assistant.id)
                     },
-                    onNavigate = {
+                    onNavigate = { assistant ->
                         showCharacterPicker = false
-                        scope.launch {
-                            drawerState?.close()
-
-                            val id = if (context.readBooleanPreference("create_new_conversation_on_start", true)) {
-                                Uuid.random()
-                            } else {
-                                repo.getConversationsOfAssistant(settings.assistantId)
-                                    .first()
-                                    .firstOrNull()
-                                    ?.id ?: Uuid.random()
-                            }
-                            navigateToChatPage(navController = navController, chatId = id)
-                        }
+                        navigateToAssistantConversation(assistant)
                     },
                     onDismiss = {
                         showCharacterPicker = false

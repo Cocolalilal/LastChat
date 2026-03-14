@@ -41,9 +41,9 @@ type ThemeProviderState = {
 };
 
 const initialState: ThemeProviderState = {
-  theme: "system",
+  theme: "dark",
   colorTheme: "default",
-  resolvedMode: "light",
+  resolvedMode: "dark",
   customThemeCss: {
     light: "",
     dark: "",
@@ -115,7 +115,7 @@ function scopeCustomThemeCss(value: string, mode: "light" | "dark"): string {
 
 export function ThemeProvider({
   children,
-  defaultTheme = "system",
+  defaultTheme = "dark",
   defaultColorTheme = "default",
   storageKey = "vite-ui-theme",
   ...props

@@ -63,6 +63,8 @@
     <string name="assistant_page_local_tools_python_engine_desc">Execute Python code with pip packages and file I/O. Supports numpy and Pillow.</string>
     <string name="assistant_page_local_tools_tts_title">Text to Speech</string>
     <string name="assistant_page_local_tools_tts_desc">Let the assistant read text aloud using your selected TTS provider</string>
+    <string name="assistant_page_local_tools_character_questions_title">Character Questions</string>
+    <string name="assistant_page_local_tools_character_questions_desc">Let the character pause and ask short clarifying questionnaires when it would genuinely help.</string>
     <string name="assistant_page_local_tools_python_internet_title">Allow Internet Access</string>
     <string name="assistant_page_local_tools_python_internet_desc">Allow Python code to make network requests</string>
     <string name="assistant_page_manage_memory">Manage Memory (%d)</string>
@@ -207,6 +209,7 @@
     <string name="chat_message_tool_python_list_files">Listing sandbox files</string>
     <string name="chat_message_tool_python_delete_file">Deleting file: %1$s</string>
     <string name="chat_message_tool_python_import">Importing attachment</string>
+    <string name="chat_message_tool_ask_user">Asking a question</string>
     <string name="chat_message_tool_python_code">Code</string>
     <string name="chat_message_tool_python_output">Output</string>
     <string name="chat_message_tool_python_files">Files</string>
@@ -223,6 +226,7 @@
     <string name="activity_timeline_tool_read_file">Reading file</string>
     <string name="activity_timeline_tool_delete_file">Deleting file</string>
     <string name="activity_timeline_tool_manage_skills">Managing skills</string>
+    <string name="activity_timeline_tool_ask_user">Asking a question</string>
     <string name="activity_timeline_activated">Activated</string>
     <string name="activity_timeline_disabled">Disabled</string>
     <string name="activity_timeline_no_skill_changes">No skill changes</string>
@@ -949,6 +953,11 @@
     <string name="skills_picker_none">No skills configured</string>
     <string name="skills_picker_active_count">%d active</string>
     <string name="banner_dismiss">Dismiss</string>
+    <string name="previous">Previous</string>
+    <string name="next">Next</string>
+    <string name="minimal_chat_input_placeholder">Ask %1$s</string>
+    <string name="character_questions_progress">%1$d of %2$d</string>
+    <string name="character_questions_custom_answer_placeholder">Write your own answer...</string>
 
     <!-- Character Lorebooks Selection -->
     <string name="assistant_lorebooks_title">Lorebooks</string>
@@ -998,6 +1007,7 @@
     <string name="context_refresh_last">Last summary: %s</string>
     <string name="context_refresh_never">Never summarized</string>
     <string name="context_refresh_no_summarizer">Configure a summarizer model in Settings &gt; Default Models first</string>
+    <string name="context_summarizer_model_optional_tip">Optional: choose a dedicated summarizer model in Settings &gt; Default Models for better summaries.</string>
     <string name="context_refresh_confirm_title">Summarize Messages?</string>
     <string name="context_refresh_confirm_message">This will summarize your conversation history into a compact form. The AI will remember the key points but detailed messages will be replaced with a summary.</string>
     

@@ -77,7 +77,7 @@ import kotlin.uuid.Uuid
 fun AssistantPicker(
     settings: Settings,
     onUpdateSettings: (Settings) -> Unit,
-    onNavigate: () -> Unit = {},  // Called after panels close
+    onNavigate: (Assistant) -> Unit = {},  // Called after panels close
     modifier: Modifier = Modifier,
     onClickSetting: () -> Unit,
 ) {
@@ -124,10 +124,10 @@ fun AssistantPicker(
                 // Settings update happens immediately inside the sheet
                 state.setSelectAssistant(assistant)
             },
-            onNavigate = {
+            onNavigate = { assistant ->
                 // Navigation callback - called after animation
                 showPicker = false
-                onNavigate()
+                onNavigate(assistant)
             },
             onDismiss = {
                 showPicker = false
@@ -141,7 +141,7 @@ fun AssistantPickerSheet(
     settings: Settings,
     currentAssistant: Assistant,
     onAssistantSelected: (Assistant) -> Unit,
-    onNavigate: () -> Unit = {},  // Called after animation completes
+    onNavigate: (Assistant) -> Unit = {},  // Called after animation completes
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -285,7 +285,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                     scope.launch {
                                         transitioningAssistantId = null
                                         sheetState.hide() // Animate sheet close
-                                        onNavigate() // drawer close + navigate
+                                        onNavigate(assistant) // drawer close + navigate
                                     }
                                 }
                             }

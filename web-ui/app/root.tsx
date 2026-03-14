@@ -65,10 +65,10 @@ function AppContent() {
   useSettingsSubscription(!webAuthLocked);
 
   return (
-    <ThemeProvider defaultTheme="system">
+    <ThemeProvider defaultTheme="dark">
       {!webAuthLocked ? <Outlet /> : null}
       <WebAuthGate open={webAuthLocked} />
-      <Toaster position="top-center"/>
+      <Toaster position="top-center" />
     </ThemeProvider>
   );
 }

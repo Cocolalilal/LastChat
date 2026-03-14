@@ -23,6 +23,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
+import me.rerere.ai.core.ToolApprovalMode
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.TtsFilterMode
 import me.rerere.rikkahub.data.datastore.getSelectedTTSProvider
@@ -48,6 +49,10 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("tts")
     data object Tts : LocalToolOption()
+
+    @Serializable
+    @SerialName("character_questions")
+    data object AskUser : LocalToolOption()
 }
 
 object LocalToolOptionListSerializer :
@@ -79,6 +84,81 @@ class LocalTools(
     private val settingsStore: SettingsStore,
     private val ttsManager: TTSManager,
 ) {
+    val askUserTool by lazy {
+        Tool(
+            name = ASK_USER_TOOL_NAME,
+            description = "Ask the user a short structured questionnaire when a clarification or tradeoff would genuinely help. Use this sparingly. Ask at most 5 questions, with up to 3 concise options per question. Each option may include a short description. Do not use this just for chit-chat.",
+            parameters = {
+                InputSchema.Obj(
+                    properties = buildJsonObject {
+                        put("questions", buildJsonObject {
+                            put("type", "array")
+                            put("description", "A short questionnaire for the user. Maximum 5 questions.")
+                            put("items", buildJsonObject {
+                                put("type", "object")
+                                put("properties", buildJsonObject {
+                                    put("id", buildJsonObject {
+                                        put("type", "string")
+                                        put("description", "Stable question identifier.")
+                                    })
+                                    put("question", buildJsonObject {
+                                        put("type", "string")
+                                        put("description", "The question to ask the user.")
+                                    })
+                                    put("options", buildJsonObject {
+                                        put("type", "array")
+                                        put("description", "Up to 3 suggested replies.")
+                                        put("items", buildJsonObject {
+                                            put("type", "object")
+                                            put("properties", buildJsonObject {
+                                                put("label", buildJsonObject {
+                                                    put("type", "string")
+                                                    put("description", "Short reply option text.")
+                                                })
+                                                put("description", buildJsonObject {
+                                                    put("type", "string")
+                                                    put("description", "Optional one-sentence explanation.")
+                                                })
+                                            })
+                                            put("required", JsonArray(listOf(JsonPrimitive("label"))))
+                                        })
+                                    })
+                                })
+                                put(
+                                    "required",
+                                    JsonArray(
+                                        listOf(
+                                            JsonPrimitive("id"),
+                                            JsonPrimitive("question"),
+                                        )
+                                    )
+                                )
+                            })
+                        })
+                    },
+                    required = listOf("questions")
+                )
+            },
+            systemPrompt = { _, _ ->
+                buildString {
+                    appendLine("## tool: ask_user")
+                    appendLine("- Use this only when a genuine clarification or meaningful tradeoff would improve your next answer.")
+                    appendLine("- It is appropriate when the user's request is ambiguous, underspecified, or could reasonably go in multiple directions.")
+                    appendLine("- Ask at most one questionnaire per turn.")
+                    appendLine("- Keep it short: at most 5 questions, and at most 3 options per question.")
+                    appendLine("- Options should be concise. Add a one-sentence description only when it helps the user distinguish them.")
+                    appendLine("- Do not use this for small talk, routine confirmations, or information you can infer safely.")
+                }
+            },
+            approvalMode = ToolApprovalMode.RequiresApproval,
+            execute = {
+                parseAskUserQuestionnaire(it)?.toJsonElement() ?: buildJsonObject {
+                    put("questions", JsonArray(emptyList()))
+                }
+            }
+        )
+    }
+
     val javascriptTool by lazy {
         Tool(
             name = "eval_javascript",
@@ -638,6 +718,9 @@ class LocalTools(
         }
         if (options.contains(LocalToolOption.Tts)) {
             tools.add(ttsTool)
+        }
+        if (options.contains(LocalToolOption.AskUser)) {
+            tools.add(askUserTool)
         }
         return tools
     }

@@ -44,6 +44,19 @@ data class SpontaneousResponse(
 )
 
 object SpontaneousMessaging {
+    fun describeElapsedTime(elapsedMillis: Long): String {
+        val clampedMillis = elapsedMillis.coerceAtLeast(0L)
+        val seconds = clampedMillis / 1_000L
+        return when {
+            seconds < 60L -> "less than a minute"
+            seconds < 60L * 60L -> formatElapsedUnit(seconds / 60L, "minute")
+            seconds < 60L * 60L * 24L -> formatElapsedUnit(seconds / (60L * 60L), "hour")
+            seconds < 60L * 60L * 24L * 7L -> formatElapsedUnit(seconds / (60L * 60L * 24L), "day")
+            seconds < 60L * 60L * 24L * 30L -> formatElapsedUnit(seconds / (60L * 60L * 24L * 7L), "week")
+            else -> formatElapsedUnit(seconds / (60L * 60L * 24L * 30L), "month")
+        }
+    }
+
     fun isWithinActiveHours(
         currentHour: Int,
         startHour: Int,
@@ -103,5 +116,17 @@ object SpontaneousMessaging {
         val end = text.lastIndexOf('}')
         if (start == -1 || end == -1 || end <= start) return null
         return text.substring(start, end + 1)
+    }
+
+    private fun formatElapsedUnit(
+        value: Long,
+        unit: String,
+    ): String {
+        val safeValue = value.coerceAtLeast(1L)
+        return if (safeValue == 1L) {
+            "1 $unit"
+        } else {
+            "$safeValue ${unit}s"
+        }
     }
 }

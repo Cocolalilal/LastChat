@@ -2,6 +2,7 @@ package me.rerere.rikkahub.ui.pages.chat
 
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.core.net.toUri
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -69,6 +70,7 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.HistoryToggleOff
 
+import me.rerere.ai.core.MessageRole
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.ui.components.chat.NewChatContent
 
@@ -82,8 +84,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
-import me.rerere.rikkahub.data.datastore.getCurrentAssistant
-import me.rerere.rikkahub.data.datastore.getCurrentChatModel
+import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.ui.components.ai.MinimalChatInput
 import me.rerere.rikkahub.ui.context.LocalNavController
@@ -106,6 +107,42 @@ import kotlin.uuid.Uuid
 
 internal fun hasConversationMessages(conversation: Conversation): Boolean {
     return conversation.messageNodes.isNotEmpty()
+}
+
+internal fun canPreserveAssistantSwitchDraft(conversation: Conversation): Boolean {
+    return conversation.messageNodes.none { it.role == MessageRole.USER }
+}
+
+internal fun extractDraftFileUrls(parts: List<UIMessagePart>): List<String> {
+    return parts.mapNotNull { part ->
+        when (part) {
+            is UIMessagePart.Image -> part.url.takeIf { it.isNotBlank() }
+            is UIMessagePart.Document -> part.url.takeIf { it.isNotBlank() }
+            is UIMessagePart.Video -> part.url.takeIf { it.isNotBlank() }
+            is UIMessagePart.Audio -> part.url.takeIf { it.isNotBlank() }
+            else -> null
+        }
+    }
+}
+
+internal data class AssistantSwitchNavigation(
+    val initText: String?,
+    val initFiles: List<String>,
+    val persistenceMode: String?,
+)
+
+internal fun buildAssistantSwitchNavigation(
+    conversation: Conversation,
+    inputText: String,
+    inputFiles: List<String>,
+    persistenceMode: ChatPersistenceMode,
+): AssistantSwitchNavigation {
+    val preserveDraft = canPreserveAssistantSwitchDraft(conversation)
+    return AssistantSwitchNavigation(
+        initText = inputText.takeIf { preserveDraft && it.isNotBlank() },
+        initFiles = if (preserveDraft) inputFiles else emptyList(),
+        persistenceMode = persistenceMode.takeIf { it != ChatPersistenceMode.NORMAL }?.routeValue,
+    )
 }
 
 internal fun shouldShowNewChatContent(
@@ -172,11 +209,22 @@ fun ChatPage(
 
     val setting by vm.settings.collectAsStateWithLifecycle()
     val conversation by vm.conversation.collectAsStateWithLifecycle()
+    val conversationAssistant by vm.conversationAssistant.collectAsStateWithLifecycle()
     val loadingJob by vm.conversationJob.collectAsStateWithLifecycle()
     val conversationPersistenceMode by vm.conversationPersistenceMode.collectAsStateWithLifecycle()
     val currentChatModel by vm.currentChatModel.collectAsStateWithLifecycle()
     val enableWebSearch by vm.enableWebSearch.collectAsStateWithLifecycle()
     val currentSearchMode by vm.currentSearchMode.collectAsStateWithLifecycle()
+    var manualTemporaryChat by rememberSaveable { mutableStateOf(false) }
+    val activePersistenceMode = when {
+        conversationPersistenceMode == ChatPersistenceMode.PERSIST_ON_REPLY -> ChatPersistenceMode.PERSIST_ON_REPLY
+        manualTemporaryChat || conversationPersistenceMode == ChatPersistenceMode.TEMPORARY -> ChatPersistenceMode.TEMPORARY
+        else -> ChatPersistenceMode.NORMAL
+    }
+
+    LaunchedEffect(conversation.id) {
+        manualTemporaryChat = false
+    }
 
     LaunchedEffect(persistenceMode) {
         vm.applyRoutePersistenceMode(ChatPersistenceMode.fromRouteValue(persistenceMode))
@@ -262,6 +310,8 @@ fun ChatPage(
                         current = conversation,
                         vm = vm,
                         settings = setting,
+                        inputState = inputState,
+                        activePersistenceMode = activePersistenceMode,
                         drawerState = drawerState
                     )
                 }
@@ -270,6 +320,7 @@ fun ChatPage(
                     inputState = inputState,
                     loadingJob = loadingJob,
                     setting = setting,
+                    currentAssistant = conversationAssistant,
                     conversation = conversation,
                     drawerState = drawerState,
                     navController = navController,
@@ -279,6 +330,8 @@ fun ChatPage(
                     currentSearchMode = currentSearchMode,
                     currentChatModel = currentChatModel,
                     conversationPersistenceMode = conversationPersistenceMode,
+                    manualTemporaryChat = manualTemporaryChat,
+                    onManualTemporaryChatChange = { manualTemporaryChat = it },
                     bigScreen = true,
                     initialSearchQuery = searchQuery
                 )
@@ -294,6 +347,8 @@ fun ChatPage(
                         current = conversation,
                         vm = vm,
                         settings = setting,
+                        inputState = inputState,
+                        activePersistenceMode = activePersistenceMode,
                         drawerState = drawerState
                     )
                 }
@@ -302,6 +357,7 @@ fun ChatPage(
                     inputState = inputState,
                     loadingJob = loadingJob,
                     setting = setting,
+                    currentAssistant = conversationAssistant,
                     conversation = conversation,
                     drawerState = drawerState,
                     navController = navController,
@@ -311,6 +367,8 @@ fun ChatPage(
                     currentSearchMode = currentSearchMode,
                     currentChatModel = currentChatModel,
                     conversationPersistenceMode = conversationPersistenceMode,
+                    manualTemporaryChat = manualTemporaryChat,
+                    onManualTemporaryChatChange = { manualTemporaryChat = it },
                     bigScreen = false,
                     initialSearchQuery = searchQuery
                 )
@@ -327,6 +385,7 @@ private fun ChatPageContent(
     inputState: ChatInputState,
     loadingJob: Job?,
     setting: Settings,
+    currentAssistant: Assistant,
     bigScreen: Boolean,
     conversation: Conversation,
     drawerState: DrawerState,
@@ -337,13 +396,14 @@ private fun ChatPageContent(
     currentSearchMode: me.rerere.rikkahub.data.model.AssistantSearchMode,
     currentChatModel: Model?,
     conversationPersistenceMode: ChatPersistenceMode,
+    manualTemporaryChat: Boolean,
+    onManualTemporaryChatChange: (Boolean) -> Unit,
     initialSearchQuery: String? = null,
 ) {
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val context = LocalContext.current
     var previewMode by rememberSaveable { mutableStateOf(false) }
-    var manualTemporaryChat by rememberSaveable { mutableStateOf(false) }
     val activePersistenceMode = when {
         conversationPersistenceMode == ChatPersistenceMode.PERSIST_ON_REPLY -> ChatPersistenceMode.PERSIST_ON_REPLY
         manualTemporaryChat || conversationPersistenceMode == ChatPersistenceMode.TEMPORARY -> ChatPersistenceMode.TEMPORARY
@@ -354,7 +414,6 @@ private fun ChatPageContent(
     // State for regeneration confirmation dialog
     var showRegenerateConfirmDialog by rememberSaveable { mutableStateOf(false) }
     var pendingRegenerateMessage by rememberSaveable { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
-    val currentAssistant = setting.getCurrentAssistant()
     val toolbarPlacement = chatTopBarPlacement(setting)
     
     // Auto-scroll to first matching message when opened from search
@@ -383,6 +442,25 @@ private fun ChatPageContent(
     }
 
 
+    fun navigateToAssistantConversation(selectedAssistant: Assistant) {
+        scope.launch {
+            val newConversation = vm.createConversationForAssistant(selectedAssistant.id)
+            val draftNavigation = buildAssistantSwitchNavigation(
+                conversation = conversation,
+                inputText = inputState.textContent.text.toString(),
+                inputFiles = extractDraftFileUrls(inputState.messageContent),
+                persistenceMode = activePersistenceMode,
+            )
+            navigateToChatPage(
+                navController = navController,
+                chatId = newConversation.id,
+                initText = draftNavigation.initText,
+                initFiles = draftNavigation.initFiles.map(String::toUri),
+                persistenceMode = draftNavigation.persistenceMode,
+            )
+        }
+    }
+
 
     LaunchedEffect(loadingJob) {
         inputState.loading = loadingJob != null
@@ -393,13 +471,14 @@ private fun ChatPageContent(
             color = MaterialTheme.colorScheme.background,
             modifier = Modifier.fillMaxSize()
         ) {
-            AssistantBackground(setting = setting)
+            AssistantBackground(assistant = currentAssistant)
             Scaffold(
                 topBar = if (toolbarPlacement == ChatToolbarPlacement.Top) {
                     {
                         ChatToolbar(
                             placement = ChatToolbarPlacement.Top,
                             settings = setting,
+                            currentAssistant = currentAssistant,
                             conversation = conversation,
                             bigScreen = bigScreen,
                             drawerState = drawerState,
@@ -414,9 +493,12 @@ private fun ChatPageContent(
                             onUpdateSettings = { newSettings ->
                                 vm.updateSettings(newSettings)
                             },
+                            onSwitchAssistant = { assistant ->
+                                navigateToAssistantConversation(assistant)
+                            },
                             onToggleTemporaryChat = {
                                 if (conversationPersistenceMode != ChatPersistenceMode.PERSIST_ON_REPLY) {
-                                    manualTemporaryChat = !manualTemporaryChat
+                                    onManualTemporaryChatChange(!manualTemporaryChat)
                                 }
                             }
                         )
@@ -484,105 +566,45 @@ private fun ChatPageContent(
                         },
 
                         onDelete = {
-                            val backup = conversation
-                            val deletedNodeIds = conversation.messageNodes.map { it.id }.toSet()
-                            vm.deleteMessage(it)
-                            val newNodeIds = vm.conversation.value.messageNodes.map { it.id }.toSet()
-                            val removedIds = deletedNodeIds - newNodeIds
-                            toaster.show(
-                                message = context.getString(R.string.message_deleted),
-                                action = me.rerere.rikkahub.ui.components.ui.ToastAction(
-                                    label = context.getString(R.string.undo),
-                                    onClick = {
-                                        vm.updateConversation(backup)
-                                        // Track restored node IDs for fade animation
-                                        vm.markNodesAsRestored(removedIds)
-                                    }
-                                )
-                            )
-                        },
-                        onUpdateMessage = { newNode ->
-                            // Turn-based version switching using versionTag
-                            // When switching versions, find the versionTag of the target message
-                            // and synchronize all nodes in the turn to show messages with that tag
-                            val oldNode = conversation.messageNodes.find { it.id == newNode.id }
-                            val isVersionSwitch = oldNode != null &&
-                                oldNode.selectIndex != newNode.selectIndex &&
-                                oldNode.role != me.rerere.ai.core.MessageRole.USER
-
-                            if (isVersionSwitch && oldNode != null) {
-                                val nodeIndex = conversation.messageNodes.indexOf(oldNode)
-
-                                // Get the versionTag of the newly selected message
-                                val targetVersionTag = newNode.messages.getOrNull(newNode.selectIndex)?.versionTag
-
-                                // Find the turn boundaries
-                                val turnStartIndex = conversation.messageNodes
-                                    .subList(0, nodeIndex + 1)
-                                    .indexOfLast { it.role == me.rerere.ai.core.MessageRole.USER } + 1
-
-                                val turnEndIndex = conversation.messageNodes
-                                    .subList(nodeIndex, conversation.messageNodes.size)
-                                    .indexOfFirst { it.role == me.rerere.ai.core.MessageRole.USER }
-                                    .let { if (it == -1) conversation.messageNodes.size else nodeIndex + it }
-
-                                // Update all nodes in the turn
-                                val updatedNodes = conversation.messageNodes.mapIndexed { index, node ->
-                                    when {
-                                        // This is the node we're switching, use the new selectIndex directly
-                                        node.id == newNode.id -> newNode
-
-                                        // This node is in the same turn, try to find matching versionTag
-                                        index in turnStartIndex until turnEndIndex &&
-                                            node.role != me.rerere.ai.core.MessageRole.USER &&
-                                            node.messages.size > 1 -> {
-                                            if (targetVersionTag != null) {
-                                                // Find message with matching versionTag
-                                                val matchingIndex = node.messages.indexOfFirst {
-                                                    it.versionTag == targetVersionTag
-                                                }
-                                                if (matchingIndex >= 0) {
-                                                    node.copy(selectIndex = matchingIndex)
-                                                } else {
-                                                    // Fallback: use index-based switching
-                                                    val versionDelta = newNode.selectIndex - oldNode.selectIndex
-                                                    val newSelectIndex = (node.selectIndex + versionDelta)
-                                                        .coerceIn(0, node.messages.lastIndex)
-                                                    node.copy(selectIndex = newSelectIndex)
-                                                }
-                                            } else {
-                                                // No versionTag (old conversation), use index-based switching
-                                                val versionDelta = newNode.selectIndex - oldNode.selectIndex
-                                                val newSelectIndex = (node.selectIndex + versionDelta)
-                                                    .coerceIn(0, node.messages.lastIndex)
-                                                node.copy(selectIndex = newSelectIndex)
-                                            }
-                                        }
-
-                                        // Not in this turn, keep unchanged
-                                        else -> node
-                                    }
-                                }
-
-                                vm.updateConversation(conversation.copy(messageNodes = updatedNodes))
-                            } else {
-                                // Normal update (not version switching)
-                                vm.updateConversation(
-                                    conversation.copy(
-                                        messageNodes = conversation.messageNodes.map { node ->
-                                            if (node.id == newNode.id) {
-                                                newNode
-                                            } else {
-                                                node
-                                            }
+                            scope.launch {
+                                val backup = conversation
+                                val removedIds = vm.deleteMessage(it)
+                                toaster.show(
+                                    message = context.getString(R.string.message_deleted),
+                                    action = me.rerere.rikkahub.ui.components.ui.ToastAction(
+                                        label = context.getString(R.string.undo),
+                                        onClick = {
+                                            vm.updateConversation(backup)
+                                            vm.markNodesAsRestored(removedIds)
                                         }
                                     )
                                 )
                             }
                         },
+                        onUpdateMessage = { newNode ->
+                            val oldNode = conversation.messageNodes.find { it.id == newNode.id }
+                            if (oldNode != null) {
+                                if (oldNode.selectIndex != newNode.selectIndex) {
+                                    vm.selectMessageNode(newNode.id, newNode.selectIndex)
+                                } else {
+                                    vm.updateConversation(
+                                        conversation.copy(
+                                            messageNodes = conversation.messageNodes.map { node ->
+                                                if (node.id == newNode.id) {
+                                                    newNode
+                                                } else {
+                                                    node
+                                                }
+                                            }
+                                        )
+                                    )
+                                }
+                            }
+                        },
                         onForkMessage = {
                             scope.launch {
-                                vm.forkMessage(it)
+                                val forkConversation = vm.forkMessage(it)
+                                navigateToChatPage(navController, forkConversation.id)
                             }
                         },
                     )
@@ -668,15 +690,15 @@ private fun ChatPageContent(
                 
                 // Assistant picker sheet triggered from header avatar
                 if (showHeaderAssistantPicker) {
-                    val assistantState = me.rerere.rikkahub.ui.hooks.rememberAssistantState(setting) { newSettings ->
-                        vm.updateSettings(newSettings)
-                    }
                     me.rerere.rikkahub.ui.components.ai.AssistantPickerSheet(
                         settings = setting,
                         currentAssistant = currentAssistant,
                         onAssistantSelected = { selectedAssistant ->
-                            assistantState.setSelectAssistant(selectedAssistant)
+                            vm.setSelectedAssistant(selectedAssistant.id)
                             showHeaderAssistantPicker = false
+                        },
+                        onNavigate = { selectedAssistant ->
+                            navigateToAssistantConversation(selectedAssistant)
                         },
                         onDismiss = { showHeaderAssistantPicker = false }
                     )
@@ -834,20 +856,10 @@ private fun ChatPageContent(
                         inputState.clearInput()
                     },
                     onUpdateChatModel = {
-                        vm.setChatModel(assistant = setting.getCurrentAssistant(), model = it)
+                        vm.setChatModel(it)
                     },
                     onUpdateAssistant = {
-                        vm.updateSettings(
-                            setting.copy(
-                                assistants = setting.assistants.map { assistant ->
-                                    if (assistant.id == it.id) {
-                                        it
-                                    } else {
-                                        assistant
-                                    }
-                                }
-                            )
-                        )
+                        vm.updateConversationAssistant(it)
                     },
                     onUpdateSearchService = { index ->
                         vm.updateAssistantSearchMode(me.rerere.rikkahub.data.model.AssistantSearchMode.Provider(index))
@@ -857,7 +869,14 @@ private fun ChatPageContent(
                     },
                     onUpdateConversation = { updatedConversation ->
                         vm.updateConversation(updatedConversation)
-                        vm.saveConversationAsync()
+                    },
+                    onToolApproval = { toolCallId, approved, reason, answer ->
+                        vm.handleToolApproval(
+                            toolCallId = toolCallId,
+                            approved = approved,
+                            reason = reason,
+                            answer = answer,
+                        )
                     },
                     onNavigateToLorebook = { lorebookId ->
                         navController.navigate(Screen.SettingLorebookDetail(lorebookId))
@@ -869,6 +888,7 @@ private fun ChatPageContent(
                             ChatToolbar(
                                 placement = ChatToolbarPlacement.Bottom,
                                 settings = setting,
+                                currentAssistant = currentAssistant,
                                 conversation = conversation,
                                 bigScreen = bigScreen,
                                 drawerState = drawerState,
@@ -883,9 +903,12 @@ private fun ChatPageContent(
                                 onUpdateSettings = { newSettings ->
                                     vm.updateSettings(newSettings)
                                 },
+                                onSwitchAssistant = { assistant ->
+                                    navigateToAssistantConversation(assistant)
+                                },
                                 onToggleTemporaryChat = {
                                     if (conversationPersistenceMode != ChatPersistenceMode.PERSIST_ON_REPLY) {
-                                        manualTemporaryChat = !manualTemporaryChat
+                                        onManualTemporaryChatChange(!manualTemporaryChat)
                                     }
                                 }
                             )
@@ -911,6 +934,7 @@ private data class TopBarActionState(
 private fun ChatToolbar(
     placement: ChatToolbarPlacement,
     settings: Settings,
+    currentAssistant: Assistant,
     conversation: Conversation,
     drawerState: DrawerState,
     bigScreen: Boolean,
@@ -919,6 +943,7 @@ private fun ChatToolbar(
     onClickMenu: () -> Unit,
     onNewChat: () -> Unit,
     onUpdateSettings: (Settings) -> Unit,
+    onSwitchAssistant: (Assistant) -> Unit,
     onToggleTemporaryChat: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -928,7 +953,6 @@ private fun ChatToolbar(
     val topPillSize = 48.dp
     // State for assistant picker - must be at function level for proper recomposition
     var showAssistantPicker by remember { mutableStateOf(false) }
-    val currentAssistant = settings.getCurrentAssistant()
     val isEmpty = !conversation.messageNodes.any { it.role == me.rerere.ai.core.MessageRole.USER }
     var animateTopPillIn by remember { mutableStateOf(false) }
 
@@ -1147,13 +1171,15 @@ private fun ChatToolbar(
     
     // Assistant picker sheet - outside TopAppBar for proper state handling
     if (showAssistantPicker) {
-        val assistantState = me.rerere.rikkahub.ui.hooks.rememberAssistantState(settings, onUpdateSettings)
         me.rerere.rikkahub.ui.components.ai.AssistantPickerSheet(
             settings = settings,
             currentAssistant = currentAssistant,
             onAssistantSelected = { selectedAssistant ->
-                assistantState.setSelectAssistant(selectedAssistant)
+                onUpdateSettings(settings.copy(assistantId = selectedAssistant.id))
+            },
+            onNavigate = { selectedAssistant ->
                 showAssistantPicker = false
+                onSwitchAssistant(selectedAssistant)
             },
             onDismiss = { showAssistantPicker = false }
         )

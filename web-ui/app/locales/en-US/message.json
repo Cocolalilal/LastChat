@@ -73,7 +73,11 @@
     "ask_user_title": "Ask User",
     "ask_user_questions_count": "Ask {{count}} questions",
     "ask_user_submit": "Submit",
-    "ask_user_answered": "Answered"
+    "ask_user_answered": "Answered",
+    "ask_user_waiting": "Waiting for your reply in the composer",
+    "ask_user_skipped": "Skipped",
+    "ask_user_dismissed": "Dismissed the remaining questions",
+    "ask_user_answer_summary": "{{answered}} answered, {{skipped}} skipped"
   },
   "media_part": {
     "video_load_failed": "Failed to load video: {{url}}",

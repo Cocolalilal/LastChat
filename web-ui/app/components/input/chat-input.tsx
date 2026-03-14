@@ -8,6 +8,8 @@ import { fileTypeFromBuffer } from "file-type";
 import {
   AudioFile,
   ArrowUp,
+  ChevronLeft,
+  ChevronRight,
   File,
   FileDown,
   FlashOn,
@@ -27,6 +29,7 @@ import { ModelList } from "~/components/input/model-list";
 import { ReasoningPickerButton } from "~/components/input/reasoning-picker";
 import { SearchPickerButton } from "~/components/input/search-picker";
 import { InjectionPickerButton } from "~/components/input/injection-picker";
+import type { AskUserOption, AskUserQuestion } from "~/lib/tool-activity";
 import { useSettingsStore } from "~/stores";
 import { Button } from "~/components/ui/button";
 import {
@@ -56,11 +59,16 @@ export interface ChatInputProps {
   disabled?: boolean;
   isGenerating?: boolean;
   isEditing?: boolean;
+  assistantId?: string | null;
+  conversationId?: string | null;
+  conversationSkillIds?: string[] | null;
+  pendingQuestionnaire?: PendingQuestionnaire | null;
   onValueChange: (value: string) => void;
   onAddParts: (parts: UIMessagePart[]) => void;
   shouldDeleteFileOnRemove?: (part: UIMessagePart) => boolean;
   onRemovePart: (index: number, part: UIMessagePart) => Promise<void> | void;
   onSend: () => Promise<void> | void;
+  onToolApproval?: (toolCallId: string, approved: boolean, reason: string, answer?: string) => Promise<void> | void;
   onStop?: () => Promise<void> | void;
   onCancelEdit?: () => void;
   onSuggestionClick?: (suggestion: string) => void;
@@ -79,6 +87,11 @@ interface SlashSkillOption {
   name: string;
   description: string;
   command: string;
+}
+
+export interface PendingQuestionnaire {
+  toolCallId: string;
+  questions: AskUserQuestion[];
 }
 
 function getSlashSkillCommand(skill: Pick<ModeInjectionProfile, "argumentHint" | "name">): string {
@@ -198,11 +211,16 @@ function ChatInputInner({
   disabled = false,
   isGenerating = false,
   isEditing = false,
+  assistantId = null,
+  conversationId = null,
+  conversationSkillIds = null,
+  pendingQuestionnaire = null,
   onValueChange,
   onAddParts,
   shouldDeleteFileOnRemove,
   onRemovePart,
   onSend,
+  onToolApproval,
   onStop,
   onCancelEdit,
   onSuggestionClick,
@@ -274,6 +292,11 @@ function ChatInputInner({
   const [error, setError] = React.useState<string | null>(null);
   const [dragActive, setDragActive] = React.useState(false);
   const dragDepthRef = React.useRef(0);
+  const questionnaireActive =
+    Boolean(pendingQuestionnaire) && pendingQuestionnaire!.questions.length > 0;
+  const [questionIndex, setQuestionIndex] = React.useState(0);
+  const [selectedAnswers, setSelectedAnswers] = React.useState<Record<string, string>>({});
+  const [customAnswers, setCustomAnswers] = React.useState<Record<string, string>>({});
 
   const isEmpty = value.trim().length === 0 && attachments.length === 0;
   const slashToken = React.useMemo(() => value.trimStart().split(/\s+/, 1)[0] ?? "", [value]);
@@ -291,11 +314,32 @@ function ChatInputInner({
   const canStop = ready && Boolean(onStop) && isGenerating && !disabled;
   const canSend = ready && !isGenerating && !disabled && !isEmpty;
   const canUpload =
-    ready && !disabled && !isGenerating && !uploading && !submitting;
+    ready && !disabled && !isGenerating && !uploading && !submitting && !questionnaireActive;
   const canSwitchModel =
-    ready && !disabled && !isGenerating && !uploading && !submitting;
-  const canUseQuickMessage = ready && !disabled && !uploading && !submitting;
-  const actionDisabled = submitting || uploading || (!canStop && !canSend);
+    ready && !disabled && !isGenerating && !uploading && !submitting && !questionnaireActive;
+  const canUseQuickMessage =
+    ready && !disabled && !uploading && !submitting && !questionnaireActive;
+  const actionDisabled = questionnaireActive
+    ? !ready || disabled || uploading || submitting
+    : submitting || uploading || (!canStop && !canSend);
+  const activeQuestion = questionnaireActive
+    ? pendingQuestionnaire!.questions[Math.min(questionIndex, pendingQuestionnaire!.questions.length - 1)]
+    : null;
+  const isFinalQuestion = questionnaireActive
+    ? questionIndex >= pendingQuestionnaire!.questions.length - 1
+    : false;
+  const questionnaireValue = activeQuestion ? (customAnswers[activeQuestion.id] ?? "") : "";
+
+  React.useEffect(() => {
+    setQuestionIndex(0);
+    setSelectedAnswers({});
+    setCustomAnswers({});
+  }, [pendingQuestionnaire?.toolCallId]);
+
+  React.useEffect(() => {
+    if (!questionnaireActive || !pendingQuestionnaire) return;
+    setQuestionIndex((current) => Math.min(current, pendingQuestionnaire.questions.length - 1));
+  }, [pendingQuestionnaire, questionnaireActive]);
 
   React.useEffect(() => {
     if (!canUpload) {
@@ -355,6 +399,65 @@ function ChatInputInner({
     [onAddParts, ready, t],
   );
 
+  const buildQuestionnairePayload = React.useCallback(
+    (dismissed: boolean) => {
+      if (!pendingQuestionnaire) {
+        return null;
+      }
+
+      return JSON.stringify({
+        answers: pendingQuestionnaire.questions.map((question) => {
+          const customValue = (customAnswers[question.id] ?? "").trim();
+          const selectedValue = (selectedAnswers[question.id] ?? "").trim();
+          if (customValue) {
+            return {
+              id: question.id,
+              status: "answered",
+              source: "custom",
+              value: customValue,
+            };
+          }
+          if (selectedValue) {
+            return {
+              id: question.id,
+              status: "answered",
+              source: "option",
+              value: selectedValue,
+            };
+          }
+          return {
+            id: question.id,
+            status: "skipped",
+          };
+        }),
+        dismissed,
+      });
+    },
+    [customAnswers, pendingQuestionnaire, selectedAnswers],
+  );
+
+  const handleQuestionnaireAction = React.useCallback(async (dismissed = false) => {
+    if (!pendingQuestionnaire || !onToolApproval) {
+      return;
+    }
+
+    if (dismissed || isFinalQuestion) {
+      const payload = buildQuestionnairePayload(dismissed);
+      if (!payload) return;
+      await onToolApproval(pendingQuestionnaire.toolCallId, true, "", payload);
+      return;
+    }
+
+    setQuestionIndex((current) =>
+      Math.min(current + 1, pendingQuestionnaire.questions.length - 1),
+    );
+  }, [
+    buildQuestionnairePayload,
+    isFinalQuestion,
+    onToolApproval,
+    pendingQuestionnaire,
+  ]);
+
   const handlePrimaryAction = React.useCallback(async () => {
     if (actionDisabled) {
       return;
@@ -364,6 +467,11 @@ function ChatInputInner({
     setError(null);
 
     try {
+      if (questionnaireActive) {
+        await handleQuestionnaireAction(false);
+        return;
+      }
+
       if (canStop) {
         await onStop?.();
         return;
@@ -381,16 +489,20 @@ function ChatInputInner({
     } finally {
       setSubmitting(false);
     }
-  }, [actionDisabled, canSend, canStop, onSend, onStop, t]);
+  }, [actionDisabled, canSend, canStop, handleQuestionnaireAction, onSend, onStop, questionnaireActive, t]);
 
   const handleTextChange = React.useCallback(
     (event: React.ChangeEvent<HTMLTextAreaElement>) => {
-      onValueChange(event.target.value);
+      if (questionnaireActive && activeQuestion) {
+        setCustomAnswers((prev) => ({ ...prev, [activeQuestion.id]: event.target.value }));
+      } else {
+        onValueChange(event.target.value);
+      }
       if (error) {
         setError(null);
       }
     },
-    [error, onValueChange],
+    [activeQuestion, error, onValueChange, questionnaireActive],
   );
 
   const handleQuickMessageSelect = React.useCallback(
@@ -557,9 +669,11 @@ function ChatInputInner({
   const sendHint = sendOnEnter
     ? t("chat.send_hint_enter")
     : t("chat.send_hint_newline");
-  const placeholder = ready
-    ? t("chat.placeholder_ready")
-    : t("chat.placeholder_not_ready");
+  const placeholder = questionnaireActive
+    ? t("chat.questionnaire_placeholder")
+    : ready
+      ? t("chat.placeholder_ready")
+      : t("chat.placeholder_not_ready");
 
   return (
     <div
@@ -642,7 +756,61 @@ function ChatInputInner({
           </AnimatePresence>
 
           <AnimatePresence initial={false}>
-            {isTypingSlashToken && filteredSlashSkills.length > 0 ? (
+            {questionnaireActive && pendingQuestionnaire ? (
+              <motion.div
+                key="questionnaire-panel"
+                layout
+                initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -10, height: 0 }}
+                animate={{
+                  opacity: 1,
+                  y: 0,
+                  height: "auto",
+                  transition: reducedMotion
+                    ? { duration: 0.01 }
+                    : {
+                        opacity: { duration: CHAT_MOTION_DURATION.fast, ease: "easeOut" },
+                        y: getChatLayoutTransition(false),
+                        height: getChatLayoutTransition(false),
+                      },
+                }}
+                exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -6, height: 0, transition: { duration: 0.12 } }}
+                className="overflow-hidden rounded-[var(--radius-card-inner)] border border-border/70 bg-secondary/50"
+              >
+                <QuestionnairePanel
+                  question={activeQuestion}
+                  currentIndex={questionIndex}
+                  totalQuestions={pendingQuestionnaire.questions.length}
+                  selectedValue={activeQuestion ? selectedAnswers[activeQuestion.id] ?? null : null}
+                  onPrevious={() => {
+                    setQuestionIndex((current) => Math.max(0, current - 1));
+                  }}
+                  onNext={() => {
+                    setQuestionIndex((current) =>
+                      Math.min(current + 1, pendingQuestionnaire.questions.length - 1),
+                    );
+                  }}
+                  onDismiss={() => {
+                    void handleQuestionnaireAction(true);
+                  }}
+                  onSelectOption={(option) => {
+                    if (!activeQuestion) return;
+                    setSelectedAnswers((prev) => ({
+                      ...prev,
+                      [activeQuestion.id]: option.label,
+                    }));
+                    setCustomAnswers((prev) => ({
+                      ...prev,
+                      [activeQuestion.id]: "",
+                    }));
+                    if (!isFinalQuestion) {
+                      setQuestionIndex((current) =>
+                        Math.min(current + 1, pendingQuestionnaire.questions.length - 1),
+                      );
+                    }
+                  }}
+                />
+              </motion.div>
+            ) : isTypingSlashToken && filteredSlashSkills.length > 0 ? (
               <motion.div
                 key="slash-skills-panel"
                 layout
@@ -710,7 +878,7 @@ function ChatInputInner({
           </AnimatePresence>
 
           <AnimatePresence initial={false}>
-            {suggestions.length > 0 && !isTypingSlashToken ? (
+            {suggestions.length > 0 && !isTypingSlashToken && !questionnaireActive ? (
               <motion.div
                 key="composer-suggestions"
                 layout
@@ -764,7 +932,7 @@ function ChatInputInner({
           </AnimatePresence>
 
           <AnimatePresence initial={false}>
-            {attachments.length > 0 ? (
+            {attachments.length > 0 && !questionnaireActive ? (
               <motion.div
                 key="composer-attachments"
                 layout
@@ -845,7 +1013,7 @@ function ChatInputInner({
 
           <Textarea
             ref={textareaRef}
-            value={value}
+            value={questionnaireActive ? questionnaireValue : value}
             onChange={handleTextChange}
             onKeyDown={handleKeyDown}
             onPaste={(event) => {
@@ -862,92 +1030,101 @@ function ChatInputInner({
             className="flex items-end justify-between gap-3 pt-1"
           >
             <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-              <DropdownMenu
-                open={uploadMenuOpen}
-                onOpenChange={setUploadMenuOpen}
-              >
-                <input
-                  ref={fileInputRef}
-                  className="hidden"
-                  multiple
-                  onChange={handleUploadInputChange}
-                  type="file"
-                />
-                <input
-                  ref={imageInputRef}
-                  accept={IMAGE_UPLOAD_ACCEPT}
-                  className="hidden"
-                  multiple
-                  onChange={handleUploadInputChange}
-                  type="file"
-                />
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    disabled={!canUpload}
-                    className={cn("size-9", COMPOSER_CONTROL_BUTTON_CLASSNAME)}
+              {!questionnaireActive ? (
+                <>
+                  <DropdownMenu
+                    open={uploadMenuOpen}
+                    onOpenChange={setUploadMenuOpen}
                   >
-                    <Plus
-                      className={cn(
-                        "size-4 transition-transform",
-                        uploadMenuOpen && "rotate-45",
-                      )}
+                    <input
+                      ref={fileInputRef}
+                      className="hidden"
+                      multiple
+                      onChange={handleUploadInputChange}
+                      type="file"
                     />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  className="min-w-36"
-                  side="top"
-                  align="start"
-                >
-                  <DropdownMenuItem
-                    onClick={() => {
-                      imageInputRef.current?.click();
-                    }}
-                  >
-                    <Image className="size-4" />
-                    {t("chat.upload_image")}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => {
-                      fileInputRef.current?.click();
-                    }}
-                  >
-                    <FolderOpen className="size-4" />
-                    {t("chat.upload_document")}
-                  </DropdownMenuItem>
-                  {onExportConversation && (
-                    <DropdownMenuItem
-                      onClick={() => {
-                        onExportConversation(false);
-                      }}
+                    <input
+                      ref={imageInputRef}
+                      accept={IMAGE_UPLOAD_ACCEPT}
+                      className="hidden"
+                      multiple
+                      onChange={handleUploadInputChange}
+                      type="file"
+                    />
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        disabled={!canUpload}
+                        className={cn("size-9", COMPOSER_CONTROL_BUTTON_CLASSNAME)}
+                      >
+                        <Plus
+                          className={cn(
+                            "size-4 transition-transform",
+                            uploadMenuOpen && "rotate-45",
+                          )}
+                        />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      className="min-w-36"
+                      side="top"
+                      align="start"
                     >
-                      <FileDown className="size-4" />
-                      {t("chat.export_conversation")}
-                    </DropdownMenuItem>
-                  )}
-                  {onExportConversation && (
-                    <DropdownMenuItem
-                      onClick={() => {
-                        onExportConversation(true);
-                      }}
-                    >
-                      <FileDown className="size-4" />
-                      {t("chat.export_conversation_with_reasoning")}
-                    </DropdownMenuItem>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <ModelList disabled={!canSwitchModel} className="max-w-64" />
-              <SearchPickerButton disabled={!canSwitchModel} />
-              <ReasoningPickerButton disabled={!canSwitchModel} />
-              <InjectionPickerButton disabled={!canSwitchModel} />
-              <QuickMessageButton
-                quickMessages={quickMessages}
-                disabled={!canUseQuickMessage}
-                onSelect={handleQuickMessageSelect}
-              />
+                      <DropdownMenuItem
+                        onClick={() => {
+                          imageInputRef.current?.click();
+                        }}
+                      >
+                        <Image className="size-4" />
+                        {t("chat.upload_image")}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          fileInputRef.current?.click();
+                        }}
+                      >
+                        <FolderOpen className="size-4" />
+                        {t("chat.upload_document")}
+                      </DropdownMenuItem>
+                      {onExportConversation && (
+                        <DropdownMenuItem
+                          onClick={() => {
+                            onExportConversation(false);
+                          }}
+                        >
+                          <FileDown className="size-4" />
+                          {t("chat.export_conversation")}
+                        </DropdownMenuItem>
+                      )}
+                      {onExportConversation && (
+                        <DropdownMenuItem
+                          onClick={() => {
+                            onExportConversation(true);
+                          }}
+                        >
+                          <FileDown className="size-4" />
+                          {t("chat.export_conversation_with_reasoning")}
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <ModelList disabled={!canSwitchModel} className="max-w-64" />
+                  <SearchPickerButton disabled={!canSwitchModel} />
+                  <ReasoningPickerButton disabled={!canSwitchModel} />
+                  <InjectionPickerButton
+                    disabled={!canSwitchModel}
+                    assistantId={assistantId}
+                    conversationId={conversationId}
+                    conversationSkillIds={conversationSkillIds}
+                  />
+                  <QuickMessageButton
+                    quickMessages={quickMessages}
+                    disabled={!canUseQuickMessage}
+                    onSelect={handleQuickMessageSelect}
+                  />
+                </>
+              ) : null}
             </div>
             <Button
               onClick={() => {
@@ -990,13 +1167,17 @@ function ChatInputInner({
                     </motion.span>
                   ) : (
                     <motion.span
-                      key="composer-send"
+                      key={questionnaireActive ? (isFinalQuestion ? "composer-questionnaire-submit" : "composer-questionnaire-next") : "composer-send"}
                       initial={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.8, rotate: 12 }}
                       animate={{ opacity: 1, scale: 1, rotate: 0 }}
                       exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.8, rotate: -12 }}
                       transition={getChatTactileTransition(reducedMotion)}
                     >
-                      <ArrowUp className="size-4.5" />
+                      {questionnaireActive && !isFinalQuestion ? (
+                        <ChevronRight className="size-4.5" />
+                      ) : (
+                        <ArrowUp className="size-4.5" />
+                      )}
                     </motion.span>
                   )}
                 </AnimatePresence>
@@ -1022,6 +1203,90 @@ type QuickMessageOption = {
   title: string;
   content: string;
 };
+
+function QuestionnairePanel({
+  question,
+  currentIndex,
+  totalQuestions,
+  selectedValue,
+  onPrevious,
+  onNext,
+  onDismiss,
+  onSelectOption,
+}: {
+  question: AskUserQuestion | null;
+  currentIndex: number;
+  totalQuestions: number;
+  selectedValue: string | null;
+  onPrevious: () => void;
+  onNext: () => void;
+  onDismiss: () => void;
+  onSelectOption: (option: AskUserOption) => void;
+}) {
+  const { t } = useTranslation("input");
+
+  if (!question) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-3 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-1 text-muted-foreground text-xs">
+          <button
+            type="button"
+            onClick={onPrevious}
+            disabled={currentIndex === 0}
+            className="rounded-full border border-border/70 bg-background/80 p-1 text-foreground transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <ChevronLeft className="size-3.5" />
+          </button>
+          <span className="px-1">{t("chat.questionnaire_progress", { current: currentIndex + 1, total: totalQuestions })}</span>
+          <button
+            type="button"
+            onClick={onNext}
+            disabled={currentIndex >= totalQuestions - 1}
+            className="rounded-full border border-border/70 bg-background/80 p-1 text-foreground transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <ChevronRight className="size-3.5" />
+          </button>
+        </div>
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="rounded-full border border-border/70 bg-background/80 p-1.5 text-muted-foreground transition hover:bg-accent hover:text-foreground"
+        >
+          <X className="size-3.5" />
+        </button>
+      </div>
+
+      <div className="text-sm font-medium text-foreground">{question.question}</div>
+
+      <div className="space-y-2">
+        {question.options.map((option) => (
+          <button
+            key={option.label}
+            type="button"
+            onClick={() => {
+              onSelectOption(option);
+            }}
+            className={cn(
+              "w-full rounded-[var(--radius-card-inner)] border px-3 py-2 text-left transition active:scale-[0.97]",
+              selectedValue === option.label
+                ? "border-primary/30 bg-primary/10 text-primary"
+                : "border-border/70 bg-background/70 text-foreground hover:bg-accent",
+            )}
+          >
+            <div className="text-sm font-medium">{option.label}</div>
+            {option.description ? (
+              <div className="mt-1 text-muted-foreground text-xs">{option.description}</div>
+            ) : null}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 interface QuickMessageButtonProps {
   quickMessages: QuickMessageOption[];

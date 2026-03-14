@@ -21,6 +21,7 @@ import {
 import { ChatInput } from "~/components/input/chat-input";
 import { AssistantTurnMessage } from "~/components/message/assistant-turn-message";
 import { ChatMessage } from "~/components/message/chat-message";
+import { parseAskUserQuestions, safeJsonParse, TOOL_NAMES } from "~/lib/tool-activity";
 import { Drawer, DrawerContent } from "~/components/ui/drawer";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "~/components/ui/resizable";
 import { TypingIndicator } from "~/components/ui/typing-indicator";
@@ -675,6 +676,27 @@ function ConversationsPageInner() {
     () => resolveEffectiveDisplaySetting(settings?.displaySetting, conversationAssistant),
     [conversationAssistant, settings?.displaySetting],
   );
+  const pendingQuestionnaire = React.useMemo(() => {
+    for (const item of selectedNodeMessages) {
+      for (const part of item.message.parts) {
+        if (
+          part.type === "tool" &&
+          part.toolName === TOOL_NAMES.ASK_USER &&
+          part.approvalState.type === "pending"
+        ) {
+          const questions = parseAskUserQuestions(safeJsonParse(part.input));
+          if (questions.length > 0) {
+            return {
+              toolCallId: part.toolCallId,
+              questions,
+            };
+          }
+        }
+      }
+    }
+
+    return null;
+  }, [selectedNodeMessages]);
 
   React.useEffect(() => {
     const base = t("conversations.meta.title");
@@ -685,7 +707,11 @@ function ConversationsPageInner() {
   }, [detail?.title, t]);
   const isNewChat = isHomeRoute && !activeId;
   const showSuggestions =
-    Boolean(activeId) && !detailLoading && !detailError && chatSuggestions.length > 0;
+    Boolean(activeId) &&
+    !detailLoading &&
+    !detailError &&
+    chatSuggestions.length > 0 &&
+    !pendingQuestionnaire;
   const displaySuggestions = showSuggestions ? chatSuggestions : EMPTY_SUGGESTIONS;
 
   const handleSelect = React.useCallback(
@@ -998,6 +1024,10 @@ function ConversationsPageInner() {
           ready={draftKey !== null}
           isGenerating={detail?.isGenerating ?? false}
           disabled={detailLoading || Boolean(detailError)}
+          assistantId={detail?.assistantId ?? currentAssistantId}
+          conversationId={activeId}
+          conversationSkillIds={detail?.enabledSkillIds ?? null}
+          pendingQuestionnaire={pendingQuestionnaire}
           onValueChange={handleInputTextChange}
           onAddParts={handleAddInputParts}
           suggestions={displaySuggestions}
@@ -1007,6 +1037,7 @@ function ConversationsPageInner() {
           shouldDeleteFileOnRemove={shouldDeleteAttachmentFileOnRemove}
           onRemovePart={handleRemoveInputPart}
           onSend={handleSend}
+          onToolApproval={handleToolApproval}
           onStop={activeId ? handleStop : undefined}
           onExportConversation={
             detail && detail.messages.length > 0

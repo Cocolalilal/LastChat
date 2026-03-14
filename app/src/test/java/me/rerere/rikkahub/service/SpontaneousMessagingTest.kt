@@ -1,5 +1,4 @@
 package me.rerere.rikkahub.service
-
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -103,6 +102,13 @@ class SpontaneousMessagingTest {
 
         assertNotNull(selected)
         assertEquals(onlyId, selected!!.assistantId)
+    }
+
+    @Test
+    fun describeElapsedTimeUsesHumanFriendlyUnits() {
+        assertEquals("less than a minute", SpontaneousMessaging.describeElapsedTime(30_000L))
+        assertEquals("5 minutes", SpontaneousMessaging.describeElapsedTime(5 * 60_000L))
+        assertEquals("2 hours", SpontaneousMessaging.describeElapsedTime(2 * 60 * 60_000L))
     }
 
     @Test

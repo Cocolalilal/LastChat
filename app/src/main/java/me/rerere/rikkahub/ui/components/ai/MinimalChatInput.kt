@@ -54,12 +54,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.foundation.content.contentReceiver
 import androidx.compose.foundation.content.MediaType
 import androidx.compose.foundation.content.ReceiveContentListener
 import androidx.compose.foundation.content.consume
 import androidx.compose.foundation.content.hasMediaType
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Book
@@ -70,6 +73,8 @@ import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Stop
@@ -118,9 +123,9 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
-import me.rerere.rikkahub.data.datastore.getCurrentAssistant
-import me.rerere.rikkahub.data.datastore.getCurrentChatModel
+import me.rerere.rikkahub.data.datastore.resolveConversationContext
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.model.canManuallySummarizeConversation
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.Skill
 import me.rerere.rikkahub.service.ChatService
@@ -137,6 +142,13 @@ import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.utils.createChatFilesByContents
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
+import me.rerere.rikkahub.data.ai.tools.AskUserAnswer
+import me.rerere.rikkahub.data.ai.tools.AskUserAnswerPayload
+import me.rerere.rikkahub.data.ai.tools.AskUserOption
+import me.rerere.rikkahub.data.ai.tools.AskUserQuestionnaire
+import me.rerere.rikkahub.data.ai.tools.findPendingAskUserToolCall
+import me.rerere.rikkahub.data.ai.tools.toJsonElement
+import me.rerere.rikkahub.utils.JsonInstantPretty
 import java.io.File
 import kotlin.uuid.Uuid
 
@@ -160,6 +172,7 @@ fun MinimalChatInput(
     onUpdateChatModel: (Model) -> Unit,
     onUpdateAssistant: (Assistant) -> Unit,
     onUpdateConversation: (Conversation) -> Unit,
+    onToolApproval: (toolCallId: String, approved: Boolean, reason: String, answer: String?) -> Unit,
     onUpdateSearchService: (Int) -> Unit,
     onClearContext: () -> Unit,
     onCancelClick: () -> Unit,
@@ -173,7 +186,11 @@ fun MinimalChatInput(
 ) {
     val context = LocalContext.current
     val toaster = LocalToaster.current
-    val assistant = settings.getCurrentAssistant()
+    val conversationContext = remember(settings, conversation) {
+        settings.resolveConversationContext(conversation)
+    }
+    val assistant = conversationContext.assistant
+    val currentChatModel = conversationContext.chatModel
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
     val keyboardController = LocalSoftwareKeyboardController.current
     val localSettings = LocalSettings.current
@@ -211,6 +228,22 @@ fun MinimalChatInput(
             skill.slashCommand().equals(slashToken, ignoreCase = true)
         }
     }
+    val pendingQuestionnaire = remember(conversation.messageNodes) {
+        conversation.currentMessages.findPendingAskUserToolCall()
+    }
+    val isQuestionnaireActive = pendingQuestionnaire != null
+    val questionnaire = pendingQuestionnaire?.questionnaire
+    val questionnaireToolCallId = pendingQuestionnaire?.toolCallId
+    var questionnaireIndex by rememberSaveable(questionnaireToolCallId) { mutableStateOf(0) }
+    var questionnaireSelectedOptions by rememberSaveable(questionnaireToolCallId) {
+        mutableStateOf<Map<String, String>>(emptyMap())
+    }
+    var questionnaireCustomAnswers by rememberSaveable(questionnaireToolCallId) {
+        mutableStateOf<Map<String, String>>(emptyMap())
+    }
+    val questionnaireTextState = remember(questionnaireToolCallId) { TextFieldState() }
+    val currentQuestion = questionnaire?.questions?.getOrNull(questionnaireIndex)
+    val isFinalQuestion = questionnaire != null && questionnaireIndex == questionnaire.questions.lastIndex
 
     // OLED dark mode handling for picker sheet
     val amoledMode by me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode()
@@ -226,7 +259,32 @@ fun MinimalChatInput(
     
     var showPicker by remember { mutableStateOf(false) }
     var isFocused by remember { mutableStateOf(false) }
-    
+
+    LaunchedEffect(questionnaireToolCallId, questionnaire?.questions?.size) {
+        if (questionnaire == null) {
+            questionnaireIndex = 0
+            questionnaireTextState.setTextAndPlaceCursorAtEnd("")
+        } else {
+            questionnaireIndex = questionnaireIndex.coerceIn(0, questionnaire.questions.lastIndex)
+            val initialText = questionnaire.questions
+                .getOrNull(questionnaireIndex)
+                ?.let { question -> questionnaireCustomAnswers[question.id].orEmpty() }
+                .orEmpty()
+            questionnaireTextState.setTextAndPlaceCursorAtEnd(initialText)
+        }
+    }
+
+    LaunchedEffect(currentQuestion?.id) {
+        val nextText = currentQuestion?.let { questionnaireCustomAnswers[it.id].orEmpty() }.orEmpty()
+        if (questionnaireTextState.text.toString() != nextText) {
+            questionnaireTextState.setTextAndPlaceCursorAtEnd(nextText)
+        }
+    }
+    LaunchedEffect(currentQuestion?.id, questionnaireTextState.text.toString()) {
+        val question = currentQuestion ?: return@LaunchedEffect
+        questionnaireCustomAnswers = questionnaireCustomAnswers + (question.id to questionnaireTextState.text.toString())
+    }
+
     // Collapse picker when keyboard opens
     val imeVisible = WindowInsets.isImeVisible
     val focusManager = LocalFocusManager.current
@@ -237,8 +295,75 @@ fun MinimalChatInput(
             focusManager.clearFocus()
         }
     }
-    
+    LaunchedEffect(isQuestionnaireActive) {
+        if (isQuestionnaireActive) {
+            showPicker = false
+        }
+    }
+
+    fun buildQuestionnairePayload(dismissed: Boolean): String? {
+        val activeQuestionnaire = questionnaire ?: return null
+        val payload = AskUserAnswerPayload(
+            answers = activeQuestionnaire.questions.map { question ->
+                val custom = questionnaireCustomAnswers[question.id]?.trim().orEmpty()
+                val selectedOption = questionnaireSelectedOptions[question.id]?.trim().orEmpty()
+                when {
+                    custom.isNotBlank() -> AskUserAnswer(
+                        id = question.id,
+                        status = "answered",
+                        source = "custom",
+                        value = custom,
+                    )
+
+                    selectedOption.isNotBlank() -> AskUserAnswer(
+                        id = question.id,
+                        status = "answered",
+                        source = "option",
+                        value = selectedOption,
+                    )
+
+                    else -> AskUserAnswer(
+                        id = question.id,
+                        status = "skipped",
+                    )
+                }
+            },
+            dismissed = dismissed,
+        )
+        return JsonInstantPretty.encodeToString(
+            kotlinx.serialization.json.JsonElement.serializer(),
+            payload.toJsonElement()
+        )
+    }
+
+    fun submitQuestionnaire(dismissed: Boolean) {
+        val toolCallId = questionnaireToolCallId ?: return
+        val payload = buildQuestionnairePayload(dismissed) ?: return
+        keyboardController?.hide()
+        haptics.perform(if (dismissed) HapticPattern.Pop else HapticPattern.Send)
+        onToolApproval(toolCallId, true, "", payload)
+    }
+
+    fun advanceQuestionnaire() {
+        val activeQuestionnaire = questionnaire ?: return
+        if (isFinalQuestion) {
+            submitQuestionnaire(dismissed = false)
+            return
+        }
+        questionnaireIndex = (questionnaireIndex + 1).coerceAtMost(activeQuestionnaire.questions.lastIndex)
+        haptics.perform(HapticPattern.Pop)
+    }
+
     fun sendMessage() {
+        if (isQuestionnaireActive) {
+            val question = currentQuestion
+            if (question != null) {
+                val trimmed = questionnaireTextState.text.toString().trim()
+                questionnaireCustomAnswers = questionnaireCustomAnswers + (question.id to trimmed)
+            }
+            advanceQuestionnaire()
+            return
+        }
         if (!state.loading && exactSlashSkill != null) {
             val updatedIds = activeConversationSkillIds + exactSlashSkill.id
             if (updatedIds != conversation.enabledModeIds) {
@@ -262,7 +387,7 @@ fun MinimalChatInput(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // Media preview row
-            if (state.messageContent.isNotEmpty()) {
+            if (!isQuestionnaireActive && state.messageContent.isNotEmpty()) {
                 MediaFileInputRow(
                     state = state,
                     onDelete = onDeleteFile
@@ -271,7 +396,7 @@ fun MinimalChatInput(
             
             // Suggestions row
             androidx.compose.animation.AnimatedVisibility(
-                visible = chatSuggestions.isNotEmpty(),
+                visible = !isQuestionnaireActive && chatSuggestions.isNotEmpty(),
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
@@ -282,7 +407,7 @@ fun MinimalChatInput(
             }
 
             androidx.compose.animation.AnimatedVisibility(
-                visible = isTypingSlashToken && filteredSlashSkills.isNotEmpty(),
+                visible = !isQuestionnaireActive && isTypingSlashToken && filteredSlashSkills.isNotEmpty(),
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
@@ -295,11 +420,54 @@ fun MinimalChatInput(
                     }
                 )
             }
+            androidx.compose.animation.AnimatedVisibility(
+                visible = isQuestionnaireActive && questionnaire != null,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                questionnaire?.let { activeQuestionnaire ->
+                    CharacterQuestionsCard(
+                        questionnaire = activeQuestionnaire,
+                        currentIndex = questionnaireIndex,
+                        selectedOptionLabel = currentQuestion?.let { question ->
+                            questionnaireSelectedOptions[question.id]
+                        },
+                        onPrevious = {
+                            questionnaireIndex = (questionnaireIndex - 1).coerceAtLeast(0)
+                            haptics.perform(HapticPattern.Pop)
+                        },
+                        onNext = {
+                            questionnaireIndex = (questionnaireIndex + 1)
+                                .coerceAtMost(activeQuestionnaire.questions.lastIndex)
+                            haptics.perform(HapticPattern.Pop)
+                        },
+                        onDismiss = {
+                            currentQuestion?.let { question ->
+                                questionnaireCustomAnswers =
+                                    questionnaireCustomAnswers + (question.id to questionnaireTextState.text.toString())
+                            }
+                            submitQuestionnaire(dismissed = true)
+                        },
+                        onSelectOption = { option ->
+                            val question = currentQuestion ?: return@CharacterQuestionsCard
+                            questionnaireSelectedOptions = questionnaireSelectedOptions + (question.id to option.label)
+                            questionnaireCustomAnswers = questionnaireCustomAnswers + (question.id to "")
+                            questionnaireTextState.setTextAndPlaceCursorAtEnd("")
+                            haptics.perform(HapticPattern.Pop)
+                            if (!isFinalQuestion) {
+                                questionnaireIndex = (questionnaireIndex + 1)
+                                    .coerceAtMost(activeQuestionnaire.questions.lastIndex)
+                            }
+                        }
+                    )
+                }
+            }
             
             // Content receiver for clipboard image paste (must be outside Surface lambda)
-            val receiveContentListener = remember {
+            val receiveContentListener = remember(isQuestionnaireActive) {
                 ReceiveContentListener { transferableContent ->
                     when {
+                        isQuestionnaireActive -> transferableContent
                         transferableContent.hasMediaType(MediaType.Image) -> {
                             transferableContent.consume { item ->
                                 item.uri?.let { uri ->
@@ -324,24 +492,26 @@ fun MinimalChatInput(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 // Plus button - 48dp pill button
-                Surface(
-                    onClick = {
-                        haptics.perform(HapticPattern.Pop)
-                        showPicker = true
-                        keyboardController?.hide()
-                    },
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surfaceContainer,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                        Icon(
-                            imageVector = Icons.Rounded.Add,
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                if (!isQuestionnaireActive) {
+                    Surface(
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            showPicker = true
+                            keyboardController?.hide()
+                        },
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                            Icon(
+                                imageVector = Icons.Rounded.Add,
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
                 // Text field capsule with embedded action button
@@ -358,7 +528,7 @@ fun MinimalChatInput(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         // Editing indicator - shown when editing a message
-                        if (state.isEditing()) {
+                        if (!isQuestionnaireActive && state.isEditing()) {
                             Surface(
                                 color = if (LocalDarkMode.current) 
                                     MaterialTheme.colorScheme.surfaceContainerLowest  // Darker in dark mode
@@ -398,16 +568,26 @@ fun MinimalChatInput(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             TextField(
-                                state = state.textContent,
+                                state = if (isQuestionnaireActive) questionnaireTextState else state.textContent,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .defaultMinSize(minHeight = 1.dp)  // Override internal min height (56dp)
                                     .focusRequester(state.focusRequester)
-                                    .contentReceiver(receiveContentListener)
+                                    .then(
+                                        if (isQuestionnaireActive) {
+                                            Modifier
+                                        } else {
+                                            Modifier.contentReceiver(receiveContentListener)
+                                        }
+                                    )
                                     .onFocusChanged { isFocused = it.isFocused },
                                 placeholder = {
                                     Text(
-                                        text = "Ask ${assistant.name}",
+                                        text = if (isQuestionnaireActive) {
+                                            stringResource(R.string.character_questions_custom_answer_placeholder)
+                                        } else {
+                                            stringResource(R.string.minimal_chat_input_placeholder, assistant.name)
+                                        },
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -434,6 +614,8 @@ fun MinimalChatInput(
                                     .padding(start = 4.dp, end = 6.dp, top = 4.dp, bottom = 6.dp)
                             ) {
                                 val currentAction = when {
+                                    isQuestionnaireActive && isFinalQuestion -> "questionnaire_submit"
+                                    isQuestionnaireActive -> "questionnaire_next"
                                     state.loading -> "loading"
                                     !state.isEmpty() -> "send"
                                     else -> "picker"
@@ -442,6 +624,7 @@ fun MinimalChatInput(
                                 val containerColor by animateColorAsState(
                                     targetValue = when (currentAction) {
                                         "loading" -> MaterialTheme.colorScheme.errorContainer
+                                        "questionnaire_submit", "questionnaire_next" -> MaterialTheme.colorScheme.primary
                                         "send" -> MaterialTheme.colorScheme.primary
                                         else -> Color.Transparent
                                     },
@@ -450,8 +633,11 @@ fun MinimalChatInput(
                                 
                                 Surface(
                                     onClick = { 
-                                        if (currentAction == "send" || currentAction == "loading") sendMessage()
-                                        else showPicker = true
+                                        if (currentAction == "send" || currentAction == "loading" || currentAction.startsWith("questionnaire_")) {
+                                            sendMessage()
+                                        } else {
+                                            showPicker = true
+                                        }
                                     },
                                     shape = CircleShape,
                                     color = containerColor,
@@ -473,6 +659,22 @@ fun MinimalChatInput(
                                                     )
                                                 }
                                                 "send" -> {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.ArrowUpward,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(18.dp),
+                                                        tint = MaterialTheme.colorScheme.onPrimary
+                                                    )
+                                                }
+                                                "questionnaire_next" -> {
+                                                    Icon(
+                                                        imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(18.dp),
+                                                        tint = MaterialTheme.colorScheme.onPrimary
+                                                    )
+                                                }
+                                                "questionnaire_submit" -> {
                                                     Icon(
                                                         imageVector = Icons.Rounded.ArrowUpward,
                                                         contentDescription = null,
@@ -519,6 +721,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 conversation = conversation,
                 settings = settings,
                 assistant = assistant,
+                currentChatModel = currentChatModel,
                 cameraPermission = cameraPermission,
                 enableSearch = enableSearch,
                 onToggleSearch = onToggleSearch,
@@ -591,11 +794,165 @@ private fun SlashSkillsPicker(
 }
 
 @Composable
+private fun CharacterQuestionsCard(
+    questionnaire: AskUserQuestionnaire,
+    currentIndex: Int,
+    selectedOptionLabel: String?,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onDismiss: () -> Unit,
+    onSelectOption: (AskUserOption) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val question = questionnaire.questions.getOrNull(currentIndex) ?: return
+    val canGoPrevious = currentIndex > 0
+    val canGoNext = currentIndex < questionnaire.questions.lastIndex
+
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    IconButton(
+                        onClick = onPrevious,
+                        enabled = canGoPrevious,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.KeyboardArrowLeft,
+                            contentDescription = stringResource(R.string.previous),
+                        )
+                    }
+                    Text(
+                        text = stringResource(
+                            R.string.character_questions_progress,
+                            currentIndex + 1,
+                            questionnaire.questions.size
+                        ),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    IconButton(
+                        onClick = onNext,
+                        enabled = canGoNext,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.KeyboardArrowRight,
+                            contentDescription = stringResource(R.string.next),
+                        )
+                    }
+                }
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = stringResource(R.string.banner_dismiss),
+                    )
+                }
+            }
+
+            Text(
+                text = question.question,
+                style = MaterialTheme.typography.titleMedium
+            )
+
+            question.options.forEach { option ->
+                CharacterQuestionOptionRow(
+                    option = option,
+                    selected = selectedOptionLabel == option.label,
+                    onClick = { onSelectOption(option) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CharacterQuestionOptionRow(
+    option: AskUserOption,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val haptics = rememberPremiumHaptics()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.85f else 1f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        label = "question_option_scale"
+    )
+
+    Surface(
+        onClick = {
+            haptics.perform(HapticPattern.Pop)
+            onClick()
+        },
+        shape = RoundedCornerShape(20.dp),
+        color = if (selected) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHigh
+        },
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+            else MaterialTheme.colorScheme.background
+        ),
+        interactionSource = interactionSource,
+        modifier = modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = option.label,
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+            )
+            option.description?.takeIf { it.isNotBlank() }?.let { description ->
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun MinimalPickerContent(
     state: ChatInputState,
     conversation: Conversation,
     settings: Settings,
     assistant: Assistant,
+    currentChatModel: Model?,
     cameraPermission: me.rerere.rikkahub.ui.components.ui.permission.PermissionState,
     enableSearch: Boolean,
     onToggleSearch: (Boolean) -> Unit,
@@ -869,7 +1226,7 @@ private fun MinimalPickerContent(
         )
         
         // Model picker - uses actual model icon, full-width clickable
-        val currentModel = settings.getCurrentChatModel()
+        val currentModel = currentChatModel
         val provider = currentModel?.findProvider(providers = settings.providers)
         MinimalPickerItem(
             icon = {
@@ -997,8 +1354,8 @@ private fun MinimalPickerContent(
             }
         )
         
-        // Summarize button - only show when context refresh is enabled and more than 2 messages
-        if (assistant.enableContextRefresh && conversation.currentMessages.size > 2) {
+        // Summarize button - show whenever there is enough history to summarize
+        if (assistant.canManuallySummarizeConversation(conversation.currentMessages.size)) {
             MinimalPickerItem(
                 icon = {
                     Icon(
@@ -1118,7 +1475,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
     
     // Search picker sheet (same as floating toolbar) - direct content, no intermediate button
     if (showSearchPicker) {
-        val chatModel = settings.getCurrentChatModel()
+        val chatModel = currentChatModel
         
         ModalBottomSheet(
 containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,

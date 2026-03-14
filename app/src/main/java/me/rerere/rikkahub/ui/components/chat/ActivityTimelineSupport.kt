@@ -199,6 +199,7 @@ private fun getLocalizedToolLabel(toolName: String, fallback: String): String {
         "read_sandbox_file" -> stringResource(R.string.activity_timeline_tool_read_file)
         "list_sandbox_files" -> stringResource(R.string.chat_message_tool_python_list_files)
         "delete_sandbox_file" -> stringResource(R.string.activity_timeline_tool_delete_file)
+        "ask_user" -> stringResource(R.string.activity_timeline_tool_ask_user)
         "manage_skills" -> stringResource(R.string.activity_timeline_tool_manage_skills)
         else -> fallback
     }

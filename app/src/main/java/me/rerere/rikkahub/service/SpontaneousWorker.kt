@@ -13,6 +13,8 @@ import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -146,12 +148,13 @@ class SpontaneousWorker(
             ?.joinToString("\n") { message -> "${message.role}: ${message.toText()}" }
             ?.takeIf { it.isNotBlank() }
             ?: "No previous chat history."
+        val timingContext = buildTimingContext(conversation, now)
 
         val memories = resolveMemoryContext(assistant, conversation)
         val lastNotificationContext = assistant.lastNotificationContent
             .takeIf { it.isNotBlank() && now - assistant.lastNotificationTime < 24 * 60 * 60 * 1000L }
             ?.let { content ->
-                "You recently sent: \"$content\". Avoid repeating the same angle or wording."
+                "Your last spontaneous notification was ${SpontaneousMessaging.describeElapsedTime(now - assistant.lastNotificationTime)} ago: \"$content\". Avoid repeating the same angle or wording."
             }
             ?: ""
 
@@ -160,6 +163,7 @@ class SpontaneousWorker(
                 assistant = assistant,
                 conversation = conversation,
                 history = history,
+                timingContext = timingContext,
                 memories = memories,
                 lastNotificationContext = lastNotificationContext,
             )
@@ -281,25 +285,34 @@ class SpontaneousWorker(
         assistant: Assistant,
         conversation: Conversation?,
         history: String,
+        timingContext: String,
         memories: String,
         lastNotificationContext: String,
     ): String {
-        val firstContactInstructions = if (conversation == null) {
+        val contactInstructions = if (conversation == null) {
             """
             There is no existing chat history yet. You may initiate first contact, but only if it feels warm, low-pressure, and genuinely worth saying.
             """.trimIndent()
         } else {
-            "This should feel like a natural continuation of the relationship, not a forced check-in."
+            """
+            There is a most recent chat available. Treat the decision carefully:
+            - choose `recent_chat` only if reopening that exact thread feels natural at this timing
+            - choose `unrelated` only if a fresh standalone ping feels more honest than continuing the old thread
+            - choose `send = false` if neither option feels justified right now
+            """.trimIndent()
         }
 
         return """
             You are ${assistant.name}.
             You are considering whether to send the user a spontaneous in-app message.
 
-            $firstContactInstructions
+            $contactInstructions
 
             Recent chat history:
             $history
+
+            Timing signals:
+            $timingContext
 
             Relevant memories:
             $memories
@@ -309,8 +322,10 @@ class SpontaneousWorker(
             Decide whether to send a spontaneous message right now.
             Only send if it feels timely, affectionate, interesting, or meaningfully connected to prior context.
             Avoid repetitive check-ins, filler, or anything that would feel spammy.
-            Choose `recent_chat` only if the message clearly continues the latest chat.
-            Choose `unrelated` only if it should stand alone as the first assistant message in a fresh chat.
+            Use the timing signals and who spoke last when deciding.
+            If the user spoke very recently, if they are still obviously waiting for a normal in-chat reply, or if the timing feels awkward, prefer `send = false`.
+            Choose `recent_chat` only if the message clearly continues the most recent chat.
+            Choose `unrelated` only if it should stand alone as a fresh new conversation rather than continue the most recent chat.
             ${if (conversation == null) "Because there is no recent chat available, relation must be `unrelated`." else ""}
 
             Return JSON only:
@@ -321,6 +336,43 @@ class SpontaneousWorker(
               "title": "short notification title",
               "content": "the exact spontaneous assistant message"
             }
+        """.trimIndent()
+    }
+
+    private fun buildTimingContext(
+        conversation: Conversation?,
+        now: Long,
+    ): String {
+        if (conversation == null) {
+            return "- No previous chat timing is available."
+        }
+
+        val messages = conversation.currentMessages
+        val lastMessage = messages.lastOrNull()
+        val lastUserMessage = messages.lastOrNull { it.role == MessageRole.USER }
+        val lastAssistantMessage = messages.lastOrNull { it.role == MessageRole.ASSISTANT }
+
+        fun elapsedSince(message: UIMessage?): String {
+            if (message == null) return "no message yet"
+            val createdAtMillis = message.createdAt
+                .toInstant(TimeZone.currentSystemDefault())
+                .toEpochMilliseconds()
+            return SpontaneousMessaging.describeElapsedTime(now - createdAtMillis)
+        }
+
+        val lastSpeaker = when (lastMessage?.role) {
+            MessageRole.USER -> "user"
+            MessageRole.ASSISTANT -> "assistant"
+            MessageRole.SYSTEM -> "system"
+            MessageRole.TOOL -> "tool"
+            null -> "unknown"
+        }
+
+        return """
+            - Last speaker in the most recent chat: $lastSpeaker
+            - Time since any message in that chat: ${elapsedSince(lastMessage)}
+            - Time since the user's last message: ${elapsedSince(lastUserMessage)}
+            - Time since your last message: ${elapsedSince(lastAssistantMessage)}
         """.trimIndent()
     }
 
