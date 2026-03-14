@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -82,6 +83,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Velocity
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
@@ -90,6 +93,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.rikkahub.data.ai.tools.AskUserAnswer
+import me.rerere.rikkahub.data.ai.tools.AskUserQuestion
 import me.rerere.rikkahub.ui.components.message.SANDBOX_FILE_TOOLS
 import me.rerere.rikkahub.ui.components.message.buildPythonToolSummary
 import me.rerere.rikkahub.ui.components.message.buildSandboxFileToolSummary
@@ -103,6 +108,109 @@ import org.koin.compose.koinInject
 private const val TIMELINE_PANEL_ANIMATION_MS = 220
 private const val TIMELINE_ENTRY_ANIMATION_MS = 180
 private const val TIMELINE_MAX_HEIGHT_DP = 360
+private const val TIMELINE_GESTURE_IDLE_TIMEOUT_MS = 120L
+
+internal enum class TimelineScrollHandoffMode {
+    LockedToPanel,
+    EdgeGatedToParent
+}
+
+internal enum class TimelineScrollDirection {
+    TowardTop,
+    TowardBottom
+}
+
+internal enum class TimelineScrollEdge {
+    Top,
+    Bottom;
+
+    val direction: TimelineScrollDirection
+        get() = when (this) {
+            Top -> TimelineScrollDirection.TowardTop
+            Bottom -> TimelineScrollDirection.TowardBottom
+        }
+}
+
+internal enum class TimelineScrollHandoffDecision {
+    ConsumeInsidePanel,
+    ReleaseToParent
+}
+
+internal data class TimelineScrollHandoffState(
+    val activeGestureSessionId: Long = 0L,
+    val isGestureActive: Boolean = false,
+    val armedEdge: TimelineScrollEdge? = null,
+    val armedSessionId: Long? = null,
+    val lastDirection: TimelineScrollDirection? = null,
+)
+
+internal fun TimelineScrollHandoffState.beginGesture(
+    direction: TimelineScrollDirection
+): TimelineScrollHandoffState {
+    val nextSessionId = if (isGestureActive) {
+        activeGestureSessionId
+    } else {
+        activeGestureSessionId + 1
+    }
+    val keepArmedEdge = armedEdge?.direction == direction
+    return copy(
+        activeGestureSessionId = nextSessionId,
+        isGestureActive = true,
+        armedEdge = armedEdge.takeIf { keepArmedEdge },
+        armedSessionId = armedSessionId.takeIf { keepArmedEdge },
+        lastDirection = direction,
+    )
+}
+
+internal fun TimelineScrollHandoffState.endGesture(): TimelineScrollHandoffState {
+    return copy(
+        isGestureActive = false,
+        lastDirection = null,
+    )
+}
+
+internal fun TimelineScrollHandoffState.onTimelineMoved(): TimelineScrollHandoffState {
+    return copy(
+        armedEdge = null,
+        armedSessionId = null,
+    )
+}
+
+internal fun TimelineScrollHandoffState.onEdgeReached(
+    edge: TimelineScrollEdge
+): Pair<TimelineScrollHandoffState, TimelineScrollHandoffDecision> {
+    val shouldReleaseToParent = armedEdge == edge &&
+        armedSessionId != null &&
+        armedSessionId != activeGestureSessionId
+    return if (shouldReleaseToParent) {
+        copy(lastDirection = edge.direction) to TimelineScrollHandoffDecision.ReleaseToParent
+    } else {
+        copy(
+            armedEdge = edge,
+            armedSessionId = activeGestureSessionId,
+            lastDirection = edge.direction,
+        ) to TimelineScrollHandoffDecision.ConsumeInsidePanel
+    }
+}
+
+internal fun timelineScrollDirectionFor(deltaY: Float): TimelineScrollDirection? {
+    return when {
+        deltaY > 0f -> TimelineScrollDirection.TowardTop
+        deltaY < 0f -> TimelineScrollDirection.TowardBottom
+        else -> null
+    }
+}
+
+internal fun timelineScrollEdgeFor(
+    listState: LazyListState,
+    deltaY: Float
+): TimelineScrollEdge? {
+    return when {
+        deltaY > 0f && !listState.canScrollBackward -> TimelineScrollEdge.Top
+        deltaY < 0f && !listState.canScrollForward -> TimelineScrollEdge.Bottom
+        else -> null
+    }
+}
 
 /**
  * Activity timeline bottom sheet.
@@ -133,7 +241,8 @@ internal fun ActivityTimelineSheet(
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 32.dp),
             initialOpenRequest = initialOpenRequest,
-            assistantId = assistantId
+            assistantId = assistantId,
+            scrollHandoffMode = TimelineScrollHandoffMode.LockedToPanel,
         )
     }
 }
@@ -145,12 +254,15 @@ internal fun ActivityTimelinePanel(
     initialOpenRequest: TimelineOpenRequest? = null,
     assistantId: String? = null,
     memoryActions: TimelineMemoryActions? = null,
+    scrollHandoffMode: TimelineScrollHandoffMode = TimelineScrollHandoffMode.LockedToPanel,
+    listState: LazyListState = rememberLazyListState(),
 ) {
-    val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val haptics = rememberPremiumHaptics()
     var autoFollowCurrentEntry by remember { mutableStateOf(false) }
-    val timelineScrollLock = remember {
+    var handoffState by remember(scrollHandoffMode) { mutableStateOf(TimelineScrollHandoffState()) }
+    var gestureEndJob by remember { mutableStateOf<Job?>(null) }
+    val timelineScrollLock = remember(scrollHandoffMode, listState) {
         object : NestedScrollConnection {
             override fun onPreScroll(
                 available: Offset,
@@ -158,6 +270,14 @@ internal fun ActivityTimelinePanel(
             ): Offset {
                 if (source == NestedScrollSource.UserInput && available.y != 0f) {
                     autoFollowCurrentEntry = false
+                    timelineScrollDirectionFor(available.y)?.let { direction ->
+                        handoffState = handoffState.beginGesture(direction)
+                        gestureEndJob?.cancel()
+                        gestureEndJob = scope.launch {
+                            delay(TIMELINE_GESTURE_IDLE_TIMEOUT_MS)
+                            handoffState = handoffState.endGesture()
+                        }
+                    }
                 }
                 return Offset.Zero
             }
@@ -165,6 +285,10 @@ internal fun ActivityTimelinePanel(
             override suspend fun onPreFling(available: Velocity): Velocity {
                 if (available.y != 0f) {
                     autoFollowCurrentEntry = false
+                    timelineScrollDirectionFor(available.y)?.let { direction ->
+                        handoffState = handoffState.beginGesture(direction)
+                    }
+                    gestureEndJob?.cancel()
                 }
                 return Velocity.Zero
             }
@@ -174,11 +298,54 @@ internal fun ActivityTimelinePanel(
                 available: Offset,
                 source: NestedScrollSource
             ): Offset {
-                return Offset(x = 0f, y = available.y)
+                if (consumed.y != 0f) {
+                    handoffState = handoffState.onTimelineMoved()
+                }
+                if (available.y == 0f) {
+                    return Offset.Zero
+                }
+                if (scrollHandoffMode == TimelineScrollHandoffMode.LockedToPanel) {
+                    return Offset(x = 0f, y = available.y)
+                }
+                if (source != NestedScrollSource.UserInput) {
+                    return Offset(x = 0f, y = available.y)
+                }
+                val edge = timelineScrollEdgeFor(listState, available.y)
+                    ?: return Offset(x = 0f, y = available.y)
+                val (nextState, decision) = handoffState.onEdgeReached(edge)
+                handoffState = nextState
+                return if (decision == TimelineScrollHandoffDecision.ConsumeInsidePanel) {
+                    Offset(x = 0f, y = available.y)
+                } else {
+                    Offset.Zero
+                }
             }
 
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                return Velocity(x = 0f, y = available.y)
+                if (consumed.y != 0f) {
+                    handoffState = handoffState.onTimelineMoved()
+                }
+                val result = when {
+                    available.y == 0f -> Velocity.Zero
+                    scrollHandoffMode == TimelineScrollHandoffMode.LockedToPanel -> Velocity(x = 0f, y = available.y)
+                    else -> {
+                        val edge = timelineScrollEdgeFor(listState, available.y)
+                        if (edge == null) {
+                            Velocity(x = 0f, y = available.y)
+                        } else {
+                            val (nextState, decision) = handoffState.onEdgeReached(edge)
+                            handoffState = nextState
+                            if (decision == TimelineScrollHandoffDecision.ConsumeInsidePanel) {
+                                Velocity(x = 0f, y = available.y)
+                            } else {
+                                Velocity.Zero
+                            }
+                        }
+                    }
+                }
+                gestureEndJob?.cancel()
+                handoffState = handoffState.endGesture()
+                return result
             }
         }
     }
@@ -306,6 +473,7 @@ internal fun ActivityTimelinePanel(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = TIMELINE_MAX_HEIGHT_DP.dp)
+                        .testTag("activity_timeline_list")
                         .nestedScroll(timelineScrollLock),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
@@ -653,6 +821,8 @@ private fun TimelinePreview(entry: TimelineEntry) {
                     ?.jsonPrimitiveOrNull
                     ?.contentOrNull
                 (answer ?: query).orEmpty().take(160)
+            } else if (parseAskUserTimelineState(entry) != null) {
+                buildAskUserPreviewText(entry).take(160)
             } else if (entry.toolName == "manage_skills") {
                 getSkillSummaryPreview(getSkillChangeSummary(entry)).take(160)
             } else if (entry.toolName == "eval_python") {
@@ -703,6 +873,7 @@ private fun ToolCallDetails(entry: TimelineEntry.ToolCall) {
         "scrape_web" -> ScrapeTimelineDetails(entry)
         "eval_python" -> PythonTimelineDetails(entry)
         in SANDBOX_FILE_TOOLS -> SandboxFileTimelineDetails(entry)
+        "ask_user" -> AskUserTimelineDetails(entry)
         "manage_skills" -> SkillManagementTimelineDetails(entry)
         else -> GenericToolDetails(entry)
     }
@@ -873,6 +1044,182 @@ private fun ScrapeTimelineDetails(entry: TimelineEntry.ToolCall) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(10.dp)
             )
+        }
+    }
+}
+
+@Composable
+private fun AskUserTimelineDetails(entry: TimelineEntry.ToolCall) {
+    val state = remember(entry) { parseAskUserTimelineState(entry) } ?: return GenericToolDetails(entry)
+    val answersById = remember(state.payload) {
+        state.payload?.answers.orEmpty().associateBy { it.id }
+    }
+    val answeredCount = remember(state.payload) {
+        state.payload?.answers.orEmpty().count { answer ->
+            answer.status == "answered" && !answer.value.isNullOrBlank()
+        }
+    }
+    val isDismissed = state.payload?.dismissed == true
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            TimelineTagChip(
+                text = stringResource(
+                    R.string.activity_timeline_questionnaire_count,
+                    state.questionnaire.questions.size
+                ),
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+
+            if (answeredCount > 0) {
+                TimelineTagChip(
+                    text = stringResource(
+                        R.string.activity_timeline_questionnaire_answered_count,
+                        answeredCount
+                    ),
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                )
+            }
+
+            when {
+                isDismissed -> TimelineTagChip(
+                    text = stringResource(R.string.activity_timeline_questionnaire_dismissed),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                entry.isLoading -> TimelineTagChip(
+                    text = stringResource(R.string.activity_timeline_questionnaire_pending),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        state.questionnaire.questions.forEachIndexed { index, question ->
+            AskUserQuestionTimelineCard(
+                index = index,
+                totalQuestions = state.questionnaire.questions.size,
+                question = question,
+                answer = answersById[question.id],
+                questionnaireDismissed = isDismissed
+            )
+        }
+    }
+}
+
+@Composable
+private fun AskUserQuestionTimelineCard(
+    index: Int,
+    totalQuestions: Int,
+    question: AskUserQuestion,
+    answer: AskUserAnswer?,
+    questionnaireDismissed: Boolean,
+) {
+    val selectedOption = answer?.value?.takeIf { answer.source == "option" }
+    val answerValue = answer?.value?.takeIf { it.isNotBlank() }
+    val showCustomAnswer = answerValue != null && (answer.source != "option" ||
+        question.options.none { option -> option.label == answerValue })
+
+    Surface(
+        shape = AppShapes.CardSmall,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.character_questions_progress, index + 1, totalQuestions),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.secondary
+            )
+
+            Text(
+                text = question.question,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            if (question.options.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    question.options.forEach { option ->
+                        val isSelected = selectedOption == option.label
+                        Surface(
+                            shape = AppShapes.CardSmall,
+                            color = if (isSelected) {
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerHighest
+                            },
+                            border = androidx.compose.foundation.BorderStroke(
+                                width = 1.dp,
+                                color = if (isSelected) {
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+                                } else {
+                                    Color.Transparent
+                                }
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    text = option.label,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isSelected) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    }
+                                )
+                                option.description?.takeIf { it.isNotBlank() }?.let { description ->
+                                    Text(
+                                        text = description,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (showCustomAnswer) {
+                TimelineDetailBlock(
+                    label = stringResource(
+                        if (answer?.source == "option") {
+                            R.string.activity_timeline_questionnaire_source_option
+                        } else {
+                            R.string.activity_timeline_questionnaire_source_custom
+                        }
+                    ),
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                ) {
+                    Text(
+                        text = answerValue.orEmpty(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                }
+            } else if (answer?.status == "skipped" && !questionnaireDismissed) {
+                TimelineTagChip(
+                    text = stringResource(R.string.activity_timeline_questionnaire_skipped),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
@@ -1140,6 +1487,27 @@ private fun TimelineDetailBlock(
 }
 
 @Composable
+private fun TimelineTagChip(
+    text: String,
+    containerColor: Color,
+    contentColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        shape = AppShapes.Chip,
+        color = containerColor,
+        modifier = modifier
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = contentColor,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+        )
+    }
+}
+
+@Composable
 private fun TimelineFieldRow(
     label: String,
     value: String?,
@@ -1157,6 +1525,35 @@ private fun TimelineFieldRow(
             style = MaterialTheme.typography.bodySmall,
             color = resolvedValueColor,
             fontFamily = if (monospace) FontFamily.Monospace else null
+        )
+    }
+}
+
+@Composable
+private fun buildAskUserPreviewText(entry: TimelineEntry.ToolCall): String {
+    val state = remember(entry) { parseAskUserTimelineState(entry) } ?: return entry.argumentsText
+    val answeredCount = remember(state.payload) {
+        state.payload?.answers.orEmpty().count { answer ->
+            answer.status == "answered" && !answer.value.isNullOrBlank()
+        }
+    }
+
+    return when {
+        answeredCount > 0 -> stringResource(
+            R.string.activity_timeline_questionnaire_answered_summary,
+            answeredCount,
+            state.questionnaire.questions.size
+        )
+
+        state.payload?.dismissed == true -> stringResource(
+            R.string.activity_timeline_questionnaire_dismissed
+        )
+
+        entry.isLoading -> state.questionnaire.questions.firstOrNull()?.question.orEmpty()
+
+        else -> stringResource(
+            R.string.activity_timeline_questionnaire_count,
+            state.questionnaire.questions.size
         )
     }
 }

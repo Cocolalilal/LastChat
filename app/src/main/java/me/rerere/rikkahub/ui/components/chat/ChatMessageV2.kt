@@ -894,7 +894,8 @@ private fun AssistantMessageTurn(
                 ActivityTimelinePanel(
                     entries = timelineEntries,
                     initialOpenRequest = initialTimelineOpenRequest,
-                    assistantId = assistant?.id?.toString()
+                    assistantId = assistant?.id?.toString(),
+                    scrollHandoffMode = TimelineScrollHandoffMode.EdgeGatedToParent,
                 )
             }
             
@@ -994,7 +995,8 @@ private fun AssistantMessageTurn(
                 ActivityTimelinePanel(
                     entries = timelineEntries,
                     initialOpenRequest = initialTimelineOpenRequest,
-                    assistantId = assistant?.id?.toString()
+                    assistantId = assistant?.id?.toString(),
+                    scrollHandoffMode = TimelineScrollHandoffMode.EdgeGatedToParent,
                 )
             }
 

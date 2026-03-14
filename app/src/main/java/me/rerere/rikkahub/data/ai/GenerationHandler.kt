@@ -61,6 +61,9 @@ import kotlin.uuid.Uuid
 
 private const val TAG = "GenerationHandler"
 private const val SKILL_MANAGEMENT_TOOL_NAME = "manage_skills"
+private const val SKILL_REASON_ASSISTANT = "Enabled for assistant"
+private const val SKILL_REASON_CONVERSATION = "Enabled for chat"
+private const val SKILL_REASON_TURN = "Activated for this turn"
 
 /**
  * Result of building messages, includes both the messages and info about activated context sources.
@@ -71,6 +74,314 @@ data class BuildMessagesResult(
     val usedModes: List<me.rerere.ai.ui.UsedMode> = emptyList(),
     val usedMemories: List<me.rerere.ai.ui.UsedMemory> = emptyList()
 )
+
+internal data class SkillToolState(
+    val activeSkills: List<me.rerere.rikkahub.data.model.Skill>,
+    val availableSkills: List<me.rerere.rikkahub.data.model.Skill>,
+    val blockedSkills: List<me.rerere.rikkahub.data.model.Skill>,
+    val activeSkillIds: Set<Uuid>,
+)
+
+internal data class SkillActivationOutcome(
+    val activatedSkills: List<me.rerere.rikkahub.data.model.Skill>,
+    val alreadyActiveSkills: List<me.rerere.rikkahub.data.model.Skill>,
+    val blockedSkills: List<me.rerere.rikkahub.data.model.Skill>,
+    val unmatchedTargets: List<String>,
+    val updatedTurnScopedSkillIds: Set<Uuid>,
+    val activeSkillIds: Set<Uuid>,
+)
+
+internal fun resolveManualSkillIds(
+    assistantDefaultSkillIds: Set<Uuid>,
+    conversationSkillIds: Set<Uuid>,
+    allSkillIds: Set<Uuid>,
+): Set<Uuid> {
+    val baseSkillIds = if (conversationSkillIds.isNotEmpty()) {
+        conversationSkillIds
+    } else {
+        assistantDefaultSkillIds
+    }
+    return baseSkillIds.intersect(allSkillIds)
+}
+
+internal fun resolveActiveSkillIds(
+    assistantDefaultSkillIds: Set<Uuid>,
+    conversationSkillIds: Set<Uuid>,
+    turnScopedSkillIds: Set<Uuid>,
+    allSkillIds: Set<Uuid>,
+): Set<Uuid> {
+    return (
+        resolveManualSkillIds(
+            assistantDefaultSkillIds = assistantDefaultSkillIds,
+            conversationSkillIds = conversationSkillIds,
+            allSkillIds = allSkillIds,
+        ) + turnScopedSkillIds
+        ).intersect(allSkillIds)
+}
+
+internal fun buildSkillToolState(
+    skills: List<me.rerere.rikkahub.data.model.Skill>,
+    assistantId: Uuid,
+    assistantDefaultSkillIds: Set<Uuid>,
+    conversationSkillIds: Set<Uuid>,
+    turnScopedSkillIds: Set<Uuid>,
+): SkillToolState {
+    val usableSkills = skills.filter { skill ->
+        skill.instructions.isNotBlank()
+    }
+    val allSkillIds = usableSkills.map { it.id }.toSet()
+    val activeSkillIds = resolveActiveSkillIds(
+        assistantDefaultSkillIds = assistantDefaultSkillIds,
+        conversationSkillIds = conversationSkillIds,
+        turnScopedSkillIds = turnScopedSkillIds,
+        allSkillIds = allSkillIds,
+    )
+    val autonomousSkills = usableSkills.filter { skill ->
+        skill.canAssistantAutonomouslyToggle(assistantId)
+    }
+
+    return SkillToolState(
+        activeSkills = autonomousSkills.filter { skill -> activeSkillIds.contains(skill.id) },
+        availableSkills = autonomousSkills.filterNot { skill -> activeSkillIds.contains(skill.id) },
+        blockedSkills = usableSkills.filterNot { skill -> skill.canAssistantAutonomouslyToggle(assistantId) },
+        activeSkillIds = activeSkillIds,
+    )
+}
+
+private fun normalizeSkillKey(value: String): String {
+    return value.trim().lowercase(Locale.ROOT)
+}
+
+private fun buildSkillLookup(
+    skills: List<me.rerere.rikkahub.data.model.Skill>,
+): Map<String, me.rerere.rikkahub.data.model.Skill> {
+    return buildMap {
+        skills.forEach { skill ->
+            put(skill.id.toString().lowercase(Locale.ROOT), skill)
+            val normalizedName = skill.name.trim().lowercase(Locale.ROOT)
+            if (normalizedName.isNotBlank()) {
+                put(normalizedName, skill)
+            }
+        }
+    }
+}
+
+internal fun activateSkillsForTurn(
+    targets: List<String>,
+    availableSkills: List<me.rerere.rikkahub.data.model.Skill>,
+    activeSkills: List<me.rerere.rikkahub.data.model.Skill>,
+    blockedSkills: List<me.rerere.rikkahub.data.model.Skill>,
+    currentTurnScopedSkillIds: Set<Uuid>,
+): SkillActivationOutcome {
+    val availableByKey = buildSkillLookup(availableSkills)
+    val activeByKey = buildSkillLookup(activeSkills)
+    val blockedByKey = buildSkillLookup(blockedSkills)
+
+    val activated = linkedSetOf<me.rerere.rikkahub.data.model.Skill>()
+    val alreadyActive = linkedSetOf<me.rerere.rikkahub.data.model.Skill>()
+    val blocked = linkedSetOf<me.rerere.rikkahub.data.model.Skill>()
+    val unmatched = mutableListOf<String>()
+
+    targets.forEach { rawTarget ->
+        val targetKey = normalizeSkillKey(rawTarget)
+        when {
+            availableByKey.containsKey(targetKey) -> activated += availableByKey.getValue(targetKey)
+            activeByKey.containsKey(targetKey) -> alreadyActive += activeByKey.getValue(targetKey)
+            blockedByKey.containsKey(targetKey) -> blocked += blockedByKey.getValue(targetKey)
+            else -> unmatched += rawTarget
+        }
+    }
+
+    return SkillActivationOutcome(
+        activatedSkills = activated.toList(),
+        alreadyActiveSkills = alreadyActive.toList(),
+        blockedSkills = blocked.toList(),
+        unmatchedTargets = unmatched,
+        updatedTurnScopedSkillIds = currentTurnScopedSkillIds + activated.map { it.id },
+        activeSkillIds = activeSkills.map { it.id }.toSet() + activated.map { it.id },
+    )
+}
+
+internal fun buildUsedModes(
+    availableSkills: List<me.rerere.rikkahub.data.model.Skill>,
+    assistantDefaultSkillIds: Set<Uuid>,
+    conversationSkillIds: Set<Uuid>,
+    turnScopedSkillIds: Set<Uuid>,
+): List<me.rerere.ai.ui.UsedMode> {
+    val allSkillIds = availableSkills.map { it.id }.toSet()
+    val activeSkillIds = resolveActiveSkillIds(
+        assistantDefaultSkillIds = assistantDefaultSkillIds,
+        conversationSkillIds = conversationSkillIds,
+        turnScopedSkillIds = turnScopedSkillIds,
+        allSkillIds = allSkillIds,
+    )
+    val enabledSkills = availableSkills.filter { skill ->
+        activeSkillIds.contains(skill.id)
+    }
+
+    return enabledSkills.mapIndexed { index, skill ->
+        val reason = when {
+            turnScopedSkillIds.contains(skill.id) -> SKILL_REASON_TURN
+            conversationSkillIds.contains(skill.id) -> SKILL_REASON_CONVERSATION
+            else -> SKILL_REASON_ASSISTANT
+        }
+        me.rerere.ai.ui.UsedMode(
+            modeId = skill.id.toString(),
+            modeName = skill.name,
+            modeIcon = skill.icon,
+            priority = enabledSkills.size - index,
+            activationReason = reason,
+        )
+    }
+}
+
+internal fun createSkillManagementTool(
+    state: SkillToolState,
+    currentTurnScopedSkillIds: Set<Uuid>,
+    onUpdateTurnScopedSkillIds: suspend (Set<Uuid>) -> Unit,
+): Tool? {
+    if (state.availableSkills.isEmpty()) {
+        return null
+    }
+
+    fun parseTargets(args: kotlinx.serialization.json.JsonElement): List<String> {
+        val params = args.jsonObject
+        val targetsFromList = (params["skills"] as? JsonArray)
+            ?.mapNotNull { item ->
+                (item as? JsonPrimitive)?.contentOrNull
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+            }
+            ?: emptyList()
+        val targetFromSingle = (params["skill"] as? JsonPrimitive)
+            ?.contentOrNull
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+        return (targetsFromList + listOfNotNull(targetFromSingle))
+            .flatMap { raw ->
+                raw.split(",")
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() }
+            }
+            .distinct()
+    }
+
+    fun summarizeSkill(skill: me.rerere.rikkahub.data.model.Skill): String {
+        return skill.description
+            .ifBlank { "No description provided." }
+            .replace('\n', ' ')
+            .trim()
+            .take(160)
+    }
+
+    return Tool(
+        name = SKILL_MANAGEMENT_TOOL_NAME,
+        description = "Activate available skills for the current assistant turn only.",
+        parameters = {
+            InputSchema.Obj(
+                properties = buildJsonObject {
+                    put("skills", buildJsonObject {
+                        put("type", "array")
+                        put("description", "Skills to activate for this turn, referenced by exact id or exact skill name.")
+                        put("items", buildJsonObject {
+                            put("type", "string")
+                        })
+                    })
+                    put("skill", buildJsonObject {
+                        put("type", "string")
+                        put("description", "Single skill to activate for this turn, referenced by exact id or exact skill name.")
+                    })
+                },
+                required = emptyList(),
+            )
+        },
+        systemPrompt = { _, _ ->
+            buildString {
+                appendLine("## Skill Management")
+                appendLine("Use `manage_skills` only when one of the available skills is clearly needed for the current user request.")
+                appendLine("Activations only apply to this assistant turn.")
+                appendLine()
+                appendLine(
+                    if (state.activeSkills.isEmpty()) {
+                        "Currently active skills: none"
+                    } else {
+                        "Currently active skills: ${state.activeSkills.joinToString(", ") { skill -> skill.name.ifBlank { skill.id.toString() } }}"
+                    }
+                )
+                appendLine("Available skills:")
+                append(
+                    state.availableSkills.joinToString("\n") { skill ->
+                        val label = skill.name.ifBlank { skill.id.toString() }
+                        "- $label: ${summarizeSkill(skill)}"
+                    }
+                )
+            }
+        },
+        execute = { args ->
+            val targets = parseTargets(args)
+            if (targets.isEmpty()) {
+                error("Provide at least one skill target in `skills` or `skill`.")
+            }
+
+            val outcome = activateSkillsForTurn(
+                targets = targets,
+                availableSkills = state.availableSkills,
+                activeSkills = state.activeSkills,
+                blockedSkills = state.blockedSkills,
+                currentTurnScopedSkillIds = currentTurnScopedSkillIds,
+            )
+
+            if (outcome.updatedTurnScopedSkillIds != currentTurnScopedSkillIds) {
+                onUpdateTurnScopedSkillIds(outcome.updatedTurnScopedSkillIds)
+            }
+
+            buildJsonObject {
+                put("updated", JsonPrimitive(outcome.updatedTurnScopedSkillIds != currentTurnScopedSkillIds))
+                put(
+                    "activated",
+                    JsonArray(
+                        outcome.activatedSkills.map { skill ->
+                            buildJsonObject {
+                                put("id", JsonPrimitive(skill.id.toString()))
+                                put("name", JsonPrimitive(skill.name))
+                            }
+                        }
+                    )
+                )
+                put(
+                    "already_active",
+                    JsonArray(
+                        outcome.alreadyActiveSkills.map { skill ->
+                            buildJsonObject {
+                                put("id", JsonPrimitive(skill.id.toString()))
+                                put("name", JsonPrimitive(skill.name))
+                            }
+                        }
+                    )
+                )
+                put(
+                    "blocked",
+                    JsonArray(
+                        outcome.blockedSkills.map { skill ->
+                            buildJsonObject {
+                                put("id", JsonPrimitive(skill.id.toString()))
+                                put("name", JsonPrimitive(skill.name))
+                            }
+                        }
+                    )
+                )
+                put(
+                    "unmatched",
+                    JsonArray(outcome.unmatchedTargets.map { JsonPrimitive(it) })
+                )
+                put(
+                    "enabled_skill_ids",
+                    JsonArray(outcome.activeSkillIds.map { JsonPrimitive(it.toString()) })
+                )
+            }
+        }
+    )
+}
 
 @Serializable
 sealed interface GenerationChunk {
@@ -100,20 +411,15 @@ class GenerationHandler(
         truncateIndex: Int = -1,
         maxSteps: Int = 256,
         enabledModeIds: Set<Uuid> = emptySet(),
-        onEnabledModeIdsUpdate: (suspend (Set<Uuid>) -> Unit)? = null,
     ): Flow<GenerationChunk> = flow {
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = providerManager.getProviderByType(provider)
 
         var messages: List<UIMessage> = messages
-        val allSkillIds = settings.skills.map { it.id }.toSet()
-        val autonomousSkillsForAssistant = settings.skills.filter { skill ->
-            skill.instructions.isNotBlank() && skill.canAssistantAutonomouslyToggle(assistant.id)
-        }
-        val autonomousSkillIds = autonomousSkillsForAssistant.map { it.id }.toSet()
+        val allSkillIds = settings.skills.filter { it.instructions.isNotBlank() }.map { it.id }.toSet()
         val assistantDefaultSkillIds = assistant.enabledSkillIds.intersect(allSkillIds)
-        var currentEnabledModeIds = enabledModeIds.intersect(allSkillIds)
-        var useAssistantDefaults = enabledModeIds.isEmpty()
+        val conversationSkillIds = enabledModeIds.intersect(allSkillIds)
+        var currentTurnScopedSkillIds = emptySet<Uuid>()
 
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
@@ -134,36 +440,19 @@ class GenerationHandler(
                         }
                     ).let(this::addAll)
                 }
-                if (autonomousSkillsForAssistant.isNotEmpty()) {
-                    add(
-                        buildSkillManagementTool(
-                            skills = autonomousSkillsForAssistant,
-                            getEnabledSkillIds = {
-                                val effectiveEnabled = if (useAssistantDefaults) {
-                                    assistantDefaultSkillIds
-                                } else {
-                                    currentEnabledModeIds
-                                }
-                                effectiveEnabled.intersect(autonomousSkillIds)
-                            },
-                            onUpdateEnabledSkillIds = { updatedIds ->
-                                val normalized = updatedIds.intersect(autonomousSkillIds)
-                                val previousEffective = if (useAssistantDefaults) {
-                                    assistantDefaultSkillIds
-                                } else {
-                                    currentEnabledModeIds
-                                }
-                                val preservedManualIds = previousEffective - autonomousSkillIds
-                                val merged = preservedManualIds + normalized
-                                if (useAssistantDefaults || merged != previousEffective) {
-                                    useAssistantDefaults = false
-                                    currentEnabledModeIds = merged
-                                    onEnabledModeIdsUpdate?.invoke(merged)
-                                }
-                            }
-                        )
-                    )
-                }
+                createSkillManagementTool(
+                    state = buildSkillToolState(
+                        skills = settings.skills,
+                        assistantId = assistant.id,
+                        assistantDefaultSkillIds = assistantDefaultSkillIds,
+                        conversationSkillIds = conversationSkillIds,
+                        turnScopedSkillIds = currentTurnScopedSkillIds,
+                    ),
+                    currentTurnScopedSkillIds = currentTurnScopedSkillIds,
+                    onUpdateTurnScopedSkillIds = { updatedIds ->
+                        currentTurnScopedSkillIds = updatedIds.intersect(allSkillIds)
+                    },
+                )?.let(this::add)
                 addAll(tools)
             }
 
@@ -197,11 +486,8 @@ class GenerationHandler(
                 memories = memories ?: emptyList(),
                 truncateIndex = truncateIndex,
                 stream = assistant.streamOutput,
-                enabledModeIds = if (useAssistantDefaults) {
-                    emptySet()
-                } else {
-                    currentEnabledModeIds
-                }
+                conversationEnabledModeIds = conversationSkillIds,
+                turnScopedEnabledModeIds = currentTurnScopedSkillIds,
             )
             messages = messages.visualTransforms(
                 transformers = outputTransformers,
@@ -311,7 +597,8 @@ class GenerationHandler(
         tools: List<Tool>,
         memories: List<AssistantMemory>,
         truncateIndex: Int,
-        enabledModeIds: Set<Uuid> = emptySet(),
+        conversationEnabledModeIds: Set<Uuid> = emptySet(),
+        turnScopedEnabledModeIds: Set<Uuid> = emptySet(),
     ): BuildMessagesResult {
         // Token estimator (rough estimate: 4 chars per token)
         fun estimateTokens(text: String) = text.length / 4
@@ -398,29 +685,21 @@ class GenerationHandler(
         val availableSkills = settings.skills.filter { skill ->
             skill.instructions.isNotBlank()
         }
-        val assistantDefaultSkillIds = assistant.enabledSkillIds
-        val activeSkillIds = if (enabledModeIds.isNotEmpty()) {
-            enabledModeIds
-        } else {
-            assistantDefaultSkillIds
-        }
+        val allSkillIds = availableSkills.map { it.id }.toSet()
+        val assistantDefaultSkillIds = assistant.enabledSkillIds.intersect(allSkillIds)
+        val activeSkillIds = resolveActiveSkillIds(
+            assistantDefaultSkillIds = assistantDefaultSkillIds,
+            conversationSkillIds = conversationEnabledModeIds,
+            turnScopedSkillIds = turnScopedEnabledModeIds,
+            allSkillIds = allSkillIds,
+        )
         val enabledSkills = availableSkills.filter { activeSkillIds.contains(it.id) }
-        
-        // Build UsedMode list for UI display (legacy type name retained for wire compatibility).
-        val usedModes = enabledSkills.mapIndexed { index, skill ->
-            val reason = if (enabledModeIds.contains(skill.id)) {
-                "Activated in chat"
-            } else {
-                "Enabled for assistant"
-            }
-            me.rerere.ai.ui.UsedMode(
-                modeId = skill.id.toString(),
-                modeName = skill.name,
-                modeIcon = skill.icon,
-                priority = enabledSkills.size - index,  // Higher priority for earlier skills
-                activationReason = reason
-            )
-        }
+        val usedModes = buildUsedModes(
+            availableSkills = availableSkills,
+            assistantDefaultSkillIds = assistantDefaultSkillIds,
+            conversationSkillIds = conversationEnabledModeIds,
+            turnScopedSkillIds = turnScopedEnabledModeIds,
+        )
 
         // Check if any lorebook entries use RAG activation
         val lorebooksForAssistant = settings.lorebooks
@@ -815,7 +1094,8 @@ class GenerationHandler(
         memories: List<AssistantMemory>,
         truncateIndex: Int,
         stream: Boolean,
-        enabledModeIds: Set<Uuid> = emptySet()
+        conversationEnabledModeIds: Set<Uuid> = emptySet(),
+        turnScopedEnabledModeIds: Set<Uuid> = emptySet(),
     ) {
         val buildResult = buildMessages(
             assistant = assistant,
@@ -825,7 +1105,8 @@ class GenerationHandler(
             tools = tools,
             memories = memories,
             truncateIndex = truncateIndex,
-            enabledModeIds = enabledModeIds
+            conversationEnabledModeIds = conversationEnabledModeIds,
+            turnScopedEnabledModeIds = turnScopedEnabledModeIds,
         )
         val internalMessages = buildResult.messages.transforms(transformers, context, model, assistant)
         val usedLorebookEntries = buildResult.activatedLorebookEntries
@@ -944,224 +1225,6 @@ class GenerationHandler(
                 }
             }
         }
-    }
-
-    private fun buildSkillManagementTool(
-        skills: List<me.rerere.rikkahub.data.model.Skill>,
-        getEnabledSkillIds: () -> Set<Uuid>,
-        onUpdateEnabledSkillIds: suspend (Set<Uuid>) -> Unit,
-    ): Tool {
-        fun skillSlashCommand(skill: me.rerere.rikkahub.data.model.Skill): String? {
-            val hinted = skill.argumentHint?.trim()
-            if (!hinted.isNullOrBlank() && hinted.startsWith("/")) {
-                return hinted
-            }
-            val normalizedName = skill.name.trim()
-            return if (normalizedName.isNotBlank()) "/$normalizedName" else null
-        }
-
-        val skillById = skills.associateBy { it.id }
-        val keysToSkill = buildMap {
-            skills.forEach { skill ->
-                put(skill.id.toString().lowercase(Locale.ROOT), skill)
-                if (skill.name.isNotBlank()) {
-                    val normalizedName = skill.name.lowercase(Locale.ROOT)
-                    put(normalizedName, skill)
-                    put("/$normalizedName", skill)
-                }
-                skillSlashCommand(skill)
-                    ?.lowercase(Locale.ROOT)
-                    ?.let { put(it, skill) }
-            }
-        }
-
-        return Tool(
-            name = SKILL_MANAGEMENT_TOOL_NAME,
-            description = "Enable, disable, or set active conversation skills. Use this only when a skill is relevant to the current request.",
-            parameters = {
-                InputSchema.Obj(
-                    properties = buildJsonObject {
-                        put("operation", buildJsonObject {
-                            put("type", "string")
-                            put("description", "One of: enable, disable, set.")
-                            put(
-                                "enum",
-                                JsonArray(
-                                    listOf(
-                                        JsonPrimitive("enable"),
-                                        JsonPrimitive("disable"),
-                                        JsonPrimitive("set")
-                                    )
-                                )
-                            )
-                        })
-                        put("skills", buildJsonObject {
-                            put("type", "array")
-                            put("description", "Skill identifiers to target (id, name, or slash command).")
-                            put("items", buildJsonObject {
-                                put("type", "string")
-                            })
-                        })
-                        put("skill", buildJsonObject {
-                            put("type", "string")
-                            put("description", "Single skill identifier target (id, name, or slash command).")
-                        })
-                    },
-                    required = listOf("operation"),
-                )
-            },
-            systemPrompt = { _, _ ->
-                val activeSkillNames = getEnabledSkillIds()
-                    .mapNotNull { skillById[it] }
-                    .map { skill -> skill.name.ifBlank { skill.id.toString() } }
-                val skillsSummary = skills.joinToString("\n") { skill ->
-                    val label = skill.name.ifBlank { skill.id.toString() }
-                    val slash = skillSlashCommand(skill)?.let { " ($it)" } ?: ""
-                    val scope = when {
-                        skill.autonomousForAllAssistants -> "auto-toggle: all assistants"
-                        skill.autonomousAssistantIds.isNotEmpty() -> "auto-toggle: selected assistants"
-                        else -> "auto-toggle: none"
-                    }
-                    val description = skill.description
-                        .ifBlank { "No description provided." }
-                        .replace('\n', ' ')
-                        .trim()
-                        .take(160)
-                    "- $label$slash [$scope]: $description"
-                }
-                buildString {
-                    appendLine("## Skill Management")
-                    appendLine("Use `manage_skills` only when a listed skill is clearly useful for the current user request.")
-                    appendLine("Do not activate unrelated skills. Activate before use, and disable when no longer needed.")
-                    appendLine("Only the listed skills may be autonomously enabled or disabled by this assistant.")
-                    appendLine()
-                    appendLine(
-                        if (activeSkillNames.isEmpty()) {
-                            "Currently active skills: none"
-                        } else {
-                            "Currently active skills: ${activeSkillNames.joinToString(", ")}"
-                        }
-                    )
-                    appendLine("Available skills:")
-                    append(skillsSummary)
-                }
-            },
-            execute = { args ->
-                val params = args.jsonObject
-                val operation = params["operation"]?.jsonPrimitive?.contentOrNull
-                    ?.lowercase(Locale.ROOT)
-                    ?: error("operation is required")
-                if (operation !in setOf("enable", "disable", "set")) {
-                    error("operation must be one of enable, disable, set")
-                }
-
-                val targetsFromList = (params["skills"] as? JsonArray)
-                    ?.mapNotNull { item ->
-                        (item as? JsonPrimitive)?.contentOrNull
-                            ?.trim()
-                            ?.takeIf { it.isNotBlank() }
-                    }
-                    ?: emptyList()
-                val targetFromSingle = (params["skill"] as? JsonPrimitive)
-                    ?.contentOrNull
-                    ?.trim()
-                    ?.takeIf { it.isNotBlank() }
-                val targets = (targetsFromList + listOfNotNull(targetFromSingle))
-                    .flatMap { raw ->
-                        raw.split(",")
-                            .map { it.trim() }
-                            .filter { it.isNotBlank() }
-                    }
-                    .distinct()
-                if (targets.isEmpty()) {
-                    error("Provide at least one skill target in `skills` or `skill`.")
-                }
-
-                val targetKeys = targets.map { it.lowercase(Locale.ROOT) }
-                fun resolveSkill(targetKey: String): me.rerere.rikkahub.data.model.Skill? {
-                    keysToSkill[targetKey]?.let { return it }
-                    val normalized = targetKey.removePrefix("/")
-                    keysToSkill[normalized]?.let { return it }
-                    return skills.firstOrNull { skill ->
-                        val name = skill.name.lowercase(Locale.ROOT)
-                        val slash = skillSlashCommand(skill)?.lowercase(Locale.ROOT)?.removePrefix("/")
-                        (name.isNotBlank() && normalized.contains(name)) ||
-                            (!slash.isNullOrBlank() && normalized.contains(slash))
-                    }
-                }
-                val matchedSkills = targetKeys
-                    .mapNotNull(::resolveSkill)
-                    .distinctBy { it.id }
-                val unmatchedTargets = targets.filter { raw ->
-                    resolveSkill(raw.lowercase(Locale.ROOT)) == null
-                }
-                val previousEnabled = getEnabledSkillIds().filter { skillById.containsKey(it) }.toSet()
-                val matchedIds = matchedSkills.map { it.id }.toSet()
-                val updatedEnabled = when (operation) {
-                    "enable" -> previousEnabled + matchedIds
-                    "disable" -> previousEnabled - matchedIds
-                    else -> matchedIds
-                }
-                val activatedIds = updatedEnabled - previousEnabled
-                val disabledIds = previousEnabled - updatedEnabled
-                val activatedSkills = skills.filter { activatedIds.contains(it.id) }
-                val disabledSkills = skills.filter { disabledIds.contains(it.id) }
-
-                onUpdateEnabledSkillIds(updatedEnabled)
-
-                buildJsonObject {
-                    put("operation", JsonPrimitive(operation))
-                    put("updated", JsonPrimitive(updatedEnabled != previousEnabled))
-                    put(
-                        "matched",
-                        JsonArray(
-                            matchedSkills.map { matched ->
-                                buildJsonObject {
-                                    put("id", JsonPrimitive(matched.id.toString()))
-                                    put("name", JsonPrimitive(matched.name))
-                                }
-                            }
-                        )
-                    )
-                    put(
-                        "blocked",
-                        JsonArray(emptyList())
-                    )
-                    put(
-                        "unmatched",
-                        JsonArray(
-                            unmatchedTargets.map { JsonPrimitive(it) }
-                        )
-                    )
-                    put(
-                        "activated",
-                        JsonArray(
-                            activatedSkills.map { activated ->
-                                buildJsonObject {
-                                    put("id", JsonPrimitive(activated.id.toString()))
-                                    put("name", JsonPrimitive(activated.name))
-                                }
-                            }
-                        )
-                    )
-                    put(
-                        "disabled",
-                        JsonArray(
-                            disabledSkills.map { disabled ->
-                                buildJsonObject {
-                                    put("id", JsonPrimitive(disabled.id.toString()))
-                                    put("name", JsonPrimitive(disabled.name))
-                                }
-                            }
-                        )
-                    )
-                    put(
-                        "enabled_skill_ids",
-                        JsonArray(updatedEnabled.map { JsonPrimitive(it.toString()) })
-                    )
-                }
-            }
-        )
     }
 
     private fun buildMemoryTools(

@@ -671,18 +671,10 @@ fun SkillEditorSheet(
     var description by remember { mutableStateOf(skill?.description ?: "") }
     var icon by remember { mutableStateOf(skill?.icon) }
     var instructions by remember { mutableStateOf(skill?.instructions ?: "") }
-    var argumentHint by remember { mutableStateOf(skill?.argumentHint ?: "") }
     var autonomousAssistantIds by remember { mutableStateOf(skill?.autonomousAssistantIds ?: emptySet()) }
     var autonomousForAllAssistants by remember { mutableStateOf(skill?.autonomousForAllAssistants ?: false) }
     var showIconPicker by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
-
-    fun normalizedArgumentHint(): String? {
-        return argumentHint
-            .trim()
-            .takeIf { it.isNotBlank() }
-            ?.let { raw -> if (raw.startsWith("/")) raw else "/$raw" }
-    }
 
     ModalBottomSheet(
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -878,33 +870,6 @@ fun SkillEditorSheet(
                     }
                 }
 
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (LocalDarkMode.current) {
-                            MaterialTheme.colorScheme.surfaceContainerLow
-                        } else {
-                            MaterialTheme.colorScheme.surfaceContainerHighest
-                        }
-                    ),
-                    shape = AppShapes.CardLarge
-                ) {
-                    Column {
-                        ListItem(
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                            headlineContent = { Text(stringResource(R.string.skills_page_argument_hint)) },
-                            supportingContent = {
-                                OutlinedTextField(
-                                    value = argumentHint,
-                                    onValueChange = { argumentHint = it.take(64) },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    placeholder = { Text(stringResource(R.string.skills_page_argument_hint_placeholder)) },
-                                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
-                                    singleLine = true
-                                )
-                            }
-                        )
-                    }
-                }
             }
 
             Row(
@@ -938,7 +903,6 @@ fun SkillEditorSheet(
                                 depth = 0,
                                 disableModelInvocation = false,
                                 userInvocable = true,
-                                argumentHint = normalizedArgumentHint(),
                                 updatedAt = System.currentTimeMillis()
                             )
                             onSave(savedSkill)
@@ -974,7 +938,6 @@ fun SkillEditorSheet(
                 depth = 0,
                 disableModelInvocation = false,
                 userInvocable = true,
-                argumentHint = normalizedArgumentHint()
             ),
             onDismiss = { showExportDialog = false }
         )

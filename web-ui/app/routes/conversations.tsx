@@ -832,32 +832,6 @@ function ConversationsPageInner() {
 
   const handleSend = React.useCallback(async () => {
     if (!editingSession) {
-      const slashToken = inputText.trimStart().split(/\s+/, 1)[0] ?? "";
-      const exactSlashSkill = settings?.modeInjections?.find((skill) => {
-        const hinted =
-          typeof skill.argumentHint === "string" && skill.argumentHint.trim().startsWith("/")
-            ? skill.argumentHint.trim()
-            : `/${skill.name}`;
-        return hinted.toLowerCase() === slashToken.toLowerCase();
-      });
-
-      if (exactSlashSkill) {
-        await submitCurrentDraft({
-          beforeSend: async (conversationId) => {
-            const currentSkillIds =
-              conversationId === activeId ? (detail?.enabledSkillIds ?? []) : [];
-            if (currentSkillIds.includes(exactSlashSkill.id)) {
-              return;
-            }
-
-            await api.post<{ status: string }>(`conversations/${conversationId}/skills`, {
-              skillIds: [...currentSkillIds, exactSlashSkill.id],
-            });
-          },
-        });
-        return;
-      }
-
       await handleSubmit();
       return;
     }
@@ -883,9 +857,6 @@ function ConversationsPageInner() {
     editingSession,
     getCurrentSubmitParts,
     handleSubmit,
-    inputText,
-    settings?.modeInjections,
-    submitCurrentDraft,
   ]);
 
   const handleTogglePinConversation = React.useCallback(

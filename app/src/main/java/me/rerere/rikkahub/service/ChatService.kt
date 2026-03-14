@@ -1160,17 +1160,6 @@ class ChatService(
                 tools = tools,
                 truncateIndex = conversation.truncateIndex,
                 enabledModeIds = conversation.enabledModeIds,
-                onEnabledModeIdsUpdate = { updatedSkillIds ->
-                    val currentConversationSnapshot = getConversationFlow(conversationId).value
-                    if (currentConversationSnapshot.enabledModeIds != updatedSkillIds) {
-                        val updatedConversation = currentConversationSnapshot.copy(
-                            enabledModeIds = updatedSkillIds,
-                            updateAt = Instant.now()
-                        )
-                        updateConversation(conversationId, updatedConversation)
-                        saveConversation(conversationId, updatedConversation)
-                    }
-                },
             ).onCompletion {
                 // Calculate generation duration from first token (excludes TTFT)
                 val generationDurationMs = firstTokenTime?.let { System.currentTimeMillis() - it }

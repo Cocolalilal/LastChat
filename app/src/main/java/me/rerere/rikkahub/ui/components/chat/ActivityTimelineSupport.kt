@@ -14,6 +14,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import me.rerere.rikkahub.data.ai.tools.ASK_USER_TOOL_NAME
+import me.rerere.rikkahub.data.ai.tools.AskUserAnswerPayload
+import me.rerere.rikkahub.data.ai.tools.AskUserQuestionnaire
+import me.rerere.rikkahub.data.ai.tools.normalizeAskUserAnswerPayload
+import me.rerere.rikkahub.data.ai.tools.parseAskUserQuestionnaire
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -81,6 +86,11 @@ internal data class MemoryDeleteTarget(
 internal data class SkillChangeSummary(
     val activated: List<String>,
     val disabled: List<String>
+)
+
+internal data class AskUserTimelineState(
+    val questionnaire: AskUserQuestionnaire,
+    val payload: AskUserAnswerPayload?,
 )
 
 internal data class TimelineMemoryActions(
@@ -166,6 +176,30 @@ internal fun getSkillChangeSummary(entry: TimelineEntry.ToolCall): SkillChangeSu
         "enable", "set" -> SkillChangeSummary(activated = matched, disabled = emptyList())
         else -> SkillChangeSummary(activated = emptyList(), disabled = emptyList())
     }
+}
+
+internal fun parseAskUserTimelineState(entry: TimelineEntry.ToolCall): AskUserTimelineState? {
+    if (entry.toolName != ASK_USER_TOOL_NAME) {
+        return null
+    }
+
+    val questionnaire = entry.argumentsJson?.let(::parseAskUserQuestionnaire)
+        ?: parseAskUserQuestionnaire(entry.argumentsText)
+        ?: return null
+
+    val payload = when {
+        entry.resultJson != null -> normalizeAskUserAnswerPayload(questionnaire, entry.resultJson)
+        !entry.resultText.isNullOrBlank() && entry.resultText != "null" -> {
+            normalizeAskUserAnswerPayload(questionnaire, entry.resultText)
+        }
+
+        else -> null
+    }
+
+    return AskUserTimelineState(
+        questionnaire = questionnaire,
+        payload = payload,
+    )
 }
 
 internal fun getTimelineIcon(entry: TimelineEntry): ImageVector {

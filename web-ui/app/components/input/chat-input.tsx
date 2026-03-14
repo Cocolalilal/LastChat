@@ -49,7 +49,7 @@ import {
 import { CHAT_COLUMN_CLASSNAME } from "~/lib/chat-layout";
 import { cn } from "~/lib/utils";
 import api from "~/services/api";
-import type { ModeInjectionProfile, UIMessagePart, UploadFilesResponseDto } from "~/types";
+import type { UIMessagePart, UploadFilesResponseDto } from "~/types";
 
 export interface ChatInputProps {
   value: string;
@@ -82,28 +82,9 @@ const COMPOSER_CONTROL_BUTTON_CLASSNAME =
 const COMPOSER_CHIP_CLASSNAME =
   "border border-border/70 bg-muted/65 text-foreground shadow-none";
 
-interface SlashSkillOption {
-  id: string;
-  name: string;
-  description: string;
-  command: string;
-}
-
 export interface PendingQuestionnaire {
   toolCallId: string;
   questions: AskUserQuestion[];
-}
-
-function getSlashSkillCommand(skill: Pick<ModeInjectionProfile, "argumentHint" | "name">): string {
-  if (typeof skill.argumentHint === "string") {
-    const hinted = skill.argumentHint.trim();
-    if (hinted.startsWith("/")) {
-      return hinted;
-    }
-  }
-
-  const normalizedName = skill.name.trim();
-  return normalizedName ? `/${normalizedName}` : "/skill";
 }
 
 async function isAllowedUploadFile(file: globalThis.File): Promise<boolean> {
@@ -262,26 +243,6 @@ function ChatInputInner({
       })
       .filter((item): item is QuickMessageOption => item !== null);
   }, [currentAssistant?.quickMessages, t]);
-  const slashSkills = React.useMemo(() => {
-    const source = settings?.modeInjections;
-    if (!Array.isArray(source)) {
-      return [] as SlashSkillOption[];
-    }
-
-    return source
-      .filter(
-        (item): item is ModeInjectionProfile =>
-          Boolean(item && typeof item === "object" && typeof item.id === "string") &&
-          item.enabled !== false,
-      )
-      .map((item) => ({
-        id: item.id,
-        name: item.name?.trim() || t("injection.unnamed_mode"),
-        description: item.description?.trim() || "",
-        command: getSlashSkillCommand(item),
-      }))
-      .sort((left, right) => left.command.localeCompare(right.command));
-  }, [settings?.modeInjections, t]);
 
   const imageInputRef = React.useRef<HTMLInputElement | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -299,18 +260,6 @@ function ChatInputInner({
   const [customAnswers, setCustomAnswers] = React.useState<Record<string, string>>({});
 
   const isEmpty = value.trim().length === 0 && attachments.length === 0;
-  const slashToken = React.useMemo(() => value.trimStart().split(/\s+/, 1)[0] ?? "", [value]);
-  const isTypingSlashToken =
-    value.startsWith("/") && !value.slice(1).includes(" ") && !value.includes("\n");
-  const filteredSlashSkills = React.useMemo(() => {
-    if (!slashToken.startsWith("/")) {
-      return [] as SlashSkillOption[];
-    }
-
-    const query = slashToken.toLowerCase();
-    return slashSkills.filter((skill) => skill.command.toLowerCase().startsWith(query));
-  }, [slashSkills, slashToken]);
-
   const canStop = ready && Boolean(onStop) && isGenerating && !disabled;
   const canSend = ready && !isGenerating && !disabled && !isEmpty;
   const canUpload =
@@ -534,21 +483,6 @@ function ChatInputInner({
       textareaRef.current?.focus();
     },
     [canUseQuickMessage, error, onSuggestionClick],
-  );
-
-  const handleSlashSkillSelect = React.useCallback(
-    (command: string) => {
-      if (!canUseQuickMessage) {
-        return;
-      }
-
-      onValueChange(`${command} `);
-      if (error) {
-        setError(null);
-      }
-      textareaRef.current?.focus();
-    },
-    [canUseQuickMessage, error, onValueChange],
   );
 
   const handleKeyDown = React.useCallback(
@@ -810,75 +744,11 @@ function ChatInputInner({
                   }}
                 />
               </motion.div>
-            ) : isTypingSlashToken && filteredSlashSkills.length > 0 ? (
-              <motion.div
-                key="slash-skills-panel"
-                layout
-                initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -10, height: 0 }}
-                animate={{
-                  opacity: 1,
-                  y: 0,
-                  height: "auto",
-                  transition: reducedMotion
-                    ? { duration: 0.01 }
-                    : {
-                        opacity: { duration: CHAT_MOTION_DURATION.fast, ease: "easeOut" },
-                        y: getChatLayoutTransition(false),
-                        height: getChatLayoutTransition(false),
-                      },
-                }}
-                exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -6, height: 0, transition: { duration: 0.12 } }}
-                className="overflow-hidden rounded-[var(--radius-card-inner)] border border-border/70 bg-secondary/50"
-              >
-                <div className="flex items-center justify-between border-b border-border/60 px-3 py-2 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                  <span>{t("chat.slash_skills_title")}</span>
-                  <span className="normal-case tracking-normal">{t("chat.slash_skills_hint")}</span>
-                </div>
-                <div className="max-h-56 overflow-y-auto p-1.5">
-                  {filteredSlashSkills.map((skill, index) => (
-                    <motion.button
-                      key={skill.id}
-                      layout
-                      type="button"
-                      disabled={!canUseQuickMessage}
-                      initial={reducedMotion ? false : { opacity: 0, x: -8 }}
-                      animate={{
-                        opacity: 1,
-                        x: 0,
-                        transition: reducedMotion
-                          ? { duration: 0.01 }
-                          : {
-                              opacity: { duration: CHAT_MOTION_DURATION.fast, delay: index * CHAT_MOTION_DURATION.stagger },
-                              x: { ...getChatLayoutTransition(false), delay: index * CHAT_MOTION_DURATION.stagger },
-                            },
-                      }}
-                      className="flex w-full items-start gap-3 rounded-[calc(var(--radius-card-inner)-0.25rem)] px-3 py-2 text-left transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-                      onClick={() => {
-                        handleSlashSkillSelect(skill.command);
-                      }}
-                    >
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium text-foreground">
-                          {skill.name}
-                        </span>
-                        {skill.description ? (
-                          <span className="mt-0.5 block line-clamp-2 text-xs text-muted-foreground">
-                            {skill.description}
-                          </span>
-                        ) : null}
-                      </span>
-                      <span className="shrink-0 rounded-full border border-border/60 bg-background/80 px-2 py-1 text-[11px] text-muted-foreground">
-                        {skill.command}
-                      </span>
-                    </motion.button>
-                  ))}
-                </div>
-              </motion.div>
             ) : null}
           </AnimatePresence>
 
           <AnimatePresence initial={false}>
-            {suggestions.length > 0 && !isTypingSlashToken && !questionnaireActive ? (
+            {suggestions.length > 0 && !questionnaireActive ? (
               <motion.div
                 key="composer-suggestions"
                 layout

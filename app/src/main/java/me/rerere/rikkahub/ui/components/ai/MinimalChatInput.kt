@@ -197,37 +197,6 @@ fun MinimalChatInput(
     val scope = rememberCoroutineScope()
     val availableSkills = remember(settings.skills) { settings.skills }
     val availableSkillIds = remember(availableSkills) { availableSkills.map { it.id }.toSet() }
-    val activeConversationSkillIds = remember(conversation.enabledModeIds, assistant.enabledSkillIds, availableSkillIds) {
-        val activeIds = if (conversation.enabledModeIds.isNotEmpty()) {
-            conversation.enabledModeIds
-        } else {
-            assistant.enabledSkillIds
-        }
-        activeIds.intersect(availableSkillIds)
-    }
-    val slashInvocableSkills = remember(availableSkills) {
-        availableSkills.distinctBy { it.id }
-    }
-    val inputText = state.textContent.text.toString()
-    val slashToken = inputText.substringBefore(" ")
-    val isTypingSlashToken = inputText.startsWith("/") &&
-        !inputText.drop(1).contains(' ') &&
-        !inputText.contains('\n')
-    val filteredSlashSkills = remember(slashToken, slashInvocableSkills) {
-        if (!slashToken.startsWith("/")) {
-            emptyList()
-        } else {
-            val query = slashToken.lowercase()
-            slashInvocableSkills.filter { skill ->
-                skill.slashCommand().lowercase().startsWith(query)
-            }
-        }
-    }
-    val exactSlashSkill = remember(slashToken, slashInvocableSkills) {
-        slashInvocableSkills.firstOrNull { skill ->
-            skill.slashCommand().equals(slashToken, ignoreCase = true)
-        }
-    }
     val pendingQuestionnaire = remember(conversation.messageNodes) {
         conversation.currentMessages.findPendingAskUserToolCall()
     }
@@ -364,12 +333,6 @@ fun MinimalChatInput(
             advanceQuestionnaire()
             return
         }
-        if (!state.loading && exactSlashSkill != null) {
-            val updatedIds = activeConversationSkillIds + exactSlashSkill.id
-            if (updatedIds != conversation.enabledModeIds) {
-                onUpdateConversation(conversation.copy(enabledModeIds = updatedIds))
-            }
-        }
         keyboardController?.hide()
         haptics.perform(HapticPattern.Send)
         if (state.loading) onCancelClick() else onSendClick()
@@ -406,20 +369,6 @@ fun MinimalChatInput(
                 )
             }
 
-            androidx.compose.animation.AnimatedVisibility(
-                visible = !isQuestionnaireActive && isTypingSlashToken && filteredSlashSkills.isNotEmpty(),
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                SlashSkillsPicker(
-                    skills = filteredSlashSkills,
-                    onSelect = { skill ->
-                        val slashCommand = "${skill.slashCommand()} "
-                        state.setMessageText(slashCommand)
-                        haptics.perform(HapticPattern.Pop)
-                    }
-                )
-            }
             androidx.compose.animation.AnimatedVisibility(
                 visible = isQuestionnaireActive && questionnaire != null,
                 enter = fadeIn() + expandVertically(),
@@ -733,62 +682,6 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 onRefreshContext = onRefreshContext,
                 onDismiss = { showPicker = false }
             )
-        }
-    }
-}
-
-@Composable
-private fun SlashSkillsPicker(
-    skills: List<Skill>,
-    onSelect: (Skill) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
-        modifier = modifier
-            .fillMaxWidth()
-            .heightIn(max = 220.dp)
-    ) {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            items(skills, key = { it.id }) { skill ->
-                val slashCommand = skill.slashCommand()
-                ListItem(
-                    modifier = Modifier.clickable { onSelect(skill) },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    leadingContent = {
-                        Icon(
-                            imageVector = ModeIcons.getIcon(skill.icon ?: "category"),
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    headlineContent = {
-                        Text(
-                            text = slashCommand,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    },
-                    supportingContent = {
-                        val summary = when {
-                            skill.description.isNotBlank() -> skill.description
-                            skill.instructions.isNotBlank() -> skill.instructions
-                            else -> skill.name
-                        }
-                        Text(
-                            text = summary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                )
-            }
         }
     }
 }
@@ -1830,15 +1723,6 @@ private fun MediaFileInputRow(
                 }
             )
         }
-    }
-}
-
-private fun Skill.slashCommand(): String {
-    val hinted = argumentHint?.trim()
-    return when {
-        !hinted.isNullOrBlank() && hinted.startsWith("/") -> hinted
-        name.isNotBlank() -> "/$name"
-        else -> "/skill"
     }
 }
 

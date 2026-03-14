@@ -101,8 +101,6 @@
     "send_hint_enter": "Press Enter to send, Shift + Enter for newline",
     "send_hint_newline": "Press Shift + Enter to send, Enter for newline",
     "long_text_as_file": "Long text converted to file attachment",
-    "slash_skills_title": "Skills",
-    "slash_skills_hint": "Type a slash command to activate a skill for this chat",
     "questionnaire_placeholder": "Write your own answer...",
     "questionnaire_progress": "{{current}} of {{total}}"
   }

@@ -64,7 +64,7 @@
     <string name="assistant_page_local_tools_tts_title">Text to Speech</string>
     <string name="assistant_page_local_tools_tts_desc">Let the assistant read text aloud using your selected TTS provider</string>
     <string name="assistant_page_local_tools_character_questions_title">Character Questions</string>
-    <string name="assistant_page_local_tools_character_questions_desc">Let the character pause and ask short clarifying questionnaires when it would genuinely help.</string>
+    <string name="assistant_page_local_tools_character_questions_desc">Let the character ask clarifying questions.</string>
     <string name="assistant_page_local_tools_python_internet_title">Allow Internet Access</string>
     <string name="assistant_page_local_tools_python_internet_desc">Allow Python code to make network requests</string>
     <string name="assistant_page_manage_memory">Manage Memory (%d)</string>
@@ -227,6 +227,14 @@
     <string name="activity_timeline_tool_delete_file">Deleting file</string>
     <string name="activity_timeline_tool_manage_skills">Managing skills</string>
     <string name="activity_timeline_tool_ask_user">Asking a question</string>
+    <string name="activity_timeline_questionnaire_count">%1$d question(s)</string>
+    <string name="activity_timeline_questionnaire_answered_count">%1$d answered</string>
+    <string name="activity_timeline_questionnaire_answered_summary">%1$d of %2$d answered</string>
+    <string name="activity_timeline_questionnaire_pending">Awaiting response</string>
+    <string name="activity_timeline_questionnaire_dismissed">Dismissed</string>
+    <string name="activity_timeline_questionnaire_skipped">Skipped</string>
+    <string name="activity_timeline_questionnaire_source_option">Picked option</string>
+    <string name="activity_timeline_questionnaire_source_custom">Custom answer</string>
     <string name="activity_timeline_activated">Activated</string>
     <string name="activity_timeline_disabled">Disabled</string>
     <string name="activity_timeline_no_skill_changes">No skill changes</string>

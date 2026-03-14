@@ -54,17 +54,6 @@ function getLorebooks(source: unknown): LorebookProfile[] {
   );
 }
 
-function getSkillCommand(item: Pick<ModeInjectionProfile, "argumentHint" | "name">): string {
-  if (typeof item.argumentHint === "string") {
-    const hinted = item.argumentHint.trim();
-    if (hinted.startsWith("/")) {
-      return hinted;
-    }
-  }
-
-  return item.name.trim() ? `/${item.name.trim()}` : "/skill";
-}
-
 export function InjectionPickerButton({
   disabled = false,
   className,
@@ -360,16 +349,18 @@ export function InjectionPickerButton({
                               }}
                             />
                           )}
-                          <div className="min-w-0">
-                            <div className="truncate text-sm font-medium">
-                              {getDisplayName(item.name, t("injection.unnamed_mode"))}
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium">
+                            {getDisplayName(item.name, t("injection.unnamed_mode"))}
+                          </div>
+                          {typeof item.description === "string" && item.description.trim().length > 0 ? (
+                            <div className="text-muted-foreground mt-0.5 line-clamp-2 text-xs">
+                              {item.description}
                             </div>
+                          ) : null}
+                          {item.enabled === false ? (
                             <div className="text-muted-foreground mt-0.5 text-xs">
-                              {getSkillCommand(item)}
-                            </div>
-                            {item.enabled === false ? (
-                              <div className="text-muted-foreground mt-0.5 text-xs">
-                                {t("injection.disabled")}
+                              {t("injection.disabled")}
                               </div>
                             ) : null}
                           </div>

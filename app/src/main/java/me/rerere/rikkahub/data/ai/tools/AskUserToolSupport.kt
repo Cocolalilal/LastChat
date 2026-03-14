@@ -114,10 +114,22 @@ fun normalizeAskUserAnswerPayload(
     val parsed = rawAnswer?.let { raw ->
         runCatching { json.parseToJsonElement(raw) }.getOrNull()
     }
+    return normalizeAskUserAnswerPayload(
+        questionnaire = questionnaire,
+        rawAnswer = parsed,
+        dismissedFallback = dismissedFallback,
+    )
+}
 
-    val arrayAnswers = parsed?.jsonObject?.get("answers") as? JsonArray
-    val mapAnswers = parsed?.jsonObject?.get("answers") as? JsonObject
-    val dismissed = parsed?.jsonObject?.get("dismissed")?.jsonPrimitive?.booleanOrNull ?: dismissedFallback
+fun normalizeAskUserAnswerPayload(
+    questionnaire: AskUserQuestionnaire,
+    rawAnswer: JsonElement?,
+    dismissedFallback: Boolean = false,
+): AskUserAnswerPayload {
+    val root = rawAnswer as? JsonObject
+    val arrayAnswers = root?.get("answers") as? JsonArray
+    val mapAnswers = root?.get("answers") as? JsonObject
+    val dismissed = root?.get("dismissed")?.jsonPrimitive?.booleanOrNull ?: dismissedFallback
 
     val normalizedAnswers = questionnaire.questions.map { question ->
         parseAskUserAnswerFromArray(arrayAnswers, question.id)

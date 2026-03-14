@@ -29,9 +29,6 @@ object SkillExportImport {
             appendLine("---")
             appendLine("name: ${skill.name}")
             appendLine("description: ${yamlEscapeString(skill.description)}")
-            if (!skill.argumentHint.isNullOrBlank()) {
-                appendLine("argument-hint: ${skill.argumentHint}")
-            }
             appendLine("---")
             appendLine()
             append(skill.instructions)

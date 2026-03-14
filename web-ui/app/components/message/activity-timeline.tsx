@@ -96,6 +96,7 @@ export function ActivityTimeline({
   open,
   onOpenChange: _onOpenChange,
   initialExpandedType = null,
+  resetKey = 0,
   onToolApproval,
 }: {
   entries: TimelineEntry[];
@@ -103,6 +104,7 @@ export function ActivityTimeline({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialExpandedType?: ActivityType | null;
+  resetKey?: number;
   onToolApproval?: (toolCallId: string, approved: boolean, reason: string, answer?: string) => void | Promise<void>;
 }) {
   const { t } = useTranslation("message");
@@ -122,7 +124,7 @@ export function ActivityTimeline({
       });
     }
     setExpandedIds(nextExpanded);
-  }, [entries, initialExpandedType, open]);
+  }, [entries, initialExpandedType, open, resetKey]);
 
   if (entries.length === 0) {
     return null;

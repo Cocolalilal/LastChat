@@ -366,7 +366,6 @@ data class WebModeInjectionDto(
     val id: String,
     val name: String,
     val description: String = "",
-    val argumentHint: String? = null,
     val enabled: Boolean = true,
 )
 
@@ -803,7 +802,6 @@ private fun Skill.toWebModeInjectionDto(): WebModeInjectionDto {
         id = id.toString(),
         name = name.ifBlank { description.ifBlank { "Skill" } },
         description = description,
-        argumentHint = argumentHint,
         enabled = enabled,
     )
 }

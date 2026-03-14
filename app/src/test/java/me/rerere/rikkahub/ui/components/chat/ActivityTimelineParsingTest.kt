@@ -8,6 +8,7 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.ui.UIMessagePart
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -194,6 +195,58 @@ class ActivityTimelineParsingTest {
 
         assertEquals(listOf("Search", "search-fallback"), summary.activated)
         assertEquals(listOf("Code"), summary.disabled)
+    }
+
+    @Test
+    fun parseAskUserTimelineState_readsQuestionnaireAnswers() {
+        val arguments = buildJsonObject {
+            put("questions", buildJsonArray {
+                add(
+                    buildJsonObject {
+                        put("id", "scope")
+                        put("question", "Which scope should I use?")
+                        put("options", buildJsonArray {
+                            add(JsonPrimitive("Short"))
+                            add(buildJsonObject {
+                                put("label", "Detailed")
+                                put("description", "Cover every section.")
+                            })
+                        })
+                    }
+                )
+            })
+        }
+        val result = buildJsonObject {
+            put("answers", buildJsonArray {
+                add(
+                    buildJsonObject {
+                        put("id", "scope")
+                        put("status", "answered")
+                        put("source", "option")
+                        put("value", "Detailed")
+                    }
+                )
+            })
+            put("dismissed", false)
+        }
+
+        val state = parseAskUserTimelineState(
+            TimelineEntry.ToolCall(
+                id = "ask-user-1",
+                toolName = "ask_user",
+                displayName = "Asking a question",
+                argumentsText = arguments.toString(),
+                resultText = result.toString(),
+                argumentsJson = arguments,
+                resultJson = result
+            )
+        )
+
+        assertNotNull(state)
+        assertEquals(1, state?.questionnaire?.questions?.size)
+        assertEquals("scope", state?.questionnaire?.questions?.single()?.id)
+        assertEquals("Detailed", state?.payload?.answers?.single()?.value)
+        assertEquals("option", state?.payload?.answers?.single()?.source)
     }
 
 }

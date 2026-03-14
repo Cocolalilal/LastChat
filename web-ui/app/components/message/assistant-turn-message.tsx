@@ -139,6 +139,7 @@ export function AssistantTurnMessage({
   const reducedMotion = useChatReducedMotion();
   const [timelineOpen, setTimelineOpen] = React.useState(false);
   const [initialExpandedType, setInitialExpandedType] = React.useState<ActivityType | null>(null);
+  const [timelineResetKey, setTimelineResetKey] = React.useState(0);
 
   const activityState = React.useMemo(
     () => deriveActivityState(turn.allParts, loading),
@@ -216,17 +217,23 @@ export function AssistantTurnMessage({
               <ActivityPill
                 state={activityState}
                 onClick={() => {
-                  const expandedType =
-                    activityState.type === "completed_single"
-                      ? activityState.activityType
-                      : activityState.type === "completed_multiple"
-                        ? activityState.toolTypes[0] ?? (activityState.reasoningDurationMs ? "reasoning" : null)
-                        : activityState.type === "reasoning"
-                          ? "reasoning"
-                          : activityState.type === "tool_use"
-                            ? latestToolActivityType
-                            : null;
-                  setInitialExpandedType(expandedType);
+                  switch (activityState.type) {
+                    case "completed_single":
+                    case "completed_multiple":
+                      setInitialExpandedType(null);
+                      setTimelineResetKey((key) => key + 1);
+                      setTimelineOpen(true);
+                      return;
+                    case "reasoning":
+                      setInitialExpandedType("reasoning");
+                      break;
+                    case "tool_use":
+                      setInitialExpandedType(latestToolActivityType);
+                      break;
+                    case "replying":
+                      setInitialExpandedType(null);
+                      break;
+                  }
                   setTimelineOpen((open) => !open);
                 }}
               />
@@ -240,6 +247,7 @@ export function AssistantTurnMessage({
           open={timelineOpen}
           onOpenChange={setTimelineOpen}
           initialExpandedType={initialExpandedType}
+          resetKey={timelineResetKey}
           onToolApproval={onToolApproval}
         />
 
