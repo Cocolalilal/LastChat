@@ -14,6 +14,10 @@ import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.datastore.FontConfig
+import me.rerere.rikkahub.data.datastore.FontSettings
+import me.rerere.rikkahub.data.datastore.FontSource
+import me.rerere.rikkahub.data.datastore.normalize
 
 /**
  * Material 3 Expressive Typography using Google Sans Flex variable font.
@@ -313,7 +317,7 @@ val TypographyNormal = createTypography(GoogleSansFlexNormal)
  * Create a FontFamily from FontConfig with proper variation settings.
  */
 @Composable
-fun rememberFontFamilyFromConfig(config: me.rerere.rikkahub.data.datastore.FontConfig): FontFamily {
+fun rememberFontFamilyFromConfig(config: FontConfig): FontFamily {
     return remember(
         config.fontSource,
         config.customFontPath,
@@ -324,7 +328,7 @@ fun rememberFontFamilyFromConfig(config: me.rerere.rikkahub.data.datastore.FontC
         config.customAxes
     ) {
         when (config.fontSource) {
-            me.rerere.rikkahub.data.datastore.FontSource.System -> {
+            FontSource.System -> {
                 // Use Google Sans Flex with roundness control
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     createDynamicFontFamily(
@@ -338,7 +342,7 @@ fun rememberFontFamilyFromConfig(config: me.rerere.rikkahub.data.datastore.FontC
                     GoogleSansFlexExpressive
                 }
             }
-            me.rerere.rikkahub.data.datastore.FontSource.SystemCode -> {
+            FontSource.SystemCode -> {
                 // Use Google Sans Code (monospace)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     FontFamily(
@@ -382,7 +386,7 @@ fun rememberFontFamilyFromConfig(config: me.rerere.rikkahub.data.datastore.FontC
                     FontFamily(Font(R.font.google_sans_code))
                 }
             }
-            me.rerere.rikkahub.data.datastore.FontSource.Custom -> {
+            FontSource.Custom -> {
                 // Custom font from file
                 config.customFontPath?.let { path ->
                     try {
@@ -420,6 +424,20 @@ fun rememberFontFamilyFromConfig(config: me.rerere.rikkahub.data.datastore.FontC
                 } ?: GoogleSansFlexExpressive
             }
         }
+    }
+}
+
+fun appFontConfigFromSettings(fontSettings: FontSettings): FontConfig {
+    return fontSettings.normalize().headerFont
+}
+
+@Composable
+fun rememberAppFontFamily(fontSettings: FontSettings): FontFamily {
+    val normalizedFontSettings = fontSettings.normalize()
+    return if (normalizedFontSettings.usePhoneSystemFont) {
+        FontFamily.Default
+    } else {
+        rememberFontFamilyFromConfig(normalizedFontSettings.headerFont)
     }
 }
 
@@ -500,130 +518,129 @@ private fun createDynamicFontFamily(
 
 /**
  * Create Typography from FontSettings.
- * Uses header font for display/headline/title styles, content font for body/label styles.
+ * All non-code styles share the same app font configuration.
  */
 @Composable
-fun rememberTypographyFromFontSettings(fontSettings: me.rerere.rikkahub.data.datastore.FontSettings): Typography {
-    val headerFont = rememberFontFamilyFromConfig(fontSettings.headerFont)
-    val contentFont = rememberFontFamilyFromConfig(
-        if (fontSettings.useSameFontForHeadersAndContent) fontSettings.headerFont else fontSettings.contentFont
-    )
-    
-    return remember(headerFont, contentFont, fontSettings) {
+fun rememberTypographyFromFontSettings(fontSettings: FontSettings): Typography {
+    val normalizedFontSettings = fontSettings.normalize()
+    val appFontConfig = appFontConfigFromSettings(normalizedFontSettings)
+    val appFontFamily = rememberAppFontFamily(normalizedFontSettings)
+
+    return remember(appFontConfig, appFontFamily, normalizedFontSettings) {
         Typography(
-            // Display styles - use header font
+            // Display styles - use shared app font
             displayLarge = TextStyle(
-                fontFamily = headerFont,
+                fontFamily = appFontFamily,
                 fontWeight = FontWeight.Bold,
-                fontSize = (57 * fontSettings.headerFont.fontSize).sp,
-                lineHeight = (64 * fontSettings.headerFont.lineHeight).sp,
-                letterSpacing = (-0.25 + fontSettings.headerFont.letterSpacing).sp
+                fontSize = (57 * appFontConfig.fontSize).sp,
+                lineHeight = (64 * appFontConfig.lineHeight).sp,
+                letterSpacing = (-0.25 + appFontConfig.letterSpacing).sp
             ),
             displayMedium = TextStyle(
-                fontFamily = headerFont,
+                fontFamily = appFontFamily,
                 fontWeight = FontWeight.Bold,
-                fontSize = (45 * fontSettings.headerFont.fontSize).sp,
-                lineHeight = (52 * fontSettings.headerFont.lineHeight).sp,
-                letterSpacing = (0 + fontSettings.headerFont.letterSpacing).sp
+                fontSize = (45 * appFontConfig.fontSize).sp,
+                lineHeight = (52 * appFontConfig.lineHeight).sp,
+                letterSpacing = (0 + appFontConfig.letterSpacing).sp
             ),
             displaySmall = TextStyle(
-                fontFamily = headerFont,
+                fontFamily = appFontFamily,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = (36 * fontSettings.headerFont.fontSize).sp,
-                lineHeight = (44 * fontSettings.headerFont.lineHeight).sp,
-                letterSpacing = (0 + fontSettings.headerFont.letterSpacing).sp
+                fontSize = (36 * appFontConfig.fontSize).sp,
+                lineHeight = (44 * appFontConfig.lineHeight).sp,
+                letterSpacing = (0 + appFontConfig.letterSpacing).sp
             ),
             
-            // Headline styles - use header font
+            // Headline styles - use shared app font
             headlineLarge = TextStyle(
-                fontFamily = headerFont,
+                fontFamily = appFontFamily,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = (32 * fontSettings.headerFont.fontSize).sp,
-                lineHeight = (40 * fontSettings.headerFont.lineHeight).sp,
-                letterSpacing = (0 + fontSettings.headerFont.letterSpacing).sp
+                fontSize = (32 * appFontConfig.fontSize).sp,
+                lineHeight = (40 * appFontConfig.lineHeight).sp,
+                letterSpacing = (0 + appFontConfig.letterSpacing).sp
             ),
             headlineMedium = TextStyle(
-                fontFamily = headerFont,
+                fontFamily = appFontFamily,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = (28 * fontSettings.headerFont.fontSize).sp,
-                lineHeight = (36 * fontSettings.headerFont.lineHeight).sp,
-                letterSpacing = (0 + fontSettings.headerFont.letterSpacing).sp
+                fontSize = (28 * appFontConfig.fontSize).sp,
+                lineHeight = (36 * appFontConfig.lineHeight).sp,
+                letterSpacing = (0 + appFontConfig.letterSpacing).sp
             ),
             headlineSmall = TextStyle(
-                fontFamily = headerFont,
+                fontFamily = appFontFamily,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = (24 * fontSettings.headerFont.fontSize).sp,
-                lineHeight = (32 * fontSettings.headerFont.lineHeight).sp,
-                letterSpacing = (0 + fontSettings.headerFont.letterSpacing).sp
+                fontSize = (24 * appFontConfig.fontSize).sp,
+                lineHeight = (32 * appFontConfig.lineHeight).sp,
+                letterSpacing = (0 + appFontConfig.letterSpacing).sp
             ),
             
-            // Title styles - use header font
+            // Title styles - use shared app font
             titleLarge = TextStyle(
-                fontFamily = headerFont,
+                fontFamily = appFontFamily,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = (22 * fontSettings.headerFont.fontSize).sp,
-                lineHeight = (28 * fontSettings.headerFont.lineHeight).sp,
-                letterSpacing = (0 + fontSettings.headerFont.letterSpacing).sp
+                fontSize = (22 * appFontConfig.fontSize).sp,
+                lineHeight = (28 * appFontConfig.lineHeight).sp,
+                letterSpacing = (0 + appFontConfig.letterSpacing).sp
             ),
             titleMedium = TextStyle(
-                fontFamily = headerFont,
+                fontFamily = appFontFamily,
                 fontWeight = FontWeight.Medium,
-                fontSize = (16 * fontSettings.headerFont.fontSize).sp,
-                lineHeight = (24 * fontSettings.headerFont.lineHeight).sp,
-                letterSpacing = (0.15 + fontSettings.headerFont.letterSpacing).sp
+                fontSize = (16 * appFontConfig.fontSize).sp,
+                lineHeight = (24 * appFontConfig.lineHeight).sp,
+                letterSpacing = (0.15 + appFontConfig.letterSpacing).sp
             ),
             titleSmall = TextStyle(
-                fontFamily = headerFont,
+                fontFamily = appFontFamily,
                 fontWeight = FontWeight.Medium,
-                fontSize = (14 * fontSettings.headerFont.fontSize).sp,
-                lineHeight = (20 * fontSettings.headerFont.lineHeight).sp,
-                letterSpacing = (0.1 + fontSettings.headerFont.letterSpacing).sp
+                fontSize = (14 * appFontConfig.fontSize).sp,
+                lineHeight = (20 * appFontConfig.lineHeight).sp,
+                letterSpacing = (0.1 + appFontConfig.letterSpacing).sp
             ),
             
-            // Body styles - use content font
+            // Body styles - use shared app font
             bodyLarge = TextStyle(
-                fontFamily = contentFont,
+                fontFamily = appFontFamily,
                 fontWeight = FontWeight.Medium,
-                fontSize = (16 * fontSettings.contentFont.fontSize).sp,
-                lineHeight = (24 * fontSettings.contentFont.lineHeight).sp,
-                letterSpacing = (0.5 + fontSettings.contentFont.letterSpacing).sp
+                fontSize = (16 * appFontConfig.fontSize).sp,
+                lineHeight = (24 * appFontConfig.lineHeight).sp,
+                letterSpacing = (0.5 + appFontConfig.letterSpacing).sp
             ),
             bodyMedium = TextStyle(
-                fontFamily = contentFont,
+                fontFamily = appFontFamily,
                 fontWeight = FontWeight.Medium,
-                fontSize = (14 * fontSettings.contentFont.fontSize).sp,
-                lineHeight = (20 * fontSettings.contentFont.lineHeight).sp,
-                letterSpacing = (0.25 + fontSettings.contentFont.letterSpacing).sp
+                fontSize = (14 * appFontConfig.fontSize).sp,
+                lineHeight = (20 * appFontConfig.lineHeight).sp,
+                letterSpacing = (0.25 + appFontConfig.letterSpacing).sp
             ),
             bodySmall = TextStyle(
-                fontFamily = contentFont,
+                fontFamily = appFontFamily,
                 fontWeight = FontWeight.Medium,
-                fontSize = (12 * fontSettings.contentFont.fontSize).sp,
-                lineHeight = (16 * fontSettings.contentFont.lineHeight).sp,
-                letterSpacing = (0.4 + fontSettings.contentFont.letterSpacing).sp
+                fontSize = (12 * appFontConfig.fontSize).sp,
+                lineHeight = (16 * appFontConfig.lineHeight).sp,
+                letterSpacing = (0.4 + appFontConfig.letterSpacing).sp
             ),
             
-            // Label styles - use content font
+            // Label styles - use shared app font
             labelLarge = TextStyle(
-                fontFamily = contentFont,
+                fontFamily = appFontFamily,
                 fontWeight = FontWeight.Medium,
-                fontSize = (14 * fontSettings.contentFont.fontSize).sp,
-                lineHeight = (20 * fontSettings.contentFont.lineHeight).sp,
-                letterSpacing = (0.1 + fontSettings.contentFont.letterSpacing).sp
+                fontSize = (14 * appFontConfig.fontSize).sp,
+                lineHeight = (20 * appFontConfig.lineHeight).sp,
+                letterSpacing = (0.1 + appFontConfig.letterSpacing).sp
             ),
             labelMedium = TextStyle(
-                fontFamily = contentFont,
+                fontFamily = appFontFamily,
                 fontWeight = FontWeight.Medium,
-                fontSize = (12 * fontSettings.contentFont.fontSize).sp,
-                lineHeight = (16 * fontSettings.contentFont.lineHeight).sp,
-                letterSpacing = (0.5 + fontSettings.contentFont.letterSpacing).sp
+                fontSize = (12 * appFontConfig.fontSize).sp,
+                lineHeight = (16 * appFontConfig.lineHeight).sp,
+                letterSpacing = (0.5 + appFontConfig.letterSpacing).sp
             ),
             labelSmall = TextStyle(
-                fontFamily = contentFont,
+                fontFamily = appFontFamily,
                 fontWeight = FontWeight.Medium,
-                fontSize = (11 * fontSettings.contentFont.fontSize).sp,
-                lineHeight = (16 * fontSettings.contentFont.lineHeight).sp,
-                letterSpacing = (0.5 + fontSettings.contentFont.letterSpacing).sp
+                fontSize = (11 * appFontConfig.fontSize).sp,
+                lineHeight = (16 * appFontConfig.lineHeight).sp,
+                letterSpacing = (0.5 + appFontConfig.letterSpacing).sp
             )
         )
     }

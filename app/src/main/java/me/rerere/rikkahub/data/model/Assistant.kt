@@ -6,6 +6,7 @@ import me.rerere.ai.provider.CustomBody
 import me.rerere.ai.provider.CustomHeader
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
+import me.rerere.rikkahub.data.ai.tools.LocalToolOptionListSerializer
 import kotlin.uuid.Uuid
 
 import me.rerere.rikkahub.data.datastore.NewChatHeaderStyle
@@ -73,11 +74,12 @@ data class Assistant(
     val presetMessages: List<UIMessage> = emptyList(),
     val quickMessages: List<QuickMessage> = emptyList(),
     val regexes: List<AssistantRegex> = emptyList(),
-    val thinkingBudget: Int? = 1024,
+    val thinkingBudget: Int? = -1,
     val maxTokens: Int? = null,
     val customHeaders: List<CustomHeader> = emptyList(),
     val customBodies: List<CustomBody> = emptyList(),
     val mcpServers: Set<Uuid> = emptySet(),
+    @Serializable(with = LocalToolOptionListSerializer::class)
     val localTools: List<LocalToolOption> = emptyList(),
     val background: String? = null,
     val backgroundDim: Float = 0.6f,

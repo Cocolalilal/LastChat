@@ -13,6 +13,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.UIMessage
+import me.rerere.rikkahub.data.ai.buildSummarizerGenerationParams
 import me.rerere.rikkahub.data.ai.rag.EmbeddingService
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
@@ -158,7 +159,10 @@ class MemoryConsolidationWorker(
                 val response = providerHandler.generateText(
                     providerSetting = provider,
                     messages = listOf(UIMessage.user(prompt)),
-                    params = TextGenerationParams(model = model, temperature = 0.5f)
+                    params = settings.buildSummarizerGenerationParams(
+                        model = model,
+                        temperature = 0.5f,
+                    )
                 )
                 val responseText = response.choices.firstOrNull()?.message?.toContentText() ?: continue
                 

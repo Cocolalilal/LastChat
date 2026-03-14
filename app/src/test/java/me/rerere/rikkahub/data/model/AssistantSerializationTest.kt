@@ -31,6 +31,20 @@ class AssistantSerializationTest {
     }
 
     @Test
+    fun olderAssistantJsonDefaultsThinkingBudgetToAuto() {
+        val assistant = Json.decodeFromString<Assistant>(
+            """
+            {
+              "id": "00000000-0000-0000-0000-000000000002",
+              "name": "Legacy Assistant"
+            }
+            """.trimIndent()
+        )
+
+        assertEquals(-1, assistant.thinkingBudget)
+    }
+
+    @Test
     fun spontaneousMessagingFieldsRoundTrip() {
         val assistant = Assistant(
             id = Uuid.parse("00000000-0000-0000-0000-000000000010"),
@@ -57,17 +71,23 @@ class AssistantSerializationTest {
     }
 
     @Test
-    fun legacyDeviceControlLocalToolDeserializesAsNotifications() {
+    fun localToolsDeserializationKeepsSupportedEntriesAndDropsUnknownOnes() {
         val assistant = JsonInstant.decodeFromString<Assistant>(
             """
             {
               "id": "00000000-0000-0000-0000-000000000011",
               "name": "Legacy Notifications Assistant",
-              "localTools": [{"type": "device_control"}]
+              "localTools": [
+                {"type": "device_control"},
+                {"type": "unknown_tool"},
+                {"type": "future_tool_from_other_build"},
+                {"oops": "missing_type"}
+              ]
             }
             """.trimIndent()
         )
 
+        assertEquals(1, assistant.localTools.size)
         assertTrue(assistant.localTools.contains(LocalToolOption.Notifications))
     }
 

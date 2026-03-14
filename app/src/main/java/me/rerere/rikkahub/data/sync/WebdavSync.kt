@@ -1,7 +1,6 @@
 package me.rerere.rikkahub.data.sync
 
 import android.content.Context
-import me.rerere.rikkahub.utils.LogUtil
 import at.bitfire.dav4jvm.okhttp.BasicDigestAuthHandler
 import at.bitfire.dav4jvm.okhttp.DavCollection
 import at.bitfire.dav4jvm.okhttp.Response
@@ -14,10 +13,11 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.data.datastore.SecureStore
 import me.rerere.rikkahub.data.datastore.SecretKeyManager
 import me.rerere.rikkahub.data.datastore.WebDavConfig
 import me.rerere.rikkahub.data.datastore.sanitize
+import me.rerere.rikkahub.data.db.AppDatabase
+import me.rerere.rikkahub.utils.LogUtil
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.asRequestBody
@@ -38,8 +38,8 @@ class WebdavSync(
     private val settingsStore: SettingsStore,
     private val json: Json,
     private val context: Context,
-    private val secureStore: SecureStore,
     private val secretKeyManager: SecretKeyManager,
+    private val appDatabase: AppDatabase,
 ) {
     suspend fun testWebdav(webDavConfig: WebDavConfig) {
         val davCollection = DavCollection(
@@ -48,9 +48,7 @@ class WebdavSync(
         )
 
         withContext(Dispatchers.IO) {
-            davCollection.propfind(
-                depth = 1,
-            ) { response, relation ->
+            davCollection.propfind(depth = 1) { response, relation ->
                 LogUtil.i(TAG, "testWebdav: $response | $relation")
             }
         }
@@ -59,11 +57,9 @@ class WebdavSync(
     suspend fun backupToWebDav(webDavConfig: WebDavConfig) = withContext(Dispatchers.IO) {
         val file = prepareBackupFile(webDavConfig)
         val collection = webDavConfig.requireCollection()
-        collection.ensureCollectionExists() // ensure collection exists
+        collection.ensureCollectionExists()
         val target = webDavConfig.requireCollection(file.name)
-        target.put(
-            body = file.asRequestBody(),
-        ) { response ->
+        target.put(body = file.asRequestBody()) { response ->
             LogUtil.i(TAG, "backupToWebDav: $response")
         }
     }
@@ -72,9 +68,7 @@ class WebdavSync(
         withContext(Dispatchers.IO) {
             val collection = webDavConfig.requireCollection()
             val files = mutableListOf<WebDavBackupItem>()
-            collection.propfind(
-                depth = 1,
-            ) { response, relation ->
+            collection.propfind(depth = 1) { response, relation ->
                 LogUtil.i(TAG, "listBackupFiles: ${response.properties} ${response.href}")
                 if (relation == Response.HrefRelation.MEMBER) {
                     val displayName = response.properties.filterIsInstance<DisplayName>()
@@ -88,7 +82,7 @@ class WebdavSync(
                             href = response.href.toString(),
                             displayName = displayName,
                             size = size,
-                            lastModified = lastModified
+                            lastModified = lastModified,
                         )
                     )
                 }
@@ -96,60 +90,59 @@ class WebdavSync(
             files
         }
 
-    suspend fun restoreFromWebDav(webDavConfig: WebDavConfig, item: WebDavBackupItem): RestoreResult =
-        withContext(Dispatchers.IO) {
-            val collection = DavCollection(
-                httpClient = webDavConfig.requireClient(),
-                location = item.href.toHttpUrl(),
-            )
-            val backupFile = File(context.cacheDir, item.displayName)
-            if (backupFile.exists()) {
-                backupFile.delete()
-            }
+    suspend fun restoreFromWebDav(
+        webDavConfig: WebDavConfig,
+        item: WebDavBackupItem,
+    ): RestoreResult = withContext(Dispatchers.IO) {
+        val collection = DavCollection(
+            httpClient = webDavConfig.requireClient(),
+            location = item.href.toHttpUrl(),
+        )
+        val backupFile = File(context.cacheDir, item.displayName)
+        if (backupFile.exists()) {
+            backupFile.delete()
+        }
 
-            // 下载备份文件
-            collection.get(
-                accept = "",
-                headers = null
-            ) { response ->
-                if (response.isSuccessful) {
-                    LogUtil.i(
-                        TAG,
-                        "restoreFromWebDav: Downloading ${item.displayName} to ${backupFile.absolutePath}"
-                    )
-                    response.body?.byteStream()?.use { inputStream ->
-                        FileOutputStream(backupFile).use { outputStream ->
-                            inputStream.copyTo(outputStream)
-                        }
+        collection.get(
+            accept = "",
+            headers = null,
+        ) { response ->
+            if (response.isSuccessful) {
+                LogUtil.i(
+                    TAG,
+                    "restoreFromWebDav: Downloading ${item.displayName} to ${backupFile.absolutePath}",
+                )
+                response.body?.byteStream()?.use { inputStream ->
+                    FileOutputStream(backupFile).use { outputStream ->
+                        inputStream.copyTo(outputStream)
                     }
-                } else {
-                    LogUtil.e(
-                        TAG,
-                        "restoreFromWebDav: Failed to download ${item.displayName}, response: $response"
-                    )
-                    throw Exception("Failed to download backup file: ${response.message}")
                 }
-            }
-
-            LogUtil.i(TAG, "restoreFromWebDav: Downloaded ${backupFile.length()} bytes")
-
-            try {
-                // 解压并恢复备份文件
-                restoreFromBackupFile(backupFile, webDavConfig)
-            } finally {
-                // 清理临时文件
-                if (backupFile.exists()) {
-                    backupFile.delete()
-                    LogUtil.i(TAG, "restoreFromWebDav: Cleaned up temporary backup file")
-                }
+            } else {
+                LogUtil.e(
+                    TAG,
+                    "restoreFromWebDav: Failed to download ${item.displayName}, response: $response",
+                )
+                throw Exception("Failed to download backup file: ${response.message}")
             }
         }
+
+        LogUtil.i(TAG, "restoreFromWebDav: Downloaded ${backupFile.length()} bytes")
+
+        try {
+            restoreFromBackupFile(backupFile)
+        } finally {
+            if (backupFile.exists()) {
+                backupFile.delete()
+                LogUtil.i(TAG, "restoreFromWebDav: Cleaned up temporary backup file")
+            }
+        }
+    }
 
     suspend fun deleteWebDavBackupFile(webDavConfig: WebDavConfig, item: WebDavBackupItem) =
         withContext(Dispatchers.IO) {
             val collection = DavCollection(
                 httpClient = webDavConfig.requireClient(),
-                location = item.href.toHttpUrl()
+                location = item.href.toHttpUrl(),
             )
             collection.delete { response ->
                 LogUtil.i(TAG, "deleteWebDavBackupFile: $response")
@@ -169,7 +162,7 @@ class WebdavSync(
             }
 
             try {
-                restoreFromBackupFile(file, webDavConfig)
+                restoreFromBackupFile(file)
             } catch (e: Exception) {
                 LogUtil.e(TAG, "restoreFromLocalFile: Failed to restore from local file", e)
                 throw Exception("Restore failed: ${e.message}")
@@ -178,254 +171,397 @@ class WebdavSync(
 
     suspend fun prepareBackupFile(webDavConfig: WebDavConfig): File = withContext(Dispatchers.IO) {
         val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
-        val backupFile = File(
-            context.cacheDir,
-            "LastChat_backup_$timestamp.zip"
-        )
+        val backupFile = File(context.cacheDir, "LastChat_backup_$timestamp.zip")
         if (backupFile.exists()) {
             backupFile.delete()
         }
 
-        // 创建zip文件并备份数据库
+        val includesDatabase = webDavConfig.items.contains(WebDavConfig.BackupItem.DATABASE)
+        val includesFiles = webDavConfig.items.contains(WebDavConfig.BackupItem.FILES)
+        val manifest = BackupManifest(
+            includesDatabase = includesDatabase,
+            includesFiles = includesFiles,
+            managedFileDirs = if (includesFiles) BackupArchiveFormat.MANAGED_FILE_DIRS else emptyList(),
+            sharedPrefsStores = BackupArchiveFormat.PORTABLE_SHARED_PREF_STORES,
+        )
+
         ZipOutputStream(FileOutputStream(backupFile)).use { zipOut ->
-            // Populate decrypted secrets for portable backup export
-            val settingsForExport = secretKeyManager.populateSecretsForExport(settingsStore.settingsFlow.value)
+            val settingsForExport =
+                secretKeyManager.populateSecretsForExport(settingsStore.settingsFlow.value)
             addVirtualFileToZip(
                 zipOut = zipOut,
-                name = "settings.json",
-                content = json.encodeToString(settingsForExport)
+                name = BackupArchiveFormat.SETTINGS_ENTRY,
+                content = json.encodeToString(settingsForExport),
+            )
+            addVirtualFileToZip(
+                zipOut = zipOut,
+                name = BackupArchiveFormat.MANIFEST_ENTRY,
+                content = json.encodeToString(manifest),
             )
 
-            // 备份数据库
-            if (webDavConfig.items.contains(WebDavConfig.BackupItem.DATABASE)) {
-                // 备份主数据库文件
-                val dbFile = context.getDatabasePath("rikka_hub")
-                if (dbFile.exists()) {
-                    addFileToZip(zipOut, dbFile, "rikka_hub.db")
-                }
-
-                // 备份数据库的WAL文件（如果存在）
-                val walFile = File(dbFile.parentFile, "rikka_hub-wal")
-                if (walFile.exists()) {
-                    addFileToZip(zipOut, walFile, "rikka_hub-wal")
-                }
-
-                // 备份数据库的SHM文件（如果存在）
-                val shmFile = File(dbFile.parentFile, "rikka_hub-shm")
-                if (shmFile.exists()) {
-                    addFileToZip(zipOut, shmFile, "rikka_hub-shm")
-                }
+            BackupArchiveFormat.PORTABLE_SHARED_PREF_STORES.forEach { storeName ->
+                val snapshot = exportSharedPreferencesSnapshot(context, storeName)
+                addVirtualFileToZip(
+                    zipOut = zipOut,
+                    name = BackupArchiveFormat.prefEntryName(storeName),
+                    content = json.encodeToString(snapshot),
+                )
             }
 
-            // 备份聊天文件
-            if (webDavConfig.items.contains(WebDavConfig.BackupItem.FILES)) {
-                val uploadFolder = File(context.filesDir, "upload")
-                if (uploadFolder.exists() && uploadFolder.isDirectory) {
-                    LogUtil.i(
-                        TAG,
-                        "prepareBackupFile: Backing up files from ${uploadFolder.absolutePath}"
-                    )
-                    uploadFolder.listFiles()?.forEach { file ->
-                        if (file.isFile) {
-                            addFileToZip(zipOut, file, "upload/${file.name}")
-                        }
-                    }
-                } else {
-                    LogUtil.w(
-                        TAG,
-                        "prepareBackupFile: Upload folder does not exist or is not a directory"
-                    )
-                }
+            if (includesDatabase) {
+                checkpointDatabase()
+                addDatabaseEntries(zipOut)
+            }
+
+            if (includesFiles) {
+                addManagedFileEntries(zipOut)
             }
         }
 
         backupFile
     }
 
-
-
     data class RestoreResult(
         val sanitization: DatabaseSanitizer.SanitizationResult,
-        val settingsCleanup: BackupCleanupResult
+        val settingsCleanup: BackupCleanupResult,
     )
 
-    private suspend fun restoreFromBackupFile(backupFile: File, webDavConfig: WebDavConfig): RestoreResult =
+    private suspend fun restoreFromBackupFile(backupFile: File): RestoreResult =
         withContext(Dispatchers.IO) {
             LogUtil.i(TAG, "restoreFromBackupFile: Starting restore from ${backupFile.absolutePath}")
-            
-            var unsupportedZipEntriesBytes: Long = 0
-            var settingsCleanupResult = BackupCleanupResult()
-            // Temp directory for extraction
-            val restoreTempDir = File(context.cacheDir, "restore_temp_${System.currentTimeMillis()}")
-            if (!restoreTempDir.exists()) restoreTempDir.mkdirs()
 
+            var unsupportedZipEntriesBytes = 0L
+            var settingsCleanupResult = BackupCleanupResult()
             var sanitizationResult = DatabaseSanitizer.SanitizationResult()
+            var settingsJson: String? = null
+            var manifest: BackupManifest? = null
+            val stagedPrefs = linkedMapOf<String, SharedPreferencesSnapshot>()
+            val stagedManagedDirs = linkedSetOf<String>()
+            var foundSupportedEntry = false
+
+            val restoreTempDir = File(context.cacheDir, "restore_temp_${System.currentTimeMillis()}")
+            val stagedFilesDir = File(restoreTempDir, "files")
+            val stagedDbDir = File(restoreTempDir, "db")
+            restoreTempDir.mkdirs()
+            stagedFilesDir.mkdirs()
+            stagedDbDir.mkdirs()
 
             try {
                 ZipInputStream(FileInputStream(backupFile)).use { zipIn ->
                     var entry: ZipEntry?
                     while (zipIn.nextEntry.also { entry = it } != null) {
-                        entry?.let { zipEntry ->
-                            LogUtil.i(TAG, "restoreFromBackupFile: Processing entry ${zipEntry.name}")
+                        val zipEntry = entry ?: continue
+                        val normalizedName = BackupArchiveFormat.normalizeEntryName(zipEntry.name)
+                        LogUtil.i(TAG, "restoreFromBackupFile: Processing entry $normalizedName")
 
-                            when (zipEntry.name) {
-                                "settings.json" -> {
-                                    // 恢复设置
-                                    val settingsJson = zipIn.readBytes().toString(Charsets.UTF_8)
-                                    LogUtil.i(TAG, "restoreFromBackupFile: Restoring settings")
-                                    try {
-                                        val settings = json.decodeFromString<Settings>(settingsJson)
-                                        // Sanitize settings to clean up deprecated/invalid data
-                                        val (cleanedSettings, cleanupResult) = settings.sanitize()
-                                        settingsCleanupResult = cleanupResult
-                                        settingsStore.update(cleanedSettings)
-                                        LogUtil.i(
-                                            TAG,
-                                            "restoreFromBackupFile: Settings restored and sanitized (issues fixed: ${cleanupResult.totalIssuesFixed})"
-                                        )
-                                    } catch (e: Exception) {
-                                        LogUtil.e(
-                                            TAG,
-                                            "restoreFromBackupFile: Failed to restore settings",
-                                            e
-                                        )
-                                        throw Exception("Failed to restore settings: ${e.message}")
-                                    }
-                                }
+                        when {
+                            normalizedName == BackupArchiveFormat.SETTINGS_ENTRY -> {
+                                settingsJson = zipIn.readBytes().toString(Charsets.UTF_8)
+                                foundSupportedEntry = true
+                            }
 
-                                "rikka_hub.db", "rikka_hub-wal", "rikka_hub-shm" -> {
-                                    if (webDavConfig.items.contains(WebDavConfig.BackupItem.DATABASE)) {
-                                        // Extract to temp dir first
-                                        val tempDbFile = File(restoreTempDir, zipEntry.name)
-                                        FileOutputStream(tempDbFile).use { outputStream ->
-                                            zipIn.copyTo(outputStream)
-                                        }
-                                        LogUtil.i(TAG, "Extracted ${zipEntry.name} to temp")
-                                    }
-                                }
+                            normalizedName == BackupArchiveFormat.MANIFEST_ENTRY -> {
+                                val manifestJson = zipIn.readBytes().toString(Charsets.UTF_8)
+                                manifest = json.decodeFromString<BackupManifest>(manifestJson)
+                                foundSupportedEntry = true
+                            }
 
-                                else -> {
-                                    // 处理聊天文件
-                                    if (webDavConfig.items.contains(WebDavConfig.BackupItem.FILES) && zipEntry.name.startsWith(
-                                            "upload/"
-                                        )
-                                    ) {
-                                        val fileName = zipEntry.name.substringAfter("upload/")
-                                        if (fileName.isNotEmpty()) {
-                                            val uploadFolder = File(context.filesDir, "upload")
-                                            // 确保upload文件夹存在
-                                            if (!uploadFolder.exists()) {
-                                                uploadFolder.mkdirs()
-                                                LogUtil.i(
-                                                    TAG,
-                                                    "restoreFromBackupFile: Created upload directory"
-                                                )
-                                            }
+                            BackupArchiveFormat.isDatabaseEntry(normalizedName) -> {
+                                stageDatabaseEntry(zipIn, stagedDbDir, normalizedName)
+                                foundSupportedEntry = true
+                            }
 
-                                            val targetFile = File(uploadFolder, fileName)
-                                            LogUtil.i(
-                                                TAG,
-                                                "restoreFromBackupFile: Restoring file ${zipEntry.name} to ${targetFile.absolutePath}"
-                                            )
-
-                                            try {
-                                                FileOutputStream(targetFile).use { outputStream ->
-                                                    zipIn.copyTo(outputStream)
-                                                }
-                                                LogUtil.i(
-                                                    TAG,
-                                                    "restoreFromBackupFile: Restored ${zipEntry.name} (${targetFile.length()} bytes)"
-                                                )
-                                            } catch (e: Exception) {
-                                                LogUtil.e(
-                                                    TAG,
-                                                    "restoreFromBackupFile: Failed to restore file ${zipEntry.name}",
-                                                    e
-                                                )
-                                                throw Exception("Failed to restore file ${zipEntry.name}: ${e.message}")
-                                            }
-                                        }
-                                    } else {
-                                        LogUtil.i(
-                                            TAG,
-                                            "restoreFromBackupFile: Skipping unsupported entry ${zipEntry.name} (${zipEntry.size} bytes)"
-                                        )
-                                        unsupportedZipEntriesBytes += zipEntry.size
-                                    }
+                            normalizedName.startsWith("${BackupArchiveFormat.PREFS_DIR}/") &&
+                                normalizedName.endsWith(".json") -> {
+                                val storeName = normalizedName
+                                    .removePrefix("${BackupArchiveFormat.PREFS_DIR}/")
+                                    .removeSuffix(".json")
+                                if (BackupArchiveFormat.PORTABLE_SHARED_PREF_STORES.contains(storeName)) {
+                                    val snapshotJson = zipIn.readBytes().toString(Charsets.UTF_8)
+                                    val snapshot =
+                                        json.decodeFromString<SharedPreferencesSnapshot>(snapshotJson)
+                                    stagedPrefs[storeName] = snapshot
+                                    foundSupportedEntry = true
+                                } else {
+                                    unsupportedZipEntriesBytes += zipEntry.size.coerceAtLeast(0L)
                                 }
                             }
 
-                            zipIn.closeEntry()
+                            BackupArchiveFormat.managedDirForEntry(normalizedName) != null -> {
+                                val managedDir = BackupArchiveFormat.managedDirForEntry(normalizedName)
+                                    ?: error("Managed directory was null for $normalizedName")
+                                stageManagedFileEntry(zipIn, stagedFilesDir, normalizedName, zipEntry.isDirectory)
+                                stagedManagedDirs.add(managedDir)
+                                foundSupportedEntry = true
+                            }
+
+                            else -> {
+                                LogUtil.i(
+                                    TAG,
+                                    "restoreFromBackupFile: Skipping unsupported entry $normalizedName (${zipEntry.size} bytes)",
+                                )
+                                unsupportedZipEntriesBytes += zipEntry.size.coerceAtLeast(0L)
+                            }
                         }
+
+                        zipIn.closeEntry()
                     }
                 }
 
-                // Sanitize and Restore Database
-                val tempDbFile = File(restoreTempDir, "rikka_hub.db")
-                
-                if (tempDbFile.exists()) {
-                    LogUtil.i(TAG, "Starting database sanitization...")
+                if (!foundSupportedEntry) {
+                    throw Exception("Backup file did not contain any supported entries")
+                }
+
+                val sanitizedSettings = settingsJson?.let { rawSettingsJson ->
                     try {
-                         val (cleanDb, result) = DatabaseSanitizer.sanitize(context, tempDbFile)
-                         sanitizationResult = result
-                         
-                         // Move clean DB to final location
-                         val finalDbFile = context.getDatabasePath("rikka_hub")
-                         if(finalDbFile.exists()) finalDbFile.delete()
-                         
-                         cleanDb.copyTo(finalDbFile, overwrite = true)
-                         
-                         val cleanWal = File(cleanDb.path + "-wal")
-                         val cleanShm = File(cleanDb.path + "-shm")
-                         
-                         if(cleanWal.exists()) {
-                             cleanWal.copyTo(File(finalDbFile.path + "-wal"), overwrite = true)
-                         } else {
-                             File(finalDbFile.path + "-wal").delete()
-                         }
-                         
-                         if(cleanShm.exists()) {
-                             cleanShm.copyTo(File(finalDbFile.path + "-shm"), overwrite = true)
-                         } else {
-                             File(finalDbFile.path + "-shm").delete()
-                         }
-                         
-                         LogUtil.i(TAG, "Database restored and sanitized: $sanitizationResult")
+                        val parsedSettings = json.decodeFromString<Settings>(rawSettingsJson)
+                        parsedSettings.sanitize().also { (_, cleanup) ->
+                            settingsCleanupResult = cleanup
+                        }
                     } catch (e: Exception) {
-                        LogUtil.e(TAG, "Failed to sanitize database", e)
+                        LogUtil.e(TAG, "restoreFromBackupFile: Failed to parse settings", e)
+                        throw Exception("Failed to restore settings: ${e.message}")
+                    }
+                }
+
+                restoreManagedFileDirectories(
+                    stagedFilesDir = stagedFilesDir,
+                    manifest = manifest,
+                    stagedManagedDirs = stagedManagedDirs,
+                )
+                restorePortableSharedPreferences(
+                    stagedSnapshots = stagedPrefs,
+                    manifest = manifest,
+                )
+
+                val stagedDatabase = File(stagedDbDir, BackupArchiveFormat.DB_ENTRY)
+                if (stagedDatabase.exists()) {
+                    LogUtil.i(TAG, "restoreFromBackupFile: Starting database sanitization")
+                    try {
+                        sanitizationResult = restoreDatabase(stagedDatabase)
+                        LogUtil.i(TAG, "restoreFromBackupFile: Database restored and sanitized")
+                    } catch (e: Exception) {
+                        LogUtil.e(TAG, "restoreFromBackupFile: Failed to restore database", e)
                         throw Exception("Database sanitization failed: ${e.message}")
                     }
                 }
 
+                sanitizedSettings?.let { (cleanedSettings, _) ->
+                    settingsStore.update(cleanedSettings)
+                    LogUtil.i(
+                        TAG,
+                        "restoreFromBackupFile: Settings restored after file/db/prefs commit",
+                    )
+                }
+
                 LogUtil.i(TAG, "restoreFromBackupFile: Restore completed successfully")
-                
-                // Combine cleanup results
+
                 val totalCleanupResult = settingsCleanupResult.copy(
-                    unsupportedZipEntriesBytes = unsupportedZipEntriesBytes
+                    unsupportedZipEntriesBytes = unsupportedZipEntriesBytes,
                 )
-                
-                LogUtil.i(TAG, "restoreFromBackupFile: Cleanup summary - skipped ${unsupportedZipEntriesBytes} bytes, fixed ${totalCleanupResult.totalIssuesFixed} issues")
-                
                 RestoreResult(
                     sanitization = sanitizationResult,
-                    settingsCleanup = totalCleanupResult
+                    settingsCleanup = totalCleanupResult,
                 )
             } finally {
-                // Cleanup temp dir
                 restoreTempDir.deleteRecursively()
             }
         }
 
+    private fun checkpointDatabase() {
+        runCatching {
+            appDatabase.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(FULL)").close()
+        }.onFailure { error ->
+            LogUtil.w(TAG, "prepareBackupFile: WAL checkpoint failed", error)
+        }
+    }
+
+    private fun addDatabaseEntries(zipOut: ZipOutputStream) {
+        val dbFile = context.getDatabasePath(BackupArchiveFormat.DB_ENTRY)
+        if (dbFile.exists()) {
+            addFileToZip(zipOut, dbFile, BackupArchiveFormat.LEGACY_DB_ENTRY)
+        }
+
+        val walFile = File(dbFile.parentFile, BackupArchiveFormat.WAL_ENTRY)
+        if (walFile.exists()) {
+            addFileToZip(zipOut, walFile, BackupArchiveFormat.WAL_ENTRY)
+        }
+
+        val shmFile = File(dbFile.parentFile, BackupArchiveFormat.SHM_ENTRY)
+        if (shmFile.exists()) {
+            addFileToZip(zipOut, shmFile, BackupArchiveFormat.SHM_ENTRY)
+        }
+    }
+
+    private fun addManagedFileEntries(zipOut: ZipOutputStream) {
+        BackupArchiveFormat.MANAGED_FILE_DIRS.forEach { dirName ->
+            val directory = File(context.filesDir, dirName)
+            enumerateDirectoryEntries(directory, dirName).forEach { entry ->
+                if (entry.isDirectory) {
+                    addDirectoryToZip(zipOut, entry.entryName)
+                } else {
+                    addFileToZip(zipOut, entry.source, entry.entryName)
+                }
+            }
+        }
+    }
+
+    private fun stageDatabaseEntry(
+        zipIn: ZipInputStream,
+        stagedDbDir: File,
+        entryName: String,
+    ) {
+        val targetName = when (entryName) {
+            BackupArchiveFormat.LEGACY_DB_ENTRY, BackupArchiveFormat.DB_ENTRY -> BackupArchiveFormat.DB_ENTRY
+            BackupArchiveFormat.WAL_ENTRY -> BackupArchiveFormat.WAL_ENTRY
+            BackupArchiveFormat.SHM_ENTRY -> BackupArchiveFormat.SHM_ENTRY
+            else -> error("Unsupported database entry: $entryName")
+        }
+        val targetFile = File(stagedDbDir, targetName)
+        targetFile.parentFile?.mkdirs()
+        FileOutputStream(targetFile).use { outputStream ->
+            zipIn.copyTo(outputStream)
+        }
+    }
+
+    private fun stageManagedFileEntry(
+        zipIn: ZipInputStream,
+        stagedFilesDir: File,
+        entryName: String,
+        isDirectory: Boolean,
+    ) {
+        val targetFile = safeZipDestination(stagedFilesDir, entryName)
+        if (isDirectory || entryName.endsWith('/')) {
+            targetFile.mkdirs()
+            return
+        }
+
+        targetFile.parentFile?.mkdirs()
+        FileOutputStream(targetFile).use { outputStream ->
+            zipIn.copyTo(outputStream)
+        }
+    }
+
+    private fun restoreManagedFileDirectories(
+        stagedFilesDir: File,
+        manifest: BackupManifest?,
+        stagedManagedDirs: Set<String>,
+    ) {
+        val directoriesToRestore = if (manifest?.formatVersion == BackupArchiveFormat.CURRENT_FORMAT_VERSION &&
+            manifest.includesFiles
+        ) {
+            manifest.managedFileDirs
+                .filter { BackupArchiveFormat.MANAGED_FILE_DIRS.contains(it) }
+                .distinct()
+        } else {
+            stagedManagedDirs
+                .filter { BackupArchiveFormat.MANAGED_FILE_DIRS.contains(it) }
+                .distinct()
+                .sorted()
+        }
+
+        directoriesToRestore.forEach { dirName ->
+            val liveDir = File(context.filesDir, dirName)
+            if (liveDir.exists()) {
+                liveDir.deleteRecursively()
+            }
+            liveDir.mkdirs()
+
+            val stagedDir = File(stagedFilesDir, dirName)
+            if (stagedDir.exists()) {
+                mirrorDirectory(stagedDir, liveDir)
+            }
+        }
+    }
+
+    private fun restorePortableSharedPreferences(
+        stagedSnapshots: Map<String, SharedPreferencesSnapshot>,
+        manifest: BackupManifest?,
+    ) {
+        val prefStoresToRestore = if (manifest?.formatVersion == BackupArchiveFormat.CURRENT_FORMAT_VERSION) {
+            manifest.sharedPrefsStores
+                .filter { BackupArchiveFormat.PORTABLE_SHARED_PREF_STORES.contains(it) }
+                .distinct()
+        } else {
+            stagedSnapshots.keys
+                .filter { BackupArchiveFormat.PORTABLE_SHARED_PREF_STORES.contains(it) }
+                .sorted()
+        }
+
+        prefStoresToRestore.forEach { storeName ->
+            val prefs = context.applicationContext.getSharedPreferences(storeName, Context.MODE_PRIVATE)
+            val snapshot = stagedSnapshots[storeName]
+            if (snapshot != null) {
+                restoreSharedPreferencesSnapshot(prefs, snapshot)
+            } else {
+                prefs.edit().clear().commit()
+            }
+        }
+    }
+
+    private fun restoreLiveDatabase(stagedDbFile: File): DatabaseSanitizer.SanitizationResult {
+        val (cleanDb, result) = DatabaseSanitizer.sanitize(context, stagedDbFile)
+        appDatabase.close()
+        context.deleteDatabase(BackupArchiveFormat.DB_ENTRY)
+
+        val finalDbFile = context.getDatabasePath(BackupArchiveFormat.DB_ENTRY)
+        finalDbFile.parentFile?.mkdirs()
+        cleanDb.copyTo(finalDbFile, overwrite = true)
+
+        val cleanWal = File(cleanDb.path + "-wal")
+        val cleanShm = File(cleanDb.path + "-shm")
+        val finalWal = File(finalDbFile.path + "-wal")
+        val finalShm = File(finalDbFile.path + "-shm")
+
+        if (cleanWal.exists()) {
+            cleanWal.copyTo(finalWal, overwrite = true)
+        } else {
+            finalWal.delete()
+        }
+
+        if (cleanShm.exists()) {
+            cleanShm.copyTo(finalShm, overwrite = true)
+        } else {
+            finalShm.delete()
+        }
+
+        context.deleteDatabase("rikka_hub_sanitized")
+        return result
+    }
+
+    private fun restoreDatabase(stagedDbFile: File): DatabaseSanitizer.SanitizationResult {
+        return restoreLiveDatabase(stagedDbFile)
+    }
+
+    private fun mirrorDirectory(sourceDir: File, targetDir: File) {
+        sourceDir.walkTopDown().forEach { source ->
+            val relative = source.relativeTo(sourceDir)
+            val target = File(targetDir, relative.path)
+            if (source.isDirectory) {
+                target.mkdirs()
+            } else {
+                target.parentFile?.mkdirs()
+                source.copyTo(target, overwrite = true)
+            }
+        }
+    }
 }
 
 private fun addFileToZip(zipOut: ZipOutputStream, file: File, entryName: String) {
-    FileInputStream(file).use { fis ->
+    FileInputStream(file).use { inputStream ->
         val zipEntry = ZipEntry(entryName)
         zipOut.putNextEntry(zipEntry)
-        fis.copyTo(zipOut)
+        inputStream.copyTo(zipOut)
         zipOut.closeEntry()
         LogUtil.d(TAG, "addFileToZip: Added $entryName (${file.length()} bytes) to zip")
     }
+}
+
+private fun addDirectoryToZip(zipOut: ZipOutputStream, entryName: String) {
+    val normalizedName = if (entryName.endsWith('/')) entryName else "$entryName/"
+    val zipEntry = ZipEntry(normalizedName)
+    zipOut.putNextEntry(zipEntry)
+    zipOut.closeEntry()
 }
 
 private fun addVirtualFileToZip(zipOut: ZipOutputStream, name: String, content: String) {
@@ -433,22 +569,21 @@ private fun addVirtualFileToZip(zipOut: ZipOutputStream, name: String, content: 
     zipOut.putNextEntry(zipEntry)
     zipOut.write(content.toByteArray())
     zipOut.closeEntry()
-    LogUtil.i(TAG, "addVirtualFileToZip: $name （${content.length} bytes）")
+    LogUtil.i(TAG, "addVirtualFileToZip: $name (${content.length} bytes)")
 }
 
 private fun WebDavConfig.requireClient(): OkHttpClient {
     val authHandler = BasicDigestAuthHandler(
         domain = null,
         username = this.username,
-        password = this.password.toCharArray()
+        password = this.password.toCharArray(),
     )
-    val okHttpClient = OkHttpClient.Builder()
+    return OkHttpClient.Builder()
         .followRedirects(false)
         .authenticator(authHandler)
         .addNetworkInterceptor(authHandler)
         .writeTimeout(5, TimeUnit.MINUTES)
         .build()
-    return okHttpClient
 }
 
 private fun WebDavConfig.requireCollection(path: String? = null): DavCollection {
@@ -463,11 +598,10 @@ private fun WebDavConfig.requireCollection(path: String? = null): DavCollection 
             append(path.trim('/'))
         }
     }.toHttpUrl()
-    val davCollection = DavCollection(
+    return DavCollection(
         httpClient = this.requireClient(),
         location = location,
     )
-    return davCollection
 }
 
 private suspend fun DavCollection.ensureCollectionExists() = withContext(Dispatchers.IO) {
@@ -476,10 +610,9 @@ private suspend fun DavCollection.ensureCollectionExists() = withContext(Dispatc
             LogUtil.i(TAG, "ensureCollectionExists: $response $relation")
         }
     } catch (e: NotFoundException) {
-        e.printStackTrace()
         LogUtil.i(TAG, "ensureCollectionExists: ${this@ensureCollectionExists.location}")
-        mkCol(null) { res ->
-            LogUtil.i(TAG, "ensureCollectionExists: $res")
+        mkCol(null) { response ->
+            LogUtil.i(TAG, "ensureCollectionExists: $response")
         }
     }
 }

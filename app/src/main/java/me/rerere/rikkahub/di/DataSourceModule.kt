@@ -147,7 +147,13 @@ val dataSourceModule = module {
     }
 
     single {
-        WebdavSync(settingsStore = get(), json = get(), context = get(), secureStore = get(), secretKeyManager = get())
+        WebdavSync(
+            settingsStore = get(),
+            json = get(),
+            context = get(),
+            secretKeyManager = get(),
+            appDatabase = get(),
+        )
     }
 
     single<Retrofit> {

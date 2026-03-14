@@ -49,6 +49,7 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.TipsAndUpdates
 import androidx.compose.material.icons.rounded.Title
 import androidx.compose.material.icons.rounded.Translate
+import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.provider.ModelType
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_OCR_PROMPT
@@ -57,6 +58,7 @@ import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TITLE_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TRANSLATION_PROMPT
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findModelById
+import me.rerere.rikkahub.ui.components.ai.ReasoningButton
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
@@ -298,6 +300,16 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         Text(stringResource(R.string.setting_model_page_reset_to_default))
                     }
                 }
+                HelperReasoningSettings(
+                    reasoningTokens = settings.suggestionThinkingBudget,
+                    onUpdateReasoningTokens = { tokens ->
+                        vm.updateSettings(
+                            settings.copy(
+                                suggestionThinkingBudget = tokens
+                            )
+                        )
+                    }
+                )
             }
         }
     }
@@ -392,6 +404,16 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         Text(stringResource(R.string.setting_model_page_reset_to_default))
                     }
                 }
+                HelperReasoningSettings(
+                    reasoningTokens = settings.titleThinkingBudget,
+                    onUpdateReasoningTokens = { tokens ->
+                        vm.updateSettings(
+                            settings.copy(
+                                titleThinkingBudget = tokens
+                            )
+                        )
+                    }
+                )
             }
         }
     }
@@ -402,6 +424,7 @@ private fun DefaultSummarizerModelSetting(
     settings: Settings,
     vm: SettingVM
 ) {
+    var showModal by remember { mutableStateOf(false) }
     ModelFeatureCard(
         title = {
             Text(stringResource(R.string.setting_model_page_summarizer_model), maxLines = 1)
@@ -429,8 +452,43 @@ private fun DefaultSummarizerModelSetting(
                     modifier = Modifier.wrapContentWidth()
                 )
             }
+            IconButton(
+                onClick = {
+                    showModal = true
+                }
+            ) {
+                Icon(Icons.Rounded.Settings, null)
+            }
         }
     )
+
+    if (showModal) {
+        ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+            onDismissRequest = {
+                showModal = false
+            },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                HelperReasoningSettings(
+                    reasoningTokens = settings.summarizerThinkingBudget,
+                    onUpdateReasoningTokens = { tokens ->
+                        vm.updateSettings(
+                            settings.copy(
+                                summarizerThinkingBudget = tokens
+                            )
+                        )
+                    }
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -560,6 +618,16 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         Text(stringResource(R.string.setting_model_page_reset_to_default))
                     }
                 }
+                HelperReasoningSettings(
+                    reasoningTokens = settings.ocrThinkingBudget,
+                    onUpdateReasoningTokens = { tokens ->
+                        vm.updateSettings(
+                            settings.copy(
+                                ocrThinkingBudget = tokens
+                            )
+                        )
+                    }
+                )
             }
         }
     }
@@ -602,6 +670,34 @@ private fun DefaultEmbeddingModelSetting(
             }
         }
     )
+}
+
+@Composable
+private fun HelperReasoningSettings(
+    reasoningTokens: Int,
+    onUpdateReasoningTokens: (Int) -> Unit,
+) {
+    FormItem(
+        label = {
+            Text(stringResource(R.string.assistant_page_thinking_budget))
+        },
+        description = {
+            Text(
+                when (ReasoningLevel.fromBudgetTokens(reasoningTokens)) {
+                    ReasoningLevel.OFF -> stringResource(R.string.reasoning_off)
+                    ReasoningLevel.AUTO -> stringResource(R.string.reasoning_auto)
+                    ReasoningLevel.LOW -> stringResource(R.string.reasoning_light)
+                    ReasoningLevel.MEDIUM -> stringResource(R.string.reasoning_medium)
+                    ReasoningLevel.HIGH -> stringResource(R.string.reasoning_heavy)
+                }
+            )
+        }
+    ) {
+        ReasoningButton(
+            reasoningTokens = reasoningTokens,
+            onUpdateReasoningTokens = onUpdateReasoningTokens,
+        )
+    }
 }
 
 @Composable

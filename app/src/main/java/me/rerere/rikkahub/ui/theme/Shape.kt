@@ -23,7 +23,7 @@ object AppShapes {
     
     // Input fields
     val InputField = RoundedCornerShape(20.dp)        // Match chat message bubble outer radius
-    val SearchField = InputField                      // Search bars share the outlined input radius
+    val SearchField = ButtonPill                      // Search and filter bars are fully rounded pills
     
     // Chips and tags
     val Chip = RoundedCornerShape(12.dp)

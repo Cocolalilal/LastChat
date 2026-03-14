@@ -39,15 +39,19 @@ data class Settings(
     val favoriteModels: List<Uuid> = emptyList(),
     val chatModelId: Uuid = Uuid.random(),
     val titleModelId: Uuid = Uuid.random(),
+    val titleThinkingBudget: Int = 0,
     val summarizerModelId: Uuid? = null,
+    val summarizerThinkingBudget: Int = 0,
     val imageGenerationModelId: Uuid = Uuid.random(),
     val titlePrompt: String = DEFAULT_TITLE_PROMPT,
     val translateModeId: Uuid = Uuid.random(),
     val translatePrompt: String = DEFAULT_TRANSLATION_PROMPT,
     val suggestionModelId: Uuid = Uuid.random(),
+    val suggestionThinkingBudget: Int = 0,
     val suggestionPrompt: String = DEFAULT_SUGGESTION_PROMPT,
     val learningModePrompt: String = DEFAULT_LEARNING_MODE_PROMPT,
     val ocrModelId: Uuid = Uuid.random(),
+    val ocrThinkingBudget: Int = 0,
     val ocrPrompt: String = DEFAULT_OCR_PROMPT,
     val embeddingModelId: Uuid = Uuid.random(),
     val assistantId: Uuid = DEFAULT_ASSISTANT_ID,
@@ -162,11 +166,19 @@ data class FontConfig(
 
 @Serializable
 data class FontSettings(
-    val useSameFontForHeadersAndContent: Boolean = false,
+    val useSameFontForHeadersAndContent: Boolean = true,
+    val usePhoneSystemFont: Boolean = false,
     val headerFont: FontConfig = FontConfig.DEFAULT_EXPRESSIVE,
     val contentFont: FontConfig = FontConfig.DEFAULT_EXPRESSIVE,
     val codeFont: FontConfig = FontConfig.DEFAULT_CODE
 )
+
+internal fun FontSettings.normalize(): FontSettings {
+    return copy(
+        useSameFontForHeadersAndContent = true,
+        contentFont = headerFont
+    )
+}
 
 @Serializable
 data class DisplaySetting(
@@ -200,6 +212,10 @@ data class DisplaySetting(
     val chatToolbarAtBottom: Boolean = false,
 )
 
+internal fun DisplaySetting.normalizeFontSettings(): DisplaySetting {
+    return copy(fontSettings = fontSettings.normalize())
+}
+
 @Serializable
 enum class NewChatHeaderStyle {
     NONE,
@@ -219,6 +235,10 @@ internal fun Settings.normalizeWebServerSettings(): Settings {
         webServerPort = webServerPort.coerceIn(1024, 65535),
         webServerJwtEnabled = webServerJwtEnabled && webServerAccessPassword.isNotBlank(),
     )
+}
+
+internal fun Settings.normalizeFontSettings(): Settings {
+    return copy(displaySetting = displaySetting.normalizeFontSettings())
 }
 
 @Serializable

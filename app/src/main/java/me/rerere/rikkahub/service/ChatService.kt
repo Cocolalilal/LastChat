@@ -55,6 +55,9 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.RouteActivity
 import me.rerere.rikkahub.data.ai.GenerationChunk
 import me.rerere.rikkahub.data.ai.GenerationHandler
+import me.rerere.rikkahub.data.ai.buildSuggestionGenerationParams
+import me.rerere.rikkahub.data.ai.buildSummarizerGenerationParams
+import me.rerere.rikkahub.data.ai.buildTitleGenerationParams
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.tools.LocalTools
 import me.rerere.rikkahub.data.ai.transformers.RegexOutputTransformer
@@ -1231,9 +1234,7 @@ class ChatService(
                             "content" to contentForTitle)
                     ),
                 ),
-                params = TextGenerationParams(
-                    model = model, temperature = 0.3f, thinkingBudget = 0
-                ),
+                params = settings.buildTitleGenerationParams(model),
             )
 
             // 生成完，conversation可能不是最新了，因此需要重新获取
@@ -1271,11 +1272,7 @@ class ChatService(
                                 .takeLast(8).joinToString("\n\n") { it.summaryAsText() }),
                     )
                 ),
-                params = TextGenerationParams(
-                    model = model,
-                    temperature = 1.0f,
-                    thinkingBudget = 0,
-                ),
+                params = settings.buildSuggestionGenerationParams(model),
             )
             val suggestions =
                 result.choices[0].message?.toContentText()?.split("\n")?.map { it.trim() }
@@ -1649,7 +1646,10 @@ class ChatService(
             val response = providerHandler.generateText(
                 providerSetting = provider,
                 messages = listOf(UIMessage.user(prompt)),
-                params = TextGenerationParams(model = model, temperature = 0.3f)
+                params = settings.buildSummarizerGenerationParams(
+                    model = model,
+                    temperature = 0.3f,
+                )
             )
 
             val summary = response.choices.firstOrNull()?.message?.toContentText()

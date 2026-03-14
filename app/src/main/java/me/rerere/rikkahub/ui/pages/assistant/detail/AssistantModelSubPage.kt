@@ -28,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.R
@@ -260,10 +261,13 @@ fun AssistantModelSubPage(
             // Thinking Budget
             SettingGroupItem(
                 title = stringResource(R.string.assistant_page_thinking_budget),
-                subtitle = if (assistant.thinkingBudget != null && assistant.thinkingBudget > 0) 
-                    "${assistant.thinkingBudget} tokens" 
-                else 
-                    "Disabled",
+                subtitle = when (ReasoningLevel.fromBudgetTokens(assistant.thinkingBudget)) {
+                    ReasoningLevel.OFF -> stringResource(R.string.reasoning_off)
+                    ReasoningLevel.AUTO -> stringResource(R.string.reasoning_auto)
+                    ReasoningLevel.LOW -> stringResource(R.string.reasoning_light)
+                    ReasoningLevel.MEDIUM -> stringResource(R.string.reasoning_medium)
+                    ReasoningLevel.HIGH -> stringResource(R.string.reasoning_heavy)
+                },
                 trailing = {
                     ReasoningButton(
                         reasoningTokens = assistant.thinkingBudget ?: 0,

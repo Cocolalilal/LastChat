@@ -422,7 +422,7 @@ internal fun ColumnScope.ModelList(
         },
         maxLines = 1,
         singleLine = true,
-        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+        shape = me.rerere.rikkahub.ui.theme.AppShapes.SearchField,
         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
             imeAction = androidx.compose.ui.text.input.ImeAction.Done
         ),

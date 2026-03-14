@@ -3,11 +3,9 @@
 package me.rerere.rikkahub.ui.pages.setting
 
 import android.net.Uri
-import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -47,7 +45,6 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,10 +55,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.Font
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -71,6 +66,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.FontConfig
 import me.rerere.rikkahub.data.datastore.FontSettings
 import me.rerere.rikkahub.data.datastore.FontSource
+import me.rerere.rikkahub.data.datastore.normalize
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
@@ -78,40 +74,44 @@ import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.ui.theme.appFontConfigFromSettings
+import me.rerere.rikkahub.ui.theme.rememberAppFontFamily
+import me.rerere.rikkahub.ui.theme.rememberFontFamilyFromConfig
 import me.rerere.rikkahub.utils.FontFileManager
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
 import kotlin.math.roundToInt
 
 
+internal const val PhoneSystemFontToggleTag = "phone_system_font_toggle"
+
 @Composable
 fun SettingFontsPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
-    // Use local state for UI, separate from persisted settings
-    var localFontSettings by remember(settings) { mutableStateOf(settings.displaySetting.fontSettings) }
+    var localFontSettings by remember(settings) {
+        mutableStateOf(settings.displaySetting.fontSettings.normalize())
+    }
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val fontManager = remember { FontFileManager(context) }
-    
+
     var showResetAllDialog by remember { mutableStateOf(false) }
-    
-    // Persist changes to settings
+
     fun persistFontSettings(fontSettings: FontSettings) {
-        val newDisplaySetting = settings.displaySetting.copy(fontSettings = fontSettings)
+        val normalizedFontSettings = fontSettings.normalize()
+        val newDisplaySetting = settings.displaySetting.copy(fontSettings = normalizedFontSettings)
         vm.updateSettings(settings.copy(displaySetting = newDisplaySetting))
     }
-    
-    // Update local state immediately, persist when requested
+
     fun updateLocalFontSettings(fontSettings: FontSettings, persist: Boolean = false) {
-        localFontSettings = fontSettings
+        val normalizedFontSettings = fontSettings.normalize()
+        localFontSettings = normalizedFontSettings
         if (persist) {
-            persistFontSettings(fontSettings)
+            persistFontSettings(normalizedFontSettings)
         }
     }
-    
+
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-    val lazyListState = rememberLazyListState()
-    
+
     Scaffold(
         topBar = {
             OneUITopAppBar(
@@ -129,129 +129,14 @@ fun SettingFontsPage(vm: SettingVM = koinViewModel()) {
         },
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { contentPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .consumeWindowInsets(contentPadding),
-            state = lazyListState,
-            contentPadding = contentPadding + PaddingValues(bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(0.dp)
-        ) {
-            // Unified Font Toggle
-            item {
-                SettingsGroup(title = "General") {
-                    SettingGroupItem(
-                        title = "Use same font for headers and content",
-                        subtitle = "Link header and content font settings together",
-                        trailing = {
-                            HapticSwitch(
-                                checked = localFontSettings.useSameFontForHeadersAndContent,
-                                onCheckedChange = {
-                                    val newSettings = if (it) {
-                                        // When enabling, copy header settings to content
-                                        localFontSettings.copy(
-                                            useSameFontForHeadersAndContent = true,
-                                            contentFont = localFontSettings.headerFont
-                                        )
-                                    } else {
-                                        localFontSettings.copy(useSameFontForHeadersAndContent = false)
-                                    }
-                                    updateLocalFontSettings(newSettings, persist = true)
-                                }
-                            )
-                        }
-                    )
-                }
-            }
-            
-            // Headers Section (or Headers & Content when unified)
-            item {
-                key("headers") {
-                    FontConfigSection(
-                        title = if (localFontSettings.useSameFontForHeadersAndContent) "Headers & Content" else "Headers",
-                        subtitle = if (localFontSettings.useSameFontForHeadersAndContent) "All text except code blocks" else "Titles, headings, and display text",
-                        config = localFontSettings.headerFont,
-                        fontManager = fontManager,
-                        onConfigChange = { newConfig, persist ->
-                            val newSettings = if (localFontSettings.useSameFontForHeadersAndContent) {
-                                localFontSettings.copy(
-                                    headerFont = newConfig,
-                                    contentFont = newConfig
-                                )
-                            } else {
-                                localFontSettings.copy(headerFont = newConfig)
-                            }
-                            updateLocalFontSettings(newSettings, persist = persist)
-                        },
-                        onReset = {
-                            val newSettings = if (localFontSettings.useSameFontForHeadersAndContent) {
-                                localFontSettings.copy(
-                                    headerFont = FontConfig.DEFAULT_EXPRESSIVE,
-                                    contentFont = FontConfig.DEFAULT_EXPRESSIVE
-                                )
-                            } else {
-                                localFontSettings.copy(headerFont = FontConfig.DEFAULT_EXPRESSIVE)
-                            }
-                            updateLocalFontSettings(newSettings, persist = true)
-                        }
-                    )
-                }
-            }
-            
-            // Content Section (hidden when unified)
-            item {
-                AnimatedVisibility(
-                    visible = !localFontSettings.useSameFontForHeadersAndContent,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
-                    key("content") {
-                        FontConfigSection(
-                            title = "Content",
-                            subtitle = "Body text, paragraphs, and messages",
-                            config = localFontSettings.contentFont,
-                            fontManager = fontManager,
-                            onConfigChange = { newConfig, persist ->
-                                updateLocalFontSettings(localFontSettings.copy(contentFont = newConfig), persist = persist)
-                            },
-                            onReset = {
-                                updateLocalFontSettings(localFontSettings.copy(contentFont = FontConfig.DEFAULT_EXPRESSIVE), persist = true)
-                            }
-                        )
-                    }
-                }
-            }
-            
-            // Code Blocks Section
-            item {
-                key("code") {
-                    FontConfigSection(
-                        title = "Code Blocks",
-                        subtitle = "Code, inline code, and monospace text",
-                        config = localFontSettings.codeFont,
-                        fontManager = fontManager,
-                        isCodeFont = true,
-                        onConfigChange = { newConfig, persist ->
-                            updateLocalFontSettings(localFontSettings.copy(codeFont = newConfig), persist = persist)
-                        },
-                        onReset = {
-                            updateLocalFontSettings(localFontSettings.copy(codeFont = FontConfig.DEFAULT_CODE), persist = true)
-                        }
-                    )
-                }
-            }
-            
-            // Preview Section
-            item {
-                Spacer(Modifier.height(8.dp))
-                SettingsGroup(title = "Preview") {
-                    FontPreviewCard(fontSettings = localFontSettings)
-                }
-            }
-        }
+        FontSettingsContent(
+            fontSettings = localFontSettings,
+            fontManager = fontManager,
+            contentPadding = contentPadding,
+            onFontSettingsChange = ::updateLocalFontSettings
+        )
     }
-    
-    // Reset All Dialog
+
     if (showResetAllDialog) {
         AlertDialog(
             onDismissRequest = { showResetAllDialog = false },
@@ -271,6 +156,115 @@ fun SettingFontsPage(vm: SettingVM = koinViewModel()) {
                 }
             }
         )
+    }
+}
+
+@Composable
+internal fun FontSettingsContent(
+    fontSettings: FontSettings,
+    fontManager: FontFileManager,
+    onFontSettingsChange: (FontSettings, Boolean) -> Unit,
+    contentPadding: PaddingValues = PaddingValues(0.dp)
+) {
+    val normalizedFontSettings = fontSettings.normalize()
+    val lazyListState = rememberLazyListState()
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .consumeWindowInsets(contentPadding),
+        state = lazyListState,
+        contentPadding = contentPadding + PaddingValues(bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp)
+    ) {
+        item {
+            SettingsGroup(title = "General") {
+                SettingGroupItem(
+                    title = "Use phone system font",
+                    subtitle = "Use the default Android font for app text",
+                    trailing = {
+                        HapticSwitch(
+                            checked = normalizedFontSettings.usePhoneSystemFont,
+                            onCheckedChange = { enabled ->
+                                onFontSettingsChange(
+                                    normalizedFontSettings.copy(usePhoneSystemFont = enabled),
+                                    true
+                                )
+                            },
+                            modifier = Modifier.testTag(PhoneSystemFontToggleTag)
+                        )
+                    }
+                )
+            }
+        }
+
+        item {
+            AnimatedVisibility(
+                visible = !normalizedFontSettings.usePhoneSystemFont,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                FontConfigSection(
+                    title = "App Font",
+                    subtitle = "Titles, headings, buttons, and body text",
+                    config = normalizedFontSettings.headerFont,
+                    fontManager = fontManager,
+                    onConfigChange = { newConfig, persist ->
+                        onFontSettingsChange(
+                            normalizedFontSettings.copy(
+                                headerFont = newConfig,
+                                contentFont = newConfig
+                            ),
+                            persist
+                        )
+                    },
+                    onReset = {
+                        onFontSettingsChange(
+                            normalizedFontSettings.copy(
+                                headerFont = FontConfig.DEFAULT_EXPRESSIVE,
+                                contentFont = FontConfig.DEFAULT_EXPRESSIVE
+                            ),
+                            true
+                        )
+                    }
+                )
+            }
+        }
+
+        item {
+            AnimatedVisibility(
+                visible = !normalizedFontSettings.usePhoneSystemFont,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                FontConfigSection(
+                    title = "Code Blocks",
+                    subtitle = "Code, inline code, and monospace text",
+                    config = normalizedFontSettings.codeFont,
+                    fontManager = fontManager,
+                    isCodeFont = true,
+                    onConfigChange = { newConfig, persist ->
+                        onFontSettingsChange(
+                            normalizedFontSettings.copy(codeFont = newConfig),
+                            persist
+                        )
+                    },
+                    onReset = {
+                        onFontSettingsChange(
+                            normalizedFontSettings.copy(codeFont = FontConfig.DEFAULT_CODE),
+                            true
+                        )
+                    }
+                )
+            }
+        }
+
+        item {
+            Spacer(Modifier.height(8.dp))
+            SettingsGroup(title = "Preview") {
+                FontPreviewCard(fontSettings = normalizedFontSettings)
+            }
+        }
     }
 }
 
@@ -425,8 +419,8 @@ private fun FontConfigSection(
                                 ) {
                                     Text(
                                         text = when (source) {
-                                            FontSource.System -> "Default"
-                                            FontSource.SystemCode -> "Default"
+                                            FontSource.System -> "Built-in"
+                                            FontSource.SystemCode -> "Built-in"
                                             FontSource.Custom -> "Custom"
                                         },
                                         style = MaterialTheme.typography.labelMedium
@@ -463,7 +457,7 @@ private fun FontConfigSection(
                                 IconButton(onClick = {
                                     config.customFontPath?.let { fontManager.deleteFont(it) }
                                     onConfigChange(config.copy(
-                                        fontSource = FontSource.System,
+                                        fontSource = if (isCodeFont) FontSource.SystemCode else FontSource.System,
                                         customFontPath = null,
                                         customFontName = null,
                                         customAxes = emptyList(),
@@ -680,11 +674,11 @@ private fun FontAxisSlider(
 
 @Composable
 private fun FontPreviewCard(fontSettings: FontSettings) {
-    // Create actual font families from the font configs
-    val headerFontFamily = rememberFontFamilyFromConfig(fontSettings.headerFont)
-    val contentFontFamily = rememberFontFamilyFromConfig(fontSettings.contentFont)
-    val codeFontFamily = rememberFontFamilyFromConfig(fontSettings.codeFont)
-    
+    val normalizedFontSettings = fontSettings.normalize()
+    val appFontConfig = appFontConfigFromSettings(normalizedFontSettings)
+    val appFontFamily = rememberAppFontFamily(normalizedFontSettings)
+    val codeFontFamily = rememberFontFamilyFromConfig(normalizedFontSettings.codeFont)
+
     Card(
         colors = CardDefaults.cardColors(
             containerColor = if (LocalDarkMode.current) 
@@ -702,11 +696,11 @@ private fun FontPreviewCard(fontSettings: FontSettings) {
             Text(
                 text = "Header Preview",
                 style = TextStyle(
-                    fontFamily = headerFontFamily,
-                    fontWeight = FontWeight(fontSettings.headerFont.weight.roundToInt()),
-                    fontSize = (24 * fontSettings.headerFont.fontSize).sp,
-                    lineHeight = (32 * fontSettings.headerFont.lineHeight).sp,
-                    letterSpacing = fontSettings.headerFont.letterSpacing.sp
+                    fontFamily = appFontFamily,
+                    fontWeight = FontWeight(appFontConfig.weight.roundToInt()),
+                    fontSize = (24 * appFontConfig.fontSize).sp,
+                    lineHeight = (32 * appFontConfig.lineHeight).sp,
+                    letterSpacing = appFontConfig.letterSpacing.sp
                 )
             )
             
@@ -714,11 +708,11 @@ private fun FontPreviewCard(fontSettings: FontSettings) {
             Text(
                 text = "This is a preview of the content font. It shows how body text will appear in messages and other content areas.",
                 style = TextStyle(
-                    fontFamily = contentFontFamily,
-                    fontWeight = FontWeight(fontSettings.contentFont.weight.roundToInt()),
-                    fontSize = (14 * fontSettings.contentFont.fontSize).sp,
-                    lineHeight = (20 * fontSettings.contentFont.lineHeight).sp,
-                    letterSpacing = fontSettings.contentFont.letterSpacing.sp
+                    fontFamily = appFontFamily,
+                    fontWeight = FontWeight(appFontConfig.weight.roundToInt()),
+                    fontSize = (14 * appFontConfig.fontSize).sp,
+                    lineHeight = (20 * appFontConfig.lineHeight).sp,
+                    letterSpacing = appFontConfig.letterSpacing.sp
                 )
             )
             
@@ -734,10 +728,10 @@ private fun FontPreviewCard(fontSettings: FontSettings) {
                     text = "fun main() {\n    println(\"Hello, World!\")\n}",
                     style = TextStyle(
                         fontFamily = codeFontFamily,
-                        fontWeight = FontWeight(fontSettings.codeFont.weight.roundToInt()),
-                        fontSize = (13 * fontSettings.codeFont.fontSize).sp,
-                        lineHeight = (18 * fontSettings.codeFont.lineHeight).sp,
-                        letterSpacing = fontSettings.codeFont.letterSpacing.sp
+                        fontWeight = FontWeight(normalizedFontSettings.codeFont.weight.roundToInt()),
+                        fontSize = (13 * normalizedFontSettings.codeFont.fontSize).sp,
+                        lineHeight = (18 * normalizedFontSettings.codeFont.lineHeight).sp,
+                        letterSpacing = normalizedFontSettings.codeFont.letterSpacing.sp
                     ),
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -746,97 +740,10 @@ private fun FontPreviewCard(fontSettings: FontSettings) {
     }
 }
 
-/**
- * Create a FontFamily from a FontConfig with proper variation settings.
- */
-@Composable
-private fun rememberFontFamilyFromConfig(config: FontConfig): FontFamily {
-    val context = LocalContext.current
-    
-    return remember(
-        config.fontSource,
-        config.customFontPath,
-        config.weight,
-        config.width,
-        config.roundness,
-        config.grade,
-        config.customAxes
-    ) {
-        when (config.fontSource) {
-            FontSource.System -> {
-                // Use Google Sans Flex with roundness
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    FontFamily(
-                        Font(
-                            R.font.google_sans_flex,
-                            weight = FontWeight(config.weight.roundToInt()),
-                            variationSettings = FontVariation.Settings(
-                                FontVariation.weight(config.weight.roundToInt()),
-                                FontVariation.width(config.width),
-                                FontVariation.Setting("ROND", config.roundness),
-                                FontVariation.Setting("GRAD", config.grade)
-                            )
-                        )
-                    )
-                } else {
-                    FontFamily(Font(R.font.google_sans_flex, weight = FontWeight(config.weight.roundToInt())))
-                }
-            }
-            FontSource.SystemCode -> {
-                // Use Google Sans Code (monospace)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    FontFamily(
-                        Font(
-                            R.font.google_sans_code,
-                            weight = FontWeight(config.weight.roundToInt()),
-                            variationSettings = FontVariation.Settings(
-                                FontVariation.weight(config.weight.roundToInt())
-                            )
-                        )
-                    )
-                } else {
-                    FontFamily(Font(R.font.google_sans_code, weight = FontWeight(config.weight.roundToInt())))
-                }
-            }
-            FontSource.Custom -> {
-                // Custom font from file
-                config.customFontPath?.let { path ->
-                    try {
-                        val fontFile = java.io.File(path)
-                        if (fontFile.exists()) {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && config.customAxes.isNotEmpty()) {
-                                // Variable font with custom axes
-                                val settings = mutableListOf<FontVariation.Setting>()
-                                config.customAxes.forEach { axis ->
-                                    settings.add(FontVariation.Setting(axis.tag, axis.currentValue))
-                                }
-                                FontFamily(
-                                    Font(
-                                        fontFile,
-                                        weight = FontWeight(config.weight.roundToInt()),
-                                        variationSettings = FontVariation.Settings(*settings.toTypedArray())
-                                    )
-                                )
-                            } else {
-                                FontFamily(Font(fontFile, weight = FontWeight(config.weight.roundToInt())))
-                            }
-                        } else {
-                            // Fallback to default if file doesn't exist
-                            FontFamily.Default
-                        }
-                    } catch (e: Exception) {
-                        FontFamily.Default
-                    }
-                } ?: FontFamily.Default
-            }
-        }
-    }
-}
-
 private fun getFontSourceLabel(config: FontConfig): String {
     return when (config.fontSource) {
-        FontSource.System -> "Default"
-        FontSource.SystemCode -> "Google Sans Code"
+        FontSource.System -> "LastChat Default"
+        FontSource.SystemCode -> "LastChat Code"
         FontSource.Custom -> config.customFontName ?: "Custom Font"
     }
 }

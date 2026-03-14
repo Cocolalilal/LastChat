@@ -1014,7 +1014,7 @@ private fun ManageMemoriesSection(
             placeholder = { Text("Search memories...") },
             leadingIcon = { Icon(Icons.Rounded.Search, null) },
             singleLine = true,
-            shape = RoundedCornerShape(16.dp),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.SearchField,
             colors = TextFieldDefaults.colors(
                 focusedIndicatorColor = Color.Transparent,
                 unfocusedIndicatorColor = Color.Transparent

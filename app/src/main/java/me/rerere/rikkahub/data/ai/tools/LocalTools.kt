@@ -3,13 +3,21 @@ package me.rerere.rikkahub.data.ai.tools
 import android.content.Context
 import com.whl.quickjs.wrapper.QuickJSContext
 import com.whl.quickjs.wrapper.QuickJSObject
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -40,6 +48,30 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("tts")
     data object Tts : LocalToolOption()
+}
+
+object LocalToolOptionListSerializer :
+    KSerializer<List<LocalToolOption>> {
+    private val delegate = ListSerializer(LocalToolOption.serializer())
+
+    override val descriptor: SerialDescriptor = delegate.descriptor
+
+    override fun serialize(encoder: Encoder, value: List<LocalToolOption>) {
+        encoder.encodeSerializableValue(delegate, value)
+    }
+
+    override fun deserialize(decoder: Decoder): List<LocalToolOption> {
+        val jsonDecoder = decoder as? JsonDecoder ?: return decoder.decodeSerializableValue(delegate)
+        val localTools = jsonDecoder.decodeJsonElement() as? JsonArray ?: return emptyList()
+
+        return buildList {
+            localTools.forEach { toolElement ->
+                runCatching {
+                    jsonDecoder.json.decodeFromJsonElement(LocalToolOption.serializer(), toolElement)
+                }.getOrNull()?.let(::add)
+            }
+        }
+    }
 }
 
 class LocalTools(

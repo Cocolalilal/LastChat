@@ -186,7 +186,7 @@ fun ColumnScope.ConversationList(
                             onSearchExpandedChange(true)
                         }
                     },
-                shape = RoundedCornerShape(50),
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.SearchField,
                 colors = TextFieldDefaults.colors(
                     focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent,

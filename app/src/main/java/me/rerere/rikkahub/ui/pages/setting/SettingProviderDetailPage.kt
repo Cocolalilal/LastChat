@@ -1405,7 +1405,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     label = { Text(stringResource(R.string.setting_provider_page_filter_placeholder)) },
                     modifier = Modifier.fillMaxWidth(),
                     placeholder = { Text(stringResource(R.string.setting_provider_page_filter_example)) },
-                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                    singleLine = true,
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.SearchField,
                 )
             }
         }
@@ -1705,7 +1706,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     placeholder = {
                         Text(stringResource(R.string.setting_provider_page_filter_example))
                     },
-                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                    singleLine = true,
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.SearchField,
                 )
             }
         }

@@ -80,15 +80,19 @@ class SettingsStore(
         val FAVORITE_MODELS = stringPreferencesKey("favorite_models")
         val SELECT_MODEL = stringPreferencesKey("chat_model")
         val TITLE_MODEL = stringPreferencesKey("title_model")
+        val TITLE_THINKING_BUDGET = intPreferencesKey("title_thinking_budget")
         val SUMMARIZER_MODEL = stringPreferencesKey("summarizer_model")
+        val SUMMARIZER_THINKING_BUDGET = intPreferencesKey("summarizer_thinking_budget")
         val TRANSLATE_MODEL = stringPreferencesKey("translate_model")
         val SUGGESTION_MODEL = stringPreferencesKey("suggestion_model")
+        val SUGGESTION_THINKING_BUDGET = intPreferencesKey("suggestion_thinking_budget")
         val IMAGE_GENERATION_MODEL = stringPreferencesKey("image_generation_model")
         val TITLE_PROMPT = stringPreferencesKey("title_prompt")
         val TRANSLATION_PROMPT = stringPreferencesKey("translation_prompt")
         val SUGGESTION_PROMPT = stringPreferencesKey("suggestion_prompt")
         val LEARNING_MODE_PROMPT = stringPreferencesKey("learning_mode_prompt")
         val OCR_MODEL = stringPreferencesKey("ocr_model")
+        val OCR_THINKING_BUDGET = intPreferencesKey("ocr_thinking_budget")
         val OCR_PROMPT = stringPreferencesKey("ocr_prompt")
         val EMBEDDING_MODEL = stringPreferencesKey("embedding_model")
 
@@ -163,17 +167,21 @@ class SettingsStore(
                     ?: GEMINI_2_5_FLASH_ID,
                 titleModelId = preferences[TITLE_MODEL]?.let { Uuid.parse(it) }
                     ?: GEMINI_2_5_FLASH_ID,
+                titleThinkingBudget = preferences[TITLE_THINKING_BUDGET] ?: 0,
                 summarizerModelId = preferences[SUMMARIZER_MODEL]?.let { Uuid.parse(it) },
+                summarizerThinkingBudget = preferences[SUMMARIZER_THINKING_BUDGET] ?: 0,
                 translateModeId = preferences[TRANSLATE_MODEL]?.let { Uuid.parse(it) }
                     ?: GEMINI_2_5_FLASH_ID,
                 suggestionModelId = preferences[SUGGESTION_MODEL]?.let { Uuid.parse(it) }
                     ?: GEMINI_2_5_FLASH_ID,
+                suggestionThinkingBudget = preferences[SUGGESTION_THINKING_BUDGET] ?: 0,
                 imageGenerationModelId = preferences[IMAGE_GENERATION_MODEL]?.let { Uuid.parse(it) } ?: Uuid.random(),
                 titlePrompt = preferences[TITLE_PROMPT] ?: DEFAULT_TITLE_PROMPT,
                 translatePrompt = preferences[TRANSLATION_PROMPT] ?: DEFAULT_TRANSLATION_PROMPT,
                 suggestionPrompt = preferences[SUGGESTION_PROMPT] ?: DEFAULT_SUGGESTION_PROMPT,
                 learningModePrompt = preferences[LEARNING_MODE_PROMPT] ?: DEFAULT_LEARNING_MODE_PROMPT,
                 ocrModelId = preferences[OCR_MODEL]?.let { Uuid.parse(it) } ?: Uuid.random(),
+                ocrThinkingBudget = preferences[OCR_THINKING_BUDGET] ?: 0,
                 ocrPrompt = preferences[OCR_PROMPT] ?: DEFAULT_OCR_PROMPT,
                 embeddingModelId = preferences[EMBEDDING_MODEL]?.let { Uuid.parse(it) } ?: Uuid.random(),
                 assistantId = preferences[SELECT_ASSISTANT]?.let { Uuid.parse(it) }
@@ -193,7 +201,9 @@ class SettingsStore(
                 themeId = preferences[THEME_ID] ?: PresetThemes[0].id,
                 developerMode = preferences[DEVELOPER_MODE] == true,
                 enableRagLogging = preferences[ENABLE_RAG_LOGGING] == true,
-                displaySetting = JsonInstant.decodeFromString(preferences[DISPLAY_SETTING] ?: "{}"),
+                displaySetting = JsonInstant.decodeFromString<DisplaySetting>(
+                    preferences[DISPLAY_SETTING] ?: "{}"
+                ).normalizeFontSettings(),
                 searchServices = preferences[SEARCH_SERVICES]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: listOf(SearchServiceOptions.DEFAULT),
@@ -264,7 +274,7 @@ class SettingsStore(
                 providers = providers,
                 assistants = assistants,
                 ttsProviders = ttsProviders,
-            ).normalizeWebServerSettings()
+            ).normalizeWebServerSettings().normalizeFontSettings()
         }
         .map { settings ->
             // 去重并清理无效引用
@@ -309,7 +319,7 @@ class SettingsStore(
                     }
                 }
             }
-            migrated
+            migrated.normalizeFontSettings()
         }
         .map { settings ->
             val migrated = settings.migrateLegacyModesToSkills()
@@ -321,7 +331,7 @@ class SettingsStore(
                     }
                 }
             }
-            migrated
+            migrated.normalizeFontSettings()
         }
         .onEach {
             get<PebbleEngine>().templateCache.invalidateAll()
@@ -345,14 +355,14 @@ class SettingsStore(
                         persistMigratedSettings(migratedSettings)
                     }
                 }
-                migratedSettings
+                migratedSettings.normalizeFontSettings()
             } else {
-                settings
+                settings.normalizeFontSettings()
             }
         }
         // Hydrate secrets (populate API keys from SecureStore) so they are available in memory/UI
         .map { settings ->
-            secretKeyManager.populateSecretsForExport(settings)
+            secretKeyManager.populateSecretsForExport(settings).normalizeFontSettings()
         }
         .onEach { settings -> quickCache.updateCache(settings) }
         .toMutableStateFlow(scope, quickCache.createCachedSettings())
@@ -417,6 +427,7 @@ class SettingsStore(
         val normalizedSettings = settingsToSave
             .normalizeWebServerSettings()
             .migrateLegacyModesToSkills()
+            .normalizeFontSettings()
 
         // Handle explicit secret deletions (user cleared a field that had a value)
         // This must be called BEFORE migration to remove deleted secrets from SecureStore
@@ -424,8 +435,10 @@ class SettingsStore(
         
         // Migrate secrets from plaintext to SecureStore if needed
         val migratedSettings = secretKeyManager.migrateSecretsFromSettings(normalizedSettings)
-        
+            .normalizeFontSettings()
+
         settingsFlow.value = secretKeyManager.populateSecretsForExport(migratedSettings)
+            .normalizeFontSettings()
         dataStore.edit { preferences ->
             preferences[DYNAMIC_COLOR] = normalizedSettings.dynamicColor
             preferences[THEME_ID] = normalizedSettings.themeId
@@ -437,17 +450,21 @@ class SettingsStore(
             preferences[FAVORITE_MODELS] = JsonInstant.encodeToString(normalizedSettings.favoriteModels)
             preferences[SELECT_MODEL] = normalizedSettings.chatModelId.toString()
             preferences[TITLE_MODEL] = normalizedSettings.titleModelId.toString()
+            preferences[TITLE_THINKING_BUDGET] = normalizedSettings.titleThinkingBudget
             normalizedSettings.summarizerModelId?.let {
                 preferences[SUMMARIZER_MODEL] = it.toString()
             } ?: preferences.remove(SUMMARIZER_MODEL)
+            preferences[SUMMARIZER_THINKING_BUDGET] = normalizedSettings.summarizerThinkingBudget
             preferences[TRANSLATE_MODEL] = normalizedSettings.translateModeId.toString()
             preferences[SUGGESTION_MODEL] = normalizedSettings.suggestionModelId.toString()
+            preferences[SUGGESTION_THINKING_BUDGET] = normalizedSettings.suggestionThinkingBudget
             preferences[IMAGE_GENERATION_MODEL] = normalizedSettings.imageGenerationModelId.toString()
             preferences[TITLE_PROMPT] = normalizedSettings.titlePrompt
             preferences[TRANSLATION_PROMPT] = normalizedSettings.translatePrompt
             preferences[SUGGESTION_PROMPT] = normalizedSettings.suggestionPrompt
             preferences[LEARNING_MODE_PROMPT] = normalizedSettings.learningModePrompt
             preferences[OCR_MODEL] = normalizedSettings.ocrModelId.toString()
+            preferences[OCR_THINKING_BUDGET] = normalizedSettings.ocrThinkingBudget
             preferences[OCR_PROMPT] = normalizedSettings.ocrPrompt
             preferences[EMBEDDING_MODEL] = normalizedSettings.embeddingModelId.toString()
 
