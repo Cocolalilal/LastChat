@@ -98,7 +98,15 @@ async function isAllowedUploadFile(file: globalThis.File): Promise<boolean> {
   if (
     detected.mime.startsWith("image/") ||
     detected.mime.startsWith("video/") ||
-    detected.mime.startsWith("audio/")
+    detected.mime.startsWith("audio/") ||
+    detected.mime.startsWith("text/") ||
+    detected.mime === "application/pdf" ||
+    detected.mime === "application/epub+zip" ||
+    detected.mime === "application/csv" ||
+    detected.mime === "application/msword" ||
+    detected.mime === "application/rtf" ||
+    detected.mime.startsWith("application/vnd.openxmlformats-officedocument.") ||
+    detected.mime.startsWith("application/vnd.ms-")
   ) {
     return true;
   }

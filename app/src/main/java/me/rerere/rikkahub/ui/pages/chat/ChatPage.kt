@@ -217,8 +217,8 @@ fun ChatPage(
     val currentSearchMode by vm.currentSearchMode.collectAsStateWithLifecycle()
     var manualTemporaryChat by rememberSaveable { mutableStateOf(false) }
     val activePersistenceMode = when {
-        conversationPersistenceMode == ChatPersistenceMode.PERSIST_ON_REPLY -> ChatPersistenceMode.PERSIST_ON_REPLY
         manualTemporaryChat || conversationPersistenceMode == ChatPersistenceMode.TEMPORARY -> ChatPersistenceMode.TEMPORARY
+        conversationPersistenceMode == ChatPersistenceMode.PERSIST_ON_REPLY -> ChatPersistenceMode.PERSIST_ON_REPLY
         else -> ChatPersistenceMode.NORMAL
     }
 
@@ -405,8 +405,8 @@ private fun ChatPageContent(
     val context = LocalContext.current
     var previewMode by rememberSaveable { mutableStateOf(false) }
     val activePersistenceMode = when {
-        conversationPersistenceMode == ChatPersistenceMode.PERSIST_ON_REPLY -> ChatPersistenceMode.PERSIST_ON_REPLY
         manualTemporaryChat || conversationPersistenceMode == ChatPersistenceMode.TEMPORARY -> ChatPersistenceMode.TEMPORARY
+        conversationPersistenceMode == ChatPersistenceMode.PERSIST_ON_REPLY -> ChatPersistenceMode.PERSIST_ON_REPLY
         else -> ChatPersistenceMode.NORMAL
     }
     val isTemporaryChat = activePersistenceMode == ChatPersistenceMode.TEMPORARY
@@ -497,9 +497,7 @@ private fun ChatPageContent(
                                 navigateToAssistantConversation(assistant)
                             },
                             onToggleTemporaryChat = {
-                                if (conversationPersistenceMode != ChatPersistenceMode.PERSIST_ON_REPLY) {
-                                    onManualTemporaryChatChange(!manualTemporaryChat)
-                                }
+                                onManualTemporaryChatChange(!manualTemporaryChat)
                             }
                         )
                     }
@@ -907,9 +905,7 @@ private fun ChatPageContent(
                                     navigateToAssistantConversation(assistant)
                                 },
                                 onToggleTemporaryChat = {
-                                    if (conversationPersistenceMode != ChatPersistenceMode.PERSIST_ON_REPLY) {
-                                        onManualTemporaryChatChange(!manualTemporaryChat)
-                                    }
+                                    onManualTemporaryChatChange(!manualTemporaryChat)
                                 }
                             )
                         }
