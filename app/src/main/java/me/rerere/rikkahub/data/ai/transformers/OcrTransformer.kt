@@ -15,6 +15,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.common.cache.LruCache
 import me.rerere.common.cache.SingleFileCacheStore
+import me.rerere.rikkahub.data.ai.buildOcrGenerationParams
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
@@ -91,9 +92,7 @@ object OcrTransformer : InputMessageTransformer, KoinComponent {
                     parts = listOf(UIMessagePart.Image(part.url))
                 )
             ),
-            params = TextGenerationParams(
-                model = model,
-            ),
+            params = settings.buildOcrGenerationParams(model),
         )
         val content = result.choices[0].message?.toText() ?: "[ERROR, OCR failed]"
         Log.i(TAG, "performOcr: $content")

@@ -56,6 +56,13 @@ val viewModelModule = module {
     viewModelOf(::ImgGenVM)
     viewModelOf(::DeveloperVM)
     viewModelOf(::MenuVM)
-    viewModelOf(::TextSelectionVM)
+    viewModel<TextSelectionVM> {
+        TextSelectionVM(
+            settingsStore = get(),
+            generationHandler = get(),
+            memoryRepository = get(),
+            templateTransformer = get(),
+        )
+    }
 }
 

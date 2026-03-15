@@ -1,0 +1,315 @@
+import { serverNow } from "~/lib/utils";
+import type {
+  MessageDto,
+  MessageNodeDto,
+  ToolPart,
+  UIMessageAnnotation,
+  UIMessagePart,
+} from "~/types";
+
+export interface SelectedNodeMessage {
+  node: MessageNodeDto;
+  message: MessageDto;
+}
+
+export type ActivityType =
+  | "reasoning"
+  | "search"
+  | "python"
+  | "skill"
+  | "mcp"
+  | "tool_other";
+
+export type ActivityState =
+  | { type: "hidden" }
+  | { type: "waiting" }
+  | { type: "replying" }
+  | { type: "reasoning"; startTimeMs: number }
+  | { type: "tool_use"; toolName: string; displayName: string; startTimeMs: number }
+  | { type: "completed_single"; activityType: ActivityType; durationMs?: number | null; count?: number }
+  | {
+      type: "completed_multiple";
+      reasoningDurationMs?: number | null;
+      toolTypes: ActivityType[];
+      totalActivities: number;
+    };
+
+export type TimelineEntry =
+  | {
+      id: string;
+      type: "reasoning";
+      reasoning: Extract<UIMessagePart, { type: "reasoning" }>;
+      durationMs: number | null;
+    }
+  | {
+      id: string;
+      type: "tool";
+      tool: ToolPart;
+      activityType: ActivityType;
+      displayName: string;
+      isLoading: boolean;
+    };
+
+export interface RawTurn {
+  kind: "raw";
+  id: string;
+  anchorMessageId: string;
+  node: MessageNodeDto;
+  message: MessageDto;
+}
+
+export interface AssistantTurnGroup {
+  kind: "assistant";
+  id: string;
+  anchorMessageId: string;
+  items: SelectedNodeMessage[];
+  displayMessage: MessageDto;
+  actionTarget: SelectedNodeMessage;
+  allParts: UIMessagePart[];
+  contentParts: UIMessagePart[];
+  annotations: UIMessageAnnotation[];
+}
+
+export type ConversationTurn = RawTurn | AssistantTurnGroup;
+
+export function getCurrentMessage(node: MessageNodeDto): MessageDto {
+  return node.messages[node.selectIndex] ?? node.messages[0];
+}
+
+function getLogicalRole(role: string): "USER" | "ASSISTANT" | "SYSTEM" {
+  if (role === "TOOL") return "ASSISTANT";
+  if (role === "USER" || role === "ASSISTANT") return role;
+  return "SYSTEM";
+}
+
+export function groupSelectedNodesIntoTurns(
+  selectedNodeMessages: SelectedNodeMessage[],
+): ConversationTurn[] {
+  const turns: ConversationTurn[] = [];
+  let currentAssistantItems: SelectedNodeMessage[] = [];
+
+  const flushAssistantItems = () => {
+    if (currentAssistantItems.length === 0) return;
+    turns.push(buildAssistantTurn(currentAssistantItems));
+    currentAssistantItems = [];
+  };
+
+  selectedNodeMessages.forEach((item) => {
+    const logicalRole = getLogicalRole(item.message.role);
+    if (logicalRole === "ASSISTANT") {
+      currentAssistantItems.push(item);
+      return;
+    }
+
+    flushAssistantItems();
+    turns.push({
+      kind: "raw",
+      id: item.message.id,
+      anchorMessageId: item.message.id,
+      node: item.node,
+      message: item.message,
+    });
+  });
+
+  flushAssistantItems();
+  return turns;
+}
+
+function buildAssistantTurn(items: SelectedNodeMessage[]): AssistantTurnGroup {
+  const allParts = items.flatMap((item) => item.message.parts);
+  const contentParts = allParts.filter((part) => part.type !== "reasoning" && part.type !== "tool");
+  const actionTarget =
+    [...items].reverse().find((item) =>
+      item.message.parts.some((part) => part.type === "text" || part.type === "image" || part.type === "video" || part.type === "audio" || part.type === "document"),
+    ) ?? items[items.length - 1];
+  const displayMessage =
+    actionTarget.message.role === "ASSISTANT"
+      ? actionTarget.message
+      : { ...actionTarget.message, role: "ASSISTANT" };
+
+  return {
+    kind: "assistant",
+    id: items.map((item) => item.message.id).join(":"),
+    anchorMessageId: items[0]?.message.id ?? actionTarget.message.id,
+    items,
+    displayMessage,
+    actionTarget,
+    allParts,
+    contentParts,
+    annotations: items.flatMap((item) => item.message.annotations ?? []),
+  };
+}
+
+export function categorizeToolName(toolName: string): ActivityType {
+  if (toolName === "search_web" || toolName === "scrape_web") return "search";
+  if (
+    toolName === "eval_python" ||
+    toolName === "pip_install" ||
+    toolName === "write_sandbox_file" ||
+    toolName === "read_sandbox_file" ||
+    toolName === "list_sandbox_files" ||
+    toolName === "delete_sandbox_file"
+  ) {
+    return "python";
+  }
+  if (toolName === "manage_skills") return "skill";
+  if (toolName.startsWith("mcp_")) return "mcp";
+  return "tool_other";
+}
+
+export function getToolDisplayName(toolName: string): string {
+  switch (toolName) {
+    case "search_web":
+      return "Searching web";
+    case "scrape_web":
+      return "Reading page";
+    case "eval_python":
+      return "Running Python";
+    case "pip_install":
+      return "Installing packages";
+    case "write_sandbox_file":
+      return "Writing file";
+    case "read_sandbox_file":
+      return "Reading file";
+    case "list_sandbox_files":
+      return "Listing files";
+    case "delete_sandbox_file":
+      return "Deleting file";
+    case "manage_skills":
+      return "Managing skills";
+    default:
+      return toolName.replaceAll("_", " ").replace(/^\w/, (char) => char.toUpperCase());
+  }
+}
+
+export function buildTimelineEntries(parts: UIMessagePart[]): TimelineEntry[] {
+  const entries: TimelineEntry[] = [];
+  const toolEntryIndexById = new Map<string, number>();
+
+  parts.forEach((part, index) => {
+    if (part.type === "reasoning") {
+      entries.push({
+        id: part.createdAt ?? `reasoning-${index}`,
+        type: "reasoning",
+        reasoning: part,
+        durationMs: getReasoningDurationMs(part),
+      });
+      return;
+    }
+
+    if (part.type === "tool") {
+      const entry: TimelineEntry = {
+        id: part.toolCallId || `tool-${index}`,
+        type: "tool",
+        tool: part,
+        activityType: categorizeToolName(part.toolName),
+        displayName: getToolDisplayName(part.toolName),
+        isLoading: part.output.length === 0,
+      };
+
+      const toolCallId = part.toolCallId?.trim();
+      if (toolCallId) {
+        const existingIndex = toolEntryIndexById.get(toolCallId);
+        if (existingIndex != null) {
+          entries[existingIndex] = entry;
+          return;
+        }
+        toolEntryIndexById.set(toolCallId, entries.length);
+      }
+
+      entries.push(entry);
+    }
+  });
+
+  return entries;
+}
+
+export function deriveActivityState(parts: UIMessagePart[], loading: boolean): ActivityState {
+  const reasoningParts = parts.filter(
+    (part): part is Extract<UIMessagePart, { type: "reasoning" }> => part.type === "reasoning",
+  );
+  const toolParts = parts.filter(
+    (part): part is Extract<UIMessagePart, { type: "tool" }> => part.type === "tool",
+  );
+  let lastActivityIndex = -1;
+  for (let index = parts.length - 1; index >= 0; index -= 1) {
+    const part = parts[index];
+    if (part.type === "reasoning" || part.type === "tool") {
+      lastActivityIndex = index;
+      break;
+    }
+  }
+  const hasRecentText = parts
+    .slice(lastActivityIndex + 1)
+    .some((part) => part.type === "text" && part.text.trim().length > 0);
+
+  if (!loading) {
+    const totalReasoningDuration = reasoningParts.reduce((total, part) => {
+      const duration = getReasoningDurationMs(part);
+      return total + (duration ?? 0);
+    }, 0);
+    const toolTypes = [...new Set(toolParts.map((part) => categorizeToolName(part.toolName)))];
+    const hasReasoning = totalReasoningDuration > 0;
+    const activityCount = (hasReasoning ? 1 : 0) + toolTypes.length;
+
+    if (activityCount === 0) return { type: "hidden" };
+    if (activityCount === 1 && hasReasoning) {
+      return {
+        type: "completed_single",
+        activityType: "reasoning",
+        durationMs: totalReasoningDuration,
+        count: reasoningParts.length,
+      };
+    }
+    if (activityCount === 1 && toolTypes.length === 1) {
+      return {
+        type: "completed_single",
+        activityType: toolTypes[0],
+        count: toolParts.length,
+      };
+    }
+
+    return {
+      type: "completed_multiple",
+      reasoningDurationMs: hasReasoning ? totalReasoningDuration : null,
+      toolTypes,
+      totalActivities: activityCount,
+    };
+  }
+
+  const activeReasoning = [...reasoningParts].reverse().find((part) => part.finishedAt == null);
+  if (activeReasoning?.createdAt) {
+    const startTimeMs = Date.parse(activeReasoning.createdAt);
+    if (!Number.isNaN(startTimeMs)) {
+      return { type: "reasoning", startTimeMs };
+    }
+  }
+
+  const activeTool = [...toolParts].reverse().find((part) => part.output.length === 0);
+  if (activeTool) {
+    return {
+      type: "tool_use",
+      toolName: activeTool.toolName,
+      displayName: getToolDisplayName(activeTool.toolName),
+      startTimeMs: serverNow(),
+    };
+  }
+
+  if (hasRecentText) {
+    return { type: "replying" };
+  }
+
+  return { type: "waiting" };
+}
+
+export function getReasoningDurationMs(
+  part: Extract<UIMessagePart, { type: "reasoning" }>,
+): number | null {
+  if (!part.createdAt) return null;
+  const start = Date.parse(part.createdAt);
+  if (Number.isNaN(start)) return null;
+
+  const end = part.finishedAt ? Date.parse(part.finishedAt) : serverNow();
+  if (Number.isNaN(end) || end <= start) return null;
+  return end - start;
+}

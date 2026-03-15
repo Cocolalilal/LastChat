@@ -409,9 +409,14 @@
   <string name="setting_model_page_ocr_prompt_vars">變數：圖片資料：{images}</string>
   <string name="setting_model_page_prompt">提示詞</string>
   <string name="setting_model_page_reset_to_default">重置為預設值</string>
+  <string name="setting_model_page_group_conversation">對話</string>
+  <string name="setting_model_page_group_processing">處理</string>
   <string name="setting_model_page_suggestion_model">聊天建議模型</string>
   <string name="setting_model_page_suggestion_model_desc">用於生成對話建議的模型, 推薦使用快速且便宜的模型</string>
   <string name="setting_model_page_suggestion_prompt_vars">變數: 對話內容: {content}, 語言: {locale}</string>
+  <string name="setting_model_page_summarizer_model">摘要模型</string>
+  <string name="setting_model_page_summarizer_model_desc">用於所有角色的記憶摘要與上下文刷新的模型</string>
+  <string name="setting_model_page_summarizer_missing_banner">請在設定 &gt; 預設模型中選擇摘要模型</string>
   <string name="setting_model_page_title">模型設定</string>
   <string name="setting_model_page_title_model">標題摘要模型</string>
   <string name="setting_model_page_title_model_desc">用於摘要對話標題的模型, 推薦使用快速且便宜的模型</string>
@@ -607,7 +612,7 @@
   <string name="setting_tts_page_voice_name_placeholder">Kore</string>
   <string name="settings">設定</string>
   <string name="share">分享</string>
-  <string name="share_handler_page_title">選擇一個助手處理分享</string>
+  <string name="share_handler_page_title">與角色分享</string>
   <string name="shortcut_take_picture">拍照提問</string>
   <string name="silicon_flow_built_in_models">* 已內建矽基流動免費模型，無需API Key即可使用，如需更強大的模型，請自行申請和配置自己的API Key。</string>
   <string name="silicon_flow_description">**全球領先的 AI 能力提供商，加速 AGI 普惠人類。**</string>

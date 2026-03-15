@@ -34,6 +34,7 @@ import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.Mode
+import me.rerere.rikkahub.data.model.Skill
 import me.rerere.rikkahub.data.model.Tag
 import me.rerere.rikkahub.data.model.TextSelectionConfig
 import me.rerere.rikkahub.ui.theme.PresetThemes
@@ -79,14 +80,19 @@ class SettingsStore(
         val FAVORITE_MODELS = stringPreferencesKey("favorite_models")
         val SELECT_MODEL = stringPreferencesKey("chat_model")
         val TITLE_MODEL = stringPreferencesKey("title_model")
+        val TITLE_THINKING_BUDGET = intPreferencesKey("title_thinking_budget")
+        val SUMMARIZER_MODEL = stringPreferencesKey("summarizer_model")
+        val SUMMARIZER_THINKING_BUDGET = intPreferencesKey("summarizer_thinking_budget")
         val TRANSLATE_MODEL = stringPreferencesKey("translate_model")
         val SUGGESTION_MODEL = stringPreferencesKey("suggestion_model")
+        val SUGGESTION_THINKING_BUDGET = intPreferencesKey("suggestion_thinking_budget")
         val IMAGE_GENERATION_MODEL = stringPreferencesKey("image_generation_model")
         val TITLE_PROMPT = stringPreferencesKey("title_prompt")
         val TRANSLATION_PROMPT = stringPreferencesKey("translation_prompt")
         val SUGGESTION_PROMPT = stringPreferencesKey("suggestion_prompt")
         val LEARNING_MODE_PROMPT = stringPreferencesKey("learning_mode_prompt")
         val OCR_MODEL = stringPreferencesKey("ocr_model")
+        val OCR_THINKING_BUDGET = intPreferencesKey("ocr_thinking_budget")
         val OCR_PROMPT = stringPreferencesKey("ocr_prompt")
         val EMBEDDING_MODEL = stringPreferencesKey("embedding_model")
 
@@ -115,6 +121,13 @@ class SettingsStore(
         val TTS_PROVIDERS = stringPreferencesKey("tts_providers")
         val SELECTED_TTS_PROVIDER = stringPreferencesKey("selected_tts_provider")
 
+        // Web Server
+        val WEB_SERVER_ENABLED = booleanPreferencesKey("web_server_enabled")
+        val WEB_SERVER_PORT = intPreferencesKey("web_server_port")
+        val WEB_SERVER_JWT_ENABLED = booleanPreferencesKey("web_server_jwt_enabled")
+        val WEB_SERVER_ACCESS_PASSWORD = stringPreferencesKey("web_server_access_password")
+        val WEB_SERVER_BACKGROUND_SETUP_SHOWN = booleanPreferencesKey("web_server_background_setup_shown")
+
         // Background Worker
         val CONSOLIDATION_WORKER_INTERVAL = intPreferencesKey("consolidation_worker_interval")
         val CONSOLIDATION_REQUIRES_DEVICE_IDLE = booleanPreferencesKey("consolidation_requires_device_idle")
@@ -122,12 +135,20 @@ class SettingsStore(
         // Prompt Injections
         val MODES = stringPreferencesKey("modes")
         val LOREBOOKS = stringPreferencesKey("lorebooks")
+        val SKILLS = stringPreferencesKey("skills")
+
+        // Dismissed banners
+        val DISMISSED_BANNERS = stringPreferencesKey("dismissed_banners")
 
         // Android Integration
         val TEXT_SELECTION_CONFIG = stringPreferencesKey("text_selection_config")
     }
 
     private val dataStore = context.settingsStore
+
+    // One-time migration flags
+    private var hasPersistedLegacyModeMigration = false
+    private var hasPersistedLegacySummarizerMigration = false
 
     val settingsFlowRaw = dataStore.data
         .catch { exception ->
@@ -146,16 +167,21 @@ class SettingsStore(
                     ?: GEMINI_2_5_FLASH_ID,
                 titleModelId = preferences[TITLE_MODEL]?.let { Uuid.parse(it) }
                     ?: GEMINI_2_5_FLASH_ID,
+                titleThinkingBudget = preferences[TITLE_THINKING_BUDGET] ?: 0,
+                summarizerModelId = preferences[SUMMARIZER_MODEL]?.let { Uuid.parse(it) },
+                summarizerThinkingBudget = preferences[SUMMARIZER_THINKING_BUDGET] ?: 0,
                 translateModeId = preferences[TRANSLATE_MODEL]?.let { Uuid.parse(it) }
                     ?: GEMINI_2_5_FLASH_ID,
                 suggestionModelId = preferences[SUGGESTION_MODEL]?.let { Uuid.parse(it) }
                     ?: GEMINI_2_5_FLASH_ID,
+                suggestionThinkingBudget = preferences[SUGGESTION_THINKING_BUDGET] ?: 0,
                 imageGenerationModelId = preferences[IMAGE_GENERATION_MODEL]?.let { Uuid.parse(it) } ?: Uuid.random(),
                 titlePrompt = preferences[TITLE_PROMPT] ?: DEFAULT_TITLE_PROMPT,
                 translatePrompt = preferences[TRANSLATION_PROMPT] ?: DEFAULT_TRANSLATION_PROMPT,
                 suggestionPrompt = preferences[SUGGESTION_PROMPT] ?: DEFAULT_SUGGESTION_PROMPT,
                 learningModePrompt = preferences[LEARNING_MODE_PROMPT] ?: DEFAULT_LEARNING_MODE_PROMPT,
                 ocrModelId = preferences[OCR_MODEL]?.let { Uuid.parse(it) } ?: Uuid.random(),
+                ocrThinkingBudget = preferences[OCR_THINKING_BUDGET] ?: 0,
                 ocrPrompt = preferences[OCR_PROMPT] ?: DEFAULT_OCR_PROMPT,
                 embeddingModelId = preferences[EMBEDDING_MODEL]?.let { Uuid.parse(it) } ?: Uuid.random(),
                 assistantId = preferences[SELECT_ASSISTANT]?.let { Uuid.parse(it) }
@@ -175,7 +201,9 @@ class SettingsStore(
                 themeId = preferences[THEME_ID] ?: PresetThemes[0].id,
                 developerMode = preferences[DEVELOPER_MODE] == true,
                 enableRagLogging = preferences[ENABLE_RAG_LOGGING] == true,
-                displaySetting = JsonInstant.decodeFromString(preferences[DISPLAY_SETTING] ?: "{}"),
+                displaySetting = JsonInstant.decodeFromString<DisplaySetting>(
+                    preferences[DISPLAY_SETTING] ?: "{}"
+                ).normalizeFontSettings(),
                 searchServices = preferences[SEARCH_SERVICES]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: listOf(SearchServiceOptions.DEFAULT),
@@ -194,6 +222,11 @@ class SettingsStore(
                 } ?: emptyList(),
                 selectedTTSProviderId = preferences[SELECTED_TTS_PROVIDER]?.let { Uuid.parse(it) }
                     ?: DEFAULT_SYSTEM_TTS_ID,
+                webServerEnabled = preferences[WEB_SERVER_ENABLED] == true,
+                webServerPort = preferences[WEB_SERVER_PORT] ?: 8080,
+                webServerJwtEnabled = preferences[WEB_SERVER_JWT_ENABLED] == true,
+                webServerAccessPassword = preferences[WEB_SERVER_ACCESS_PASSWORD] ?: "",
+                webServerBackgroundSetupShown = preferences[WEB_SERVER_BACKGROUND_SETUP_SHOWN] == true,
                 consolidationWorkerIntervalMinutes = preferences[CONSOLIDATION_WORKER_INTERVAL] ?: 15,
                 consolidationRequiresDeviceIdle = preferences[CONSOLIDATION_REQUIRES_DEVICE_IDLE] ?: false,
                 modes = preferences[MODES]?.let {
@@ -202,6 +235,12 @@ class SettingsStore(
                 lorebooks = preferences[LOREBOOKS]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: emptyList(),
+                skills = preferences[SKILLS]?.let {
+                    JsonInstant.decodeFromString(it)
+                } ?: emptyList(),
+                dismissedBanners = preferences[DISMISSED_BANNERS]?.let {
+                    JsonInstant.decodeFromString(it)
+                } ?: emptySet(),
                 textSelectionConfig = preferences[TEXT_SELECTION_CONFIG]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: TextSelectionConfig(),
@@ -234,8 +273,8 @@ class SettingsStore(
             it.copy(
                 providers = providers,
                 assistants = assistants,
-                ttsProviders = ttsProviders
-            )
+                ttsProviders = ttsProviders,
+            ).normalizeWebServerSettings().normalizeFontSettings()
         }
         .map { settings ->
             // 去重并清理无效引用
@@ -270,6 +309,30 @@ class SettingsStore(
                 }
             )
         }
+        .map { settings ->
+            val migrated = settings.migrateAssistantSummarizerToGlobal()
+            if (!hasPersistedLegacySummarizerMigration) {
+                hasPersistedLegacySummarizerMigration = true
+                if (migrated != settings) {
+                    scope.launch(Dispatchers.IO) {
+                        persistLegacySummarizerMigration(migrated)
+                    }
+                }
+            }
+            migrated.normalizeFontSettings()
+        }
+        .map { settings ->
+            val migrated = settings.migrateLegacyModesToSkills()
+            if (!hasPersistedLegacyModeMigration) {
+                hasPersistedLegacyModeMigration = true
+                if (migrated != settings) {
+                    scope.launch(Dispatchers.IO) {
+                        persistLegacyModeMigration(migrated)
+                    }
+                }
+            }
+            migrated.normalizeFontSettings()
+        }
         .onEach {
             get<PebbleEngine>().templateCache.invalidateAll()
         }
@@ -288,18 +351,18 @@ class SettingsStore(
                 if (migratedSettings != settings) {
                     // Secrets were migrated - persist the cleared plaintext back to DataStore
                     // We do this synchronously to ensure consistency
-                    scope.launch {
+                    scope.launch(Dispatchers.IO) {
                         persistMigratedSettings(migratedSettings)
                     }
                 }
-                migratedSettings
+                migratedSettings.normalizeFontSettings()
             } else {
-                settings
+                settings.normalizeFontSettings()
             }
         }
         // Hydrate secrets (populate API keys from SecureStore) so they are available in memory/UI
         .map { settings ->
-            secretKeyManager.populateSecretsForExport(settings)
+            secretKeyManager.populateSecretsForExport(settings).normalizeFontSettings()
         }
         .onEach { settings -> quickCache.updateCache(settings) }
         .toMutableStateFlow(scope, quickCache.createCachedSettings())
@@ -312,6 +375,29 @@ class SettingsStore(
             preferences[PROVIDERS] = JsonInstant.encodeToString(settings.providers)
             preferences[WEBDAV_CONFIG] = JsonInstant.encodeToString(settings.webDavConfig)
             preferences[TTS_PROVIDERS] = JsonInstant.encodeToString(settings.ttsProviders)
+        }
+    }
+
+    /**
+     * Persist one-time legacy mode -> skill migration.
+     */
+    private suspend fun persistLegacyModeMigration(settings: Settings) {
+        dataStore.edit { preferences ->
+            preferences[ASSISTANTS] = JsonInstant.encodeToString(settings.assistants)
+            preferences[MODES] = JsonInstant.encodeToString(settings.modes)
+            preferences[SKILLS] = JsonInstant.encodeToString(settings.skills)
+        }
+    }
+
+    /**
+     * Persist one-time assistant summarizer -> global summarizer migration.
+     */
+    private suspend fun persistLegacySummarizerMigration(settings: Settings) {
+        dataStore.edit { preferences ->
+            settings.summarizerModelId?.let {
+                preferences[SUMMARIZER_MODEL] = it.toString()
+            } ?: preferences.remove(SUMMARIZER_MODEL)
+            preferences[ASSISTANTS] = JsonInstant.encodeToString(settings.assistants)
         }
     }
 
@@ -338,61 +424,82 @@ class SettingsStore(
             settings
         }
         
+        val normalizedSettings = settingsToSave
+            .normalizeWebServerSettings()
+            .migrateLegacyModesToSkills()
+            .normalizeFontSettings()
+
         // Handle explicit secret deletions (user cleared a field that had a value)
         // This must be called BEFORE migration to remove deleted secrets from SecureStore
-        secretKeyManager.handleExplicitSecretDeletions(settingsFlow.value, settingsToSave)
+        secretKeyManager.handleExplicitSecretDeletions(settingsFlow.value, normalizedSettings)
         
         // Migrate secrets from plaintext to SecureStore if needed
-        val migratedSettings = secretKeyManager.migrateSecretsFromSettings(settingsToSave)
-        
-        settingsFlow.value = secretKeyManager.populateSecretsForExport(migratedSettings)
-        dataStore.edit { preferences ->
-            preferences[DYNAMIC_COLOR] = settingsToSave.dynamicColor
-            preferences[THEME_ID] = settingsToSave.themeId
-            preferences[DEVELOPER_MODE] = settingsToSave.developerMode
-            preferences[ENABLE_RAG_LOGGING] = settingsToSave.enableRagLogging
-            preferences[DISPLAY_SETTING] = JsonInstant.encodeToString(settingsToSave.displaySetting)
+        val migratedSettings = secretKeyManager.migrateSecretsFromSettings(normalizedSettings)
+            .normalizeFontSettings()
 
-            preferences[ENABLE_WEB_SEARCH] = settingsToSave.enableWebSearch
-            preferences[FAVORITE_MODELS] = JsonInstant.encodeToString(settingsToSave.favoriteModels)
-            preferences[SELECT_MODEL] = settingsToSave.chatModelId.toString()
-            preferences[TITLE_MODEL] = settingsToSave.titleModelId.toString()
-            preferences[TRANSLATE_MODEL] = settingsToSave.translateModeId.toString()
-            preferences[SUGGESTION_MODEL] = settingsToSave.suggestionModelId.toString()
-            preferences[IMAGE_GENERATION_MODEL] = settingsToSave.imageGenerationModelId.toString()
-            preferences[TITLE_PROMPT] = settingsToSave.titlePrompt
-            preferences[TRANSLATION_PROMPT] = settingsToSave.translatePrompt
-            preferences[SUGGESTION_PROMPT] = settingsToSave.suggestionPrompt
-            preferences[LEARNING_MODE_PROMPT] = settingsToSave.learningModePrompt
-            preferences[OCR_MODEL] = settingsToSave.ocrModelId.toString()
-            preferences[OCR_PROMPT] = settingsToSave.ocrPrompt
-            preferences[EMBEDDING_MODEL] = settingsToSave.embeddingModelId.toString()
+        settingsFlow.value = secretKeyManager.populateSecretsForExport(migratedSettings)
+            .normalizeFontSettings()
+        dataStore.edit { preferences ->
+            preferences[DYNAMIC_COLOR] = normalizedSettings.dynamicColor
+            preferences[THEME_ID] = normalizedSettings.themeId
+            preferences[DEVELOPER_MODE] = normalizedSettings.developerMode
+            preferences[ENABLE_RAG_LOGGING] = normalizedSettings.enableRagLogging
+            preferences[DISPLAY_SETTING] = JsonInstant.encodeToString(normalizedSettings.displaySetting)
+
+            preferences[ENABLE_WEB_SEARCH] = normalizedSettings.enableWebSearch
+            preferences[FAVORITE_MODELS] = JsonInstant.encodeToString(normalizedSettings.favoriteModels)
+            preferences[SELECT_MODEL] = normalizedSettings.chatModelId.toString()
+            preferences[TITLE_MODEL] = normalizedSettings.titleModelId.toString()
+            preferences[TITLE_THINKING_BUDGET] = normalizedSettings.titleThinkingBudget
+            normalizedSettings.summarizerModelId?.let {
+                preferences[SUMMARIZER_MODEL] = it.toString()
+            } ?: preferences.remove(SUMMARIZER_MODEL)
+            preferences[SUMMARIZER_THINKING_BUDGET] = normalizedSettings.summarizerThinkingBudget
+            preferences[TRANSLATE_MODEL] = normalizedSettings.translateModeId.toString()
+            preferences[SUGGESTION_MODEL] = normalizedSettings.suggestionModelId.toString()
+            preferences[SUGGESTION_THINKING_BUDGET] = normalizedSettings.suggestionThinkingBudget
+            preferences[IMAGE_GENERATION_MODEL] = normalizedSettings.imageGenerationModelId.toString()
+            preferences[TITLE_PROMPT] = normalizedSettings.titlePrompt
+            preferences[TRANSLATION_PROMPT] = normalizedSettings.translatePrompt
+            preferences[SUGGESTION_PROMPT] = normalizedSettings.suggestionPrompt
+            preferences[LEARNING_MODE_PROMPT] = normalizedSettings.learningModePrompt
+            preferences[OCR_MODEL] = normalizedSettings.ocrModelId.toString()
+            preferences[OCR_THINKING_BUDGET] = normalizedSettings.ocrThinkingBudget
+            preferences[OCR_PROMPT] = normalizedSettings.ocrPrompt
+            preferences[EMBEDDING_MODEL] = normalizedSettings.embeddingModelId.toString()
 
             preferences[PROVIDERS] = JsonInstant.encodeToString(migratedSettings.providers)
 
-            preferences[ASSISTANTS] = JsonInstant.encodeToString(settingsToSave.assistants)
-            preferences[SELECT_ASSISTANT] = settingsToSave.assistantId.toString()
-            preferences[ASSISTANT_TAGS] = JsonInstant.encodeToString(settingsToSave.assistantTags)
-            preferences[PROVIDER_TAGS] = JsonInstant.encodeToString(settingsToSave.providerTags)
-            preferences[RECENTLY_USED_ASSISTANTS] = JsonInstant.encodeToString(settingsToSave.recentlyUsedAssistants)
+            preferences[ASSISTANTS] = JsonInstant.encodeToString(normalizedSettings.assistants)
+            preferences[SELECT_ASSISTANT] = normalizedSettings.assistantId.toString()
+            preferences[ASSISTANT_TAGS] = JsonInstant.encodeToString(normalizedSettings.assistantTags)
+            preferences[PROVIDER_TAGS] = JsonInstant.encodeToString(normalizedSettings.providerTags)
+            preferences[RECENTLY_USED_ASSISTANTS] = JsonInstant.encodeToString(normalizedSettings.recentlyUsedAssistants)
 
-            preferences[SEARCH_SERVICES] = JsonInstant.encodeToString(settingsToSave.searchServices)
-            preferences[SEARCH_COMMON] = JsonInstant.encodeToString(settingsToSave.searchCommonOptions)
-            preferences[SEARCH_SELECTED] = settingsToSave.searchServiceSelected.coerceIn(0, settingsToSave.searchServices.size - 1)
+            preferences[SEARCH_SERVICES] = JsonInstant.encodeToString(normalizedSettings.searchServices)
+            preferences[SEARCH_COMMON] = JsonInstant.encodeToString(normalizedSettings.searchCommonOptions)
+            preferences[SEARCH_SELECTED] = normalizedSettings.searchServiceSelected.coerceIn(0, normalizedSettings.searchServices.size - 1)
 
-            preferences[MCP_SERVERS] = JsonInstant.encodeToString(settingsToSave.mcpServers)
+            preferences[MCP_SERVERS] = JsonInstant.encodeToString(normalizedSettings.mcpServers)
             preferences[WEBDAV_CONFIG] = JsonInstant.encodeToString(migratedSettings.webDavConfig)
             preferences[TTS_PROVIDERS] = JsonInstant.encodeToString(migratedSettings.ttsProviders)
-            settingsToSave.selectedTTSProviderId?.let {
+            normalizedSettings.selectedTTSProviderId?.let {
                 preferences[SELECTED_TTS_PROVIDER] = it.toString()
             } ?: preferences.remove(SELECTED_TTS_PROVIDER)
+            preferences[WEB_SERVER_ENABLED] = normalizedSettings.webServerEnabled
+            preferences[WEB_SERVER_PORT] = normalizedSettings.webServerPort
+            preferences[WEB_SERVER_JWT_ENABLED] = normalizedSettings.webServerJwtEnabled
+            preferences[WEB_SERVER_ACCESS_PASSWORD] = normalizedSettings.webServerAccessPassword
+            preferences[WEB_SERVER_BACKGROUND_SETUP_SHOWN] = normalizedSettings.webServerBackgroundSetupShown
 
-            preferences[CONSOLIDATION_WORKER_INTERVAL] = settingsToSave.consolidationWorkerIntervalMinutes
-            preferences[CONSOLIDATION_REQUIRES_DEVICE_IDLE] = settingsToSave.consolidationRequiresDeviceIdle
+            preferences[CONSOLIDATION_WORKER_INTERVAL] = normalizedSettings.consolidationWorkerIntervalMinutes
+            preferences[CONSOLIDATION_REQUIRES_DEVICE_IDLE] = normalizedSettings.consolidationRequiresDeviceIdle
 
-            preferences[MODES] = JsonInstant.encodeToString(settingsToSave.modes)
-            preferences[LOREBOOKS] = JsonInstant.encodeToString(settingsToSave.lorebooks)
-            preferences[TEXT_SELECTION_CONFIG] = JsonInstant.encodeToString(settingsToSave.textSelectionConfig)
+            preferences[MODES] = JsonInstant.encodeToString(normalizedSettings.modes)
+            preferences[LOREBOOKS] = JsonInstant.encodeToString(normalizedSettings.lorebooks)
+            preferences[SKILLS] = JsonInstant.encodeToString(normalizedSettings.skills)
+            preferences[DISMISSED_BANNERS] = JsonInstant.encodeToString(normalizedSettings.dismissedBanners)
+            preferences[TEXT_SELECTION_CONFIG] = JsonInstant.encodeToString(normalizedSettings.textSelectionConfig)
         }
     }
 
@@ -443,426 +550,5 @@ class SettingsStore(
             update(current.copy(recentlyUsedAssistants = updatedList))
         }
     }
-}
-
-@Serializable
-data class Settings(
-    @Transient
-    val init: Boolean = false,
-    val dynamicColor: Boolean = true,
-    val themeId: String = PresetThemes[0].id,
-    val developerMode: Boolean = false,
-    val enableRagLogging: Boolean = false,
-    val displaySetting: DisplaySetting = DisplaySetting(),
-    val enableWebSearch: Boolean = false,
-    val favoriteModels: List<Uuid> = emptyList(),
-    val chatModelId: Uuid = Uuid.random(),
-    val titleModelId: Uuid = Uuid.random(),
-    val imageGenerationModelId: Uuid = Uuid.random(),
-    val titlePrompt: String = DEFAULT_TITLE_PROMPT,
-    val translateModeId: Uuid = Uuid.random(),
-    val translatePrompt: String = DEFAULT_TRANSLATION_PROMPT,
-    val suggestionModelId: Uuid = Uuid.random(),
-    val suggestionPrompt: String = DEFAULT_SUGGESTION_PROMPT,
-    val learningModePrompt: String = DEFAULT_LEARNING_MODE_PROMPT,
-    val ocrModelId: Uuid = Uuid.random(),
-    val ocrPrompt: String = DEFAULT_OCR_PROMPT,
-    val embeddingModelId: Uuid = Uuid.random(),
-    val assistantId: Uuid = DEFAULT_ASSISTANT_ID,
-    val providers: List<ProviderSetting> = DEFAULT_PROVIDERS,
-    val assistants: List<Assistant> = DEFAULT_ASSISTANTS,
-    val assistantTags: List<Tag> = emptyList(),
-    val providerTags: List<Tag> = emptyList(),
-    val recentlyUsedAssistants: List<Uuid> = emptyList(), // For app shortcuts, max 3 items
-    val searchServices: List<SearchServiceOptions> = listOf(SearchServiceOptions.DEFAULT),
-    val searchCommonOptions: SearchCommonOptions = SearchCommonOptions(),
-    val searchServiceSelected: Int = 0,
-    val mcpServers: List<McpServerConfig> = emptyList(),
-    val webDavConfig: WebDavConfig = WebDavConfig(),
-    val ttsProviders: List<TTSProviderSetting> = DEFAULT_TTS_PROVIDERS,
-    val selectedTTSProviderId: Uuid = DEFAULT_SYSTEM_TTS_ID,
-    val consolidationWorkerIntervalMinutes: Int = 15,
-    val consolidationRequiresDeviceIdle: Boolean = false,
-    // Prompt Injections
-    val modes: List<Mode> = emptyList(),
-    val lorebooks: List<Lorebook> = emptyList(),
-    // Android Integration
-    val textSelectionConfig: TextSelectionConfig = TextSelectionConfig(),
-) {
-    companion object {
-        // 构造一个用于初始化的settings, 但它不能用于保存，防止使用初始值存储
-        fun dummy() = Settings(init = true)
-    }
-}
-
-/**
- * Custom text styling rule for roleplay formatting.
- * Pattern wrapping (e.g., "*", "%") will be matched and styled with the specified color.
- */
-@Serializable
-data class RpStyleRule(
-    val id: String = kotlin.uuid.Uuid.random().toString(),
-    val pattern: String = "*",      // The wrapping pattern, e.g., "*" for *text*, "%" for %text%
-    val colorHex: String = "#808080", // Hex color code
-    val enabled: Boolean = true
-)
-
-/**
- * TTS text filter rule for skipping or only reading text matching a pattern.
- * Pattern wrapping (e.g., "*", "%") will be matched and filtered accordingly.
- */
-@Serializable
-data class TtsTextFilterRule(
-    val id: String = kotlin.uuid.Uuid.random().toString(),
-    val pattern: String = "*",      // The wrapping pattern, e.g., "*" for *text*
-    val mode: TtsFilterMode = TtsFilterMode.SKIP,
-    val enabled: Boolean = true
-)
-
-@Serializable
-enum class TtsFilterMode {
-    SKIP,       // Skip text inside this pattern (don't read it)
-    ONLY_READ   // Only read text inside this pattern (skip everything else)
-}
-
-/**
- * Source of font for text rendering
- */
-@Serializable
-enum class FontSource {
-    System,       // Default Google Sans Flex (with roundness control)
-    SystemCode,   // Google Sans Code (monospace for code blocks)
-    Custom        // User-uploaded font file
-}
-
-/**
- * Variable font axis with its metadata
- */
-@Serializable
-data class FontAxis(
-    val tag: String,         // e.g., "wght", "wdth", "ROND"
-    val name: String,        // Human-readable name
-    val minValue: Float,
-    val maxValue: Float,
-    val defaultValue: Float,
-    val currentValue: Float = defaultValue
-)
-
-/**
- * OpenType feature toggle
- */
-@Serializable
-data class FontFeature(
-    val tag: String,         // e.g., "liga", "kern", "smcp"
-    val name: String,        // Human-readable name
-    val enabled: Boolean = true
-)
-
-/**
- * Font configuration for a specific text element (headers, content, or code)
- */
-@Serializable
-data class FontConfig(
-    val fontSource: FontSource = FontSource.System,
-    val customFontPath: String? = null,  // Internal path to custom font file
-    val customFontName: String? = null,  // Display name of custom font
-    // Common variable font axes (applied when supported)
-    val weight: Float = 400f,       // 100-900
-    val width: Float = 100f,        // 75-125
-    val roundness: Float = 100f,    // 0-100 (Google Sans Flex specific, default expressive)
-    val grade: Float = 0f,          // -50 to 150
-    val slant: Float = 0f,          // -10 to 0
-    // Typography adjustments
-    val fontSize: Float = 1.0f,     // Multiplier (0.5-2.0)
-    val lineHeight: Float = 1.0f,   // Multiplier (0.8-2.0)
-    val letterSpacing: Float = 0f,  // -0.05 to 0.1 em
-    // Custom axes detected from font (for custom fonts)
-    val customAxes: List<FontAxis> = emptyList(),
-    // OpenType features (detected from font)
-    val features: List<FontFeature> = emptyList()
-) {
-    companion object {
-        val DEFAULT_EXPRESSIVE = FontConfig(
-            fontSource = FontSource.System,
-            roundness = 100f
-        )
-        val DEFAULT_NORMAL = FontConfig(
-            fontSource = FontSource.System,
-            roundness = 0f
-        )
-        val DEFAULT_CODE = FontConfig(
-            fontSource = FontSource.SystemCode,
-            roundness = 0f,
-            weight = 400f
-        )
-    }
-}
-
-/**
- * Complete font customization settings for the app
- */
-@Serializable
-data class FontSettings(
-    val useSameFontForHeadersAndContent: Boolean = false,
-    val headerFont: FontConfig = FontConfig.DEFAULT_EXPRESSIVE,
-    val contentFont: FontConfig = FontConfig.DEFAULT_EXPRESSIVE,
-    val codeFont: FontConfig = FontConfig.DEFAULT_CODE
-)
-
-@Serializable
-data class DisplaySetting(
-    val userAvatar: Avatar = Avatar.Dummy,
-    val userNickname: String = "",
-    val chatInputStyle: ChatInputStyle = ChatInputStyle.MINIMAL, // Input bar style (floating toolbar or minimal)
-    val showUserAvatar: Boolean = true,
-    val showModelIcon: Boolean = true,
-    val showModelName: Boolean = true,
-    val showAssistantBubbles: Boolean = true,
-    val showTokenUsage: Boolean = false,
-    val autoCloseThinking: Boolean = true,
-    val showUpdates: Boolean = false,
-    val checkForUpdates: Boolean = true, // Check GitHub for app updates
-    val showMessageJumper: Boolean = false,
-    val messageJumperOnLeft: Boolean = false,
-    val fontSizeRatio: Float = 1.0f,
-    val fontSettings: FontSettings = FontSettings(), // Comprehensive font customization
-    val enableMessageGenerationHapticEffect: Boolean = false,
-    val enableUIHaptics: Boolean = true,
-    val skipCropImage: Boolean = false,
-    val enableNotificationOnMessageGeneration: Boolean = false,
-    val codeBlockAutoWrap: Boolean = false,
-    val codeBlockAutoCollapse: Boolean = true,
-    val rpStyleRules: List<RpStyleRule> = emptyList(), // Custom RP text styling rules
-    val ttsTextFilterRules: List<TtsTextFilterRule> = emptyList(), // TTS text filter rules
-    val providerViewMode: ProviderViewMode = ProviderViewMode.LIST, // Provider page view mode
-    val showContextStacks: Boolean = false, // Show context sources (modes, memories, lorebooks) in message toolbar
-    // New chat customization
-    val newChatHeaderStyle: NewChatHeaderStyle = NewChatHeaderStyle.GREETING, // Header for empty new chats
-    val newChatContentStyle: NewChatContentStyle = NewChatContentStyle.ACTIONS, // Content for empty new chats
-    val newChatShowAvatar: Boolean = true, // Show avatar in header (true) or top-right corner (false)
-)
-
-@Serializable
-enum class NewChatHeaderStyle {
-    NONE,       // Empty header
-    GREETING,   // Small avatar left of greeting
-    BIG_ICON    // Big avatar with name below (no greeting)
-}
-
-@Serializable
-enum class NewChatContentStyle {
-    NONE,       // Empty content
-    TEMPLATES,  // Template cards (Write, Code, etc.)
-    STATS,      // Stats widgets (streak, chats, avg msgs)
-    ACTIONS     // ChatGPT-style pill buttons with navigation (Create image, Translate, Code, More)
-}
-
-@Serializable
-enum class ProviderViewMode {
-    LIST,
-    GRID
-}
-
-@Serializable
-enum class ChatInputStyle {
-    FLOATING,   // "LastChat" - current floating toolbar
-    MINIMAL     // "Minimal" - ChatGPT-style simple bar with bottom sheet picker
-}
-
-@Serializable
-data class WebDavConfig(
-    val url: String = "",
-    val username: String = "",
-    val password: String = "",
-    val path: String = "lastchat_backups",
-    val items: List<BackupItem> = listOf(
-        BackupItem.DATABASE,
-        BackupItem.FILES
-    ),
-) {
-    @Serializable
-    enum class BackupItem {
-        DATABASE,
-        FILES,
-    }
-}
-
-fun Settings.isNotConfigured() = providers.all { it.models.isEmpty() }
-
-fun Settings.findModelById(uuid: Uuid): Model? {
-    return this.providers.findModelById(uuid)
-}
-
-fun List<ProviderSetting>.findModelById(uuid: Uuid): Model? {
-    this.forEach { setting ->
-        setting.models.forEach { model ->
-            if (model.id == uuid) {
-                return model
-            }
-        }
-    }
-    return null
-}
-
-fun Settings.getCurrentChatModel(): Model? {
-    return findModelById(this.getCurrentAssistant().chatModelId ?: this.chatModelId)
-}
-
-fun Settings.getCurrentAssistant(): Assistant {
-    return this.assistants.find { it.id == assistantId } ?: this.assistants.first()
-}
-
-fun Settings.getAssistantById(id: Uuid): Assistant? {
-    return this.assistants.find { it.id == id }
-}
-
-/**
- * Get effective display settings by merging assistant's UI overrides with global display settings.
- * Per-assistant settings take precedence when set (non-null).
- */
-fun Settings.getEffectiveDisplaySetting(assistant: Assistant? = null): DisplaySetting {
-    val ui = (assistant ?: getCurrentAssistant()).uiSettings
-    return displaySetting.copy(
-        chatInputStyle = ui.chatInputStyle ?: displaySetting.chatInputStyle,
-        showUserAvatar = ui.showUserAvatar ?: displaySetting.showUserAvatar,
-        showModelIcon = ui.showAssistantAvatar ?: displaySetting.showModelIcon,
-        showAssistantBubbles = ui.showAssistantBubbles ?: displaySetting.showAssistantBubbles,
-        showTokenUsage = ui.showTokenUsage ?: displaySetting.showTokenUsage,
-        autoCloseThinking = ui.autoCloseThinking ?: displaySetting.autoCloseThinking,
-        showMessageJumper = ui.showMessageJumper ?: displaySetting.showMessageJumper,
-        messageJumperOnLeft = ui.messageJumperOnLeft ?: displaySetting.messageJumperOnLeft,
-        fontSizeRatio = ui.fontSizeRatio ?: displaySetting.fontSizeRatio,
-        codeBlockAutoWrap = ui.codeBlockAutoWrap ?: displaySetting.codeBlockAutoWrap,
-        codeBlockAutoCollapse = ui.codeBlockAutoCollapse ?: displaySetting.codeBlockAutoCollapse,
-        showContextStacks = ui.showContextStacks ?: displaySetting.showContextStacks,
-        newChatHeaderStyle = ui.newChatHeaderStyle ?: displaySetting.newChatHeaderStyle,
-        newChatContentStyle = ui.newChatContentStyle ?: displaySetting.newChatContentStyle,
-        newChatShowAvatar = ui.newChatShowAvatar ?: displaySetting.newChatShowAvatar,
-    )
-}
-
-fun Settings.getSelectedTTSProvider(): TTSProviderSetting? {
-    return selectedTTSProviderId?.let { id ->
-        ttsProviders.find { it.id == id }
-    } ?: ttsProviders.firstOrNull()
-}
-
-fun Model.findProvider(providers: List<ProviderSetting>, checkOverwrite: Boolean = true): ProviderSetting? {
-    val provider = findModelProviderFromList(providers) ?: return null
-    val providerOverwrite = this.providerOverwrite
-    if (checkOverwrite && providerOverwrite != null) {
-        return providerOverwrite.copyProvider(proxy = provider.proxy, models = emptyList())
-    }
-    return provider
-}
-
-private fun Model.findModelProviderFromList(providers: List<ProviderSetting>): ProviderSetting? {
-    providers.forEach { setting ->
-        setting.models.forEach { model ->
-            if (model.id == this.id) {
-                return setting
-            }
-        }
-    }
-    return null
-}
-
-internal val GEMINI_2_5_FLASH_ID = Uuid.parse("cd2cba9a-3f92-4148-b4c6-4d7a86f7b9c2")
-internal val DEFAULT_ASSISTANT_ID = Uuid.parse("0950e2dc-9bd5-4801-afa3-aa887aa36b4e")
-internal val DEFAULT_ASSISTANTS = listOf(
-    Assistant(
-        id = DEFAULT_ASSISTANT_ID,
-        name = "Generical",
-        avatar = Avatar.Resource(me.rerere.rikkahub.R.drawable.default_generical_pfp),
-        temperature = 0.6f,
-        systemPrompt = """
-            You are the best generic assistant, called {{char}}. {{char}} is a really nice guy. He doesn't use emojis though. Use the search tool when looking for factual info. You can have opinions if the user asks you for one. 
-
-            **Context:
-            - You are currently chatting to {{user}}
-            - You are running on {{model_name}}
-            - Date: {{cur_date}}
-            - Time: {{cur_time}}
-
-            **Additional info:
-            - The UI supports LaTeX rendering
-            - The user is chatting to you trough an app called LastChat
-            - You are an AI/LLM and shouldn't hide this fact
-        """.trimIndent()
-    )
-)
-
-val DEFAULT_SYSTEM_TTS_ID = Uuid.parse("026a01a2-c3a0-4fd5-8075-80e03bdef200")
-private val DEFAULT_TTS_PROVIDERS = listOf(
-    TTSProviderSetting.SystemTTS(
-        id = DEFAULT_SYSTEM_TTS_ID,
-        name = "",
-    ),
-)
-
-internal val DEFAULT_ASSISTANTS_IDS = DEFAULT_ASSISTANTS.map { it.id }
-
-/**
- * Sanitize settings after backup restore.
- * Cleans up deprecated fields and invalid references.
- * @return Pair of sanitized settings and cleanup result with statistics
- */
-fun Settings.sanitize(): Pair<Settings, me.rerere.rikkahub.data.sync.BackupCleanupResult> {
-    var invalidSearchModeCount = 0
-    var orphanedTagReferences = 0
-    var orphanedModelReferences = 0
-
-    // 1. Fix invalid searchMode.Provider indices
-    val sanitizedAssistants = assistants.map { assistant ->
-        when (val mode = assistant.searchMode) {
-            is me.rerere.rikkahub.data.model.AssistantSearchMode.Provider -> {
-                if (mode.index < 0 || mode.index >= searchServices.size) {
-                    invalidSearchModeCount++
-                    assistant.copy(searchMode = me.rerere.rikkahub.data.model.AssistantSearchMode.Off)
-                } else {
-                    assistant
-                }
-            }
-            else -> assistant
-        }
-    }
-
-    // 2. Remove orphaned tag references from assistants
-    val validTagIds = assistantTags.map { it.id }.toSet()
-    val cleanedAssistants = sanitizedAssistants.map { assistant ->
-        val validTags = assistant.tags.filter { it in validTagIds }
-        if (validTags.size != assistant.tags.size) {
-            orphanedTagReferences += assistant.tags.size - validTags.size
-            assistant.copy(tags = validTags)
-        } else {
-            assistant
-        }
-    }
-
-    // 3. Remove orphaned favorite model references
-    val allModelIds = providers.flatMap { it.models.map { m -> m.id } }.toSet()
-    val cleanedFavorites = favoriteModels.filter { it in allModelIds }
-    orphanedModelReferences = favoriteModels.size - cleanedFavorites.size
-
-    // 4. Clamp searchServiceSelected to valid range
-    val clampedSearchSelected = if (searchServices.isNotEmpty()) {
-        searchServiceSelected.coerceIn(0, searchServices.size - 1)
-    } else {
-        0
-    }
-
-    val cleanedSettings = copy(
-        assistants = cleanedAssistants,
-        favoriteModels = cleanedFavorites,
-        searchServiceSelected = clampedSearchSelected,
-    )
-
-    val result = me.rerere.rikkahub.data.sync.BackupCleanupResult(
-        invalidSearchModeCount = invalidSearchModeCount,
-        orphanedTagReferences = orphanedTagReferences,
-        orphanedModelReferences = orphanedModelReferences,
-    )
-
-    return cleanedSettings to result
 }
 

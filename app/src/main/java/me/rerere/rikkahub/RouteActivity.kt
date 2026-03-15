@@ -23,7 +23,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -52,6 +51,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.filterNotNull
 import me.rerere.highlight.Highlighter
 import me.rerere.highlight.LocalHighlighter
+import me.rerere.rikkahub.data.datastore.SpontaneousMessagingStateStore
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.ui.components.ui.TTSController
 import me.rerere.rikkahub.ui.context.LocalAnimatedVisibilityScope
@@ -80,47 +80,151 @@ import me.rerere.rikkahub.ui.pages.setting.SettingProviderDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingProviderPage
 import me.rerere.rikkahub.ui.pages.setting.SettingSearchPage
 import me.rerere.rikkahub.ui.pages.setting.SettingTTSPage
+import me.rerere.rikkahub.ui.pages.setting.SettingWebPage
 import me.rerere.rikkahub.ui.pages.setting.SettingRpOptimizationsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPromptInjectionsPage
-import me.rerere.rikkahub.ui.pages.setting.SettingModesPage
 import me.rerere.rikkahub.ui.pages.setting.SettingLorebooksPage
 import me.rerere.rikkahub.ui.pages.setting.SettingLorebookDetailPage
+import me.rerere.rikkahub.ui.pages.setting.SettingSkillsPage
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerPage
 import me.rerere.rikkahub.ui.pages.webview.WebViewPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAndroidIntegrationPage
 import me.rerere.rikkahub.ui.pages.setting.SettingUICustomizationPage
 import me.rerere.rikkahub.ui.pages.setting.SettingFontsPage
+import me.rerere.rikkahub.share.ResolvedSharePayload
+import me.rerere.rikkahub.share.readResolvedSharePayload
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.theme.RikkahubTheme
+import me.rerere.rikkahub.service.EXTRA_IS_SPONTANEOUS_NOTIFICATION
+import me.rerere.rikkahub.service.EXTRA_SPONTANEOUS_EVENT_ID
+import me.rerere.rikkahub.service.EXTRA_SPONTANEOUS_MESSAGE
+import me.rerere.rikkahub.service.EXTRA_SPONTANEOUS_RELATION
+import me.rerere.rikkahub.service.ChatPersistenceMode
+import me.rerere.rikkahub.ui.activity.QuickAskContinuationData
+import me.rerere.rikkahub.ui.activity.buildQuickAskMessageParts
+import me.rerere.rikkahub.ui.activity.readQuickAskContinuationData
 import okhttp3.OkHttpClient
 import org.koin.android.ext.android.inject
 import me.rerere.rikkahub.utils.fileSizeToString
-import me.rerere.rikkahub.utils.base64Encode
 import kotlin.uuid.Uuid
 
 private const val TAG = "RouteActivity"
 
-/**
- * Data class to hold text selection intent data for navigation
- */
-data class TextSelectionData(
-    val navigateTo: String?,
-    val selectedText: String?,
-    val aiResponse: String?,
-    val userPrompt: String?,
-    val selectionAssistantId: String?
+internal data class SpontaneousNotificationData(
+    val assistantId: String,
+    val conversationId: String?,
+    val eventId: String,
+    val message: String,
+    val relation: me.rerere.rikkahub.service.SpontaneousMessageRelation,
 )
+
+internal data class ResolvedSpontaneousChatTarget(
+    val conversationId: Uuid,
+    val persistenceMode: ChatPersistenceMode,
+    val assistantId: Uuid,
+)
+
+internal fun resolveSpontaneousNotificationRelation(
+    relationExtra: String?,
+    conversationId: String?,
+): me.rerere.rikkahub.service.SpontaneousMessageRelation {
+    return me.rerere.rikkahub.service.SpontaneousMessageRelation.fromWireValue(relationExtra)
+        ?: if (conversationId.isNullOrBlank()) {
+            me.rerere.rikkahub.service.SpontaneousMessageRelation.UNRELATED
+        } else {
+            me.rerere.rikkahub.service.SpontaneousMessageRelation.RECENT_CHAT
+        }
+}
+
+internal suspend fun resolveSpontaneousNotificationTarget(
+    data: SpontaneousNotificationData,
+    isEventConsumed: (String) -> Boolean,
+    updateAssistantSelection: suspend (Uuid) -> Unit,
+    hasConversation: suspend (Uuid) -> Boolean,
+    appendToConversation: suspend (Uuid, String, Uuid) -> Uuid?,
+    seedDraftConversation: suspend (Uuid, String) -> Uuid?,
+    markEventConsumed: (String) -> Unit,
+): ResolvedSpontaneousChatTarget? {
+    val assistantId = runCatching { Uuid.parse(data.assistantId) }.getOrNull() ?: return null
+    val message = data.message.trim()
+    if (message.isBlank() || isEventConsumed(data.eventId)) return null
+
+    updateAssistantSelection(assistantId)
+
+    val originalConversationId = data.conversationId?.let { raw ->
+        runCatching { Uuid.parse(raw) }.getOrNull()
+    }
+
+    val target = when (data.relation) {
+        me.rerere.rikkahub.service.SpontaneousMessageRelation.RECENT_CHAT -> {
+            val existingConversationId = if (
+                originalConversationId != null &&
+                hasConversation(originalConversationId)
+            ) {
+                appendToConversation(assistantId, message, originalConversationId)
+            } else {
+                null
+            }
+            val conversationId = existingConversationId
+                ?: seedDraftConversation(assistantId, message)
+                ?: return null
+            ResolvedSpontaneousChatTarget(
+                conversationId = conversationId,
+                persistenceMode = if (existingConversationId != null) {
+                    ChatPersistenceMode.NORMAL
+                } else {
+                    ChatPersistenceMode.PERSIST_ON_REPLY
+                },
+                assistantId = assistantId,
+            )
+        }
+
+        me.rerere.rikkahub.service.SpontaneousMessageRelation.UNRELATED -> {
+            val conversationId = seedDraftConversation(assistantId, message) ?: return null
+            ResolvedSpontaneousChatTarget(
+                conversationId = conversationId,
+                persistenceMode = ChatPersistenceMode.PERSIST_ON_REPLY,
+                assistantId = assistantId,
+            )
+        }
+    }
+
+    markEventConsumed(data.eventId)
+    return target
+}
+
+internal fun determineInitialChatScreen(
+    defaultScreen: Screen.Chat,
+    deepLinkedConversationId: String?,
+    spontaneousTarget: ResolvedSpontaneousChatTarget?,
+): Screen.Chat {
+    return when {
+        spontaneousTarget != null -> spontaneousTarget.toScreen()
+        !deepLinkedConversationId.isNullOrBlank() -> Screen.Chat(id = deepLinkedConversationId)
+        else -> defaultScreen
+    }
+}
+
+private fun ResolvedSpontaneousChatTarget.toScreen(): Screen.Chat {
+    return Screen.Chat(
+        id = conversationId.toString(),
+        persistenceMode = persistenceMode.routeValue.takeIf { persistenceMode != ChatPersistenceMode.NORMAL },
+    )
+}
 
 class RouteActivity : ComponentActivity() {
     private val highlighter by inject<Highlighter>()
     private val okHttpClient by inject<OkHttpClient>()
     private val settingsStore by inject<SettingsStore>()
+    private val spontaneousMessagingStateStore by inject<SpontaneousMessagingStateStore>()
     private val chatService by inject<me.rerere.rikkahub.service.ChatService>()
     private val conversationRepo by inject<me.rerere.rikkahub.data.repository.ConversationRepository>()
     private var navStack by mutableStateOf<NavHostController?>(null)
-    private var pendingAssistantId by mutableStateOf<String?>(null)
-    private var pendingTextSelection by mutableStateOf<TextSelectionData?>(null)
+    private var pendingTextSelection by mutableStateOf<QuickAskContinuationData?>(null)
     private var pendingConversationId by mutableStateOf<String?>(null)
+    private var pendingResolvedSpontaneousTarget by mutableStateOf<ResolvedSpontaneousChatTarget?>(null)
+    private var pendingShareIntent by mutableStateOf<ResolvedSharePayload?>(null)
+    private var initialChatScreen by mutableStateOf<Screen.Chat?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -140,30 +244,25 @@ class RouteActivity : ComponentActivity() {
                 .onFailure { android.util.Log.e(TAG, "increment app launches failed", it) }
         }
         
-        // Store intent data - will be processed AFTER composition is ready
-        val intentAssistantId = intent?.getStringExtra("assistantId")
-        val intentConversationId = intent?.getStringExtra("conversationId")
-        
-        // Check for text selection intent
-        val navigateTo = intent?.getStringExtra("navigate_to")
-        val continueConversation = intent?.getBooleanExtra("continue_conversation", false) ?: false
-        if (continueConversation) {
-            pendingTextSelection = TextSelectionData(
-                navigateTo = navigateTo,
-                selectedText = intent?.getStringExtra("selected_text"),
-                aiResponse = intent?.getStringExtra("ai_response"),
-                userPrompt = intent?.getStringExtra("user_prompt"),
-                selectionAssistantId = intent?.getStringExtra("selection_assistant_id")
+        val spontaneousNotification = intent.toSpontaneousNotificationData()
+        val intentAssistantId = if (spontaneousNotification == null) intent?.getStringExtra("assistantId") else null
+        val intentConversationId = if (spontaneousNotification == null) intent?.getStringExtra("conversationId") else null
+        val intentWebServerSettings = intent?.getBooleanExtra("webServerSettings", false) == true
+        pendingTextSelection = intent?.readQuickAskContinuationData()
+        pendingShareIntent = intent?.readResolvedSharePayload()
+        lifecycleScope.launch {
+            initialChatScreen = determineInitialChatScreen(
+                defaultScreen = defaultStartScreen(),
+                deepLinkedConversationId = intentConversationId,
+                spontaneousTarget = spontaneousNotification?.let { resolveSpontaneousChatTarget(it) },
             )
         }
-        
+
         setContent {
             val navStack = rememberNavController()
             this.navStack = navStack
-            ShareHandler(navStack)
-            TextSelectionHandler(navStack)
-            NotificationHandler(navStack)
             RikkahubTheme {
+                val startScreen = initialChatScreen
                 setSingletonImageLoaderFactory { context ->
                     ImageLoader.Builder(context)
                         .crossfade(true)
@@ -184,7 +283,24 @@ class RouteActivity : ComponentActivity() {
                         }
                         .build()
                 }
-                AppRoutes(navStack)
+                if (startScreen == null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background)
+                    )
+                } else {
+                    ShareHandler(navStack)
+                    TextSelectionHandler(navStack)
+                    NotificationHandler(navStack)
+                    AppRoutes(navStack, startScreen)
+                    
+                    LaunchedEffect(intentWebServerSettings) {
+                        if (intentWebServerSettings) {
+                            navStack.navigate(Screen.SettingWeb)
+                        }
+                    }
+                }
             }
         }
         
@@ -210,9 +326,6 @@ class RouteActivity : ComponentActivity() {
                 }
             }
         }
-        if (intentConversationId != null) {
-            pendingConversationId = intentConversationId
-        }
     }
 
     private fun disableNavigationBarContrast() {
@@ -220,37 +333,111 @@ class RouteActivity : ComponentActivity() {
             window.isNavigationBarContrastEnforced = false
         }
     }
-    
-    // AssistantShortcutHandler removed - shortcuts now handled directly in onCreate/onNewIntent
+
+    private fun defaultStartScreen(): Screen.Chat {
+        return Screen.Chat(
+            id = if (readBooleanPreference("create_new_conversation_on_start", true)) {
+                Uuid.random().toString()
+            } else {
+                readStringPreference(
+                    "lastConversationId",
+                    Uuid.random().toString()
+                ) ?: Uuid.random().toString()
+            }
+        )
+    }
+
+    private fun Intent?.toSpontaneousNotificationData(): SpontaneousNotificationData? {
+        if (this == null || !getBooleanExtra(EXTRA_IS_SPONTANEOUS_NOTIFICATION, false)) {
+            return null
+        }
+
+        val assistantId = getStringExtra("assistantId") ?: return null
+        val eventId = getStringExtra(EXTRA_SPONTANEOUS_EVENT_ID) ?: return null
+        val message = getStringExtra(EXTRA_SPONTANEOUS_MESSAGE) ?: return null
+        val conversationId = getStringExtra("conversationId")
+        val relation = resolveSpontaneousNotificationRelation(
+            relationExtra = getStringExtra(EXTRA_SPONTANEOUS_RELATION),
+            conversationId = conversationId,
+        )
+
+        return SpontaneousNotificationData(
+            assistantId = assistantId,
+            conversationId = conversationId,
+            eventId = eventId,
+            message = message,
+            relation = relation,
+        )
+    }
 
     @Composable
     private fun ShareHandler(navBackStack: NavHostController) {
-        val shareIntent = remember {
-            Intent().apply {
-                action = intent?.action
-                putExtra(Intent.EXTRA_TEXT, intent?.getStringExtra(Intent.EXTRA_TEXT))
-                putExtra(Intent.EXTRA_STREAM, intent?.getStringExtra(Intent.EXTRA_STREAM))
-            }
-        }
-
-        LaunchedEffect(navBackStack) {
-            if (shareIntent.action == Intent.ACTION_SEND) {
-                val text = shareIntent.getStringExtra(Intent.EXTRA_TEXT) ?: ""
-                val imageUri = shareIntent.getStringExtra(Intent.EXTRA_STREAM)
-                navBackStack.navigate(Screen.ShareHandler(text, imageUri))
+        val shareData = pendingShareIntent
+        LaunchedEffect(navBackStack, shareData) {
+            val currentShareData = shareData ?: return@LaunchedEffect
+            pendingShareIntent = null
+            runCatching {
+                navBackStack.navigate(
+                    Screen.ShareHandler(
+                        text = currentShareData.text,
+                        files = currentShareData.attachmentUris()
+                    )
+                )
+            }.onFailure { throwable ->
+                android.util.Log.e(TAG, "Share navigation failed", throwable)
+                navBackStack.navigate(
+                    Screen.ShareHandler(
+                        text = currentShareData.text,
+                        files = currentShareData.attachmentUris()
+                    )
+                )
             }
         }
     }
 
     @Composable
     private fun NotificationHandler(navBackStack: NavHostController) {
+        val spontaneousTarget = pendingResolvedSpontaneousTarget
         val conversationIdStr = pendingConversationId
-        LaunchedEffect(conversationIdStr) {
-            if (conversationIdStr != null) {
+        LaunchedEffect(spontaneousTarget, conversationIdStr) {
+            if (spontaneousTarget != null) {
+                pendingResolvedSpontaneousTarget = null
+                navBackStack.navigate(spontaneousTarget.toScreen())
+            } else if (conversationIdStr != null) {
                 pendingConversationId = null
                 navBackStack.navigate(Screen.Chat(conversationIdStr))
             }
         }
+    }
+
+    private suspend fun resolveSpontaneousChatTarget(
+        data: SpontaneousNotificationData,
+    ): ResolvedSpontaneousChatTarget? {
+        return resolveSpontaneousNotificationTarget(
+            data = data,
+            isEventConsumed = spontaneousMessagingStateStore::isEventConsumed,
+            updateAssistantSelection = { assistantId ->
+                settingsStore.updateAssistant(assistantId)
+                settingsStore.markAssistantUsed(assistantId)
+            },
+            hasConversation = { conversationId ->
+                conversationRepo.getConversationById(conversationId) != null
+            },
+            appendToConversation = { assistantId, message, conversationId ->
+                chatService.persistSpontaneousAssistantMessage(
+                    assistantId = assistantId,
+                    content = message,
+                    conversationId = conversationId,
+                ).id
+            },
+            seedDraftConversation = { assistantId, message ->
+                chatService.seedSpontaneousDraftConversation(
+                    assistantId = assistantId,
+                    content = message,
+                ).id
+            },
+            markEventConsumed = spontaneousMessagingStateStore::markEventConsumed,
+        )
     }
 
     @Composable
@@ -266,22 +453,19 @@ class RouteActivity : ComponentActivity() {
                     // Create a new conversation with pre-existing messages
                     val conversationId = Uuid.random()
                     
-                    // Create user message with selected text
-                    val userContent = buildString {
-                        if (!data.selectedText.isNullOrBlank()) {
-                            append(data.selectedText)
-                        }
-                        if (!data.userPrompt.isNullOrBlank()) {
-                            append("\n\n")
-                            append(data.userPrompt)
-                        }
-                    }
-                    
                     val messages = mutableListOf<me.rerere.rikkahub.data.model.MessageNode>()
-                    
-                    // Add user message if there's content
-                    if (userContent.isNotBlank()) {
-                        val userMessage = me.rerere.ai.ui.UIMessage.user(userContent.trim())
+
+                    val userParts = buildQuickAskMessageParts(
+                        text = data.text,
+                        attachments = data.attachments,
+                        customPrompt = data.userPrompt
+                    )
+
+                    if (userParts.isNotEmpty()) {
+                        val userMessage = me.rerere.ai.ui.UIMessage(
+                            role = me.rerere.ai.core.MessageRole.USER,
+                            parts = userParts
+                        )
                         messages.add(me.rerere.rikkahub.data.model.MessageNode.of(userMessage))
                     }
                     
@@ -294,7 +478,7 @@ class RouteActivity : ComponentActivity() {
                     
                     if (messages.isNotEmpty()) {
                         // Use the assistant from text selection config if available
-                        val assistantId = data.selectionAssistantId?.takeIf { it.isNotBlank() }?.let { 
+                        val assistantId = data.assistantId?.takeIf { it.isNotBlank() }?.let {
                             try { Uuid.parse(it) } catch (e: Exception) { null }
                         } ?: settings.assistantId
                         
@@ -320,8 +504,29 @@ class RouteActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         android.util.Log.d(TAG, "onNewIntent called")
         android.util.Log.d(TAG, "Intent extras: conversationId=${intent.getStringExtra("conversationId")}, assistantId=${intent.getStringExtra("assistantId")}")
+        pendingShareIntent = intent.readResolvedSharePayload()
+        pendingTextSelection = intent.readQuickAskContinuationData() ?: pendingTextSelection
+
+        if (intent.getBooleanExtra("webServerSettings", false)) {
+            navStack?.navigate(Screen.SettingWeb)
+            return
+        }
+
+        intent.toSpontaneousNotificationData()?.let { notification ->
+            lifecycleScope.launch {
+                resolveSpontaneousChatTarget(notification)?.let { target ->
+                    if (navStack == null) {
+                        initialChatScreen = target.toScreen()
+                    } else {
+                        pendingResolvedSpontaneousTarget = target
+                    }
+                }
+            }
+            return
+        }
         
         // Navigate to the chat screen if a conversation ID is provided
         intent.getStringExtra("conversationId")?.let { text ->
@@ -356,7 +561,7 @@ class RouteActivity : ComponentActivity() {
     }
 
     @Composable
-    fun AppRoutes(navBackStack: NavHostController) {
+    fun AppRoutes(navBackStack: NavHostController, startDestination: Screen.Chat) {
         val toastState = rememberAppToasterState()
         val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
         val tts = rememberCustomTtsState()
@@ -402,16 +607,7 @@ class RouteActivity : ComponentActivity() {
                     modifier = Modifier
                         .fillMaxSize()
                         .background(MaterialTheme.colorScheme.background),
-                    startDestination = Screen.Chat(
-                        id = if (readBooleanPreference("create_new_conversation_on_start", true)) {
-                            Uuid.random().toString()
-                        } else {
-                            readStringPreference(
-                                "lastConversationId",
-                                Uuid.random().toString()
-                            ) ?: Uuid.random().toString()
-                        }
-                    ),
+                    startDestination = startDestination,
                     navController = navBackStack,
                     enterTransition = { 
                         slideInHorizontally(
@@ -443,7 +639,8 @@ class RouteActivity : ComponentActivity() {
                             id = Uuid.parse(route.id),
                             text = route.text,
                             files = route.files.map { it.toUri() },
-                            searchQuery = route.searchQuery
+                            searchQuery = route.searchQuery,
+                            persistenceMode = route.persistenceMode,
                         )
                     }
 
@@ -451,7 +648,7 @@ class RouteActivity : ComponentActivity() {
                         val route = backStackEntry.toRoute<Screen.ShareHandler>()
                         ShareHandlerPage(
                             text = route.text,
-                            image = route.streamUri
+                            files = route.files
                         )
                     }
 
@@ -528,6 +725,10 @@ class RouteActivity : ComponentActivity() {
                         SettingTTSPage()
                     }
 
+                    composable<Screen.SettingWeb> {
+                        SettingWebPage()
+                    }
+
                     composable<Screen.SettingMcp> {
                         SettingMcpPage()
                     }
@@ -540,18 +741,92 @@ class RouteActivity : ComponentActivity() {
                         SettingPromptInjectionsPage()
                     }
 
-                    composable<Screen.SettingModes> { backStackEntry ->
-                        val route = backStackEntry.toRoute<Screen.SettingModes>()
-                        SettingModesPage(scrollToModeId = route.scrollToModeId)
-                    }
-
-                    composable<Screen.SettingLorebooks> {
+                    composable<Screen.SettingLorebooks>(
+                        enterTransition = {
+                            if (initialState.destination.route?.contains("SettingSkills") == true) {
+                                slideInHorizontally(
+                                    animationSpec = tween(220, easing = FastOutSlowInEasing)
+                                ) { it } + fadeIn(animationSpec = tween(180))
+                            } else {
+                                null
+                            }
+                        },
+                        exitTransition = {
+                            if (targetState.destination.route?.contains("SettingSkills") == true) {
+                                slideOutHorizontally(
+                                    animationSpec = tween(220, easing = FastOutSlowInEasing)
+                                ) { it } + fadeOut(animationSpec = tween(150))
+                            } else {
+                                null
+                            }
+                        },
+                        popEnterTransition = {
+                            if (initialState.destination.route?.contains("SettingSkills") == true) {
+                                slideInHorizontally(
+                                    animationSpec = tween(220, easing = FastOutSlowInEasing)
+                                ) { it } + fadeIn(animationSpec = tween(180))
+                            } else {
+                                null
+                            }
+                        },
+                        popExitTransition = {
+                            if (targetState.destination.route?.contains("SettingSkills") == true) {
+                                slideOutHorizontally(
+                                    animationSpec = tween(220, easing = FastOutSlowInEasing)
+                                ) { it } + fadeOut(animationSpec = tween(150))
+                            } else {
+                                null
+                            }
+                        }
+                    ) {
                         SettingLorebooksPage()
                     }
 
                     composable<Screen.SettingLorebookDetail> { backStackEntry ->
                         val route = backStackEntry.toRoute<Screen.SettingLorebookDetail>()
                         SettingLorebookDetailPage(id = route.id, scrollToEntryId = route.scrollToEntryId)
+                    }
+
+                    composable<Screen.SettingSkills>(
+                        enterTransition = {
+                            if (initialState.destination.route?.contains("SettingLorebooks") == true) {
+                                slideInHorizontally(
+                                    animationSpec = tween(220, easing = FastOutSlowInEasing)
+                                ) { -it } + fadeIn(animationSpec = tween(180))
+                            } else {
+                                null
+                            }
+                        },
+                        exitTransition = {
+                            if (targetState.destination.route?.contains("SettingLorebooks") == true) {
+                                slideOutHorizontally(
+                                    animationSpec = tween(220, easing = FastOutSlowInEasing)
+                                ) { -it } + fadeOut(animationSpec = tween(150))
+                            } else {
+                                null
+                            }
+                        },
+                        popEnterTransition = {
+                            if (initialState.destination.route?.contains("SettingLorebooks") == true) {
+                                slideInHorizontally(
+                                    animationSpec = tween(220, easing = FastOutSlowInEasing)
+                                ) { -it } + fadeIn(animationSpec = tween(180))
+                            } else {
+                                null
+                            }
+                        },
+                        popExitTransition = {
+                            if (targetState.destination.route?.contains("SettingLorebooks") == true) {
+                                slideOutHorizontally(
+                                    animationSpec = tween(220, easing = FastOutSlowInEasing)
+                                ) { -it } + fadeOut(animationSpec = tween(150))
+                            } else {
+                                null
+                            }
+                        }
+                    ) { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.SettingSkills>()
+                        SettingSkillsPage(scrollToSkillId = route.scrollToSkillId)
                     }
 
                     composable<Screen.Developer> {
@@ -581,10 +856,16 @@ class RouteActivity : ComponentActivity() {
 
 sealed interface Screen {
     @Serializable
-    data class Chat(val id: String, val text: String? = null, val files: List<String> = emptyList(), val searchQuery: String? = null) : Screen
+    data class Chat(
+        val id: String,
+        val text: String? = null,
+        val files: List<String> = emptyList(),
+        val searchQuery: String? = null,
+        val persistenceMode: String? = null,
+    ) : Screen
 
     @Serializable
-    data class ShareHandler(val text: String, val streamUri: String? = null) : Screen
+    data class ShareHandler(val text: String, val files: List<String> = emptyList()) : Screen
 
 
     @Serializable
@@ -635,6 +916,9 @@ sealed interface Screen {
     data object SettingTTS : Screen
 
     @Serializable
+    data object SettingWeb : Screen
+
+    @Serializable
     data object SettingMcp : Screen
 
     @Serializable
@@ -644,9 +928,6 @@ sealed interface Screen {
     data object SettingPromptInjections : Screen
 
     @Serializable
-    data class SettingModes(val scrollToModeId: String? = null) : Screen
-
-    @Serializable
     data object SettingLorebooks : Screen
 
     @Serializable
@@ -654,6 +935,9 @@ sealed interface Screen {
 
     @Serializable
     data object Developer : Screen
+
+    @Serializable
+    data class SettingSkills(val scrollToSkillId: String? = null) : Screen
 
     @Serializable
     data object SettingAndroidIntegration : Screen

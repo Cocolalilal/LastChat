@@ -146,6 +146,12 @@ val SEARCH_SERVICE_PRESETS = listOf(
         hasScraping = false
     ),
     SearchServicePreset(
+        name = "Grok",
+        description = "xAI web search with cited answers",
+        optionsClass = SearchServiceOptions.GrokOptions::class,
+        hasScraping = false
+    ),
+    SearchServicePreset(
         name = "NanoGPT",
         description = "AI web search with scraping and stealth mode",
         optionsClass = SearchServiceOptions.NanoGPTOptions::class,
@@ -537,6 +543,11 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                     currentService = it
                                 }
                             }
+                            is SearchServiceOptions.GrokOptions -> {
+                                GrokOptions(currentService as SearchServiceOptions.GrokOptions) {
+                                    currentService = it
+                                }
+                            }
                             is SearchServiceOptions.BingLocalOptions -> {
                                 // No configuration needed for Bing
                                 Text(
@@ -923,7 +934,8 @@ private fun TavilyOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -974,7 +986,8 @@ private fun ExaOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 }
@@ -999,7 +1012,8 @@ fun ZhipuOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 }
@@ -1070,7 +1084,8 @@ private fun SearXNGOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -1088,7 +1103,8 @@ private fun SearXNGOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -1106,7 +1122,8 @@ private fun SearXNGOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -1124,7 +1141,8 @@ private fun SearXNGOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -1142,7 +1160,8 @@ private fun SearXNGOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 }
@@ -1166,7 +1185,8 @@ private fun SearchLinkUpOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -1217,7 +1237,8 @@ private fun BraveOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 }
@@ -1242,7 +1263,8 @@ private fun MetasoOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 }
@@ -1266,7 +1288,8 @@ private fun OllamaOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 }
@@ -1290,7 +1313,8 @@ private fun PerplexityOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -1309,7 +1333,55 @@ private fun PerplexityOptions(
                 )
             },
             modifier = Modifier.fillMaxWidth(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+        )
+    }
+}
+
+@Composable
+private fun GrokOptions(
+    options: SearchServiceOptions.GrokOptions,
+    onUpdateOptions: (SearchServiceOptions.GrokOptions) -> Unit
+) {
+    FormItem(
+        label = {
+            Text("API Key")
+        }
+    ) {
+        OutlinedTextField(
+            value = options.apiKey,
+            onValueChange = {
+                onUpdateOptions(
+                    options.copy(
+                        apiKey = it
+                    )
+                )
+            },
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+        )
+    }
+
+    FormItem(
+        label = {
+            Text("Model")
+        },
+        description = {
+            Text("Use an xAI model that supports web search")
+        }
+    ) {
+        OutlinedTextField(
+            value = options.model,
+            onValueChange = {
+                onUpdateOptions(
+                    options.copy(
+                        model = it
+                    )
+                )
+            },
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 }
@@ -1333,7 +1405,8 @@ private fun FirecrawlOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 }
@@ -1357,7 +1430,8 @@ private fun JinaOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 }
@@ -1381,7 +1455,8 @@ private fun BochaOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -1426,7 +1501,8 @@ private fun NanoGPTOptions(
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 

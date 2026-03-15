@@ -55,7 +55,8 @@ fun TTSProviderConfigure(
                     onValueChange(setting.copyProvider(name = newName))
                 },
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text(stringResource(R.string.setting_tts_page_name_placeholder)) }
+                placeholder = { Text(stringResource(R.string.setting_tts_page_name_placeholder)) },
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
             )
         }
 
@@ -65,6 +66,7 @@ fun TTSProviderConfigure(
             is TTSProviderSetting.Gemini -> GeminiTTSConfiguration(setting, onValueChange)
             is TTSProviderSetting.MiniMax -> MiniMaxTTSConfiguration(setting, onValueChange)
             is TTSProviderSetting.ElevenLabs -> ElevenLabsTTSConfiguration(setting, onValueChange)
+            is TTSProviderSetting.Qwen -> QwenTTSConfiguration(setting, onValueChange)
             is TTSProviderSetting.SystemTTS -> SystemTTSConfiguration(setting, onValueChange)
         }
     }
@@ -99,7 +101,8 @@ private fun OpenAITTSConfiguration(
                         contentDescription = if (apiKeyVisible) "Hide" else "Show"
                     )
                 }
-            }
+            },
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -114,7 +117,8 @@ private fun OpenAITTSConfiguration(
                 onValueChange(setting.copy(baseUrl = newBaseUrl))
             },
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text(stringResource(R.string.setting_tts_page_base_url_placeholder)) }
+            placeholder = { Text(stringResource(R.string.setting_tts_page_base_url_placeholder)) },
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -129,7 +133,8 @@ private fun OpenAITTSConfiguration(
                 onValueChange(setting.copy(model = newModel))
             },
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text(stringResource(R.string.setting_tts_page_model_placeholder_openai)) }
+            placeholder = { Text(stringResource(R.string.setting_tts_page_model_placeholder_openai)) },
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -155,7 +160,8 @@ private fun OpenAITTSConfiguration(
                     .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable),
                 trailingIcon = {
                     ExposedDropdownMenuDefaults.TrailingIcon(expanded = voiceExpanded)
-                }
+                },
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
             )
             ExposedDropdownMenu(
                 expanded = voiceExpanded,
@@ -202,7 +208,8 @@ private fun MiniMaxTTSConfiguration(
                         contentDescription = if (apiKeyVisible) "Hide" else "Show"
                     )
                 }
-            }
+            },
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -217,7 +224,8 @@ private fun MiniMaxTTSConfiguration(
                 onValueChange(setting.copy(baseUrl = newBaseUrl))
             },
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text(stringResource(R.string.setting_tts_page_base_url_placeholder)) }
+            placeholder = { Text(stringResource(R.string.setting_tts_page_base_url_placeholder)) },
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -232,7 +240,8 @@ private fun MiniMaxTTSConfiguration(
                 onValueChange(setting.copy(model = newModel))
             },
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("speech-2.5-hd-preview") }
+            placeholder = { Text("speech-2.5-hd-preview") },
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -270,7 +279,8 @@ private fun MiniMaxTTSConfiguration(
                     .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable),
                 trailingIcon = {
                     ExposedDropdownMenuDefaults.TrailingIcon(expanded = voiceIdExpanded)
-                }
+                },
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
             )
             ExposedDropdownMenu(
                 expanded = voiceIdExpanded,
@@ -311,7 +321,8 @@ private fun MiniMaxTTSConfiguration(
                     .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable),
                 trailingIcon = {
                     ExposedDropdownMenuDefaults.TrailingIcon(expanded = emotionExpanded)
-                }
+                },
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
             )
             ExposedDropdownMenu(
                 expanded = emotionExpanded,
@@ -376,7 +387,8 @@ private fun GeminiTTSConfiguration(
                         contentDescription = if (apiKeyVisible) "Hide" else "Show"
                     )
                 }
-            }
+            },
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -391,7 +403,8 @@ private fun GeminiTTSConfiguration(
                 onValueChange(setting.copy(baseUrl = newBaseUrl))
             },
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text(stringResource(R.string.setting_tts_page_base_url_placeholder)) }
+            placeholder = { Text(stringResource(R.string.setting_tts_page_base_url_placeholder)) },
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -406,7 +419,8 @@ private fun GeminiTTSConfiguration(
                 onValueChange(setting.copy(model = newModel))
             },
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text(stringResource(R.string.setting_tts_page_model_placeholder_gemini)) }
+            placeholder = { Text(stringResource(R.string.setting_tts_page_model_placeholder_gemini)) },
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -421,7 +435,8 @@ private fun GeminiTTSConfiguration(
                 onValueChange(setting.copy(voiceName = newVoiceName))
             },
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text(stringResource(R.string.setting_tts_page_voice_name_placeholder)) }
+            placeholder = { Text(stringResource(R.string.setting_tts_page_voice_name_placeholder)) },
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 }
@@ -467,6 +482,158 @@ private fun SystemTTSConfiguration(
 }
 
 @Composable
+private fun QwenTTSConfiguration(
+    setting: TTSProviderSetting.Qwen,
+    onValueChange: (TTSProviderSetting) -> Unit
+) {
+    var apiKeyVisible by remember { mutableStateOf(false) }
+    FormItem(
+        label = { Text(stringResource(R.string.setting_tts_page_api_key)) },
+        description = { Text(stringResource(R.string.setting_tts_page_api_key_description)) }
+    ) {
+        OutlinedTextField(
+            value = setting.apiKey,
+            onValueChange = { newApiKey ->
+                onValueChange(setting.copy(apiKey = newApiKey))
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { if (!it.isFocused) apiKeyVisible = false },
+            placeholder = { Text("sk-xxx") },
+            visualTransformation = if (apiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = {
+                IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
+                    Icon(
+                        imageVector = if (apiKeyVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                        contentDescription = if (apiKeyVisible) "Hide" else "Show"
+                    )
+                }
+            },
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+        )
+    }
+
+    FormItem(
+        label = { Text(stringResource(R.string.setting_tts_page_base_url)) },
+        description = { Text(stringResource(R.string.setting_tts_page_base_url_description)) }
+    ) {
+        OutlinedTextField(
+            value = setting.baseUrl,
+            onValueChange = { newBaseUrl ->
+                onValueChange(setting.copy(baseUrl = newBaseUrl))
+            },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("https://dashscope.aliyuncs.com/api/v1") },
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+        )
+    }
+
+    FormItem(
+        label = { Text(stringResource(R.string.setting_tts_page_model)) },
+        description = { Text(stringResource(R.string.setting_tts_page_model_description)) }
+    ) {
+        OutlinedTextField(
+            value = setting.model,
+            onValueChange = { newModel ->
+                onValueChange(setting.copy(model = newModel))
+            },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("qwen3-tts-flash") },
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+        )
+    }
+
+    var voiceExpanded by remember { mutableStateOf(false) }
+    val voices = listOf(
+        "Cherry", "Serene", "Ethan", "Chelsie",
+        "Momo", "Vivian", "Moon", "Maia", "Kai",
+        "Nofish", "Bella", "Jennifer", "Ryan",
+        "Katerina", "Aiden", "Eldric Sage", "Mia",
+        "Mochi", "Bellona", "Vincent", "Bunny",
+        "Neil", "Elias", "Arthur", "Nini"
+    )
+
+    FormItem(
+        label = { Text(stringResource(R.string.setting_tts_page_voice)) },
+        description = { Text(stringResource(R.string.setting_tts_page_voice_description)) }
+    ) {
+        ExposedDropdownMenuBox(
+            expanded = voiceExpanded,
+            onExpandedChange = { voiceExpanded = !voiceExpanded }
+        ) {
+            OutlinedTextField(
+                value = setting.voice,
+                onValueChange = { newVoice ->
+                    onValueChange(setting.copy(voice = newVoice))
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable),
+                trailingIcon = {
+                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = voiceExpanded)
+                },
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+            )
+            ExposedDropdownMenu(
+                expanded = voiceExpanded,
+                onDismissRequest = { voiceExpanded = false }
+            ) {
+                voices.forEach { voice ->
+                    DropdownMenuItem(
+                        text = { Text(voice) },
+                        onClick = {
+                            voiceExpanded = false
+                            onValueChange(setting.copy(voice = voice))
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    var languageExpanded by remember { mutableStateOf(false) }
+    val languageTypes = listOf("Auto", "Chinese", "English", "Japanese", "Korean")
+
+    FormItem(
+        label = { Text(stringResource(R.string.setting_tts_page_language_type)) },
+        description = { Text(stringResource(R.string.setting_tts_page_language_type_description)) }
+    ) {
+        ExposedDropdownMenuBox(
+            expanded = languageExpanded,
+            onExpandedChange = { languageExpanded = !languageExpanded }
+        ) {
+            OutlinedTextField(
+                value = setting.languageType,
+                onValueChange = { newLanguageType ->
+                    onValueChange(setting.copy(languageType = newLanguageType))
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable),
+                trailingIcon = {
+                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = languageExpanded)
+                },
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+            )
+            ExposedDropdownMenu(
+                expanded = languageExpanded,
+                onDismissRequest = { languageExpanded = false }
+            ) {
+                languageTypes.forEach { languageType ->
+                    DropdownMenuItem(
+                        text = { Text(languageType) },
+                        onClick = {
+                            languageExpanded = false
+                            onValueChange(setting.copy(languageType = languageType))
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ElevenLabsTTSConfiguration(
     setting: TTSProviderSetting.ElevenLabs,
     onValueChange: (TTSProviderSetting) -> Unit
@@ -494,7 +661,8 @@ private fun ElevenLabsTTSConfiguration(
                         contentDescription = if (apiKeyVisible) "Hide" else "Show"
                     )
                 }
-            }
+            },
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -509,7 +677,8 @@ private fun ElevenLabsTTSConfiguration(
                 onValueChange(setting.copy(voiceId = newVoiceId))
             },
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("21m00Tcm4TlvDq8ikWAM") }
+            placeholder = { Text("21m00Tcm4TlvDq8ikWAM") },
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -540,7 +709,8 @@ private fun ElevenLabsTTSConfiguration(
                     .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable),
                 trailingIcon = {
                     ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelExpanded)
-                }
+                },
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
             )
             ExposedDropdownMenu(
                 expanded = modelExpanded,

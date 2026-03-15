@@ -284,7 +284,8 @@ fun BackgroundPicker(
                     label = { Text(stringResource(R.string.assistant_page_image_url)) },
                     modifier = Modifier.fillMaxWidth(),
                     placeholder = { Text("https://example.com/image.jpg") },
-                    singleLine = true
+                    singleLine = true,
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                 )
             },
             confirmButton = {

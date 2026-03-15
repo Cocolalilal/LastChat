@@ -55,6 +55,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
@@ -69,6 +70,7 @@ import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 import me.rerere.rikkahub.data.model.Tag as DataTag
 import me.rerere.rikkahub.ui.pages.chat.ExportOptionsDialog
+import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.utils.AssistantExportImport
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.components.ui.ToastAction
@@ -82,6 +84,7 @@ private object AssistantDetailRoutes {
     const val PROMPTS = "prompts"
     const val CONTEXT_MANAGEMENT = "context_management"
     const val LOREBOOKS = "lorebooks"
+    const val SKILLS = "skills"
     const val TOOLS = "tools"
     const val MEMORY = "memory"
     const val UI = "ui"
@@ -102,9 +105,11 @@ fun AssistantDetailPage(
     )
 
     val navController = rememberNavController()
+    val rootNavController = LocalNavController.current
     val toaster = LocalToaster.current
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    val settings by vm.settings.collectAsStateWithLifecycle()
     val mcpServerConfigs by vm.mcpServerConfigs.collectAsStateWithLifecycle()
     val assistant by vm.assistant.collectAsStateWithLifecycle()
     val memories by vm.memories.collectAsStateWithLifecycle()
@@ -375,15 +380,25 @@ fun AssistantDetailPage(
             composable(AssistantDetailRoutes.CONTEXT_MANAGEMENT) {
                 AssistantContextManagementSubPage(
                     assistant = assistant,
+                    hasSummarizerModelConfigured = settings.summarizerModelId != null,
                     onUpdate = { onUpdate(it) },
                     onNavigateToLorebooks = { navController.navigate(AssistantDetailRoutes.LOREBOOKS) },
-                    onNavigateToModels = { navController.navigate(AssistantDetailRoutes.MODEL) }
+                    onNavigateToSummarizerSettings = { rootNavController.navigate(Screen.SettingModels) }
                 )
             }
 
             // Lorebooks (nested under Context Management)
             composable(AssistantDetailRoutes.LOREBOOKS) {
                 AssistantLorebooksSubPage(
+                    assistant = assistant,
+                    onUpdate = { onUpdate(it) },
+                    vm = vm
+                )
+            }
+
+            // Skills (nested under Context Management)
+            composable(AssistantDetailRoutes.SKILLS) {
+                AssistantSkillsSubPage(
                     assistant = assistant,
                     onUpdate = { onUpdate(it) },
                     vm = vm
@@ -408,6 +423,7 @@ fun AssistantDetailPage(
                 val retrievalResults by vm.retrievalResults.collectAsStateWithLifecycle()
                 AssistantMemorySettings(
                     assistant = assistant,
+                    hasSummarizerModelConfigured = settings.summarizerModelId != null,
                     memories = memories,
                     onUpdateAssistant = { onUpdate(it) },
                     onDeleteMemory = { vm.deleteMemory(it) },
@@ -422,7 +438,7 @@ fun AssistantDetailPage(
                     needsEmbeddingRegeneration = needsEmbeddingRegeneration,
                     initialMemoryTab = initialMemoryTab,
                     scrollToMemoryId = scrollToMemoryId,
-                    onNavigateToModels = { navController.navigate(AssistantDetailRoutes.MODEL) }
+                    onNavigateToSummarizerSettings = { rootNavController.navigate(Screen.SettingModels) }
                 )
             }
 
@@ -565,7 +581,7 @@ private fun AssistantDetailHome(
             NavigationCard(
                 icon = Icons.Rounded.Psychology,
                 title = "Models",
-                description = "Chat model, summarizer, generation settings",
+                description = "Chat model, background model, generation settings",
                 onClick = onNavigateToModel
             )
         }

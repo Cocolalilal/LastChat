@@ -414,7 +414,7 @@ private fun SharedTransitionScope.ChatListNormal(
                                 navController.navigate(Screen.SettingLorebookDetail(entry.lorebookId, entry.entryId))
                             },
                             onModeClick = { mode ->
-                                navController.navigate(Screen.SettingModes(scrollToModeId = mode.modeId))
+                                navController.navigate(Screen.SettingSkills(scrollToSkillId = mode.modeId))
                             },
                             onMemoryClick = { memory ->
                                 navController.navigate(
@@ -427,6 +427,20 @@ private fun SharedTransitionScope.ChatListNormal(
                                 )
                             },
                             showRegenerate = showRegenerate,
+                            onExpandedStreamingCodeBlockChanged = if (loading && isLastTurn) {
+                                {
+                                    if (!userScrolledUp) {
+                                        scope.launch {
+                                            val targetIndex = state.layoutInfo.totalItemsCount - 1
+                                            if (targetIndex >= 0) {
+                                                state.animateScrollToItem(targetIndex)
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                null
+                            },
                         )
                     }
                     // Show truncate indicator if any node in this group is at the truncate point
@@ -549,7 +563,9 @@ private fun SharedTransitionScope.ChatListNormal(
             )
 
             val captureProgress = LocalScrollCaptureInProgress.current
-            val effectiveDisplay = settings.getEffectiveDisplaySetting()
+            val effectiveDisplay = settings.getEffectiveDisplaySetting(
+                settings.getAssistantById(conversation.assistantId)
+            )
 
             // 消息快速跳转
             MessageJumper(
@@ -683,7 +699,7 @@ private fun SharedTransitionScope.ChatListPreview(
                 }
             },
             singleLine = true,
-            shape = CircleShape,
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.SearchField,
             maxLines = 1,
         )
 

@@ -108,7 +108,7 @@ fun EmojiPicker(
                             onSearch = { /* Handle search */ }
                         ),
                         singleLine = true,
-                        shape = RoundedCornerShape(50)
+                        shape = me.rerere.rikkahub.ui.theme.AppShapes.SearchField
                     )
                 }
 

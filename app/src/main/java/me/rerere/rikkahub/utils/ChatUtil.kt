@@ -11,6 +11,7 @@ import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.util.Log
+import android.webkit.MimeTypeMap
 import androidx.core.net.toFile
 import androidx.core.net.toUri
 import androidx.navigation.NavHostController
@@ -21,6 +22,7 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.Screen
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.InputStream
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.uuid.Uuid
@@ -33,6 +35,7 @@ fun navigateToChatPage(
     initText: String? = null,
     initFiles: List<Uri> = emptyList(),
     searchQuery: String? = null,
+    persistenceMode: String? = null,
 ) {
     Log.i(TAG, "navigateToChatPage: navigate to $chatId")
     navController.navigate(
@@ -41,6 +44,7 @@ fun navigateToChatPage(
             text = initText,
             files = initFiles.map { it.toString() },
             searchQuery = searchQuery,
+            persistenceMode = persistenceMode,
         ),
     ) {
         popUpTo(0) {
@@ -137,18 +141,21 @@ fun Context.createChatFilesByContents(uris: List<Uri>): List<Uri> {
         dir.mkdirs()
     }
     uris.forEach { uri ->
-        val fileName = Uuid.random()
-        val file = dir.resolve("$fileName")
+        val fileName = buildUploadFileName(
+            originalName = getFileNameFromUri(uri),
+            mimeType = getFileMimeType(uri)
+        )
+        val file = dir.resolve(fileName)
         if (!file.exists()) {
             file.createNewFile()
         }
         val newUri = file.toUri()
         runCatching {
-            this.contentResolver.openInputStream(uri)?.use { inputStream ->
+            openUriInputStream(uri)?.use { inputStream ->
                 file.outputStream().use { outputStream ->
                     inputStream.copyTo(outputStream)
                 }
-            }
+            } ?: error("Unable to open input stream for $uri")
             newUris.add(newUri)
         }.onFailure {
             it.printStackTrace()
@@ -179,7 +186,27 @@ fun Context.createChatFilesByByteArrays(byteArrays: List<ByteArray>): List<Uri> 
     return newUris
 }
 
+fun Context.createChatTextFile(fileName: String, content: String): Uri {
+    val dir = filesDir.resolve("upload")
+    if (!dir.exists()) {
+        dir.mkdirs()
+    }
+    val extension = fileName.substringAfterLast('.', "")
+        .takeIf { it.isNotBlank() && it != fileName }
+        ?.lowercase()
+        ?: "txt"
+    val baseName = fileName.substringBeforeLast('.', fileName)
+    val safeBaseName = sanitizeUploadBaseName(baseName)
+    val targetFile = dir.resolve("${safeBaseName}-${Uuid.random()}.$extension")
+    targetFile.writeText(content)
+    return targetFile.toUri()
+}
+
 fun Context.getFileNameFromUri(uri: Uri): String? {
+    if (uri.scheme == "file") {
+        return runCatching { uri.toFile().name }.getOrNull()
+            ?: uri.lastPathSegment?.substringAfterLast('/')
+    }
     var fileName: String? = null
     val projection = arrayOf(
         OpenableColumns.DISPLAY_NAME,
@@ -203,14 +230,26 @@ fun Context.getFileNameFromUri(uri: Uri): String? {
         }
     }
     // 如果查询失败或没有获取到名称，fileName 会保持 null
-    return fileName
+    return fileName ?: uri.lastPathSegment?.substringAfterLast('/')
 }
 
 fun Context.getFileMimeType(uri: Uri): String? {
-    return when (uri.scheme) {
+    val contentType = when (uri.scheme) {
         "content" -> contentResolver.getType(uri)
+        "file" -> MimeTypeMap.getSingleton().getMimeTypeFromExtension(
+            uri.toFile().extension.lowercase().takeIf { it.isNotBlank() }
+        )
+
         else -> null
     }
+    if (contentType != null) {
+        return contentType
+    }
+    val extension = getFileNameFromUri(uri)
+        ?.substringAfterLast('.', "")
+        ?.lowercase()
+        ?.takeIf { it.isNotBlank() }
+    return extension?.let { MimeTypeMap.getSingleton().getMimeTypeFromExtension(it) }
 }
 
 @OptIn(ExperimentalEncodingApi::class)
@@ -303,4 +342,40 @@ fun Context.listImageFiles(): List<File> {
     return imagesDir.listFiles()
         ?.filter { it.isFile && it.extension.lowercase() in listOf("png", "jpg", "jpeg", "webp") }?.toList()
         ?: emptyList()
+}
+
+private fun Context.openUriInputStream(uri: Uri): InputStream? {
+    return when (uri.scheme) {
+        "file" -> runCatching { uri.toFile().inputStream() }.getOrNull()
+        else -> contentResolver.openInputStream(uri)
+    }
+}
+
+private fun buildUploadFileName(originalName: String?, mimeType: String?): String {
+    val extension = originalName
+        ?.substringAfterLast('.', "")
+        ?.takeIf { it.isNotBlank() && it != originalName }
+        ?.lowercase()
+        ?: mimeType
+            ?.let { MimeTypeMap.getSingleton().getExtensionFromMimeType(it) }
+            ?.takeIf { it.isNotBlank() }
+            ?.lowercase()
+    val safeBaseName = sanitizeUploadBaseName(originalName?.substringBeforeLast('.', originalName))
+    return buildString {
+        append(safeBaseName)
+        append('-')
+        append(Uuid.random())
+        extension?.let {
+            append('.')
+            append(it)
+        }
+    }
+}
+
+private fun sanitizeUploadBaseName(rawName: String?): String {
+    val cleaned = rawName
+        ?.replace(Regex("[^A-Za-z0-9._-]+"), "-")
+        ?.trim('-', '.', '_')
+        ?.take(48)
+    return cleaned?.takeIf { it.isNotBlank() } ?: "upload"
 }

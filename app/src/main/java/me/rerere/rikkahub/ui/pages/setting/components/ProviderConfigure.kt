@@ -5,12 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Visibility
-import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
@@ -26,10 +21,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.delay
@@ -159,6 +151,7 @@ fun ProviderConfigure(
                     Text(stringResource(id = R.string.setting_provider_page_name))
                 },
                 modifier = Modifier.weight(1f),
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
             )
         }
 
@@ -183,17 +176,29 @@ fun ProviderConfigure(
  * Convert a provider to a different type while preserving all common properties.
  */
 fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSetting {
-    // If same type, return unchanged
-    if (this::class == type) return this
+    if (this::class == type) {
+        return this
+    }
 
-    // Extract API key from current provider
     val apiKey = when (this) {
         is ProviderSetting.OpenAI -> this.apiKey
         is ProviderSetting.Google -> this.apiKey
         is ProviderSetting.Claude -> this.apiKey
     }
 
-    // Convert to target type while preserving common properties
+    val sourceBaseUrl = when (this) {
+        is ProviderSetting.OpenAI -> this.baseUrl
+        is ProviderSetting.Google -> this.baseUrl
+        is ProviderSetting.Claude -> this.baseUrl
+    }
+    val targetDefaultBaseUrl = when (type) {
+        ProviderSetting.OpenAI::class -> ProviderSetting.OpenAI().baseUrl
+        ProviderSetting.Google::class -> ProviderSetting.Google().baseUrl
+        ProviderSetting.Claude::class -> ProviderSetting.Claude().baseUrl
+        else -> error("Unsupported provider type: $type")
+    }
+    val convertedBaseUrl = sourceBaseUrl.convertToTargetBaseUrl(targetDefaultBaseUrl)
+
     return when (type) {
         ProviderSetting.OpenAI::class -> ProviderSetting.OpenAI(
             id = this.id,
@@ -204,9 +209,15 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
             balanceOption = this.balanceOption,
             tags = this.tags,
             customIconUri = this.customIconUri,
+            builtIn = this.builtIn,
+            description = this.description,
+            shortDescription = this.shortDescription,
             apiKey = apiKey,
-            baseUrl = if (this is ProviderSetting.OpenAI) this.baseUrl else "https://api.openai.com/v1"
+            baseUrl = convertedBaseUrl,
+            chatCompletionsPath = if (this is ProviderSetting.OpenAI) this.chatCompletionsPath else ProviderSetting.OpenAI().chatCompletionsPath,
+            useResponseApi = if (this is ProviderSetting.OpenAI) this.useResponseApi else false
         )
+
         ProviderSetting.Google::class -> ProviderSetting.Google(
             id = this.id,
             enabled = this.enabled,
@@ -216,9 +227,18 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
             balanceOption = this.balanceOption,
             tags = this.tags,
             customIconUri = this.customIconUri,
+            builtIn = this.builtIn,
+            description = this.description,
+            shortDescription = this.shortDescription,
             apiKey = apiKey,
-            baseUrl = if (this is ProviderSetting.Google) this.baseUrl else "https://generativelanguage.googleapis.com/v1beta"
+            baseUrl = convertedBaseUrl,
+            vertexAI = if (this is ProviderSetting.Google) this.vertexAI else false,
+            privateKey = if (this is ProviderSetting.Google) this.privateKey else ProviderSetting.Google().privateKey,
+            serviceAccountEmail = if (this is ProviderSetting.Google) this.serviceAccountEmail else ProviderSetting.Google().serviceAccountEmail,
+            location = if (this is ProviderSetting.Google) this.location else ProviderSetting.Google().location,
+            projectId = if (this is ProviderSetting.Google) this.projectId else ProviderSetting.Google().projectId
         )
+
         ProviderSetting.Claude::class -> ProviderSetting.Claude(
             id = this.id,
             enabled = this.enabled,
@@ -228,12 +248,66 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
             balanceOption = this.balanceOption,
             tags = this.tags,
             customIconUri = this.customIconUri,
+            builtIn = this.builtIn,
+            description = this.description,
+            shortDescription = this.shortDescription,
             apiKey = apiKey,
-            baseUrl = if (this is ProviderSetting.Claude) this.baseUrl else "https://api.anthropic.com/v1"
+            baseUrl = convertedBaseUrl
         )
-        else -> this // Return unchanged if unknown type
+
+        else -> error("Unsupported provider type: $type")
     }
 }
+
+private fun String.convertToTargetBaseUrl(targetDefaultBaseUrl: String): String {
+    val sourceUrl = this.toHttpUrlOrNull() ?: return this
+    val sourceHost = sourceUrl.host.lowercase()
+    if (sourceHost in OFFICIAL_PROVIDER_HOSTS) {
+        return targetDefaultBaseUrl
+    }
+
+    val targetUrl = targetDefaultBaseUrl.toHttpUrlOrNull() ?: return this
+    val convertedPath = sourceUrl.encodedPath.convertToTargetPath(targetUrl.encodedPath)
+    return sourceUrl.newBuilder()
+        .encodedPath(convertedPath)
+        .build()
+        .toString()
+}
+
+private fun String.convertToTargetPath(targetPath: String): String {
+    val source = this.normalizePath()
+    val target = targetPath.normalizePath()
+
+    val replaced = when {
+        source.lowercase().endsWith(V1_BETA_SUFFIX) -> source.dropLast(V1_BETA_SUFFIX.length) + target
+        source.lowercase().endsWith(V1_SUFFIX) -> source.dropLast(V1_SUFFIX.length) + target
+        source.isBlank() -> target
+        else -> source + target
+    }
+
+    return replaced.normalizePath()
+}
+
+private fun String.normalizePath(): String {
+    val value = this.trim()
+    if (value.isEmpty() || value == "/") {
+        return ""
+    }
+    val path = if (value.startsWith("/")) value else "/$value"
+    return path.trimEnd('/')
+}
+
+private const val OPENAI_OFFICIAL_HOST = "api.openai.com"
+private const val GOOGLE_OFFICIAL_HOST = "generativelanguage.googleapis.com"
+private const val CLAUDE_OFFICIAL_HOST = "api.anthropic.com"
+private const val V1_SUFFIX = "/v1"
+private const val V1_BETA_SUFFIX = "/v1beta"
+
+private val OFFICIAL_PROVIDER_HOSTS = setOf(
+    OPENAI_OFFICIAL_HOST,
+    GOOGLE_OFFICIAL_HOST,
+    CLAUDE_OFFICIAL_HOST
+)
 
 @Composable
 private fun ColumnScope.ProviderConfigureOpenAI(
@@ -245,7 +319,6 @@ private fun ColumnScope.ProviderConfigureOpenAI(
 
     provider.description()
 
-    var apiKeyVisible by remember { mutableStateOf(false) }
     var localApiKey by remember(provider.id) { mutableStateOf(provider.apiKey) }
     LaunchedEffect(provider.apiKey) {
         if (provider.apiKey != localApiKey) {
@@ -259,25 +332,13 @@ private fun ColumnScope.ProviderConfigureOpenAI(
             onEdit(latest.copy(apiKey = localApiKey.trim()))
         }
     }
-    OutlinedTextField(
+    SecureOutlinedTextField(
         value = localApiKey,
         onValueChange = { localApiKey = it },
-        label = {
-            Text(stringResource(id = R.string.setting_provider_page_api_key))
-        },
+        label = stringResource(id = R.string.setting_provider_page_api_key),
         modifier = Modifier
-            .fillMaxWidth()
-            .onFocusChanged { if (!it.isFocused) apiKeyVisible = false },
-        maxLines = if (apiKeyVisible) 3 else 1,
-        visualTransformation = if (apiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
-        trailingIcon = {
-            IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
-                Icon(
-                    imageVector = if (apiKeyVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
-                    contentDescription = if (apiKeyVisible) "Hide" else "Show"
-                )
-            }
-        }
+            .fillMaxWidth(),
+        maxVisibleLines = 3
     )
 
     // Local state for URL fields with debouncing to prevent lag
@@ -305,7 +366,8 @@ private fun ColumnScope.ProviderConfigureOpenAI(
         label = {
             Text(stringResource(id = R.string.setting_provider_page_api_base_url))
         },
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
     )
 
     if (!provider.useResponseApi) {
@@ -332,7 +394,8 @@ private fun ColumnScope.ProviderConfigureOpenAI(
                 Text(stringResource(id = R.string.setting_provider_page_api_path))
             },
             modifier = Modifier.fillMaxWidth(),
-            enabled = !provider.builtIn
+            enabled = !provider.builtIn,
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 
@@ -365,7 +428,6 @@ private fun ColumnScope.ProviderConfigureClaude(
     val latestProvider by rememberUpdatedState(provider)
     provider.description()
 
-    var apiKeyVisible by remember { mutableStateOf(false) }
     var localApiKey by remember(provider.id) { mutableStateOf(provider.apiKey) }
     LaunchedEffect(provider.apiKey) {
         if (provider.apiKey != localApiKey) {
@@ -379,25 +441,11 @@ private fun ColumnScope.ProviderConfigureClaude(
             onEdit(latest.copy(apiKey = localApiKey.trim()))
         }
     }
-    OutlinedTextField(
+    SecureOutlinedTextField(
         value = localApiKey,
         onValueChange = { localApiKey = it },
-        label = {
-            Text(stringResource(id = R.string.setting_provider_page_api_key))
-        },
-        modifier = Modifier
-            .fillMaxWidth()
-            .onFocusChanged { if (!it.isFocused) apiKeyVisible = false },
-        maxLines = 1,
-        visualTransformation = if (apiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
-        trailingIcon = {
-            IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
-                Icon(
-                    imageVector = if (apiKeyVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
-                    contentDescription = if (apiKeyVisible) "Hide" else "Show"
-                )
-            }
-        }
+        label = stringResource(id = R.string.setting_provider_page_api_key),
+        modifier = Modifier.fillMaxWidth()
     )
 
     // Local state for URL field with debouncing to prevent lag
@@ -423,7 +471,8 @@ private fun ColumnScope.ProviderConfigureClaude(
         label = {
             Text(stringResource(id = R.string.setting_provider_page_api_base_url))
         },
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
     )
 }
 
@@ -448,7 +497,6 @@ private fun ColumnScope.ProviderConfigureGoogle(
     }
 
     if (!provider.vertexAI) {
-        var apiKeyVisible by remember { mutableStateOf(false) }
         var localApiKey by remember(provider.id) { mutableStateOf(provider.apiKey) }
         LaunchedEffect(provider.apiKey) {
             if (provider.apiKey != localApiKey) {
@@ -462,25 +510,12 @@ private fun ColumnScope.ProviderConfigureGoogle(
                 onEdit(latest.copy(apiKey = localApiKey.trim()))
             }
         }
-        OutlinedTextField(
+        SecureOutlinedTextField(
             value = localApiKey,
             onValueChange = { localApiKey = it },
-            label = {
-                Text(stringResource(id = R.string.setting_provider_page_api_key))
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .onFocusChanged { if (!it.isFocused) apiKeyVisible = false },
-            maxLines = if (apiKeyVisible) 3 else 1,
-            visualTransformation = if (apiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
-            trailingIcon = {
-                IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
-                    Icon(
-                        imageVector = if (apiKeyVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
-                        contentDescription = if (apiKeyVisible) "Hide" else "Show"
-                    )
-                }
-            }
+            label = stringResource(id = R.string.setting_provider_page_api_key),
+            modifier = Modifier.fillMaxWidth(),
+            maxVisibleLines = 3
         )
 
         // Local state for URL field with debouncing
@@ -512,7 +547,8 @@ private fun ColumnScope.ProviderConfigureGoogle(
                 {
                     Text("The base URL usually ends with `/v1beta`")
                 }
-            } else null
+            } else null,
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     } else {
         // Local state for all Vertex AI text fields with debouncing
@@ -563,7 +599,8 @@ private fun ColumnScope.ProviderConfigureGoogle(
             label = {
                 Text(stringResource(id = R.string.setting_provider_page_service_account_email))
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
         OutlinedTextField(
             value = localPrivateKey,
@@ -575,6 +612,7 @@ private fun ColumnScope.ProviderConfigureGoogle(
             maxLines = 6,
             minLines = 3,
             textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
         OutlinedTextField(
             value = localLocation,
@@ -583,7 +621,8 @@ private fun ColumnScope.ProviderConfigureGoogle(
                 // https://cloud.google.com/vertex-ai/generative-ai/docs/learn/locations#available-regions
                 Text(stringResource(id = R.string.setting_provider_page_location))
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
         OutlinedTextField(
             value = localProjectId,
@@ -591,7 +630,8 @@ private fun ColumnScope.ProviderConfigureGoogle(
             label = {
                 Text(stringResource(id = R.string.setting_provider_page_project_id))
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
         )
     }
 }

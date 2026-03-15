@@ -280,7 +280,7 @@ private fun LobeHubIconSearchDialog(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                    shape = RoundedCornerShape(50)
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.SearchField
                 )
                 
                 LazyVerticalGrid(

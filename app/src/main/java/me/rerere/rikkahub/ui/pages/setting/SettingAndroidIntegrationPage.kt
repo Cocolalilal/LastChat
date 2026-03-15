@@ -77,6 +77,9 @@ import me.rerere.rikkahub.data.model.TextSelectionAction
 import me.rerere.rikkahub.data.model.TextSelectionConfig
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
+import me.rerere.rikkahub.ui.components.textselection.QuickAskInnerShape
+import me.rerere.rikkahub.ui.components.textselection.QuickAskOuterShape
+import me.rerere.rikkahub.ui.components.textselection.quickAskGroupedButtonShape
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.components.ui.Select
@@ -326,7 +329,7 @@ private fun PreviewCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 8.dp), // No horizontal padding - edge to edge
-            shape = RoundedCornerShape(40.dp),
+            shape = QuickAskOuterShape,
             color = if (amoledMode && isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerLow,
             tonalElevation = 8.dp
         ) {
@@ -360,7 +363,7 @@ private fun PreviewCard(
                 // Preview text
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = QuickAskInnerShape,
                     color = MaterialTheme.colorScheme.surfaceContainerHigh // Same as popup
                 ) {
                     Text(
@@ -384,7 +387,7 @@ private fun PreviewCard(
                                 PreviewActionButton(
                                     modifier = Modifier.weight(if (isLastOdd) 2f else 1f),
                                     action = action,
-                                    shape = getButtonShape(rowIndex, colIndex, rows.size, rowActions.size),
+                                    shape = quickAskGroupedButtonShape(rowIndex, colIndex, rows.size, rowActions.size),
                                     isBlack = amoledMode && isDarkMode,
                                     onClick = { onActionClick(action) }
                                 )
@@ -541,7 +544,8 @@ private fun EditActionDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 150.dp),
-                    minLines = 5
+                    minLines = 5,
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                 )
                 // Show variable hint only for relevant actions
                 val variableHint = when (action.id) {
@@ -571,21 +575,6 @@ private fun EditActionDialog(
                 Text(stringResource(R.string.cancel))
             }
         }
-    )
-}
-
-private fun getButtonShape(rowIndex: Int, colIndex: Int, totalRows: Int, colsInRow: Int): RoundedCornerShape {
-    val isFirstRow = rowIndex == 0
-    val isLastRow = rowIndex == totalRows - 1
-    val isFirstCol = colIndex == 0
-    val isLastCol = colIndex == colsInRow - 1
-    val isFullWidth = colsInRow == 1
-
-    return RoundedCornerShape(
-        topStart = if (isFirstRow && isFirstCol) 24.dp else 10.dp,
-        topEnd = if (isFirstRow && (isLastCol || isFullWidth)) 24.dp else 10.dp,
-        bottomStart = if (isLastRow && isFirstCol) 24.dp else 10.dp,
-        bottomEnd = if (isLastRow && (isLastCol || isFullWidth)) 24.dp else 10.dp
     )
 }
 

@@ -16,16 +16,52 @@ plugins {
     alias(libs.plugins.chaquopy)
 }
 
+val enableReleaseShrinker = providers.gradleProperty("lastchat.release.minify")
+    .map(String::toBoolean)
+    .orElse(false)
+
+val webUiDir = rootProject.file("web-ui")
+val webUiBuildDir = File(webUiDir, "build/client")
+
+val buildWebUi by tasks.registering(Exec::class) {
+    group = "build"
+    description = "Builds the React web UI bundle used by the Android app."
+    workingDir = webUiDir
+
+    inputs.dir(File(webUiDir, "app"))
+    inputs.dir(File(webUiDir, "public"))
+    inputs.file(File(webUiDir, "package.json"))
+    inputs.file(File(webUiDir, "react-router.config.ts"))
+    inputs.file(File(webUiDir, "tsconfig.json"))
+    inputs.file(File(webUiDir, "vite.config.ts"))
+    val packageLock = File(webUiDir, "package-lock.json")
+    if (packageLock.exists()) {
+        inputs.file(packageLock)
+    }
+    outputs.dir(webUiBuildDir)
+
+    commandLine(
+        if (Os.isFamily(Os.FAMILY_WINDOWS)) listOf("cmd", "/c", "npm", "run", "build")
+        else listOf("npm", "run", "build")
+    )
+}
+
 android {
     namespace = "me.rerere.rikkahub"
     compileSdk = 36
+
+    sourceSets {
+        getByName("main") {
+            assets.srcDir("../web-ui/build/client")
+        }
+    }
 
     defaultConfig {
         applicationId = "lastchat.rikkafork.cocolal"
         minSdk = 28
         targetSdk = 36
-        versionCode = 28
-        versionName = "1.3.7"
+        versionCode = 29
+        versionName = "1.3.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -80,8 +116,10 @@ android {
             } else {
                 signingConfig = signingConfigs.getByName("debug")
             }
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // Shrinking stays opt-in so it can be verified against runtime-only
+            // loading paths before becoming the default release behavior.
+            isMinifyEnabled = enableReleaseShrinker.get()
+            isShrinkResources = enableReleaseShrinker.get()
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -113,6 +151,18 @@ android {
         compose = true
         buildConfig = true
     }
+    packaging {
+        resources {
+            excludes += setOf(
+                "META-INF/DEPENDENCIES",
+                "META-INF/LICENSE*",
+                "META-INF/NOTICE*",
+                "META-INF/AL2.0",
+                "META-INF/LGPL2.1",
+                "META-INF/*.kotlin_module"
+            )
+        }
+    }
     androidResources {
         generateLocaleConfig = true
     }
@@ -143,6 +193,10 @@ android {
 tasks.register("buildAll") {
     dependsOn("assembleRelease", "bundleRelease")
     description = "Build both APK and AAB"
+}
+
+tasks.named("preBuild") {
+    dependsOn(buildWebUi)
 }
 
 ksp {
@@ -253,6 +307,15 @@ dependencies {
     implementation(libs.ktor.client.okhttp)
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.kotlinx.json)
+    implementation(libs.ktor.server.core)
+    implementation(libs.ktor.server.cio)
+    implementation(libs.ktor.server.auth)
+    implementation(libs.ktor.server.auth.jwt)
+    implementation(libs.ktor.server.compression)
+    implementation(libs.ktor.server.content.negotiation)
+    implementation(libs.ktor.server.default.headers)
+    implementation(libs.ktor.server.status.pages)
+    implementation(libs.jmdns)
 
 
     // pebble (template engine)
@@ -339,6 +402,7 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
+    androidTestImplementation("io.ktor:ktor-server-sse:3.2.3")
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 }

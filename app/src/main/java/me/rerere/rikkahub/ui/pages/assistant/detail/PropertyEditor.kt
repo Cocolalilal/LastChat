@@ -74,7 +74,8 @@ fun CustomHeaders(headers: List<CustomHeader>, onUpdate: (List<CustomHeader>) ->
                                 onUpdate(updatedHeaders)
                             },
                             label = { Text(stringResource(R.string.assistant_page_header_name)) },
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                         )
                         Spacer(Modifier.height(8.dp))
                         OutlinedTextField(
@@ -87,7 +88,8 @@ fun CustomHeaders(headers: List<CustomHeader>, onUpdate: (List<CustomHeader>) ->
                                 onUpdate(updatedHeaders)
                             },
                             label = { Text(stringResource(R.string.assistant_page_header_value)) },
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                         )
                     }
                     IconButton(onClick = {
@@ -152,7 +154,8 @@ fun CustomBodies(customBodies: List<CustomBody>, onUpdate: (List<CustomBody>) ->
                                 onUpdate(updatedBodies)
                             },
                             label = { Text(stringResource(R.string.assistant_page_body_key)) },
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                         )
                         Spacer(Modifier.height(8.dp))
                         OutlinedTextField(
@@ -189,6 +192,7 @@ fun CustomBodies(customBodies: List<CustomBody>, onUpdate: (List<CustomBody>) ->
                                 code = bodyValueString
                             ),
                             textStyle = LocalTextStyle.current.merge(fontFamily = FontFamily.Monospace),
+                            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                         )
                     }
                     IconButton(onClick = {

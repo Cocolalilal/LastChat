@@ -14,6 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
+import me.rerere.rikkahub.ui.theme.AppShapes
 
 @Composable
 fun <T : Number> OutlinedNumberInput(
@@ -47,7 +48,8 @@ fun <T : Number> OutlinedNumberInput(
         label = { Text(label) },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         isError = !textFieldValue.isValidNumberInput(),
-        colors = colors
+        colors = colors,
+        shape = AppShapes.InputField
     )
 }
 

@@ -17,6 +17,7 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.QuickSettingsCache
 import me.rerere.rikkahub.data.datastore.SecureStore
 import me.rerere.rikkahub.data.datastore.SecretKeyManager
+import me.rerere.rikkahub.data.datastore.SpontaneousMessagingStateStore
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.Migration_6_7
 import me.rerere.rikkahub.data.ai.mcp.McpManager
@@ -45,6 +46,10 @@ val dataSourceModule = module {
 
     single {
         SettingsStore(context = get(), scope = get(), quickCache = get(), secretKeyManager = get())
+    }
+
+    single {
+        SpontaneousMessagingStateStore(context = get())
     }
 
     single {
@@ -142,7 +147,13 @@ val dataSourceModule = module {
     }
 
     single {
-        WebdavSync(settingsStore = get(), json = get(), context = get(), secureStore = get(), secretKeyManager = get())
+        WebdavSync(
+            settingsStore = get(),
+            json = get(),
+            context = get(),
+            secretKeyManager = get(),
+            appDatabase = get(),
+        )
     }
 
     single<Retrofit> {

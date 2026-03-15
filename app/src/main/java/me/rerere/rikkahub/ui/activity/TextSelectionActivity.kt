@@ -33,21 +33,19 @@ class TextSelectionActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        
-        // Get the selected text from the intent
-        val selectedText = intent?.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString() ?: ""
-        
+
+        val selectedText = intent?.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString().orEmpty()
         if (selectedText.isBlank()) {
             finish()
             return
         }
-        
-        viewModel.updateSelectedText(selectedText)
-        
+
+        viewModel.updateInput(QuickAskInputData(text = selectedText))
+
         setContent {
             val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
             val toastState = rememberAppToasterState()
-            
+
             RikkahubTheme {
                 CompositionLocalProvider(
                     LocalSettings provides settings,
@@ -57,26 +55,13 @@ class TextSelectionActivity : ComponentActivity() {
                     TextSelectionSheet(
                         viewModel = viewModel,
                         onDismiss = { finish() },
-                        onContinueInApp = { 
-                            val intent = Intent(this@TextSelectionActivity, RouteActivity::class.java).apply {
+                        onContinueInApp = {
+                            val continuationData = viewModel.buildContinuationData() ?: return@TextSelectionSheet
+                            val routeIntent = Intent(this@TextSelectionActivity, RouteActivity::class.java).apply {
                                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                                
-                                // All actions open chat with context
-                                putExtra("continue_conversation", true)
-                                putExtra("selected_text", viewModel.selectedText)
-                                // Pass the assistant ID from text selection config
-                                settings.textSelectionConfig.assistantId?.let { 
-                                    putExtra("selection_assistant_id", it.toString())
-                                }
-                                val state = viewModel.state
-                                if (state is TextSelectionState.Result) {
-                                    putExtra("ai_response", state.responseText)
-                                }
-                                if (viewModel.lastAction == QuickAction.CUSTOM) {
-                                    putExtra("user_prompt", viewModel.customPrompt)
-                                }
+                                putQuickAskContinuationData(continuationData)
                             }
-                            startActivity(intent)
+                            startActivity(routeIntent)
                             finish()
                         }
                     )
@@ -86,4 +71,3 @@ class TextSelectionActivity : ComponentActivity() {
         }
     }
 }
-

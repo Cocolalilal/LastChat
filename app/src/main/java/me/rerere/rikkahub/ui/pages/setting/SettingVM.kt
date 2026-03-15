@@ -24,10 +24,14 @@ class SettingVM(
     val settings: StateFlow<Settings> = settingsStore.settingsFlow
         .stateIn(viewModelScope, SharingStarted.Lazily, Settings(init = true, providers = emptyList()))
 
-    fun updateSettings(newSettings: Settings) {
+    fun updateSettings(
+        newSettings: Settings,
+        afterPersist: (() -> Unit)? = null,
+    ) {
         viewModelScope.launch {
             val oldSettings = settings.value
             settingsStore.update(newSettings)
+            afterPersist?.invoke()
             
             // Check if providers were removed and trigger icon cleanup
             val oldProviderIds = oldSettings.providers.map { it.id }.toSet()

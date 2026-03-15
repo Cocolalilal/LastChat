@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.components.chat
+﻿package me.rerere.rikkahub.ui.components.chat
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -41,11 +41,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Build
+import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.Search
@@ -126,8 +128,18 @@ enum class ActivityType {
     REASONING,
     SEARCH,
     PYTHON,
+    SKILL,
     MCP,
     TOOL_OTHER
+}
+
+private fun ActivityType.toTestTag(): String = when (this) {
+    ActivityType.REASONING -> "activity_pill_reasoning"
+    ActivityType.SEARCH -> "activity_pill_search"
+    ActivityType.PYTHON -> "activity_pill_python"
+    ActivityType.SKILL -> "activity_pill_skill"
+    ActivityType.MCP -> "activity_pill_mcp"
+    ActivityType.TOOL_OTHER -> "activity_pill_tool_other"
 }
 
 /**
@@ -137,6 +149,7 @@ private fun ActivityType.getIcon(): ImageVector = when (this) {
     ActivityType.REASONING -> Icons.Rounded.Lightbulb
     ActivityType.SEARCH -> Icons.Rounded.Public
     ActivityType.PYTHON -> Icons.Rounded.Terminal
+    ActivityType.SKILL -> Icons.Rounded.Category
     ActivityType.MCP -> Icons.Rounded.Memory
     ActivityType.TOOL_OTHER -> Icons.Rounded.Build
 }
@@ -148,6 +161,7 @@ private fun ActivityType.getDisplayText(): String = when (this) {
     ActivityType.REASONING -> "Reasoned"
     ActivityType.SEARCH -> "Searched"
     ActivityType.PYTHON -> "Ran Python"
+    ActivityType.SKILL -> "Skills"
     ActivityType.MCP -> "MCP"
     ActivityType.TOOL_OTHER -> "Used tools"
 }
@@ -159,6 +173,7 @@ internal fun categorizeToolName(toolName: String): ActivityType = when (toolName
     "search_web", "scrape_web" -> ActivityType.SEARCH
     "eval_python", "pip_install", "write_sandbox_file", 
     "read_sandbox_file", "list_sandbox_files", "delete_sandbox_file" -> ActivityType.PYTHON
+    "manage_skills" -> ActivityType.SKILL
     else -> if (toolName.startsWith("mcp_")) ActivityType.MCP else ActivityType.TOOL_OTHER
 }
 
@@ -209,7 +224,7 @@ enum class PillPosition {
 /**
  * A row of activity pills with Apple-like smooth animations.
  * 
- * During loading: Shows a single morphing pill (Waiting → Reasoning → Tool → etc.)
+ * During loading: Shows a single morphing pill (Waiting â†’ Reasoning â†’ Tool â†’ etc.)
  * After completion: If multiple activities, reveals them with staggered fly-out animation
  */
 @Composable
@@ -454,7 +469,7 @@ private fun AnimatedSinglePill(
 @Composable
 private fun ReasoningContent(startTimeMs: Long, isLive: Boolean) {
     var elapsedMs by remember { mutableLongStateOf(0L) }
-    
+
     if (isLive) {
         LaunchedEffect(startTimeMs) {
             while (isActive) {
@@ -463,17 +478,17 @@ private fun ReasoningContent(startTimeMs: Long, isLive: Boolean) {
             }
         }
     }
-    
+
     Icon(
         imageVector = Icons.Rounded.Lightbulb,
         contentDescription = null,
         modifier = Modifier.size(18.dp),
-        tint = MaterialTheme.colorScheme.secondary
+        tint = MaterialTheme.colorScheme.onSurfaceVariant
     )
     Text(
         text = "Reasoning",
         style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.secondary,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = if (isLive) Modifier.shimmer(true) else Modifier
     )
     Text(
@@ -490,17 +505,17 @@ private fun ReasoningContent(startTimeMs: Long, isLive: Boolean) {
 @Composable
 private fun ToolUseContent(toolName: String, displayName: String, isLive: Boolean) {
     val type = categorizeToolName(toolName)
-    
+
     Icon(
         imageVector = type.getIcon(),
         contentDescription = null,
         modifier = Modifier.size(18.dp),
-        tint = MaterialTheme.colorScheme.secondary
+        tint = MaterialTheme.colorScheme.onSurfaceVariant
     )
     Text(
         text = displayName,
         style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.secondary,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = if (isLive) Modifier.shimmer(true) else Modifier
     )
 }
@@ -516,7 +531,7 @@ private fun ExpandedActivityContent(item: ActivityItem) {
         modifier = Modifier.size(18.dp),
         tint = MaterialTheme.colorScheme.onSurfaceVariant
     )
-    
+
     val text = when (item.type) {
         ActivityType.REASONING -> {
             if (item.durationMs != null) {
@@ -527,10 +542,11 @@ private fun ExpandedActivityContent(item: ActivityItem) {
         }
         ActivityType.SEARCH -> "Searched the Web"
         ActivityType.PYTHON -> "Ran Python"
+        ActivityType.SKILL -> "Managed skills"
         ActivityType.MCP -> "MCP"
         ActivityType.TOOL_OTHER -> "Used tool"
     }
-    
+
     Text(
         text = text,
         style = MaterialTheme.typography.labelMedium,
@@ -585,12 +601,14 @@ private fun SinglePill(
     position: PillPosition,
     connectsToBubbleBelow: Boolean,
     modifier: Modifier = Modifier,
+    testTag: String? = null,
     isLoading: Boolean = false,
     content: @Composable () -> Unit
 ) {
     Surface(
         modifier = modifier
             .height(PILL_HEIGHT)
+            .then(if (testTag != null) Modifier.testTag(testTag) else Modifier)
             .animateContentSize(spring(dampingRatio = 0.7f, stiffness = 300f)),
         shape = getCornerRadii(position, connectsToBubbleBelow),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -633,18 +651,19 @@ private fun ReasoningPill(
         onClick = onClick,
         position = position,
         connectsToBubbleBelow = connectsToBubbleBelow,
+        testTag = ActivityType.REASONING.toTestTag(),
         isLoading = isLive
     ) {
         Icon(
             imageVector = Icons.Rounded.Lightbulb,
             contentDescription = null,
             modifier = Modifier.size(18.dp),
-            tint = MaterialTheme.colorScheme.secondary
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
             text = "Reasoning",
             style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.secondary,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = if (isLive) Modifier.shimmer(true) else Modifier
         )
         Text(
@@ -674,18 +693,19 @@ private fun ToolUsePill(
         onClick = onClick,
         position = position,
         connectsToBubbleBelow = connectsToBubbleBelow,
+        testTag = type.toTestTag(),
         isLoading = isLive
     ) {
         Icon(
             imageVector = type.getIcon(),
             contentDescription = null,
             modifier = Modifier.size(18.dp),
-            tint = MaterialTheme.colorScheme.secondary
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
             text = displayName,
             style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.secondary,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = if (isLive) Modifier.shimmer(true) else Modifier
         )
     }
@@ -705,7 +725,8 @@ private fun ExpandedActivityPill(
     SinglePill(
         onClick = onClick,
         position = position,
-        connectsToBubbleBelow = connectsToBubbleBelow
+        connectsToBubbleBelow = connectsToBubbleBelow,
+        testTag = item.type.toTestTag()
     ) {
         Icon(
             imageVector = item.type.getIcon(),
@@ -723,16 +744,19 @@ private fun ExpandedActivityPill(
                 }
             }
             ActivityType.SEARCH -> {
-                if (item.count > 1) "Searched ×${item.count}" else "Searched the Web"
+                if (item.count > 1) "Searched Ã—${item.count}" else "Searched the Web"
             }
             ActivityType.PYTHON -> {
-                if (item.count > 1) "Ran Python ×${item.count}" else "Ran Python"
+                if (item.count > 1) "Ran Python Ã—${item.count}" else "Ran Python"
+            }
+            ActivityType.SKILL -> {
+                if (item.count > 1) "Managed skills x${item.count}" else "Managed skills"
             }
             ActivityType.MCP -> {
-                if (item.count > 1) "MCP calls ×${item.count}" else "MCP"
+                if (item.count > 1) "MCP calls Ã—${item.count}" else "MCP"
             }
             ActivityType.TOOL_OTHER -> {
-                if (item.count > 1) "Used tools ×${item.count}" else "Used tool"
+                if (item.count > 1) "Used tools Ã—${item.count}" else "Used tool"
             }
         }
         
@@ -760,7 +784,8 @@ private fun CompactActivityPill(
         onClick = onClick,
         position = position,
         connectsToBubbleBelow = connectsToBubbleBelow,
-        modifier = modifier
+        modifier = modifier,
+        testTag = item.type.toTestTag()
     ) {
         Icon(
             imageVector = item.type.getIcon(),

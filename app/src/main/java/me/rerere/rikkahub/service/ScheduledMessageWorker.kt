@@ -25,6 +25,9 @@ class ScheduledMessageWorker(
     context: Context,
     params: WorkerParameters
 ) : CoroutineWorker(context, params), KoinComponent {
+    companion object {
+        private const val TAG = "ScheduledMessageWorker"
+    }
 
     private val settingsStore: SettingsStore by inject()
     private val conversationRepository: ConversationRepository by inject()
@@ -33,14 +36,32 @@ class ScheduledMessageWorker(
 
     override suspend fun doWork(): Result {
         return try {
-            val assistantIdStr = inputData.getString("assistantId") ?: return Result.failure()
-            val conversationIdStr = inputData.getString("conversationId") ?: return Result.failure()
-            val reason = inputData.getString("reason") ?: "No reason provided"
+            val assistantIdStr = inputData.getString(ScheduledMessageWorkSpec.KEY_ASSISTANT_ID)
+                ?: return Result.failure()
+            val conversationIdStr = inputData.getString(ScheduledMessageWorkSpec.KEY_CONVERSATION_ID)
+                ?: return Result.failure()
+            val reason = inputData.getString(ScheduledMessageWorkSpec.KEY_REASON) ?: "No reason provided"
+            val createdAtMillis = inputData.getLong(ScheduledMessageWorkSpec.KEY_CREATED_AT, 0L)
+            val scheduledAtMillis = inputData.getLong(ScheduledMessageWorkSpec.KEY_SCHEDULED_AT, 0L)
 
-            me.rerere.common.android.Logging.log("ScheduledMessageWorker", "Processing scheduled message: $reason")
+            val assistantId = runCatching { Uuid.parse(assistantIdStr) }.getOrElse {
+                me.rerere.common.android.Logging.log(TAG, "Invalid assistantId in scheduled work: $assistantIdStr")
+                return Result.failure()
+            }
+            val conversationId = runCatching { Uuid.parse(conversationIdStr) }.getOrElse {
+                me.rerere.common.android.Logging.log(TAG, "Invalid conversationId in scheduled work: $conversationIdStr")
+                return Result.failure()
+            }
 
-            val assistantId = Uuid.parse(assistantIdStr)
-            val conversationId = Uuid.parse(conversationIdStr)
+            val latenessMillis = if (scheduledAtMillis > 0L) {
+                (System.currentTimeMillis() - scheduledAtMillis).coerceAtLeast(0L)
+            } else {
+                0L
+            }
+            me.rerere.common.android.Logging.log(
+                TAG,
+                "Processing scheduled message attempt=${runAttemptCount + 1} createdAt=$createdAtMillis scheduledAt=$scheduledAtMillis latenessMs=$latenessMillis reason=$reason"
+            )
 
             val settings = settingsStore.settingsFlow.first()
             val assistant = settings.getAssistantById(assistantId) ?: return Result.failure()
@@ -82,31 +103,66 @@ class ScheduledMessageWorker(
             """.trimIndent()
 
             val modelId = assistant.chatModelId ?: settings.chatModelId
-            val model = settings.findModelById(modelId) ?: return Result.failure()
-            val provider = model.findProvider(settings.providers) ?: return Result.failure()
-            val providerHandler = providerManager.getProviderByType(provider)
+            val model = settings.findModelById(modelId)
+            if (model == null) {
+                me.rerere.common.android.Logging.log(TAG, "Retrying scheduled message because model is unavailable for assistant ${assistant.id}")
+                return Result.retry()
+            }
+            val provider = model.findProvider(settings.providers)
+            if (provider == null) {
+                me.rerere.common.android.Logging.log(TAG, "Retrying scheduled message because provider is unavailable for model ${model.modelId}")
+                return Result.retry()
+            }
+            val providerHandler = runCatching { providerManager.getProviderByType(provider) }
+                .getOrElse {
+                    me.rerere.common.android.Logging.log(TAG, "Retrying scheduled message because provider handler lookup failed: ${it.message}")
+                    return Result.retry()
+                }
 
-            val result = providerHandler.generateText(
-                providerSetting = provider,
-                messages = listOf(UIMessage.user(prompt)),
-                params = TextGenerationParams(
-                    model = model,
-                    temperature = 0.7f,
-                    thinkingBudget = 0
+            val content = try {
+                val result = providerHandler.generateText(
+                    providerSetting = provider,
+                    messages = listOf(UIMessage.user(prompt)),
+                    params = TextGenerationParams(
+                        model = model,
+                        temperature = 0.7f,
+                        thinkingBudget = 0
+                    )
                 )
-            )
+                result.choices.firstOrNull()?.message?.toContentText()?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: run {
+                        me.rerere.common.android.Logging.log(TAG, "Retrying scheduled message because generated content was blank")
+                        return Result.retry()
+                    }
+            } catch (e: Exception) {
+                me.rerere.common.android.Logging.log(TAG, "Retrying scheduled message after generation failure: ${e.message}")
+                return Result.retry()
+            }
 
-            val content = result.choices.firstOrNull()?.message?.toContentText()?.trim() ?: return Result.failure()
-
-            sendNotification(assistant.name, content, conversationId)
+            if (!sendNotification(assistant.name, content, conversationId)) {
+                if (runAttemptCount + 1 < ScheduledMessageWorkSpec.MAX_NOTIFICATION_PERMISSION_RETRIES) {
+                    me.rerere.common.android.Logging.log(
+                        TAG,
+                        "Notification could not be posted, retrying scheduled message (${runAttemptCount + 1}/${ScheduledMessageWorkSpec.MAX_NOTIFICATION_PERMISSION_RETRIES})"
+                    )
+                    return Result.retry()
+                }
+                me.rerere.common.android.Logging.log(
+                    TAG,
+                    "Dropping scheduled message after notification-post retries; permission or channel access is unavailable"
+                )
+                return Result.success()
+            }
             Result.success()
         } catch (e: Exception) {
             e.printStackTrace()
-            Result.failure()
+            me.rerere.common.android.Logging.log(TAG, "Retrying scheduled message after unexpected failure: ${e.message}")
+            Result.retry()
         }
     }
 
-    private fun sendNotification(title: String, content: String, conversationId: Uuid) {
+    private fun sendNotification(title: String, content: String, conversationId: Uuid): Boolean {
         val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
         val channelId = "assistant_scheduled"
         val channel = android.app.NotificationChannel(
@@ -143,6 +199,9 @@ class ScheduledMessageWorker(
             ) == android.content.pm.PackageManager.PERMISSION_GRANTED
         ) {
             notificationManager.notify(System.currentTimeMillis().toInt(), notification)
+            return true
         }
+        me.rerere.common.android.Logging.log(TAG, "POST_NOTIFICATIONS permission missing when posting scheduled message")
+        return false
     }
 }

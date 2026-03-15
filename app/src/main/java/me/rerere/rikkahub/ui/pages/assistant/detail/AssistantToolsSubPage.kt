@@ -1,7 +1,5 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
-import android.Manifest
-import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -15,10 +13,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import androidx.compose.runtime.Composable
@@ -28,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -43,6 +45,7 @@ import me.rerere.rikkahub.ui.components.ai.McpPicker
 import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
+import me.rerere.rikkahub.utils.PermissionChecker
 import me.rerere.search.SearchServiceOptions
 import org.koin.compose.koinInject
 
@@ -58,6 +61,40 @@ fun AssistantToolsSubPage(
     mcpServerConfigs: List<McpServerConfig>
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    var pendingNotificationAccess by remember {
+        mutableStateOf(PermissionChecker.MissingFeatureAccess())
+    }
+    var showNotificationAccessDialog by remember { mutableStateOf(false) }
+
+    val notificationSettingsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        val remainingAccess = PermissionChecker.getMissingNotificationAccess(context)
+        pendingNotificationAccess = remainingAccess
+        showNotificationAccessDialog = remainingAccess.specialAccesses.isNotEmpty()
+    }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        val remainingAccess = PermissionChecker.getMissingNotificationAccess(context)
+        pendingNotificationAccess = remainingAccess
+        showNotificationAccessDialog = remainingAccess.specialAccesses.isNotEmpty()
+    }
+
+    fun requestNotificationAccess() {
+        val missingAccess = PermissionChecker.getMissingNotificationAccess(context)
+        pendingNotificationAccess = missingAccess
+        when {
+            missingAccess.runtimePermissions.isNotEmpty() -> {
+                notificationPermissionLauncher.launch(missingAccess.runtimePermissions.toTypedArray())
+            }
+            missingAccess.specialAccesses.isNotEmpty() -> {
+                showNotificationAccessDialog = true
+            }
+        }
+    }
     
     Column(
         modifier = Modifier
@@ -124,13 +161,6 @@ fun AssistantToolsSubPage(
         // ═══════════════════════════════════════════════════════════════════
         // LOCAL TOOLS GROUP
         // ═══════════════════════════════════════════════════════════════════
-        val deviceControlPermissionLauncher = rememberLauncherForActivityResult(
-            ActivityResultContracts.RequestMultiplePermissions()
-        ) {
-            val newLocalTools = assistant.localTools + LocalToolOption.DeviceControl
-            onUpdate(assistant.copy(localTools = newLocalTools))
-        }
-        
         SettingsGroup(title = stringResource(R.string.assistant_page_tab_local_tools)) {
             // JavaScript Engine
             SettingGroupItem(
@@ -151,29 +181,20 @@ fun AssistantToolsSubPage(
                 }
             )
             
-            // Device Control
+            // Notifications
             SettingGroupItem(
-                title = "Device Control",
-                subtitle = "Notifications, apps, alarms, reminders",
+                title = "Notifications",
+                subtitle = "Notifications, notification reading, scheduled follow-ups",
                 trailing = {
                     HapticSwitch(
-                        checked = assistant.localTools.contains(LocalToolOption.DeviceControl),
+                        checked = assistant.localTools.contains(LocalToolOption.Notifications),
                         onCheckedChange = { enabled ->
                             if (enabled) {
-                                val permissions = mutableListOf<String>()
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                    permissions.add(Manifest.permission.POST_NOTIFICATIONS)
-                                }
-                                permissions.add(Manifest.permission.CAMERA)
-                                
-                                if (permissions.isNotEmpty()) {
-                                    deviceControlPermissionLauncher.launch(permissions.toTypedArray())
-                                } else {
-                                    val newLocalTools = assistant.localTools + LocalToolOption.DeviceControl
-                                    onUpdate(assistant.copy(localTools = newLocalTools))
-                                }
+                                val newLocalTools = assistant.localTools + LocalToolOption.Notifications
+                                onUpdate(assistant.copy(localTools = newLocalTools))
+                                requestNotificationAccess()
                             } else {
-                                val newLocalTools = assistant.localTools - LocalToolOption.DeviceControl
+                                val newLocalTools = assistant.localTools - LocalToolOption.Notifications
                                 onUpdate(assistant.copy(localTools = newLocalTools))
                             }
                         }
@@ -194,6 +215,42 @@ fun AssistantToolsSubPage(
                                 assistant.localTools + LocalToolOption.PythonEngine
                             } else {
                                 assistant.localTools.filterNot { it is LocalToolOption.PythonEngine }
+                            }
+                            onUpdate(assistant.copy(localTools = newLocalTools))
+                        }
+                    )
+                }
+            )
+
+            SettingGroupItem(
+                title = stringResource(R.string.assistant_page_local_tools_tts_title),
+                subtitle = stringResource(R.string.assistant_page_local_tools_tts_desc),
+                trailing = {
+                    HapticSwitch(
+                        checked = assistant.localTools.contains(LocalToolOption.Tts),
+                        onCheckedChange = { enabled ->
+                            val newLocalTools = if (enabled) {
+                                assistant.localTools + LocalToolOption.Tts
+                            } else {
+                                assistant.localTools - LocalToolOption.Tts
+                            }
+                            onUpdate(assistant.copy(localTools = newLocalTools))
+                        }
+                    )
+                }
+            )
+
+            SettingGroupItem(
+                title = stringResource(R.string.assistant_page_local_tools_character_questions_title),
+                subtitle = stringResource(R.string.assistant_page_local_tools_character_questions_desc),
+                trailing = {
+                    HapticSwitch(
+                        checked = assistant.localTools.contains(LocalToolOption.AskUser),
+                        onCheckedChange = { enabled ->
+                            val newLocalTools = if (enabled) {
+                                assistant.localTools + LocalToolOption.AskUser
+                            } else {
+                                assistant.localTools - LocalToolOption.AskUser
                             }
                             onUpdate(assistant.copy(localTools = newLocalTools))
                         }
@@ -272,5 +329,40 @@ fun AssistantToolsSubPage(
                 }
             }
         }
+    }
+
+    if (showNotificationAccessDialog && pendingNotificationAccess.specialAccesses.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { showNotificationAccessDialog = false },
+            title = { Text("Notification Access") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Enable the remaining access below so notification tools and scheduled follow-ups work reliably:")
+                    PermissionChecker.getFeatureAccessDescriptions(pendingNotificationAccess).forEach { description ->
+                        Text("- $description", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showNotificationAccessDialog = false
+                        val nextAccess = pendingNotificationAccess.specialAccesses.firstOrNull() ?: return@Button
+                        notificationSettingsLauncher.launch(
+                            PermissionChecker.createSpecialAccessIntent(nextAccess)
+                        )
+                    }
+                ) {
+                    Text("Open Settings")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showNotificationAccessDialog = false }
+                ) {
+                    Text("Not now")
+                }
+            }
+        )
     }
 }

@@ -40,6 +40,7 @@ import me.rerere.ai.ui.UsedMemory
 import me.rerere.ai.ui.UsedMode
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.ui.components.ui.icons.ModeIcons
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 private val json = Json { ignoreUnknownKeys = true }
@@ -227,11 +228,20 @@ private fun ModeCover(
             },
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = mode.modeName.take(1).uppercase(),
-            style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp),
-            color = MaterialTheme.colorScheme.onTertiaryContainer
-        )
+        if (!mode.modeIcon.isNullOrBlank()) {
+            Icon(
+                imageVector = ModeIcons.getIcon(mode.modeIcon),
+                contentDescription = mode.modeName,
+                modifier = Modifier.size(14.dp),
+                tint = MaterialTheme.colorScheme.onTertiaryContainer
+            )
+        } else {
+            Text(
+                text = mode.modeName.take(1).uppercase(),
+                style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp),
+                color = MaterialTheme.colorScheme.onTertiaryContainer
+            )
+        }
     }
 }
 

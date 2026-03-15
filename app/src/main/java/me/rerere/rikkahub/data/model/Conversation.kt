@@ -159,6 +159,7 @@ data class MessageNode(
     val id: Uuid = Uuid.random(),
     val messages: List<UIMessage>,
     val selectIndex: Int = 0,
+    val forceTurnBreakBefore: Boolean = false,
 ) {
     val currentMessage get() = if (messages.isEmpty() || selectIndex !in messages.indices) {
         throw IllegalStateException("MessageNode has no valid current message: messages.size=${messages.size}, selectIndex=$selectIndex")
@@ -169,9 +170,13 @@ data class MessageNode(
     val role get() = messages.firstOrNull()?.role ?: MessageRole.USER
 
     companion object {
-        fun of(message: UIMessage) = MessageNode(
+        fun of(
+            message: UIMessage,
+            forceTurnBreakBefore: Boolean = false,
+        ) = MessageNode(
             messages = listOf(message),
-            selectIndex = 0
+            selectIndex = 0,
+            forceTurnBreakBefore = forceTurnBreakBefore,
         )
     }
 }

@@ -3,7 +3,10 @@ package me.rerere.rikkahub.ui.components.chat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -58,6 +61,7 @@ import kotlinx.serialization.json.longOrNull
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.Model
+import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.model.Assistant
@@ -173,7 +177,7 @@ fun List<MessageNode>.groupIntoTurns(): List<MessageTurnGroup> {
         val logicalRole = getGroupingRole(nodeRole)
         
         // Start a new group if logical role changes
-        if (logicalRole != currentGroupRole && currentGroup.isNotEmpty()) {
+        if (currentGroup.isNotEmpty() && (logicalRole != currentGroupRole || node.forceTurnBreakBefore)) {
             groups.add(MessageTurnGroup(currentGroup.toList(), currentGroupRole!!))
             currentGroup = mutableListOf()
         }
@@ -191,7 +195,7 @@ fun List<MessageNode>.groupIntoTurns(): List<MessageTurnGroup> {
 /**
  * Build timeline entries from message parts.
  */
-private fun buildTimelineEntries(parts: List<UIMessagePart>): List<TimelineEntry> {
+internal fun buildTimelineEntries(parts: List<UIMessagePart>): List<TimelineEntry> {
     val entries = mutableListOf<TimelineEntry>()
     val memoryTools = setOf("create_memory", "edit_memory", "delete_memory")
     
@@ -210,7 +214,8 @@ private fun buildTimelineEntries(parts: List<UIMessagePart>): List<TimelineEntry
                     id = "reasoning_${entries.size}",
                     content = part.reasoning,
                     durationMs = durationMs,
-                    title = null
+                    title = null,
+                    isInProgress = part.finishedAt == null
                 ))
             }
             is UIMessagePart.ToolCall -> {
@@ -228,15 +233,14 @@ private fun buildTimelineEntries(parts: List<UIMessagePart>): List<TimelineEntry
                         resultText = result?.content?.toString()?.take(500),
                         argumentsJson = argumentsJson,
                         resultJson = resultJson,
-                        isLoading = result == null
+                        isLoading = result == null && part.approvalState !is ToolApprovalState.Pending
                     ))
                 }
             }
-            // Don't add Reply entries to timeline - they're shown as bubbles
             else -> {}
         }
     }
-    
+
     return entries
 }
 
@@ -294,6 +298,8 @@ private fun getToolDisplayName(toolName: String): String {
         "create_memory" -> "Creating memory"
         "edit_memory" -> "Editing memory"
         "delete_memory" -> "Deleting memory"
+        "ask_user" -> "Asking a question"
+        "manage_skills" -> "Managing skills"
         else -> toolName.replace("_", " ").replaceFirstChar { it.uppercase() }
     }
 }
@@ -411,6 +417,7 @@ fun ChatMessageTurn(
     onEditLorebookEntry: ((me.rerere.ai.ui.UsedLorebookEntry) -> Unit)? = null,
     onModeClick: ((me.rerere.ai.ui.UsedMode) -> Unit)? = null,
     onMemoryClick: ((me.rerere.ai.ui.UsedMemory) -> Unit)? = null,
+    onExpandedStreamingCodeBlockChanged: (() -> Unit)? = null,
 ) {
     val settings = LocalSettings.current
     val effectiveDisplay = settings.getEffectiveDisplaySetting(assistant)
@@ -424,8 +431,8 @@ fun ChatMessageTurn(
     // State for sheets
     var showActionsSheet by remember { mutableStateOf(false) }
     var showSelectCopySheet by remember { mutableStateOf(false) }
-    var showTimelineSheet by remember { mutableStateOf(false) }
-    var initialTimelineExpandedType by remember { mutableStateOf<ActivityType?>(null) }
+    var timelineOpen by remember { mutableStateOf(false) }
+    var timelineOpenRequest by remember { mutableStateOf<TimelineOpenRequest?>(null) }
     var showUserDropdown by remember { mutableStateOf(false) }
     var actionsExpanded by remember { mutableStateOf(false) }
     var showUserToolbar by remember { mutableStateOf(false) }  // User message toolbar visibility
@@ -433,9 +440,10 @@ fun ChatMessageTurn(
     // Activity state from ALL nodes in the group
     // For multi-node turns (with tools), the current generation is on the last node
     val activityState = deriveActivityState(group.allParts, loading && isLastTurn)
+    val isTimelineLive = loading && isLastTurn
     
     // Timeline entries from all parts - computed fresh to avoid stale data
-    val timelineEntries = buildTimelineEntries(group.allParts)
+    val timelineEntries = buildTimelineEntries(parts = group.allParts)
 
     // Actions should target the visible assistant content node instead of blindly using lastNode,
     // because the last node in a turn can be a tool node.
@@ -481,10 +489,25 @@ fun ChatMessageTurn(
                     maxWidth = maxBubbleWidth,
                     showTokenUsage = effectiveDisplay.showTokenUsage,
                     showAssistantBubbles = effectiveDisplay.showAssistantBubbles,
+                    timelineEntries = timelineEntries,
+                    timelineOpen = timelineOpen,
+                    initialTimelineOpenRequest = timelineOpenRequest,
                     onCitationClick = onCitationClick,
                     onActivityPillClick = { type ->
-                        initialTimelineExpandedType = type
-                        showTimelineSheet = true
+                        if (timelineEntries.isEmpty()) return@AssistantMessageTurn
+                        if (timelineOpen && timelineOpenRequest?.focusType == type) {
+                            timelineOpen = false
+                        } else {
+                            timelineOpenRequest = TimelineOpenRequest(
+                                focusType = type,
+                                openMode = if (isTimelineLive) {
+                                    TimelineOpenMode.FocusCurrent
+                                } else {
+                                    TimelineOpenMode.Collapsed
+                                }
+                            )
+                            timelineOpen = true
+                        }
                     },
                     onBubbleClick = {
                         if (isLastTurn) {
@@ -500,22 +523,13 @@ fun ChatMessageTurn(
                     onEditLorebookEntry = onEditLorebookEntry,
                     onModeClick = onModeClick,
                     onMemoryClick = onMemoryClick,
+                    onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
                     modifier = modifier
                 )
             }
             
             else -> { /* System messages not rendered */ }
         }
-    }
-    
-    // Sheets
-    if (showTimelineSheet) {
-        ActivityTimelineSheet(
-            entries = timelineEntries,
-            onDismissRequest = { showTimelineSheet = false },
-            initialExpandedType = initialTimelineExpandedType,
-            assistantId = assistant?.id?.toString()
-        )
     }
     
     if (showActionsSheet) {
@@ -715,6 +729,9 @@ private fun AssistantMessageTurn(
     maxWidth: androidx.compose.ui.unit.Dp,
     showTokenUsage: Boolean,
     showAssistantBubbles: Boolean,
+    timelineEntries: List<TimelineEntry>,
+    timelineOpen: Boolean,
+    initialTimelineOpenRequest: TimelineOpenRequest?,
     onCitationClick: (String) -> Unit,
     onActivityPillClick: (ActivityType?) -> Unit,
     onBubbleClick: () -> Unit,
@@ -725,6 +742,7 @@ private fun AssistantMessageTurn(
     onEditLorebookEntry: ((me.rerere.ai.ui.UsedLorebookEntry) -> Unit)?,
     onModeClick: ((me.rerere.ai.ui.UsedMode) -> Unit)?,
     onMemoryClick: ((me.rerere.ai.ui.UsedMemory) -> Unit)?,
+    onExpandedStreamingCodeBlockChanged: (() -> Unit)?,
     modifier: Modifier = Modifier
 ) {
     val settings = LocalSettings.current
@@ -767,7 +785,10 @@ private fun AssistantMessageTurn(
         modifier = modifier
             .fillMaxWidth()
             .animateContentSize(
-                animationSpec = spring(dampingRatio = 0.7f, stiffness = 320f)
+                animationSpec = tween(
+                    durationMillis = 220,
+                    easing = LinearOutSlowInEasing
+                )
             ),
         verticalArrangement = Arrangement.spacedBy(
             if (showAssistantBubbles) elementSpacing else 3.dp
@@ -844,6 +865,39 @@ private fun AssistantMessageTurn(
                     }
                 }
             }
+
+            AnimatedVisibility(
+                visible = timelineOpen && timelineEntries.isNotEmpty(),
+                enter = expandVertically(
+                    animationSpec = tween(
+                        durationMillis = 220,
+                        easing = LinearOutSlowInEasing
+                    )
+                ) + fadeIn(
+                    animationSpec = tween(
+                        durationMillis = 180,
+                        easing = LinearOutSlowInEasing
+                    )
+                ),
+                exit = shrinkVertically(
+                    animationSpec = tween(
+                        durationMillis = 180,
+                        easing = FastOutLinearInEasing
+                    )
+                ) + fadeOut(
+                    animationSpec = tween(
+                        durationMillis = 120,
+                        easing = FastOutLinearInEasing
+                    )
+                )
+            ) {
+                ActivityTimelinePanel(
+                    entries = timelineEntries,
+                    initialOpenRequest = initialTimelineOpenRequest,
+                    assistantId = assistant?.id?.toString(),
+                    scrollHandoffMode = TimelineScrollHandoffMode.EdgeGatedToParent,
+                )
+            }
             
             // Message bubbles - full width, standard bubble positions (no connection to pills)
             allTextBubbles.forEachIndexed { index, (node, part) ->
@@ -866,6 +920,7 @@ private fun AssistantMessageTurn(
                             scope = AssistantAffectScope.ASSISTANT,
                             visual = true,
                         ),
+                        onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
                         onClickCitation = { id -> onCitationClick(id) }
                     )
                 }
@@ -912,6 +967,39 @@ private fun AssistantMessageTurn(
                 )
             }
 
+            AnimatedVisibility(
+                visible = timelineOpen && timelineEntries.isNotEmpty(),
+                enter = expandVertically(
+                    animationSpec = tween(
+                        durationMillis = 220,
+                        easing = LinearOutSlowInEasing
+                    )
+                ) + fadeIn(
+                    animationSpec = tween(
+                        durationMillis = 180,
+                        easing = LinearOutSlowInEasing
+                    )
+                ),
+                exit = shrinkVertically(
+                    animationSpec = tween(
+                        durationMillis = 180,
+                        easing = FastOutLinearInEasing
+                    )
+                ) + fadeOut(
+                    animationSpec = tween(
+                        durationMillis = 120,
+                        easing = FastOutLinearInEasing
+                    )
+                )
+            ) {
+                ActivityTimelinePanel(
+                    entries = timelineEntries,
+                    initialOpenRequest = initialTimelineOpenRequest,
+                    assistantId = assistant?.id?.toString(),
+                    scrollHandoffMode = TimelineScrollHandoffMode.EdgeGatedToParent,
+                )
+            }
+
             allTextBubbles.forEach { (_, part) ->
                 MarkdownBlock(
                     content = part.text.replaceRegexes(
@@ -919,6 +1007,7 @@ private fun AssistantMessageTurn(
                         scope = AssistantAffectScope.ASSISTANT,
                         visual = true,
                     ),
+                    onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
                     onClickCitation = { id -> onCitationClick(id) },
                     modifier = Modifier.clickable { handleBubbleClick() }
                 )

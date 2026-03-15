@@ -52,8 +52,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -692,7 +690,8 @@ private fun TtsFilterRuleEditDialog(
                     modifier = Modifier.fillMaxWidth(),
                     supportingText = {
                         Text("Text wrapped like ${pattern}text${pattern} will be filtered")
-                    }
+                    },
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                 )
                 
                 // Mode selector
@@ -789,6 +788,7 @@ private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
                 TTSPreset(TTSProviderSetting.Gemini::class, "Gemini", "Google's TTS with natural voices"),
                 TTSPreset(TTSProviderSetting.ElevenLabs::class, "ElevenLabs", "Professional voice cloning"),
                 TTSPreset(TTSProviderSetting.MiniMax::class, "MiniMax", "Chinese TTS with emotions"),
+                TTSPreset(TTSProviderSetting.Qwen::class, "Qwen", "DashScope streaming TTS with voice presets"),
             )
         }
         
@@ -892,6 +892,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                     TTSProviderSetting.Gemini::class -> TTSProviderSetting.Gemini()
                                     TTSProviderSetting.ElevenLabs::class -> TTSProviderSetting.ElevenLabs()
                                     TTSProviderSetting.MiniMax::class -> TTSProviderSetting.MiniMax()
+                                    TTSProviderSetting.Qwen::class -> TTSProviderSetting.Qwen()
                                     else -> TTSProviderSetting.SystemTTS()
                                 }
                                 onAdd(newProvider)
@@ -933,6 +934,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                             TTSProviderSetting.Gemini::class -> "Google"
                                             TTSProviderSetting.ElevenLabs::class -> "ElevenLabs"
                                             TTSProviderSetting.MiniMax::class -> "MiniMax"
+                                            TTSProviderSetting.Qwen::class -> "Qwen"
                                             else -> "Unknown"
                                         }
                                         AutoProviderIcon(
@@ -1052,6 +1054,7 @@ private fun TTSProviderItemContent(
                     is TTSProviderSetting.Gemini -> "Google"
                     is TTSProviderSetting.MiniMax -> "MiniMax"
                     is TTSProviderSetting.ElevenLabs -> "ElevenLabs"
+                    is TTSProviderSetting.Qwen -> "Qwen"
                     is TTSProviderSetting.SystemTTS -> "System"
                 }
                 AutoProviderIcon(

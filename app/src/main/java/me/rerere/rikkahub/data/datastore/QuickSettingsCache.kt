@@ -76,7 +76,7 @@ class QuickSettingsCache(context: Context) {
     fun createCachedSettings(): Settings {
         val cachedAssistantId = assistantId ?: DEFAULT_ASSISTANT_ID
         val cachedHeaderStyle = newChatHeaderStyle ?: NewChatHeaderStyle.GREETING
-        val cachedContentStyle = newChatContentStyle ?: NewChatContentStyle.TEMPLATES
+        val cachedContentStyle = newChatContentStyle ?: NewChatContentStyle.ACTIONS
         
         return Settings(
             init = true, // Still marked as init so updates don't save it

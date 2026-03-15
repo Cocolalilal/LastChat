@@ -34,7 +34,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
@@ -45,7 +44,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FloatingToolbarDefaults.ScreenOffset
 import androidx.compose.material3.FloatingToolbarDefaults.floatingToolbarVerticalNestedScroll
-import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearWavyProgressIndicator
@@ -90,7 +88,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastFilter
@@ -104,12 +101,10 @@ import androidx.compose.material.icons.rounded.DragIndicator
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.NetworkCheck
-import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.ViewModule
 import androidx.compose.material.icons.rounded.Widgets
-import me.rerere.rikkahub.ui.components.ui.ToastType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import me.rerere.ai.provider.BuiltInTools
@@ -119,7 +114,6 @@ import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ImageGenerationMethod
 import me.rerere.ai.provider.ProviderManager
-import me.rerere.ai.provider.ProviderProxy
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.registry.ModelRegistry
@@ -166,7 +160,7 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
     val provider = settings.providers.find { it.id == id } ?: return
-    val pager = rememberPagerState { 3 }
+    val pager = rememberPagerState { 2 }
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val context = LocalContext.current
@@ -305,30 +299,6 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                             )
                         }
                         
-                        // Proxy tab
-                        Box(
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .then(
-                                    if (pager.currentPage == 2) 
-                                        Modifier.background(MaterialTheme.colorScheme.primaryContainer)
-                                    else Modifier.clickable {
-                                        haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Tick)
-                                        scope.launch { pager.animateScrollToPage(2) }
-                                    }
-                                )
-                                .padding(12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Public,
-                                contentDescription = stringResource(R.string.setting_provider_page_network_proxy),
-                                tint = if (pager.currentPage == 2) 
-                                    MaterialTheme.colorScheme.onPrimaryContainer 
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
                     }
                 }
             }
@@ -372,14 +342,6 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
 
                     1 -> {
                         SettingProviderModelPage(
-                            provider = provider,
-                            onEdit = onEdit,
-                            contentPadding = contentPadding
-                        )
-                    }
-
-                    2 -> {
-                        SettingProviderProxyPage(
                             provider = provider,
                             onEdit = onEdit,
                             contentPadding = contentPadding
@@ -514,127 +476,6 @@ private fun SettingProviderModelPage(
         onUpdateProvider = onEdit,
         contentPadding = contentPadding
     )
-}
-
-@Composable
-private fun SettingProviderProxyPage(
-    provider: ProviderSetting,
-    onEdit: (ProviderSetting) -> Unit,
-    contentPadding: PaddingValues = PaddingValues(0.dp)
-) {
-    val toaster = LocalToaster.current
-    val context = LocalContext.current
-    var editingProxy by remember(provider.proxy) {
-        mutableStateOf(provider.proxy)
-    }
-    val proxyType = when (editingProxy) {
-        is ProviderProxy.Http -> "HTTP"
-        is ProviderProxy.None -> "None"
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(contentPadding)
-            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 80.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        SingleChoiceSegmentedButtonRow(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            val types = listOf("None", "HTTP")
-            types.forEachIndexed { index, type ->
-                SegmentedButton(
-                    shape = SegmentedButtonDefaults.itemShape(index, types.size),
-                    label = { Text(type) },
-                    selected = proxyType == type,
-                    onClick = {
-                        editingProxy = when (type) {
-                            "HTTP" -> ProviderProxy.Http(
-                                address = "",
-                                port = 8080
-                            )
-
-                            else -> ProviderProxy.None
-                        }
-                    }
-                )
-            }
-        }
-
-        when (editingProxy) {
-            is ProviderProxy.None -> {}
-            is ProviderProxy.Http -> {
-                Card(
-                    shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = (editingProxy as ProviderProxy.Http).address,
-                            onValueChange = {
-                                editingProxy = (editingProxy as ProviderProxy.Http).copy(address = it)
-                            },
-                            label = { Text(stringResource(id = R.string.setting_provider_page_proxy_host)) },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        var portStr by remember { mutableStateOf((editingProxy as ProviderProxy.Http).port.toString()) }
-                        OutlinedTextField(
-                            value = portStr,
-                            onValueChange = {
-                                portStr = it
-                                it.toIntOrNull()?.let { port ->
-                                    editingProxy = (editingProxy as ProviderProxy.Http).copy(port = port)
-                                }
-                            },
-                            label = { Text(stringResource(id = R.string.setting_provider_page_proxy_port)) },
-                            modifier = Modifier.fillMaxWidth(),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                        )
-                        OutlinedTextField(
-                            value = (editingProxy as ProviderProxy.Http).username ?: "",
-                            onValueChange = {
-                                editingProxy = (editingProxy as ProviderProxy.Http).copy(username = it)
-                            },
-                            label = { Text(stringResource(id = R.string.setting_provider_page_proxy_username)) },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            value = (editingProxy as ProviderProxy.Http).password ?: "",
-                            onValueChange = {
-                                editingProxy = (editingProxy as ProviderProxy.Http).copy(password = it)
-                            },
-                            label = { Text(stringResource(id = R.string.setting_provider_page_proxy_password)) },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                }
-            }
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End
-        ) {
-            Button(
-                onClick = {
-                    onEdit(provider.copyProvider(proxy = editingProxy))
-                    toaster.show(
-                        context.getString(R.string.setting_provider_page_save_success),
-                        type = ToastType.Success
-                    )
-                }
-            ) {
-                Text(stringResource(id = R.string.setting_provider_page_save))
-            }
-        }
-    }
 }
 
 @Composable
@@ -1013,7 +854,7 @@ private fun ModelSettingsForm(
     isEdit: Boolean,
     parentProvider: ProviderSetting? = null
 ) {
-    val pagerState = rememberPagerState { 3 }
+    val pagerState = rememberPagerState { 2 }
     val scope = rememberCoroutineScope()
 
     fun setModelId(id: String) {
@@ -1057,15 +898,6 @@ private fun ModelSettingsForm(
                 },
                 text = { Text(stringResource(R.string.setting_provider_page_advanced_settings)) }
             )
-            Tab(
-                selected = pagerState.currentPage == 2,
-                onClick = {
-                    scope.launch {
-                        pagerState.animateScrollToPage(2)
-                    }
-                },
-                text = { Text(stringResource(R.string.setting_page_built_in_tools)) }
-            )
         }
 
         HorizontalPager(
@@ -1096,7 +928,8 @@ private fun ModelSettingsForm(
                                     Text(stringResource(R.string.setting_provider_page_model_id_placeholder))
                                 }
                             },
-                            enabled = !isEdit
+                            enabled = !isEdit,
+                            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                         )
 
                         // Display name with icon picker
@@ -1133,7 +966,8 @@ private fun ModelSettingsForm(
                                     if (!isEdit) {
                                         Text(stringResource(R.string.setting_provider_page_model_display_name_placeholder))
                                     }
-                                }
+                                },
+                                shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                             )
                         }
 
@@ -1217,16 +1051,6 @@ private fun ModelSettingsForm(
                             }
                         )
                     }
-                }
-
-                2 -> {
-                    // 内置工具页面
-                    BuiltInToolsSettings(
-                        tools = model.tools,
-                        onUpdateTools = { tools ->
-                            onModelChange(model.copy(tools = tools))
-                        }
-                    )
                 }
             }
         }
@@ -1581,6 +1405,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     label = { Text(stringResource(R.string.setting_provider_page_filter_placeholder)) },
                     modifier = Modifier.fillMaxWidth(),
                     placeholder = { Text(stringResource(R.string.setting_provider_page_filter_example)) },
+                    singleLine = true,
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.SearchField,
                 )
             }
         }
@@ -1880,6 +1706,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     placeholder = {
                         Text(stringResource(R.string.setting_provider_page_filter_example))
                     },
+                    singleLine = true,
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.SearchField,
                 )
             }
         }

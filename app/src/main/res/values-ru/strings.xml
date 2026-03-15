@@ -409,9 +409,14 @@
   <string name="setting_model_page_ocr_prompt_vars">Переменные: Данные изображения: {images}</string>
   <string name="setting_model_page_prompt">Промпт</string>
   <string name="setting_model_page_reset_to_default">Сбросить до значения по умолчанию</string>
+  <string name="setting_model_page_group_conversation">Диалог</string>
+  <string name="setting_model_page_group_processing">Обработка</string>
   <string name="setting_model_page_suggestion_model">Модель предложений чата</string>
   <string name="setting_model_page_suggestion_model_desc">Модель, используемая для генерации предложений в диалоге, рекомендуется использовать быстрые и недорогие модели</string>
   <string name="setting_model_page_suggestion_prompt_vars">Переменные: Содержание разговора: {content}, Язык: {locale}</string>
+  <string name="setting_model_page_summarizer_model">Модель суммаризации</string>
+  <string name="setting_model_page_summarizer_model_desc">Модель для суммаризации памяти и обновления контекста для всех персонажей</string>
+  <string name="setting_model_page_summarizer_missing_banner">Выберите модель суммаризации в Настройки &gt; Модели по умолчанию</string>
   <string name="setting_model_page_title">Настройки модели</string>
   <string name="setting_model_page_title_model">Модель сводки заголовков</string>
   <string name="setting_model_page_title_model_desc">Модель, используемая для суммаризации названий бесед, рекомендуется использовать быстрые и недорогие модели</string>
@@ -607,7 +612,7 @@
   <string name="setting_tts_page_voice_name_placeholder">Коре</string>
   <string name="settings">Настройки</string>
   <string name="share">Поделиться</string>
-  <string name="share_handler_page_title">Выбрать ассистента</string>
+  <string name="share_handler_page_title">Поделиться с персонажем</string>
   <string name="shortcut_take_picture">Сделать фото и спросить</string>
   <string name="silicon_flow_built_in_models">* Встроенные бесплатные модели Silicon Flow доступны без ключа API. Для использования более мощных моделей получите и настройте собственный ключ API.</string>
   <string name="silicon_flow_description">**Ведущий мировой поставщик ИИ-возможностей, ускоряющий AGI на благо человечества.**</string>

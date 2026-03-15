@@ -57,6 +57,7 @@ interface SearchService<T : SearchServiceOptions> {
                 is SearchServiceOptions.JinaOptions -> JinaSearchService
                 is SearchServiceOptions.BochaOptions -> BochaSearchService
                 is SearchServiceOptions.NanoGPTOptions -> NanoGPTSearchService
+                is SearchServiceOptions.GrokOptions -> GrokSearchService
             } as SearchService<T>
         }
 
@@ -137,6 +138,7 @@ sealed class SearchServiceOptions {
             JinaOptions::class to "Jina",
             BochaOptions::class to "博查",
             NanoGPTOptions::class to "NanoGPT",
+            GrokOptions::class to "Grok",
         )
     }
 
@@ -247,6 +249,14 @@ sealed class SearchServiceOptions {
         val outputType: String = "searchResults",
         val includeImages: Boolean = false,
         val stealthMode: Boolean = false,
+    ) : SearchServiceOptions()
+
+    @Serializable
+    @SerialName("grok")
+    data class GrokOptions(
+        override val id: Uuid = Uuid.random(),
+        val apiKey: String = "",
+        val model: String = "grok-4-1212"
     ) : SearchServiceOptions()
 }
 

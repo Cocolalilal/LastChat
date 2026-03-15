@@ -59,6 +59,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -157,8 +158,13 @@ fun SettingLorebookDetailPage(
     
     // Track drag state for neighbor offset
     var draggingIndex by remember { mutableStateOf(-1) }
-    var dragOffset by remember { mutableStateOf(0f) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
     var isUnlocked by remember { mutableStateOf(false) }
+    var neighborsUnlocked by remember { mutableStateOf(false) }
+
+    if (dragOffset == 0f && neighborsUnlocked) {
+        neighborsUnlocked = false
+    }
     
     // Scroll to specific entry if requested
     val configuration = LocalConfiguration.current
@@ -214,6 +220,7 @@ fun SettingLorebookDetailPage(
         }
         return
     }
+    val canDelete = lorebook.entries.size > 1
     
     fun updateLorebook(updated: Lorebook) {
         vm.updateSettings(settings.copy(
@@ -236,8 +243,16 @@ fun SettingLorebookDetailPage(
     }
     
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
+        if (isFiltering) {
+            return@rememberReorderableLazyListState
+        }
+        val fromIndex = from.index - 1
+        val toIndex = to.index - 1
+        if (fromIndex !in lorebook.entries.indices || toIndex !in 0..lorebook.entries.size) {
+            return@rememberReorderableLazyListState
+        }
         val newEntries = lorebook.entries.toMutableList().apply {
-            add(to.index - 1, removeAt(from.index - 1)) // -1 for header item
+            add(toIndex, removeAt(fromIndex))
         }
         updateLorebook(lorebook.copy(entries = newEntries))
         haptics.perform(HapticPattern.Pop)
@@ -422,77 +437,92 @@ fun SettingLorebookDetailPage(
                         else -> ItemPosition.MIDDLE
                     }
                     
-                    val neighborOffset = when {
-                        draggingIndex == -1 -> 0f
-                        index == draggingIndex - 1 && isUnlocked -> dragOffset * 0.15f
-                        index == draggingIndex + 1 && isUnlocked -> dragOffset * 0.15f
-                        else -> 0f
+                    val thresholdPx = with(density) { 35.dp.toPx() }
+                    if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
+                        neighborsUnlocked = true
+                    }
+
+                    val shouldNeighborFollow = draggingIndex >= 0 &&
+                        draggingIndex != index &&
+                        !isUnlocked &&
+                        !neighborsUnlocked
+
+                    val neighborOffset = if (shouldNeighborFollow) {
+                        when (kotlin.math.abs(index - draggingIndex)) {
+                            1 -> dragOffset * 0.35f
+                            2 -> dragOffset * 0.12f
+                            else -> 0f
+                        }
+                    } else {
+                        0f
                     }
 
                     ReorderableItem(
                         state = reorderableState, 
                         key = entry.id
                     ) { isDragging ->
-                        PhysicsSwipeToDelete(
-                            position = position,
-                            deleteEnabled = true,
-                            neighborOffset = neighborOffset,
-                            onDragProgress = { offset, unlocked ->
-                                draggingIndex = index
-                                dragOffset = offset
-                                isUnlocked = unlocked
-                            },
-                            onDragEnd = {
-                                if (draggingIndex == index) {
-                                    draggingIndex = -1
-                                    dragOffset = 0f
-                                }
-                            },
-                            onDelete = {
-                                val deletedEntry = entry
-                                updateLorebook(lorebook.copy(
-                                    entries = lorebook.entries.filter { it.id != entry.id }
-                                ))
-                                toaster.show(
-                                    message = context.getString(R.string.lorebook_entry_deleted, entry.name.ifEmpty { context.getString(R.string.lorebook_entry_unnamed) }),
-                                    action = ToastAction(
-                                        label = context.getString(R.string.undo),
-                                        onClick = {
-                                            updateLorebook(lorebook.copy(
-                                                entries = lorebook.entries.toMutableList().apply {
-                                                    add(index.coerceAtMost(size), deletedEntry)
-                                                }
-                                            ))
-                                        }
+                        androidx.compose.runtime.key(canDelete) {
+                            PhysicsSwipeToDelete(
+                                position = position,
+                                deleteEnabled = canDelete,
+                                neighborOffset = neighborOffset,
+                                onDragProgress = { offset, unlocked ->
+                                    draggingIndex = index
+                                    dragOffset = offset
+                                    isUnlocked = unlocked
+                                },
+                                onDragEnd = {
+                                    if (draggingIndex == index) {
+                                        draggingIndex = -1
+                                        dragOffset = 0f
+                                    }
+                                },
+                                onDelete = {
+                                    val deletedEntry = entry
+                                    updateLorebook(lorebook.copy(
+                                        entries = lorebook.entries.filter { it.id != entry.id }
+                                    ))
+                                    toaster.show(
+                                        message = context.getString(R.string.lorebook_entry_deleted, entry.name.ifEmpty { context.getString(R.string.lorebook_entry_unnamed) }),
+                                        action = ToastAction(
+                                            label = context.getString(R.string.undo),
+                                            onClick = {
+                                                updateLorebook(lorebook.copy(
+                                                    entries = lorebook.entries.toMutableList().apply {
+                                                        add(index.coerceAtMost(size), deletedEntry)
+                                                    }
+                                                ))
+                                            }
+                                        )
                                     )
-                                )
-                            },
-                            modifier = Modifier
-                                .scale(if (isDragging) 0.95f else 1f)
-                                .fillMaxWidth()
-                        ) { _ ->
-                            EntryCard(
-                                entry = entry,
-                                priority = (lorebook.entries.indexOf(entry) + 1),
-                                onEdit = { editingEntry = entry },
-                                dragHandle = {
-                                    if (!isFiltering) {
-                                        IconButton(
-                                            onClick = {},
-                                            modifier = Modifier.longPressDraggableHandle(
-                                                onDragStarted = {
-                                                    haptics.perform(HapticPattern.Pop)
-                                                },
-                                                onDragStopped = {
-                                                    haptics.perform(HapticPattern.Thud)
-                                                }
-                                            )
-                                        ) {
-                                            Icon(Icons.Rounded.DragIndicator, contentDescription = null)
+                                },
+                                modifier = Modifier
+                                    .scale(if (isDragging) 0.95f else 1f)
+                                    .fillMaxWidth()
+                            ) { _ ->
+                                EntryCard(
+                                    entry = entry,
+                                    priority = (lorebook.entries.indexOf(entry) + 1),
+                                    onEdit = { editingEntry = entry },
+                                    dragHandle = {
+                                        if (!isFiltering) {
+                                            IconButton(
+                                                onClick = {},
+                                                modifier = Modifier.longPressDraggableHandle(
+                                                    onDragStarted = {
+                                                        haptics.perform(HapticPattern.Pop)
+                                                    },
+                                                    onDragStopped = {
+                                                        haptics.perform(HapticPattern.Thud)
+                                                    }
+                                                )
+                                            ) {
+                                                Icon(Icons.Rounded.DragIndicator, contentDescription = null)
+                                            }
                                         }
                                     }
-                                }
-                            )
+                                )
+                            }
                         }
                     }
                 }
@@ -773,7 +803,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     onValueChange = { name = it },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    placeholder = { Text(stringResource(R.string.lorebook_entry_name_placeholder)) }
+                    placeholder = { Text(stringResource(R.string.lorebook_entry_name_placeholder)) },
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                 )
             }
 
@@ -786,7 +817,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(120.dp),
-                    placeholder = { Text(stringResource(R.string.lorebook_entry_prompt_placeholder)) }
+                    placeholder = { Text(stringResource(R.string.lorebook_entry_prompt_placeholder)) },
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                 )
             }
 
@@ -817,7 +849,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                             value = keywords,
                             onValueChange = { keywords = it },
                             modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text(stringResource(R.string.lorebook_entry_keywords_placeholder)) }
+                            placeholder = { Text(stringResource(R.string.lorebook_entry_keywords_placeholder)) },
+                            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                         )
                     }
 
@@ -860,7 +893,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     value = scanDepth.toString(),
                     onValueChange = { scanDepth = it.toIntOrNull() ?: 5 },
                     modifier = Modifier.width(80.dp),
-                    singleLine = true
+                    singleLine = true,
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                 )
             }
 
@@ -1065,7 +1099,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         onValueChange = { name = it },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        placeholder = { Text(stringResource(R.string.lorebooks_page_name_placeholder)) }
+                        placeholder = { Text(stringResource(R.string.lorebooks_page_name_placeholder)) },
+                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                     )
                 }
             }
@@ -1079,7 +1114,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(100.dp),
-                    placeholder = { Text(stringResource(R.string.lorebooks_page_description_placeholder)) }
+                    placeholder = { Text(stringResource(R.string.lorebooks_page_description_placeholder)) },
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                 )
             }
 

@@ -1,0 +1,18 @@
+{
+  "code_block": {
+    "clipboard_not_available": "å‰ªè´´æ¿ä¸å¯ç”¨",
+    "copy_code": "å¤åˆ¶ä»£ç ",
+    "copied": "å·²å¤åˆ¶",
+    "copy": "å¤åˆ¶",
+    "collapse": "æŠ˜å ",
+    "expand": "å±•å¼€",
+    "preview_code": "é¢„è§ˆä»£ç ",
+    "preview": "é¢„è§ˆ",
+    "window_not_available": "çª—å£å¯¹è±¡ä¸å¯ç”¨",
+    "download_code": "ä¸‹è½½ä»£ç ",
+    "download": "ä¸‹è½½"
+  },
+  "markdown": {
+    "code_preview_title": "{{language}} é¢„è§ˆ"
+  }
+}

@@ -26,4 +26,9 @@
 # keep jlatexmath
 -keep class org.scilab.forge.jlatexmath.** {*;}
 
+# Ktor pulls a JVM-only debugger probe which references java.lang.management.
+# Those types don't exist on Android and are safe to ignore for release builds.
+-dontwarn java.lang.management.ManagementFactory
+-dontwarn java.lang.management.RuntimeMXBean
+
 -dontobfuscate

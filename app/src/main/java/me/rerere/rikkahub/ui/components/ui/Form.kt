@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import me.rerere.rikkahub.ui.theme.AppShapes
 
 @Composable
 fun FormItem(
@@ -66,7 +67,8 @@ private fun FormItemPreview() {
         content = {
             OutlinedTextField(
                 value = "",
-                onValueChange = {}
+                onValueChange = {},
+                shape = AppShapes.InputField
             )
         },
         description = {

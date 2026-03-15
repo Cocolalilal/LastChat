@@ -61,6 +61,10 @@
     <string name="assistant_page_local_tools_javascript_engine_title">JavaScript Engine</string>
     <string name="assistant_page_local_tools_python_engine_title">Python Engine</string>
     <string name="assistant_page_local_tools_python_engine_desc">Execute Python code with pip packages and file I/O. Supports numpy and Pillow.</string>
+    <string name="assistant_page_local_tools_tts_title">Text to Speech</string>
+    <string name="assistant_page_local_tools_tts_desc">Let the assistant read text aloud using your selected TTS provider</string>
+    <string name="assistant_page_local_tools_character_questions_title">Character Questions</string>
+    <string name="assistant_page_local_tools_character_questions_desc">Let the character ask clarifying questions.</string>
     <string name="assistant_page_local_tools_python_internet_title">Allow Internet Access</string>
     <string name="assistant_page_local_tools_python_internet_desc">Allow Python code to make network requests</string>
     <string name="assistant_page_manage_memory">Manage Memory (%d)</string>
@@ -155,6 +159,8 @@
     <string name="backup_page_import_desc">Import Local Backup File</string>
     <string name="backup_page_import_export">Import &amp; Export</string>
     <string name="backup_page_import_from_chatbox">Import from ChatBox</string>
+    <string name="backup_page_import_from_cherry_studio">Import from Cherry Studio</string>
+    <string name="backup_page_import_cherry_studio_desc">Import provider settings from a Cherry Studio backup</string>
     <string name="backup_page_import_from_other_app">Import from other App</string>
     <string name="backup_page_importing">Restoring...</string>
     <string name="backup_page_last_modified">Last Modified</string>
@@ -203,11 +209,65 @@
     <string name="chat_message_tool_python_list_files">Listing sandbox files</string>
     <string name="chat_message_tool_python_delete_file">Deleting file: %1$s</string>
     <string name="chat_message_tool_python_import">Importing attachment</string>
+    <string name="chat_message_tool_ask_user">Asking a question</string>
     <string name="chat_message_tool_python_code">Code</string>
     <string name="chat_message_tool_python_output">Output</string>
     <string name="chat_message_tool_python_files">Files</string>
     <string name="chat_message_tool_file_created">File Created</string>
     <string name="chat_message_tool_download_file">Download File</string>
+    <string name="activity_timeline_title">Activity Timeline</string>
+    <string name="activity_timeline_description">%1$d activity step(s)</string>
+    <string name="activity_timeline_empty">No activity recorded</string>
+    <string name="activity_timeline_reasoning">Reasoning</string>
+    <string name="activity_timeline_reply">Reply</string>
+    <string name="activity_timeline_tool_search_web">Searching web</string>
+    <string name="activity_timeline_tool_scrape_web">Reading page</string>
+    <string name="activity_timeline_tool_write_file">Writing file</string>
+    <string name="activity_timeline_tool_read_file">Reading file</string>
+    <string name="activity_timeline_tool_delete_file">Deleting file</string>
+    <string name="activity_timeline_tool_manage_skills">Managing skills</string>
+    <string name="activity_timeline_tool_ask_user">Asking a question</string>
+    <string name="activity_timeline_questionnaire_count">%1$d question(s)</string>
+    <string name="activity_timeline_questionnaire_answered_count">%1$d answered</string>
+    <string name="activity_timeline_questionnaire_answered_summary">%1$d of %2$d answered</string>
+    <string name="activity_timeline_questionnaire_pending">Awaiting response</string>
+    <string name="activity_timeline_questionnaire_dismissed">Dismissed</string>
+    <string name="activity_timeline_questionnaire_skipped">Skipped</string>
+    <string name="activity_timeline_questionnaire_source_option">Picked option</string>
+    <string name="activity_timeline_questionnaire_source_custom">Custom answer</string>
+    <string name="activity_timeline_activated">Activated</string>
+    <string name="activity_timeline_disabled">Disabled</string>
+    <string name="activity_timeline_no_skill_changes">No skill changes</string>
+    <string name="activity_timeline_expand">Expand</string>
+    <string name="activity_timeline_collapse">Collapse</string>
+    <string name="activity_timeline_edit_memory_title">Edit memory</string>
+    <string name="activity_timeline_delete_memory_title">Delete memory?</string>
+    <string name="activity_timeline_delete_memory_message">This memory will be removed from the assistant.</string>
+    <string name="activity_timeline_query">Query</string>
+    <string name="activity_timeline_sources">Sources (%1$d)</string>
+    <string name="activity_timeline_url">URL</string>
+    <string name="activity_timeline_arguments">Arguments</string>
+    <string name="activity_timeline_python_error">Error</string>
+    <string name="activity_timeline_python_stdout">Stdout</string>
+    <string name="activity_timeline_python_result">Result</string>
+    <string name="activity_timeline_python_stderr">Stderr</string>
+    <string name="activity_timeline_no_output">No output</string>
+    <string name="activity_timeline_file_path">Path</string>
+    <string name="activity_timeline_file_count">File count</string>
+    <string name="activity_timeline_file_count_value">%1$d files</string>
+    <string name="activity_timeline_file_uri">URI</string>
+    <string name="activity_timeline_status">Status</string>
+    <string name="activity_timeline_status_success">Success</string>
+    <string name="activity_timeline_status_failed">Failed</string>
+    <string name="activity_timeline_error">Error</string>
+    <string name="activity_timeline_memory_core">Core memory</string>
+    <string name="activity_timeline_memory_episodic">Episodic memory</string>
+    <string name="activity_timeline_deleted">Deleted</string>
+    <string name="activity_timeline_content">Content</string>
+    <string name="activity_timeline_before">Before</string>
+    <string name="activity_timeline_after">After</string>
+    <string name="activity_timeline_revert">Revert</string>
+    <string name="activity_timeline_restore">Restore</string>
     <string name="chat_page_cancel">Cancel</string>
     <string name="chat_page_clear_context">Clear Context</string>
     <string name="chat_page_date_format_different_year">%1$d-%2$d-%3$d</string>
@@ -238,7 +298,9 @@
     <string name="chat_page_consolidate">Consolidate</string>
     <string name="chat_page_save">Save</string>
     <string name="chat_page_scroll_to_bottom">Scroll to Bottom</string>
-    <string name="chat_page_search_placeholder">Search chats</string>
+    <string name="chat_page_search_placeholder">Search chats and messages</string>
+    <string name="chat_page_search_hint">Searches conversation titles and message text</string>
+    <string name="chat_page_search_message_match">Message content match</string>
     <string name="chat_page_today">Today</string>
     <string name="chat_page_yesterday">Yesterday</string>
     <string name="citations_count">%1$d citations</string>
@@ -418,6 +480,11 @@
     <string name="setting_mcp_page_name_desc">Display name for MCP server</string>
     <string name="setting_mcp_page_name_placeholder">e.g. My MCP Server</string>
     <string name="setting_mcp_page_no_mcp_servers_found">No MCP servers found</string>
+    <string name="setting_mcp_page_import_title">Import MCP Servers</string>
+    <string name="setting_mcp_page_import_desc">Paste a JSON config with an `mcpServers` object to add servers without rebuilding them by hand.</string>
+    <string name="setting_mcp_page_import_confirm">Import Servers</string>
+    <string name="setting_mcp_page_import_no_valid_config">No valid MCP servers were found in this JSON.</string>
+    <string name="setting_mcp_page_import_parse_error">Could not parse MCP JSON: %s</string>
     <string name="setting_mcp_page_save">Save</string>
     <string name="setting_mcp_page_server_url">Server URL</string>
     <string name="setting_mcp_page_sse_url_desc">SSE Transport URL</string>
@@ -439,9 +506,14 @@
     <string name="setting_model_page_ocr_prompt_vars">Vars: Image Data: {images}</string>
     <string name="setting_model_page_prompt">Prompt</string>
     <string name="setting_model_page_reset_to_default">Reset to Default</string>
+    <string name="setting_model_page_group_conversation">Conversation</string>
+    <string name="setting_model_page_group_processing">Processing</string>
     <string name="setting_model_page_suggestion_model">Suggestion Model</string>
     <string name="setting_model_page_suggestion_model_desc">Model for generating chat suggestions. Recommend fast/cheap model.</string>
     <string name="setting_model_page_suggestion_prompt_vars">Vars: Content: {content}, Locale: {locale}</string>
+    <string name="setting_model_page_summarizer_model">Summarizer Model</string>
+    <string name="setting_model_page_summarizer_model_desc">Model for memory summarization and context refresh across all characters.</string>
+    <string name="setting_model_page_summarizer_missing_banner">Select a summarizer model in Settings > Default Models</string>
     <string name="setting_model_page_title">Default Models</string>
     <string name="setting_model_page_title_model">Title Model</string>
     <string name="setting_model_page_title_model_desc">Model for summarizing chat titles. Recommend fast/cheap model.</string>
@@ -621,9 +693,49 @@
     <string name="setting_tts_page_enabled">Enabled</string>
     <string name="setting_tts_page_language">Language</string>
     <string name="setting_tts_page_language_description">TTS Language Code (e.g. en-US)</string>
+    <string name="setting_tts_page_language_type">Language Type</string>
+    <string name="setting_tts_page_language_type_description">Preferred language hint for synthesis</string>
     <string name="setting_tts_page_model">Model</string>
     <string name="setting_tts_page_model_description">TTS Model to use</string>
     <string name="setting_tts_page_model_placeholder_gemini">gemini-2.5-flash-preview-tts</string>
+    <string name="setting_page_web_server">Web Access</string>
+    <string name="setting_page_web_server_desc">Use LastChat on your network</string>
+    <string name="setting_page_web_server_hero_title">LastChat in a browser</string>
+    <string name="setting_page_web_server_hero_desc">Start a local web server to browse conversations and send messages from phones, tablets, or desktops on the same network.</string>
+    <string name="setting_page_web_server_status_idle">Server is offline</string>
+    <string name="setting_page_web_server_status_starting">Starting local server…</string>
+    <string name="setting_page_web_server_status_stopping">Turning off server…</string>
+    <string name="setting_page_web_server_status_running">Server is live on your LAN</string>
+    <string name="setting_page_web_server_status_error">Server needs attention</string>
+    <string name="setting_page_web_server_start">Start</string>
+    <string name="setting_page_web_server_stop">Stop</string>
+    <string name="setting_page_web_server_open">Open</string>
+    <string name="setting_page_web_server_access">Access</string>
+    <string name="setting_page_web_server_port">Port</string>
+    <string name="setting_page_web_server_port_desc">Choose the port your browser will connect to. 8080 is the default.</string>
+    <string name="setting_page_web_server_protect">Protect with password</string>
+    <string name="setting_page_web_server_protect_desc">Require a password before the browser UI can read conversations or send messages.</string>
+    <string name="setting_page_web_server_password">Access password</string>
+    <string name="setting_page_web_server_password_desc">Leave blank for open LAN access. Add a password first to enable protection.</string>
+    <string name="setting_page_web_server_background_setup_title">Keep web access alive</string>
+    <string name="setting_page_web_server_background_setup_desc">Allow notifications and battery optimization changes so web access stays reachable while the screen is off.</string>
+    <string name="setting_page_web_server_background_setup_continue">Continue</string>
+    <string name="setting_page_web_server_notification_permission_warning">Notifications were not allowed. Server status may be hidden.</string>
+    <string name="setting_page_web_server_background_warning_title">Background reliability may be reduced</string>
+    <string name="setting_page_web_server_background_warning_desc">Battery optimization is still on, so web access may stop when the screen turns off.</string>
+    <string name="setting_page_web_server_background_warning_action">Fix</string>
+    <string name="setting_page_web_server_addresses">Addresses</string>
+    <string name="setting_page_web_server_lan_address">LAN address</string>
+    <string name="setting_page_web_server_mdns_address">Bonjour address</string>
+    <string name="setting_page_web_server_waiting_for_network">Start the server to get a reachable address.</string>
+    <string name="setting_page_web_server_error">Web server error</string>
+    <string name="notification_channel_web_server">Web server</string>
+    <string name="notification_channel_spontaneous">Assistant updates</string>
+    <string name="notification_web_server_title">LastChat web server</string>
+    <string name="notification_web_server_starting">Starting local browser access…</string>
+    <string name="notification_web_server_stopping">Turning off local browser access…</string>
+    <string name="notification_web_server_running">Local browser access is running</string>
+    <string name="notification_web_server_error">Web server failed</string>
     <string name="setting_tts_page_model_placeholder_openai">gpt-4o-mini-tts</string>
     <string name="setting_tts_page_more_options_content_description">More Options</string>
     <string name="setting_tts_page_name">Name</string>
@@ -653,7 +765,7 @@
     <string name="setting_tts_page_voice_name_placeholder">Kore</string>
     <string name="settings">Settings</string>
     <string name="share">Share</string>
-    <string name="share_handler_page_title">Share to LastChat</string>
+    <string name="share_handler_page_title">Share with character</string>
     <string name="shortcut_take_picture">Take Picture</string>
     <string name="shortcut_chat_with">Chat with %s</string>
     <string name="widget_assistant_name">Character Shortcut</string>
@@ -706,27 +818,27 @@
 
     <!-- Prompt Injections -->
     <string name="setting_page_prompt_injections">Prompt Injections</string>
-    <string name="setting_page_prompt_injections_desc">Modes and lorebooks</string>
+    <string name="setting_page_prompt_injections_desc">Skills and lorebooks</string>
     <string name="prompt_injections_page_injection_types">Injection Types</string>
-    <string name="prompt_injections_page_modes">Modes</string>
-    <string name="prompt_injections_page_modes_desc">Custom prompts that can be toggled on/off</string>
+    <string name="prompt_injections_page_modes">Skills</string>
+    <string name="prompt_injections_page_modes_desc">Structured instructions that can be toggled per chat</string>
     <string name="prompt_injections_page_lorebooks">Lorebooks</string>
     <string name="prompt_injections_page_lorebooks_desc">Context-triggered prompt entries</string>
     
     <!-- Modes -->
-    <string name="modes_page_description_title">Custom Modes</string>
-    <string name="modes_page_description_text">Define custom prompts that can be toggled on/off per chat. Higher priority modes are injected first.</string>
-    <string name="modes_page_deleted">Mode \"%s\" deleted</string>
+    <string name="modes_page_description_title">Custom Skills</string>
+    <string name="modes_page_description_text">Define custom skills that can be toggled on/off per chat. Higher priority skills are injected first.</string>
+    <string name="modes_page_deleted">Skill \"%s\" deleted</string>
     <string name="modes_page_enable_by_default">Enable by default</string>
-    <string name="modes_page_empty_title">No modes yet</string>
-    <string name="modes_page_empty_desc">Add modes to inject custom prompts</string>
-    <string name="modes_page_unnamed">Unnamed Mode</string>
-    <string name="modes_page_add_mode">Add Mode</string>
-    <string name="modes_page_edit_mode">Edit Mode</string>
+    <string name="modes_page_empty_title">No skills yet</string>
+    <string name="modes_page_empty_desc">Add skills to inject custom instructions</string>
+    <string name="modes_page_unnamed">Unnamed Skill</string>
+    <string name="modes_page_add_mode">Add Skill</string>
+    <string name="modes_page_edit_mode">Edit Skill</string>
     <string name="modes_page_name">Name</string>
-    <string name="modes_page_name_placeholder">e.g. Creative Writing</string>
-    <string name="modes_page_prompt">Prompt</string>
-    <string name="modes_page_prompt_placeholder">Enter the prompt to inject...</string>
+    <string name="modes_page_name_placeholder">e.g. code-reviewer</string>
+    <string name="modes_page_prompt">Instructions</string>
+    <string name="modes_page_prompt_placeholder">Enter the instructions to inject...</string>
     <string name="modes_page_injection_position">Injection Position</string>
     <string name="modes_page_depth">Depth</string>
     <string name="modes_page_attachments">Attachments</string>
@@ -792,9 +904,9 @@
     <!-- Modes Picker -->
     <string name="modes_page_default_on">On by default</string>
     <string name="modes_page_default_off">Off by default</string>
-    <string name="modes_picker_title">Modes</string>
+    <string name="modes_picker_title">Skills</string>
     <string name="modes_picker_count">%d active</string>
-    <string name="modes_picker_none">No modes configured</string>
+    <string name="modes_picker_none">No skills configured</string>
     <string name="modes_page_default_enabled">Enable by default</string>
     <string name="modes_page_default_enabled_desc">Automatically enable for new chats</string>
     <string name="lorebook_entry_deleted">Entry %s deleted</string>
@@ -807,18 +919,75 @@
     <string name="lorebook_toggle_assistants">Toggle Characters</string>
     <string name="lorebook_select_to_toggle">Select a lorebook to toggle</string>
     
+    <!-- Skills -->
+    <string name="prompt_injections_page_skills">Skills</string>
+    <string name="skills_page_description_title">Claude Skills</string>
+    <string name="skills_page_description_text">Import or create skills that follow the Claude Skills standard. Skills provide structured instructions with metadata that guide AI behaviour.</string>
+    <string name="skills_page_deleted">Skill \"%s\" deleted</string>
+    <string name="skills_page_empty_title">No skills yet</string>
+    <string name="skills_page_empty_desc">Add skills to extend AI capabilities with structured instructions</string>
+    <string name="skills_page_unnamed">Unnamed Skill</string>
+    <string name="skills_page_add_skill">Add Skill</string>
+    <string name="skills_page_edit_skill">Edit Skill</string>
+    <string name="skills_page_name">Name</string>
+    <string name="skills_page_name_placeholder">e.g. code-reviewer</string>
+    <string name="skills_page_icon">Icon</string>
+    <string name="skills_page_description">Description</string>
+    <string name="skills_page_description_placeholder">What the skill does and when to use it…</string>
+    <string name="skills_page_instructions">Instructions</string>
+    <string name="skills_page_instructions_placeholder">Markdown instructions for the skill…</string>
+    <string name="skills_page_attachments">Attachments</string>
+    <string name="skills_page_add_image">Image</string>
+    <string name="skills_page_add_file">File</string>
+    <string name="skills_page_enable_by_default">Enable by default</string>
+    <string name="skills_page_available_for_all_characters">All characters can auto-toggle this skill</string>
+    <string name="skills_page_available_for_characters_desc">Choose which characters can autonomously enable or disable this skill</string>
+    <string name="skills_page_available_in_all">All characters</string>
+    <string name="skills_page_available_in_count">%d characters</string>
+    <string name="skills_page_injection_position">Injection Position</string>
+    <string name="skills_page_depth">Depth</string>
+    <string name="skills_page_disable_model_invocation">User-only invocation</string>
+    <string name="skills_page_disable_model_invocation_desc">Prevent the AI from activating this skill automatically</string>
+    <string name="skills_page_user_invocable">User can invoke</string>
+    <string name="skills_page_user_invocable_desc">Allow user to invoke this skill directly</string>
+    <string name="skills_page_argument_hint">Slash command hint</string>
+    <string name="skills_page_argument_hint_placeholder">e.g. /review</string>
+    <string name="skill_import_success">Imported: %s</string>
+    <string name="skill_export_success">Skill exported successfully</string>
+    <string name="skill_export_format">Export Format</string>
+    <string name="export_format_skill_md">SKILL.md (Standard)</string>
+    <string name="export_format_skill_json">JSON (LastChat)</string>
+    <string name="skills_picker_title">Skills</string>
+    <string name="skills_picker_none">No skills configured</string>
+    <string name="skills_picker_active_count">%d active</string>
+    <string name="banner_dismiss">Dismiss</string>
+    <string name="previous">Previous</string>
+    <string name="next">Next</string>
+    <string name="minimal_chat_input_placeholder">Ask %1$s</string>
+    <string name="character_questions_progress">%1$d of %2$d</string>
+    <string name="character_questions_custom_answer_placeholder">Write your own answer...</string>
+
     <!-- Character Lorebooks Selection -->
     <string name="assistant_lorebooks_title">Lorebooks</string>
     <string name="assistant_lorebooks_desc">Select which lorebooks to use with this character</string>
     <string name="assistant_lorebooks_empty">No lorebooks configured</string>
     <string name="assistant_lorebooks_empty_hint">Create lorebooks in Settings → Prompt Injections → Lorebooks</string>
     <string name="assistant_lorebooks_enabled">%d enabled</string>
+    <string name="assistant_skills_title">Skills</string>
+    <string name="assistant_skills_desc">Select which skills to use with this character</string>
+    <string name="assistant_skills_empty">No skills available</string>
+    <string name="assistant_skills_empty_hint">Create skills in Settings > Prompt Injections > Skills</string>
     
     <!-- Context Management -->
     <string name="context_management_title">Context Management</string>
-    <string name="context_management_desc">Lorebooks, message history, search results</string>
+    <string name="context_management_desc">Lorebooks, time awareness, message history, search results</string>
     <string name="context_lorebooks_title">Lorebooks</string>
     <string name="context_lorebooks_desc">Select which lorebooks to use with this assistant</string>
+    <string name="context_skills_title">Skills</string>
+    <string name="context_skills_desc">Select which skills to use with this assistant</string>
+    <string name="context_time_awareness_title">Time Awareness</string>
+    <string name="context_time_awareness_toggle_title">Time awareness</string>
+    <string name="context_time_awareness_desc">Tell the AI the current local time and notable conversation gaps so it can track pacing more naturally</string>
     <string name="context_message_history_title">Message History</string>
     <string name="context_max_messages">Maximum messages</string>
     <string name="context_max_messages_desc">Limit messages sent to model (0 = unlimited)</string>
@@ -845,7 +1014,8 @@
     <string name="context_refresh_cleaned">Summarized %d messages</string>
     <string name="context_refresh_last">Last summary: %s</string>
     <string name="context_refresh_never">Never summarized</string>
-    <string name="context_refresh_no_summarizer">Configure a summarizer model in settings first</string>
+    <string name="context_refresh_no_summarizer">Configure a summarizer model in Settings &gt; Default Models first</string>
+    <string name="context_summarizer_model_optional_tip">Optional: choose a dedicated summarizer model in Settings &gt; Default Models for better summaries.</string>
     <string name="context_refresh_confirm_title">Summarize Messages?</string>
     <string name="context_refresh_confirm_message">This will summarize your conversation history into a compact form. The AI will remember the key points but detailed messages will be replaced with a summary.</string>
     
@@ -917,7 +1087,6 @@
     <string name="setting_new_chat_content_desc">Content shown below header</string>
     <string name="setting_new_chat_content_none">None</string>
     <string name="setting_new_chat_content_templates">Templates</string>
-    <string name="setting_new_chat_content_stats">Stats</string>
     <string name="setting_new_chat_content_actions">Actions</string>
     
     <!-- New Chat Actions -->
@@ -925,26 +1094,8 @@
     <string name="new_chat_action_translate">Translate</string>
     <string name="new_chat_action_more">More</string>
     
-    <!-- New Chat Stats -->
-    <string name="new_chat_stat_streak">Streak</string>
-    <string name="new_chat_stat_days">Days</string>
-    <string name="new_chat_stat_total_chats">Chats</string>
-    <string name="new_chat_stat_avg_messages">Avg/Day</string>
-    <string name="new_chat_stat_most_used_model">Top Model</string>
-    
-    <!-- Time Labels -->
-    <string name="time_label_early_bird">Early Bird</string>
-    <string name="time_label_daytime_chatter">Daytime Chatter</string>
-    <string name="time_label_night_owl">Night Owl</string>
-    
     <!-- UI Customization -->
     <string name="setting_ui_customization_title">UI Customization</string>
-    
-    <!-- Chat Input Style -->
-    <string name="setting_chat_input_style">Input Style</string>
-    <string name="setting_chat_input_style_desc">How the message input bar looks</string>
-    <string name="setting_chat_input_style_floating">LastChat</string>
-    <string name="setting_chat_input_style_minimal">Minimal</string>
     
     <!-- Minimal Input Picker -->
     <string name="minimal_input_camera">Camera</string>
@@ -954,12 +1105,10 @@
     <string name="minimal_input_thinking_desc">Think longer for better answers</string>
     <string name="minimal_input_search">Search</string>
     <string name="minimal_input_search_desc">Search the web for information</string>
-    <string name="minimal_input_modes">Modes</string>
-    <string name="minimal_input_modes_desc">Change how the assistant behaves</string>
+    <string name="minimal_input_skills">Skills</string>
+    <string name="minimal_input_skills_desc">Apply skills to this chat</string>
     <string name="minimal_input_lorebooks">Lorebooks</string>
     <string name="minimal_input_lorebooks_desc">Add context from your lorebooks</string>
     <string name="minimal_input_summarize">Summarize</string>
     <string name="minimal_input_summarize_desc">Summarize the conversation</string>
 </resources>
-
-

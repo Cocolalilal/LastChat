@@ -1,0 +1,45 @@
+{
+  "conversations": {
+    "meta": {
+      "title": "LastChat Web",
+      "description": "LastChat web client"
+    },
+    "preview": {
+      "empty_message": "Empty message",
+      "image": "[Image]",
+      "video": "[Video]",
+      "audio": "[Audio]",
+      "document": "[Document]",
+      "document_with_name": "[Document] {{name}}",
+      "thinking": "[Thinking]",
+      "tool_call": "[Tool call]",
+      "tool_with_name": "[Tool] {{name}}"
+    },
+    "errors": {
+      "load_detail_failed": "Failed to load conversation details"
+    },
+    "empty_state": {
+      "select_title": "Select a conversation",
+      "select_description": "Pick a conversation from the sidebar to view messages",
+      "loading_title": "Loading...",
+      "loading_description": "Loading conversation details",
+      "error_title": "Load failed",
+      "no_message_title": "No messages yet",
+      "no_message_description": "This conversation does not have any messages yet"
+    },
+    "welcome_prompt": "How can I help you?",
+    "greeting": {
+      "early_morning": "Rise and shine!",
+      "morning": "Good Morning!",
+      "lunch": "Lunch time!",
+      "afternoon": "Good Afternoon!",
+      "evening": "Good Evening!",
+      "late_evening": "Winding down?",
+      "night": "Good Night!",
+      "early_hours": "Still up? Get some rest"
+    },
+    "user": {
+      "default_name": "User"
+    }
+  }
+}

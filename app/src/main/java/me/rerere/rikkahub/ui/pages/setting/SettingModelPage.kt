@@ -5,13 +5,13 @@ import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Card
@@ -49,6 +49,7 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.TipsAndUpdates
 import androidx.compose.material.icons.rounded.Title
 import androidx.compose.material.icons.rounded.Translate
+import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.provider.ModelType
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_OCR_PROMPT
@@ -56,10 +57,23 @@ import me.rerere.rikkahub.data.ai.prompts.DEFAULT_SUGGESTION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TITLE_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TRANSLATION_PROMPT
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.datastore.findModelById
+import me.rerere.rikkahub.ui.components.ai.ReasoningPicker
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.draw.clip
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.LightbulbCircle
+import androidx.compose.material.icons.rounded.Lightbulb
+import androidx.compose.material.icons.rounded.AutoAwesome
+
+import me.rerere.rikkahub.ui.components.ai.ReasoningButton
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.FormItem
+import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
 
@@ -84,27 +98,23 @@ fun SettingModelPage(vm: SettingVM = koinViewModel()) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             state = lazyListState,
-            contentPadding = contentPadding + PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = contentPadding,
+            verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
             item {
-                DefaultChatModelSetting(settings = settings, vm = vm)
+                SettingsGroup(title = stringResource(R.string.setting_model_page_group_conversation)) {
+                    DefaultChatModelSetting(settings = settings, vm = vm)
+                    DefaultTitleModelSetting(settings = settings, vm = vm)
+                    DefaultSummarizerModelSetting(settings = settings, vm = vm)
+                    DefaultSuggestionModelSetting(settings = settings, vm = vm)
+                }
             }
 
             item {
-                DefaultTitleModelSetting(settings = settings, vm = vm)
-            }
-
-            item {
-                DefaultSuggestionModelSetting(settings = settings, vm = vm)
-            }
-
-            item {
-                DefaultOcrModelSetting(settings = settings, vm = vm)
-            }
-
-            item {
-                DefaultEmbeddingModelSetting(settings = settings, vm = vm)
+                SettingsGroup(title = stringResource(R.string.setting_model_page_group_processing)) {
+                    DefaultOcrModelSetting(settings = settings, vm = vm)
+                    DefaultEmbeddingModelSetting(settings = settings, vm = vm)
+                }
             }
         }
     }
@@ -188,6 +198,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         },
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 10,
+                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                     )
                     TextButton(
                         onClick = {
@@ -284,7 +295,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                             )
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        maxLines = 8
+                        maxLines = 8,
+                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                     )
                     TextButton(
                         onClick = {
@@ -298,6 +310,16 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         Text(stringResource(R.string.setting_model_page_reset_to_default))
                     }
                 }
+                HelperReasoningSettings(
+                    reasoningTokens = settings.suggestionThinkingBudget,
+                    onUpdateReasoningTokens = { tokens ->
+                        vm.updateSettings(
+                            settings.copy(
+                                suggestionThinkingBudget = tokens
+                            )
+                        )
+                    }
+                )
             }
         }
     }
@@ -377,7 +399,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                             )
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        maxLines = 8
+                        maxLines = 8,
+                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                     )
                     TextButton(
                         onClick = {
@@ -391,6 +414,88 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         Text(stringResource(R.string.setting_model_page_reset_to_default))
                     }
                 }
+                HelperReasoningSettings(
+                    reasoningTokens = settings.titleThinkingBudget,
+                    onUpdateReasoningTokens = { tokens ->
+                        vm.updateSettings(
+                            settings.copy(
+                                titleThinkingBudget = tokens
+                            )
+                        )
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DefaultSummarizerModelSetting(
+    settings: Settings,
+    vm: SettingVM
+) {
+    var showModal by remember { mutableStateOf(false) }
+    ModelFeatureCard(
+        title = {
+            Text(stringResource(R.string.setting_model_page_summarizer_model), maxLines = 1)
+        },
+        description = {
+            Text(stringResource(R.string.setting_model_page_summarizer_model_desc))
+        },
+        icon = {
+            Icon(Icons.Rounded.Psychology, null)
+        },
+        actions = {
+            Box(modifier = Modifier.weight(1f)) {
+                ModelSelector(
+                    modelId = settings.summarizerModelId,
+                    type = ModelType.CHAT,
+                    onSelect = { selectedModel ->
+                        vm.updateSettings(
+                            settings.copy(
+                                summarizerModelId = settings.findModelById(selectedModel.id)?.id
+                            )
+                        )
+                    },
+                    providers = settings.providers,
+                    allowClear = true,
+                    modifier = Modifier.wrapContentWidth()
+                )
+            }
+            IconButton(
+                onClick = {
+                    showModal = true
+                }
+            ) {
+                Icon(Icons.Rounded.Settings, null)
+            }
+        }
+    )
+
+    if (showModal) {
+        ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+            onDismissRequest = {
+                showModal = false
+            },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                HelperReasoningSettings(
+                    reasoningTokens = settings.summarizerThinkingBudget,
+                    onUpdateReasoningTokens = { tokens ->
+                        vm.updateSettings(
+                            settings.copy(
+                                summarizerThinkingBudget = tokens
+                            )
+                        )
+                    }
+                )
             }
         }
     }
@@ -509,6 +614,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         },
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 10,
+                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                     )
                     TextButton(
                         onClick = {
@@ -522,6 +628,16 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         Text(stringResource(R.string.setting_model_page_reset_to_default))
                     }
                 }
+                HelperReasoningSettings(
+                    reasoningTokens = settings.ocrThinkingBudget,
+                    onUpdateReasoningTokens = { tokens ->
+                        vm.updateSettings(
+                            settings.copy(
+                                ocrThinkingBudget = tokens
+                            )
+                        )
+                    }
+                )
             }
         }
     }
@@ -567,6 +683,109 @@ private fun DefaultEmbeddingModelSetting(
 }
 
 @Composable
+private fun HelperReasoningSettings(
+    reasoningTokens: Int,
+    onUpdateReasoningTokens: (Int) -> Unit,
+) {
+    var showReasoningPicker by remember { mutableStateOf(false) }
+
+    if (showReasoningPicker) {
+        ReasoningPicker(
+            reasoningTokens = reasoningTokens,
+            onDismissRequest = { showReasoningPicker = false },
+            onUpdateReasoningTokens = onUpdateReasoningTokens,
+        )
+    }
+
+    val currentLevel = ReasoningLevel.fromBudgetTokens(reasoningTokens)
+    val amoledMode by me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode()
+    val isDarkMode = LocalDarkMode.current
+    val isAmoled = amoledMode && isDarkMode
+    val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
+
+    val title = when (currentLevel) {
+        ReasoningLevel.OFF -> stringResource(R.string.reasoning_off)
+        ReasoningLevel.AUTO -> stringResource(R.string.reasoning_auto)
+        ReasoningLevel.LOW -> stringResource(R.string.reasoning_light)
+        ReasoningLevel.MEDIUM -> stringResource(R.string.reasoning_medium)
+        ReasoningLevel.HIGH -> stringResource(R.string.reasoning_heavy)
+    }
+
+    val subtitle = when (currentLevel) {
+        ReasoningLevel.OFF -> "Reasoning disabled"
+        ReasoningLevel.AUTO -> "Model decides reasoning level"
+        ReasoningLevel.LOW -> stringResource(R.string.reasoning_light_desc)
+        ReasoningLevel.MEDIUM -> stringResource(R.string.reasoning_medium_desc)
+        ReasoningLevel.HIGH -> stringResource(R.string.reasoning_heavy_desc)
+    }
+
+    val icon = when (currentLevel) {
+        ReasoningLevel.OFF -> Icons.Rounded.LightbulbCircle
+        ReasoningLevel.AUTO -> Icons.Rounded.AutoAwesome
+        else -> Icons.Rounded.Lightbulb
+    }
+
+    Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.padding(top = 8.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.assistant_page_thinking_budget),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(24.dp))
+                .background(
+                    color = if (isAmoled) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                )
+                .clickable {
+                    haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
+                    showReasoningPicker = true
+                }
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Box(
+                modifier = Modifier.size(24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f).padding(end = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Icon(
+                imageVector = Icons.Rounded.KeyboardArrowDown,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
 private fun ModelFeatureCard(
     modifier: Modifier = Modifier,
     description: @Composable () -> Unit = {},
@@ -576,9 +795,9 @@ private fun ModelFeatureCard(
 ) {
     Card(
         modifier = modifier,
-        shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
+        shape = RoundedCornerShape(10.dp),
         colors = androidx.compose.material3.CardDefaults.cardColors(
-            containerColor = if (LocalDarkMode.current) androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow else androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = if (LocalDarkMode.current) androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow else androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHighest
         )
     ) {
         Column(

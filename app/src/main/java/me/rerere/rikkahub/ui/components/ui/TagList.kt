@@ -158,7 +158,8 @@ fun TagsInput(
                     placeholder = { Text(stringResource(R.string.tag_input_dialog_placeholder)) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    isError = showError
+                    isError = showError,
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField
                 )
 
                 // 显示错误信息

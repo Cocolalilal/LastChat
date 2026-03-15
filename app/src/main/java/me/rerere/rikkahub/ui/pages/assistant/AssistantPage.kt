@@ -460,10 +460,12 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                             value = assistant.name, onValueChange = {
                                 update(
                                     assistant.copy(
-                                        name = it
+                                name = it
                                     )
                                 )
-                            }, modifier = Modifier.fillMaxWidth()
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField
                         )
                     }
 

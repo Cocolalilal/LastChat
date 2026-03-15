@@ -71,7 +71,9 @@ import androidx.compose.material.icons.rounded.SystemUpdateAlt
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import me.rerere.rikkahub.ui.components.ui.ToastType
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.WebDavConfig
 import me.rerere.rikkahub.data.sync.WebDavBackupItem
@@ -170,13 +172,30 @@ private fun WebDavPage(
     var isBackingUp by remember { mutableStateOf(false) }
     
     // Permission handling after restore
-    var pendingPermissions by remember { mutableStateOf<List<String>>(emptyList()) }
+    var pendingFeatureAccess by remember {
+        mutableStateOf(PermissionChecker.MissingFeatureAccess())
+    }
     var showPermissionDialog by remember { mutableStateOf(false) }
     
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { _ ->
-        // Permissions requested, now show restart dialog
+        scope.launch {
+            val missing = PermissionChecker.getMissingFeatureAccess(context, vm.getAssistantsSnapshot())
+            if (missing.specialAccesses.isNotEmpty()) {
+                pendingFeatureAccess = PermissionChecker.MissingFeatureAccess(
+                    specialAccesses = missing.specialAccesses
+                )
+                showPermissionDialog = true
+            } else {
+                showRestartDialog = true
+            }
+        }
+    }
+
+    val specialAccessLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
         showRestartDialog = true
     }
 
@@ -210,7 +229,8 @@ private fun WebDavPage(
                         value = webDavConfig.url,
                         onValueChange = { updateWebDavConfig(webDavConfig.copy(url = it.trim())) },
                        // Placeholder = { Text("https://example.com/dav") },
-                        singleLine = true
+                        singleLine = true,
+                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField
                     )
                 }
                 FormItem(
@@ -226,7 +246,8 @@ private fun WebDavPage(
                                 )
                             )
                         },
-                        singleLine = true
+                        singleLine = true,
+                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField
                     )
                 }
                 FormItem(
@@ -247,7 +268,8 @@ private fun WebDavPage(
                                 Icon(imageVector = image, null)
                             }
                         },
-                        singleLine = true
+                        singleLine = true,
+                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField
                     )
                 }
                 FormItem(
@@ -257,7 +279,8 @@ private fun WebDavPage(
                         modifier = Modifier.fillMaxWidth(),
                         value = webDavConfig.path,
                         onValueChange = { updateWebDavConfig(webDavConfig.copy(path = it.trim())) },
-                        singleLine = true
+                        singleLine = true,
+                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField
                     )
                 }
             }
@@ -445,11 +468,12 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                             )
                                             showBackupFiles = false
                                             
-                                            // Check for missing permissions after restore
-                                            val assistants = vm.settings.value.assistants
-                                            val missing = PermissionChecker.getMissingPermissions(context, assistants)
-                                            if (missing.isNotEmpty()) {
-                                                pendingPermissions = missing
+                                            val missing = PermissionChecker.getMissingFeatureAccess(
+                                                context,
+                                                vm.getAssistantsSnapshot()
+                                            )
+                                            if (!missing.isEmpty) {
+                                                pendingFeatureAccess = missing
                                                 showPermissionDialog = true
                                             } else {
                                                 showRestartDialog = true
@@ -503,22 +527,42 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
             title = { Text("Permissions Required") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Your restored backup includes features that require additional permissions:")
-                    pendingPermissions.forEach { permission ->
-                        val desc = PermissionChecker.getPermissionDescriptions(listOf(permission)).firstOrNull() ?: permission
-                        Text("• $desc", style = MaterialTheme.typography.bodySmall)
+                    Text("Your restored backup includes notification features that need additional access:")
+                    PermissionChecker.getFeatureAccessDescriptions(pendingFeatureAccess).forEach { description ->
+                        val desc = description
+                        Text("- $desc", style = MaterialTheme.typography.bodySmall)
                     }
-                    Text("Grant these permissions for full functionality.", style = MaterialTheme.typography.bodySmall)
+                    Text("Grant or enable them so notifications and scheduled follow-ups work properly.", style = MaterialTheme.typography.bodySmall)
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
                         showPermissionDialog = false
-                        permissionLauncher.launch(pendingPermissions.toTypedArray())
+                        when {
+                            pendingFeatureAccess.runtimePermissions.isNotEmpty() -> {
+                                permissionLauncher.launch(pendingFeatureAccess.runtimePermissions.toTypedArray())
+                            }
+                            pendingFeatureAccess.specialAccesses.isNotEmpty() -> {
+                                val nextAccess = pendingFeatureAccess.specialAccesses.firstOrNull()
+                                    ?: return@Button
+                                specialAccessLauncher.launch(
+                                    PermissionChecker.createSpecialAccessIntent(nextAccess)
+                                )
+                            }
+                            else -> {
+                                showRestartDialog = true
+                            }
+                        }
                     }
                 ) {
-                    Text("Grant Permissions")
+                    Text(
+                        if (pendingFeatureAccess.runtimePermissions.isNotEmpty()) {
+                            "Grant Permissions"
+                        } else {
+                            "Open Settings"
+                        }
+                    )
                 }
             },
             dismissButton = {
@@ -630,13 +674,30 @@ private fun ImportExportPage(
     var restoreResult by remember { mutableStateOf<me.rerere.rikkahub.data.sync.WebdavSync.RestoreResult?>(null) }
     
     // Permission handling after restore
-    var pendingPermissions by remember { mutableStateOf<List<String>>(emptyList()) }
+    var pendingFeatureAccess by remember {
+        mutableStateOf(PermissionChecker.MissingFeatureAccess())
+    }
     var showPermissionDialog by remember { mutableStateOf(false) }
     
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { _ ->
-        // Permissions requested, now show restart dialog
+        scope.launch {
+            val missing = PermissionChecker.getMissingFeatureAccess(context, vm.getAssistantsSnapshot())
+            if (missing.specialAccesses.isNotEmpty()) {
+                pendingFeatureAccess = PermissionChecker.MissingFeatureAccess(
+                    specialAccesses = missing.specialAccesses
+                )
+                showPermissionDialog = true
+            } else {
+                showRestartDialog = true
+            }
+        }
+    }
+
+    val specialAccessLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
         showRestartDialog = true
     }
 
@@ -655,14 +716,18 @@ private fun ImportExportPage(
                     val exportFile = vm.exportToFile()
 
                     // 复制到用户选择的位置
-                    context.contentResolver.openOutputStream(targetUri)?.use { outputStream ->
-                        FileInputStream(exportFile).use { inputStream ->
-                            inputStream.copyTo(outputStream)
+                    withContext(Dispatchers.IO) {
+                        context.contentResolver.openOutputStream(targetUri)?.use { outputStream ->
+                            FileInputStream(exportFile).use { inputStream ->
+                                inputStream.copyTo(outputStream)
+                            }
                         }
                     }
 
                     // 清理临时文件
-                    exportFile.delete()
+                    withContext(Dispatchers.IO) {
+                        exportFile.delete()
+                    }
 
                     toaster.show(
                         context.getString(R.string.backup_page_backup_success),
@@ -694,9 +759,11 @@ private fun ImportExportPage(
                             val tempFile =
                                 File(context.cacheDir, "temp_restore_${System.currentTimeMillis()}.zip")
 
-                            context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
-                                FileOutputStream(tempFile).use { outputStream ->
-                                    inputStream.copyTo(outputStream)
+                            withContext(Dispatchers.IO) {
+                                context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
+                                    FileOutputStream(tempFile).use { outputStream ->
+                                        inputStream.copyTo(outputStream)
+                                    }
                                 }
                             }
 
@@ -705,7 +772,47 @@ private fun ImportExportPage(
                             restoreResult = result
 
                             // 清理临时文件
-                            tempFile.delete()
+                            withContext(Dispatchers.IO) {
+                                tempFile.delete()
+                            }
+                        }
+                        "chatbox" -> {
+                            val tempFile =
+                                File(context.cacheDir, "temp_chatbox_${System.currentTimeMillis()}.json")
+
+                            try {
+                                withContext(Dispatchers.IO) {
+                                    context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
+                                        FileOutputStream(tempFile).use { outputStream ->
+                                            inputStream.copyTo(outputStream)
+                                        }
+                                    }
+                                }
+                                vm.restoreFromChatBox(tempFile)
+                            } finally {
+                                withContext(Dispatchers.IO) {
+                                    tempFile.delete()
+                                }
+                            }
+                        }
+                        "cherry" -> {
+                            val tempFile =
+                                File(context.cacheDir, "temp_cherry_${System.currentTimeMillis()}.zip")
+
+                            try {
+                                withContext(Dispatchers.IO) {
+                                    context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
+                                        FileOutputStream(tempFile).use { outputStream ->
+                                            inputStream.copyTo(outputStream)
+                                        }
+                                    }
+                                }
+                                vm.restoreFromCherryStudio(tempFile)
+                            } finally {
+                                withContext(Dispatchers.IO) {
+                                    tempFile.delete()
+                                }
+                            }
                         }
                     }
 
@@ -713,15 +820,18 @@ private fun ImportExportPage(
                         context.getString(R.string.backup_page_restore_success),
                         type = ToastType.Success
                     )
-                    
-                    // Check for missing permissions after restore
-                    val assistants = vm.settings.value.assistants
-                    val missing = PermissionChecker.getMissingPermissions(context, assistants)
-                    if (missing.isNotEmpty()) {
-                        pendingPermissions = missing
-                        showPermissionDialog = true
-                    } else {
-                        showRestartDialog = true
+
+                    if (importType == "local") {
+                        val missing = PermissionChecker.getMissingFeatureAccess(
+                            context,
+                            vm.getAssistantsSnapshot()
+                        )
+                        if (!missing.isEmpty) {
+                            pendingFeatureAccess = missing
+                            showPermissionDialog = true
+                        } else {
+                            showRestartDialog = true
+                        }
                     }
                 }.onFailure { e ->
                     e.printStackTrace()
@@ -804,19 +914,95 @@ private fun ImportExportPage(
                     },
                     supportingContent = {
                         Text(
-                            if (isRestoring) stringResource(R.string.backup_page_importing) else stringResource(
+                            if (isRestoring && importType == "local") stringResource(R.string.backup_page_importing) else stringResource(
                                 R.string.backup_page_import_desc
                             )
                         )
                     },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     leadingContent = {
-                        if (isRestoring) {
+                        if (isRestoring && importType == "local") {
                             CircularWavyProgressIndicator(
                                 modifier = Modifier.size(24.dp)
                             )
                         } else {
                             Icon(Icons.Rounded.SystemUpdateAlt, null)
+                        }
+                    }
+                )
+            }
+        }
+
+        stickyHeader {
+            StickyHeader {
+                Text(stringResource(R.string.backup_page_import_from_other_app))
+            }
+        }
+
+        item {
+            Card(
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
+                colors = androidx.compose.material3.CardDefaults.cardColors(
+                    containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow else androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh
+                ),
+                onClick = {
+                    if (!isRestoring) {
+                        importType = "chatbox"
+                        openDocumentLauncher.launch(arrayOf("application/json", "text/plain"))
+                    }
+                }
+            ) {
+                ListItem(
+                    headlineContent = {
+                        Text(stringResource(R.string.backup_page_import_from_chatbox))
+                    },
+                    supportingContent = {
+                        Text(stringResource(R.string.backup_page_import_chatbox_desc))
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    leadingContent = {
+                        if (isRestoring && importType == "chatbox") {
+                            CircularWavyProgressIndicator(
+                                modifier = Modifier.size(24.dp)
+                            )
+                        } else {
+                            Icon(Icons.Rounded.SystemUpdateAlt, null)
+                        }
+                    }
+                )
+            }
+        }
+
+        item {
+            Card(
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
+                colors = androidx.compose.material3.CardDefaults.cardColors(
+                    containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow else androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh
+                ),
+                onClick = {
+                    if (!isRestoring) {
+                        importType = "cherry"
+                        openDocumentLauncher.launch(
+                            arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")
+                        )
+                    }
+                }
+            ) {
+                ListItem(
+                    headlineContent = {
+                        Text(stringResource(R.string.backup_page_import_from_cherry_studio))
+                    },
+                    supportingContent = {
+                        Text(stringResource(R.string.backup_page_import_cherry_studio_desc))
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    leadingContent = {
+                        if (isRestoring && importType == "cherry") {
+                            CircularWavyProgressIndicator(
+                                modifier = Modifier.size(24.dp)
+                            )
+                        } else {
+                            Icon(Icons.Rounded.Folder, null)
                         }
                     }
                 )
@@ -835,22 +1021,42 @@ private fun ImportExportPage(
             title = { Text("Permissions Required") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Your restored backup includes features that require additional permissions:")
-                    pendingPermissions.forEach { permission ->
-                        val desc = PermissionChecker.getPermissionDescriptions(listOf(permission)).firstOrNull() ?: permission
-                        Text("• $desc", style = MaterialTheme.typography.bodySmall)
+                    Text("Your restored backup includes notification features that need additional access:")
+                    PermissionChecker.getFeatureAccessDescriptions(pendingFeatureAccess).forEach { description ->
+                        val desc = description
+                        Text("- $desc", style = MaterialTheme.typography.bodySmall)
                     }
-                    Text("Grant these permissions for full functionality.", style = MaterialTheme.typography.bodySmall)
+                    Text("Grant or enable them so notifications and scheduled follow-ups work properly.", style = MaterialTheme.typography.bodySmall)
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
                         showPermissionDialog = false
-                        permissionLauncher.launch(pendingPermissions.toTypedArray())
+                        when {
+                            pendingFeatureAccess.runtimePermissions.isNotEmpty() -> {
+                                permissionLauncher.launch(pendingFeatureAccess.runtimePermissions.toTypedArray())
+                            }
+                            pendingFeatureAccess.specialAccesses.isNotEmpty() -> {
+                                val nextAccess = pendingFeatureAccess.specialAccesses.firstOrNull()
+                                    ?: return@Button
+                                specialAccessLauncher.launch(
+                                    PermissionChecker.createSpecialAccessIntent(nextAccess)
+                                )
+                            }
+                            else -> {
+                                showRestartDialog = true
+                            }
+                        }
                     }
                 ) {
-                    Text("Grant Permissions")
+                    Text(
+                        if (pendingFeatureAccess.runtimePermissions.isNotEmpty()) {
+                            "Grant Permissions"
+                        } else {
+                            "Open Settings"
+                        }
+                    )
                 }
             },
             dismissButton = {
@@ -904,13 +1110,13 @@ private fun BackupDialog(
                                     style = MaterialTheme.typography.labelMedium
                                 )
                                 if (it.sanitization.skippedRows > 0) {
-                                    Text("• Removed ${it.sanitization.skippedRows} corrupt/invalid items")
+                                    Text("- Removed ${it.sanitization.skippedRows} corrupt/invalid items")
                                 }
                                 if (it.settingsCleanup.totalIssuesFixed > 0) {
-                                    Text("• Fixed ${it.settingsCleanup.totalIssuesFixed} setting issues")
+                                    Text("- Fixed ${it.settingsCleanup.totalIssuesFixed} setting issues")
                                 }
                                 if (it.settingsCleanup.unsupportedZipEntriesBytes > 0) {
-                                    Text("• Cleaned ${it.settingsCleanup.unsupportedZipEntriesBytes.fileSizeToString()} of junk data")
+                                    Text("- Cleaned ${it.settingsCleanup.unsupportedZipEntriesBytes.fileSizeToString()} of junk data")
                                 }
                             }
                         }

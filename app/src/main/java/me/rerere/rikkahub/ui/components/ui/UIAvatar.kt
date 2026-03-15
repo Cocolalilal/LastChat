@@ -264,7 +264,8 @@ fun UIAvatar(
                     onValueChange = { urlInput = it },
                     label = { Text(stringResource(id = R.string.avatar_url_hint)) },
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
+                    singleLine = true,
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField
                 )
             },
             confirmButton = {
