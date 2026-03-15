@@ -220,7 +220,7 @@ export function AssistantTurnMessage({
                     case "completed_multiple":
                       setInitialExpandedType(null);
                       setTimelineResetKey((key) => key + 1);
-                      setTimelineOpen(true);
+                      setTimelineOpen((open) => !open);
                       return;
                     case "reasoning":
                       setInitialExpandedType("reasoning");

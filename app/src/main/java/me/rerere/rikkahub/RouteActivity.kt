@@ -247,6 +247,7 @@ class RouteActivity : ComponentActivity() {
         val spontaneousNotification = intent.toSpontaneousNotificationData()
         val intentAssistantId = if (spontaneousNotification == null) intent?.getStringExtra("assistantId") else null
         val intentConversationId = if (spontaneousNotification == null) intent?.getStringExtra("conversationId") else null
+        val intentWebServerSettings = intent?.getBooleanExtra("webServerSettings", false) == true
         pendingTextSelection = intent?.readQuickAskContinuationData()
         pendingShareIntent = intent?.readResolvedSharePayload()
         lifecycleScope.launch {
@@ -293,6 +294,12 @@ class RouteActivity : ComponentActivity() {
                     TextSelectionHandler(navStack)
                     NotificationHandler(navStack)
                     AppRoutes(navStack, startScreen)
+                    
+                    LaunchedEffect(intentWebServerSettings) {
+                        if (intentWebServerSettings) {
+                            navStack.navigate(Screen.SettingWeb)
+                        }
+                    }
                 }
             }
         }
@@ -502,6 +509,11 @@ class RouteActivity : ComponentActivity() {
         android.util.Log.d(TAG, "Intent extras: conversationId=${intent.getStringExtra("conversationId")}, assistantId=${intent.getStringExtra("assistantId")}")
         pendingShareIntent = intent.readResolvedSharePayload()
         pendingTextSelection = intent.readQuickAskContinuationData() ?: pendingTextSelection
+
+        if (intent.getBooleanExtra("webServerSettings", false)) {
+            navStack?.navigate(Screen.SettingWeb)
+            return
+        }
 
         intent.toSpontaneousNotificationData()?.let { notification ->
             lifecycleScope.launch {

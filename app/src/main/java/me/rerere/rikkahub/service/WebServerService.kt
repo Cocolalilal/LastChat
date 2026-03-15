@@ -202,6 +202,7 @@ class WebServerService : Service() {
         )
         val openIntent = Intent(this, RouteActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra("webServerSettings", true)
         }
         val openPendingIntent = PendingIntent.getActivity(
             this,

@@ -58,6 +58,16 @@ import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TITLE_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TRANSLATION_PROMPT
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findModelById
+import me.rerere.rikkahub.ui.components.ai.ReasoningPicker
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.draw.clip
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.LightbulbCircle
+import androidx.compose.material.icons.rounded.Lightbulb
+import androidx.compose.material.icons.rounded.AutoAwesome
+
 import me.rerere.rikkahub.ui.components.ai.ReasoningButton
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.nav.BackButton
@@ -677,26 +687,101 @@ private fun HelperReasoningSettings(
     reasoningTokens: Int,
     onUpdateReasoningTokens: (Int) -> Unit,
 ) {
-    FormItem(
-        label = {
-            Text(stringResource(R.string.assistant_page_thinking_budget))
-        },
-        description = {
-            Text(
-                when (ReasoningLevel.fromBudgetTokens(reasoningTokens)) {
-                    ReasoningLevel.OFF -> stringResource(R.string.reasoning_off)
-                    ReasoningLevel.AUTO -> stringResource(R.string.reasoning_auto)
-                    ReasoningLevel.LOW -> stringResource(R.string.reasoning_light)
-                    ReasoningLevel.MEDIUM -> stringResource(R.string.reasoning_medium)
-                    ReasoningLevel.HIGH -> stringResource(R.string.reasoning_heavy)
-                }
-            )
-        }
-    ) {
-        ReasoningButton(
+    var showReasoningPicker by remember { mutableStateOf(false) }
+
+    if (showReasoningPicker) {
+        ReasoningPicker(
             reasoningTokens = reasoningTokens,
+            onDismissRequest = { showReasoningPicker = false },
             onUpdateReasoningTokens = onUpdateReasoningTokens,
         )
+    }
+
+    val currentLevel = ReasoningLevel.fromBudgetTokens(reasoningTokens)
+    val amoledMode by me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode()
+    val isDarkMode = LocalDarkMode.current
+    val isAmoled = amoledMode && isDarkMode
+    val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
+
+    val title = when (currentLevel) {
+        ReasoningLevel.OFF -> stringResource(R.string.reasoning_off)
+        ReasoningLevel.AUTO -> stringResource(R.string.reasoning_auto)
+        ReasoningLevel.LOW -> stringResource(R.string.reasoning_light)
+        ReasoningLevel.MEDIUM -> stringResource(R.string.reasoning_medium)
+        ReasoningLevel.HIGH -> stringResource(R.string.reasoning_heavy)
+    }
+
+    val subtitle = when (currentLevel) {
+        ReasoningLevel.OFF -> "Reasoning disabled"
+        ReasoningLevel.AUTO -> "Model decides reasoning level"
+        ReasoningLevel.LOW -> stringResource(R.string.reasoning_light_desc)
+        ReasoningLevel.MEDIUM -> stringResource(R.string.reasoning_medium_desc)
+        ReasoningLevel.HIGH -> stringResource(R.string.reasoning_heavy_desc)
+    }
+
+    val icon = when (currentLevel) {
+        ReasoningLevel.OFF -> Icons.Rounded.LightbulbCircle
+        ReasoningLevel.AUTO -> Icons.Rounded.AutoAwesome
+        else -> Icons.Rounded.Lightbulb
+    }
+
+    Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.padding(top = 8.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.assistant_page_thinking_budget),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(24.dp))
+                .background(
+                    color = if (isAmoled) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                )
+                .clickable {
+                    haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
+                    showReasoningPicker = true
+                }
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Box(
+                modifier = Modifier.size(24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f).padding(end = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Icon(
+                imageVector = Icons.Rounded.KeyboardArrowDown,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 

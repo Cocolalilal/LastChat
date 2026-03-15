@@ -548,6 +548,7 @@ class ChatService(
                 id = conversationId,
                 assistantId = assistant.id,
             ).updateCurrentMessages(assistant.presetMessages)
+            setConversationPersistenceMode(conversationId, ChatPersistenceMode.PERSIST_ON_REPLY)
             updateConversation(conversationId, newConversation)
         }
     }
@@ -559,6 +560,7 @@ class ChatService(
             id = Uuid.random(),
             assistantId = assistant.id,
         ).updateCurrentMessages(assistant.presetMessages)
+        setConversationPersistenceMode(conversation.id, ChatPersistenceMode.PERSIST_ON_REPLY)
         saveConversation(conversation.id, conversation)
         return conversation
     }
@@ -1625,9 +1627,7 @@ class ChatService(
     suspend fun generateSuggestion(conversationId: Uuid, conversation: Conversation) {
         runCatching {
             val settings = settingsStore.settingsFlow.first()
-            val model = settings.findModelById(settings.suggestionModelId)
-                ?: settings.resolveConversationContext(conversation).chatModel
-                ?: return
+            val model = settings.findModelById(settings.suggestionModelId) ?: return
             val provider = model.findProvider(settings.providers) ?: return
 
             updateConversation(
