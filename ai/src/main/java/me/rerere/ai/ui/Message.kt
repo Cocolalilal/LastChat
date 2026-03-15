@@ -178,9 +178,12 @@ data class UIMessage(
      * Extract only text content, excluding reasoning/thinking parts.
      * Use this for background tasks where reasoning output should not be included.
      */
-    fun toContentText() = parts.filterIsInstance<UIMessagePart.Text>()
-        .joinToString(separator = "\n") { it.text }
-        .trim()
+    fun toContentText(): String {
+        val text = parts.filterIsInstance<UIMessagePart.Text>()
+            .joinToString(separator = "\n") { it.text }
+        
+        return text.replace(Regex("<think(?:ing)?>([\\s\\S]*?)(?:</think(?:ing)?>|$)", RegexOption.DOT_MATCHES_ALL), "").trim()
+    }
 
     fun getToolCalls() = parts.filterIsInstance<UIMessagePart.ToolCall>()
 

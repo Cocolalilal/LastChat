@@ -255,7 +255,22 @@ class ChatCompletionsAPI(
         val host = providerSetting.baseUrl.toHttpUrl().host
         return buildJsonObject {
             put("model", params.model.modelId)
-            put("messages", buildMessages(messages, host))
+            val processedMessages = if (params.model.abilities.contains(ModelAbility.REASONING) && 
+                ReasoningLevel.fromBudgetTokens(params.thinkingBudget) == ReasoningLevel.OFF) {
+                // If reasoning is OFF but it's a reasoning model, inject an empty think tag as an assistant prefill
+                // This tricks models like Qwen 3.5 into believing they have already completed their reasoning phase
+                val mutableMessages = messages.toMutableList()
+                mutableMessages.add(
+                    UIMessage(
+                        role = MessageRole.ASSISTANT,
+                        parts = listOf(UIMessagePart.Text("<think></think>\n"))
+                    )
+                )
+                mutableMessages
+            } else {
+                messages
+            }
+            put("messages", buildMessages(processedMessages, host))
 
             if (isModelAllowTemperature(params.model)) {
                 if (params.temperature != null) put("temperature", params.temperature)
@@ -339,6 +354,12 @@ class ChatCompletionsAPI(
                         // 文档中，只支持 "low", "medium", "high"
                         if (level != ReasoningLevel.AUTO && level != ReasoningLevel.OFF) {
                             put("reasoning_effort", if(level.effort == "minimal") "low" else level.effort)
+                        } else if (level == ReasoningLevel.OFF) {
+                            // Suppress reasoning mode on local fast-tier LLMs (e.g. LM Studio, vLLM, Ollama)
+                            // This acts as a Jinja template override for models like Qwen 3.5
+                            put("chat_template_kwargs", buildJsonObject {
+                                put("enable_thinking", false)
+                            })
                         }
                     }
                 }
