@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.service
 
 import me.rerere.ai.core.MessageRole
+import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.model.Conversation
@@ -14,6 +15,41 @@ import java.time.Instant
 import kotlin.uuid.Uuid
 
 class ChatServiceTest {
+    @Test
+    fun dropDanglingAutoToolCallNodes_removesOnlyAutoToolCallsWithoutResults() {
+        val autoNode = MessageNode.of(
+            UIMessage(
+                role = MessageRole.ASSISTANT,
+                parts = listOf(
+                    UIMessagePart.ToolCall(
+                        toolCallId = "auto-call",
+                        toolName = "search_web",
+                        arguments = """{"query":"weather"}""",
+                    )
+                ),
+            )
+        )
+        val pendingNode = MessageNode.of(
+            UIMessage(
+                role = MessageRole.ASSISTANT,
+                parts = listOf(
+                    UIMessagePart.ToolCall(
+                        toolCallId = "pending-call",
+                        toolName = "ask_user",
+                        arguments = """{"questions":[{"id":"scope","question":"Which scope?"}]}""",
+                        approvalState = ToolApprovalState.Pending,
+                    )
+                ),
+            )
+        )
+
+        val cleaned = dropDanglingAutoToolCallNodes(listOf(autoNode, pendingNode))
+
+        assertTrue(cleaned[0].messages.isEmpty())
+        assertEquals(1, cleaned[1].messages.size)
+        assertEquals("pending-call", cleaned[1].currentMessage.getToolCalls().single().toolCallId)
+    }
+
     @Test
     fun shouldPreserveInMemoryConversationKeepsAssistantSeededDrafts() {
         val conversation = Conversation.ofId(

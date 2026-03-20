@@ -93,6 +93,7 @@
     "delete_attachment_failed": "删除附件失败",
     "upload_image": "上传图片",
     "upload_document": "上传文档",
+    "no_image_input_hint": "\u8be5\u6a21\u578b\u4e0d\u76f4\u63a5\u63a5\u53d7\u56fe\u50cf\u8f93\u5165\u3002\u4e0a\u4f20\u7684\u56fe\u50cf\u4f1a\u5728\u53ef\u7528\u65f6\u8f6c\u6362\u4e3a\u6587\u672c\u3002",
     "export_conversation": "导出会话为 Markdown",
     "export_conversation_with_reasoning": "导出会话为 Markdown（含推理过程）",
     "unsupported_file_skipped": "{{count}} 个文件因格式不支持已被跳过",

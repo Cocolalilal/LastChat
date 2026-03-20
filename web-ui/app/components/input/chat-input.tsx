@@ -25,6 +25,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { useCurrentAssistant } from "~/hooks/use-current-assistant";
+import { useCurrentModel } from "~/hooks/use-current-model";
 import { ModelList } from "~/components/input/model-list";
 import { ReasoningPickerButton } from "~/components/input/reasoning-picker";
 import { SearchPickerButton } from "~/components/input/search-picker";
@@ -227,7 +228,8 @@ function ChatInputInner({
   const pasteLongTextThreshold = useSettingsStore(
     (state) => state.settings?.displaySetting.pasteLongTextThreshold ?? 1000,
   );
-  const { settings, currentAssistant } = useCurrentAssistant();
+  const { currentAssistant } = useCurrentAssistant();
+  const { currentModel } = useCurrentModel();
 
   const quickMessages = React.useMemo(() => {
     const source = currentAssistant?.quickMessages;
@@ -286,6 +288,10 @@ function ChatInputInner({
     ? questionIndex >= pendingQuestionnaire!.questions.length - 1
     : false;
   const questionnaireValue = activeQuestion ? (customAnswers[activeQuestion.id] ?? "") : "";
+  const hasImageAttachment = attachments.some((part) => part.type === "image");
+  const modelLacksImageInput =
+    currentModel != null && !currentModel.inputModalities?.includes("IMAGE");
+  const showNoImageInputHint = hasImageAttachment && modelLacksImageInput;
 
   React.useEffect(() => {
     setQuestionIndex(0);
@@ -885,6 +891,30 @@ function ChatInputInner({
                     </motion.div>
                   );
                 })}
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+
+          <AnimatePresence initial={false}>
+            {showNoImageInputHint ? (
+              <motion.div
+                key="composer-no-image-hint"
+                layout
+                initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 4 }}
+                animate={{
+                  opacity: 1,
+                  y: 0,
+                  transition: reducedMotion
+                    ? { duration: 0.01 }
+                    : {
+                        opacity: { duration: CHAT_MOTION_DURATION.fast, ease: "easeOut" },
+                        y: getChatLayoutTransition(false),
+                      },
+                }}
+                exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -2, transition: { duration: 0.12 } }}
+                className="px-1 text-xs text-muted-foreground"
+              >
+                {t("chat.no_image_input_hint")}
               </motion.div>
             ) : null}
           </AnimatePresence>

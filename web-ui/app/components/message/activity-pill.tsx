@@ -7,6 +7,7 @@ import {
   Build,
   Category,
   Globe,
+  Image,
   Lightbulb,
   Memory,
   Sparkles,
@@ -33,6 +34,8 @@ function getActivityIcon(type: ActivityType) {
   switch (type) {
     case "reasoning":
       return Lightbulb;
+    case "ocr":
+      return Image;
     case "search":
       return Globe;
     case "python":
@@ -74,6 +77,8 @@ function getStateKey(state: ActivityState) {
       return "waiting";
     case "replying":
       return "replying";
+    case "ocr":
+      return "ocr";
     case "reasoning":
       return "reasoning";
     case "tool_use":
@@ -81,7 +86,7 @@ function getStateKey(state: ActivityState) {
     case "completed_single":
       return `completed-single-${state.activityType}`;
     case "completed_multiple":
-      return `completed-multiple-${state.toolTypes.join("-")}-${state.reasoningDurationMs ?? "none"}`;
+      return `completed-multiple-${state.activityTypes.join("-")}-${state.reasoningDurationMs ?? "none"}`;
     case "hidden":
       return "hidden";
   }
@@ -108,6 +113,13 @@ function buildSegments(
         variant: "full",
         showIcon: false,
       }];
+    case "ocr":
+      return [{
+        key: "ocr-live",
+        type: "ocr",
+        label: t("activity.ocr_live"),
+        variant: "full",
+      }];
     case "reasoning":
       return [{
         key: "reasoning-live",
@@ -131,6 +143,10 @@ function buildSegments(
         label:
           state.activityType === "reasoning" && state.durationMs
             ? t("activity.reasoning_done", { duration: formatDuration(state.durationMs) })
+            : state.activityType === "ocr"
+              ? state.count && state.count > 1
+                ? t("activity.ocr_done_count", { count: state.count })
+                : t("activity.ocr_done")
             : t(`activity.type.${state.activityType}`),
         variant: "full",
       }];
@@ -145,7 +161,7 @@ function buildSegments(
             }),
             variant: "full",
           },
-          ...state.toolTypes.map((toolType) => ({
+          ...state.activityTypes.map((toolType) => ({
             key: `completed-multi-${toolType}`,
             type: toolType,
             label: t(`activity.type.${toolType}`),
@@ -154,7 +170,7 @@ function buildSegments(
         ];
       }
 
-      return state.toolTypes.map((toolType) => ({
+      return state.activityTypes.map((toolType) => ({
         key: `completed-multi-${toolType}`,
         type: toolType,
         label: t(`activity.type.${toolType}`),
@@ -256,6 +272,7 @@ export function ActivityPill({
   const { t } = useTranslation("message");
   const reducedMotion = useChatReducedMotion();
   const live =
+    state.type === "ocr" ||
     state.type === "reasoning" ||
     state.type === "tool_use" ||
     state.type === "waiting" ||

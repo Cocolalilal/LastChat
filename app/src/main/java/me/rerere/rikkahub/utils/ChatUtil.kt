@@ -76,7 +76,7 @@ suspend fun Context.saveMessageImage(image: String) = withContext(Dispatchers.IO
             // Handle content:// URIs (used by FileProvider for Python sandbox files)
             // Copy bytes directly to gallery to preserve original format
             val uri = image.toUri()
-            contentResolver.openInputStream(uri)?.use { inputStream ->
+            openOwnedUriInputStream(uri)?.use { inputStream ->
                 val fileName = "LastChat_${System.currentTimeMillis()}.png"
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     // Android 10+ use MediaStore API
@@ -346,8 +346,8 @@ fun Context.listImageFiles(): List<File> {
 
 private fun Context.openUriInputStream(uri: Uri): InputStream? {
     return when (uri.scheme) {
-        "file" -> runCatching { uri.toFile().inputStream() }.getOrNull()
-        else -> contentResolver.openInputStream(uri)
+        "file", "content" -> openOwnedUriInputStream(uri)
+        else -> null
     }
 }
 

@@ -19,10 +19,13 @@ import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.core.net.toFile
 import androidx.core.net.toUri
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.io.OutputStream
+import java.net.URLDecoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -86,6 +89,42 @@ fun Context.openUrl(url: String) {
     }.onFailure {
         it.printStackTrace()
         Toast.makeText(this, "Failed to open URL: $url", Toast.LENGTH_SHORT).show()
+    }
+}
+
+fun Context.openAttachmentUri(uri: Uri, mimeType: String? = null): Boolean {
+    val normalizedUri = normalizeAttachmentUriForViewing(uri)
+    val resolvedMimeType = mimeType?.takeIf { it.isNotBlank() } ?: getFileMimeType(uri)
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+        if (normalizedUri.scheme in listOf("http", "https")) {
+            data = normalizedUri
+        } else if (resolvedMimeType != null) {
+            setDataAndType(normalizedUri, resolvedMimeType)
+        } else {
+            data = normalizedUri
+        }
+    }
+
+    return runCatching {
+        startActivity(intent)
+        true
+    }.onFailure { error ->
+        Log.e(TAG, "Failed to open attachment: $normalizedUri", error)
+        Toast.makeText(this, "Unable to open attachment", Toast.LENGTH_SHORT).show()
+    }.getOrDefault(false)
+}
+
+private fun Context.normalizeAttachmentUriForViewing(uri: Uri): Uri {
+    if (uri.scheme != "file") return uri
+
+    val file = runCatching { uri.toFile() }.getOrNull() ?: return uri
+    return runCatching {
+        FileProvider.getUriForFile(this, "${packageName}.fileprovider", file)
+    }.getOrElse {
+        uri
     }
 }
 
@@ -241,6 +280,57 @@ fun shareTextFile(context: Context, fileName: String, content: String) {
     }
 }
 
+internal fun resolveAppOwnedFileProviderFile(
+    authority: String?,
+    encodedPath: String?,
+    expectedAuthority: String,
+    cacheDir: File,
+    filesDir: File,
+    externalFilesDir: File?,
+): File? {
+    if (authority != expectedAuthority || encodedPath.isNullOrBlank()) return null
+
+    val normalizedPath = encodedPath.removePrefix("/")
+    val separatorIndex = normalizedPath.indexOf('/')
+    if (separatorIndex <= 0) return null
+
+    val rootName = normalizedPath.substring(0, separatorIndex)
+    val encodedRelativePath = normalizedPath.substring(separatorIndex + 1)
+    val rootDir = when (rootName) {
+        "cache" -> cacheDir
+        "upload" -> filesDir
+        "external_files" -> externalFilesDir ?: return null
+        else -> return null
+    }
+    val relativePath = URLDecoder.decode(encodedRelativePath, Charsets.UTF_8.name())
+    val candidate = if (relativePath.isBlank()) rootDir else File(rootDir, relativePath)
+    val canonicalRoot = rootDir.canonicalFile
+    val canonicalCandidate = candidate.canonicalFile
+
+    return canonicalCandidate.takeIf { file ->
+        file.path == canonicalRoot.path || file.path.startsWith(canonicalRoot.path + File.separator)
+    }
+}
+
+fun Context.openOwnedUriInputStream(uri: Uri): InputStream? {
+    return when (uri.scheme) {
+        "file" -> runCatching { uri.toFile().inputStream() }.getOrNull()
+        "content" -> {
+            runCatching { contentResolver.openInputStream(uri) }.getOrNull()
+                ?: resolveAppOwnedFileProviderFile(
+                    authority = uri.authority,
+                    encodedPath = uri.encodedPath,
+                    expectedAuthority = "${packageName}.fileprovider",
+                    cacheDir = cacheDir,
+                    filesDir = filesDir,
+                    externalFilesDir = getExternalFilesDir(null),
+                )?.inputStream()
+        }
+
+        else -> null
+    }
+}
+
 suspend fun Context.saveToDownloads(uri: Uri, fileName: String) {
     // Check permissions for legacy Android
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
@@ -267,9 +357,9 @@ suspend fun Context.saveToDownloads(uri: Uri, fileName: String) {
 
     withContext(Dispatchers.IO) {
         var outputStream: OutputStream? = null
-        var inputStream: java.io.InputStream? = null
+        var inputStream: InputStream? = null
         try {
-            inputStream = contentResolver.openInputStream(uri)
+            inputStream = openOwnedUriInputStream(uri)
             if (inputStream == null) {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@saveToDownloads, "Failed to read source file", Toast.LENGTH_SHORT).show()

@@ -8,12 +8,14 @@ import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.rikkahub.data.ai.tools.ASK_USER_TOOL_NAME
 import me.rerere.rikkahub.data.ai.tools.AskUserAnswerPayload
 import me.rerere.rikkahub.data.ai.tools.AskUserQuestionnaire
@@ -58,6 +60,14 @@ sealed interface TimelineEntry {
         val memoryType: Int?,
         val timestamp: Long?,
         val isLoading: Boolean = false
+    ) : TimelineEntry
+
+    data class Ocr(
+        override val id: String,
+        val source: UIMessageAnnotation.OcrActivity.Source,
+        val fileName: String?,
+        val pageNumbers: List<Int>,
+        val isInProgress: Boolean = false,
     ) : TimelineEntry
 
     data class Reply(
@@ -141,6 +151,16 @@ internal fun buildEntryFollowSignature(entry: TimelineEntry): String {
             append(entry.isLoading)
         }
 
+        is TimelineEntry.Ocr -> buildString {
+            append(entry.source)
+            append('|')
+            append(entry.fileName.orEmpty())
+            append('|')
+            append(entry.pageNumbers.joinToString(","))
+            append('|')
+            append(entry.isInProgress)
+        }
+
         is TimelineEntry.Reply -> entry.content
     }
 }
@@ -218,6 +238,8 @@ internal fun getTimelineIcon(entry: TimelineEntry): ImageVector {
             else -> Icons.Rounded.Bookmark
         }
 
+        is TimelineEntry.Ocr -> Icons.Rounded.Image
+
         is TimelineEntry.Reply -> Icons.Rounded.ChevronRight
     }
 }
@@ -250,6 +272,8 @@ internal fun getTimelineLabel(entry: TimelineEntry): String {
             MemoryOperation.DELETE -> stringResource(R.string.chat_message_tool_delete_memory)
         }
 
+        is TimelineEntry.Ocr -> stringResource(R.string.activity_timeline_ocr)
+
         is TimelineEntry.Reply -> stringResource(R.string.activity_timeline_reply)
     }
 }
@@ -277,6 +301,7 @@ internal fun getTimelineAccentColor(entry: TimelineEntry): Color {
         is TimelineEntry.Reasoning -> MaterialTheme.colorScheme.tertiary
         is TimelineEntry.ToolCall -> MaterialTheme.colorScheme.secondary
         is TimelineEntry.MemoryAction -> MaterialTheme.colorScheme.primary
+        is TimelineEntry.Ocr -> MaterialTheme.colorScheme.secondary
         is TimelineEntry.Reply -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 }
@@ -296,6 +321,7 @@ internal fun entryMatchesType(entry: TimelineEntry, type: ActivityType): Boolean
         is TimelineEntry.Reasoning -> type == ActivityType.REASONING
         is TimelineEntry.ToolCall -> categorizeToolName(entry.toolName) == type
         is TimelineEntry.MemoryAction -> categorizeToolName(entry.toolName) == type
+        is TimelineEntry.Ocr -> type == ActivityType.OCR
         else -> false
     }
 }
@@ -323,6 +349,10 @@ internal fun findCurrentEntryIndex(entries: List<TimelineEntry>): Int? {
         }
     }
     if (toolIndex >= 0) return toolIndex
+    val ocrIndex = entries.indexOfLast { entry ->
+        entry is TimelineEntry.Ocr && entry.isInProgress
+    }
+    if (ocrIndex >= 0) return ocrIndex
     return null
 }
 

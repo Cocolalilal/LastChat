@@ -144,8 +144,10 @@ data class UIMessage(
                 }
             }
             // Handle annotations
-            val newAnnotations = delta.annotations.ifEmpty {
+            val newAnnotations = if (delta.annotations.isEmpty()) {
                 annotations
+            } else {
+                (annotations + delta.annotations).distinct()
             }
             copy(
                 parts = newParts,
@@ -539,6 +541,23 @@ sealed class UIMessageAnnotation {
         val title: String,
         val url: String
     ) : UIMessageAnnotation()
+
+    @Serializable
+    @SerialName("ocr_activity")
+    data class OcrActivity(
+        val source: Source,
+        val fileName: String? = null,
+        val pageNumbers: List<Int> = emptyList(),
+    ) : UIMessageAnnotation() {
+        @Serializable
+        enum class Source {
+            @SerialName("image")
+            IMAGE,
+
+            @SerialName("pdf")
+            PDF,
+        }
+    }
 }
 
 @Serializable

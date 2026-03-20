@@ -9,6 +9,9 @@
   "activity": {
     "waiting": "æ€è€ƒä¸­...",
     "replying": "æ­£åœ¨å›žå¤",
+    "ocr_live": "OCR \u8bc6\u522b\u4e2d",
+    "ocr_done": "\u5df2\u5b8c\u6210 OCR",
+    "ocr_done_count": "\u5df2\u5b8c\u6210 OCR {{count}} \u6b21",
     "reasoning_live": "æŽ¨ç† {{duration}}",
     "reasoning_done": "å·²æŽ¨ç† {{duration}}",
     "multiple": "{{count}} ä¸ªæ´»åŠ¨",
@@ -16,12 +19,18 @@
     "timeline_description": "{{count}} ä¸ªæ´»åŠ¨æ­¥éª¤",
     "type": {
       "reasoning": "å·²æŽ¨ç†",
+      "ocr": "\u5df2\u5b8c\u6210 OCR",
       "search": "å·²æœç´¢ç½‘é¡µ",
       "python": "å·²è¿è¡Œ Python",
       "skill": "å·²ä½¿ç”¨æŠ€èƒ½",
       "mcp": "å·²ä½¿ç”¨ MCP",
       "tool_other": "å·²ä½¿ç”¨å·¥å…·"
-    }
+    },
+    "timeline_ocr_source": "\u6765\u6e90",
+    "timeline_ocr_source_image": "\u56fe\u50cf",
+    "timeline_ocr_source_pdf": "PDF",
+    "timeline_ocr_pages": "\u9875\u7801 {{pages}}",
+    "timeline_ocr_pages_label": "\u9875\u7801"
   },
   "chat_message": {
     "copy_image": "图片",

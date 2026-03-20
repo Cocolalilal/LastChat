@@ -7,6 +7,7 @@ import me.rerere.ai.ui.UIMessagePart
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AskUserToolSupportTest {
@@ -159,6 +160,57 @@ class AskUserToolSupportTest {
         assertNotNull(pending)
         assertEquals("call-1", pending?.toolCallId)
         assertEquals("scope", pending?.questionnaire?.questions?.single()?.id)
+    }
+
+    @Test
+    fun parseAskUserQuestionnaire_recoversWrappedAndFencedPayloads() {
+        val wrapped = parseAskUserQuestionnaire(
+            """
+            {
+              "name": "ask_user",
+              "arguments": {
+                "questions": [
+                  { "id": "scope", "question": "Which scope?" }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+        val fenced = parseAskUserQuestionnaire(
+            """
+            assistant to=ask_user
+            ```json
+            {"questions":[{"id":"tone","question":"Which tone?"}]}
+            ```
+            """.trimIndent()
+        )
+
+        assertEquals("scope", wrapped?.questions?.singleOrNull()?.id)
+        assertEquals("tone", fenced?.questions?.singleOrNull()?.id)
+    }
+
+    @Test
+    fun recoverInlineAskUserToolCall_replacesPrintedPayloadWithToolCall() {
+        val message = UIMessage.assistant(
+            """
+            assistant to=ask_user
+            ```json
+            {"questions":[{"id":"deadline","question":"Which deadline matters?"}]}
+            ```
+            """.trimIndent()
+        )
+
+        val recovered = message.recoverInlineAskUserToolCall()
+
+        assertNotNull(recovered)
+        val toolCall = recovered?.getToolCalls()?.singleOrNull()
+        assertNotNull(toolCall)
+        assertEquals(ASK_USER_TOOL_NAME, toolCall?.toolName)
+        assertTrue(recovered?.parts?.none { part -> part is UIMessagePart.Text } == true)
+        assertEquals(
+            "deadline",
+            parseAskUserQuestionnaire(toolCall?.arguments.orEmpty())?.questions?.singleOrNull()?.id,
+        )
     }
 
     @Test

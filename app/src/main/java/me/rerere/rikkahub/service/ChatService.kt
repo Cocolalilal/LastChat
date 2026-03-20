@@ -50,6 +50,7 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.finishReasoning
 import me.rerere.ai.ui.isEmptyInputMessage
@@ -68,12 +69,14 @@ import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.tools.ASK_USER_TOOL_NAME
 import me.rerere.rikkahub.data.ai.tools.AskUserAnswerPayload
 import me.rerere.rikkahub.data.ai.tools.LocalTools
+import me.rerere.rikkahub.data.ai.tools.PythonAttachmentReference
 import me.rerere.rikkahub.data.ai.tools.normalizeAskUserAnswerPayload
 import me.rerere.rikkahub.data.ai.tools.parseAskUserQuestionnaire
 import me.rerere.rikkahub.data.ai.tools.toJsonElement
 import me.rerere.rikkahub.data.ai.transformers.RegexOutputTransformer
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
 import me.rerere.rikkahub.data.ai.transformers.ThinkTagTransformer
+import me.rerere.rikkahub.data.ai.transformers.shouldSilentlyPreloadImageForPython
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
@@ -93,6 +96,7 @@ import me.rerere.rikkahub.utils.JsonInstantPretty
 import me.rerere.rikkahub.utils.applyPlaceholders
 import me.rerere.rikkahub.utils.createChatFilesByContents
 import me.rerere.rikkahub.utils.deleteChatFiles
+import me.rerere.rikkahub.utils.getFileMimeType
 import me.rerere.search.SearchService
 import me.rerere.search.SearchServiceOptions
 import java.time.Instant
@@ -314,10 +318,50 @@ internal fun Conversation.hasPendingToolApprovals(): Boolean {
     }
 }
 
+internal fun dropDanglingAutoToolCallNodes(messageNodes: List<MessageNode>): List<MessageNode> {
+    return messageNodes.mapIndexed { index, node ->
+        val toolCalls = node.currentMessage.getToolCalls()
+        val nextMessage = messageNodes.getOrNull(index + 1)?.currentMessage
+        val hasFollowingToolResult = nextMessage?.hasPart<UIMessagePart.ToolResult>() == true
+        val shouldDropCurrentMessage = toolCalls.isNotEmpty() &&
+            toolCalls.all { toolCall -> toolCall.approvalState is ToolApprovalState.Auto } &&
+            !hasFollowingToolResult
+
+        if (!shouldDropCurrentMessage) {
+            node
+        } else {
+            node.copy(
+                messages = node.messages.filter { message -> message.id != node.currentMessage.id },
+                selectIndex = node.selectIndex - 1,
+            )
+        }
+    }
+}
+
 private fun Conversation.findCurrentToolCall(toolCallId: String): UIMessagePart.ToolCall? {
     return currentMessages
         .flatMap { it.getToolCalls() }
         .firstOrNull { it.toolCallId == toolCallId }
+}
+
+private fun Conversation.removeTrailingEmptyOcrPlaceholder(): Conversation {
+    val lastNode = messageNodes.lastOrNull() ?: return this
+    val lastMessage = lastNode.currentMessage
+    val isOcrOnlyPlaceholder = lastMessage.role == MessageRole.ASSISTANT &&
+        lastMessage.parts.isEmpty() &&
+        lastMessage.annotations.isNotEmpty() &&
+        lastMessage.annotations.all { annotation ->
+            annotation is UIMessageAnnotation.OcrActivity
+        }
+
+    if (!isOcrOnlyPlaceholder) {
+        return this
+    }
+
+    return copy(
+        messageNodes = messageNodes.dropLast(1),
+        updateAt = Instant.now(),
+    )
 }
 
 private fun Conversation.updateToolApprovalState(
@@ -1162,7 +1206,7 @@ class ChatService(
                 tools = tools,
                 truncateIndex = conversation.truncateIndex,
                 enabledModeIds = conversation.enabledModeIds,
-            ).onCompletion {
+            ).onCompletion { cause ->
                 // Calculate generation duration from first token (excludes TTFT)
                 val generationDurationMs = firstTokenTime?.let { System.currentTimeMillis() - it }
 
@@ -1187,11 +1231,14 @@ class ChatService(
                     },
                     updateAt = Instant.now()
                 )
-                updateConversation(conversationId, updatedConversation)
+                val cleanedConversation = updatedConversation.removeTrailingEmptyOcrPlaceholder()
+                updateConversation(conversationId, cleanedConversation)
 
                 // Show notification if app is not in foreground
                 if (
-                    !updatedConversation.hasPendingToolApprovals() &&
+                    cause == null &&
+                    !cleanedConversation.hasPendingToolApprovals() &&
+                    cleanedConversation.currentMessages.lastOrNull()?.role == MessageRole.ASSISTANT &&
                     !suppressCompletionNotification &&
                     !isForeground.value &&
                     settings.displaySetting.enableNotificationOnMessageGeneration
@@ -1285,12 +1332,11 @@ class ChatService(
                     options = assistant.localTools,
                     assistantId = assistant.id,
                     conversationId = conversation.id,
-                    userImageUrls = conversation.currentMessages
-                        .lastOrNull { it.role == MessageRole.USER }
-                        ?.parts
-                        ?.filterIsInstance<me.rerere.ai.ui.UIMessagePart.Image>()
-                        ?.map { it.url }
-                        ?: emptyList()
+                    attachments = buildLatestUserPythonAttachments(
+                        conversation = conversation,
+                        settings = settings,
+                        model = model,
+                    )
                 )
             )
 
@@ -1305,6 +1351,38 @@ class ChatService(
                         },
                     )
                 )
+            }
+        }
+    }
+
+    private fun buildLatestUserPythonAttachments(
+        conversation: Conversation,
+        settings: Settings,
+        model: Model,
+    ): List<PythonAttachmentReference> {
+        val latestUserMessage = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER } ?: return emptyList()
+        val hideImagePrompt = shouldSilentlyPreloadImageForPython(model, settings)
+        return latestUserMessage.parts.mapNotNull { part ->
+            when (part) {
+                is UIMessagePart.Image -> {
+                    val uri = part.url.toUri()
+                    val fileName = uri.lastPathSegment?.substringAfterLast('/')?.ifBlank { null } ?: return@mapNotNull null
+                    PythonAttachmentReference(
+                        url = part.url,
+                        fileName = fileName,
+                        mimeType = context.getFileMimeType(uri) ?: "application/octet-stream",
+                        promptVisible = !hideImagePrompt,
+                    )
+                }
+
+                is UIMessagePart.Document -> PythonAttachmentReference(
+                    url = part.url,
+                    fileName = part.fileName,
+                    mimeType = part.mime,
+                    promptVisible = true,
+                )
+
+                else -> null
             }
         }
     }
@@ -1532,21 +1610,7 @@ class ChatService(
     // 检查无效消息
     private suspend fun checkInvalidMessages(conversationId: Uuid) {
         val conversation = normalizeConversation(getConversationFlow(conversationId).value)
-        var messagesNodes = conversation.messageNodes
-
-        // Step 1: 移除无效tool call (now safe to access currentMessage)
-        messagesNodes = messagesNodes.mapIndexed { index, node ->
-            val next = if (index < messagesNodes.size - 1) messagesNodes[index + 1] else null
-            if (node.currentMessage.hasPart<UIMessagePart.ToolCall>()) {
-                if (next?.currentMessage?.hasPart<UIMessagePart.ToolResult>() != true) {
-                    return@mapIndexed node.copy(
-                        messages = node.messages.filter { it.id != node.currentMessage.id },
-                        selectIndex = node.selectIndex - 1
-                    )
-                }
-            }
-            node
-        }
+        val messagesNodes = dropDanglingAutoToolCallNodes(conversation.messageNodes)
 
         updateConversation(
             conversationId,

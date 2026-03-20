@@ -142,10 +142,13 @@ export function AssistantTurnMessage({
   const [timelineResetKey, setTimelineResetKey] = React.useState(0);
 
   const activityState = React.useMemo(
-    () => deriveActivityState(turn.allParts, loading),
-    [loading, turn.allParts],
+    () => deriveActivityState(turn.allParts, turn.annotations, loading),
+    [loading, turn.allParts, turn.annotations],
   );
-  const timelineEntries = React.useMemo(() => buildTimelineEntries(turn.allParts), [turn.allParts]);
+  const timelineEntries = React.useMemo(
+    () => buildTimelineEntries(turn.allParts, turn.annotations, loading),
+    [loading, turn.allParts, turn.annotations],
+  );
   const citationUrlMap = React.useMemo(() => buildCitationUrlMap(turn.allParts), [turn.allParts]);
   const statsMessage = React.useMemo(() => buildStatsMessage(turn), [turn]);
   const hasMessageContent = turn.contentParts.some(hasRenderableContentPart) || activityState.type !== "hidden";
@@ -224,6 +227,9 @@ export function AssistantTurnMessage({
                       return;
                     case "reasoning":
                       setInitialExpandedType("reasoning");
+                      break;
+                    case "ocr":
+                      setInitialExpandedType("ocr");
                       break;
                     case "tool_use":
                       setInitialExpandedType(latestToolActivityType);

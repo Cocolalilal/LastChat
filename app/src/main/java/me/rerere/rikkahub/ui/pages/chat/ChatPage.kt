@@ -58,6 +58,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -122,6 +123,39 @@ internal fun extractDraftFileUrls(parts: List<UIMessagePart>): List<String> {
             is UIMessagePart.Audio -> part.url.takeIf { it.isNotBlank() }
             else -> null
         }
+    }
+}
+
+@Composable
+private fun ChatTopFadeOverlay(
+    fadeHeight: Dp,
+    modifier: Modifier = Modifier,
+) {
+    val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val backgroundColor = MaterialTheme.colorScheme.background
+
+    Column(
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Spacer(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(statusBarHeight)
+                .background(backgroundColor)
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(fadeHeight)
+                .background(
+                    brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                        colors = listOf(
+                            backgroundColor.copy(alpha = 0.98f),
+                            Color.Transparent
+                        )
+                    )
+                )
+        )
     }
 }
 
@@ -503,18 +537,8 @@ private fun ChatPageContent(
                     }
                 } else {
                     {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .statusBarsPadding()
-                                .background(
-                                    brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                                        colors = listOf(
-                                            MaterialTheme.colorScheme.background.copy(alpha = 0.95f),
-                                            Color.Transparent
-                                        )
-                                    )
-                                )
+                        ChatTopFadeOverlay(
+                            fadeHeight = 36.dp,
                         )
                     }
                 },
@@ -759,15 +783,15 @@ private fun ChatPageContent(
                                     androidx.compose.ui.graphics.Brush.verticalGradient(
                                         colors = listOf(
                                             Color.Transparent,
-                                            MaterialTheme.colorScheme.background.copy(alpha = 0.6f),
-                                            MaterialTheme.colorScheme.background.copy(alpha = 0.92f)
+                                            MaterialTheme.colorScheme.background.copy(alpha = 0.72f),
+                                            MaterialTheme.colorScheme.background.copy(alpha = 0.97f)
                                         )
                                     )
                                 } else {
                                     androidx.compose.ui.graphics.Brush.verticalGradient(
                                         colors = listOf(
                                             Color.Transparent,
-                                            MaterialTheme.colorScheme.background.copy(alpha = 0.85f)
+                                            MaterialTheme.colorScheme.background.copy(alpha = 0.92f)
                                         )
                                     )
                                 }
@@ -963,19 +987,9 @@ private fun ChatToolbar(
             .fillMaxWidth()
     ) {
         if (placement == ChatToolbarPlacement.Top) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth()
-                    .height(120.dp)
-                    .background(
-                        brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                            colors = listOf(
-                                MaterialTheme.colorScheme.background.copy(alpha = 0.95f),
-                                Color.Transparent
-                            )
-                        )
-                    )
+            ChatTopFadeOverlay(
+                fadeHeight = 96.dp,
+                modifier = Modifier.align(Alignment.TopCenter)
             )
         }
 

@@ -12,9 +12,9 @@ import me.rerere.rikkahub.data.ai.transformers.UnsupportedFileTransformer
 
 internal val defaultChatInputTransformers: List<InputMessageTransformer> = listOf(
     PlaceholderTransformer,
-    UnsupportedFileTransformer,
     DocumentAsPromptTransformer,
     OcrTransformer,
+    UnsupportedFileTransformer,
 )
 
 internal val defaultChatOutputTransformers: List<OutputMessageTransformer> = listOf(

@@ -215,10 +215,21 @@
     <string name="chat_message_tool_python_files">Files</string>
     <string name="chat_message_tool_file_created">File Created</string>
     <string name="chat_message_tool_download_file">Download File</string>
+    <string name="chat_message_attachment_video">Video attachment</string>
+    <string name="chat_message_attachment_audio">Audio attachment</string>
+    <string name="activity_pill_ocr_live">Running OCR</string>
+    <string name="activity_pill_ocr_done">Ran OCR</string>
+    <string name="activity_pill_ocr_done_count">Ran OCR x%1$d</string>
     <string name="activity_timeline_title">Activity Timeline</string>
     <string name="activity_timeline_description">%1$d activity step(s)</string>
     <string name="activity_timeline_empty">No activity recorded</string>
     <string name="activity_timeline_reasoning">Reasoning</string>
+    <string name="activity_timeline_ocr">OCR</string>
+    <string name="activity_timeline_ocr_source">Source</string>
+    <string name="activity_timeline_ocr_source_image">Image</string>
+    <string name="activity_timeline_ocr_source_pdf">PDF</string>
+    <string name="activity_timeline_ocr_pages">Pages</string>
+    <string name="activity_timeline_ocr_pages_value">%1$s</string>
     <string name="activity_timeline_reply">Reply</string>
     <string name="activity_timeline_tool_search_web">Searching web</string>
     <string name="activity_timeline_tool_scrape_web">Reading page</string>
@@ -252,6 +263,7 @@
     <string name="activity_timeline_python_result">Result</string>
     <string name="activity_timeline_python_stderr">Stderr</string>
     <string name="activity_timeline_no_output">No output</string>
+    <string name="activity_timeline_file_name">File</string>
     <string name="activity_timeline_file_path">Path</string>
     <string name="activity_timeline_file_count">File count</string>
     <string name="activity_timeline_file_count_value">%1$d files</string>
@@ -463,7 +475,7 @@
     <string name="setting_display_page_show_assistant_bubbles_desc">Show chat bubbles around character messages</string>
     <string name="setting_display_page_skip_crop_image_desc">Skip crop screen after picking image</string>
     <string name="setting_display_page_skip_crop_image_title">Skip Image Crop</string>
-    <string name="setting_display_page_title">Display Settings</string>
+    <string name="setting_display_page_title">Advanced Settings</string>
     <string name="setting_mcp_page_add_header">Add Header</string>
     <string name="setting_mcp_page_add_one_to_get_started">Add one to get started</string>
     <string name="setting_mcp_page_basic_settings">Basic Settings</string>
@@ -546,7 +558,7 @@
     <string name="setting_page_data_settings">Data Settings</string>
     <string name="setting_page_default_model">Default Models</string>
     <string name="setting_page_default_model_desc">Set default models for features</string>
-    <string name="setting_page_display_setting">Display Settings</string>
+    <string name="setting_page_display_setting">Advanced Settings</string>
     <string name="setting_page_display_setting_desc">Manage display options</string>
     <string name="setting_page_documentation">Documentation</string>
     <string name="setting_page_documentation_desc">View user manual and help docs</string>

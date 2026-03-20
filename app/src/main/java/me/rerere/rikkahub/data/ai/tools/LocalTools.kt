@@ -30,6 +30,8 @@ import me.rerere.rikkahub.data.datastore.getSelectedTTSProvider
 import me.rerere.rikkahub.utils.stripMarkdown
 import me.rerere.tts.controller.TtsController
 import me.rerere.tts.provider.TTSManager
+import java.io.File
+import java.security.MessageDigest
 import kotlin.uuid.Uuid
 
 @Serializable
@@ -77,6 +79,80 @@ object LocalToolOptionListSerializer :
             }
         }
     }
+}
+
+data class PythonAttachmentReference(
+    val url: String,
+    val fileName: String,
+    val mimeType: String,
+    val promptVisible: Boolean = true,
+)
+
+internal data class PreloadedSandboxAttachment(
+    val sandboxName: String,
+    val originalFileName: String,
+    val mimeType: String,
+    val sourceUrl: String,
+    val promptVisible: Boolean,
+)
+
+internal fun buildSandboxAttachmentFilename(originalName: String, sourceUrl: String): String {
+    val extension = originalName
+        .substringAfterLast('.', "")
+        .takeIf { it.isNotBlank() && it != originalName }
+        ?.lowercase()
+    val baseName = sanitizeSandboxBaseName(originalName.substringBeforeLast('.', originalName))
+    val hash = shortStableHash(sourceUrl)
+
+    return buildString {
+        append(baseName)
+        append('-')
+        append(hash)
+        extension?.let {
+            append('.')
+            append(it)
+        }
+    }
+}
+
+internal fun buildPreloadedPythonDescription(preloadedFiles: List<PreloadedSandboxAttachment>): String {
+    val visibleFiles = visiblePreloadedSandboxAttachments(preloadedFiles)
+    if (visibleFiles.isEmpty()) return ""
+    val fileList = visibleFiles.joinToString(", ") { "'${it.sandboxName}'" }
+    return " Latest user attachments are already copied into the Python sandbox as $fileList. Open these files directly by sandbox filename in Python. Use import_attachment only for original chat attachment URLs."
+}
+
+internal fun visiblePreloadedSandboxAttachments(
+    preloadedFiles: List<PreloadedSandboxAttachment>,
+): List<PreloadedSandboxAttachment> {
+    return preloadedFiles.filter { it.promptVisible }
+}
+
+internal fun detectSandboxPseudoImportFilename(
+    url: String,
+    sandboxFileNames: Set<String>,
+    pathExists: (String) -> Boolean = { path -> File(path).exists() },
+): String? {
+    if (!url.startsWith("file:///")) return null
+    val path = url.removePrefix("file:///")
+    if (path.isBlank() || path.contains('/')) return null
+    if (!sandboxFileNames.contains(path)) return null
+    return path.takeUnless { pathExists("/$it") }
+}
+
+private fun sanitizeSandboxBaseName(rawName: String): String {
+    val cleaned = rawName
+        .replace(Regex("[^A-Za-z0-9._-]+"), "-")
+        .trim('-', '.', '_')
+        .take(40)
+    return cleaned.ifBlank { "attachment" }
+}
+
+private fun shortStableHash(value: String): String {
+    return MessageDigest.getInstance("SHA-256")
+        .digest(value.toByteArray())
+        .joinToString(separator = "") { byte -> "%02x".format(byte) }
+        .take(8)
 }
 
 class LocalTools(
@@ -237,28 +313,43 @@ class LocalTools(
     /**
      * Get Python tools for the conversation.
      * @param conversationId The conversation UUID
-     * @param userImageUrls Image URLs from the most recent user message - will be auto-imported
+     * @param attachments Image/document attachments from the most recent user message - will be auto-imported
      */
-    fun getPythonTools(conversationId: Uuid, userImageUrls: List<String> = emptyList()): List<Tool> {
+    fun getPythonTools(
+        conversationId: Uuid,
+        attachments: List<PythonAttachmentReference> = emptyList(),
+    ): List<Tool> {
         val workingDir = pythonSandbox.getConversationDir(conversationId).absolutePath
-        
-        // Auto-import user attachments to sandbox
-        val preloadedFiles = mutableListOf<String>()
-        userImageUrls.forEachIndexed { index, url ->
+
+        val preloadedFiles = mutableListOf<PreloadedSandboxAttachment>()
+        attachments.forEachIndexed { index, attachment ->
             runCatching {
-                val filename = "attachment_$index.png"
-                pythonSandbox.importFile(conversationId, android.net.Uri.parse(url), filename)
-                preloadedFiles.add(filename)
+                val originalFileName = attachment.fileName.ifBlank { "attachment_$index" }
+                val filename = buildSandboxAttachmentFilename(
+                    originalName = originalFileName,
+                    sourceUrl = attachment.url,
+                )
+                pythonSandbox.importFile(
+                    conversationId = conversationId,
+                    sourceUri = android.net.Uri.parse(attachment.url),
+                    filename = filename,
+                )
+                preloadedFiles.add(
+                    PreloadedSandboxAttachment(
+                        sandboxName = filename,
+                        originalFileName = originalFileName,
+                        mimeType = attachment.mimeType,
+                        sourceUrl = attachment.url,
+                        promptVisible = attachment.promptVisible,
+                    )
+                )
             }.onFailure { e ->
                 android.util.Log.w("LocalTools", "Failed to auto-import attachment $index: ${e.message}")
             }
         }
-        
-        // Build description with info about pre-loaded files
-        val preloadedInfo = if (preloadedFiles.isNotEmpty()) {
-            " User attachments are pre-loaded in sandbox as: ${preloadedFiles.joinToString { it }}. Access them with Image.open(\"${'$'}{filename}\")."
-        } else ""
-        
+
+        val preloadedInfo = buildPreloadedPythonDescription(preloadedFiles)
+
         return listOf(
             Tool(
                 name = "eval_python",
@@ -302,8 +393,21 @@ class LocalTools(
 
                         val finalResultObj = buildJsonObject {
                             baseResultObj.forEach { (k, v) -> put(k, v) }
-                            if (preloadedFiles.isNotEmpty()) {
-                                put("preloaded_attachments", JsonArray(preloadedFiles.map { JsonPrimitive(it) }))
+                            val visiblePreloadedFiles = visiblePreloadedSandboxAttachments(preloadedFiles)
+                            if (visiblePreloadedFiles.isNotEmpty()) {
+                                put(
+                                    "preloaded_attachments",
+                                    JsonArray(
+                                        visiblePreloadedFiles.map { file ->
+                                            buildJsonObject {
+                                                put("name", file.sandboxName)
+                                                put("original_name", file.originalFileName)
+                                                put("mime", file.mimeType)
+                                                put("source_url", file.sourceUrl)
+                                            }
+                                        }
+                                    )
+                                )
                             }
                             if (generatedFiles.isNotEmpty()) {
                                 put("generated_files", JsonArray(generatedFiles))
@@ -456,7 +560,7 @@ class LocalTools(
             ),
             Tool(
                 name = "import_attachment",
-                description = "Import an attached file from the user's message into the Python sandbox. Use the file URL from image/document attachments in the conversation. Tip: you can also pass multiple attachments directly in eval_python.attachments for automatic import.",
+                description = "Import an original chat attachment URL into the Python sandbox. Use this for file/content URLs from message attachments, not for sandbox filenames already listed in preloaded_attachments.",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
@@ -476,16 +580,28 @@ class LocalTools(
                     val url = it.jsonObject["url"]?.jsonPrimitive?.contentOrNull ?: ""
                     val filename = it.jsonObject["filename"]?.jsonPrimitive?.contentOrNull ?: ""
                     try {
-                        val uriArg = android.net.Uri.parse(url)
-                        val savedPath = pythonSandbox.importFile(conversationId, uriArg, filename)
-                         // Inject URI for file access
-                        val fileUri = pythonSandbox.getFileUri(conversationId, filename)
-                        buildJsonObject {
-                            put("success", true)
-                            put("path", savedPath)
-                            put("filename", filename)
-                            put("uri", fileUri.toString())
-                            put("markdown_link", "[$filename]($fileUri)")
+                        val pseudoSandboxFile = detectSandboxPseudoImportFilename(
+                            url = url,
+                            sandboxFileNames = pythonSandbox.listFiles(conversationId).map { file -> file.name }.toSet(),
+                        )
+                        if (pseudoSandboxFile != null) {
+                            buildJsonObject {
+                                put("success", false)
+                                put("error", "The URL '$url' points to a sandbox filename, not an original chat attachment URL.")
+                                put("hint", "Use the existing sandbox file '$pseudoSandboxFile' directly in Python instead of calling import_attachment.")
+                                put("sandbox_filename", pseudoSandboxFile)
+                            }
+                        } else {
+                            val uriArg = android.net.Uri.parse(url)
+                            val savedPath = pythonSandbox.importFile(conversationId, uriArg, filename)
+                            val fileUri = pythonSandbox.getFileUri(conversationId, filename)
+                            buildJsonObject {
+                                put("success", true)
+                                put("path", savedPath)
+                                put("filename", filename)
+                                put("uri", fileUri.toString())
+                                put("markdown_link", "[$filename]($fileUri)")
+                            }
                         }
                     } catch (e: Exception) {
                         buildJsonObject {
@@ -702,9 +818,14 @@ class LocalTools(
     
     /**
      * Get all enabled local tools for the conversation.
-     * @param userImageUrls Image URLs from the most recent user message (for Python auto-import)
+     * @param attachments Image/document attachments from the most recent user message (for Python auto-import)
      */
-    fun getTools(options: List<LocalToolOption>, assistantId: Uuid, conversationId: Uuid, userImageUrls: List<String> = emptyList()): List<Tool> {
+    fun getTools(
+        options: List<LocalToolOption>,
+        assistantId: Uuid,
+        conversationId: Uuid,
+        attachments: List<PythonAttachmentReference> = emptyList(),
+    ): List<Tool> {
         val tools = mutableListOf<Tool>()
         if (options.contains(LocalToolOption.JavascriptEngine)) {
             tools.add(javascriptTool)
@@ -712,9 +833,9 @@ class LocalTools(
         if (options.contains(LocalToolOption.Notifications)) {
             tools.addAll(getNotificationTools(assistantId, conversationId))
         }
-        // Find Python engine option if present - pass user images for auto-import
+        // Find Python engine option if present - pass latest user attachments for auto-import
         if (options.contains(LocalToolOption.PythonEngine)) {
-            tools.addAll(getPythonTools(conversationId, userImageUrls))
+            tools.addAll(getPythonTools(conversationId, attachments))
         }
         if (options.contains(LocalToolOption.Tts)) {
             tools.add(ttsTool)

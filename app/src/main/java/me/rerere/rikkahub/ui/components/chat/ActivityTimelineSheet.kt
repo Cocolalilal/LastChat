@@ -621,6 +621,7 @@ private fun TimelineEntryItem(
             entry.argumentsJson != null ||
             entry.resultJson != null
         is TimelineEntry.MemoryAction -> true
+        is TimelineEntry.Ocr -> true
         is TimelineEntry.Reply -> entry.content.isNotBlank()
     }
     val isMemoryDeleted = (entry is TimelineEntry.MemoryAction &&
@@ -852,6 +853,7 @@ private fun TimelinePreview(entry: TimelineEntry) {
             }
         }
         is TimelineEntry.MemoryAction -> entry.content?.take(160) ?: entry.previousContent?.take(160).orEmpty()
+        is TimelineEntry.Ocr -> buildOcrPreviewText(entry).take(160)
         is TimelineEntry.Reply -> entry.content.take(160)
     }
 
@@ -876,6 +878,54 @@ private fun ToolCallDetails(entry: TimelineEntry.ToolCall) {
         "ask_user" -> AskUserTimelineDetails(entry)
         "manage_skills" -> SkillManagementTimelineDetails(entry)
         else -> GenericToolDetails(entry)
+    }
+}
+
+@Composable
+private fun buildOcrPreviewText(entry: TimelineEntry.Ocr): String {
+    val pagesText = if (entry.pageNumbers.isEmpty()) {
+        null
+    } else {
+        stringResource(
+            R.string.activity_timeline_ocr_pages_value,
+            entry.pageNumbers.joinToString(", ")
+        )
+    }
+
+    return listOfNotNull(entry.fileName, pagesText).joinToString(" - ").ifBlank {
+        stringResource(R.string.activity_timeline_ocr)
+    }
+}
+
+@Composable
+private fun OcrDetails(entry: TimelineEntry.Ocr) {
+    val sourceLabel = stringResource(
+        when (entry.source) {
+            me.rerere.ai.ui.UIMessageAnnotation.OcrActivity.Source.IMAGE -> R.string.activity_timeline_ocr_source_image
+            me.rerere.ai.ui.UIMessageAnnotation.OcrActivity.Source.PDF -> R.string.activity_timeline_ocr_source_pdf
+        }
+    )
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        entry.fileName?.takeIf { it.isNotBlank() }?.let { fileName ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_file_name),
+                value = fileName
+            )
+        }
+        TimelineFieldRow(
+            label = stringResource(R.string.activity_timeline_ocr_source),
+            value = sourceLabel
+        )
+        if (entry.pageNumbers.isNotEmpty()) {
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_ocr_pages),
+                value = stringResource(
+                    R.string.activity_timeline_ocr_pages_value,
+                    entry.pageNumbers.joinToString(", ")
+                )
+            )
+        }
     }
 }
 
@@ -912,6 +962,10 @@ private fun TimelineExpandedContent(
                 onRevertMemory = onRevertMemory,
                 canRestore = canRestore
             )
+        }
+
+        is TimelineEntry.Ocr -> {
+            OcrDetails(entry)
         }
 
         is TimelineEntry.Reply -> {

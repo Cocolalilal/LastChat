@@ -3,12 +3,39 @@ package me.rerere.rikkahub.data.ai.transformers
 import android.content.Context
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.rikkahub.data.model.Assistant
 
 class TransformerContext(
     val context: Context,
     val model: Model,
     val assistant: Assistant,
+    private val generationAnnotations: MutableList<UIMessageAnnotation>? = null,
+    private val progressAnnotations: MutableList<UIMessageAnnotation>? = null,
+    private val onProgressAnnotationsChanged: (suspend (List<UIMessageAnnotation>) -> Unit)? = null,
+) {
+    suspend fun recordGenerationAnnotation(annotation: UIMessageAnnotation) {
+        generationAnnotations?.add(annotation)
+    }
+
+    suspend fun upsertProgressAnnotation(
+        annotation: UIMessageAnnotation,
+        matches: (UIMessageAnnotation) -> Boolean,
+    ) {
+        val annotations = progressAnnotations ?: return
+        val existingIndex = annotations.indexOfFirst(matches)
+        if (existingIndex >= 0) {
+            annotations[existingIndex] = annotation
+        } else {
+            annotations.add(annotation)
+        }
+        onProgressAnnotationsChanged?.invoke(annotations.toList())
+    }
+}
+
+data class InputTransformResult(
+    val messages: List<UIMessage>,
+    val annotations: List<UIMessageAnnotation>,
 )
 
 interface MessageTransformer {
@@ -59,10 +86,38 @@ suspend fun List<UIMessage>.transforms(
     model: Model,
     assistant: Assistant,
 ): List<UIMessage> {
-    val ctx = TransformerContext(context, model, assistant)
-    return transformers.fold(this) { acc, transformer ->
+    return transformInput(
+        transformers = transformers,
+        context = context,
+        model = model,
+        assistant = assistant,
+    ).messages
+}
+
+suspend fun List<UIMessage>.transformInput(
+    transformers: List<MessageTransformer>,
+    context: Context,
+    model: Model,
+    assistant: Assistant,
+    onProgressAnnotationsChanged: (suspend (List<UIMessageAnnotation>) -> Unit)? = null,
+): InputTransformResult {
+    val collectedAnnotations = mutableListOf<UIMessageAnnotation>()
+    val progressAnnotations = mutableListOf<UIMessageAnnotation>()
+    val ctx = TransformerContext(
+        context = context,
+        model = model,
+        assistant = assistant,
+        generationAnnotations = collectedAnnotations,
+        progressAnnotations = progressAnnotations,
+        onProgressAnnotationsChanged = onProgressAnnotationsChanged,
+    )
+    val messages = transformers.fold(this) { acc, transformer ->
         transformer.transform(ctx, acc)
     }
+    return InputTransformResult(
+        messages = messages,
+        annotations = collectedAnnotations.toList(),
+    )
 }
 
 suspend fun List<UIMessage>.visualTransforms(

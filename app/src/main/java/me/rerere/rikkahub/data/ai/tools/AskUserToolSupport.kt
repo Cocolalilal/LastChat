@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.data.ai.tools
 
+import me.rerere.ai.core.MessageRole
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -8,16 +9,14 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.utils.JsonInstant
+import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
+import kotlin.uuid.Uuid
 
 const val ASK_USER_TOOL_NAME = "ask_user"
 const val ASK_USER_MAX_QUESTIONS = 5
@@ -56,26 +55,12 @@ data class PendingAskUserToolCall(
 )
 
 fun parseAskUserQuestionnaire(arguments: String, json: Json = JsonInstant): AskUserQuestionnaire? {
-    val parsed = runCatching {
-        json.parseToJsonElement(arguments.ifBlank { "{}" })
-    }.getOrElse {
-        runCatching {
-            json.parseToJsonElement(sanitizeAskUserArguments(arguments))
-        }.getOrNull()
-    } ?: return null
-    return parseAskUserQuestionnaire(parsed)
+    val parsed = parseJsonElementWithRecovery(arguments, json) ?: return null
+    return parseAskUserQuestionnaireInternal(parsed, json, depth = 0)
 }
 
 fun parseAskUserQuestionnaire(arguments: JsonElement): AskUserQuestionnaire? {
-    val root = arguments as? JsonObject ?: return null
-    val questions = (root["questions"] as? JsonArray)
-        ?.mapNotNull(::parseAskUserQuestion)
-        ?.take(ASK_USER_MAX_QUESTIONS)
-        .orEmpty()
-    if (questions.isEmpty()) {
-        return null
-    }
-    return AskUserQuestionnaire(questions = questions)
+    return parseAskUserQuestionnaireInternal(arguments, JsonInstant, depth = 0)
 }
 
 fun AskUserQuestionnaire.toJsonElement(): JsonObject {
@@ -112,7 +97,7 @@ fun normalizeAskUserAnswerPayload(
     json: Json = JsonInstant,
 ): AskUserAnswerPayload {
     val parsed = rawAnswer?.let { raw ->
-        runCatching { json.parseToJsonElement(raw) }.getOrNull()
+        parseJsonElementWithRecovery(raw, json)
     }
     return normalizeAskUserAnswerPayload(
         questionnaire = questionnaire,
@@ -129,7 +114,7 @@ fun normalizeAskUserAnswerPayload(
     val root = rawAnswer as? JsonObject
     val arrayAnswers = root?.get("answers") as? JsonArray
     val mapAnswers = root?.get("answers") as? JsonObject
-    val dismissed = root?.get("dismissed")?.jsonPrimitive?.booleanOrNull ?: dismissedFallback
+    val dismissed = root?.get("dismissed")?.jsonPrimitiveOrNull?.booleanOrNull ?: dismissedFallback
 
     val normalizedAnswers = questionnaire.questions.map { question ->
         parseAskUserAnswerFromArray(arrayAnswers, question.id)
@@ -182,10 +167,50 @@ fun List<UIMessage>.findPendingAskUserToolCall(json: Json = JsonInstant): Pendin
         }
 }
 
+internal fun List<UIMessage>.recoverInlineAskUserToolCall(json: Json = JsonInstant): List<UIMessage> {
+    val lastMessage = lastOrNull() ?: return this
+    val recoveredMessage = lastMessage.recoverInlineAskUserToolCall(json) ?: return this
+    return dropLast(1) + recoveredMessage
+}
+
+internal fun UIMessage.recoverInlineAskUserToolCall(json: Json = JsonInstant): UIMessage? {
+    if (role != MessageRole.ASSISTANT || getToolCalls().isNotEmpty()) {
+        return null
+    }
+    if (parts.none { part -> part is UIMessagePart.Text }) {
+        return null
+    }
+
+    val contentText = toContentText().trim()
+    if (!looksLikeStandaloneAskUserPayload(contentText)) {
+        return null
+    }
+
+    val questionnaire = parseAskUserQuestionnaire(contentText, json) ?: return null
+    return copy(
+        parts = parts.filterNot { part -> part is UIMessagePart.Text } + UIMessagePart.ToolCall(
+            toolCallId = "ask_user_recovered_${Uuid.random()}",
+            toolName = ASK_USER_TOOL_NAME,
+            arguments = questionnaire.toJsonElement().toString(),
+        )
+    )
+}
+
+internal fun parseJsonElementWithRecovery(
+    arguments: String,
+    json: Json = JsonInstant,
+): JsonElement? {
+    return parseJsonElementWithRecovery(
+        arguments = arguments,
+        json = json,
+        unwrapNestedStrings = true,
+    )
+}
+
 private fun parseAskUserQuestion(question: JsonElement): AskUserQuestion? {
     val record = question as? JsonObject ?: return null
-    val id = record["id"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
-    val prompt = record["question"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+    val id = record["id"]?.jsonPrimitiveOrNull?.contentOrNull?.trim().orEmpty()
+    val prompt = record["question"]?.jsonPrimitiveOrNull?.contentOrNull?.trim().orEmpty()
     if (id.isBlank() || prompt.isBlank()) {
         return null
     }
@@ -214,13 +239,13 @@ private fun parseAskUserOption(option: JsonElement): AskUserOption? {
         }
 
         is JsonObject -> {
-            val label = option["label"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+            val label = option["label"]?.jsonPrimitiveOrNull?.contentOrNull?.trim().orEmpty()
             if (label.isBlank()) {
                 null
             } else {
                 AskUserOption(
                     label = label,
-                    description = option["description"]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotBlank() },
+                    description = option["description"]?.jsonPrimitiveOrNull?.contentOrNull?.trim()?.takeIf { it.isNotBlank() },
                 )
             }
         }
@@ -237,11 +262,11 @@ private fun parseAskUserAnswerFromArray(
         ?.firstOrNull { element ->
             (element as? JsonObject)
                 ?.get("id")
-                ?.jsonPrimitive
+                ?.jsonPrimitiveOrNull
                 ?.contentOrNull == questionId
         } as? JsonObject ?: return null
 
-    val status = answer["status"]?.jsonPrimitive?.contentOrNull?.trim()?.lowercase().orEmpty()
+    val status = answer["status"]?.jsonPrimitiveOrNull?.contentOrNull?.trim()?.lowercase().orEmpty()
     if (status == "skipped") {
         return AskUserAnswer(
             id = questionId,
@@ -249,12 +274,12 @@ private fun parseAskUserAnswerFromArray(
         )
     }
 
-    val value = answer["value"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+    val value = answer["value"]?.jsonPrimitiveOrNull?.contentOrNull?.trim().orEmpty()
     if (status != "answered" || value.isBlank()) {
         return null
     }
 
-    val source = answer["source"]?.jsonPrimitive?.contentOrNull?.trim()?.lowercase()
+    val source = answer["source"]?.jsonPrimitiveOrNull?.contentOrNull?.trim()?.lowercase()
         ?.takeIf { it == "option" || it == "custom" }
         ?: "custom"
 
@@ -272,7 +297,7 @@ private fun parseAskUserAnswerFromMap(
 ): AskUserAnswer? {
     val value = answers
         ?.get(questionId)
-        ?.jsonPrimitive
+        ?.jsonPrimitiveOrNull
         ?.contentOrNull
         ?.trim()
         .orEmpty()
@@ -287,30 +312,277 @@ private fun parseAskUserAnswerFromMap(
     )
 }
 
-private fun sanitizeAskUserArguments(arguments: String): String {
-    if (arguments.isBlank()) return "{}"
-    val trimmed = arguments.trim()
-    var braceCount = 0
-    var inString = false
-    var escape = false
+private fun parseAskUserQuestionnaireInternal(
+    arguments: JsonElement?,
+    json: Json,
+    depth: Int,
+): AskUserQuestionnaire? {
+    if (arguments == null || depth > 8) {
+        return null
+    }
 
-    for ((index, char) in trimmed.withIndex()) {
-        if (escape) {
-            escape = false
+    return when (arguments) {
+        is JsonObject -> {
+            parseAskUserQuestions(arguments["questions"], json, depth + 1)
+                ?.let { questions -> AskUserQuestionnaire(questions = questions) }
+                ?: ASK_USER_WRAPPER_KEYS.firstNotNullOfOrNull { key ->
+                    parseAskUserQuestionnaireInternal(arguments[key], json, depth + 1)
+                }
+                ?: if (resolveAskUserToolName(arguments) == ASK_USER_TOOL_NAME) {
+                    arguments.entries.firstNotNullOfOrNull { (key, value) ->
+                        if (key in ASK_USER_TOOL_NAME_KEYS) {
+                            null
+                        } else {
+                            parseAskUserQuestionnaireInternal(value, json, depth + 1)
+                        }
+                    }
+                } else {
+                    null
+                }
+        }
+
+        is JsonArray -> {
+            parseAskUserQuestions(arguments, json, depth + 1)
+                ?.let { questions -> AskUserQuestionnaire(questions = questions) }
+                ?: arguments.firstNotNullOfOrNull { element ->
+                    parseAskUserQuestionnaireInternal(element, json, depth + 1)
+                }
+        }
+
+        is JsonPrimitive -> {
+            arguments.contentOrNull
+                ?.takeIf { content -> content.isNotBlank() }
+                ?.let { content -> parseJsonElementWithRecovery(content, json) }
+                ?.takeIf { recovered -> recovered != arguments }
+                ?.let { recovered -> parseAskUserQuestionnaireInternal(recovered, json, depth + 1) }
+        }
+    }
+}
+
+private fun parseAskUserQuestions(
+    element: JsonElement?,
+    json: Json,
+    depth: Int,
+): List<AskUserQuestion>? {
+    return when (element) {
+        is JsonArray -> element
+            .mapNotNull(::parseAskUserQuestion)
+            .take(ASK_USER_MAX_QUESTIONS)
+            .takeIf { questions -> questions.isNotEmpty() }
+
+        is JsonObject -> parseAskUserQuestionnaireInternal(element, json, depth + 1)?.questions
+        is JsonPrimitive -> element.contentOrNull
+            ?.takeIf { content -> content.isNotBlank() }
+            ?.let { content -> parseJsonElementWithRecovery(content, json) }
+            ?.takeIf { recovered -> recovered != element }
+            ?.let { recovered -> parseAskUserQuestions(recovered, json, depth + 1) }
+
+        else -> null
+    }
+}
+
+private fun resolveAskUserToolName(root: JsonObject): String? {
+    return ASK_USER_TOOL_NAME_KEYS.firstNotNullOfOrNull { key ->
+        root[key]
+            ?.jsonPrimitiveOrNull
+            ?.contentOrNull
+            ?.trim()
+            ?.lowercase()
+            ?.takeIf { value -> value.isNotBlank() }
+    }
+}
+
+private fun parseJsonElementWithRecovery(
+    arguments: String,
+    json: Json,
+    unwrapNestedStrings: Boolean,
+): JsonElement? {
+    if (arguments.isBlank()) {
+        return runCatching { json.parseToJsonElement("{}") }.getOrNull()
+    }
+    val trimmed = arguments.trim()
+
+    val fenced = extractJsonCodeFence(trimmed)
+    val candidates = listOfNotNull(
+        trimmed,
+        fenced,
+        extractBalancedJsonSlice(trimmed),
+        fenced?.let(::extractBalancedJsonSlice),
+    ).distinct()
+
+    val parsed = candidates.firstNotNullOfOrNull { candidate ->
+        runCatching { json.parseToJsonElement(candidate) }.getOrNull()
+    } ?: return null
+
+    return if (unwrapNestedStrings) {
+        unwrapNestedJsonString(parsed, json)
+    } else {
+        parsed
+    }
+}
+
+private fun unwrapNestedJsonString(
+    element: JsonElement,
+    json: Json,
+    maxDepth: Int = 4,
+): JsonElement {
+    var current = element
+    repeat(maxDepth) {
+        val content = (current as? JsonPrimitive)
+            ?.contentOrNull
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: return current
+        current = parseJsonElementWithRecovery(
+            arguments = content,
+            json = json,
+            unwrapNestedStrings = false,
+        ) ?: return current
+    }
+    return current
+}
+
+private fun extractJsonCodeFence(input: String): String? {
+    return ASK_USER_JSON_CODE_FENCE_REGEX.matchEntire(input)?.groupValues?.getOrNull(1)
+}
+
+private fun extractBalancedJsonSlice(input: String): String? {
+    if (input.isBlank()) {
+        return null
+    }
+
+    val objectStart = input.indexOf('{')
+    val arrayStart = input.indexOf('[')
+    val startIndex = when {
+        objectStart < 0 -> arrayStart
+        arrayStart < 0 -> objectStart
+        else -> minOf(objectStart, arrayStart)
+    }
+    if (startIndex < 0) {
+        return null
+    }
+
+    val stack = ArrayDeque<Char>()
+    var inString = false
+    var escaping = false
+
+    for (index in startIndex until input.length) {
+        val char = input[index]
+        if (escaping) {
+            escaping = false
             continue
         }
+
         when (char) {
-            '\\' -> if (inString) escape = true
+            '\\' -> {
+                if (inString) {
+                    escaping = true
+                }
+            }
+
             '"' -> inString = !inString
-            '{' -> if (!inString) braceCount++
-            '}' -> if (!inString) {
-                braceCount--
-                if (braceCount == 0) {
-                    return trimmed.substring(0, index + 1)
+
+            else -> {
+                if (inString) {
+                    continue
+                }
+
+                when (char) {
+                    '{' -> stack.addLast('}')
+                    '[' -> stack.addLast(']')
+                    '}', ']' -> {
+                        if (stack.isEmpty() || stack.removeLast() != char) {
+                            return null
+                        }
+                        if (stack.isEmpty()) {
+                            return input.substring(startIndex, index + 1)
+                        }
+                    }
                 }
             }
         }
     }
 
-    return "{}"
+    return null
 }
+
+private fun looksLikeStandaloneAskUserPayload(text: String): Boolean {
+    val trimmed = text.trim()
+    if (trimmed.isBlank()) {
+        return false
+    }
+    if (trimmed.startsWith("{") || trimmed.startsWith("[") || trimmed.startsWith("```")) {
+        return true
+    }
+
+    val candidate = extractBalancedJsonSlice(trimmed) ?: return false
+    val startIndex = trimmed.indexOf(candidate)
+    if (startIndex < 0) {
+        return false
+    }
+
+    val wrapperText = buildString {
+        append(trimmed.substring(0, startIndex))
+        append(trimmed.substring(startIndex + candidate.length))
+    }.trim()
+    return isAskUserWrapperText(wrapperText)
+}
+
+private fun isAskUserWrapperText(text: String): Boolean {
+    if (text.isBlank()) {
+        return true
+    }
+
+    val lowered = text.lowercase()
+    if (
+        !lowered.contains(ASK_USER_TOOL_NAME) &&
+        !lowered.contains("tool_call") &&
+        !lowered.contains("function_call")
+    ) {
+        return false
+    }
+
+    val normalized = lowered
+        .replace(ASK_USER_TOOL_NAME, "")
+        .replace("tool_call", "")
+        .replace("function_call", "")
+        .replace("assistant", "")
+        .replace("json", "")
+        .replace("function", "")
+        .replace("tool", "")
+        .replace("call", "")
+        .replace("name", "")
+        .replace("arguments", "")
+        .replace("arg", "")
+        .replace("to", "")
+        .replace(Regex("""[\s:={}\[\]()"'.,;`_-]+"""), "")
+
+    return normalized.isBlank()
+}
+
+private val ASK_USER_WRAPPER_KEYS = listOf(
+    "arguments",
+    "input",
+    "payload",
+    "questionnaire",
+    "params",
+    "data",
+    "value",
+    "function",
+    "function_call",
+    "tool_calls",
+    "toolCall",
+    "call",
+)
+
+private val ASK_USER_TOOL_NAME_KEYS = listOf(
+    "name",
+    "toolName",
+    "tool",
+    "type",
+)
+
+private val ASK_USER_JSON_CODE_FENCE_REGEX = Regex(
+    pattern = """^```(?:json)?\s*([\s\S]*?)\s*```$""",
+    option = RegexOption.IGNORE_CASE,
+)
