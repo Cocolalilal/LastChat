@@ -665,7 +665,7 @@
   <string name="setting_provider_page_add_custom_provider">カスタムプロバイダーを追加</string>
   <string name="setting_provider_page_add_custom_provider_desc">カスタムAPIエンドポイント経由で追加</string>
   <string name="setting_provider_page_no_providers_but_preset">リストにこのプロバイダーがないようです。ご安心ください、プリセットを用意しています！</string>
-  <string name="theme_name_nightsky_blue">ナイトスカイブルー</string>
+    <string name="theme_name_seafoam_mint">シーフォームミント</string>
   <string name="undo">元に戻す</string>
   <string name="setting_model_page_embedding_model">埋め込みモデル (Embedding)</string>
   <string name="setting_model_page_embedding_model_desc">テキスト埋め込み用モデル（記憶機能などで使用）。</string>

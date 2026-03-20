@@ -665,7 +665,7 @@
   <string name="setting_provider_page_add_custom_provider">添加自定義提供商</string>
   <string name="setting_provider_page_add_custom_provider_desc">通過自定義 API 端點添加</string>
   <string name="setting_provider_page_no_providers_but_preset">您的列表中似乎沒有此提供商。別擔心，我們已為您準備了預設！</string>
-  <string name="theme_name_nightsky_blue">夜空藍</string>
+    <string name="theme_name_seafoam_mint">海沫薄荷</string>
   <string name="undo">復原</string>
   <string name="setting_model_page_embedding_model">嵌入模型 (Embedding)</string>
   <string name="setting_model_page_embedding_model_desc">用於文本嵌入的模型（例如用於記憶功能）。</string>

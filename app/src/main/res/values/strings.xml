@@ -493,7 +493,7 @@
     <string name="setting_mcp_page_name_placeholder">e.g. My MCP Server</string>
     <string name="setting_mcp_page_no_mcp_servers_found">No MCP servers found</string>
     <string name="setting_mcp_page_import_title">Import MCP Servers</string>
-    <string name="setting_mcp_page_import_desc">Paste a JSON config with an `mcpServers` object to add servers without rebuilding them by hand.</string>
+    <string name="setting_mcp_page_import_desc">Paste an `mcpServers` JSON config to add servers quickly.</string>
     <string name="setting_mcp_page_import_confirm">Import Servers</string>
     <string name="setting_mcp_page_import_no_valid_config">No valid MCP servers were found in this JSON.</string>
     <string name="setting_mcp_page_import_parse_error">Could not parse MCP JSON: %s</string>
@@ -538,7 +538,7 @@
     <string name="setting_page_assistant_desc">Configure your characters</string>
     <string name="setting_page_basic_settings">Basic Settings</string>
     <string name="setting_page_built_in_tools">Built-in Tools</string>
-    <string name="setting_page_built_in_tools_desc">Select built-in tools supported by model. Currently only for Gemini official API.</string>
+    <string name="setting_page_built_in_tools_desc">Select built-in tools for this model. Only supported for Gemini.</string>
     <string name="setting_page_built_in_tools_search">Search</string>
     <string name="setting_page_built_in_tools_search_desc">Enable Google Search integration</string>
     <string name="setting_page_built_in_tools_url_context">URL Context</string>
@@ -650,7 +650,7 @@
     <string name="setting_provider_page_private_key">Private Key</string>
     <string name="setting_provider_page_project_id">Project ID</string>
     <string name="setting_provider_page_provider_override">Provider Override</string>
-    <string name="setting_provider_page_provider_override_desc">Configure custom provider settings for this model. Inherits common properties from parent.</string>
+    <string name="setting_provider_page_provider_override_desc">Configure custom settings for this model. Common settings still come from the parent provider.</string>
     <string name="setting_provider_page_proxy_host">Host</string>
     <string name="setting_provider_page_proxy_password">Password (Optional)</string>
     <string name="setting_provider_page_proxy_port">Port</string>
@@ -658,7 +658,7 @@
     <string name="setting_provider_page_qr_decode_failed">QR decode failed: %s</string>
     <string name="setting_provider_page_reasoning">Reasoning</string>
     <string name="setting_provider_page_response_api">Response API</string>
-    <string name="setting_provider_page_response_api_warning">Response API is OpenAI\'s new API. Most providers don\'t support it. Keep off if unsure.</string>
+    <string name="setting_provider_page_response_api_warning">Response API is unsupported by most providers. Leave this off unless your provider supports it.</string>
     <string name="setting_provider_page_save">Save</string>
     <string name="setting_provider_page_save_success">Save Success</string>
     <string name="setting_provider_page_scan_error">Error: %s</string>
@@ -713,7 +713,7 @@
     <string name="setting_page_web_server">Web Access</string>
     <string name="setting_page_web_server_desc">Use LastChat on your network</string>
     <string name="setting_page_web_server_hero_title">LastChat in a browser</string>
-    <string name="setting_page_web_server_hero_desc">Start a local web server to browse conversations and send messages from phones, tablets, or desktops on the same network.</string>
+    <string name="setting_page_web_server_hero_desc">Start a local web server to browse conversations and send messages from devices on the same network.</string>
     <string name="setting_page_web_server_status_idle">Server is offline</string>
     <string name="setting_page_web_server_status_starting">Starting local server…</string>
     <string name="setting_page_web_server_status_stopping">Turning off server…</string>
@@ -724,17 +724,16 @@
     <string name="setting_page_web_server_open">Open</string>
     <string name="setting_page_web_server_access">Access</string>
     <string name="setting_page_web_server_port">Port</string>
-    <string name="setting_page_web_server_port_desc">Choose the port your browser will connect to. 8080 is the default.</string>
+    <string name="setting_page_web_server_port_desc">Choose the port your browser will connect to.</string>
     <string name="setting_page_web_server_protect">Protect with password</string>
-    <string name="setting_page_web_server_protect_desc">Require a password before the browser UI can read conversations or send messages.</string>
+    <string name="setting_page_web_server_protect_desc">Require a password when accessing the web UI</string>
     <string name="setting_page_web_server_password">Access password</string>
-    <string name="setting_page_web_server_password_desc">Leave blank for open LAN access. Add a password first to enable protection.</string>
     <string name="setting_page_web_server_background_setup_title">Keep web access alive</string>
-    <string name="setting_page_web_server_background_setup_desc">Allow notifications and battery optimization changes so web access stays reachable while the screen is off.</string>
+    <string name="setting_page_web_server_background_setup_desc">Allow notifications and battery changes so web access stays available with the screen off.</string>
     <string name="setting_page_web_server_background_setup_continue">Continue</string>
     <string name="setting_page_web_server_notification_permission_warning">Notifications were not allowed. Server status may be hidden.</string>
     <string name="setting_page_web_server_background_warning_title">Background reliability may be reduced</string>
-    <string name="setting_page_web_server_background_warning_desc">Battery optimization is still on, so web access may stop when the screen turns off.</string>
+    <string name="setting_page_web_server_background_warning_desc">Battery optimization may stop web access when the screen turns off.</string>
     <string name="setting_page_web_server_background_warning_action">Fix</string>
     <string name="setting_page_web_server_addresses">Addresses</string>
     <string name="setting_page_web_server_lan_address">LAN address</string>
@@ -797,7 +796,7 @@
     <string name="test_tts">Test TTS</string>
     <string name="theme_name_autumn">Autumn Yellow</string>
     <string name="theme_name_black">Neutral Black</string>
-    <string name="theme_name_nightsky_blue">Nightsky Blue</string>
+    <string name="theme_name_seafoam_mint">Seafoam Mint</string>
     <string name="theme_name_ocean">Ocean Blue</string>
     <string name="theme_name_sakura">Sakura Pink</string>
     <string name="theme_name_spring">Meadow Green</string>

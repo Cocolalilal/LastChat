@@ -665,7 +665,7 @@
   <string name="setting_provider_page_add_custom_provider">Добавить своего провайдера</string>
   <string name="setting_provider_page_add_custom_provider_desc">Настроить пользовательский API endpoint</string>
   <string name="setting_provider_page_no_providers_but_preset">Кажется, у вас нет этого провайдера. Не волнуйтесь, у нас есть готовый пресет для вас!</string>
-  <string name="theme_name_nightsky_blue">Ночное небо (Синий)</string>
+    <string name="theme_name_seafoam_mint">Мятная морская пена</string>
   <string name="undo">Отменить</string>
   <string name="setting_model_page_embedding_model">Модель встраивания (Embedding)</string>
   <string name="setting_model_page_embedding_model_desc">Модель для встраивания текста (например, для функции памяти).</string>

@@ -60,6 +60,9 @@ import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.hooks.heroAnimation
+import me.rerere.rikkahub.ui.motion.LocalMotionPolicy
+import me.rerere.rikkahub.ui.motion.hierarchicalEnterTransition
+import me.rerere.rikkahub.ui.motion.hierarchicalExitTransition
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import androidx.compose.runtime.rememberCoroutineScope
@@ -106,6 +109,7 @@ fun AssistantDetailPage(
 
     val navController = rememberNavController()
     val rootNavController = LocalNavController.current
+    val motionPolicy = LocalMotionPolicy.current
     val toaster = LocalToaster.current
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
@@ -310,28 +314,28 @@ fun AssistantDetailPage(
                 .padding(innerPadding)
                 .fillMaxSize(),
             enterTransition = {
-                slideIntoContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(300)
-                ) + fadeIn(animationSpec = tween(300))
+                hierarchicalEnterTransition(
+                    direction = AnimatedContentTransitionScope.SlideDirection.Left,
+                    motionPolicy = motionPolicy
+                )
             },
             exitTransition = {
-                slideOutOfContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(300)
-                ) + fadeOut(animationSpec = tween(300))
+                hierarchicalExitTransition(
+                    direction = AnimatedContentTransitionScope.SlideDirection.Left,
+                    motionPolicy = motionPolicy
+                )
             },
             popEnterTransition = {
-                slideIntoContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(300)
-                ) + fadeIn(animationSpec = tween(300))
+                hierarchicalEnterTransition(
+                    direction = AnimatedContentTransitionScope.SlideDirection.Right,
+                    motionPolicy = motionPolicy
+                )
             },
             popExitTransition = {
-                slideOutOfContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(300)
-                ) + fadeOut(animationSpec = tween(300))
+                hierarchicalExitTransition(
+                    direction = AnimatedContentTransitionScope.SlideDirection.Right,
+                    motionPolicy = motionPolicy
+                )
             }
         ) {
             composable(AssistantDetailRoutes.HOME) {

@@ -244,7 +244,7 @@ class SettingsStore(
                 textSelectionConfig = preferences[TEXT_SELECTION_CONFIG]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: TextSelectionConfig(),
-            )
+            ).normalizeThemeId()
         }
         .map {
             var providers = it.providers.ifEmpty { DEFAULT_PROVIDERS }.toMutableList()
@@ -428,6 +428,7 @@ class SettingsStore(
             .normalizeWebServerSettings()
             .migrateLegacyModesToSkills()
             .normalizeFontSettings()
+            .normalizeThemeId()
 
         // Handle explicit secret deletions (user cleared a field that had a value)
         // This must be called BEFORE migration to remove deleted secrets from SecureStore

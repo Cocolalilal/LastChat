@@ -1791,10 +1791,11 @@ class ChatService(
     // 发送生成完成通知
     private fun sendGenerationDoneNotification(conversationId: Uuid) {
         val conversation = getConversationFlow(conversationId).value
+        val contentPreview = conversation.currentMessages.lastOrNull()?.toContentText()?.take(50).orEmpty()
         val notification =
             NotificationCompat.Builder(context, CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID)
                 .setContentTitle(context.getString(R.string.notification_chat_done_title))
-                .setContentText(conversation.currentMessages.lastOrNull()?.toText()?.take(50) ?: "")
+                .setContentText(contentPreview)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
                 .setAutoCancel(true)

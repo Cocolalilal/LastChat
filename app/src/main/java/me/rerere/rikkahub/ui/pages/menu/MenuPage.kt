@@ -10,11 +10,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -46,14 +48,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.modifier.shimmer
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
@@ -62,10 +65,13 @@ import java.time.YearMonth
 import java.time.format.TextStyle
 import java.util.Locale
 
+private val StatCardMinHeight = 136.dp
+private val HeatmapCardMinHeight = 284.dp
+
 @Composable
 fun MenuPage() {
     val vm: MenuVM = koinViewModel()
-    val stats by vm.stats.collectAsStateWithLifecycle()
+    val uiState by vm.uiState.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -82,128 +88,370 @@ fun MenuPage() {
                 },
             )
         },
+    ) { innerPadding ->
+        when (val state = uiState) {
+            MenuUiState.Loading -> MenuLoadingContent(innerPadding = innerPadding)
+            is MenuUiState.Ready -> MenuLoadedContent(
+                stats = state.stats,
+                showEmptyActivity = false,
+                innerPadding = innerPadding
+            )
+            is MenuUiState.Empty -> MenuLoadedContent(
+                stats = state.stats,
+                showEmptyActivity = true,
+                innerPadding = innerPadding
+            )
+        }
+    }
+}
+
+@Composable
+private fun MenuLoadedContent(
+    stats: MenuStats,
+    showEmptyActivity: Boolean,
+    innerPadding: PaddingValues
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = innerPadding + PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = it + PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            item {
-                ChatHeatmapCard(
-                    heatmapData = stats.heatmapData,
-                    modifier = Modifier.fillMaxWidth()
+        item {
+            ChatHeatmapCard(
+                heatmapData = stats.heatmapData,
+                showEmptyState = showEmptyActivity,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        item {
+            StatsRow {
+                StatCard(
+                    title = "Daily Streak",
+                    value = "${stats.dailyChatStreak}",
+                    subtitle = "days",
+                    icon = Icons.Rounded.LocalFireDepartment,
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                )
+                StatCard(
+                    title = "Conversations",
+                    value = formatCount(stats.usageStats.totalConversations),
+                    icon = Icons.AutoMirrored.Rounded.Chat,
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
                 )
             }
+        }
 
-            item {
-                Row(
+        item {
+            StatsRow {
+                StatCard(
+                    title = "Messages",
+                    value = formatCount(stats.usageStats.totalMessages),
+                    icon = Icons.AutoMirrored.Rounded.Message,
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(IntrinsicSize.Min),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        .weight(1f)
+                        .fillMaxHeight()
+                )
+                StatCard(
+                    title = "Input Tokens",
+                    value = formatTokenCount(stats.usageStats.inputTokens),
+                    icon = Icons.AutoMirrored.Rounded.Input,
+                    containerColor = if (LocalDarkMode.current) {
+                        MaterialTheme.colorScheme.surfaceContainerHigh
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerHighest
+                    },
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                )
+            }
+        }
+
+        item {
+            StatsRow {
+                StatCard(
+                    title = "Output Tokens",
+                    value = formatTokenCount(stats.usageStats.outputTokens),
+                    icon = Icons.Rounded.Output,
+                    containerColor = if (LocalDarkMode.current) {
+                        MaterialTheme.colorScheme.surfaceContainerHigh
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerHighest
+                    },
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                )
+                StatCard(
+                    title = "Cached Tokens",
+                    value = formatTokenCount(stats.usageStats.cachedTokens),
+                    icon = Icons.Rounded.Savings,
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                )
+            }
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun MenuLoadingContent(innerPadding: PaddingValues) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = innerPadding + PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            ChatHeatmapSkeletonCard(modifier = Modifier.fillMaxWidth())
+        }
+
+        item {
+            StatsRow {
+                StatCardSkeleton(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                )
+                StatCardSkeleton(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                )
+            }
+        }
+
+        item {
+            StatsRow {
+                StatCardSkeleton(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                )
+                StatCardSkeleton(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                )
+            }
+        }
+
+        item {
+            StatsRow {
+                StatCardSkeleton(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                )
+                StatCardSkeleton(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                )
+            }
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun StatsRow(content: @Composable RowScope.() -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        content = content
+    )
+}
+
+@Composable
+private fun ChatHeatmapSkeletonCard(modifier: Modifier = Modifier) {
+    val containerColor = if (LocalDarkMode.current) {
+        MaterialTheme.colorScheme.surfaceContainerLow
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerHigh
+    }
+    val contentColor = MaterialTheme.colorScheme.onSurface
+
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = containerColor,
+            contentColor = contentColor
+        ),
+        shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
+        modifier = modifier.heightIn(min = HeatmapCardMinHeight)
+    ) {
+        Column(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth()
+                .heightIn(min = HeatmapCardMinHeight - 32.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            SkeletonBlock(
+                modifier = Modifier
+                    .width(92.dp)
+                    .height(20.dp),
+                color = contentColor
+            )
+            SkeletonBlock(
+                modifier = Modifier
+                    .width(140.dp)
+                    .height(12.dp),
+                color = contentColor.copy(alpha = 0.85f)
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(top = 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    StatCard(
-                        title = "Daily Streak",
-                        value = "${stats.dailyChatStreak}",
-                        subtitle = "days",
-                        icon = Icons.Rounded.LocalFireDepartment,
-                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                    )
-                    StatCard(
-                        title = "Conversations",
-                        value = formatCount(stats.usageStats.totalConversations),
-                        icon = Icons.AutoMirrored.Rounded.Chat,
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                    )
+                    repeat(7) {
+                        SkeletonBlock(
+                            modifier = Modifier
+                                .width(20.dp)
+                                .height(12.dp),
+                            color = contentColor.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        repeat(5) {
+                            SkeletonBlock(
+                                modifier = Modifier
+                                    .width(28.dp)
+                                    .height(12.dp),
+                                color = contentColor.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        repeat(12) {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                repeat(7) {
+                                    SkeletonBlock(
+                                        modifier = Modifier.size(12.dp),
+                                        color = contentColor
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
-
-            item {
-                Row(
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                SkeletonBlock(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(IntrinsicSize.Min),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    StatCard(
-                        title = "Messages",
-                        value = formatCount(stats.usageStats.totalMessages),
-                        icon = Icons.AutoMirrored.Rounded.Message,
-                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                    )
-                    StatCard(
-                        title = "Input Tokens",
-                        value = formatTokenCount(stats.usageStats.inputTokens),
-                        icon = Icons.AutoMirrored.Rounded.Input,
-                        containerColor = if (LocalDarkMode.current) {
-                            MaterialTheme.colorScheme.surfaceContainerHigh
-                        } else {
-                            MaterialTheme.colorScheme.surfaceContainerHighest
-                        },
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                    )
-                }
-            }
-
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(IntrinsicSize.Min),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    StatCard(
-                        title = "Output Tokens",
-                        value = formatTokenCount(stats.usageStats.outputTokens),
-                        icon = Icons.Rounded.Output,
-                        containerColor = if (LocalDarkMode.current) {
-                            MaterialTheme.colorScheme.surfaceContainerHigh
-                        } else {
-                            MaterialTheme.colorScheme.surfaceContainerHighest
-                        },
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                    )
-                    StatCard(
-                        title = "Cached Tokens",
-                        value = formatTokenCount(stats.usageStats.cachedTokens),
-                        icon = Icons.Rounded.Savings,
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                    )
-                }
-            }
-
-            item {
-                Spacer(modifier = Modifier.height(16.dp))
+                        .width(96.dp)
+                        .height(10.dp),
+                    color = contentColor.copy(alpha = 0.75f)
+                )
             }
         }
     }
 }
 
 @Composable
+private fun StatCardSkeleton(modifier: Modifier = Modifier) {
+    val containerColor = if (LocalDarkMode.current) {
+        MaterialTheme.colorScheme.surfaceContainerHigh
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerHighest
+    }
+    val contentColor = MaterialTheme.colorScheme.onSurface
+
+    Card(
+        modifier = modifier.heightIn(min = StatCardMinHeight),
+        colors = CardDefaults.cardColors(
+            containerColor = containerColor,
+            contentColor = contentColor
+        ),
+        shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium
+    ) {
+        Column(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxHeight(),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            SkeletonBlock(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(me.rerere.rikkahub.ui.theme.AppShapes.Chip),
+                color = contentColor
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SkeletonBlock(
+                    modifier = Modifier
+                        .width(72.dp)
+                        .height(26.dp),
+                    color = contentColor
+                )
+                SkeletonBlock(
+                    modifier = Modifier
+                        .width(84.dp)
+                        .height(12.dp),
+                    color = contentColor.copy(alpha = 0.8f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SkeletonBlock(
+    modifier: Modifier,
+    color: Color
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(color.copy(alpha = 0.16f))
+            .shimmer(
+                isLoading = true,
+                shimmerColor = color.copy(alpha = 0.28f),
+                backgroundColor = color.copy(alpha = 0.82f)
+            )
+    )
+}
+
+@Composable
 private fun ChatHeatmapCard(
     heatmapData: List<HeatmapDay>,
+    showEmptyState: Boolean,
     modifier: Modifier = Modifier
 ) {
     val containerColor = if (LocalDarkMode.current) {
@@ -221,10 +469,13 @@ private fun ChatHeatmapCard(
             contentColor = contentColor
         ),
         shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
-        modifier = modifier
+        modifier = modifier.heightIn(min = HeatmapCardMinHeight)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth()
+                .heightIn(min = HeatmapCardMinHeight - 32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
@@ -233,7 +484,7 @@ private fun ChatHeatmapCard(
                 fontWeight = FontWeight.Bold
             )
 
-            if (heatmapData.isEmpty()) {
+            if (showEmptyState || heatmapData.isEmpty()) {
                 Text(
                     text = "No activity yet",
                     style = MaterialTheme.typography.bodyMedium,
@@ -558,7 +809,7 @@ private fun StatCard(
     subtitle: String? = null
 ) {
     Card(
-        modifier = modifier,
+        modifier = modifier.heightIn(min = StatCardMinHeight),
         colors = CardDefaults.cardColors(
             containerColor = containerColor,
             contentColor = contentColor

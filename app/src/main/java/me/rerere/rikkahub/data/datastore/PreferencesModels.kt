@@ -22,6 +22,7 @@ import me.rerere.rikkahub.data.model.Tag
 import me.rerere.rikkahub.data.model.TextSelectionConfig
 import me.rerere.rikkahub.data.sync.BackupCleanupResult
 import me.rerere.rikkahub.ui.theme.PresetThemes
+import me.rerere.rikkahub.ui.theme.normalizePresetThemeId
 import me.rerere.search.SearchCommonOptions
 import me.rerere.search.SearchServiceOptions
 import me.rerere.tts.provider.TTSProviderSetting
@@ -248,6 +249,15 @@ internal fun Settings.normalizeWebServerSettings(): Settings {
 
 internal fun Settings.normalizeFontSettings(): Settings {
     return copy(displaySetting = displaySetting.normalizeFontSettings())
+}
+
+internal fun Settings.normalizeThemeId(): Settings {
+    val normalizedThemeId = normalizePresetThemeId(themeId)
+    return if (normalizedThemeId == themeId) {
+        this
+    } else {
+        copy(themeId = normalizedThemeId)
+    }
 }
 
 @Serializable

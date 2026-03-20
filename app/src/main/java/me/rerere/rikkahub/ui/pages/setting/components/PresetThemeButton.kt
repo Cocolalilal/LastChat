@@ -38,6 +38,7 @@ import androidx.compose.material.icons.rounded.Check
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.theme.PresetTheme
 import me.rerere.rikkahub.ui.theme.PresetThemes
+import me.rerere.rikkahub.ui.theme.normalizePresetThemeId
 
 @Composable
 fun PresetThemeButton(
@@ -123,6 +124,7 @@ fun PresetThemeButtonGroup(
     onChangeTheme: (String) -> Unit,
 ) {
     val scrollState = rememberScrollState()
+    val selectedThemeId = normalizePresetThemeId(themeId)
     
     Column(
         modifier = modifier.padding(12.dp),
@@ -142,7 +144,7 @@ fun PresetThemeButtonGroup(
                     key(theme.id) {
                         PresetThemeButton(
                             theme = theme,
-                            selected = theme.id == themeId,
+                            selected = theme.id == selectedThemeId,
                             onClick = {
                                 onChangeTheme(theme.id)
                             },

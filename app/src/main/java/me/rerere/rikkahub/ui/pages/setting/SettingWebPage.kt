@@ -381,7 +381,6 @@ fun SettingWebPage(
 
                     SettingGroupInputItem(
                         title = stringResource(R.string.setting_page_web_server_password),
-                        subtitle = stringResource(R.string.setting_page_web_server_password_desc),
                         icon = { Icon(Icons.Rounded.Lock, null) },
                     ) {
                         SecureOutlinedTextField(

@@ -665,7 +665,7 @@
   <string name="setting_provider_page_add_custom_provider">사용자 정의 제공업체 추가</string>
   <string name="setting_provider_page_add_custom_provider_desc">사용자 정의 API 엔드포인트로 추가</string>
   <string name="setting_provider_page_no_providers_but_preset">목록에 해당 제공업체가 없는 것 같습니다. 걱정하지 마세요, 프리셋이 준비되어 있습니다!</string>
-  <string name="theme_name_nightsky_blue">밤하늘 블루</string>
+    <string name="theme_name_seafoam_mint">씨폼 민트</string>
   <string name="undo">실행 취소</string>
   <string name="setting_model_page_embedding_model">임베딩 모델 (Embedding)</string>
   <string name="setting_model_page_embedding_model_desc">텍스트 임베딩을 위한 모델입니다 (예: 기억 기능 용).</string>

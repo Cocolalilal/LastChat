@@ -4,10 +4,14 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.runtime.Composable
 import me.rerere.rikkahub.ui.theme.presets.AutumnThemePreset
 import me.rerere.rikkahub.ui.theme.presets.BlackThemePreset
-import me.rerere.rikkahub.ui.theme.presets.NightskyBlueThemePreset
 import me.rerere.rikkahub.ui.theme.presets.OceanThemePreset
 import me.rerere.rikkahub.ui.theme.presets.SakuraThemePreset
+import me.rerere.rikkahub.ui.theme.presets.SeafoamMintThemePreset
 import me.rerere.rikkahub.ui.theme.presets.SpringThemePreset
+
+const val SeafoamMintThemeId = "seafoam_mint"
+
+private const val LegacyNightskyBlueThemeId = "nightsky_blue"
 
 data class PresetTheme(
     val id: String,
@@ -22,7 +26,7 @@ data class PresetTheme(
 
 val PresetThemes by lazy {
     listOf(
-        NightskyBlueThemePreset,
+        SeafoamMintThemePreset,
         OceanThemePreset,
         SakuraThemePreset,
         SpringThemePreset,
@@ -31,6 +35,14 @@ val PresetThemes by lazy {
     )
 }
 
+fun normalizePresetThemeId(id: String): String {
+    return when (id) {
+        LegacyNightskyBlueThemeId -> SeafoamMintThemeId
+        else -> id
+    }
+}
+
 fun findPresetTheme(id: String): PresetTheme {
-    return PresetThemes.find { it.id == id } ?: SakuraThemePreset
+    val normalizedId = normalizePresetThemeId(id)
+    return PresetThemes.find { it.id == normalizedId } ?: SakuraThemePreset
 }

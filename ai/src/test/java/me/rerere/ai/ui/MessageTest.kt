@@ -212,6 +212,31 @@ class MessageTest {
         assertEquals(messages, result)
     }
 
+    @Test
+    fun `toContentText excludes reasoning parts`() {
+        val message = UIMessage(
+            role = MessageRole.ASSISTANT,
+            parts = listOf(
+                UIMessagePart.Reasoning("Internal chain of thought"),
+                UIMessagePart.Text("Final response"),
+            )
+        )
+
+        assertEquals("Final response", message.toContentText())
+    }
+
+    @Test
+    fun `toContentText strips think tags from text parts`() {
+        val message = UIMessage(
+            role = MessageRole.ASSISTANT,
+            parts = listOf(
+                UIMessagePart.Text("<think>Internal chain of thought</think>\nFinal response"),
+            )
+        )
+
+        assertEquals("Final response", message.toContentText())
+    }
+
     private fun createTestMessages(count: Int): List<UIMessage> {
         return (0 until count).map { i ->
             UIMessage(
