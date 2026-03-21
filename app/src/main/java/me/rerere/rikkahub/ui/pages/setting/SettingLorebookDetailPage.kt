@@ -84,6 +84,9 @@ import me.rerere.rikkahub.data.model.LorebookActivationType
 import me.rerere.rikkahub.data.model.LorebookEntry
 import me.rerere.rikkahub.data.model.ModeAttachment
 import me.rerere.rikkahub.data.model.ModeAttachmentType
+import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.data.model.collectAttachmentFileRefs
+import me.rerere.rikkahub.data.repository.AppStorageRepository
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.FormItem
@@ -97,11 +100,13 @@ import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
-import me.rerere.rikkahub.utils.plus
-import me.rerere.rikkahub.utils.createChatFilesByContents
+import me.rerere.rikkahub.utils.OwnedFileDirectory
 import me.rerere.rikkahub.utils.getFileNameFromUri
 import me.rerere.rikkahub.utils.getFileMimeType
+import me.rerere.rikkahub.utils.importOwnedFile
+import me.rerere.rikkahub.utils.importOwnedFiles
 import me.rerere.rikkahub.utils.LorebookExportImport
+import me.rerere.rikkahub.utils.plus
 import androidx.activity.result.contract.ActivityResultContracts
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
@@ -482,6 +487,10 @@ fun SettingLorebookDetailPage(
                                     updateLorebook(lorebook.copy(
                                         entries = lorebook.entries.filter { it.id != entry.id }
                                     ))
+                                    vm.cleanupFilesIfUnreferenced(
+                                        fileRefs = deletedEntry.collectAttachmentFileRefs(),
+                                        delayMs = 4500L,
+                                    )
                                     toaster.show(
                                         message = context.getString(R.string.lorebook_entry_deleted, entry.name.ifEmpty { context.getString(R.string.lorebook_entry_unnamed) }),
                                         action = ToastAction(
@@ -534,7 +543,8 @@ fun SettingLorebookDetailPage(
     if (showAddEntrySheet || editingEntry != null) {
         EntryEditorSheet(
             entry = editingEntry,
-            onDismiss = {
+            onDismiss = { discardedFileRefs ->
+                vm.cleanupFilesIfUnreferenced(discardedFileRefs)
                 showAddEntrySheet = false
                 editingEntry = null
             },
@@ -542,6 +552,7 @@ fun SettingLorebookDetailPage(
                 // Capture editing state before async work
                 val wasEditing = editingEntry != null
                 val currentLorebook = lorebook
+                val originalEntry = editingEntry
                 
                 // Generate embedding for RAG entries
                 scope.launch {
@@ -567,6 +578,13 @@ fun SettingLorebookDetailPage(
                             if (it.id == finalEntry.id) finalEntry else it
                         }
                         updateLorebook(currentLorebook.copy(entries = updatedEntries))
+                        vm.cleanupFilesIfUnreferenced(
+                            originalEntry
+                                ?.attachments
+                                .orEmpty()
+                                .map { attachment -> attachment.url }
+                                .filter { url -> finalEntry.attachments.none { it.url == url } }
+                        )
                     } else {
                         updateLorebook(currentLorebook.copy(entries = currentLorebook.entries + finalEntry))
                     }
@@ -581,9 +599,17 @@ fun SettingLorebookDetailPage(
     if (showEditLorebookSheet) {
         LorebookEditorSheet(
             lorebook = lorebook,
-            onDismiss = { showEditLorebookSheet = false },
+            onDismiss = { discardedFileRefs ->
+                vm.cleanupFilesIfUnreferenced(discardedFileRefs)
+                showEditLorebookSheet = false
+            },
             onSave = { updated ->
                 updateLorebook(updated)
+                val previousCoverUrl = (lorebook.cover as? Avatar.Image)?.url
+                val updatedCoverUrl = (updated.cover as? Avatar.Image)?.url
+                if (previousCoverUrl != null && previousCoverUrl != updatedCoverUrl) {
+                    vm.cleanupFilesIfUnreferenced(listOf(previousCoverUrl))
+                }
                 showEditLorebookSheet = false
             }
         )
@@ -686,18 +712,18 @@ private fun EntryCard(
 @Composable
 private fun EntryEditorSheet(
     entry: LorebookEntry?,
-    onDismiss: () -> Unit,
+    onDismiss: (List<String>) -> Unit,
     onSave: (LorebookEntry) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val appStorageRepository: AppStorageRepository = koinInject()
     
     // Capture entry ID and initial values ONCE at composition time
     // Using Unit as key means these values are captured only on first composition
     // and won't change even if parent recomposes
     val entryId by remember { mutableStateOf(entry?.id) }
-    val isEditing by remember { mutableStateOf(entry != null) }
     
     var name by remember { mutableStateOf(entry?.name ?: "") }
     var prompt by remember { mutableStateOf(entry?.prompt ?: "") }
@@ -710,29 +736,55 @@ private fun EntryEditorSheet(
         mutableStateOf(entry?.injectionPosition ?: InjectionPosition.AFTER_SYSTEM) 
     }
     var attachments by remember { mutableStateOf(entry?.attachments ?: emptyList()) }
+    val initialAttachmentUrls = remember(entry) {
+        entry?.attachments?.map { attachment -> attachment.url }?.toSet().orEmpty()
+    }
+
+    fun cleanupUnsavedAttachments(urls: Collection<String>) {
+        if (urls.isEmpty()) {
+            return
+        }
+        scope.launch {
+            appStorageRepository.deleteFilesIfUnreferenced(urls)
+        }
+    }
+
+    fun currentDiscardedAttachmentUrls(): List<String> {
+        return attachments.map { attachment -> attachment.url }
+            .filter { url -> url !in initialAttachmentUrls }
+    }
+
+    fun dismissEditor() {
+        onDismiss(currentDiscardedAttachmentUrls())
+    }
     
     // Image picker
     val imagePickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetMultipleContents()
     ) { uris ->
         if (uris.isNotEmpty()) {
-            val savedUris = context.createChatFilesByContents(uris)
-            val newAttachments = savedUris.mapIndexed { index, uri ->
-                val originalUri = uris.getOrNull(index)
-                val fileName = originalUri?.let { context.getFileNameFromUri(it) } ?: "image"
-                val mime = originalUri?.let { context.getFileMimeType(it) } ?: "image/*"
-                val type = when {
-                    mime.startsWith("video/") -> ModeAttachmentType.VIDEO
-                    else -> ModeAttachmentType.IMAGE
-                }
-                ModeAttachment(
-                    url = uri.toString(),
-                    type = type,
-                    fileName = fileName,
-                    mime = mime
+            scope.launch {
+                val savedUris = context.importOwnedFiles(
+                    uris = uris,
+                    directory = OwnedFileDirectory.LOREBOOK_ATTACHMENT,
                 )
+                val newAttachments = savedUris.mapIndexed { index, uri ->
+                    val originalUri = uris.getOrNull(index)
+                    val fileName = originalUri?.let { context.getFileNameFromUri(it) } ?: "image"
+                    val mime = originalUri?.let { context.getFileMimeType(it) } ?: "image/*"
+                    val type = when {
+                        mime.startsWith("video/") -> ModeAttachmentType.VIDEO
+                        else -> ModeAttachmentType.IMAGE
+                    }
+                    ModeAttachment(
+                        url = uri.toString(),
+                        type = type,
+                        fileName = fileName,
+                        mime = mime
+                    )
+                }
+                attachments = attachments + newAttachments
             }
-            attachments = attachments + newAttachments
         }
     }
     
@@ -741,29 +793,34 @@ private fun EntryEditorSheet(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
         if (uris.isNotEmpty()) {
-            val savedUris = context.createChatFilesByContents(uris)
-            val newAttachments = savedUris.mapIndexed { index, uri ->
-                val originalUri = uris.getOrNull(index)
-                val fileName = originalUri?.let { context.getFileNameFromUri(it) } ?: "file"
-                val mime = originalUri?.let { context.getFileMimeType(it) } ?: "application/octet-stream"
-                val type = when {
-                    mime.startsWith("audio/") -> ModeAttachmentType.AUDIO
-                    else -> ModeAttachmentType.DOCUMENT
-                }
-                ModeAttachment(
-                    url = uri.toString(),
-                    type = type,
-                    fileName = fileName,
-                    mime = mime
+            scope.launch {
+                val savedUris = context.importOwnedFiles(
+                    uris = uris,
+                    directory = OwnedFileDirectory.LOREBOOK_ATTACHMENT,
                 )
+                val newAttachments = savedUris.mapIndexed { index, uri ->
+                    val originalUri = uris.getOrNull(index)
+                    val fileName = originalUri?.let { context.getFileNameFromUri(it) } ?: "file"
+                    val mime = originalUri?.let { context.getFileMimeType(it) } ?: "application/octet-stream"
+                    val type = when {
+                        mime.startsWith("audio/") -> ModeAttachmentType.AUDIO
+                        else -> ModeAttachmentType.DOCUMENT
+                    }
+                    ModeAttachment(
+                        url = uri.toString(),
+                        type = type,
+                        fileName = fileName,
+                        mime = mime
+                    )
+                }
+                attachments = attachments + newAttachments
             }
-            attachments = attachments + newAttachments
         }
     }
     
     ModalBottomSheet(
 containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
-        onDismissRequest = onDismiss,
+        onDismissRequest = { dismissEditor() },
         sheetState = sheetState,
         sheetGesturesEnabled = false,
         dragHandle = {
@@ -771,7 +828,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 onClick = {
                     scope.launch {
                         sheetState.hide()
-                        onDismiss()
+                        dismissEditor()
                     }
                 }
             ) {
@@ -935,6 +992,9 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 LorebookEntryAttachmentItem(
                                     attachment = attachment,
                                     onRemove = {
+                                        if (attachment.url !in initialAttachmentUrls) {
+                                            cleanupUnsavedAttachments(listOf(attachment.url))
+                                        }
                                         attachments = attachments.filter { it != attachment }
                                     }
                                 )
@@ -977,7 +1037,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(onClick = onDismiss) {
+                TextButton(onClick = { dismissEditor() }) {
                     Text(stringResource(R.string.cancel))
                 }
                 Spacer(Modifier.width(8.dp))
@@ -1010,31 +1070,61 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
 @Composable
 private fun LorebookEditorSheet(
     lorebook: Lorebook,
-    onDismiss: () -> Unit,
+    onDismiss: (List<String>) -> Unit,
     onSave: (Lorebook) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val appStorageRepository: AppStorageRepository = koinInject()
     
     var name by remember { mutableStateOf(lorebook.name) }
     var description by remember { mutableStateOf(lorebook.description) }
     var cover by remember { mutableStateOf(lorebook.cover) }
+    val initialCoverUrl = remember(lorebook) {
+        (lorebook.cover as? Avatar.Image)?.url
+    }
+
+    fun cleanupIfUnsaved(url: String?) {
+        if (url.isNullOrBlank() || url == initialCoverUrl) {
+            return
+        }
+        scope.launch {
+            appStorageRepository.deleteFilesIfUnreferenced(listOf(url))
+        }
+    }
+
+    fun discardedCoverRefs(): List<String> {
+        val currentCoverUrl = (cover as? Avatar.Image)?.url
+        return listOfNotNull(currentCoverUrl?.takeIf { it != initialCoverUrl })
+    }
+
+    fun dismissEditor() {
+        onDismiss(discardedCoverRefs())
+    }
     
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
     ) { uri: android.net.Uri? ->
         uri?.let {
-            val localUri = context.createChatFilesByContents(listOf(it)).firstOrNull()
-            if (localUri != null) {
-                cover = me.rerere.rikkahub.data.model.Avatar.Image(localUri.toString())
+            scope.launch {
+                val previousUnsavedCoverUrl = (cover as? Avatar.Image)?.url?.takeIf { existing ->
+                    existing != initialCoverUrl
+                }
+                context.importOwnedFile(
+                    sourceUri = it,
+                    directory = OwnedFileDirectory.LOREBOOK_COVER,
+                )?.let { localUri ->
+                    cleanupIfUnsaved(previousUnsavedCoverUrl)
+                    cover = me.rerere.rikkahub.data.model.Avatar.Image(localUri.toString())
+                }
             }
         }
     }
     
     ModalBottomSheet(
 containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
-        onDismissRequest = onDismiss,
+        onDismissRequest = { dismissEditor() },
         sheetState = sheetState
     ) {
         Column(
@@ -1124,7 +1214,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(onClick = onDismiss) {
+                TextButton(onClick = { dismissEditor() }) {
                     Text(stringResource(R.string.cancel))
                 }
                 Spacer(Modifier.width(8.dp))

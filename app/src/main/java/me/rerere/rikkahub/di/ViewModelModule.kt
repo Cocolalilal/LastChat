@@ -21,9 +21,11 @@ val viewModelModule = module {
             context = get(),
             settingsStore = get(),
             conversationRepo = get(),
+            chatAttachmentRepository = get(),
             chatService = get(),
             updateChecker = get(),
-            appScope = get()
+            appScope = get(),
+            appStorageRepository = get(),
         )
     }
     viewModel<SettingVM> {
@@ -31,7 +33,8 @@ val viewModelModule = module {
             settingsStore = get(),
             mcpManager = get(),
             context = get(),
-            okHttpClient = get()
+            okHttpClient = get(),
+            appStorageRepository = get(),
         )
     }
     viewModelOf(::AssistantVM)
@@ -44,6 +47,7 @@ val viewModelModule = module {
             context = get(),
             chatEpisodeDAO = get(),
             providerManager = get(),
+            appStorageRepository = get(),
         )
     }
     viewModel<ShareHandlerVM> {

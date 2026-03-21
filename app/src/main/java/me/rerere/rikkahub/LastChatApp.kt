@@ -31,6 +31,8 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import me.rerere.rikkahub.service.CHAT_STORAGE_MAINTENANCE_WORK_NAME
+import me.rerere.rikkahub.service.ChatStorageMaintenanceWorker
 import me.rerere.rikkahub.service.MemoryConsolidationWorker
 import me.rerere.rikkahub.service.SPONTANEOUS_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.service.SPONTANEOUS_WORK_INTERVAL_MINUTES
@@ -85,6 +87,21 @@ class LastChatApp : Application() {
             PeriodicWorkRequestBuilder<SpontaneousWorker>(
                 SPONTANEOUS_WORK_INTERVAL_MINUTES,
                 TimeUnit.MINUTES
+            )
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .build()
+                )
+                .build()
+        )
+
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            CHAT_STORAGE_MAINTENANCE_WORK_NAME,
+            ExistingPeriodicWorkPolicy.UPDATE,
+            PeriodicWorkRequestBuilder<ChatStorageMaintenanceWorker>(
+                1,
+                TimeUnit.DAYS
             )
                 .setConstraints(
                     Constraints.Builder()

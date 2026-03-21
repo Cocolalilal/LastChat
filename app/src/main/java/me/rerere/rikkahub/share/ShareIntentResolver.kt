@@ -9,8 +9,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.repository.ChatAttachmentManager
 import me.rerere.rikkahub.utils.JsonInstant
-import me.rerere.rikkahub.utils.createChatFilesByContents
 import me.rerere.rikkahub.utils.createChatTextFile
 import me.rerere.rikkahub.utils.getFileMimeType
 import me.rerere.rikkahub.utils.getFileNameFromUri
@@ -210,12 +210,16 @@ internal fun Intent.copyShareGrantFlagsFrom(source: Intent) {
     clipData = source.clipData
 }
 
-private fun android.content.Context.copyShareAttachment(
+private suspend fun android.content.Context.copyShareAttachment(
     rawUri: String,
     fallbackMimeType: String?,
 ): ShareAttachment? {
     val sourceUri = rawUri.toUri()
-    val copiedUri = createChatFilesByContents(listOf(sourceUri)).firstOrNull() ?: return null
+    val copiedUri = ChatAttachmentManager.importChatFile(
+        uri = sourceUri,
+        fileNameHint = getFileNameFromUri(sourceUri),
+        mimeHint = getFileMimeType(sourceUri) ?: fallbackMimeType,
+    )?.uri ?: return null
     return ShareAttachment(
         uri = copiedUri.toString(),
         fileName = getFileNameFromUri(sourceUri) ?: "file",

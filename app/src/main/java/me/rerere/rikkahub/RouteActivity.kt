@@ -73,6 +73,7 @@ import me.rerere.rikkahub.ui.pages.developer.DeveloperPage
 import me.rerere.rikkahub.ui.pages.imggen.ImageGenPage
 import me.rerere.rikkahub.ui.pages.menu.MenuPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAboutPage
+import me.rerere.rikkahub.ui.pages.setting.SettingChatStoragePage
 import me.rerere.rikkahub.ui.pages.setting.SettingDisplayPage
 
 import me.rerere.rikkahub.ui.pages.setting.SettingMcpPage
@@ -702,6 +703,10 @@ class RouteActivity : ComponentActivity() {
                         SettingAboutPage()
                     }
 
+                    composable<Screen.SettingChatStorage> {
+                        SettingChatStoragePage()
+                    }
+
                     composable<Screen.SettingSearch> {
                         SettingSearchPage()
                     }
@@ -901,6 +906,9 @@ sealed interface Screen {
 
     @Serializable
     data object SettingAbout : Screen
+
+    @Serializable
+    data object SettingChatStorage : Screen
 
     @Serializable
     data object SettingSearch : Screen

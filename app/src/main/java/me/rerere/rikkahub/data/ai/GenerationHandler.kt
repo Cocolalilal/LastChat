@@ -59,6 +59,7 @@ import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.LorebookActivationType
 import me.rerere.rikkahub.data.model.LorebookEntry
 import me.rerere.rikkahub.data.model.ModeAttachmentType
+import me.rerere.rikkahub.data.repository.ChatAttachmentRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.utils.applyPlaceholders
@@ -401,6 +402,7 @@ class GenerationHandler(
     private val providerManager: ProviderManager,
     private val json: Json,
     private val memoryRepo: MemoryRepository,
+    private val chatAttachmentRepository: ChatAttachmentRepository,
     private val conversationRepo: ConversationRepository,
     private val aiLoggingManager: AILoggingManager,
     private val embeddingService: me.rerere.rikkahub.data.ai.rag.EmbeddingService,
@@ -859,9 +861,13 @@ class GenerationHandler(
                 } else historyLimitedMessages
             } else historyLimitedMessages
         } ?: historyLimitedMessages
+        val imageArchivedMessages = archiveOldImageMessages(
+            messages = searchPrunedMessages,
+            assistant = assistant,
+        )
         
         // Chat History (reverse order to prioritize recent)
-        val chatHistoryCandidates = searchPrunedMessages.truncate(truncateIndex).reversed()
+        val chatHistoryCandidates = imageArchivedMessages.truncate(truncateIndex).reversed()
         
         // Memories (Prepare effective memories including recent chats if enabled)
         val effectiveMemoriesCandidates = if (assistant.enableMemory) {
@@ -1086,6 +1092,56 @@ class GenerationHandler(
             usedModes = usedModes,
             usedMemories = usedMemories
         )
+    }
+
+    private suspend fun archiveOldImageMessages(
+        messages: List<UIMessage>,
+        assistant: Assistant,
+    ): List<UIMessage> {
+        val threshold = assistant.archiveImagesAfterMessageAge?.takeIf { it > 0 } ?: return messages
+        val archiveBeforeIndex = (messages.size - threshold).coerceAtLeast(0)
+        if (archiveBeforeIndex <= 0) {
+            return messages
+        }
+
+        return messages.mapIndexed { index, message ->
+            if (index >= archiveBeforeIndex) {
+                return@mapIndexed message
+            }
+
+            var changed = false
+            val updatedParts = buildList {
+                message.parts.forEach { part ->
+                    if (part is UIMessagePart.Image) {
+                        val ocrText = chatAttachmentRepository.resolveAttachmentOcrText(
+                            part = part,
+                            ensureAvailable = true,
+                        )
+                        if (!ocrText.isNullOrBlank()) {
+                            changed = true
+                            add(
+                                UIMessagePart.Text(
+                                    """
+                                    [Archived image OCR]
+                                    $ocrText
+                                    """.trimIndent()
+                                )
+                            )
+                        } else {
+                            add(part)
+                        }
+                    } else {
+                        add(part)
+                    }
+                }
+            }
+
+            if (changed) {
+                message.copy(parts = updatedParts)
+            } else {
+                message
+            }
+        }
     }
 
     private suspend fun generateInternal(

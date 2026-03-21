@@ -84,6 +84,7 @@ import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupInputItem
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.openUrl
 import me.rerere.rikkahub.utils.plus
 import me.rerere.rikkahub.utils.writeClipboardText
@@ -260,47 +261,61 @@ fun SettingWebPage(
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
             item {
+                val settingsSurface = if (LocalDarkMode.current) {
+                    MaterialTheme.colorScheme.surfaceContainerLow
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainerHighest
+                }
                 Card(
                     shape = AppShapes.CardLarge,
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                    colors = CardDefaults.cardColors(containerColor = settingsSurface),
                     modifier = Modifier
                         .padding(horizontal = 16.dp, vertical = 0.dp)
                         .padding(bottom = 12.dp)
                         .clip(AppShapes.CardLarge)
                 ) {
-                    Box(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(
                                 brush = Brush.verticalGradient(
-                                    colors = listOf(
-                                        MaterialTheme.colorScheme.primaryContainer,
-                                        MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    colorStops = arrayOf(
+                                        0.0f to MaterialTheme.colorScheme.primaryContainer,
+                                        0.35f to MaterialTheme.colorScheme.primaryContainer,
+                                        1.0f to settingsSurface,
                                     )
                                 )
                             )
-                            .padding(20.dp)
                     ) {
                         Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(20.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.setting_page_web_server_hero_title),
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Text(
+                                text = stringResource(serverState.statusTextResId()),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.86f)
+                            )
+                        }
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(20.dp),
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text(
-                                    text = stringResource(R.string.setting_page_web_server_hero_title),
-                                    style = MaterialTheme.typography.headlineSmall,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                                Text(
-                                    text = stringResource(serverState.statusTextResId()),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.86f)
-                                )
-                                Text(
-                                    text = stringResource(R.string.setting_page_web_server_hero_desc),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+                            Text(
+                                text = stringResource(R.string.setting_page_web_server_hero_desc),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
 
                             WebActionButtons(
                                 showOpenButton = serverState.phase == WebServerPhase.Running,

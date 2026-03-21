@@ -87,6 +87,7 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.repository.ChatAttachmentManager
 import me.rerere.rikkahub.ui.components.ai.MinimalChatInput
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
@@ -98,12 +99,13 @@ import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.service.ChatPersistenceMode
 import me.rerere.rikkahub.ui.theme.AssistantChatTheme
 import me.rerere.rikkahub.utils.base64Decode
-import me.rerere.rikkahub.utils.createChatFilesByContents
 import me.rerere.rikkahub.utils.getFileNameFromUri
 import me.rerere.rikkahub.utils.getFileMimeType
 import me.rerere.rikkahub.utils.navigateToChatPage
+import kotlinx.coroutines.Dispatchers
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
+import kotlinx.coroutines.withContext
 import kotlin.uuid.Uuid
 
 internal fun hasConversationMessages(conversation: Conversation): Boolean {
@@ -286,46 +288,43 @@ fun ChatPage(
         windowAdaptiveInfo.width > windowAdaptiveInfo.height && windowAdaptiveInfo.width >= 1100.dp
 
     val inputState = rememberChatInputState(
-        message = remember(files) {
-            buildList {
-                files.forEach { sourceFile ->
-                    val mimeType = context.getFileMimeType(sourceFile)
-                    val fileName = context.getFileNameFromUri(sourceFile) ?: "file"
-                    val localFile = if (sourceFile.scheme == "file") {
-                        sourceFile
-                    } else {
-                        context.createChatFilesByContents(listOf(sourceFile)).firstOrNull()
-                    } ?: return@forEach
-                    when {
-                        mimeType?.startsWith("image/") == true -> {
-                            add(UIMessagePart.Image(url = localFile.toString()))
-                        }
-
-                        mimeType?.startsWith("video/") == true -> {
-                            add(UIMessagePart.Video(url = localFile.toString()))
-                        }
-
-                        mimeType?.startsWith("audio/") == true -> {
-                            add(UIMessagePart.Audio(url = localFile.toString()))
-                        }
-
-                        else -> {
-                            add(
-                                UIMessagePart.Document(
-                                    url = localFile.toString(),
-                                    fileName = fileName,
-                                    mime = mimeType ?: "application/octet-stream"
-                                )
-                            )
-                        }
-                    }
-                }
-            }
-        },
         textContent = remember(text) {
             text?.base64Decode() ?: ""
         }
     )
+    LaunchedEffect(files) {
+        if (files.isEmpty() || inputState.messageContent.isNotEmpty()) {
+            return@LaunchedEffect
+        }
+        val importedParts = withContext(Dispatchers.IO) {
+            buildList {
+                files.forEach { sourceFile ->
+                    val mimeType = context.getFileMimeType(sourceFile)
+                    val fileName = context.getFileNameFromUri(sourceFile) ?: "file"
+                    val localFile = ChatAttachmentManager.importChatFile(
+                        uri = sourceFile,
+                        fileNameHint = fileName,
+                        mimeHint = mimeType,
+                    )?.uri ?: return@forEach
+                    when {
+                        mimeType?.startsWith("image/") == true -> add(UIMessagePart.Image(url = localFile.toString()))
+                        mimeType?.startsWith("video/") == true -> add(UIMessagePart.Video(url = localFile.toString()))
+                        mimeType?.startsWith("audio/") == true -> add(UIMessagePart.Audio(url = localFile.toString()))
+                        else -> add(
+                            UIMessagePart.Document(
+                                url = localFile.toString(),
+                                fileName = fileName,
+                                mime = mimeType ?: "application/octet-stream"
+                            )
+                        )
+                    }
+                }
+            }
+        }
+        if (importedParts.isNotEmpty()) {
+            inputState.messageContent = importedParts
+        }
+    }
 
     val chatListState = rememberLazyListState()
     LaunchedEffect(conversation.messageNodes.size) {

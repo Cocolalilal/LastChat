@@ -14,6 +14,7 @@ import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TRANSLATION_PROMPT
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantSearchMode
 import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.data.model.ChatStorageSettings
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.Mode
@@ -79,6 +80,7 @@ data class Settings(
     val modes: List<Mode> = emptyList(),
     val lorebooks: List<Lorebook> = emptyList(),
     val skills: List<Skill> = emptyList(),
+    val chatStorage: ChatStorageSettings = ChatStorageSettings(),
     val dismissedBanners: Set<String> = emptySet(),
     val textSelectionConfig: TextSelectionConfig = TextSelectionConfig(),
 ) {

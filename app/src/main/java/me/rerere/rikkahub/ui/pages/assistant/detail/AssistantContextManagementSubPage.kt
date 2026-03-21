@@ -153,7 +153,7 @@ fun AssistantContextManagementSubPage(
         // SEARCH RESULTS
         // ═══════════════════════════════════════════════════════════════════
         SettingsGroup(title = stringResource(R.string.context_search_results_title)) {
-            val maxSearchResults = assistant.maxSearchResultsRetained ?: 0
+            val maxSearchResults = assistant.maxSearchResultsRetained ?: 10
             var searchSliderValue by remember(maxSearchResults) { mutableFloatStateOf(maxSearchResults.toFloat()) }
             
             SliderSettingCard(
@@ -174,6 +174,35 @@ fun AssistantContextManagementSubPage(
                 },
                 valueRange = 0f..50f,
                 steps = 49
+            )
+        }
+
+        SettingsGroup(title = "Image Context") {
+            val archiveThreshold = assistant.archiveImagesAfterMessageAge ?: 0
+            var archiveSliderValue by remember(archiveThreshold) {
+                mutableFloatStateOf(archiveThreshold.toFloat())
+            }
+
+            SliderSettingCard(
+                title = if (archiveSliderValue.roundToInt() == 0) {
+                    "Keep all images in context"
+                } else {
+                    "Archive images after ${archiveSliderValue.roundToInt()} messages"
+                },
+                value = archiveSliderValue,
+                valueText = "",
+                description = "Older chat images stay visible in the transcript, but once OCR is ready they stop consuming image context and use text instead.",
+                onValueChange = { archiveSliderValue = it },
+                onValueChangeFinished = {
+                    val newValue = archiveSliderValue.roundToInt()
+                    onUpdate(
+                        assistant.copy(
+                            archiveImagesAfterMessageAge = if (newValue == 0) null else newValue
+                        )
+                    )
+                },
+                valueRange = 0f..60f,
+                steps = 59,
             )
         }
 

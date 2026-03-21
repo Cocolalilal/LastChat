@@ -557,7 +557,7 @@
     <string name="setting_page_data_backup_desc">Backup and restore app data</string>
     <string name="setting_page_data_settings">Data Settings</string>
     <string name="setting_page_default_model">Default Models</string>
-    <string name="setting_page_default_model_desc">Set default models for features</string>
+    <string name="setting_page_default_model_desc">Choose default models</string>
     <string name="setting_page_display_setting">Advanced Settings</string>
     <string name="setting_page_display_setting_desc">Manage display options</string>
     <string name="setting_page_documentation">Documentation</string>

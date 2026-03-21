@@ -90,12 +90,11 @@ import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.replaceRegexes
 import me.rerere.rikkahub.data.model.shouldAutoSummarizeMessages
 import me.rerere.rikkahub.data.model.toMessageNode
+import me.rerere.rikkahub.data.repository.ChatAttachmentRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.utils.JsonInstantPretty
 import me.rerere.rikkahub.utils.applyPlaceholders
-import me.rerere.rikkahub.utils.createChatFilesByContents
-import me.rerere.rikkahub.utils.deleteChatFiles
 import me.rerere.rikkahub.utils.getFileMimeType
 import me.rerere.search.SearchService
 import me.rerere.search.SearchServiceOptions
@@ -205,10 +204,10 @@ internal fun selectConversationTurnVersion(
     )
 }
 
-internal fun buildForkConversationSnapshot(
+internal suspend fun buildForkConversationSnapshot(
     conversation: Conversation,
     messageId: Uuid,
-    copyAttachmentUrl: (String) -> String,
+    copyAttachmentUrl: suspend (String) -> String,
     newConversationId: Uuid = Uuid.random(),
     now: Instant = Instant.now(),
 ): Conversation? {
@@ -400,6 +399,7 @@ class ChatService(
     private val appScope: AppScope,
     private val settingsStore: SettingsStore,
     private val conversationRepo: ConversationRepository,
+    private val chatAttachmentRepository: ChatAttachmentRepository,
     private val memoryRepository: MemoryRepository,
     private val generationHandler: GenerationHandler,
     private val templateTransformer: TemplateTransformer,
@@ -581,6 +581,10 @@ class ChatService(
 
         val conversation = withContext(Dispatchers.IO) {
             conversationRepo.getConversationById(conversationId)
+        }?.let { loadedConversation ->
+            withContext(Dispatchers.IO) {
+                chatAttachmentRepository.syncConversationAttachments(loadedConversation)
+            }
         }
         if (conversation != null) {
             updateConversation(conversationId, conversation)
@@ -1752,12 +1756,9 @@ class ChatService(
             }
             recentlyDeletedConversations[conversation.id] = conversationFull
 
-            // Schedule file deletion
+            // Finalize the soft-delete window after a short undo grace period.
             val job = appScope.launch {
                 kotlinx.coroutines.delay(4000)
-                withContext(Dispatchers.IO) {
-                    context.deleteChatFiles(conversationFull.files)
-                }
                 conversationDeletionJobs.remove(conversation.id)
                 recentlyDeletedConversations.remove(conversation.id)
             }
@@ -1827,13 +1828,12 @@ class ChatService(
     }
 
     // 更新对话
-    private fun copyAttachmentUrl(url: String): String {
+    private suspend fun copyAttachmentUrl(url: String): String {
         if (!url.startsWith("file:") && !url.startsWith("content:")) {
             return url
         }
 
-        val copied = context.createChatFilesByContents(listOf(url.toUri())).firstOrNull()
-        return copied?.toString() ?: url
+        return chatAttachmentRepository.copyOrReuseUrl(url)
     }
 
     private fun collectRelatedMessages(
@@ -1917,24 +1917,13 @@ class ChatService(
     private suspend fun updateConversation(conversationId: Uuid, conversation: Conversation) {
         if (conversation.id != conversationId) return
         val normalizedConversation = normalizeConversation(conversation)
-        checkFilesDelete(normalizedConversation, getConversationFlow(conversationId).value)
         conversations.getOrPut(conversationId) { MutableStateFlow(normalizedConversation) }.value =
             normalizedConversation
     }
 
     // 检查文件删除
     private suspend fun checkFilesDelete(newConversation: Conversation, oldConversation: Conversation) {
-        val newFiles = newConversation.files
-        val oldFiles = oldConversation.files
-        val deletedFiles = oldFiles.filter { file ->
-            newFiles.none { it == file }
-        }
-        if (deletedFiles.isNotEmpty()) {
-            withContext(Dispatchers.IO) {
-                context.deleteChatFiles(deletedFiles)
-            }
-            Log.w(TAG, "checkFilesDelete: $deletedFiles")
-        }
+        // Attachment lifecycle is synchronized through ChatAttachmentRepository.
     }
 
     // Context Refresh result
@@ -2141,14 +2130,17 @@ class ChatService(
     // 保存对话
     suspend fun saveConversation(conversationId: Uuid, conversation: Conversation) {
         val normalizedConversation = normalizeConversation(conversation)
+        val synchronizedConversation = withContext(Dispatchers.IO) {
+            chatAttachmentRepository.syncConversationAttachments(normalizedConversation)
+        }
 
         // 临时对话不持久化到数据库
         if (getConversationPersistenceMode(conversationId) != ChatPersistenceMode.NORMAL) {
-            updateConversation(conversationId, normalizedConversation)
+            updateConversation(conversationId, synchronizedConversation)
             return
         }
 
-        val updatedConversation = normalizedConversation.copy()
+        val updatedConversation = synchronizedConversation.copy()
         // Always update in-memory state (even for empty conversations)
         // This ensures mode toggles work on new chats before first message
         updateConversation(conversationId, updatedConversation)

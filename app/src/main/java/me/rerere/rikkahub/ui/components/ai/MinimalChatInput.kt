@@ -140,7 +140,6 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
-import me.rerere.rikkahub.utils.createChatFilesByContents
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
 import me.rerere.rikkahub.data.ai.tools.AskUserAnswer
 import me.rerere.rikkahub.data.ai.tools.AskUserAnswerPayload
@@ -148,6 +147,7 @@ import me.rerere.rikkahub.data.ai.tools.AskUserOption
 import me.rerere.rikkahub.data.ai.tools.AskUserQuestionnaire
 import me.rerere.rikkahub.data.ai.tools.findPendingAskUserToolCall
 import me.rerere.rikkahub.data.ai.tools.toJsonElement
+import me.rerere.rikkahub.data.repository.ChatAttachmentManager
 import me.rerere.rikkahub.utils.JsonInstantPretty
 import java.io.File
 import kotlin.uuid.Uuid
@@ -420,11 +420,14 @@ fun MinimalChatInput(
                         transferableContent.hasMediaType(MediaType.Image) -> {
                             transferableContent.consume { item ->
                                 item.uri?.let { uri ->
-                                    state.addImages(
-                                        context.createChatFilesByContents(
-                                            listOf(uri)
-                                        )
-                                    )
+                                    scope.launch {
+                                        val importedUris = withContext(Dispatchers.IO) {
+                                            ChatAttachmentManager.importChatFiles(listOf(uri))
+                                        }
+                                        if (importedUris.isNotEmpty()) {
+                                            state.addImages(importedUris)
+                                        }
+                                    }
                                 }
                                 item.uri != null
                             }
@@ -933,7 +936,7 @@ private fun MinimalPickerContent(
 
         scope.launch {
             val importedUris = withContext(Dispatchers.IO) {
-                context.createChatFilesByContents(uris)
+                ChatAttachmentManager.importChatFiles(uris)
             }
             if (importedUris.isEmpty()) {
                 Log.w("MinimalChatInput", "Failed to import ${uris.size} selected image(s)")

@@ -10,6 +10,7 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.data.repository.AppStorageRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 
@@ -17,7 +18,8 @@ class AssistantVM(
     private val settingsStore: SettingsStore,
     private val memoryRepository: MemoryRepository,
     private val conversationRepo: ConversationRepository,
-    private val appScope: me.rerere.rikkahub.AppScope
+    private val appScope: me.rerere.rikkahub.AppScope,
+    private val appStorageRepository: AppStorageRepository,
 ) : ViewModel() {
     val settings: StateFlow<Settings> = settingsStore.settingsFlow
         .stateIn(viewModelScope, SharingStarted.Lazily, Settings.dummy())
@@ -53,9 +55,12 @@ class AssistantVM(
             } else {
                 assistant
             }
+            val seededAssistant = newAssistant.copy(
+                maxSearchResultsRetained = newAssistant.maxSearchResultsRetained ?: 10
+            )
             settingsStore.update(
                 settings.copy(
-                    assistants = settings.assistants.plus(newAssistant)
+                    assistants = settings.assistants.plus(seededAssistant)
                 )
             )
         }
@@ -81,6 +86,7 @@ class AssistantVM(
             kotlinx.coroutines.delay(4000) // 4 seconds to undo
             memoryRepository.deleteMemoriesOfAssistant(assistant.id.toString())
             conversationRepo.deleteConversationOfAssistant(assistant.id)
+            appStorageRepository.deleteFilesIfUnreferenced(assistant.collectMediaFileRefs())
             deletionJobs.remove(assistant.id)
         }
         deletionJobs[assistant.id] = job
@@ -123,4 +129,11 @@ class AssistantVM(
 
     fun getMemories(assistant: Assistant) =
         memoryRepository.getMemoriesOfAssistantFlow(assistant.id.toString())
+}
+
+private fun Assistant.collectMediaFileRefs(): List<String> {
+    return buildList {
+        (avatar as? Avatar.Image)?.url?.let(::add)
+        background?.let(::add)
+    }
 }

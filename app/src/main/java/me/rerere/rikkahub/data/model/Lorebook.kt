@@ -68,6 +68,19 @@ data class Lorebook(
     val updatedAt: Long = System.currentTimeMillis()
 )
 
+fun Lorebook.collectMediaFileRefs(): List<String> {
+    return buildList {
+        (cover as? Avatar.Image)?.url?.let(::add)
+        entries.forEach { entry ->
+            addAll(entry.collectAttachmentFileRefs())
+        }
+    }
+}
+
+fun LorebookEntry.collectAttachmentFileRefs(): List<String> {
+    return attachments.map { attachment -> attachment.url }
+}
+
 /**
  * Export format for lorebooks to share between LastChat users.
  */

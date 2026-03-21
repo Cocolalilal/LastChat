@@ -43,13 +43,14 @@ import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.replaceRegexes
+import me.rerere.rikkahub.data.repository.AppStorageRepository
+import me.rerere.rikkahub.data.repository.ChatAttachmentRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.service.ChatPersistenceMode
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.ui.hooks.writeStringPreference
 import me.rerere.rikkahub.utils.UiState
 import me.rerere.rikkahub.utils.UpdateChecker
-import me.rerere.rikkahub.utils.deleteChatFiles
 import me.rerere.rikkahub.utils.toLocalString
 import java.time.LocalDate
 import java.time.ZoneId
@@ -62,9 +63,11 @@ class ChatVM(
     private val context: Application,
     private val settingsStore: SettingsStore,
     private val conversationRepo: ConversationRepository,
+    private val chatAttachmentRepository: ChatAttachmentRepository,
     private val chatService: ChatService,
     val updateChecker: UpdateChecker,
-    private val appScope: me.rerere.rikkahub.AppScope
+    private val appScope: me.rerere.rikkahub.AppScope,
+    private val appStorageRepository: AppStorageRepository,
 ) : ViewModel() {
     private val _conversationId: Uuid = Uuid.parse(id)
     val conversation: StateFlow<Conversation> = chatService.getConversationFlow(_conversationId)
@@ -279,19 +282,15 @@ class ChatVM(
             // 检查用户头像是否有变化，如果有则删除旧头像
             checkUserAvatarDelete(oldSettings, newSettings)
             settingsStore.update(newSettings)
+            appStorageRepository.deleteFilesIfUnreferenced(
+                collectRemovedUserAvatarRefs(oldSettings, newSettings)
+            )
         }
     }
 
     // 检查用户头像删除
     private suspend fun checkUserAvatarDelete(oldSettings: Settings, newSettings: Settings) {
-        val oldAvatar = oldSettings.displaySetting.userAvatar
-        val newAvatar = newSettings.displaySetting.userAvatar
-
-        if (oldAvatar is Avatar.Image && oldAvatar != newAvatar) {
-            withContext(Dispatchers.IO) {
-                context.deleteChatFiles(listOf(oldAvatar.url.toUri()))
-            }
-        }
+        // Cleanup now happens after the settings update through orphan-aware storage checks.
     }
 
     fun updateConversationAssistant(updatedAssistant: Assistant) {
@@ -576,7 +575,7 @@ class ChatVM(
 
     fun deleteFile(uri: Uri) {
         appScope.launch(Dispatchers.IO) {
-            context.deleteChatFiles(listOf(uri))
+            chatAttachmentRepository.discardImportedUri(uri)
         }
     }
 
@@ -595,4 +594,13 @@ class ChatVM(
             else -> date.toLocalString(date.year != today.year)
         }
     }
+}
+
+private fun collectRemovedUserAvatarRefs(
+    oldSettings: Settings,
+    newSettings: Settings,
+): List<String> {
+    val oldAvatar = oldSettings.displaySetting.userAvatar as? Avatar.Image ?: return emptyList()
+    val newAvatar = newSettings.displaySetting.userAvatar as? Avatar.Image
+    return if (oldAvatar.url != newAvatar?.url) listOf(oldAvatar.url) else emptyList()
 }

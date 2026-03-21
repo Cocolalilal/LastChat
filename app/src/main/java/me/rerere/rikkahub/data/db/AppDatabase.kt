@@ -13,14 +13,18 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.data.db.dao.ChatEpisodeDAO
+import me.rerere.rikkahub.data.db.dao.ChatAttachmentDao
 import me.rerere.rikkahub.data.db.dao.ConversationDAO
+import me.rerere.rikkahub.data.db.dao.ConversationAttachmentRefDao
 import me.rerere.rikkahub.data.db.dao.DailyActivityDAO
 import me.rerere.rikkahub.data.db.dao.EmbeddingCacheDAO
 import me.rerere.rikkahub.data.db.dao.GenMediaDAO
 import me.rerere.rikkahub.data.db.dao.UsageStatsDAO
 import me.rerere.rikkahub.data.db.dao.MemoryDAO
 import me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity
+import me.rerere.rikkahub.data.db.entity.ChatAttachmentEntity
 import me.rerere.rikkahub.data.db.entity.ConversationEntity
+import me.rerere.rikkahub.data.db.entity.ConversationAttachmentRefEntity
 import me.rerere.rikkahub.data.db.entity.DailyActivityEntity
 import me.rerere.rikkahub.data.db.entity.EmbeddingCacheEntity
 import me.rerere.rikkahub.data.db.entity.GenMediaEntity
@@ -38,8 +42,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 @Database(
-    entities = [ConversationEntity::class, MemoryEntity::class, GenMediaEntity::class, ChatEpisodeEntity::class, EmbeddingCacheEntity::class, DailyActivityEntity::class, UsageStatsEntity::class],
-    version = 24,
+    entities = [ConversationEntity::class, MemoryEntity::class, GenMediaEntity::class, ChatEpisodeEntity::class, EmbeddingCacheEntity::class, DailyActivityEntity::class, UsageStatsEntity::class, ChatAttachmentEntity::class, ConversationAttachmentRefEntity::class],
+    version = 25,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -61,11 +65,16 @@ import kotlinx.serialization.json.put
         AutoMigration(from = 21, to = 22), // Adds DailyActivityEntity table for persistent streak tracking
         // 22->23 is manual migration (MIGRATION_22_23)
         // 23->24 is manual migration (MIGRATION_23_24) - adds usage_stats table
+        // 24->25 is manual migration (MIGRATION_24_25) - adds chat attachment catalog tables
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun conversationDao(): ConversationDAO
+
+    abstract fun chatAttachmentDao(): ChatAttachmentDao
+
+    abstract fun conversationAttachmentRefDao(): ConversationAttachmentRefDao
 
     abstract fun memoryDao(): MemoryDAO
 
@@ -335,6 +344,49 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("UPDATE usage_stats SET total_messages = COALESCE((SELECT SUM(message_count) FROM daily_activity), 0) WHERE id = 1")
                 
                 Log.i(TAG, "migrate: migrate from 23 to 24 success")
+            }
+        }
+
+        val MIGRATION_24_25 = object : Migration(24, 25) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "migrate: start migrate from 24 to 25")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `chat_attachment` (
+                        `id` TEXT NOT NULL,
+                        `file_path` TEXT NOT NULL DEFAULT '',
+                        `display_name` TEXT NOT NULL DEFAULT '',
+                        `sha256` TEXT NOT NULL,
+                        `mime` TEXT NOT NULL DEFAULT '',
+                        `kind` TEXT NOT NULL,
+                        `size_bytes` INTEGER NOT NULL DEFAULT 0,
+                        `width` INTEGER,
+                        `height` INTEGER,
+                        `ocr_text` TEXT,
+                        `ocr_status` TEXT NOT NULL DEFAULT 'NONE',
+                        `created_at` INTEGER NOT NULL,
+                        `updated_at` INTEGER NOT NULL,
+                        `deleted` INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_chat_attachment_file_path` ON `chat_attachment` (`file_path`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_chat_attachment_sha256` ON `chat_attachment` (`sha256`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_chat_attachment_kind` ON `chat_attachment` (`kind`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_chat_attachment_deleted` ON `chat_attachment` (`deleted`)")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `conversation_attachment_ref` (
+                        `conversation_id` TEXT NOT NULL,
+                        `attachment_id` TEXT NOT NULL,
+                        PRIMARY KEY(`conversation_id`, `attachment_id`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_conversation_attachment_ref_attachment_id` ON `conversation_attachment_ref` (`attachment_id`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_conversation_attachment_ref_conversation_id` ON `conversation_attachment_ref` (`conversation_id`)")
+                Log.i(TAG, "migrate: migrate from 24 to 25 success")
             }
         }
     }

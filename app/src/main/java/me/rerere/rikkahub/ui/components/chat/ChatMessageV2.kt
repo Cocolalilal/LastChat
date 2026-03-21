@@ -49,12 +49,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastForEach
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.core.net.toUri
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -72,7 +75,11 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantAffectScope
+import me.rerere.rikkahub.data.model.ChatAttachmentState
 import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.rikkahub.data.model.chatAttachmentDisplayName
+import me.rerere.rikkahub.data.model.chatAttachmentMimeHint
+import me.rerere.rikkahub.data.model.chatAttachmentState
 import me.rerere.rikkahub.data.model.replaceRegexes
 import me.rerere.rikkahub.ui.components.message.ChatMessageActionButtons
 import me.rerere.rikkahub.ui.components.message.ChatMessageActionsSheet
@@ -206,10 +213,20 @@ fun List<MessageNode>.groupIntoTurns(): List<MessageTurnGroup> {
 }
 
 private sealed interface RenderableAttachment {
-    data class Image(val url: String) : RenderableAttachment
+    data class Image(
+        val url: String,
+        val archived: Boolean,
+        val label: String,
+    ) : RenderableAttachment
 
     data class File(
         val url: String,
+        val fileName: String,
+        val mimeType: String?,
+        val archived: Boolean,
+    ) : RenderableAttachment
+
+    data class Placeholder(
         val fileName: String,
         val mimeType: String?,
     ) : RenderableAttachment
@@ -223,58 +240,94 @@ private fun collectRenderableAttachments(
 ): List<RenderableAttachment> {
     return buildList {
         parts.forEach { part ->
+            val attachmentState = part.chatAttachmentState()
             when (part) {
                 is UIMessagePart.Image -> {
                     if (part.url.isNotBlank()) {
-                        add(RenderableAttachment.Image(url = part.url))
+                        add(
+                            RenderableAttachment.Image(
+                                url = part.url,
+                                archived = attachmentState != ChatAttachmentState.ACTIVE,
+                                label = part.chatAttachmentDisplayName().orEmpty().ifBlank {
+                                    resolveAttachmentDisplayName(
+                                        context = context,
+                                        url = part.url,
+                                        fallbackLabel = "Image",
+                                    )
+                                },
+                            )
+                        )
+                    } else if (attachmentState != ChatAttachmentState.ACTIVE) {
+                        add(
+                            RenderableAttachment.Placeholder(
+                                fileName = buildString {
+                                    append(part.chatAttachmentDisplayName().orEmpty().ifBlank { "Image" })
+                                    append(if (attachmentState == ChatAttachmentState.ARCHIVED) " (archived)" else " (deleted)")
+                                },
+                                mimeType = part.chatAttachmentMimeHint() ?: "image/*",
+                            )
+                        )
                     }
                 }
 
                 is UIMessagePart.Document -> {
-                    if (part.url.isNotBlank()) {
+                    if (part.url.isNotBlank() || attachmentState != ChatAttachmentState.ACTIVE) {
                         add(
                             RenderableAttachment.File(
                                 url = part.url,
-                                fileName = part.fileName.ifBlank {
-                                    resolveAttachmentDisplayName(
-                                        context = context,
-                                        url = part.url,
-                                        fallbackLabel = "File",
-                                    )
+                                fileName = part.chatAttachmentDisplayName().orEmpty().ifBlank {
+                                    part.fileName.ifBlank {
+                                        resolveAttachmentDisplayName(
+                                            context = context,
+                                            url = part.url,
+                                            fallbackLabel = "File",
+                                        )
+                                    }
                                 },
-                                mimeType = part.mime,
+                                mimeType = part.chatAttachmentMimeHint() ?: part.mime,
+                                archived = attachmentState != ChatAttachmentState.ACTIVE,
                             )
                         )
                     }
                 }
 
                 is UIMessagePart.Video -> {
-                    if (part.url.isNotBlank()) {
+                    if (part.url.isNotBlank() || attachmentState != ChatAttachmentState.ACTIVE) {
                         add(
                             RenderableAttachment.File(
                                 url = part.url,
-                                fileName = resolveAttachmentDisplayName(
-                                    context = context,
-                                    url = part.url,
-                                    fallbackLabel = fallbackVideoLabel,
-                                ),
-                                mimeType = context.getFileMimeType(part.url.toUri()) ?: "video/*",
+                                fileName = part.chatAttachmentDisplayName().orEmpty().ifBlank {
+                                    resolveAttachmentDisplayName(
+                                        context = context,
+                                        url = part.url,
+                                        fallbackLabel = fallbackVideoLabel,
+                                    )
+                                },
+                                mimeType = part.chatAttachmentMimeHint()
+                                    ?: context.getFileMimeType(part.url.toUri())
+                                    ?: "video/*",
+                                archived = attachmentState != ChatAttachmentState.ACTIVE,
                             )
                         )
                     }
                 }
 
                 is UIMessagePart.Audio -> {
-                    if (part.url.isNotBlank()) {
+                    if (part.url.isNotBlank() || attachmentState != ChatAttachmentState.ACTIVE) {
                         add(
                             RenderableAttachment.File(
                                 url = part.url,
-                                fileName = resolveAttachmentDisplayName(
-                                    context = context,
-                                    url = part.url,
-                                    fallbackLabel = fallbackAudioLabel,
-                                ),
-                                mimeType = context.getFileMimeType(part.url.toUri()) ?: "audio/*",
+                                fileName = part.chatAttachmentDisplayName().orEmpty().ifBlank {
+                                    resolveAttachmentDisplayName(
+                                        context = context,
+                                        url = part.url,
+                                        fallbackLabel = fallbackAudioLabel,
+                                    )
+                                },
+                                mimeType = part.chatAttachmentMimeHint()
+                                    ?: context.getFileMimeType(part.url.toUri())
+                                    ?: "audio/*",
+                                archived = attachmentState != ChatAttachmentState.ACTIVE,
                             )
                         )
                     }
@@ -316,6 +369,17 @@ private fun AttachmentRow(
     val context = LocalContext.current
     val haptics = rememberPremiumHaptics()
     val horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start
+    val saturationMatrix = remember {
+        android.graphics.ColorMatrix().apply { setSaturation(0f) }
+    }
+    val colorFilter = remember(saturationMatrix) {
+        android.graphics.ColorMatrixColorFilter(saturationMatrix)
+    }
+    val grayscalePaint = remember(colorFilter) {
+        android.graphics.Paint().apply {
+            this.colorFilter = colorFilter
+        }
+    }
 
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp, horizontalAlignment),
@@ -325,26 +389,56 @@ private fun AttachmentRow(
         attachments.fastForEach { attachment ->
             when (attachment) {
                 is RenderableAttachment.Image -> {
+                    val archivedModifier = if (attachment.archived) {
+                        Modifier
+                            .graphicsLayer { alpha = 0.99f }
+                            .drawWithContent {
+                                drawIntoCanvas { canvas ->
+                                    canvas.nativeCanvas.saveLayer(null, grayscalePaint)
+                                    drawContent()
+                                    canvas.nativeCanvas.restore()
+                                }
+                            }
+                            .graphicsLayer(alpha = 0.72f)
+                    } else {
+                        Modifier
+                    }
                     ZoomableAsyncImage(
                         model = attachment.url,
                         contentDescription = null,
                         modifier = Modifier
                             .clip(MaterialTheme.shapes.medium)
                             .height(72.dp)
+                            .then(archivedModifier)
                     )
                 }
 
                 is RenderableAttachment.File -> {
                     DocumentChip(
+                        fileName = if (attachment.archived && attachment.url.isBlank()) {
+                            "${attachment.fileName} (archived)"
+                        } else {
+                            attachment.fileName
+                        },
+                        mimeType = attachment.mimeType,
+                        modifier = Modifier.graphicsLayer(alpha = if (attachment.archived) 0.72f else 1f),
+                        onClick = {
+                            if (attachment.url.isNotBlank()) {
+                                haptics.perform(HapticPattern.Pop)
+                                context.openAttachmentUri(
+                                    uri = attachment.url.toUri(),
+                                    mimeType = attachment.mimeType,
+                                )
+                            }
+                        }
+                    )
+                }
+
+                is RenderableAttachment.Placeholder -> {
+                    DocumentChip(
                         fileName = attachment.fileName,
                         mimeType = attachment.mimeType,
-                        onClick = {
-                            haptics.perform(HapticPattern.Pop)
-                            context.openAttachmentUri(
-                                uri = attachment.url.toUri(),
-                                mimeType = attachment.mimeType,
-                            )
-                        }
+                        modifier = Modifier.graphicsLayer(alpha = 0.72f),
                     )
                 }
             }

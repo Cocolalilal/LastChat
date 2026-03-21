@@ -3,8 +3,8 @@ package me.rerere.rikkahub.ui.components.ai
 import android.content.Context
 import android.net.Uri
 import me.rerere.ai.ui.UIMessagePart
-import me.rerere.rikkahub.utils.createChatFilesByContents
 import me.rerere.rikkahub.utils.getFileNameFromUri
+import me.rerere.rikkahub.data.repository.ChatAttachmentManager
 
 private const val PDF_MIME_TYPE = "application/pdf"
 
@@ -21,7 +21,7 @@ private data class PendingDocumentImport(
     val mimeType: String,
 )
 
-internal fun Context.prepareImportedPickerFiles(
+internal suspend fun Context.prepareImportedPickerFiles(
     selectedUris: List<Uri>,
     isPythonEnabled: Boolean,
 ): ImportedPickerFiles {
@@ -56,7 +56,7 @@ internal fun Context.prepareImportedPickerFiles(
     }
 
     val importedImages = if (imageUris.isNotEmpty()) {
-        createChatFilesByContents(imageUris)
+        ChatAttachmentManager.importChatFiles(imageUris)
     } else {
         emptyList()
     }
@@ -64,7 +64,11 @@ internal fun Context.prepareImportedPickerFiles(
     val importedDocuments = mutableListOf<UIMessagePart.Document>()
     val failedFileNames = mutableListOf<String>()
     documentsToImport.forEach { document ->
-        val localUri = createChatFilesByContents(listOf(document.sourceUri)).firstOrNull()
+        val localUri = ChatAttachmentManager.importChatFile(
+            uri = document.sourceUri,
+            fileNameHint = document.fileName,
+            mimeHint = document.mimeType,
+        )?.uri
         if (localUri == null) {
             failedFileNames.add(document.fileName)
             return@forEach

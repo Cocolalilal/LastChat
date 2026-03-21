@@ -29,7 +29,6 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -67,6 +66,8 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.isNotConfigured
+import me.rerere.rikkahub.data.model.AppStorageSnapshot
+import me.rerere.rikkahub.data.repository.AppStorageRepository
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.context.LocalNavController
@@ -75,18 +76,24 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.hooks.rememberColorMode
 import me.rerere.rikkahub.ui.theme.ColorMode
-import me.rerere.rikkahub.utils.countChatFiles
+import me.rerere.rikkahub.utils.fileSizeToString
 import me.rerere.rikkahub.utils.openUrl
 import me.rerere.rikkahub.utils.plus
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
 
 @Composable
-fun SettingPage(vm: SettingVM = koinViewModel()) {
+fun SettingPage(
+    vm: SettingVM = koinViewModel(),
+    appStorageRepository: AppStorageRepository = koinInject(),
+) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val navController = LocalNavController.current
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val storageSnapshot by appStorageRepository.observeSnapshot()
+        .collectAsStateWithLifecycle(initialValue = AppStorageSnapshot())
     val lazyListState = rememberLazyListState()
     val mainSettingItemPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp)
     
@@ -266,23 +273,16 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.Backup) }
                     )
-                    val context = LocalContext.current
-                    val storageState by produceState(-1 to 0L) {
-                        value = context.countChatFiles()
-                    }
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_chat_storage),
-                        subtitle = if (storageState.first == -1) {
-                            stringResource(R.string.calculating)
+                        subtitle = if (storageSnapshot.isScanning) {
+                            "Scanning app storage..."
                         } else {
-                            stringResource(
-                                R.string.setting_page_chat_storage_desc,
-                                storageState.first,
-                                storageState.second / 1024 / 1024.0
-                            )
+                            "App ${storageSnapshot.totalBytes.fileSizeToString()} \u2022 Chat ${storageSnapshot.chatBytes.fileSizeToString()}"
                         },
                         icon = { Icon(Icons.Rounded.Storage, null, modifier = Modifier.size(20.dp)) },
-                        contentPadding = mainSettingItemPadding
+                        contentPadding = mainSettingItemPadding,
+                        onClick = { navController.navigate(Screen.SettingChatStorage) }
                     )
                 }
             }
@@ -303,7 +303,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     val context = LocalContext.current
                     SettingGroupItem(
                         title = "Buy Me a Coffee",
-                        subtitle = stringResource(R.string.setting_page_donate_desc),
                         icon = { Icon(Icons.Rounded.Favorite, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { 

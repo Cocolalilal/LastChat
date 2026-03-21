@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
@@ -37,6 +38,8 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 @Composable
 fun SettingsGroup(
     title: String,
+    horizontalPadding: Dp = 16.dp,
+    titleStartPadding: Dp = 16.dp,
     content: @Composable ColumnScope.() -> Unit
 ) {
     Column(
@@ -48,11 +51,11 @@ fun SettingsGroup(
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(start = 16.dp, bottom = 4.dp, top = 0.dp)
+            modifier = Modifier.padding(start = titleStartPadding, bottom = 4.dp, top = 0.dp)
         )
         Column(
             modifier = Modifier
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = horizontalPadding)
                 .clip(RoundedCornerShape(24.dp)),
             verticalArrangement = Arrangement.spacedBy(4.dp),
             content = content
