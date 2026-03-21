@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.ui.pages.menu
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,8 +25,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.automirrored.rounded.Input
@@ -42,6 +42,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -50,7 +51,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -63,8 +63,7 @@ import me.rerere.rikkahub.ui.modifier.shimmer
 import me.rerere.rikkahub.ui.motion.LocalMotionPolicy
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.plus
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import org.koin.androidx.compose.koinViewModel
 import java.time.LocalDate
 import java.time.YearMonth
@@ -95,185 +94,193 @@ fun MenuPage() {
             )
         },
     ) { innerPadding ->
-        when (val state = uiState) {
-            MenuUiState.Loading -> MenuLoadingContent(innerPadding = innerPadding)
-            is MenuUiState.Ready -> MenuLoadedContent(
-                stats = state.stats,
-                showEmptyActivity = false,
-                innerPadding = innerPadding
-            )
-            is MenuUiState.Empty -> MenuLoadedContent(
-                stats = state.stats,
-                showEmptyActivity = true,
-                innerPadding = innerPadding
-            )
-        }
+        MenuStatsContent(
+            uiState = uiState,
+            innerPadding = innerPadding
+        )
     }
 }
 
 @Composable
-private fun MenuLoadedContent(
-    stats: MenuStats,
-    showEmptyActivity: Boolean,
+private fun MenuStatsContent(
+    uiState: MenuUiState,
     innerPadding: PaddingValues
 ) {
+    val loadedStats = when (uiState) {
+        MenuUiState.Loading -> null
+        is MenuUiState.Ready -> uiState.stats
+        is MenuUiState.Empty -> uiState.stats
+    }
+    val showEmptyActivity = uiState is MenuUiState.Empty
+    val revealStage = rememberStatsWidgetRevealStage(
+        isLoading = uiState is MenuUiState.Loading,
+        revealKey = uiState !is MenuUiState.Loading
+    )
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = innerPadding + PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            ChatHeatmapCard(
-                heatmapData = stats.heatmapData,
-                showEmptyState = showEmptyActivity,
-                modifier = Modifier.fillMaxWidth()
+            StatsWidgetCrossfade(
+                showContent = loadedStats != null && revealStage >= 0,
+                loadingContent = {
+                    ChatHeatmapSkeletonCard(modifier = Modifier.fillMaxWidth())
+                },
+                loadedContent = {
+                    val stats = checkNotNull(loadedStats)
+                    ChatHeatmapCard(
+                        heatmapData = stats.heatmapData,
+                        showEmptyState = showEmptyActivity,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             )
         }
 
         item {
-            StatsRow {
-                StatCard(
-                    title = "Daily Streak",
-                    value = "${stats.dailyChatStreak}",
-                    subtitle = "days",
-                    icon = Icons.Rounded.LocalFireDepartment,
-                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                )
-                StatCard(
-                    title = "Conversations",
-                    value = formatCount(stats.usageStats.totalConversations),
-                    icon = Icons.AutoMirrored.Rounded.Chat,
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                )
-            }
+            StatsWidgetCrossfade(
+                showContent = loadedStats != null && revealStage >= 1,
+                loadingContent = {
+                    StatsRow {
+                        StatCardSkeleton(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                        )
+                        StatCardSkeleton(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                        )
+                    }
+                },
+                loadedContent = {
+                    val stats = checkNotNull(loadedStats)
+                    StatsRow {
+                        StatCard(
+                            title = "Daily Streak",
+                            value = "${stats.dailyChatStreak}",
+                            subtitle = "days",
+                            icon = Icons.Rounded.LocalFireDepartment,
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                        )
+                        StatCard(
+                            title = "Conversations",
+                            value = formatCount(stats.usageStats.totalConversations),
+                            icon = Icons.AutoMirrored.Rounded.Chat,
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                        )
+                    }
+                }
+            )
         }
 
         item {
-            StatsRow {
-                StatCard(
-                    title = "Messages",
-                    value = formatCount(stats.usageStats.totalMessages),
-                    icon = Icons.AutoMirrored.Rounded.Message,
-                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                )
-                StatCard(
-                    title = "Input Tokens",
-                    value = formatTokenCount(stats.usageStats.inputTokens),
-                    icon = Icons.AutoMirrored.Rounded.Input,
-                    containerColor = if (LocalDarkMode.current) {
-                        MaterialTheme.colorScheme.surfaceContainerHigh
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainerHighest
-                    },
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                )
-            }
+            StatsWidgetCrossfade(
+                showContent = loadedStats != null && revealStage >= 2,
+                loadingContent = {
+                    StatsRow {
+                        StatCardSkeleton(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                        )
+                        StatCardSkeleton(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                        )
+                    }
+                },
+                loadedContent = {
+                    val stats = checkNotNull(loadedStats)
+                    StatsRow {
+                        StatCard(
+                            title = "Messages",
+                            value = formatCount(stats.usageStats.totalMessages),
+                            icon = Icons.AutoMirrored.Rounded.Message,
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                        )
+                        StatCard(
+                            title = "Input Tokens",
+                            value = formatTokenCount(stats.usageStats.inputTokens),
+                            icon = Icons.AutoMirrored.Rounded.Input,
+                            containerColor = if (LocalDarkMode.current) {
+                                MaterialTheme.colorScheme.surfaceContainerHigh
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerHighest
+                            },
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                        )
+                    }
+                }
+            )
         }
 
         item {
-            StatsRow {
-                StatCard(
-                    title = "Output Tokens",
-                    value = formatTokenCount(stats.usageStats.outputTokens),
-                    icon = Icons.Rounded.Output,
-                    containerColor = if (LocalDarkMode.current) {
-                        MaterialTheme.colorScheme.surfaceContainerHigh
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainerHighest
-                    },
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                )
-                StatCard(
-                    title = "Cached Tokens",
-                    value = formatTokenCount(stats.usageStats.cachedTokens),
-                    icon = Icons.Rounded.Savings,
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                )
-            }
-        }
-
-        item {
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-    }
-}
-
-@Composable
-private fun MenuLoadingContent(innerPadding: PaddingValues) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = innerPadding + PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item {
-            ChatHeatmapSkeletonCard(modifier = Modifier.fillMaxWidth())
-        }
-
-        item {
-            StatsRow {
-                StatCardSkeleton(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                )
-                StatCardSkeleton(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                )
-            }
-        }
-
-        item {
-            StatsRow {
-                StatCardSkeleton(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                )
-                StatCardSkeleton(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                )
-            }
-        }
-
-        item {
-            StatsRow {
-                StatCardSkeleton(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                )
-                StatCardSkeleton(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                )
-            }
+            StatsWidgetCrossfade(
+                showContent = loadedStats != null && revealStage >= 3,
+                loadingContent = {
+                    StatsRow {
+                        StatCardSkeleton(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                        )
+                        StatCardSkeleton(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                        )
+                    }
+                },
+                loadedContent = {
+                    val stats = checkNotNull(loadedStats)
+                    StatsRow {
+                        StatCard(
+                            title = "Output Tokens",
+                            value = formatTokenCount(stats.usageStats.outputTokens),
+                            icon = Icons.Rounded.Output,
+                            containerColor = if (LocalDarkMode.current) {
+                                MaterialTheme.colorScheme.surfaceContainerHigh
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerHighest
+                            },
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                        )
+                        StatCard(
+                            title = "Cached Tokens",
+                            value = formatTokenCount(stats.usageStats.cachedTokens),
+                            icon = Icons.Rounded.Savings,
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                        )
+                    }
+                }
+            )
         }
 
         item {
@@ -291,6 +298,61 @@ private fun StatsRow(content: @Composable RowScope.() -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         content = content
     )
+}
+
+@Composable
+private fun StatsWidgetCrossfade(
+    showContent: Boolean,
+    loadingContent: @Composable () -> Unit,
+    loadedContent: @Composable () -> Unit
+) {
+    val motionPolicy = LocalMotionPolicy.current
+
+    Crossfade(
+        targetState = showContent,
+        animationSpec = tween(
+            durationMillis = if (motionPolicy.reduceMotion) 90 else 140
+        ),
+        label = "stats-widget-crossfade"
+    ) { isLoaded ->
+        if (isLoaded) {
+            loadedContent()
+        } else {
+            loadingContent()
+        }
+    }
+}
+
+@Composable
+private fun rememberStatsWidgetRevealStage(
+    isLoading: Boolean,
+    revealKey: Any
+): Int {
+    val motionPolicy = LocalMotionPolicy.current
+    var revealStage by remember(revealKey, motionPolicy.reduceMotion) {
+        mutableIntStateOf(if (isLoading) -1 else if (motionPolicy.reduceMotion) 3 else -1)
+    }
+
+    LaunchedEffect(isLoading, revealKey, motionPolicy.reduceMotion) {
+        if (isLoading) {
+            revealStage = -1
+            return@LaunchedEffect
+        }
+        if (motionPolicy.reduceMotion) {
+            revealStage = 3
+            return@LaunchedEffect
+        }
+
+        revealStage = 0
+        delay(36)
+        revealStage = 1
+        delay(36)
+        revealStage = 2
+        delay(36)
+        revealStage = 3
+    }
+
+    return revealStage
 }
 
 @Composable
@@ -561,88 +623,6 @@ private fun SkeletonBlock(
     )
 }
 
-private data class HeatmapRevealState(
-    val titleAlpha: Float,
-    val summaryAlpha: Float,
-    val monthChipsAlpha: Float,
-    val rowAlphas: List<Float>,
-    val legendAlpha: Float
-) {
-    fun rowAlpha(index: Int): Float = rowAlphas.getOrElse(index) { 1f }
-}
-
-@Composable
-private fun rememberHeatmapRevealState(revealKey: Any): HeatmapRevealState {
-    val motionPolicy = LocalMotionPolicy.current
-    val titleAlpha = remember(revealKey) { Animatable(if (motionPolicy.reduceMotion) 1f else 0f) }
-    val summaryAlpha = remember(revealKey) { Animatable(if (motionPolicy.reduceMotion) 1f else 0f) }
-    val monthChipsAlpha = remember(revealKey) { Animatable(if (motionPolicy.reduceMotion) 1f else 0f) }
-    val rowAlphas = remember(revealKey) {
-        List(7) { Animatable(if (motionPolicy.reduceMotion) 1f else 0f) }
-    }
-    val legendAlpha = remember(revealKey) { Animatable(if (motionPolicy.reduceMotion) 1f else 0f) }
-
-    LaunchedEffect(revealKey, motionPolicy.reduceMotion) {
-        if (motionPolicy.reduceMotion) {
-            titleAlpha.snapTo(1f)
-            summaryAlpha.snapTo(1f)
-            monthChipsAlpha.snapTo(1f)
-            rowAlphas.forEach { it.snapTo(1f) }
-            legendAlpha.snapTo(1f)
-            return@LaunchedEffect
-        }
-
-        titleAlpha.snapTo(0f)
-        summaryAlpha.snapTo(0f)
-        monthChipsAlpha.snapTo(0f)
-        rowAlphas.forEach { it.snapTo(0f) }
-        legendAlpha.snapTo(0f)
-
-        coroutineScope {
-            launch {
-                titleAlpha.animateTo(1f, animationSpec = tween(durationMillis = 80))
-            }
-            launch {
-                summaryAlpha.animateTo(
-                    1f,
-                    animationSpec = tween(durationMillis = 90, delayMillis = 24)
-                )
-            }
-            launch {
-                monthChipsAlpha.animateTo(
-                    1f,
-                    animationSpec = tween(durationMillis = 90, delayMillis = 48)
-                )
-            }
-            rowAlphas.forEachIndexed { index, animatable ->
-                launch {
-                    animatable.animateTo(
-                        1f,
-                        animationSpec = tween(
-                            durationMillis = 85,
-                            delayMillis = 72 + (index * 18)
-                        )
-                    )
-                }
-            }
-            launch {
-                legendAlpha.animateTo(
-                    1f,
-                    animationSpec = tween(durationMillis = 90, delayMillis = 220)
-                )
-            }
-        }
-    }
-
-    return HeatmapRevealState(
-        titleAlpha = titleAlpha.value,
-        summaryAlpha = summaryAlpha.value,
-        monthChipsAlpha = monthChipsAlpha.value,
-        rowAlphas = rowAlphas.map { it.value },
-        legendAlpha = legendAlpha.value
-    )
-}
-
 @Composable
 private fun ChatHeatmapCard(
     heatmapData: List<HeatmapDay>,
@@ -673,10 +653,8 @@ private fun ChatHeatmapCard(
                 .heightIn(min = HeatmapCardMinHeight - 32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            val reveal = rememberHeatmapRevealState(revealKey = heatmapData)
             Text(
                 text = "Activity",
-                modifier = Modifier.graphicsLayer { alpha = reveal.titleAlpha },
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
@@ -757,9 +735,7 @@ private fun ChatHeatmapCard(
             }
 
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .graphicsLayer { alpha = reveal.summaryAlpha },
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -783,11 +759,9 @@ private fun ChatHeatmapCard(
                     modifier = Modifier.padding(top = headerHeight + cellSpacing),
                     verticalArrangement = Arrangement.spacedBy(cellSpacing)
                 ) {
-                    listOf("Mon", "", "Wed", "", "Fri", "", "Sun").forEachIndexed { index, label ->
+                    listOf("Mon", "", "Wed", "", "Fri", "", "Sun").forEach { label ->
                         Box(
-                            modifier = Modifier
-                                .height(cellSize)
-                                .graphicsLayer { alpha = reveal.rowAlpha(index) },
+                            modifier = Modifier.height(cellSize),
                             contentAlignment = Alignment.CenterStart
                         ) {
                             Text(
@@ -806,7 +780,6 @@ private fun ChatHeatmapCard(
                     verticalArrangement = Arrangement.spacedBy(cellSpacing)
                 ) {
                     Row(
-                        modifier = Modifier.graphicsLayer { alpha = reveal.monthChipsAlpha },
                         horizontalArrangement = Arrangement.spacedBy(monthSpacing)
                     ) {
                         layout.months.forEach { month ->
@@ -881,7 +854,6 @@ private fun ChatHeatmapCard(
 
                                             Box(
                                                 modifier = Modifier
-                                                    .graphicsLayer { alpha = reveal.rowAlpha(cell.dayIndex) }
                                                     .size(cellSize)
                                                     .clip(RoundedCornerShape(3.dp))
                                                     .background(color)
@@ -946,9 +918,7 @@ private fun ChatHeatmapCard(
             }
 
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .graphicsLayer { alpha = reveal.legendAlpha },
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {

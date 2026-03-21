@@ -219,8 +219,8 @@ fun SettingChatStoragePage(
             columns = StaggeredGridCells.Fixed(2),
             modifier = Modifier.fillMaxSize(),
             contentPadding = innerPadding + PaddingValues(
-                start = 8.dp,
-                end = 8.dp,
+                start = 12.dp,
+                end = 12.dp,
                 top = 12.dp,
                 bottom = 32.dp,
             ),
@@ -228,7 +228,7 @@ fun SettingChatStoragePage(
             verticalItemSpacing = 12.dp,
         ) {
             item(span = StaggeredGridItemSpan.FullLine) {
-                Box(modifier = Modifier.padding(horizontal = 8.dp)) {
+                Box(modifier = Modifier.padding(horizontal = 4.dp)) {
                     AppStorageHeroCard(
                         snapshot = appStorageSnapshot,
                         chatSummary = chatSummary,
@@ -239,8 +239,8 @@ fun SettingChatStoragePage(
             item(span = StaggeredGridItemSpan.FullLine) {
                 SettingsGroup(
                     title = "App storage",
-                    horizontalPadding = 8.dp,
-                    titleStartPadding = 8.dp,
+                    horizontalPadding = 4.dp,
+                    titleStartPadding = 4.dp,
                 ) {
                     val primaryCategories = appStorageSnapshot.categories.filter { it.isPrimaryStorageCategory() }
                     val secondaryCategories = appStorageSnapshot.categories.filterNot { it.isPrimaryStorageCategory() }
@@ -324,8 +324,8 @@ fun SettingChatStoragePage(
             item(span = StaggeredGridItemSpan.FullLine) {
                 SettingsGroup(
                     title = "Chat settings",
-                    horizontalPadding = 8.dp,
-                    titleStartPadding = 8.dp,
+                    horizontalPadding = 4.dp,
+                    titleStartPadding = 4.dp,
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         ResolutionSliderCard(
@@ -394,8 +394,8 @@ fun SettingChatStoragePage(
             item(span = StaggeredGridItemSpan.FullLine) {
                 SettingsGroup(
                     title = "Files",
-                    horizontalPadding = 8.dp,
-                    titleStartPadding = 8.dp,
+                    horizontalPadding = 4.dp,
+                    titleStartPadding = 4.dp,
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         CompactChipSection(
@@ -435,25 +435,21 @@ fun SettingChatStoragePage(
 
             if (visibleFiles.isEmpty()) {
                 item(span = StaggeredGridItemSpan.FullLine) {
-                    Box(modifier = Modifier.padding(horizontal = 8.dp)) {
-                        EmptyFilesCard(
-                            isSyncing = appStorageSnapshot.isScanning,
-                            hasFilters = filter != StorageFilter.ALL,
-                        )
-                    }
+                    EmptyFilesCard(
+                        isSyncing = appStorageSnapshot.isScanning,
+                        hasFilters = filter != StorageFilter.ALL,
+                    )
                 }
             } else {
                 items(visibleFiles, key = { it.id }) { attachment ->
-                    Box(modifier = Modifier.padding(horizontal = 8.dp)) {
-                        StorageAttachmentTile(
-                            attachment = attachment,
-                            haptics = haptics,
-                            onDelete = {
-                                haptics.perform(HapticPattern.Thud)
-                                pendingDeletion = attachment
-                            }
-                        )
-                    }
+                    StorageAttachmentTile(
+                        attachment = attachment,
+                        haptics = haptics,
+                        onDelete = {
+                            haptics.perform(HapticPattern.Thud)
+                            pendingDeletion = attachment
+                        }
+                    )
                 }
             }
         }
@@ -1195,7 +1191,7 @@ private fun OtherUploadsSheet(
                     .heightIn(max = 520.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalItemSpacing = 12.dp,
-                contentPadding = PaddingValues(start = 4.dp, end = 4.dp, bottom = 24.dp),
+                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 24.dp),
             ) {
                 items(files, key = { it.path }) { file ->
                     OtherUploadTile(
