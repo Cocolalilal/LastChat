@@ -204,7 +204,7 @@ internal fun chatTopBarPlacement(settings: Settings): ChatToolbarPlacement {
 }
 
 internal fun chatListTopPadding(placement: ChatToolbarPlacement): androidx.compose.ui.unit.Dp {
-    return if (placement == ChatToolbarPlacement.Top) 72.dp else 16.dp
+    return if (placement == ChatToolbarPlacement.Top) 88.dp else 16.dp
 }
 
 internal fun chatListBottomPadding(placement: ChatToolbarPlacement): androidx.compose.ui.unit.Dp {

@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.automirrored.rounded.Input
@@ -48,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -57,8 +60,11 @@ import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.modifier.shimmer
+import me.rerere.rikkahub.ui.motion.LocalMotionPolicy
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.plus
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 import java.time.LocalDate
 import java.time.YearMonth
@@ -295,6 +301,19 @@ private fun ChatHeatmapSkeletonCard(modifier: Modifier = Modifier) {
         MaterialTheme.colorScheme.surfaceContainerHigh
     }
     val contentColor = MaterialTheme.colorScheme.onSurface
+    val today = LocalDate.now()
+    val windowStart = remember(today) { today.withDayOfMonth(1).minusMonths(11) }
+    val layout = remember(today, windowStart) {
+        buildHeatmapLayout(
+            heatmapData = emptyList(),
+            windowStart = windowStart,
+            windowEnd = today
+        )
+    }
+    val cellSize = 12.dp
+    val cellSpacing = 4.dp
+    val headerHeight = 16.dp
+    val monthSpacing = 12.dp
 
     Card(
         colors = CardDefaults.cardColors(
@@ -317,51 +336,128 @@ private fun ChatHeatmapSkeletonCard(modifier: Modifier = Modifier) {
                     .height(20.dp),
                 color = contentColor
             )
-            SkeletonBlock(
-                modifier = Modifier
-                    .width(140.dp)
-                    .height(12.dp),
-                color = contentColor.copy(alpha = 0.85f)
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                SkeletonBlock(
+                    modifier = Modifier
+                        .width(134.dp)
+                        .height(12.dp),
+                    color = contentColor.copy(alpha = 0.85f)
+                )
+                SkeletonBlock(
+                    modifier = Modifier
+                        .width(78.dp)
+                        .height(10.dp),
+                    color = contentColor.copy(alpha = 0.7f)
+                )
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(top = 20.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    modifier = Modifier.padding(top = headerHeight + cellSpacing),
+                    verticalArrangement = Arrangement.spacedBy(cellSpacing)
                 ) {
-                    repeat(7) {
-                        SkeletonBlock(
-                            modifier = Modifier
-                                .width(20.dp)
-                                .height(12.dp),
-                            color = contentColor.copy(alpha = 0.7f)
-                        )
+                    listOf("Mon", "", "Wed", "", "Fri", "", "Sun").forEachIndexed { index, label ->
+                        Box(
+                            modifier = Modifier.height(cellSize),
+                            contentAlignment = Alignment.CenterStart
+                        ) {
+                            if (label.isBlank()) {
+                                SkeletonBlock(
+                                    modifier = Modifier
+                                        .width(12.dp)
+                                        .height(8.dp),
+                                    color = contentColor.copy(alpha = 0.5f + (index * 0.04f))
+                                )
+                            } else {
+                                SkeletonBlock(
+                                    modifier = Modifier
+                                        .width(22.dp)
+                                        .height(10.dp),
+                                    color = contentColor.copy(alpha = 0.7f)
+                                )
+                            }
+                        }
                     }
                 }
                 Column(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(cellSpacing)
                 ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        repeat(5) {
-                            SkeletonBlock(
+                    Row(horizontalArrangement = Arrangement.spacedBy(monthSpacing)) {
+                        layout.months.forEachIndexed { index, month ->
+                            Box(
                                 modifier = Modifier
-                                    .width(28.dp)
-                                    .height(12.dp),
-                                color = contentColor.copy(alpha = 0.7f)
-                            )
+                                    .width(
+                                        heatmapWidthForWeeks(
+                                            weekCount = month.weekSpan,
+                                            cellSize = cellSize,
+                                            cellSpacing = cellSpacing
+                                        )
+                                    )
+                                    .height(headerHeight)
+                                    .padding(horizontal = 2.dp),
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                SkeletonBlock(
+                                    modifier = Modifier
+                                        .width(
+                                            when (index % 3) {
+                                                0 -> 24.dp
+                                                1 -> 28.dp
+                                                else -> 32.dp
+                                            }
+                                        )
+                                        .height(12.dp),
+                                    color = contentColor.copy(alpha = 0.7f)
+                                )
+                            }
                         }
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        repeat(12) {
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                repeat(7) {
-                                    SkeletonBlock(
-                                        modifier = Modifier.size(12.dp),
-                                        color = contentColor
+                    Row(horizontalArrangement = Arrangement.spacedBy(monthSpacing)) {
+                        layout.months.forEach { month ->
+                            val monthWeeks = layout.weeks.subList(month.startWeekIndex, month.endWeekIndex + 1)
+                            Row(
+                                modifier = Modifier.width(
+                                    heatmapWidthForWeeks(
+                                        weekCount = month.weekSpan,
+                                        cellSize = cellSize,
+                                        cellSpacing = cellSpacing
                                     )
+                                ),
+                                horizontalArrangement = Arrangement.spacedBy(cellSpacing)
+                            ) {
+                                monthWeeks.forEach { week ->
+                                    Column(
+                                        modifier = Modifier.width(cellSize),
+                                        verticalArrangement = Arrangement.spacedBy(cellSpacing)
+                                    ) {
+                                        week.cells.forEach { cell ->
+                                            val isMonthCell = cell.isInWindow && cell.month == month.month
+                                            if (!isMonthCell) {
+                                                Spacer(modifier = Modifier.size(cellSize))
+                                            } else {
+                                                val placeholderAlpha = when ((cell.weekIndex + cell.dayIndex) % 5) {
+                                                    0 -> 0.58f
+                                                    1 -> 0.7f
+                                                    2 -> 0.5f
+                                                    3 -> 0.82f
+                                                    else -> 0.64f
+                                                }
+                                                SkeletonBlock(
+                                                    modifier = Modifier
+                                                        .size(cellSize)
+                                                        .clip(RoundedCornerShape(3.dp)),
+                                                    color = contentColor.copy(alpha = placeholderAlpha)
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -370,13 +466,30 @@ private fun ChatHeatmapSkeletonCard(modifier: Modifier = Modifier) {
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 SkeletonBlock(
                     modifier = Modifier
-                        .width(96.dp)
+                        .width(22.dp)
                         .height(10.dp),
-                    color = contentColor.copy(alpha = 0.75f)
+                    color = contentColor.copy(alpha = 0.65f)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                repeat(5) { index ->
+                    SkeletonBlock(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .clip(RoundedCornerShape(2.dp)),
+                        color = contentColor.copy(alpha = 0.45f + (index * 0.09f))
+                    )
+                    Spacer(modifier = Modifier.width(2.dp))
+                }
+                SkeletonBlock(
+                    modifier = Modifier
+                        .width(24.dp)
+                        .height(10.dp),
+                    color = contentColor.copy(alpha = 0.65f)
                 )
             }
         }
@@ -448,6 +561,88 @@ private fun SkeletonBlock(
     )
 }
 
+private data class HeatmapRevealState(
+    val titleAlpha: Float,
+    val summaryAlpha: Float,
+    val monthChipsAlpha: Float,
+    val rowAlphas: List<Float>,
+    val legendAlpha: Float
+) {
+    fun rowAlpha(index: Int): Float = rowAlphas.getOrElse(index) { 1f }
+}
+
+@Composable
+private fun rememberHeatmapRevealState(revealKey: Any): HeatmapRevealState {
+    val motionPolicy = LocalMotionPolicy.current
+    val titleAlpha = remember(revealKey) { Animatable(if (motionPolicy.reduceMotion) 1f else 0f) }
+    val summaryAlpha = remember(revealKey) { Animatable(if (motionPolicy.reduceMotion) 1f else 0f) }
+    val monthChipsAlpha = remember(revealKey) { Animatable(if (motionPolicy.reduceMotion) 1f else 0f) }
+    val rowAlphas = remember(revealKey) {
+        List(7) { Animatable(if (motionPolicy.reduceMotion) 1f else 0f) }
+    }
+    val legendAlpha = remember(revealKey) { Animatable(if (motionPolicy.reduceMotion) 1f else 0f) }
+
+    LaunchedEffect(revealKey, motionPolicy.reduceMotion) {
+        if (motionPolicy.reduceMotion) {
+            titleAlpha.snapTo(1f)
+            summaryAlpha.snapTo(1f)
+            monthChipsAlpha.snapTo(1f)
+            rowAlphas.forEach { it.snapTo(1f) }
+            legendAlpha.snapTo(1f)
+            return@LaunchedEffect
+        }
+
+        titleAlpha.snapTo(0f)
+        summaryAlpha.snapTo(0f)
+        monthChipsAlpha.snapTo(0f)
+        rowAlphas.forEach { it.snapTo(0f) }
+        legendAlpha.snapTo(0f)
+
+        coroutineScope {
+            launch {
+                titleAlpha.animateTo(1f, animationSpec = tween(durationMillis = 80))
+            }
+            launch {
+                summaryAlpha.animateTo(
+                    1f,
+                    animationSpec = tween(durationMillis = 90, delayMillis = 24)
+                )
+            }
+            launch {
+                monthChipsAlpha.animateTo(
+                    1f,
+                    animationSpec = tween(durationMillis = 90, delayMillis = 48)
+                )
+            }
+            rowAlphas.forEachIndexed { index, animatable ->
+                launch {
+                    animatable.animateTo(
+                        1f,
+                        animationSpec = tween(
+                            durationMillis = 85,
+                            delayMillis = 72 + (index * 18)
+                        )
+                    )
+                }
+            }
+            launch {
+                legendAlpha.animateTo(
+                    1f,
+                    animationSpec = tween(durationMillis = 90, delayMillis = 220)
+                )
+            }
+        }
+    }
+
+    return HeatmapRevealState(
+        titleAlpha = titleAlpha.value,
+        summaryAlpha = summaryAlpha.value,
+        monthChipsAlpha = monthChipsAlpha.value,
+        rowAlphas = rowAlphas.map { it.value },
+        legendAlpha = legendAlpha.value
+    )
+}
+
 @Composable
 private fun ChatHeatmapCard(
     heatmapData: List<HeatmapDay>,
@@ -478,8 +673,10 @@ private fun ChatHeatmapCard(
                 .heightIn(min = HeatmapCardMinHeight - 32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            val reveal = rememberHeatmapRevealState(revealKey = heatmapData)
             Text(
                 text = "Activity",
+                modifier = Modifier.graphicsLayer { alpha = reveal.titleAlpha },
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
@@ -492,7 +689,6 @@ private fun ChatHeatmapCard(
                 )
                 return@Column
             }
-
             val today = LocalDate.now()
             val windowStart = remember(today) { today.withDayOfMonth(1).minusMonths(11) }
             val layout = remember(heatmapData, windowStart, today) {
@@ -561,7 +757,9 @@ private fun ChatHeatmapCard(
             }
 
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer { alpha = reveal.summaryAlpha },
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -585,9 +783,11 @@ private fun ChatHeatmapCard(
                     modifier = Modifier.padding(top = headerHeight + cellSpacing),
                     verticalArrangement = Arrangement.spacedBy(cellSpacing)
                 ) {
-                    listOf("Mon", "", "Wed", "", "Fri", "", "Sun").forEach { label ->
+                    listOf("Mon", "", "Wed", "", "Fri", "", "Sun").forEachIndexed { index, label ->
                         Box(
-                            modifier = Modifier.height(cellSize),
+                            modifier = Modifier
+                                .height(cellSize)
+                                .graphicsLayer { alpha = reveal.rowAlpha(index) },
                             contentAlignment = Alignment.CenterStart
                         ) {
                             Text(
@@ -606,6 +806,7 @@ private fun ChatHeatmapCard(
                     verticalArrangement = Arrangement.spacedBy(cellSpacing)
                 ) {
                     Row(
+                        modifier = Modifier.graphicsLayer { alpha = reveal.monthChipsAlpha },
                         horizontalArrangement = Arrangement.spacedBy(monthSpacing)
                     ) {
                         layout.months.forEach { month ->
@@ -680,6 +881,7 @@ private fun ChatHeatmapCard(
 
                                             Box(
                                                 modifier = Modifier
+                                                    .graphicsLayer { alpha = reveal.rowAlpha(cell.dayIndex) }
                                                     .size(cellSize)
                                                     .clip(RoundedCornerShape(3.dp))
                                                     .background(color)
@@ -744,7 +946,9 @@ private fun ChatHeatmapCard(
             }
 
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer { alpha = reveal.legendAlpha },
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {

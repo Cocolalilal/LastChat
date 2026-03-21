@@ -29,6 +29,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -74,6 +75,7 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.hooks.rememberColorMode
 import me.rerere.rikkahub.ui.theme.ColorMode
+import me.rerere.rikkahub.utils.countChatFiles
 import me.rerere.rikkahub.utils.openUrl
 import me.rerere.rikkahub.utils.plus
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
@@ -165,6 +167,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     )
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_display_setting),
+                        subtitle = stringResource(R.string.setting_page_display_setting_desc),
                         icon = { Icon(Icons.Rounded.DesktopWindows, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingDisplay) }
@@ -172,6 +175,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
 
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_assistant),
+                        subtitle = stringResource(R.string.setting_page_assistant_desc),
                         icon = { Icon(Icons.Rounded.Group, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.Assistant) }
@@ -179,6 +183,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
 
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_prompt_injections),
+                        subtitle = stringResource(R.string.setting_page_prompt_injections_desc),
                         icon = { Icon(Icons.Rounded.Category, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingPromptInjections) }
@@ -193,6 +198,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                 ) {
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_default_model),
+                        subtitle = stringResource(R.string.setting_page_default_model_desc),
                         icon = { Icon(Icons.Rounded.AccountTree, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingModels) }
@@ -200,6 +206,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
 
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_providers),
+                        subtitle = stringResource(R.string.setting_page_providers_desc),
                         icon = { Icon(Icons.Rounded.Cloud, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingProvider) }
@@ -207,6 +214,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
 
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_search_service),
+                        subtitle = stringResource(R.string.setting_page_search_service_desc),
                         icon = { Icon(Icons.Rounded.Public, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingSearch) }
@@ -214,6 +222,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
 
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_tts_service),
+                        subtitle = stringResource(R.string.setting_page_tts_service_desc),
                         icon = { Icon(Icons.Rounded.RecordVoiceOver, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingTTS) }
@@ -221,6 +230,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
 
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_mcp),
+                        subtitle = stringResource(R.string.setting_page_mcp_desc),
                         icon = { Icon(Icons.Rounded.Code, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingMcp) }
@@ -228,6 +238,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
 
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_web_server),
+                        subtitle = stringResource(R.string.setting_page_web_server_desc),
                         icon = { Icon(Icons.Rounded.Language, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingWeb) }
@@ -235,6 +246,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
 
                     SettingGroupItem(
                         title = stringResource(R.string.setting_android_integration),
+                        subtitle = stringResource(R.string.setting_android_integration_desc),
                         icon = { Icon(Icons.Rounded.PhoneAndroid, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingAndroidIntegration) }
@@ -249,14 +261,27 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                 ) {
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_data_backup),
+                        subtitle = stringResource(R.string.setting_page_data_backup_desc),
                         icon = { Icon(Icons.Rounded.CloudUpload, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.Backup) }
                     )
+                    val context = LocalContext.current
+                    val storageState by produceState(-1 to 0L) {
+                        value = context.countChatFiles()
+                    }
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_chat_storage),
-                        icon = { Icon(Icons.Rounded.Storage, null, modifier = Modifier.size(20.dp)) }
-                        ,
+                        subtitle = if (storageState.first == -1) {
+                            stringResource(R.string.calculating)
+                        } else {
+                            stringResource(
+                                R.string.setting_page_chat_storage_desc,
+                                storageState.first,
+                                storageState.second / 1024 / 1024.0
+                            )
+                        },
+                        icon = { Icon(Icons.Rounded.Storage, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding
                     )
                 }
@@ -269,6 +294,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                 ) {
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_about),
+                        subtitle = stringResource(R.string.setting_page_about_desc),
                         icon = { Icon(Icons.Rounded.Info, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingAbout) }
@@ -277,6 +303,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     val context = LocalContext.current
                     SettingGroupItem(
                         title = "Buy Me a Coffee",
+                        subtitle = stringResource(R.string.setting_page_donate_desc),
                         icon = { Icon(Icons.Rounded.Favorite, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { 
