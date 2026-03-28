@@ -112,8 +112,8 @@ fun AssistantUISubPage(
             if (effectiveHeaderStyle != me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.NONE) {
                 // Changed to use TriStateSettingItem for consistent look with other settings
                 TriStateSettingItem(
-                    title = "Show Avatar in Header",
-                    subtitle = "Display character avatar in the new chat header",
+                    title = stringResource(R.string.setting_ui_show_avatar_header_title),
+                    subtitle = stringResource(R.string.setting_ui_show_avatar_header_desc),
                     value = uiSettings.newChatShowAvatar,
                     globalValue = settings.displaySetting.newChatShowAvatar,
                     onValueChange = { updateUI(uiSettings.copy(newChatShowAvatar = it)) }
@@ -147,16 +147,16 @@ fun AssistantUISubPage(
         // Chat Display Settings
         SettingsGroup(title = stringResource(R.string.setting_page_chat_settings)) {
             TriStateSettingItem(
-                title = "Show Character Avatar",
-                subtitle = "Show the character's avatar before messages",
+                title = stringResource(R.string.setting_ui_show_character_avatar_title),
+                subtitle = stringResource(R.string.setting_ui_show_character_avatar_desc),
                 value = uiSettings.showAssistantAvatar,
                 globalValue = settings.displaySetting.showModelIcon,
                 onValueChange = { updateUI(uiSettings.copy(showAssistantAvatar = it)) }
             )
 
             TriStateSettingItem(
-                title = "Message Bubbles for Characters",
-                subtitle = "Show rounded chat bubbles for assistant messages",
+                title = stringResource(R.string.setting_display_page_show_assistant_bubbles_title),
+                subtitle = stringResource(R.string.setting_display_page_show_assistant_bubbles_desc),
                 value = uiSettings.showAssistantBubbles,
                 globalValue = settings.displaySetting.showAssistantBubbles,
                 onValueChange = { updateUI(uiSettings.copy(showAssistantBubbles = it)) }
@@ -180,7 +180,7 @@ fun AssistantUISubPage(
         }
 
         // Message Jumper Settings
-        SettingsGroup(title = "Message Jumper") {
+        SettingsGroup(title = stringResource(R.string.setting_ui_message_jumper_group)) {
             TriStateSettingItem(
                 title = stringResource(R.string.setting_display_page_show_message_jumper_title),
                 subtitle = stringResource(R.string.setting_display_page_show_message_jumper_desc),
@@ -199,7 +199,7 @@ fun AssistantUISubPage(
         }
 
         // Code Blocks Settings
-        SettingsGroup(title = "Code Blocks") {
+        SettingsGroup(title = stringResource(R.string.setting_ui_code_blocks_group)) {
             TriStateSettingItem(
                 title = stringResource(R.string.setting_display_page_code_block_auto_wrap_title),
                 subtitle = stringResource(R.string.setting_display_page_code_block_auto_wrap_desc),
@@ -218,10 +218,10 @@ fun AssistantUISubPage(
         }
 
         // Context Sources Settings
-        SettingsGroup(title = "Context Sources") {
+        SettingsGroup(title = stringResource(R.string.setting_ui_context_sources_group)) {
             TriStateSettingItem(
-                title = "Show Context Stacks",
-                subtitle = "Show context sources (skills, memories, lorebooks) in message toolbar",
+                title = stringResource(R.string.setting_ui_show_context_stacks_title),
+                subtitle = stringResource(R.string.setting_ui_show_context_stacks_desc),
                 value = uiSettings.showContextStacks,
                 globalValue = settings.displaySetting.showContextStacks,
                 onValueChange = { updateUI(uiSettings.copy(showContextStacks = it)) }
@@ -265,19 +265,32 @@ private fun TriStateSettingItem(
                     FilterChip(
                         selected = value == true,
                         onClick = { onValueChange(true) },
-                        label = { Text("On") }
+                        label = { Text(stringResource(R.string.setting_ui_state_on)) }
                     )
                     FilterChip(
                         selected = value == false,
                         onClick = { onValueChange(false) },
-                        label = { Text("Off") }
+                        label = { Text(stringResource(R.string.setting_ui_state_off)) }
                     )
                 }
                 // Global below, fills to match On/Off width
                 FilterChip(
                     selected = value == null,
                     onClick = { onValueChange(null) },
-                    label = { Text("Global (${if (globalValue) "On" else "Off"})") },
+                    label = {
+                        Text(
+                            stringResource(
+                                R.string.setting_ui_state_global_value,
+                                stringResource(
+                                    if (globalValue) {
+                                        R.string.setting_ui_state_on
+                                    } else {
+                                        R.string.setting_ui_state_off
+                                    }
+                                )
+                            )
+                        )
+                    },
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -306,12 +319,12 @@ private fun FontSizeSettingItem(
             FilterChip(
                 selected = value == null,
                 onClick = { onValueChange(null) },
-                label = { Text("Global") }
+                label = { Text(stringResource(R.string.setting_ui_state_global)) }
             )
             FilterChip(
                 selected = value != null,
                 onClick = { if (value == null) onValueChange(1.0f) },
-                label = { Text("Custom") }
+                label = { Text(stringResource(R.string.setting_ui_state_custom)) }
             )
         }
 

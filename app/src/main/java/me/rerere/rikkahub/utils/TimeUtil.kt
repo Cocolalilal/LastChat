@@ -14,38 +14,41 @@ import java.util.Locale
 fun Instant.toLocalDate(): String {
     val zoneId = ZoneId.systemDefault()
     val localDateTime = this.atZone(zoneId).toLocalDateTime()
+    val locale = currentAppLocale()
 
     return DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)
-        .withLocale(Locale.getDefault())
+        .withLocale(locale)
         .format(localDateTime)
 }
 
 fun Instant.toLocalDateTime(): String {
     val zoneId = ZoneId.systemDefault()
     val localDateTime = this.atZone(zoneId).toLocalDateTime()
+    val locale = currentAppLocale()
 
     return DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM)
-        .withLocale(Locale.getDefault())
+        .withLocale(locale)
         .format(localDateTime)
 }
 
 fun Instant.toLocalTime(): String {
     val zoneId = ZoneId.systemDefault()
     val localDateTime = this.atZone(zoneId).toLocalDateTime()
+    val locale = currentAppLocale()
 
     return DateTimeFormatter.ofLocalizedTime(FormatStyle.MEDIUM)
-        .withLocale(Locale.getDefault())
+        .withLocale(locale)
         .format(localDateTime)
 }
 
 fun LocalDateTime.toLocalString(): String {
-    val locale = Locale.getDefault()
+    val locale = currentAppLocale()
     val formatter = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM).withLocale(locale)
     return formatter.format(this)
 }
 
 fun LocalDate.toLocalString(includeYear: Boolean): String {
-    val locale = Locale.getDefault()
+    val locale = currentAppLocale()
     val formatter = if (includeYear) {
         DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(locale)
     } else {

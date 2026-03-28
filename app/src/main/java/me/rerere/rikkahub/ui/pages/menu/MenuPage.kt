@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.utils.currentAppLocale
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.modifier.shimmer
 import me.rerere.rikkahub.ui.motion.LocalMotionPolicy
@@ -705,8 +706,9 @@ private fun ChatHeatmapCard(
             val selectedMonthMetadata = remember(layout.months, selectedMonth) {
                 layout.months.firstOrNull { it.month == selectedMonth }
             }
+            val activeLocale = currentAppLocale()
             val selectedMonthLabel = selectedMonthMetadata?.let {
-                "${it.month.month.getDisplayName(TextStyle.FULL, Locale.getDefault())} ${it.month.year}"
+                "${it.month.month.getDisplayName(TextStyle.FULL, activeLocale)} ${it.month.year}"
             } ?: "Activity Timeline"
             val selectedMonthCount = selectedMonthMetadata?.totalMessageCount?.toLong() ?: 0L
             val scrollState = rememberScrollState()
@@ -807,7 +809,7 @@ private fun ChatHeatmapCard(
                                         .padding(horizontal = 8.dp, vertical = 2.dp)
                                 ) {
                                     Text(
-                                        text = month.month.month.getDisplayName(TextStyle.SHORT, Locale.getDefault()),
+                                        text = month.month.month.getDisplayName(TextStyle.SHORT, activeLocale),
                                         style = MaterialTheme.typography.labelSmall,
                                         fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                                         color = if (isSelected) contentColor else contentColor.copy(alpha = 0.55f)

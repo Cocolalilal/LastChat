@@ -18,7 +18,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import me.rerere.rikkahub.R
 
 @Composable
 fun ImportConfigDialog(
@@ -33,32 +35,32 @@ fun ImportConfigDialog(
 
     AlertDialog(
         onDismissRequest = onDismissRequest,
-        title = { Text("Import Character") },
+        title = { Text(stringResource(R.string.assistant_importer_import_character)) },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState())
             ) {
                 if (missingModels.isNotEmpty()) {
                     Text(
-                        text = "Missing Models",
+                        text = stringResource(R.string.assistant_importer_missing_models_title),
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.error
                     )
                     Text(
-                        text = "This character uses the following models which are not configured in your settings. They will be unselected:",
+                        text = stringResource(R.string.assistant_importer_missing_models_desc),
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
                     missingModels.forEach { name ->
                         Text(
-                            text = "• $name",
+                            text = "- $name",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(start = 8.dp)
                         )
                     }
                     Text(
-                        text = "You can re-configure them after import.",
+                        text = stringResource(R.string.assistant_importer_missing_models_hint),
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
                     )
@@ -66,7 +68,7 @@ fun ImportConfigDialog(
 
                 if (hasMemories || hasLorebooks) {
                     Text(
-                        text = "Include Components",
+                        text = stringResource(R.string.assistant_importer_include_components),
                         style = MaterialTheme.typography.titleSmall,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
@@ -83,9 +85,9 @@ fun ImportConfigDialog(
                                 onCheckedChange = { importLorebooks = it }
                             )
                             Column(modifier = Modifier.padding(start = 8.dp)) {
-                                Text("Lorebooks")
+                                Text(stringResource(R.string.assistant_importer_lorebooks))
                                 Text(
-                                    "Import and link associated lorebooks",
+                                    stringResource(R.string.assistant_importer_lorebooks_desc),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -103,9 +105,9 @@ fun ImportConfigDialog(
                                 onCheckedChange = { importMemories = it }
                             )
                             Column(modifier = Modifier.padding(start = 8.dp)) {
-                                Text("Memories")
+                                Text(stringResource(R.string.assistant_importer_memories))
                                 Text(
-                                    "Import core and episodic memories",
+                                    stringResource(R.string.assistant_importer_memories_desc),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -113,7 +115,7 @@ fun ImportConfigDialog(
                         }
                     }
                 } else if (missingModels.isEmpty()) {
-                     Text("Ready to import this character.")
+                     Text(stringResource(R.string.assistant_importer_ready))
                 }
             }
         },
@@ -123,12 +125,12 @@ fun ImportConfigDialog(
                     onConfirm(importMemories, importLorebooks)
                 }
             ) {
-                Text("Import")
+                Text(stringResource(R.string.import_label))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismissRequest) {
-                Text("Cancel")
+                Text(stringResource(R.string.cancel))
             }
         }
     )

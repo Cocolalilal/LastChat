@@ -66,7 +66,7 @@ fun AssistantProfileSubPage(
             )
             
             Text(
-                text = "Tap to change avatar",
+                text = stringResource(R.string.assistant_profile_tap_change_avatar),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -75,11 +75,11 @@ fun AssistantProfileSubPage(
         // ═══════════════════════════════════════════════════════════════════
         // IDENTITY GROUP
         // ═══════════════════════════════════════════════════════════════════
-        SettingsGroup(title = "Identity") {
+        SettingsGroup(title = stringResource(R.string.assistant_profile_identity)) {
             // Name
             SettingGroupItem(
                 title = stringResource(R.string.assistant_page_name),
-                subtitle = "Display name for this character",
+                subtitle = stringResource(R.string.assistant_profile_name_desc),
                 trailing = {
                     DebouncedTextField(
                         value = assistant.name,
@@ -110,7 +110,7 @@ fun AssistantProfileSubPage(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Organize with custom tags",
+                        text = stringResource(R.string.assistant_profile_tags_desc),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -128,7 +128,7 @@ fun AssistantProfileSubPage(
         // ═══════════════════════════════════════════════════════════════════
         // APPEARANCE GROUP
         // ═══════════════════════════════════════════════════════════════════
-        SettingsGroup(title = "Appearance") {
+        SettingsGroup(title = stringResource(R.string.assistant_profile_appearance)) {
             val hasImageSource = assistant.background != null ||
                 assistant.avatar is Avatar.Image ||
                 assistant.avatar is Avatar.Resource

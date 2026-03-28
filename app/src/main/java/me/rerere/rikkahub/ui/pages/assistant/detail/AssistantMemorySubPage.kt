@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
+import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -105,18 +106,21 @@ private fun getMemoryMode(assistant: Assistant): MemoryMode {
     }
 }
 
-private enum class MemoryMode(val displayName: String, val description: String) {
-    OFF("Off", "Memory is disabled"),
-    BASIC("Basic", "All memories sent to model in every conversation"),
-    BASIC_RECENT("Basic + Recent Chats", "Adds titles and timestamps of recent conversations"),
-    BASIC_RAG("Basic + RAG", "Smart memory retrieval based on conversation context"),
-    ADVANCED("Advanced", "Forms episodic memories with automatic consolidation")
+private enum class MemoryMode(
+    @StringRes val displayNameRes: Int,
+    @StringRes val descriptionRes: Int
+) {
+    OFF(R.string.assistant_memory_mode_off, R.string.assistant_memory_mode_off_desc),
+    BASIC(R.string.assistant_memory_mode_basic, R.string.assistant_memory_mode_basic_desc),
+    BASIC_RECENT(R.string.assistant_memory_mode_basic_recent, R.string.assistant_memory_mode_basic_recent_desc),
+    BASIC_RAG(R.string.assistant_memory_mode_basic_rag, R.string.assistant_memory_mode_basic_rag_desc),
+    ADVANCED(R.string.assistant_memory_mode_advanced, R.string.assistant_memory_mode_advanced_desc)
 }
 
-private enum class MemorySortOrder(val displayName: String) {
-    NEWEST_FIRST("Newest First"),
-    OLDEST_FIRST("Oldest First"),
-    ALPHABETICAL("Alphabetical")
+private enum class MemorySortOrder(@StringRes val displayNameRes: Int) {
+    NEWEST_FIRST(R.string.assistant_memory_sort_newest),
+    OLDEST_FIRST(R.string.assistant_memory_sort_oldest),
+    ALPHABETICAL(R.string.assistant_memory_sort_alpha)
 }
 
 @Composable
@@ -151,10 +155,16 @@ fun AssistantMemorySettings(
     if (embeddingProgress != null && embeddingProgress.isRunning) {
         AlertDialog(
             onDismissRequest = { },
-            title = { Text("Generating Embeddings") },
+            title = { Text(stringResource(R.string.assistant_memory_generating_embeddings)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Processing ${embeddingProgress.current} of ${embeddingProgress.total} items...")
+                    Text(
+                        stringResource(
+                            R.string.assistant_memory_embedding_progress,
+                            embeddingProgress.current,
+                            embeddingProgress.total
+                        )
+                    )
                     androidx.compose.material3.LinearProgressIndicator(
                         progress = { embeddingProgress.current.toFloat() / embeddingProgress.total.coerceAtLeast(1) },
                         modifier = Modifier.fillMaxWidth(),
@@ -210,7 +220,7 @@ fun AssistantMemorySettings(
         // ═══════════════════════════════════════════════════════════════════
         // SETTINGS GROUP
         // ═══════════════════════════════════════════════════════════════════
-        SettingsGroupHeader(title = "Memory Settings")
+        SettingsGroupHeader(title = stringResource(R.string.assistant_memory_settings_title))
         
         Column(
             modifier = Modifier.clip(RoundedCornerShape(24.dp)),
@@ -271,8 +281,8 @@ fun AssistantMemorySettings(
                 exit = fadeOut() + shrinkVertically()
             ) {
                 MemorySettingsItem(
-                    title = "RAG Memory Retrieval",
-                    subtitle = "Smart context-based memory retrieval",
+                    title = stringResource(R.string.assistant_memory_rag_retrieval),
+                    subtitle = stringResource(R.string.assistant_memory_rag_retrieval_desc),
                     position = if (!assistant.useRagMemoryRetrieval) "LAST" else "MIDDLE",
                     trailing = {
                         HapticSwitch(
@@ -299,8 +309,8 @@ fun AssistantMemorySettings(
                 exit = fadeOut() + shrinkVertically()
             ) {
                 MemorySettingsItem(
-                    title = "Advanced Memory",
-                    subtitle = "Form episodic memories from conversations",
+                    title = stringResource(R.string.assistant_memory_advanced_title),
+                    subtitle = stringResource(R.string.assistant_memory_advanced_desc),
                     position = "LAST",
                     trailing = {
                         HapticSwitch(
@@ -332,7 +342,7 @@ fun AssistantMemorySettings(
             exit = fadeOut() + shrinkVertically()
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                SettingsGroupHeader(title = "RAG Settings")
+                SettingsGroupHeader(title = stringResource(R.string.assistant_memory_rag_settings))
                 RagSettingsCard(assistant = assistant, onUpdateAssistant = onUpdateAssistant)
             }
         }
@@ -346,7 +356,7 @@ fun AssistantMemorySettings(
             exit = fadeOut() + shrinkVertically()
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                SettingsGroupHeader(title = "Advanced Memory Settings")
+                SettingsGroupHeader(title = stringResource(R.string.assistant_memory_advanced_settings))
                 
                 ConsolidationSettingsCard(
                     assistant = assistant,
@@ -409,7 +419,7 @@ fun AssistantMemorySettings(
         ) {
             if (onTestRetrieval != null) {
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    SettingsGroupHeader(title = "Memory Debugger")
+                    SettingsGroupHeader(title = stringResource(R.string.assistant_memory_debugger))
                     MemoryDebugger(
                         onTestRetrieval = onTestRetrieval,
                         retrievalResults = retrievalResults
@@ -554,23 +564,23 @@ private fun MemoryModeIndicator(mode: MemoryMode) {
             )
             Column {
                 AnimatedContent(
-                    targetState = mode.displayName,
+                    targetState = mode.displayNameRes,
                     transitionSpec = { fadeIn() togetherWith fadeOut() },
                     label = "modeName"
-                ) { name ->
+                ) { nameRes ->
                     Text(
-                        text = "Memory Mode: $name",
+                        text = stringResource(R.string.assistant_memory_mode_label, stringResource(nameRes)),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold
                     )
                 }
                 AnimatedContent(
-                    targetState = mode.description,
+                    targetState = mode.descriptionRes,
                     transitionSpec = { fadeIn() togetherWith fadeOut() },
                     label = "modeDesc"
-                ) { desc ->
+                ) { descRes ->
                     Text(
-                        text = desc,
+                        text = stringResource(descRes),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -602,7 +612,10 @@ private fun RagSettingsCard(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Similarity Threshold", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        stringResource(R.string.assistant_memory_similarity_threshold),
+                        style = MaterialTheme.typography.titleMedium
+                    )
                     Text(
                         text = String.format("%.2f", threshold),
                         style = MaterialTheme.typography.labelLarge,
@@ -623,8 +636,16 @@ private fun RagSettingsCard(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("0.0 (All)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("1.0 (Exact)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        stringResource(R.string.assistant_memory_similarity_all),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        stringResource(R.string.assistant_memory_similarity_exact),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
@@ -719,15 +740,21 @@ private fun ConsolidationSettingsCard(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Consolidation Delay", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        text = "${assistant.consolidationDelayMinutes} min",
+                        stringResource(R.string.assistant_memory_consolidation_delay_label),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.assistant_memory_consolidation_delay_value,
+                            assistant.consolidationDelayMinutes
+                        ),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
                 Text(
-                    text = "Wait time after a chat ends before forming memories",
+                    text = stringResource(R.string.assistant_memory_consolidation_delay_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -753,7 +780,7 @@ private fun ConsolidationSettingsCard(
                 ) {
                     Icon(Icons.Rounded.Psychology, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Consolidate All Memories Now")
+                    Text(stringResource(R.string.assistant_memory_consolidate_now))
                 }
                 
                 if (assistant.lastConsolidationTime > 0) {
@@ -762,7 +789,7 @@ private fun ConsolidationSettingsCard(
                         .toLocalDateTime()
                         .toLocalString()
                     Text(
-                        text = "Last run: $time",
+                        text = stringResource(R.string.assistant_memory_last_run, time),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -795,7 +822,7 @@ private fun MemoryStatisticsCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = "Memory Statistics",
+                    text = stringResource(R.string.assistant_memory_statistics),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -809,18 +836,18 @@ private fun MemoryStatisticsCard(
                 if (assistant.enableMemoryConsolidation) {
                     StatItem(
                         value = coreMemories.toString(),
-                        label = "Core",
+                        label = stringResource(R.string.assistant_memory_core_memories),
                         color = MaterialTheme.colorScheme.primary
                     )
                     StatItem(
                         value = episodicMemories.toString(),
-                        label = "Episodic",
+                        label = stringResource(R.string.assistant_memory_episodic_memories),
                         color = MaterialTheme.colorScheme.secondary
                     )
                 } else {
                     StatItem(
                         value = memories.size.toString(),
-                        label = "Total",
+                        label = stringResource(R.string.assistant_memory_total),
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
@@ -829,7 +856,7 @@ private fun MemoryStatisticsCard(
                 AnimatedVisibility(visible = assistant.useRagMemoryRetrieval) {
                     StatItem(
                         value = withEmbeddings.toString(),
-                        label = "Embedded",
+                        label = stringResource(R.string.assistant_memory_embedded),
                         color = if (withEmbeddings < memories.size) 
                             MaterialTheme.colorScheme.error 
                         else 
@@ -840,7 +867,10 @@ private fun MemoryStatisticsCard(
 
             AnimatedVisibility(visible = assistant.useRagMemoryRetrieval) {
                 Text(
-                    text = "Estimated capacity: ~$estimatedMemoryCapacity memories",
+                    text = stringResource(
+                        R.string.assistant_memory_estimated_capacity,
+                        estimatedMemoryCapacity
+                    ),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.secondary
                 )
@@ -946,7 +976,10 @@ private fun ManageMemoriesSection(
                 // Sort button
                 Box {
                     IconButton(onClick = { showSortMenu = true }) {
-                        Icon(Icons.Rounded.Sort, contentDescription = "Sort")
+                        Icon(
+                            Icons.Rounded.Sort,
+                            contentDescription = stringResource(R.string.assistant_memory_sort)
+                        )
                     }
                     DropdownMenu(
                         expanded = showSortMenu,
@@ -954,7 +987,7 @@ private fun ManageMemoriesSection(
                     ) {
                         MemorySortOrder.entries.forEach { order ->
                             DropdownMenuItem(
-                                text = { Text(order.displayName) },
+                                text = { Text(stringResource(order.displayNameRes)) },
                                 onClick = {
                                     sortOrder = order
                                     showSortMenu = false
@@ -971,11 +1004,17 @@ private fun ManageMemoriesSection(
                 
                 if (onRegenerateEmbeddings != null && assistant.useRagMemoryRetrieval && needsEmbeddingRegeneration) {
                     IconButton(onClick = onRegenerateEmbeddings) {
-                        Icon(Icons.Rounded.Refresh, contentDescription = "Regenerate Embeddings")
+                        Icon(
+                            Icons.Rounded.Refresh,
+                            contentDescription = stringResource(R.string.assistant_memory_regenerate_embeddings)
+                        )
                     }
                 }
                 IconButton(onClick = onAddMemory) {
-                    Icon(Icons.Rounded.Add, contentDescription = "Add Memory")
+                    Icon(
+                        Icons.Rounded.Add,
+                        contentDescription = stringResource(R.string.assistant_memory_add_memory)
+                    )
                 }
             }
         }
@@ -994,13 +1033,13 @@ private fun ManageMemoriesSection(
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
-                    text = { Text("Core (${coreMemories.size})") },
+                    text = { Text(stringResource(R.string.assistant_memory_tab_core, coreMemories.size)) },
                     icon = { Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(18.dp)) }
                 )
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    text = { Text("Episodic (${episodicMemories.size})") },
+                    text = { Text(stringResource(R.string.assistant_memory_tab_episodic, episodicMemories.size)) },
                     icon = { Icon(Icons.Rounded.History, null, modifier = Modifier.size(18.dp)) }
                 )
             }
@@ -1011,7 +1050,7 @@ private fun ManageMemoriesSection(
             value = memorySearchQuery,
             onValueChange = onSearchQueryChange,
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Search memories...") },
+            placeholder = { Text(stringResource(R.string.assistant_memory_search_placeholder)) },
             leadingIcon = { Icon(Icons.Rounded.Search, null) },
             singleLine = true,
             shape = me.rerere.rikkahub.ui.theme.AppShapes.SearchField,
@@ -1055,7 +1094,11 @@ private fun ManageMemoriesSection(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = if (memorySearchQuery.isBlank()) "No memories yet" else "No matching memories",
+                        text = if (memorySearchQuery.isBlank()) {
+                            stringResource(R.string.assistant_memory_empty)
+                        } else {
+                            stringResource(R.string.assistant_memory_empty_search)
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(24.dp)
@@ -1176,7 +1219,11 @@ private fun MemoryItem(
                                 shape = MaterialTheme.shapes.extraSmall
                             ) {
                                 Text(
-                                    text = if (memory.type == 0) "CORE" else "EPISODIC",
+                                    text = if (memory.type == 0) {
+                                        stringResource(R.string.assistant_memory_type_core)
+                                    } else {
+                                        stringResource(R.string.assistant_memory_type_episodic)
+                                    },
                                     style = MaterialTheme.typography.labelSmall,
                                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
                                     color = if (memory.type == 0) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
@@ -1190,7 +1237,7 @@ private fun MemoryItem(
                                 shape = MaterialTheme.shapes.extraSmall
                             ) {
                                 Text(
-                                    text = "NO EMBEDDING",
+                                    text = stringResource(R.string.assistant_memory_no_embedding),
                                     style = MaterialTheme.typography.labelSmall,
                                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
                                     color = Color.White
@@ -1237,7 +1284,7 @@ private fun MemoryDebugger(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                text = "Test RAG retrieval to see which memories are returned",
+                text = stringResource(R.string.assistant_memory_test_retrieval_desc),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1250,7 +1297,7 @@ private fun MemoryDebugger(
                 TextField(
                     value = query,
                     onValueChange = setQuery,
-                    placeholder = { Text("Enter test query...") },
+                    placeholder = { Text(stringResource(R.string.assistant_memory_test_query_placeholder)) },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     shape = RoundedCornerShape(10.dp),
@@ -1263,7 +1310,7 @@ private fun MemoryDebugger(
                     onClick = { onTestRetrieval(query) },
                     enabled = query.isNotBlank()
                 ) {
-                    Text("Test")
+                    Text(stringResource(R.string.assistant_memory_test))
                 }
             }
 
@@ -1273,7 +1320,7 @@ private fun MemoryDebugger(
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "Results (${retrievalResults.size}):",
+                        text = stringResource(R.string.assistant_memory_results, retrievalResults.size),
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -1289,7 +1336,10 @@ private fun MemoryDebugger(
                                 ) {
                                     Text("#${index + 1}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                                     Text(
-                                        "Score: ${String.format("%.4f", score)}",
+                                        stringResource(
+                                            R.string.assistant_memory_score,
+                                            String.format("%.4f", score)
+                                        ),
                                         style = MaterialTheme.typography.labelMedium,
                                         color = if (score >= 0.5f) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                     )

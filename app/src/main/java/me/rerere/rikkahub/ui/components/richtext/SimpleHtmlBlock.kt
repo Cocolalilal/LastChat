@@ -16,6 +16,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,20 +27,43 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.toColorInt
 import me.rerere.rikkahub.ui.components.table.DataTable
+import me.rerere.rikkahub.utils.BidiDirection
+import me.rerere.rikkahub.utils.appLocale
+import me.rerere.rikkahub.utils.resolveBidiDirection
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import org.jsoup.nodes.Node
 import org.jsoup.nodes.TextNode
+
+@Composable
+private fun rememberElementDirection(text: String): BidiDirection {
+    val appLocale = LocalContext.current.appLocale()
+    return remember(text, appLocale) {
+        resolveBidiDirection(text = text, fallbackLocale = appLocale)
+    }
+}
+
+private fun BidiDirection.toComposeTextDirection(): TextDirection {
+    return if (this == BidiDirection.Rtl) TextDirection.ContentOrRtl else TextDirection.ContentOrLtr
+}
+
+private fun BidiDirection.toLayoutDirection(): LayoutDirection {
+    return if (this == BidiDirection.Rtl) LayoutDirection.Rtl else LayoutDirection.Ltr
+}
 
 @Composable
 fun SimpleHtmlBlock(
@@ -78,10 +102,12 @@ private fun RenderNode(
     when (node) {
         is TextNode -> {
             if (node.text().isNotBlank()) {
+                val direction = rememberElementDirection(node.text())
                 Text(
                     text = node.text(),
                     style = MaterialTheme.typography.bodyMedium.copy(
-                        color = LocalContentColor.current
+                        color = LocalContentColor.current,
+                        textDirection = direction.toComposeTextDirection()
                     )
                 )
             }
@@ -92,18 +118,22 @@ private fun RenderNode(
                 "p" -> {
                     val annotatedString = buildAnnotatedStringFromElement(node, onLinkClick)
                     if (annotatedString.text.isNotBlank()) {
+                        val direction = rememberElementDirection(annotatedString.text)
                         // Parse inline styles for <p> element
                         val style = node.attr("style")
                         val inlineStyle = if (style.isNotEmpty()) parseInlineStyle(style) else null
 
-                        Text(
-                            text = annotatedString,
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                color = inlineStyle?.color ?: LocalContentColor.current,
-                                fontWeight = inlineStyle?.fontWeight ?: FontWeight.Normal
-                            ),
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
+                        CompositionLocalProvider(LocalLayoutDirection provides direction.toLayoutDirection()) {
+                            Text(
+                                text = annotatedString,
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    color = inlineStyle?.color ?: LocalContentColor.current,
+                                    fontWeight = inlineStyle?.fontWeight ?: FontWeight.Normal,
+                                    textDirection = direction.toComposeTextDirection()
+                                ),
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                        }
                     }
                 }
 
@@ -120,18 +150,22 @@ private fun RenderNode(
 
                     val annotatedString = buildAnnotatedStringFromElement(node, onLinkClick)
                     if (annotatedString.text.isNotBlank()) {
+                        val direction = rememberElementDirection(annotatedString.text)
                         // Parse inline styles for heading elements
                         val style = node.attr("style")
                         val inlineStyle = if (style.isNotEmpty()) parseInlineStyle(style) else null
 
-                        Text(
-                            text = annotatedString,
-                            style = textStyle.copy(
-                                color = inlineStyle?.color ?: LocalContentColor.current,
-                                fontWeight = inlineStyle?.fontWeight ?: textStyle.fontWeight
-                            ),
-                            modifier = Modifier.padding(vertical = 8.dp)
-                        )
+                        CompositionLocalProvider(LocalLayoutDirection provides direction.toLayoutDirection()) {
+                            Text(
+                                text = annotatedString,
+                                style = textStyle.copy(
+                                    color = inlineStyle?.color ?: LocalContentColor.current,
+                                    fontWeight = inlineStyle?.fontWeight ?: textStyle.fontWeight,
+                                    textDirection = direction.toComposeTextDirection()
+                                ),
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            )
+                        }
                     }
                 }
 
@@ -171,17 +205,21 @@ private fun RenderNode(
                     // Render other elements as text
                     val annotatedString = buildAnnotatedStringFromElement(node, onLinkClick)
                     if (annotatedString.text.isNotBlank()) {
+                        val direction = rememberElementDirection(annotatedString.text)
                         // Parse inline styles for other elements
                         val style = node.attr("style")
                         val inlineStyle = if (style.isNotEmpty()) parseInlineStyle(style) else null
 
-                        Text(
-                            text = annotatedString,
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                color = inlineStyle?.color ?: LocalContentColor.current,
-                                fontWeight = inlineStyle?.fontWeight ?: FontWeight.Normal
+                        CompositionLocalProvider(LocalLayoutDirection provides direction.toLayoutDirection()) {
+                            Text(
+                                text = annotatedString,
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    color = inlineStyle?.color ?: LocalContentColor.current,
+                                    fontWeight = inlineStyle?.fontWeight ?: FontWeight.Normal,
+                                    textDirection = direction.toComposeTextDirection()
+                                )
                             )
-                        )
+                        }
                     }
                 }
             }
@@ -195,31 +233,48 @@ private fun RenderList(
     isOrdered: Boolean,
     onLinkClick: (String) -> Unit
 ) {
-    Column(modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)) {
+    val listDirection = rememberElementDirection(listElement.text())
+    CompositionLocalProvider(LocalLayoutDirection provides listDirection.toLayoutDirection()) {
+        Column(modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)) {
         listElement.children().forEachIndexed { index, item ->
             if (item.tagName().lowercase() == "li") {
+                val itemDirection = rememberElementDirection(item.text())
                 Row(modifier = Modifier.padding(vertical = 2.dp)) {
-                    Text(
-                        text = if (isOrdered) "${index + 1}. " else "• ",
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            color = LocalContentColor.current
-                        )
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-
-                    val annotatedString = buildAnnotatedStringFromElement(item, onLinkClick)
-                    if (annotatedString.text.isNotBlank()) {
+                    val markerText = if (isOrdered) "${index + 1}. " else "• "
+                    val marker: @Composable () -> Unit = {
                         Text(
-                            text = annotatedString,
+                            text = markerText,
                             style = MaterialTheme.typography.bodyMedium.copy(
                                 color = LocalContentColor.current
-                            ),
-                            modifier = Modifier.weight(1f)
+                            )
                         )
+                    }
+                    val content: @Composable () -> Unit = {
+                        val annotatedString = buildAnnotatedStringFromElement(item, onLinkClick)
+                        if (annotatedString.text.isNotBlank()) {
+                            Text(
+                                text = annotatedString,
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    color = LocalContentColor.current,
+                                    textDirection = itemDirection.toComposeTextDirection()
+                                ),
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                    if (itemDirection == BidiDirection.Rtl) {
+                        content()
+                        Spacer(modifier = Modifier.width(4.dp))
+                        marker()
+                    } else {
+                        marker()
+                        Spacer(modifier = Modifier.width(4.dp))
+                        content()
                     }
                 }
             }
         }
+    }
     }
 }
 
@@ -235,48 +290,63 @@ private fun RenderDetails(
         it.tagName().lowercase() == "summary"
     }
     val summaryText = summaryElement?.text() ?: "Details"
+    val summaryDirection = rememberElementDirection(summaryText)
 
     Column(modifier = Modifier.padding(vertical = 4.dp)) {
         // Summary (clickable header)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { isExpanded = !isExpanded }
-                .padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = if (isExpanded) "▼ " else "▶ ",
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    color = LocalContentColor.current
-                )
-            )
-
-            val summaryAnnotatedString = if (summaryElement != null) {
-                buildAnnotatedStringFromElement(summaryElement, onLinkClick)
-            } else {
-                AnnotatedString(summaryText)
+        CompositionLocalProvider(LocalLayoutDirection provides summaryDirection.toLayoutDirection()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { isExpanded = !isExpanded }
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val indicator: @Composable () -> Unit = {
+                    Text(
+                        text = if (isExpanded) "▼ " else "▶ ",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            color = LocalContentColor.current
+                        )
+                    )
+                }
+                val summaryAnnotatedString = if (summaryElement != null) {
+                    buildAnnotatedStringFromElement(summaryElement, onLinkClick)
+                } else {
+                    AnnotatedString(summaryText)
+                }
+                val summaryContent: @Composable () -> Unit = {
+                    Text(
+                        text = summaryAnnotatedString,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            color = LocalContentColor.current,
+                            fontWeight = FontWeight.Medium,
+                            textDirection = summaryDirection.toComposeTextDirection()
+                        )
+                    )
+                }
+                if (summaryDirection == BidiDirection.Rtl) {
+                    summaryContent()
+                    indicator()
+                } else {
+                    indicator()
+                    summaryContent()
+                }
             }
-
-            Text(
-                text = summaryAnnotatedString,
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    color = LocalContentColor.current,
-                    fontWeight = FontWeight.Medium
-                )
-            )
         }
 
         // Details content (animated visibility)
         AnimatedVisibility(visible = isExpanded) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, top = 4.dp)
-            ) {
-                detailsElement.children().forEach { child ->
-                    if (child.tagName().lowercase() != "summary") {
-                        RenderNode(child, onLinkClick)
+            CompositionLocalProvider(LocalLayoutDirection provides summaryDirection.toLayoutDirection()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, top = 4.dp)
+                ) {
+                    detailsElement.children().forEach { child ->
+                        if (child.tagName().lowercase() != "summary") {
+                            RenderNode(child, onLinkClick)
+                        }
                     }
                 }
             }

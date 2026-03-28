@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Psychology
 import me.rerere.ai.provider.Model
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ui.Select
@@ -66,7 +68,7 @@ fun AssistantMemoryConsolidationSubPage(
                     ) {
                         Icon(Icons.Rounded.Psychology, null, tint = MaterialTheme.colorScheme.primary)
                         Text(
-                            text = "Memory Consolidation Settings",
+                            text = stringResource(R.string.assistant_memory_consolidation_settings),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -81,12 +83,12 @@ fun AssistantMemoryConsolidationSubPage(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Enable Memory Consolidation",
+                                text = stringResource(R.string.assistant_memory_consolidation_enable),
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.Medium
                             )
                             Text(
-                                text = "Allow character to form long-term memories",
+                                text = stringResource(R.string.assistant_memory_consolidation_enable_desc),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -101,12 +103,16 @@ fun AssistantMemoryConsolidationSubPage(
                         // Consolidation Delay
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(
-                                text = "Consolidation Delay: ${assistant.consolidationDelayMinutes} minutes",
+                                text = stringResource(
+                                    R.string.assistant_memory_consolidation_delay,
+                                    stringResource(R.string.assistant_memory_consolidation_delay_label),
+                                    assistant.consolidationDelayMinutes
+                                ),
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.Medium
                             )
                             Text(
-                                text = "Wait time after a chat ends before consolidating it.",
+                                text = stringResource(R.string.assistant_memory_consolidation_delay_desc),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -141,12 +147,12 @@ fun AssistantMemoryConsolidationSubPage(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(Icons.Rounded.AutoAwesome, null, tint = MaterialTheme.colorScheme.tertiary)
-                            Text(
-                                text = "Memory Statistics",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
+                        Icon(Icons.Rounded.AutoAwesome, null, tint = MaterialTheme.colorScheme.tertiary)
+                        Text(
+                            text = stringResource(R.string.assistant_memory_statistics),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
                         }
     
 
@@ -155,11 +161,11 @@ fun AssistantMemoryConsolidationSubPage(
                             horizontalArrangement = Arrangement.SpaceEvenly
                         ) {
                             StatItem(
-                                label = "Core Memories",
+                                label = stringResource(R.string.assistant_memory_core_memories),
                                 value = stats.coreMemoryCount.toString()
                             )
                             StatItem(
-                                label = "Episodic Memories",
+                                label = stringResource(R.string.assistant_memory_episodic_memories),
                                 value = stats.totalEpisodes.toString()
                             )
                         }
@@ -167,7 +173,7 @@ fun AssistantMemoryConsolidationSubPage(
                         // Detailed Run Stats
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(
-                                text = "Recent Activity",
+                                text = stringResource(R.string.assistant_memory_recent_activity),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.primary
                             )
@@ -175,7 +181,7 @@ fun AssistantMemoryConsolidationSubPage(
                             // Track A Stats
                             Column {
                                 Text(
-                                    text = "Consolidation (Track A)",
+                                    text = stringResource(R.string.assistant_memory_consolidation_track_a),
                                     style = MaterialTheme.typography.bodySmall,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -185,16 +191,22 @@ fun AssistantMemoryConsolidationSubPage(
                                         .toLocalDateTime()
                                         .toLocalString()
                                     Text(
-                                        text = "Last Run: $time",
+                                        text = stringResource(R.string.assistant_memory_last_run, time),
                                         style = MaterialTheme.typography.bodySmall
                                     )
                                     Text(
-                                        text = "Result: ${assistant.lastConsolidationResult}",
+                                        text = stringResource(
+                                            R.string.assistant_memory_result,
+                                            assistant.lastConsolidationResult
+                                        ),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 } else {
-                                    Text("No run recorded yet", style = MaterialTheme.typography.bodySmall)
+                                    Text(
+                                        stringResource(R.string.assistant_memory_no_run_yet),
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
                                 }
                             }
                         }
@@ -205,7 +217,7 @@ fun AssistantMemoryConsolidationSubPage(
                         ) {
                             Icon(Icons.Rounded.Psychology, null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text("Consolidate All Memories Now")
+                            Text(stringResource(R.string.assistant_memory_consolidate_now))
                         }
                         
                         if (snackbarMessage != null && snackbarMessage!!.contains("consolidation")) {
@@ -222,7 +234,7 @@ fun AssistantMemoryConsolidationSubPage(
             // Episodes List Section
             item {
                 Text(
-                    text = "Recent Memory Episodes",
+                    text = stringResource(R.string.assistant_memory_recent_episodes),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(start = 8.dp)
@@ -232,7 +244,7 @@ fun AssistantMemoryConsolidationSubPage(
             item {
                 if (episodes.isNotEmpty()) {
                     Text(
-                        text = "${episodes.count()} total episodes recorded",
+                        text = stringResource(R.string.assistant_memory_total_episodes, episodes.count()),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(start = 8.dp)

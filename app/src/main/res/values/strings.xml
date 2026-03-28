@@ -362,6 +362,7 @@
     <string name="imggen_page_save_failed">Save Failed: %1$s</string>
     <string name="imggen_page_settings_title">Settings</string>
     <string name="imggen_page_title">Image Generation</string>
+    <string name="language_arabic">🇸🇦 العربية</string>
     <string name="language_english">🇺🇸 English</string>
     <string name="language_french">🇫🇷 Français</string>
     <string name="language_german">🇩🇪 Deutsch</string>

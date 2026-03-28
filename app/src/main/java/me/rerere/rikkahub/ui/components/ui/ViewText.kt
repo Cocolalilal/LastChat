@@ -9,6 +9,7 @@ import android.text.method.LinkMovementMethod
 import android.text.style.AbsoluteSizeSpan
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import androidx.compose.foundation.layout.Arrangement
@@ -40,6 +41,9 @@ import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlin.math.roundToInt
+import me.rerere.rikkahub.utils.BidiDirection
+import me.rerere.rikkahub.utils.appLocale
+import me.rerere.rikkahub.utils.resolveBidiDirection
 
 @Composable
 fun ViewText(
@@ -59,12 +63,14 @@ fun ViewText(
                 movementMethod = LinkMovementMethod.getInstance()
                 setText(text)
                 setComposeTextStyle(density, mergedStyle)
+                applyBidiTextProperties(text)
             }
         },
         modifier = modifier,
         update = { view ->
             view.setComposeTextStyle(density, mergedStyle)
             view.text = text
+            view.applyBidiTextProperties(text)
         }
     )
 }
@@ -154,8 +160,8 @@ private fun TextView.setComposeTextStyle(
         // align
         textStyle.textAlign.let {
             gravity = when (it) {
-                TextAlign.Left -> Gravity.LEFT
-                TextAlign.Right -> Gravity.RIGHT
+                TextAlign.Left -> Gravity.START
+                TextAlign.Right -> Gravity.END
                 TextAlign.Center -> Gravity.CENTER_HORIZONTAL
                 TextAlign.Start -> Gravity.START
                 TextAlign.End -> Gravity.END
@@ -219,6 +225,20 @@ private fun TextView.setComposeTextStyle(
             else -> Typeface.create(typeface, typefaceStyle)
         }
         setTypeface(finalTypeface)
+    }
+}
+
+private fun TextView.applyBidiTextProperties(text: CharSequence) {
+    val direction = resolveBidiDirection(text = text, fallbackLocale = context.appLocale())
+    layoutDirection = if (direction == BidiDirection.Rtl) {
+        View.LAYOUT_DIRECTION_RTL
+    } else {
+        View.LAYOUT_DIRECTION_LTR
+    }
+    textDirection = if (direction == BidiDirection.Rtl) {
+        View.TEXT_DIRECTION_FIRST_STRONG_RTL
+    } else {
+        View.TEXT_DIRECTION_FIRST_STRONG_LTR
     }
 }
 

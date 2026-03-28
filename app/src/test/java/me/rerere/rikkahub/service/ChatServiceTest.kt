@@ -6,6 +6,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MessageNode
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertFalse
@@ -182,13 +183,15 @@ class ChatServiceTest {
             ),
         )
 
-        val fork = buildForkConversationSnapshot(
-            conversation = conversation,
-            messageId = messageId,
-            copyAttachmentUrl = { url -> "$url-copy" },
-            newConversationId = Uuid.parse("00000000-0000-0000-0000-000000000404"),
-            now = now,
-        )
+        val fork = runBlocking {
+            buildForkConversationSnapshot(
+                conversation = conversation,
+                messageId = messageId,
+                copyAttachmentUrl = { url -> "$url-copy" },
+                newConversationId = Uuid.parse("00000000-0000-0000-0000-000000000404"),
+                now = now,
+            )
+        }
 
         assertNotNull(fork)
         assertEquals(assistantId, fork!!.assistantId)

@@ -1,0 +1,384 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Import / export -->
+    <string name="assistant_importer_missing_models_title">Missing Models</string>
+    <string name="assistant_importer_missing_models_desc">This character uses the following models which are not configured in your settings. They will be unselected:</string>
+    <string name="assistant_importer_missing_models_hint">You can re-configure them after import.</string>
+    <string name="assistant_importer_include_components">Include Components</string>
+    <string name="assistant_importer_lorebooks">Lorebooks</string>
+    <string name="assistant_importer_lorebooks_desc">Import and link associated lorebooks</string>
+    <string name="assistant_importer_memories">Memories</string>
+    <string name="assistant_importer_memories_desc">Import core and episodic memories</string>
+    <string name="assistant_importer_ready">Ready to import this character.</string>
+    <string name="assistant_detail_export">Export</string>
+    <string name="assistant_detail_export_lastchat_bundle">LastChat Bundle (.json)</string>
+    <string name="assistant_detail_export_card_json">Character Card V2 (.json)</string>
+    <string name="assistant_detail_export_card_png">Character Card V2 (.png)</string>
+    <string name="assistant_detail_export_options">Export Options</string>
+    <string name="export_failed_message">Export failed: %1$s</string>
+    <string name="export_failed_create_png">Export failed: Could not create PNG</string>
+
+    <!-- Common UI -->
+    <string name="common_default">Default</string>
+    <string name="common_enabled_value">Enabled (%1$s)</string>
+    <string name="common_off">Off</string>
+    <string name="common_on">On</string>
+    <string name="download">Download</string>
+    <string name="later">Later</string>
+    <string name="open_settings">Open Settings</string>
+    <string name="not_now">Not now</string>
+    <string name="local_label">Local</string>
+    <string name="clear_search">Clear</string>
+    <string name="developer">Developer</string>
+
+    <!-- Context refresh -->
+    <string name="context_refresh_error_title">Error</string>
+    <string name="context_refresh_summary_impact">%1$d messages will be summarized and ~%2$d tokens will be cleaned up.</string>
+    <string name="context_refresh_previous_summary">Previous summary:</string>
+    <string name="context_refresh_tokens_saved">~%1$d tokens saved</string>
+
+    <!-- Share / WebView -->
+    <string name="provider_share_title">Share your LLM configuration</string>
+    <string name="webview_refresh">Refresh</string>
+    <string name="webview_forward">Forward</string>
+    <string name="webview_more_options">More options</string>
+    <string name="webview_open_in_browser">Open in Browser</string>
+    <string name="webview_console_logs">Console Logs</string>
+    <string name="webview_console_empty">No console messages</string>
+    <string name="webview_console_source">Source: %1$s:%2$d</string>
+
+    <!-- Assistant detail -->
+    <string name="assistant_detail_group_configuration">Configuration</string>
+    <string name="assistant_detail_group_capabilities">Capabilities</string>
+    <string name="assistant_detail_group_other">Other</string>
+    <string name="assistant_detail_profile">Profile</string>
+    <string name="assistant_detail_profile_desc">Name, avatar, tags, appearance</string>
+    <string name="assistant_detail_prompts_desc">System prompts, quick messages, presets</string>
+    <string name="assistant_detail_models">Models</string>
+    <string name="assistant_detail_models_desc">Chat model, background model, generation settings</string>
+    <string name="assistant_detail_memory_desc">Memory settings, recent chats, RAG</string>
+    <string name="assistant_detail_tools_search">Tools &amp; Search</string>
+    <string name="assistant_detail_tools_search_desc">Search providers, local tools, MCP</string>
+    <string name="assistant_detail_ui_customization">UI Customization</string>
+    <string name="assistant_detail_ui_customization_desc">Per-character display settings</string>
+    <string name="assistant_detail_advanced">Advanced</string>
+    <string name="assistant_detail_advanced_desc">Templates, regex, custom headers</string>
+
+    <!-- Assistant advanced -->
+    <string name="assistant_advanced_spontaneous_messaging">Spontaneous Messaging</string>
+    <string name="assistant_advanced_enable_spontaneous">Enable Spontaneous Messages</string>
+    <string name="assistant_advanced_enable_spontaneous_desc">Let this character message you on their own</string>
+    <string name="assistant_advanced_delivery_schedule">Delivery schedule</string>
+    <string name="assistant_advanced_delivery_schedule_desc">Choose when spontaneous messages are allowed and how often they can happen.</string>
+    <string name="assistant_advanced_schedule_starts">Starts %1$s</string>
+    <string name="assistant_advanced_schedule_ends">Ends %1$s</string>
+    <string name="assistant_advanced_schedule_midnight_start">12 AM</string>
+    <string name="assistant_advanced_schedule_midnight_end">11 PM next day</string>
+    <string name="assistant_advanced_schedule_tip">Drag the right handle past midnight for overnight windows. A full 24-hour span means all day.</string>
+    <string name="assistant_advanced_minimum_gap">Minimum gap</string>
+    <string name="assistant_advanced_minimum_gap_desc">Minimum cooldown between spontaneous messages from this character.</string>
+    <string name="assistant_advanced_message_formatting">Message Formatting</string>
+    <string name="assistant_advanced_custom_request">Custom Request</string>
+    <string name="assistant_advanced_frequency_hour">1 hour</string>
+    <string name="assistant_advanced_frequency_hours">%1$d hours</string>
+    <string name="assistant_advanced_next_day">%1$s next day</string>
+    <string name="assistant_advanced_all_day">All day</string>
+    <string name="assistant_advanced_duration">Duration %1$s</string>
+    <string name="assistant_advanced_reach_out_any_time">This character can reach out any time of day.</string>
+    <string name="assistant_advanced_reach_out_between">This character can reach out between %1$s and %2$s.</string>
+
+    <!-- Assistant context management -->
+    <string name="assistant_context_auto_summarize">Auto-summarize messages</string>
+    <string name="assistant_context_auto_summarize_desc">Automatically summarize when history limit is reached</string>
+    <string name="assistant_context_history_limit">History limit</string>
+    <string name="assistant_context_history_limit_value">%1$d messages</string>
+    <string name="assistant_context_history_limit_desc">Number of messages before auto-summarization triggers</string>
+    <string name="assistant_context_image_context">Image Context</string>
+    <string name="assistant_context_keep_all_images">Keep all images in context</string>
+    <string name="assistant_context_archive_images_after">Archive images after %1$d messages</string>
+    <string name="assistant_context_image_context_desc">Older chat images stay visible in the transcript, but once OCR is ready they stop consuming image context and use text instead.</string>
+
+    <!-- Notifications -->
+    <string name="notification_tools_title">Notifications</string>
+    <string name="notification_tools_desc">Notifications, notification reading, scheduled follow-ups</string>
+    <string name="notification_access_title">Notification Access</string>
+    <string name="notification_access_desc">Enable the remaining access below so notification tools and scheduled follow-ups work reliably:</string>
+
+    <!-- Assistant memory -->
+    <string name="assistant_memory_consolidation_settings">Memory Consolidation Settings</string>
+    <string name="assistant_memory_consolidation_enable">Enable Memory Consolidation</string>
+    <string name="assistant_memory_consolidation_enable_desc">Allow character to form long-term memories</string>
+    <string name="assistant_memory_consolidation_delay">%1$s: %2$d minutes</string>
+    <string name="assistant_memory_consolidation_delay_desc">Wait time after a chat ends before consolidating it.</string>
+    <string name="assistant_memory_statistics">Memory Statistics</string>
+    <string name="assistant_memory_core_memories">Core Memories</string>
+    <string name="assistant_memory_episodic_memories">Episodic Memories</string>
+    <string name="assistant_memory_recent_activity">Recent Activity</string>
+    <string name="assistant_memory_consolidation_track_a">Consolidation (Track A)</string>
+    <string name="assistant_memory_last_run">Last Run: %1$s</string>
+    <string name="assistant_memory_result">Result: %1$s</string>
+    <string name="assistant_memory_no_run_yet">No run recorded yet</string>
+    <string name="assistant_memory_consolidate_now">Consolidate All Memories Now</string>
+    <string name="assistant_memory_recent_episodes">Recent Memory Episodes</string>
+    <string name="assistant_memory_total_episodes">%1$d total episodes recorded</string>
+    <string name="assistant_memory_generating_embeddings">Generating Embeddings</string>
+    <string name="assistant_memory_embedding_progress">Processing %1$d of %2$d items...</string>
+    <string name="assistant_memory_settings_title">Memory Settings</string>
+    <string name="assistant_memory_mode_label">Memory Mode: %1$s</string>
+    <string name="assistant_memory_rag_retrieval">RAG Memory Retrieval</string>
+    <string name="assistant_memory_rag_retrieval_desc">Smart context-based memory retrieval</string>
+    <string name="assistant_memory_advanced_title">Advanced Memory</string>
+    <string name="assistant_memory_advanced_desc">Form episodic memories from conversations</string>
+    <string name="assistant_memory_rag_settings">RAG Settings</string>
+    <string name="assistant_memory_advanced_settings">Advanced Memory Settings</string>
+    <string name="assistant_memory_debugger">Memory Debugger</string>
+    <string name="assistant_memory_similarity_threshold">Similarity Threshold</string>
+    <string name="assistant_memory_similarity_threshold_desc">Minimum similarity score (0.0 = include all, 1.0 = only perfect matches). Lower values include more memories. Current: %1$.2f</string>
+    <string name="assistant_memory_similarity_all">0.0 (All)</string>
+    <string name="assistant_memory_similarity_exact">1.0 (Exact)</string>
+    <string name="assistant_memory_similarity_perfect">1.0 (Perfect)</string>
+    <string name="assistant_memory_consolidation_delay_label">Consolidation Delay</string>
+    <string name="assistant_memory_consolidation_delay_value">%1$d min</string>
+    <string name="assistant_memory_sort">Sort</string>
+    <string name="assistant_memory_regenerate_embeddings">Regenerate Embeddings</string>
+    <string name="assistant_memory_add_memory">Add Memory</string>
+    <string name="assistant_memory_tab_core">Core (%1$d)</string>
+    <string name="assistant_memory_tab_episodic">Episodic (%1$d)</string>
+    <string name="assistant_memory_search_placeholder">Search memories...</string>
+    <string name="assistant_memory_empty">No memories yet</string>
+    <string name="assistant_memory_empty_search">No matching memories</string>
+    <string name="assistant_memory_type_core">CORE</string>
+    <string name="assistant_memory_type_episodic">EPISODIC</string>
+    <string name="assistant_memory_no_embedding">NO EMBEDDING</string>
+    <string name="assistant_memory_test_retrieval_desc">Test RAG retrieval to see which memories are returned</string>
+    <string name="assistant_memory_test_query_placeholder">Enter test query...</string>
+    <string name="assistant_memory_test">Test</string>
+    <string name="assistant_memory_results">Results (%1$d):</string>
+    <string name="assistant_memory_score">Score: %1$s</string>
+    <string name="assistant_memory_estimated_capacity">Estimated capacity: ~%1$d memories</string>
+    <string name="assistant_memory_embedded">Embedded</string>
+    <string name="assistant_memory_total">Total</string>
+    <string name="assistant_memory_active">Active</string>
+    <string name="assistant_memory_mode_off">Off</string>
+    <string name="assistant_memory_mode_off_desc">Memory is disabled</string>
+    <string name="assistant_memory_mode_basic">Basic</string>
+    <string name="assistant_memory_mode_basic_desc">All memories sent to model in every conversation</string>
+    <string name="assistant_memory_mode_basic_recent">Basic + Recent Chats</string>
+    <string name="assistant_memory_mode_basic_recent_desc">Adds titles and timestamps of recent conversations</string>
+    <string name="assistant_memory_mode_basic_rag">Basic + RAG</string>
+    <string name="assistant_memory_mode_basic_rag_desc">Smart memory retrieval based on conversation context</string>
+    <string name="assistant_memory_mode_advanced">Advanced</string>
+    <string name="assistant_memory_mode_advanced_desc">Forms episodic memories with automatic consolidation</string>
+    <string name="assistant_memory_sort_newest">Newest First</string>
+    <string name="assistant_memory_sort_oldest">Oldest First</string>
+    <string name="assistant_memory_sort_alpha">Alphabetical</string>
+    <string name="assistant_memory_include_core">Include Core Memories</string>
+    <string name="assistant_memory_include_core_desc">Include permanent facts in retrieval.</string>
+    <string name="assistant_memory_include_episodic">Include Episodic Memories</string>
+    <string name="assistant_memory_include_episodic_desc">Include conversation history in retrieval.</string>
+    <string name="assistant_memory_recent_chats_reference">Recent Chats Reference</string>
+    <string name="assistant_memory_recent_chats_reference_desc">Include recent chat history in the context window.</string>
+    <string name="assistant_memory_retrieval_debugger">Memory Retrieval Debugger</string>
+    <string name="assistant_memory_retrieval_debugger_desc">Test RAG retrieval with a query to see which memories are retrieved and their similarity scores.</string>
+    <string name="assistant_memory_test_query">Test Query</string>
+    <string name="assistant_memory_type_label">Type: %1$s</string>
+    <string name="assistant_memory_id_label">ID: %1$d</string>
+    <string name="assistant_memory_no_results">No memories retrieved. Try lowering the similarity threshold or check if embeddings are generated.</string>
+
+    <!-- Assistant model -->
+    <string name="assistant_model_group_models">Models</string>
+    <string name="assistant_model_background_model">Background Model</string>
+    <string name="assistant_model_background_model_desc">For notifications and background tasks</string>
+    <string name="assistant_model_group_generation">Generation</string>
+    <string name="assistant_model_temp_strict_value">Strict (%1$s)</string>
+    <string name="assistant_model_temp_balanced_value">Balanced (%1$s)</string>
+    <string name="assistant_model_temp_creative_value">Creative (%1$s)</string>
+    <string name="assistant_model_temp_chaotic_value">Chaotic (%1$s)</string>
+    <string name="assistant_model_group_output">Output</string>
+    <string name="assistant_model_auto">Auto</string>
+
+    <!-- Assistant profile -->
+    <string name="assistant_profile_tap_change_avatar">Tap to change avatar</string>
+    <string name="assistant_profile_identity">Identity</string>
+    <string name="assistant_profile_name_desc">Display name for this character</string>
+    <string name="assistant_profile_tags_desc">Organize with custom tags</string>
+    <string name="assistant_profile_appearance">Appearance</string>
+
+    <!-- Assistant tools -->
+    <string name="assistant_tools_search_group">Search</string>
+    <string name="assistant_tools_search_provider">Search Provider</string>
+    <string name="assistant_tools_prefer_builtin">Prefer Built-in Search</string>
+    <string name="assistant_tools_prefer_builtin_desc">Use model\'s native search when available</string>
+    <string name="assistant_tools_mcp_enabled_count">%1$d enabled of %2$d</string>
+    <string name="assistant_tools_mcp_select">Select external tool servers</string>
+    <string name="assistant_tools_provider_fallback">Provider %1$d</string>
+
+    <!-- UI customization -->
+    <string name="setting_ui_show_avatar_header_title">Show Avatar in Header</string>
+    <string name="setting_ui_show_avatar_header_desc">Display character avatar in the new chat header</string>
+    <string name="setting_ui_show_avatar_header_global_desc">When disabled, avatar moves to top-right corner</string>
+    <string name="setting_ui_move_toolbar_bottom_title">Move Chat Toolbar to Bottom</string>
+    <string name="setting_ui_move_toolbar_bottom_desc">Place the chat toolbar below the minimal message input bar</string>
+    <string name="setting_ui_show_character_avatar_title">Show Character Avatar</string>
+    <string name="setting_ui_show_character_avatar_desc">Show the character\'s avatar before messages</string>
+    <string name="setting_ui_show_context_stacks_title">Show Context Stacks</string>
+    <string name="setting_ui_show_context_stacks_desc">Show context sources (skills, memories, lorebooks) in message toolbar</string>
+    <string name="setting_ui_message_jumper_group">Message Jumper</string>
+    <string name="setting_ui_haptics_group">Haptics</string>
+    <string name="setting_ui_haptics_ui_title">UI Haptic Feedback</string>
+    <string name="setting_ui_haptics_ui_desc">Enable tactile feedback when tapping buttons and controls</string>
+    <string name="setting_ui_media_group">Media</string>
+    <string name="setting_ui_code_blocks_group">Code Blocks</string>
+    <string name="setting_ui_context_sources_group">Context Sources</string>
+    <string name="setting_ui_state_on">On</string>
+    <string name="setting_ui_state_off">Off</string>
+    <string name="setting_ui_state_global">Global</string>
+    <string name="setting_ui_state_global_value">Global (%1$s)</string>
+    <string name="setting_ui_state_custom">Custom</string>
+
+    <!-- Fonts -->
+    <string name="setting_fonts_title">Fonts</string>
+    <string name="setting_fonts_reset_all">Reset All</string>
+    <string name="setting_fonts_reset_all_title">Reset All Fonts?</string>
+    <string name="setting_fonts_reset_all_desc">This will reset all font settings to their defaults. Custom fonts will be kept but no longer applied.</string>
+    <string name="setting_fonts_general">General</string>
+    <string name="setting_fonts_use_system">Use phone system font</string>
+    <string name="setting_fonts_use_system_desc">Use the default Android font for app text</string>
+    <string name="setting_fonts_app_font">App Font</string>
+    <string name="setting_fonts_app_font_desc">Titles, headings, buttons, and body text</string>
+    <string name="setting_fonts_code_blocks">Code Blocks</string>
+    <string name="setting_fonts_code_blocks_desc">Code, inline code, and monospace text</string>
+    <string name="setting_fonts_preview">Preview</string>
+    <string name="setting_fonts_reset_title">Reset %1$s Font?</string>
+    <string name="setting_fonts_reset_desc">This will reset the font settings for %1$s to defaults.</string>
+    <string name="setting_fonts_font_source">Font Source</string>
+    <string name="setting_fonts_builtin">Built-in</string>
+    <string name="setting_fonts_custom">Custom</string>
+    <string name="setting_fonts_variable_font">Variable font · %1$d axes</string>
+    <string name="setting_fonts_remove">Remove</string>
+    <string name="setting_fonts_axes">Font Axes</string>
+    <string name="setting_fonts_width">Width</string>
+    <string name="setting_fonts_roundness">Roundness</string>
+    <string name="setting_fonts_typography">Typography</string>
+    <string name="setting_fonts_size">Size</string>
+    <string name="setting_fonts_letter_spacing">Letter Spacing</string>
+    <string name="setting_fonts_opentype_features">OpenType Features</string>
+    <string name="setting_fonts_header_preview">Header Preview</string>
+    <string name="setting_fonts_content_preview">This is a preview of the content font. It shows how body text will appear in messages and other content areas.</string>
+    <string name="setting_fonts_code_preview">fun main() {\n    println(\"Hello, World!\")\n}</string>
+    <string name="setting_fonts_source_default">LastChat Default</string>
+    <string name="setting_fonts_source_code">LastChat Code</string>
+    <string name="setting_fonts_source_custom_fallback">Custom Font</string>
+
+    <!-- Settings page -->
+    <string name="buy_me_a_coffee">Buy Me a Coffee</string>
+    <string name="setting_storage_scanning">Scanning app storage...</string>
+    <string name="setting_storage_summary">App %1$s • Chat %2$s</string>
+    <string name="update_available">Update Available</string>
+    <string name="update_available_version">Version %1$s is available</string>
+    <string name="update_dialog_title">Update to %1$s</string>
+    <string name="update_changelog">Changelog:</string>
+    <string name="update_no_changelog">No changelog available</string>
+
+    <!-- MCP -->
+    <string name="setting_mcp_delete_server">Are you sure you want to delete this MCP server?</string>
+    <string name="setting_mcp_transport_sse">SSE</string>
+    <string name="setting_mcp_transport_streamable_http">Streamable HTTP</string>
+    <string name="setting_mcp_import_placeholder">{ \"mcpServers\": { ... } }</string>
+
+    <!-- RP optimizations -->
+    <string name="setting_rp_optimizations_title">RP Optimizations</string>
+    <string name="setting_rp_custom_text_styling">Custom Text Styling</string>
+    <string name="setting_rp_custom_text_styling_desc">Define custom color rules for markdown elements. Add rules with patterns below to change their text color.</string>
+    <string name="setting_rp_supported_patterns">Supported Patterns</string>
+    <string name="setting_rp_no_rules">No rules yet. Tap + to add one.</string>
+    <string name="setting_rp_add_rule">Add Rule</string>
+    <string name="setting_rp_edit_rule">Edit Rule</string>
+    <string name="setting_rp_pattern">Pattern</string>
+    <string name="setting_rp_pattern_placeholder">e.g., *, **, ~~, &gt;, #, %%, ||</string>
+    <string name="setting_rp_heading_level">Heading level %1$d</string>
+    <string name="setting_rp_blockquotes">Blockquotes</string>
+    <string name="setting_rp_italic">Italic text (*text*)</string>
+    <string name="setting_rp_bold">Bold text (**text**)</string>
+    <string name="setting_rp_strikethrough">Strikethrough (~~text~~)</string>
+    <string name="setting_rp_inline_code">Inline code (`text`)</string>
+    <string name="setting_rp_custom_preview">Custom: %1$stext%1$s</string>
+    <string name="setting_rp_enter_pattern">Enter any pattern</string>
+    <string name="setting_rp_color_hex">Color (Hex)</string>
+    <string name="setting_rp_presets">Presets</string>
+    <string name="setting_rp_example_text">%1$sexample text%1$s</string>
+
+    <!-- Search settings -->
+    <string name="setting_search_delete_service">Are you sure you want to delete this search service?</string>
+    <string name="setting_search_service_generic">Search Service</string>
+    <string name="setting_search_edit_service">Edit %1$s</string>
+    <string name="setting_search_bing_no_config">Bing search doesn\'t require any configuration.</string>
+    <string name="setting_search_unknown_provider">Unknown</string>
+    <string name="setting_search_preset_bing_desc">Free local Bing search, no API key needed</string>
+    <string name="setting_search_preset_perplexity_desc">AI-powered search with citations</string>
+    <string name="setting_search_preset_ollama_desc">Search powered by Ollama</string>
+    <string name="setting_search_preset_brave_desc">Privacy-focused web search</string>
+    <string name="setting_search_preset_grok_desc">xAI web search with cited answers</string>
+    <string name="setting_search_preset_nanogpt_desc">AI web search with scraping and stealth mode</string>
+    <string name="setting_search_preset_tavily_desc">AI-optimized search with scraping support</string>
+    <string name="setting_search_preset_exa_desc">Neural search engine for quality results</string>
+    <string name="setting_search_preset_jina_desc">Search and web scraping API</string>
+    <string name="setting_search_preset_firecrawl_desc">Web scraping and crawling API</string>
+    <string name="setting_search_preset_searxng_desc">Self-hosted metasearch engine</string>
+    <string name="setting_search_preset_linkup_desc">Link aggregation and search</string>
+    <string name="setting_search_preset_zhipu_desc">Zhipu AI web search</string>
+    <string name="setting_search_preset_metaso_desc">Metaso Chinese search engine</string>
+    <string name="setting_search_preset_bocha_desc">Bocha search with summary</string>
+    <string name="search_field_api_key">API Key</string>
+    <string name="search_field_depth">Depth</string>
+    <string name="search_field_api_url">API URL</string>
+    <string name="search_field_engines">Engines</string>
+    <string name="search_field_language">Language</string>
+    <string name="search_field_username">Username</string>
+    <string name="search_field_password">Password</string>
+    <string name="search_field_max_tokens_per_page">Max Tokens / Page</string>
+    <string name="search_field_model">Model</string>
+    <string name="search_grok_model_desc">Use an xAI model that supports web search</string>
+    <string name="search_field_summary">Summary</string>
+    <string name="search_field_summary_desc">Enable summary generation</string>
+    <string name="search_field_search_depth">Search Depth</string>
+    <string name="search_field_search_depth_desc">Standard is faster/cheaper, Deep is more comprehensive</string>
+    <string name="search_field_output_type">Output Type</string>
+    <string name="search_field_output_type_desc">searchResults: multiple sources, sourcedAnswer: synthesized answer</string>
+    <string name="search_output_results">Results</string>
+    <string name="search_output_answer">Answer</string>
+    <string name="search_field_include_images">Include Images</string>
+    <string name="search_field_include_images_desc">Include images in search results</string>
+    <string name="search_field_stealth_mode">Stealth Mode</string>
+    <string name="search_field_stealth_mode_desc">Use stealth mode for web scraping</string>
+
+    <!-- Skills -->
+    <string name="skills_claude_standard">Compatible with Claude Skills standard</string>
+
+    <!-- TTS -->
+    <string name="setting_tts_settings_title">TTS Settings</string>
+    <string name="setting_tts_error">TTS Error: %1$s</string>
+    <string name="setting_tts_delete_service">Are you sure you want to delete this TTS service?</string>
+    <string name="setting_tts_test_voice">Test TTS</string>
+    <string name="setting_tts_test_voice_preview">Hello user, this is what your characters will sound like if you use this setup!</string>
+    <string name="setting_tts_filter_title">Configure text patterns for TTS</string>
+    <string name="setting_tts_filter_desc">Skip: Text matching the pattern will be skipped.\nOnly Read: Only text matching the pattern will be read.</string>
+    <string name="setting_tts_filter_empty">No rules yet. Tap + to add one.</string>
+    <string name="setting_tts_filter_edit_rule">Edit Rule</string>
+    <string name="setting_tts_filter_add_rule">Add Rule</string>
+    <string name="setting_tts_filter_pattern">Pattern</string>
+    <string name="setting_tts_filter_pattern_placeholder">e.g., * or %</string>
+    <string name="setting_tts_filter_pattern_desc">Text wrapped like %1$stext%1$s will be filtered</string>
+    <string name="setting_tts_filter_mode">Mode</string>
+    <string name="setting_tts_filter_skip">Skip</string>
+    <string name="setting_tts_filter_only_read">Only Read</string>
+    <string name="setting_tts_filter_skip_desc">Text inside %1$s...%1$s will be skipped</string>
+    <string name="setting_tts_filter_only_read_desc">Only text inside %1$s...%1$s will be read</string>
+    <string name="setting_tts_filter_delete">Delete</string>
+    <string name="setting_tts_preset_system_desc">Uses device\'s built-in TTS engine</string>
+    <string name="setting_tts_preset_openai_desc">High-quality voices with emotion</string>
+    <string name="setting_tts_preset_gemini_desc">Google\'s TTS with natural voices</string>
+    <string name="setting_tts_preset_elevenlabs_desc">Professional voice cloning</string>
+    <string name="setting_tts_preset_minimax_desc">Chinese TTS with emotions</string>
+    <string name="setting_tts_preset_qwen_desc">DashScope streaming TTS with voice presets</string>
+</resources>

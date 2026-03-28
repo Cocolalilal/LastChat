@@ -51,8 +51,14 @@ const val CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID = "chat_completed"
 const val WEB_SERVER_NOTIFICATION_CHANNEL_ID = "web_server"
 
 class LastChatApp : Application() {
+    companion object {
+        lateinit var instance: LastChatApp
+            private set
+    }
+
     override fun onCreate() {
         super.onCreate()
+        instance = this
         startKoin {
             androidLogger()
             androidContext(this@LastChatApp)

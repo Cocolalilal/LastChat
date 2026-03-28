@@ -147,7 +147,12 @@ fun AssistantDetailPage(
                     toaster.show(context.getString(R.string.export_success))
                 } catch (e: Exception) {
                     e.printStackTrace()
-                    toaster.show("Export failed: ${e.message}")
+                    toaster.show(
+                        context.getString(
+                            R.string.export_failed_message,
+                            e.message ?: context.getString(R.string.backup_page_unknown_error)
+                        )
+                    )
                 }
                 pendingExportContent = ""
             }
@@ -167,7 +172,12 @@ fun AssistantDetailPage(
                     toaster.show(context.getString(R.string.export_success))
                 } catch (e: Exception) {
                     e.printStackTrace()
-                    toaster.show("Export failed: ${e.message}")
+                    toaster.show(
+                        context.getString(
+                            R.string.export_failed_message,
+                            e.message ?: context.getString(R.string.backup_page_unknown_error)
+                        )
+                    )
                 }
                 pendingExportBytes = null
             }
@@ -228,7 +238,7 @@ fun AssistantDetailPage(
                             IconButton(onClick = { showExportMenu = true }) {
                                 Icon(
                                     imageVector = Icons.Rounded.Upload,
-                                    contentDescription = "Export"
+                                    contentDescription = stringResource(R.string.assistant_detail_export)
                                 )
                             }
                             
@@ -237,7 +247,7 @@ fun AssistantDetailPage(
                                 onDismissRequest = { showExportMenu = false }
                             ) {
                                 DropdownMenuItem(
-                                    text = { Text("LastChat Bundle (.json)") },
+                                    text = { Text(stringResource(R.string.assistant_detail_export_lastchat_bundle)) },
                                     onClick = {
                                         showExportMenu = false
                                         if (hasMemories || hasLorebooks) {
@@ -256,14 +266,19 @@ fun AssistantDetailPage(
                                                     exportLauncher.launch(fileName)
                                                 } catch (e: Exception) {
                                                     e.printStackTrace()
-                                                    toaster.show("Export failed: ${e.message}")
+                                                    toaster.show(
+                                                        context.getString(
+                                                            R.string.export_failed_message,
+                                                            e.message ?: context.getString(R.string.backup_page_unknown_error)
+                                                        )
+                                                    )
                                                 }
                                             }
                                         }
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("Character Card V2 (.json)") },
+                                    text = { Text(stringResource(R.string.assistant_detail_export_card_json)) },
                                     onClick = {
                                         showExportMenu = false
                                         scope.launch {
@@ -274,13 +289,18 @@ fun AssistantDetailPage(
                                                 exportLauncher.launch(fileName)
                                             } catch (e: Exception) {
                                                 e.printStackTrace()
-                                                toaster.show("Export failed: ${e.message}")
+                                                toaster.show(
+                                                    context.getString(
+                                                        R.string.export_failed_message,
+                                                        e.message ?: context.getString(R.string.backup_page_unknown_error)
+                                                    )
+                                                )
                                             }
                                         }
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("Character Card V2 (.png)") },
+                                    text = { Text(stringResource(R.string.assistant_detail_export_card_png)) },
                                     onClick = {
                                         showExportMenu = false
                                         scope.launch {
@@ -291,11 +311,16 @@ fun AssistantDetailPage(
                                                     val fileName = AssistantExportImport.getSuggestedFileName(assistant, "card_v2_png")
                                                     pngExportLauncher.launch(fileName)
                                                 } else {
-                                                    toaster.show("Export failed: Could not create PNG")
+                                                    toaster.show(context.getString(R.string.export_failed_create_png))
                                                 }
                                             } catch (e: Exception) {
                                                 e.printStackTrace()
-                                                toaster.show("Export failed: ${e.message}")
+                                                toaster.show(
+                                                    context.getString(
+                                                        R.string.export_failed_message,
+                                                        e.message ?: context.getString(R.string.backup_page_unknown_error)
+                                                    )
+                                                )
                                             }
                                         }
                                     }
@@ -467,8 +492,8 @@ fun AssistantDetailPage(
 
     
     if (showExportOptionsDialog) {
-        me.rerere.rikkahub.ui.pages.chat.ExportOptionsDialog(
-            title = "Export Options",
+        ExportOptionsDialog(
+            title = stringResource(R.string.assistant_detail_export_options),
             onDismissRequest = { showExportOptionsDialog = false },
             showMemoriesOption = hasMemories,
             showLorebooksOption = hasLorebooks,
@@ -487,7 +512,12 @@ fun AssistantDetailPage(
                         exportLauncher.launch(fileName)
                     } catch (e: Exception) {
                         e.printStackTrace()
-                            toaster.show(message = "Export failed: ${e.message}")
+                        toaster.show(
+                            message = context.getString(
+                                R.string.export_failed_message,
+                                e.message ?: context.getString(R.string.backup_page_unknown_error)
+                            )
+                        )
                     }
                 }
             }
@@ -560,18 +590,18 @@ private fun AssistantDetailHome(
         // ═══════════════════════════════════════════════════════════════════
         // NAVIGATION CARDS - Grouped properly
         // ═══════════════════════════════════════════════════════════════════
-        SettingsGroup(title = "Configuration") {
+        SettingsGroup(title = stringResource(R.string.assistant_detail_group_configuration)) {
             NavigationCard(
                 icon = Icons.Rounded.Person,
-                title = "Profile",
-                description = "Name, avatar, tags, appearance",
+                title = stringResource(R.string.assistant_detail_profile),
+                description = stringResource(R.string.assistant_detail_profile_desc),
                 onClick = onNavigateToProfile
             )
 
             NavigationCard(
                 icon = Icons.AutoMirrored.Rounded.Chat,
                 title = stringResource(R.string.assistant_page_tab_prompt),
-                description = "System prompts, quick messages, presets",
+                description = stringResource(R.string.assistant_detail_prompts_desc),
                 onClick = onNavigateToPrompts
             )
 
@@ -584,40 +614,40 @@ private fun AssistantDetailHome(
 
             NavigationCard(
                 icon = Icons.Rounded.Psychology,
-                title = "Models",
-                description = "Chat model, background model, generation settings",
+                title = stringResource(R.string.assistant_detail_models),
+                description = stringResource(R.string.assistant_detail_models_desc),
                 onClick = onNavigateToModel
             )
         }
 
-        SettingsGroup(title = "Capabilities") {
+        SettingsGroup(title = stringResource(R.string.assistant_detail_group_capabilities)) {
             NavigationCard(
                 icon = Icons.Rounded.Memory,
                 title = stringResource(R.string.assistant_page_tab_memory),
-                description = "Memory settings, recent chats, RAG",
+                description = stringResource(R.string.assistant_detail_memory_desc),
                 onClick = onNavigateToMemory
             )
 
             NavigationCard(
                 icon = Icons.Rounded.Build,
-                title = "Tools & Search",
-                description = "Search providers, local tools, MCP",
+                title = stringResource(R.string.assistant_detail_tools_search),
+                description = stringResource(R.string.assistant_detail_tools_search_desc),
                 onClick = onNavigateToTools
             )
         }
 
-        SettingsGroup(title = "Other") {
+        SettingsGroup(title = stringResource(R.string.assistant_detail_group_other)) {
             NavigationCard(
                 icon = Icons.Rounded.Palette,
-                title = "UI Customization",
-                description = "Per-character display settings",
+                title = stringResource(R.string.assistant_detail_ui_customization),
+                description = stringResource(R.string.assistant_detail_ui_customization_desc),
                 onClick = onNavigateToUI
             )
 
             NavigationCard(
                 icon = Icons.Rounded.Tune,
-                title = "Advanced",
-                description = "Templates, regex, custom headers",
+                title = stringResource(R.string.assistant_detail_advanced),
+                description = stringResource(R.string.assistant_detail_advanced_desc),
                 onClick = onNavigateToAdvanced
             )
         }

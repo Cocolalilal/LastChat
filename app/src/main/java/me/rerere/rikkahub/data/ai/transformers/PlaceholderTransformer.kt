@@ -13,6 +13,8 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.utils.appLocale
+import me.rerere.rikkahub.utils.currentAppLocale
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
 import java.time.LocalDate
@@ -124,7 +126,7 @@ object DefaultPlaceholderProvider : PlaceholderProvider {
                 
                 location?.let { loc -> 
                     try {
-                        val geocoder = android.location.Geocoder(it.context, Locale.getDefault())
+                        val geocoder = android.location.Geocoder(it.context, it.context.appLocale())
                         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
                             // For Android 13+, Geocoder is async, but we need sync here for the placeholder.
                             // This is a limitation of the current synchronous placeholder architecture.
@@ -167,17 +169,17 @@ object DefaultPlaceholderProvider : PlaceholderProvider {
 
     private fun Temporal.toDateString() = DateTimeFormatter
         .ofLocalizedDate(FormatStyle.MEDIUM)
-        .withLocale(Locale.getDefault())
+        .withLocale(currentAppLocale())
         .format(this)
 
     private fun Temporal.toTimeString() = DateTimeFormatter
         .ofLocalizedTime(FormatStyle.MEDIUM)
-        .withLocale(Locale.getDefault())
+        .withLocale(currentAppLocale())
         .format(this)
 
     private fun Temporal.toDateTimeString() = DateTimeFormatter
         .ofLocalizedDateTime(FormatStyle.MEDIUM)
-        .withLocale(Locale.getDefault())
+        .withLocale(currentAppLocale())
         .format(this)
 
     private fun Context.batteryLevel(): Int {

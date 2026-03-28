@@ -22,13 +22,13 @@ import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.Migration_6_7
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.sync.WebdavSync
+import me.rerere.rikkahub.utils.appLocale
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import org.koin.dsl.module
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
-import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 val dataSourceModule = module {
@@ -65,7 +65,7 @@ val dataSourceModule = module {
     single {
         PebbleEngine.Builder()
             .loader(get<AssistantTemplateLoader>())
-            .defaultLocale(Locale.getDefault())
+            .defaultLocale(get<android.content.Context>().appLocale())
             .autoEscaping(false)
             .build()
     }

@@ -108,8 +108,8 @@ fun AssistantContextManagementSubPage(
             }
 
             SettingGroupItem(
-                title = "Auto-summarize messages",
-                subtitle = "Automatically summarize when history limit is reached",
+                title = stringResource(R.string.assistant_context_auto_summarize),
+                subtitle = stringResource(R.string.assistant_context_auto_summarize_desc),
                 trailing = {
                     HapticSwitch(
                         checked = assistant.autoRegenerateSummary,
@@ -132,10 +132,13 @@ fun AssistantContextManagementSubPage(
                 var sliderValue by remember(historyLimit) { mutableFloatStateOf(historyLimit.toFloat()) }
                 
                 SliderSettingCard(
-                    title = "History limit",
+                    title = stringResource(R.string.assistant_context_history_limit),
                     value = sliderValue,
-                    valueText = "${sliderValue.roundToInt()} messages",
-                    description = "Number of messages before auto-summarization triggers",
+                    valueText = stringResource(
+                        R.string.assistant_context_history_limit_value,
+                        sliderValue.roundToInt()
+                    ),
+                    description = stringResource(R.string.assistant_context_history_limit_desc),
                     onValueChange = { sliderValue = it },
                     onValueChangeFinished = {
                         val newValue = sliderValue.roundToInt()
@@ -177,7 +180,7 @@ fun AssistantContextManagementSubPage(
             )
         }
 
-        SettingsGroup(title = "Image Context") {
+        SettingsGroup(title = stringResource(R.string.assistant_context_image_context)) {
             val archiveThreshold = assistant.archiveImagesAfterMessageAge ?: 0
             var archiveSliderValue by remember(archiveThreshold) {
                 mutableFloatStateOf(archiveThreshold.toFloat())
@@ -185,13 +188,16 @@ fun AssistantContextManagementSubPage(
 
             SliderSettingCard(
                 title = if (archiveSliderValue.roundToInt() == 0) {
-                    "Keep all images in context"
+                    stringResource(R.string.assistant_context_keep_all_images)
                 } else {
-                    "Archive images after ${archiveSliderValue.roundToInt()} messages"
+                    stringResource(
+                        R.string.assistant_context_archive_images_after,
+                        archiveSliderValue.roundToInt()
+                    )
                 },
                 value = archiveSliderValue,
                 valueText = "",
-                description = "Older chat images stay visible in the transcript, but once OCR is ready they stop consuming image context and use text instead.",
+                description = stringResource(R.string.assistant_context_image_context_desc),
                 onValueChange = { archiveSliderValue = it },
                 onValueChangeFinished = {
                     val newValue = archiveSliderValue.roundToInt()

@@ -95,6 +95,7 @@ import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.utils.JsonInstantPretty
 import me.rerere.rikkahub.utils.applyPlaceholders
+import me.rerere.rikkahub.utils.appLocale
 import me.rerere.rikkahub.utils.getFileMimeType
 import me.rerere.search.SearchService
 import me.rerere.search.SearchServiceOptions
@@ -1670,7 +1671,7 @@ class ChatService(
                 messages = listOf(
                     UIMessage.user(
                         prompt = settings.titlePrompt.applyPlaceholders(
-                            "locale" to Locale.getDefault().displayName,
+                            "locale" to context.appLocale().displayName,
                             "content" to contentForTitle)
                     ),
                 ),
@@ -1709,7 +1710,7 @@ class ChatService(
                 messages = listOf(
                     UIMessage.user(
                         settings.suggestionPrompt.applyPlaceholders(
-                            "locale" to Locale.getDefault().displayName,
+                            "locale" to context.appLocale().displayName,
                             "content" to conversation.currentMessages.truncate(conversation.truncateIndex)
                                 .takeLast(8).joinToString("\n\n") { it.summaryAsText() }),
                     )

@@ -843,11 +843,11 @@ fun SkillEditorSheet(
                                     ) {
                                         UIAvatar(
                                             value = assistant.avatar,
-                                            name = assistant.name.ifBlank { "Character" },
+                                            name = assistant.name.ifBlank { stringResource(R.string.text_selection_assistant) },
                                             modifier = Modifier.size(32.dp),
                                         )
                                         Text(
-                                            text = assistant.name.ifBlank { "Character" },
+                                            text = assistant.name.ifBlank { stringResource(R.string.text_selection_assistant) },
                                             style = MaterialTheme.typography.bodyLarge,
                                             modifier = Modifier.weight(1f),
                                             maxLines = 1,
@@ -964,7 +964,12 @@ private fun SkillExportDialog(
             }.onSuccess {
                 toaster.show(context.getString(R.string.skill_export_success))
             }.onFailure {
-                toaster.show("Export failed: ${it.message}")
+                toaster.show(
+                    context.getString(
+                        R.string.export_failed_message,
+                        it.message ?: context.getString(R.string.backup_page_unknown_error)
+                    )
+                )
             }
         }
         onDismiss()
@@ -1004,7 +1009,7 @@ private fun SkillExportDialog(
                 ListItem(
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     headlineContent = { Text(stringResource(R.string.export_format_skill_md)) },
-                    supportingContent = { Text("Compatible with Claude Skills standard") },
+                    supportingContent = { Text(stringResource(R.string.skills_claude_standard)) },
                     leadingContent = {
                         Icon(Icons.Rounded.Code, contentDescription = null)
                     }

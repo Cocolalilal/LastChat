@@ -28,13 +28,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.utils.currentAppLocale
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupInputItem
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
@@ -42,6 +46,9 @@ import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import androidx.compose.material3.Text
 import kotlin.math.roundToInt
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 /**
  * Advanced tab - Message formatting and custom request settings.
@@ -51,6 +58,7 @@ fun AssistantAdvancedSubPage(
     assistant: Assistant,
     onUpdate: (Assistant) -> Unit
 ) {
+    val context = LocalContext.current
     val haptics = rememberPremiumHaptics()
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -82,10 +90,10 @@ fun AssistantAdvancedSubPage(
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
-        SettingsGroup(title = "Spontaneous Messaging") {
+        SettingsGroup(title = stringResource(R.string.assistant_advanced_spontaneous_messaging)) {
             SettingGroupItem(
-                title = "Enable Spontaneous Messages",
-                subtitle = "Let this character message you on their own",
+                title = stringResource(R.string.assistant_advanced_enable_spontaneous),
+                subtitle = stringResource(R.string.assistant_advanced_enable_spontaneous_desc),
                 trailing = {
                     HapticSwitch(
                         checked = assistant.enableSpontaneous,
@@ -111,11 +119,11 @@ fun AssistantAdvancedSubPage(
             ) {
                 val scheduleStartHour = scheduleSelection.startHour
                 SettingGroupInputItem(
-                    title = "Delivery schedule",
-                    subtitle = "Choose when spontaneous messages are allowed and how often they can happen."
+                    title = stringResource(R.string.assistant_advanced_delivery_schedule),
+                    subtitle = stringResource(R.string.assistant_advanced_delivery_schedule_desc)
                 ) {
                     Text(
-                        text = buildSpontaneousWindowSummary(scheduleSelection),
+                        text = buildSpontaneousWindowSummary(context, scheduleSelection),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -124,10 +132,15 @@ fun AssistantAdvancedSubPage(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Tag {
-                            Text("Starts ${formatHourLabel(scheduleStartHour)}")
+                            Text(
+                                stringResource(
+                                    R.string.assistant_advanced_schedule_starts,
+                                    formatHourLabel(scheduleStartHour)
+                                )
+                            )
                         }
                         Tag(type = TagType.SUCCESS) {
-                            Text(buildSpontaneousScheduleStatusLabel(scheduleSelection))
+                            Text(buildSpontaneousScheduleStatusLabel(context, scheduleSelection))
                         }
                     }
                     Row(
@@ -135,7 +148,12 @@ fun AssistantAdvancedSubPage(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Tag(type = TagType.INFO) {
-                            Text("Ends ${formatScheduleEndLabel(scheduleSelection)}")
+                            Text(
+                                stringResource(
+                                    R.string.assistant_advanced_schedule_ends,
+                                    formatScheduleEndLabel(context, scheduleSelection)
+                                )
+                            )
                         }
                     }
                     RangeSlider(
@@ -171,18 +189,21 @@ fun AssistantAdvancedSubPage(
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Text(
-                            text = "12 AM",
+                            text = formatHourLabel(0),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Text(
-                            text = "11 PM next day",
+                            text = stringResource(
+                                R.string.assistant_advanced_next_day,
+                                formatHourLabel(23)
+                            ),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     Text(
-                        text = "Drag the right handle past midnight for overnight windows. A full 24-hour span means all day.",
+                        text = stringResource(R.string.assistant_advanced_schedule_tip),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -196,13 +217,13 @@ fun AssistantAdvancedSubPage(
             ) {
                 val frequencyHours = frequencySlider.roundToInt().coerceIn(1, 24)
                 SettingGroupInputItem(
-                    title = "Minimum gap",
-                    subtitle = "Minimum cooldown between spontaneous messages from this character.",
+                    title = stringResource(R.string.assistant_advanced_minimum_gap),
+                    subtitle = stringResource(R.string.assistant_advanced_minimum_gap_desc),
                 ) {
                     SpontaneousSliderSection(
-                        title = "Minimum gap",
-                        valueLabel = formatFrequencyLabel(frequencyHours),
-                        description = "Minimum cooldown between spontaneous messages from this character.",
+                        title = stringResource(R.string.assistant_advanced_minimum_gap),
+                        valueLabel = formatFrequencyLabel(context, frequencyHours),
+                        description = stringResource(R.string.assistant_advanced_minimum_gap_desc),
                         sliderValue = frequencySlider,
                         onSliderValueChange = { frequencySlider = it.roundToInt().toFloat() },
                         onSliderValueFinished = {
@@ -221,7 +242,7 @@ fun AssistantAdvancedSubPage(
             }
         }
 
-        SettingsGroup(title = "Message Formatting") {
+        SettingsGroup(title = stringResource(R.string.assistant_advanced_message_formatting)) {
             MessageTemplateSettingsCard(
                 assistant = assistant,
                 onUpdate = onUpdate
@@ -234,7 +255,7 @@ fun AssistantAdvancedSubPage(
         }
 
         // Custom request settings
-        SettingsGroup(title = "Custom Request") {
+        SettingsGroup(title = stringResource(R.string.assistant_advanced_custom_request)) {
             androidx.compose.material3.Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
@@ -402,42 +423,53 @@ private const val SPONTANEOUS_SCHEDULE_SLIDER_MAX = 47
 private const val SPONTANEOUS_SCHEDULE_SLIDER_STEPS = 46
 
 private fun formatHourLabel(hour: Int): String {
-    val normalizedHour = hour.mod(24)
-    val hourOfDay = when (val value = normalizedHour % 12) {
-        0 -> 12
-        else -> value
-    }
-    val meridiem = if (normalizedHour < 12) "AM" else "PM"
-    return "$hourOfDay:00 $meridiem"
+    val formatter = DateTimeFormatter.ofPattern("h:mm a", currentAppLocale())
+    return LocalTime.of(hour.mod(24), 0).format(formatter)
 }
 
-private fun formatFrequencyLabel(hours: Int): String {
+private fun formatFrequencyLabel(context: android.content.Context, hours: Int): String {
     return if (hours == 1) {
-        "1 hour"
+        context.getString(R.string.assistant_advanced_frequency_hour)
     } else {
-        "$hours hours"
+        context.getString(R.string.assistant_advanced_frequency_hours, hours)
     }
 }
 
-private fun formatScheduleEndLabel(selection: SpontaneousScheduleSelection): String {
+private fun formatScheduleEndLabel(
+    context: android.content.Context,
+    selection: SpontaneousScheduleSelection,
+): String {
     val endLabel = formatHourLabel(selection.endHour)
-    return if (selection.endsNextDay) "$endLabel next day" else endLabel
-}
-
-private fun buildSpontaneousScheduleStatusLabel(selection: SpontaneousScheduleSelection): String {
-    return if (selection.isAllDay) {
-        "All day"
+    return if (selection.endsNextDay) {
+        context.getString(R.string.assistant_advanced_next_day, endLabel)
     } else {
-        "Duration ${formatFrequencyLabel(selection.spanHours)}"
+        endLabel
     }
 }
 
-private fun buildSpontaneousWindowSummary(selection: SpontaneousScheduleSelection): String {
-    val startLabel = formatHourLabel(selection.startHour)
-    val endLabel = formatScheduleEndLabel(selection)
+private fun buildSpontaneousScheduleStatusLabel(
+    context: android.content.Context,
+    selection: SpontaneousScheduleSelection,
+): String {
     return if (selection.isAllDay) {
-        "This character can reach out any time of day."
+        context.getString(R.string.assistant_advanced_all_day)
     } else {
-        "This character can reach out between $startLabel and $endLabel."
+        context.getString(
+            R.string.assistant_advanced_duration,
+            formatFrequencyLabel(context, selection.spanHours)
+        )
+    }
+}
+
+private fun buildSpontaneousWindowSummary(
+    context: android.content.Context,
+    selection: SpontaneousScheduleSelection,
+): String {
+    val startLabel = formatHourLabel(selection.startHour)
+    val endLabel = formatScheduleEndLabel(context, selection)
+    return if (selection.isAllDay) {
+        context.getString(R.string.assistant_advanced_reach_out_any_time)
+    } else {
+        context.getString(R.string.assistant_advanced_reach_out_between, startLabel, endLabel)
     }
 }

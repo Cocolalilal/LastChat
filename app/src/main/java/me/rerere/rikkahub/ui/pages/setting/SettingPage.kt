@@ -112,7 +112,7 @@ fun SettingPage(
                                 navController.navigate(Screen.Developer)
                             }
                         ) {
-                            Icon(Icons.Rounded.Build, "Developer")
+                            Icon(Icons.Rounded.Build, stringResource(R.string.developer))
                         }
                     }
                 }
@@ -276,9 +276,13 @@ fun SettingPage(
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_chat_storage),
                         subtitle = if (storageSnapshot.isScanning) {
-                            "Scanning app storage..."
+                            stringResource(R.string.setting_storage_scanning)
                         } else {
-                            "App ${storageSnapshot.totalBytes.fileSizeToString()} \u2022 Chat ${storageSnapshot.chatBytes.fileSizeToString()}"
+                            stringResource(
+                                R.string.setting_storage_summary,
+                                storageSnapshot.totalBytes.fileSizeToString(),
+                                storageSnapshot.chatBytes.fileSizeToString()
+                            )
                         },
                         icon = { Icon(Icons.Rounded.Storage, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
@@ -302,7 +306,7 @@ fun SettingPage(
                     
                     val context = LocalContext.current
                     SettingGroupItem(
-                        title = "Buy Me a Coffee",
+                        title = stringResource(R.string.buy_me_a_coffee),
                         icon = { Icon(Icons.Rounded.Favorite, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { 
@@ -453,12 +457,12 @@ private fun UpdateAvailableBanner(
                         )
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Update Available",
+                                text = stringResource(R.string.update_available),
                                 style = MaterialTheme.typography.titleSmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                             Text(
-                                text = "Version ${updateInfo.version} is available",
+                                text = stringResource(R.string.update_available_version, updateInfo.version),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                             )
@@ -474,18 +478,18 @@ private fun UpdateAvailableBanner(
                 if (showUpdateDialog) {
                     AlertDialog(
                         onDismissRequest = { showUpdateDialog = false },
-                        title = { Text("Update to ${updateInfo.version}") },
+                        title = { Text(stringResource(R.string.update_dialog_title, updateInfo.version)) },
                         text = {
                             Column(
                                 modifier = Modifier.verticalScroll(rememberScrollState()),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Text(
-                                    text = "Changelog:",
+                                    text = stringResource(R.string.update_changelog),
                                     style = MaterialTheme.typography.titleSmall
                                 )
                                 Text(
-                                    text = updateInfo.changelog.ifEmpty { "No changelog available" },
+                                    text = updateInfo.changelog.ifEmpty { context.getString(R.string.update_no_changelog) },
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             }
@@ -499,12 +503,12 @@ private fun UpdateAvailableBanner(
                                     showUpdateDialog = false
                                 }
                             ) {
-                                Text("Download")
+                                Text(stringResource(R.string.download))
                             }
                         },
                         dismissButton = {
                             TextButton(onClick = { showUpdateDialog = false }) {
-                                Text("Later")
+                                Text(stringResource(R.string.later))
                             }
                         }
                     )
