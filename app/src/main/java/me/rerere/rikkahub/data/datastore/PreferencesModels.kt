@@ -20,6 +20,7 @@ import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.Mode
 import me.rerere.rikkahub.data.model.Skill
 import me.rerere.rikkahub.data.model.Tag
+import me.rerere.rikkahub.data.model.TextSelectionAction
 import me.rerere.rikkahub.data.model.TextSelectionConfig
 import me.rerere.rikkahub.data.sync.BackupCleanupResult
 import me.rerere.rikkahub.ui.theme.PresetThemes
@@ -327,7 +328,31 @@ fun List<ProviderSetting>.findModelById(uuid: Uuid): Model? {
 }
 
 fun Settings.getCurrentChatModel(): Model? {
-    return findModelById(getCurrentAssistant().chatModelId ?: chatModelId)
+    return getChatModelForAssistant(getCurrentAssistant())
+}
+
+fun Settings.getChatModelForAssistant(assistant: Assistant): Model? {
+    return findModelById(assistant.chatModelId ?: chatModelId)
+}
+
+fun Settings.resolveTextSelectionAssistant(): Assistant {
+    return textSelectionConfig.assistantId?.let { getAssistantById(it) }
+        ?: getCurrentAssistant()
+}
+
+fun Settings.findTextSelectionAction(actionId: String): TextSelectionAction? {
+    return textSelectionConfig.actions.find { it.id == actionId }
+}
+
+fun Settings.getTextSelectionActionModel(
+    actionId: String,
+    assistant: Assistant = resolveTextSelectionAssistant(),
+): Model? {
+    findTextSelectionAction(actionId)?.modelId?.let { configuredModelId ->
+        findModelById(configuredModelId)?.let { return it }
+    }
+
+    return getChatModelForAssistant(assistant)
 }
 
 fun Settings.resolveConversationContext(assistantId: Uuid): ConversationContext {
@@ -470,7 +495,17 @@ fun Settings.sanitize(): Pair<Settings, BackupCleanupResult> {
 
     val allModelIds = providers.flatMap { it.models.map { model -> model.id } }.toSet()
     val cleanedFavorites = favoriteModels.filter { it in allModelIds }
-    orphanedModelReferences = favoriteModels.size - cleanedFavorites.size
+    orphanedModelReferences += favoriteModels.size - cleanedFavorites.size
+
+    val cleanedTextSelectionActions = textSelectionConfig.actions.map { action ->
+        val modelId = action.modelId
+        if (modelId != null && modelId !in allModelIds) {
+            orphanedModelReferences++
+            action.copy(modelId = null)
+        } else {
+            action
+        }
+    }
 
     val clampedSearchSelected = if (searchServices.isNotEmpty()) {
         searchServiceSelected.coerceIn(0, searchServices.size - 1)
@@ -482,6 +517,7 @@ fun Settings.sanitize(): Pair<Settings, BackupCleanupResult> {
         assistants = cleanedAssistants,
         favoriteModels = cleanedFavorites,
         searchServiceSelected = clampedSearchSelected,
+        textSelectionConfig = textSelectionConfig.copy(actions = cleanedTextSelectionActions),
     ).migrateLegacyModesToSkills()
 
     val result = BackupCleanupResult(

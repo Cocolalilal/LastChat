@@ -23,6 +23,7 @@ data class TextSelectionAction(
     val name: String,
     val icon: String, // Material icon name (e.g., "Translate", "Lightbulb")
     val prompt: String,
+    val modelId: Uuid? = null,
     val enabled: Boolean = true,
     val isCustomPrompt: Boolean = false // Special flag for "Ask anything" which shows input field
 )

@@ -75,7 +75,7 @@ import java.time.format.TextStyle
 import java.util.Locale
 
 private val StatCardMinHeight = 136.dp
-private val HeatmapCardMinHeight = 284.dp
+private val HeatmapCardMinHeight = 264.dp
 
 @Composable
 fun MenuPage() {

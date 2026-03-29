@@ -17,9 +17,9 @@ import me.rerere.rikkahub.data.ai.GenerationHandler
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.data.datastore.getAssistantById
-import me.rerere.rikkahub.data.datastore.getCurrentAssistant
-import me.rerere.rikkahub.data.datastore.getCurrentChatModel
+import me.rerere.rikkahub.data.datastore.findTextSelectionAction
+import me.rerere.rikkahub.data.datastore.getTextSelectionActionModel
+import me.rerere.rikkahub.data.datastore.resolveTextSelectionAssistant
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.repository.MemoryRepository
@@ -153,25 +153,26 @@ class TextSelectionVM(
         currentJob = viewModelScope.launch {
             try {
                 val settings = settingsStore.settingsFlow.value
-                val model = settings.getCurrentChatModel()
+                val assistant = resolveAssistant(settings)
+                val actionConfig = settings.findTextSelectionAction(action.actionId)
+                val model = settings.getTextSelectionActionModel(
+                    actionId = action.actionId,
+                    assistant = assistant,
+                )
                 if (model == null) {
                     state = TextSelectionState.Error(
-                        "No chat model selected. Please select a model in Settings."
+                        "No model is available for this Ask LastChat action. Please choose one in Android Integration settings."
                     )
                     return@launch
                 }
 
-                val assistant = resolveAssistant(settings)
                 lastAssistantId = assistant.id.toString()
                 val actionPrompt = buildQuickAskAssistantSystemPrompt(
                     action = action,
                     customPrompt = customPrompt,
                     assistantPrompt = assistant.systemPrompt,
                     translateLanguage = settings.textSelectionConfig.translateLanguage,
-                    userDefinedPrompt = settings.textSelectionConfig.actions
-                        .find { it.id == action.actionId }
-                        ?.prompt
-                        .orEmpty()
+                    userDefinedPrompt = actionConfig?.prompt.orEmpty()
                 )
                 val generationAssistant = assistant.copy(systemPrompt = actionPrompt)
                 val userParts = buildQuickAskMessageParts(
@@ -272,9 +273,7 @@ class TextSelectionVM(
     }
 
     private fun resolveAssistant(settings: Settings): Assistant {
-        val configuredAssistantId = settings.textSelectionConfig.assistantId
-        return configuredAssistantId?.let { settings.getAssistantById(it) }
-            ?: settings.getCurrentAssistant()
+        return settings.resolveTextSelectionAssistant()
     }
 
     override fun onCleared() {

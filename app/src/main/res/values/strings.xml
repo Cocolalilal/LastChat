@@ -1028,6 +1028,7 @@
     <string name="context_refresh_never">Never summarized</string>
     <string name="context_refresh_no_summarizer">Configure a summarizer model in Settings &gt; Default Models first</string>
     <string name="context_summarizer_model_optional_tip">Optional: choose a dedicated summarizer model in Settings &gt; Default Models for better summaries.</string>
+    <string name="summarizer_model_tip_banner">Choose a dedicated summarizer model in Settings &gt; Default Models for better summaries.</string>
     <string name="context_refresh_confirm_title">Summarize Messages?</string>
     <string name="context_refresh_confirm_message">This will summarize your conversation history into a compact form. The AI will remember the key points but detailed messages will be replaced with a summary.</string>
     
