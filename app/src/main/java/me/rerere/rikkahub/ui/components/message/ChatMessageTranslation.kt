@@ -50,6 +50,8 @@ import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Translate
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
+import me.rerere.rikkahub.utils.currentAppLocale
+import me.rerere.rikkahub.utils.localizedDisplayLanguage
 import java.util.Locale
 
 @Composable
@@ -61,6 +63,7 @@ fun LanguageSelectionDialog(
     // 支持的语言列表
     val languages = remember {
         listOf(
+            Locale.Builder().setLanguage("ar").setRegion("SA").build(),
             Locale.SIMPLIFIED_CHINESE,
             Locale.ENGLISH,
             Locale.TRADITIONAL_CHINESE,
@@ -77,6 +80,7 @@ fun LanguageSelectionDialog(
     @Composable
     fun getLanguageDisplayName(locale: Locale): String {
         return when (locale) {
+            Locale.Builder().setLanguage("ar").setRegion("SA").build() -> stringResource(R.string.language_arabic)
             Locale.SIMPLIFIED_CHINESE -> stringResource(R.string.language_simplified_chinese)
             Locale.ENGLISH -> stringResource(R.string.language_english)
             Locale.TRADITIONAL_CHINESE -> stringResource(R.string.language_traditional_chinese)
@@ -86,7 +90,7 @@ fun LanguageSelectionDialog(
             Locale.GERMAN -> stringResource(R.string.language_german)
             Locale.ITALIAN -> stringResource(R.string.language_italian)
             Locale.Builder().setLanguage("es").setRegion("ES").build() -> stringResource(R.string.language_spanish)
-            else -> locale.getDisplayLanguage(Locale.getDefault())
+            else -> locale.localizedDisplayLanguage(currentAppLocale())
         }
     }
 

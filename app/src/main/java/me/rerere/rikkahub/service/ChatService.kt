@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.util.Log
+import androidx.annotation.StringRes
 import androidx.core.net.toUri
 import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.utils.LogUtil
@@ -50,6 +51,7 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.finishReasoning
 import me.rerere.ai.ui.isEmptyInputMessage
@@ -68,12 +70,14 @@ import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.tools.ASK_USER_TOOL_NAME
 import me.rerere.rikkahub.data.ai.tools.AskUserAnswerPayload
 import me.rerere.rikkahub.data.ai.tools.LocalTools
+import me.rerere.rikkahub.data.ai.tools.PythonAttachmentReference
 import me.rerere.rikkahub.data.ai.tools.normalizeAskUserAnswerPayload
 import me.rerere.rikkahub.data.ai.tools.parseAskUserQuestionnaire
 import me.rerere.rikkahub.data.ai.tools.toJsonElement
 import me.rerere.rikkahub.data.ai.transformers.RegexOutputTransformer
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
 import me.rerere.rikkahub.data.ai.transformers.ThinkTagTransformer
+import me.rerere.rikkahub.data.ai.transformers.shouldSilentlyPreloadImageForPython
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
@@ -87,12 +91,13 @@ import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.replaceRegexes
 import me.rerere.rikkahub.data.model.shouldAutoSummarizeMessages
 import me.rerere.rikkahub.data.model.toMessageNode
+import me.rerere.rikkahub.data.repository.ChatAttachmentRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.utils.JsonInstantPretty
 import me.rerere.rikkahub.utils.applyPlaceholders
-import me.rerere.rikkahub.utils.createChatFilesByContents
-import me.rerere.rikkahub.utils.deleteChatFiles
+import me.rerere.rikkahub.utils.appLocale
+import me.rerere.rikkahub.utils.getFileMimeType
 import me.rerere.search.SearchService
 import me.rerere.search.SearchServiceOptions
 import java.time.Instant
@@ -201,10 +206,10 @@ internal fun selectConversationTurnVersion(
     )
 }
 
-internal fun buildForkConversationSnapshot(
+internal suspend fun buildForkConversationSnapshot(
     conversation: Conversation,
     messageId: Uuid,
-    copyAttachmentUrl: (String) -> String,
+    copyAttachmentUrl: suspend (String) -> String,
     newConversationId: Uuid = Uuid.random(),
     now: Instant = Instant.now(),
 ): Conversation? {
@@ -314,10 +319,50 @@ internal fun Conversation.hasPendingToolApprovals(): Boolean {
     }
 }
 
+internal fun dropDanglingAutoToolCallNodes(messageNodes: List<MessageNode>): List<MessageNode> {
+    return messageNodes.mapIndexed { index, node ->
+        val toolCalls = node.currentMessage.getToolCalls()
+        val nextMessage = messageNodes.getOrNull(index + 1)?.currentMessage
+        val hasFollowingToolResult = nextMessage?.hasPart<UIMessagePart.ToolResult>() == true
+        val shouldDropCurrentMessage = toolCalls.isNotEmpty() &&
+            toolCalls.all { toolCall -> toolCall.approvalState is ToolApprovalState.Auto } &&
+            !hasFollowingToolResult
+
+        if (!shouldDropCurrentMessage) {
+            node
+        } else {
+            node.copy(
+                messages = node.messages.filter { message -> message.id != node.currentMessage.id },
+                selectIndex = node.selectIndex - 1,
+            )
+        }
+    }
+}
+
 private fun Conversation.findCurrentToolCall(toolCallId: String): UIMessagePart.ToolCall? {
     return currentMessages
         .flatMap { it.getToolCalls() }
         .firstOrNull { it.toolCallId == toolCallId }
+}
+
+private fun Conversation.removeTrailingEmptyOcrPlaceholder(): Conversation {
+    val lastNode = messageNodes.lastOrNull() ?: return this
+    val lastMessage = lastNode.currentMessage
+    val isOcrOnlyPlaceholder = lastMessage.role == MessageRole.ASSISTANT &&
+        lastMessage.parts.isEmpty() &&
+        lastMessage.annotations.isNotEmpty() &&
+        lastMessage.annotations.all { annotation ->
+            annotation is UIMessageAnnotation.OcrActivity
+        }
+
+    if (!isOcrOnlyPlaceholder) {
+        return this
+    }
+
+    return copy(
+        messageNodes = messageNodes.dropLast(1),
+        updateAt = Instant.now(),
+    )
 }
 
 private fun Conversation.updateToolApprovalState(
@@ -356,6 +401,7 @@ class ChatService(
     private val appScope: AppScope,
     private val settingsStore: SettingsStore,
     private val conversationRepo: ConversationRepository,
+    private val chatAttachmentRepository: ChatAttachmentRepository,
     private val memoryRepository: MemoryRepository,
     private val generationHandler: GenerationHandler,
     private val templateTransformer: TemplateTransformer,
@@ -537,6 +583,10 @@ class ChatService(
 
         val conversation = withContext(Dispatchers.IO) {
             conversationRepo.getConversationById(conversationId)
+        }?.let { loadedConversation ->
+            withContext(Dispatchers.IO) {
+                chatAttachmentRepository.syncConversationAttachments(loadedConversation)
+            }
         }
         if (conversation != null) {
             updateConversation(conversationId, conversation)
@@ -1162,7 +1212,7 @@ class ChatService(
                 tools = tools,
                 truncateIndex = conversation.truncateIndex,
                 enabledModeIds = conversation.enabledModeIds,
-            ).onCompletion {
+            ).onCompletion { cause ->
                 // Calculate generation duration from first token (excludes TTFT)
                 val generationDurationMs = firstTokenTime?.let { System.currentTimeMillis() - it }
 
@@ -1187,11 +1237,14 @@ class ChatService(
                     },
                     updateAt = Instant.now()
                 )
-                updateConversation(conversationId, updatedConversation)
+                val cleanedConversation = updatedConversation.removeTrailingEmptyOcrPlaceholder()
+                updateConversation(conversationId, cleanedConversation)
 
                 // Show notification if app is not in foreground
                 if (
-                    !updatedConversation.hasPendingToolApprovals() &&
+                    cause == null &&
+                    !cleanedConversation.hasPendingToolApprovals() &&
+                    cleanedConversation.currentMessages.lastOrNull()?.role == MessageRole.ASSISTANT &&
                     !suppressCompletionNotification &&
                     !isForeground.value &&
                     settings.displaySetting.enableNotificationOnMessageGeneration
@@ -1285,12 +1338,11 @@ class ChatService(
                     options = assistant.localTools,
                     assistantId = assistant.id,
                     conversationId = conversation.id,
-                    userImageUrls = conversation.currentMessages
-                        .lastOrNull { it.role == MessageRole.USER }
-                        ?.parts
-                        ?.filterIsInstance<me.rerere.ai.ui.UIMessagePart.Image>()
-                        ?.map { it.url }
-                        ?: emptyList()
+                    attachments = buildLatestUserPythonAttachments(
+                        conversation = conversation,
+                        settings = settings,
+                        model = model,
+                    )
                 )
             )
 
@@ -1305,6 +1357,38 @@ class ChatService(
                         },
                     )
                 )
+            }
+        }
+    }
+
+    private fun buildLatestUserPythonAttachments(
+        conversation: Conversation,
+        settings: Settings,
+        model: Model,
+    ): List<PythonAttachmentReference> {
+        val latestUserMessage = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER } ?: return emptyList()
+        val hideImagePrompt = shouldSilentlyPreloadImageForPython(model, settings)
+        return latestUserMessage.parts.mapNotNull { part ->
+            when (part) {
+                is UIMessagePart.Image -> {
+                    val uri = part.url.toUri()
+                    val fileName = uri.lastPathSegment?.substringAfterLast('/')?.ifBlank { null } ?: return@mapNotNull null
+                    PythonAttachmentReference(
+                        url = part.url,
+                        fileName = fileName,
+                        mimeType = context.getFileMimeType(uri) ?: "application/octet-stream",
+                        promptVisible = !hideImagePrompt,
+                    )
+                }
+
+                is UIMessagePart.Document -> PythonAttachmentReference(
+                    url = part.url,
+                    fileName = part.fileName,
+                    mimeType = part.mime,
+                    promptVisible = true,
+                )
+
+                else -> null
             }
         }
     }
@@ -1532,21 +1616,7 @@ class ChatService(
     // 检查无效消息
     private suspend fun checkInvalidMessages(conversationId: Uuid) {
         val conversation = normalizeConversation(getConversationFlow(conversationId).value)
-        var messagesNodes = conversation.messageNodes
-
-        // Step 1: 移除无效tool call (now safe to access currentMessage)
-        messagesNodes = messagesNodes.mapIndexed { index, node ->
-            val next = if (index < messagesNodes.size - 1) messagesNodes[index + 1] else null
-            if (node.currentMessage.hasPart<UIMessagePart.ToolCall>()) {
-                if (next?.currentMessage?.hasPart<UIMessagePart.ToolResult>() != true) {
-                    return@mapIndexed node.copy(
-                        messages = node.messages.filter { it.id != node.currentMessage.id },
-                        selectIndex = node.selectIndex - 1
-                    )
-                }
-            }
-            node
-        }
+        val messagesNodes = dropDanglingAutoToolCallNodes(conversation.messageNodes)
 
         updateConversation(
             conversationId,
@@ -1602,7 +1672,7 @@ class ChatService(
                 messages = listOf(
                     UIMessage.user(
                         prompt = settings.titlePrompt.applyPlaceholders(
-                            "locale" to Locale.getDefault().displayName,
+                            "locale" to context.appLocale().displayName,
                             "content" to contentForTitle)
                     ),
                 ),
@@ -1641,7 +1711,7 @@ class ChatService(
                 messages = listOf(
                     UIMessage.user(
                         settings.suggestionPrompt.applyPlaceholders(
-                            "locale" to Locale.getDefault().displayName,
+                            "locale" to context.appLocale().displayName,
                             "content" to conversation.currentMessages.truncate(conversation.truncateIndex)
                                 .takeLast(8).joinToString("\n\n") { it.summaryAsText() }),
                     )
@@ -1688,12 +1758,9 @@ class ChatService(
             }
             recentlyDeletedConversations[conversation.id] = conversationFull
 
-            // Schedule file deletion
+            // Finalize the soft-delete window after a short undo grace period.
             val job = appScope.launch {
                 kotlinx.coroutines.delay(4000)
-                withContext(Dispatchers.IO) {
-                    context.deleteChatFiles(conversationFull.files)
-                }
                 conversationDeletionJobs.remove(conversation.id)
                 recentlyDeletedConversations.remove(conversation.id)
             }
@@ -1727,10 +1794,11 @@ class ChatService(
     // 发送生成完成通知
     private fun sendGenerationDoneNotification(conversationId: Uuid) {
         val conversation = getConversationFlow(conversationId).value
+        val contentPreview = conversation.currentMessages.lastOrNull()?.toContentText()?.take(50).orEmpty()
         val notification =
             NotificationCompat.Builder(context, CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID)
                 .setContentTitle(context.getString(R.string.notification_chat_done_title))
-                .setContentText(conversation.currentMessages.lastOrNull()?.toText()?.take(50) ?: "")
+                .setContentText(contentPreview)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
                 .setAutoCancel(true)
@@ -1762,13 +1830,12 @@ class ChatService(
     }
 
     // 更新对话
-    private fun copyAttachmentUrl(url: String): String {
+    private suspend fun copyAttachmentUrl(url: String): String {
         if (!url.startsWith("file:") && !url.startsWith("content:")) {
             return url
         }
 
-        val copied = context.createChatFilesByContents(listOf(url.toUri())).firstOrNull()
-        return copied?.toString() ?: url
+        return chatAttachmentRepository.copyOrReuseUrl(url)
     }
 
     private fun collectRelatedMessages(
@@ -1852,24 +1919,13 @@ class ChatService(
     private suspend fun updateConversation(conversationId: Uuid, conversation: Conversation) {
         if (conversation.id != conversationId) return
         val normalizedConversation = normalizeConversation(conversation)
-        checkFilesDelete(normalizedConversation, getConversationFlow(conversationId).value)
         conversations.getOrPut(conversationId) { MutableStateFlow(normalizedConversation) }.value =
             normalizedConversation
     }
 
     // 检查文件删除
     private suspend fun checkFilesDelete(newConversation: Conversation, oldConversation: Conversation) {
-        val newFiles = newConversation.files
-        val oldFiles = oldConversation.files
-        val deletedFiles = oldFiles.filter { file ->
-            newFiles.none { it == file }
-        }
-        if (deletedFiles.isNotEmpty()) {
-            withContext(Dispatchers.IO) {
-                context.deleteChatFiles(deletedFiles)
-            }
-            Log.w(TAG, "checkFilesDelete: $deletedFiles")
-        }
+        // Attachment lifecycle is synchronized through ChatAttachmentRepository.
     }
 
     // Context Refresh result
@@ -1878,7 +1934,17 @@ class ChatService(
         val summary: String = "",
         val messagesSummarized: Int = 0,
         val tokensSaved: Int = 0,
-        val errorMessage: String? = null
+        @param:StringRes val errorResId: Int? = null,
+        val errorArgs: List<Any> = emptyList()
+    )
+
+    private fun contextRefreshError(
+        @StringRes errorResId: Int,
+        vararg errorArgs: Any
+    ): ContextRefreshResult = ContextRefreshResult(
+        success = false,
+        errorResId = errorResId,
+        errorArgs = errorArgs.toList(),
     )
 
     // Check if auto-summarization threshold is reached and trigger if needed
@@ -1919,7 +1985,7 @@ class ChatService(
                 if (result.success) {
                     Log.i(TAG, "Auto-summarization completed: ${result.messagesSummarized} messages summarized, ${result.tokensSaved} tokens saved")
                 } else {
-                    Log.w(TAG, "Auto-summarization failed: ${result.errorMessage}")
+                    Log.w(TAG, "Auto-summarization failed: ${result.errorResId}, args=${result.errorArgs}")
                 }
             }
         } catch (e: Exception) {
@@ -1933,7 +1999,7 @@ class ChatService(
             val settings = settingsStore.settingsFlow.first()
             val conversation = normalizeConversation(
                 conversationRepo.getConversationById(conversationId)
-                ?: return@withContext ContextRefreshResult(false, errorMessage = "Conversation not found")
+                    ?: return@withContext contextRefreshError(R.string.context_refresh_error_conversation_not_found)
             )
             val conversationContext = settings.resolveConversationContext(conversation)
             val assistant = conversationContext.assistant
@@ -1941,15 +2007,15 @@ class ChatService(
             // Check for empty messages FIRST before model lookup
             val messages = conversation.currentMessages
             if (messages.isEmpty()) {
-                return@withContext ContextRefreshResult(false, errorMessage = "No messages to summarize")
+                return@withContext contextRefreshError(R.string.context_refresh_error_no_messages)
             }
 
             // Get the summarizer model (fall back to chat model)
             val model = settings.summarizerModelId?.let(settings::findModelById)
                 ?: conversationContext.chatModel
-                ?: return@withContext ContextRefreshResult(false, errorMessage = "No model configured")
+                ?: return@withContext contextRefreshError(R.string.context_refresh_error_no_model)
             val provider = model.findProvider(settings.providers)
-                ?: return@withContext ContextRefreshResult(false, errorMessage = "No provider found")
+                ?: return@withContext contextRefreshError(R.string.context_refresh_error_no_provider)
 
 
 
@@ -1976,7 +2042,7 @@ class ChatService(
             }
             
             if (messagesToSummarize.isEmpty()) {
-                return@withContext ContextRefreshResult(false, errorMessage = "No new messages to summarize (keeping last exchange)")
+                return@withContext contextRefreshError(R.string.context_refresh_error_no_new_messages)
             }
 
             // Build summarization prompt - only include NEW messages
@@ -2041,7 +2107,7 @@ class ChatService(
             )
 
             val summary = response.choices.firstOrNull()?.message?.toContentText()
-                ?: return@withContext ContextRefreshResult(false, errorMessage = "Empty response from model")
+                ?: return@withContext contextRefreshError(R.string.context_refresh_error_empty_response)
 
             // Estimate new tokens
             val summaryTokens = summary.length / 4
@@ -2068,7 +2134,12 @@ class ChatService(
             )
         } catch (e: Exception) {
             Log.e(TAG, "summarizeAndRefresh failed", e)
-            ContextRefreshResult(false, errorMessage = e.message ?: "Unknown error")
+            val errorMessage = e.message?.takeIf { it.isNotBlank() }
+            if (errorMessage != null) {
+                contextRefreshError(R.string.context_refresh_error_unexpected, errorMessage)
+            } else {
+                contextRefreshError(R.string.context_refresh_error_unknown)
+            }
         }
     }
 
@@ -2076,14 +2147,17 @@ class ChatService(
     // 保存对话
     suspend fun saveConversation(conversationId: Uuid, conversation: Conversation) {
         val normalizedConversation = normalizeConversation(conversation)
+        val synchronizedConversation = withContext(Dispatchers.IO) {
+            chatAttachmentRepository.syncConversationAttachments(normalizedConversation)
+        }
 
         // 临时对话不持久化到数据库
         if (getConversationPersistenceMode(conversationId) != ChatPersistenceMode.NORMAL) {
-            updateConversation(conversationId, normalizedConversation)
+            updateConversation(conversationId, synchronizedConversation)
             return
         }
 
-        val updatedConversation = normalizedConversation.copy()
+        val updatedConversation = synchronizedConversation.copy()
         // Always update in-memory state (even for empty conversations)
         // This ensures mode toggles work on new chats before first message
         updateConversation(conversationId, updatedConversation)

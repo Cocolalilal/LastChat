@@ -52,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -114,6 +115,7 @@ import me.rerere.rikkahub.ui.components.ui.ToastType
 fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
+    val context = LocalContext.current
     var editingProvider by remember { mutableStateOf<TTSProviderSetting?>(null) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     
@@ -139,7 +141,7 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                 },
                 actions = {
                     IconButton(onClick = { showFilterSettingsDialog = true }) {
-                        Icon(Icons.Rounded.Settings, contentDescription = "TTS Settings")
+                        Icon(Icons.Rounded.Settings, contentDescription = stringResource(R.string.setting_tts_settings_title))
                     }
                     AddTTSProviderButton {
                         vm.updateSettings(
@@ -188,7 +190,7 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
         LaunchedEffect(ttsError) {
             ttsError?.let { errorMessage ->
                 toaster.show(
-                    message = "TTS Error: $errorMessage",
+                    message = context.getString(R.string.setting_tts_error, errorMessage),
                     type = ToastType.Error
                 )
             }
@@ -311,7 +313,7 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                     providerToDelete = null
                 },
                 title = { Text(stringResource(R.string.confirm_delete)) },
-                text = { Text("Are you sure you want to delete this TTS service?") },
+                text = { Text(stringResource(R.string.setting_tts_delete_service)) },
                 dismissButton = {
                     TextButton(onClick = { 
                         showDeleteDialog = false
@@ -388,7 +390,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         onClick = {
                             scope.launch {
                                 tts.speak(
-                                    text = "Hello user, this is what your characters will sound like if you use this setup!",
+                                    text = context.getString(R.string.setting_tts_test_voice_preview),
                                     overrideSetting = currentProvider
                                 )
                             }
@@ -396,7 +398,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.VolumeUp,
-                            contentDescription = "Test TTS"
+                            contentDescription = stringResource(R.string.setting_tts_test_voice)
                         )
                     }
                 }
@@ -501,11 +503,11 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Text Filter Rules",
+                    text = stringResource(R.string.setting_tts_filter_title),
                     style = MaterialTheme.typography.titleLarge
                 )
                 IconButton(onClick = { showAddDialog = true }) {
-                    Icon(Icons.Rounded.Add, contentDescription = "Add Rule")
+                    Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.setting_tts_filter_add_rule))
                 }
             }
             
@@ -521,12 +523,12 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "Configure text patterns for TTS",
+                        text = stringResource(R.string.setting_tts_filter_title),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                     )
                     Text(
-                        text = "Skip: Text matching the pattern will be skipped.\nOnly Read: Only text matching the pattern will be read.",
+                        text = stringResource(R.string.setting_tts_filter_desc),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -548,7 +550,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "No rules yet. Tap + to add one.",
+                            text = stringResource(R.string.setting_tts_filter_empty),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -610,8 +612,8 @@ private fun TtsFilterRuleItem(
     onDelete: () -> Unit
 ) {
     val modeText = when (rule.mode) {
-        me.rerere.rikkahub.data.datastore.TtsFilterMode.SKIP -> "Skip"
-        me.rerere.rikkahub.data.datastore.TtsFilterMode.ONLY_READ -> "Only Read"
+        me.rerere.rikkahub.data.datastore.TtsFilterMode.SKIP -> stringResource(R.string.setting_tts_filter_skip)
+        me.rerere.rikkahub.data.datastore.TtsFilterMode.ONLY_READ -> stringResource(R.string.setting_tts_filter_only_read)
     }
     val modeColor = when (rule.mode) {
         me.rerere.rikkahub.data.datastore.TtsFilterMode.SKIP -> MaterialTheme.colorScheme.error
@@ -632,7 +634,7 @@ private fun TtsFilterRuleItem(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("${rule.pattern}text${rule.pattern}")
+                    Text(stringResource(R.string.setting_rp_custom_preview, rule.pattern))
                 }
             },
             supportingContent = {
@@ -649,7 +651,7 @@ private fun TtsFilterRuleItem(
                     IconButton(onClick = onDelete) {
                         Icon(
                             Icons.Rounded.Delete,
-                            "Delete",
+                            stringResource(R.string.setting_tts_filter_delete),
                             tint = MaterialTheme.colorScheme.error
                         )
                     }
@@ -675,7 +677,13 @@ private fun TtsFilterRuleEditDialog(
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(if (rule != null) "Edit Rule" else "Add Rule")
+            Text(
+                if (rule != null) {
+                    stringResource(R.string.setting_tts_filter_edit_rule)
+                } else {
+                    stringResource(R.string.setting_tts_filter_add_rule)
+                }
+            )
         },
         text = {
             Column(
@@ -684,19 +692,19 @@ private fun TtsFilterRuleEditDialog(
                 androidx.compose.material3.OutlinedTextField(
                     value = pattern,
                     onValueChange = { pattern = it },
-                    label = { Text("Pattern") },
-                    placeholder = { Text("e.g., * or %") },
+                    label = { Text(stringResource(R.string.setting_tts_filter_pattern)) },
+                    placeholder = { Text(stringResource(R.string.setting_tts_filter_pattern_placeholder)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     supportingText = {
-                        Text("Text wrapped like ${pattern}text${pattern} will be filtered")
+                        Text(stringResource(R.string.setting_tts_filter_pattern_desc, pattern))
                     },
                     shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                 )
                 
                 // Mode selector
                 Text(
-                    text = "Mode",
+                    text = stringResource(R.string.setting_tts_filter_mode),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -707,13 +715,13 @@ private fun TtsFilterRuleEditDialog(
                     androidx.compose.material3.FilterChip(
                         selected = mode == me.rerere.rikkahub.data.datastore.TtsFilterMode.SKIP,
                         onClick = { mode = me.rerere.rikkahub.data.datastore.TtsFilterMode.SKIP },
-                        label = { Text("Skip") },
+                        label = { Text(stringResource(R.string.setting_tts_filter_skip)) },
                         modifier = Modifier.weight(1f)
                     )
                     androidx.compose.material3.FilterChip(
                         selected = mode == me.rerere.rikkahub.data.datastore.TtsFilterMode.ONLY_READ,
                         onClick = { mode = me.rerere.rikkahub.data.datastore.TtsFilterMode.ONLY_READ },
-                        label = { Text("Only Read") },
+                        label = { Text(stringResource(R.string.setting_tts_filter_only_read)) },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -721,8 +729,14 @@ private fun TtsFilterRuleEditDialog(
                 // Mode description
                 Text(
                     text = when (mode) {
-                        me.rerere.rikkahub.data.datastore.TtsFilterMode.SKIP -> "Text inside ${pattern}...${pattern} will be skipped"
-                        me.rerere.rikkahub.data.datastore.TtsFilterMode.ONLY_READ -> "Only text inside ${pattern}...${pattern} will be read"
+                        me.rerere.rikkahub.data.datastore.TtsFilterMode.SKIP -> stringResource(
+                            R.string.setting_tts_filter_skip_desc,
+                            pattern
+                        )
+                        me.rerere.rikkahub.data.datastore.TtsFilterMode.ONLY_READ -> stringResource(
+                            R.string.setting_tts_filter_only_read_desc,
+                            pattern
+                        )
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -744,12 +758,12 @@ private fun TtsFilterRuleEditDialog(
                     }
                 }
             ) {
-                Text("Save")
+                Text(stringResource(R.string.save))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.cancel))
             }
         }
     )
@@ -781,16 +795,14 @@ private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
             val isLocal: Boolean = false
         )
         
-        val allTtsPresets = remember {
-            listOf(
-                TTSPreset(TTSProviderSetting.SystemTTS::class, "System TTS", "Uses device's built-in TTS engine", isLocal = true),
-                TTSPreset(TTSProviderSetting.OpenAI::class, "OpenAI", "High-quality voices with emotion"),
-                TTSPreset(TTSProviderSetting.Gemini::class, "Gemini", "Google's TTS with natural voices"),
-                TTSPreset(TTSProviderSetting.ElevenLabs::class, "ElevenLabs", "Professional voice cloning"),
-                TTSPreset(TTSProviderSetting.MiniMax::class, "MiniMax", "Chinese TTS with emotions"),
-                TTSPreset(TTSProviderSetting.Qwen::class, "Qwen", "DashScope streaming TTS with voice presets"),
-            )
-        }
+        val allTtsPresets = listOf(
+            TTSPreset(TTSProviderSetting.SystemTTS::class, stringResource(R.string.setting_tts_page_default_system_name), stringResource(R.string.setting_tts_preset_system_desc), isLocal = true),
+            TTSPreset(TTSProviderSetting.OpenAI::class, "OpenAI", stringResource(R.string.setting_tts_preset_openai_desc)),
+            TTSPreset(TTSProviderSetting.Gemini::class, "Gemini", stringResource(R.string.setting_tts_preset_gemini_desc)),
+            TTSPreset(TTSProviderSetting.ElevenLabs::class, "ElevenLabs", stringResource(R.string.setting_tts_preset_elevenlabs_desc)),
+            TTSPreset(TTSProviderSetting.MiniMax::class, "MiniMax", stringResource(R.string.setting_tts_preset_minimax_desc)),
+            TTSPreset(TTSProviderSetting.Qwen::class, "Qwen", stringResource(R.string.setting_tts_preset_qwen_desc)),
+        )
         
         // Filter presets based on search
         val filteredPresets = remember(searchQuery) {
@@ -855,7 +867,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     trailingIcon = if (searchQuery.isNotEmpty()) {
                         {
                             IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Rounded.Close, contentDescription = "Clear")
+                                Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.clear_search))
                             }
                         }
                     } else null
@@ -964,7 +976,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 ) {
                                     if (preset.isLocal) {
                                         Tag(type = TagType.SUCCESS) {
-                                            Text("Local")
+                                            Text(stringResource(R.string.local_label))
                                         }
                                     }
                                 }
@@ -1090,7 +1102,7 @@ private fun TTSProviderItemContent(
                         modifier = Modifier.wrapContentWidth(align = Alignment.Start, unbounded = true)
                     ) {
                         Tag(type = TagType.SUCCESS) {
-                            Text("Local")
+                            Text(stringResource(R.string.local_label))
                         }
                     }
                     // Fade gradient overlay

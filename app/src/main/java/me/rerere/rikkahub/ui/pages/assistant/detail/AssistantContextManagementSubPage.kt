@@ -13,13 +13,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Book
-import androidx.compose.material.icons.rounded.TipsAndUpdates
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -38,6 +36,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.withAutoSummaryEnabled
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
+import me.rerere.rikkahub.ui.components.ui.SummarizerModelTipBanner
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
@@ -104,12 +103,12 @@ fun AssistantContextManagementSubPage(
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
-                SummarizerTipBanner(onClick = onNavigateToSummarizerSettings)
+                SummarizerModelTipBanner(onClick = onNavigateToSummarizerSettings)
             }
 
             SettingGroupItem(
-                title = "Auto-summarize messages",
-                subtitle = "Automatically summarize when history limit is reached",
+                title = stringResource(R.string.assistant_context_auto_summarize),
+                subtitle = stringResource(R.string.assistant_context_auto_summarize_desc),
                 trailing = {
                     HapticSwitch(
                         checked = assistant.autoRegenerateSummary,
@@ -132,10 +131,13 @@ fun AssistantContextManagementSubPage(
                 var sliderValue by remember(historyLimit) { mutableFloatStateOf(historyLimit.toFloat()) }
                 
                 SliderSettingCard(
-                    title = "History limit",
+                    title = stringResource(R.string.assistant_context_history_limit),
                     value = sliderValue,
-                    valueText = "${sliderValue.roundToInt()} messages",
-                    description = "Number of messages before auto-summarization triggers",
+                    valueText = stringResource(
+                        R.string.assistant_context_history_limit_value,
+                        sliderValue.roundToInt()
+                    ),
+                    description = stringResource(R.string.assistant_context_history_limit_desc),
                     onValueChange = { sliderValue = it },
                     onValueChangeFinished = {
                         val newValue = sliderValue.roundToInt()
@@ -153,7 +155,7 @@ fun AssistantContextManagementSubPage(
         // SEARCH RESULTS
         // ═══════════════════════════════════════════════════════════════════
         SettingsGroup(title = stringResource(R.string.context_search_results_title)) {
-            val maxSearchResults = assistant.maxSearchResultsRetained ?: 0
+            val maxSearchResults = assistant.maxSearchResultsRetained ?: 10
             var searchSliderValue by remember(maxSearchResults) { mutableFloatStateOf(maxSearchResults.toFloat()) }
             
             SliderSettingCard(
@@ -177,38 +179,39 @@ fun AssistantContextManagementSubPage(
             )
         }
 
-        Spacer(Modifier.height(32.dp))
-    }
-}
+        SettingsGroup(title = stringResource(R.string.assistant_context_image_context)) {
+            val archiveThreshold = assistant.archiveImagesAfterMessageAge ?: 0
+            var archiveSliderValue by remember(archiveThreshold) {
+                mutableFloatStateOf(archiveThreshold.toFloat())
+            }
 
-@Composable
-private fun SummarizerTipBanner(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        onClick = onClick,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = RoundedCornerShape(10.dp),
-        modifier = modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.TipsAndUpdates,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp)
-            )
-            Text(
-                text = stringResource(R.string.context_summarizer_model_optional_tip),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+            SliderSettingCard(
+                title = if (archiveSliderValue.roundToInt() == 0) {
+                    stringResource(R.string.assistant_context_keep_all_images)
+                } else {
+                    stringResource(
+                        R.string.assistant_context_archive_images_after,
+                        archiveSliderValue.roundToInt()
+                    )
+                },
+                value = archiveSliderValue,
+                valueText = "",
+                description = stringResource(R.string.assistant_context_image_context_desc),
+                onValueChange = { archiveSliderValue = it },
+                onValueChangeFinished = {
+                    val newValue = archiveSliderValue.roundToInt()
+                    onUpdate(
+                        assistant.copy(
+                            archiveImagesAfterMessageAge = if (newValue == 0) null else newValue
+                        )
+                    )
+                },
+                valueRange = 0f..60f,
+                steps = 59,
             )
         }
+
+        Spacer(Modifier.height(32.dp))
     }
 }
 

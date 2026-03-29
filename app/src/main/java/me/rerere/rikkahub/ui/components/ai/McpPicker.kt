@@ -207,10 +207,13 @@ fun McpPicker(
                         )
                         Text(
                             text = when (status) {
-                                is McpStatus.Idle -> "Idle"
-                                is McpStatus.Connecting -> "Connecting"
-                                is McpStatus.Connected -> "Connected"
-                                is McpStatus.Error -> "Error: ${(status as McpStatus.Error).message}"
+                                is McpStatus.Idle -> stringResource(R.string.mcp_status_idle)
+                                is McpStatus.Connecting -> stringResource(R.string.mcp_status_connecting)
+                                is McpStatus.Connected -> stringResource(R.string.mcp_status_connected)
+                                is McpStatus.Error -> stringResource(
+                                    R.string.mcp_status_error,
+                                    (status as McpStatus.Error).message
+                                )
                             },
                             style = MaterialTheme.typography.labelSmall,
                             color = LocalContentColor.current.copy(alpha = 0.8f),
@@ -222,7 +225,13 @@ fun McpPicker(
                             Tag(
                                 type = TagType.INFO
                             ) {
-                                Text("${enabledTools.size}/${tools.size} tools")
+                                Text(
+                                    stringResource(
+                                        R.string.mcp_tools_enabled_count,
+                                        enabledTools.size,
+                                        tools.size
+                                    )
+                                )
                             }
                         }
                     }

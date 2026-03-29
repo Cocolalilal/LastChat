@@ -77,10 +77,9 @@ fun AssistantLocalToolSubPage(
             }
         )
 
-        // Notifications
         LocalToolCard(
-            title = "Notifications",
-            description = "Notifications, notification reading, scheduled follow-ups",
+            title = stringResource(R.string.notification_tools_title),
+            description = stringResource(R.string.notification_tools_desc),
             isEnabled = assistant.localTools.contains(LocalToolOption.Notifications),
             onToggle = { enabled ->
                 if (enabled) {
@@ -137,10 +136,10 @@ fun AssistantLocalToolSubPage(
     if (showNotificationAccessDialog && pendingNotificationAccess.specialAccesses.isNotEmpty()) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showNotificationAccessDialog = false },
-            title = { Text("Notification Access") },
+            title = { Text(stringResource(R.string.notification_access_title)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Enable the remaining access below so notification tools and scheduled follow-ups work reliably:")
+                    Text(stringResource(R.string.notification_access_desc))
                     PermissionChecker.getFeatureAccessDescriptions(pendingNotificationAccess).forEach { description ->
                         Text("- $description")
                     }
@@ -156,14 +155,14 @@ fun AssistantLocalToolSubPage(
                         )
                     }
                 ) {
-                    Text("Open Settings")
+                    Text(stringResource(R.string.open_settings))
                 }
             },
             dismissButton = {
                 androidx.compose.material3.TextButton(
                     onClick = { showNotificationAccessDialog = false }
                 ) {
-                    Text("Not now")
+                    Text(stringResource(R.string.not_now))
                 }
             }
         )

@@ -178,7 +178,7 @@ fun ColumnScope.ChatMessageActionButtons(
 
         Icon(
             imageVector = Icons.Rounded.MoreHoriz,
-            contentDescription = "More Options",
+            contentDescription = stringResource(R.string.more_options),
             modifier = Modifier
                 .clip(CircleShape)
                 .clickable(

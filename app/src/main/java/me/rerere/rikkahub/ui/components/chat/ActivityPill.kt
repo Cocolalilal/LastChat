@@ -50,8 +50,10 @@ import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Terminal
-import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.ui.res.stringResource
+import me.rerere.rikkahub.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import me.rerere.rikkahub.ui.modifier.shimmer
@@ -65,6 +67,9 @@ sealed interface ActivityState {
     /** Waiting for first token - shows typing dots */
     data object Waiting : ActivityState
     
+    /** OCR is preprocessing attachments before generation starts */
+    data object Ocr : ActivityState
+
     /** Model is reasoning/thinking - shows timer */
     data class Reasoning(val startTimeMs: Long = System.currentTimeMillis()) : ActivityState
     
@@ -93,7 +98,7 @@ sealed interface ActivityState {
     /** Multiple activities completed - show compact pills */
     data class CompletedMultiple(
         val reasoningDurationMs: Long? = null,
-        val toolsUsed: List<String> = emptyList()
+        val activityTypes: List<ActivityType> = emptyList()
     ) : ActivityState
 }
 
@@ -106,6 +111,7 @@ sealed interface ActivityState {
  */
 private fun stateToKey(state: ActivityState): Any = when (state) {
     is ActivityState.Waiting -> "waiting"
+    is ActivityState.Ocr -> "ocr"
     is ActivityState.Reasoning -> "reasoning"
     is ActivityState.ToolUse -> "tool_${categorizeToolName(state.toolName)}"
     is ActivityState.Replying -> "replying"
@@ -126,6 +132,7 @@ data class ActivityItem(
 
 enum class ActivityType {
     REASONING,
+    OCR,
     SEARCH,
     PYTHON,
     SKILL,
@@ -135,6 +142,7 @@ enum class ActivityType {
 
 private fun ActivityType.toTestTag(): String = when (this) {
     ActivityType.REASONING -> "activity_pill_reasoning"
+    ActivityType.OCR -> "activity_pill_ocr"
     ActivityType.SEARCH -> "activity_pill_search"
     ActivityType.PYTHON -> "activity_pill_python"
     ActivityType.SKILL -> "activity_pill_skill"
@@ -147,6 +155,7 @@ private fun ActivityType.toTestTag(): String = when (this) {
  */
 private fun ActivityType.getIcon(): ImageVector = when (this) {
     ActivityType.REASONING -> Icons.Rounded.Lightbulb
+            ActivityType.OCR -> Icons.Rounded.Image
     ActivityType.SEARCH -> Icons.Rounded.Public
     ActivityType.PYTHON -> Icons.Rounded.Terminal
     ActivityType.SKILL -> Icons.Rounded.Category
@@ -159,6 +168,7 @@ private fun ActivityType.getIcon(): ImageVector = when (this) {
  */
 private fun ActivityType.getDisplayText(): String = when (this) {
     ActivityType.REASONING -> "Reasoned"
+    ActivityType.OCR -> "OCR"
     ActivityType.SEARCH -> "Searched"
     ActivityType.PYTHON -> "Ran Python"
     ActivityType.SKILL -> "Skills"
@@ -192,15 +202,10 @@ fun buildActivityItemsFromMultiple(state: ActivityState.CompletedMultiple): List
         ))
     }
     
-    // Group tools by type and count
-    if (state.toolsUsed.isNotEmpty()) {
-        state.toolsUsed
-            .map { categorizeToolName(it) }
-            .groupingBy { it }
-            .eachCount()
-            .forEach { (type, count) ->
-                items.add(ActivityItem(type = type, count = count))
-            }
+    if (state.activityTypes.isNotEmpty()) {
+        state.activityTypes.distinct().forEach { type ->
+            items.add(ActivityItem(type = type))
+        }
     }
     
     return items
@@ -331,6 +336,7 @@ fun ActivityPillRow(
                 else -> {
                     // Single pill for all other states (Waiting, Reasoning, ToolUse, Replying, CompletedSingle)
                     val clickType = when (state) {
+                        is ActivityState.Ocr -> ActivityType.OCR
                         is ActivityState.Reasoning -> ActivityType.REASONING
                         is ActivityState.ToolUse -> categorizeToolName(state.toolName)
                         is ActivityState.CompletedSingle -> state.type
@@ -422,6 +428,10 @@ private fun AnimatedSinglePill(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+
+                    is ActivityState.Ocr -> {
+                        OcrContent(isLive = true)
+                    }
                     
                     is ActivityState.Reasoning -> {
                         ReasoningContent(startTimeMs = targetState.startTimeMs, isLive = true)
@@ -437,7 +447,7 @@ private fun AnimatedSinglePill(
                     
                     is ActivityState.Replying -> {
                         Text(
-                            text = "Replying",
+                            text = stringResource(R.string.activity_pill_replying),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.shimmer(isLoading = true)
@@ -486,7 +496,7 @@ private fun ReasoningContent(startTimeMs: Long, isLive: Boolean) {
         tint = MaterialTheme.colorScheme.onSurfaceVariant
     )
     Text(
-        text = "Reasoning",
+        text = stringResource(R.string.activity_timeline_reasoning),
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = if (isLive) Modifier.shimmer(true) else Modifier
@@ -494,6 +504,22 @@ private fun ReasoningContent(startTimeMs: Long, isLive: Boolean) {
     Text(
         text = formatDuration(elapsedMs),
         style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = if (isLive) Modifier.shimmer(true) else Modifier
+    )
+}
+
+@Composable
+private fun OcrContent(isLive: Boolean) {
+    Icon(
+            imageVector = Icons.Rounded.Image,
+        contentDescription = null,
+        modifier = Modifier.size(18.dp),
+        tint = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Text(
+        text = stringResource(R.string.activity_pill_ocr_live),
+        style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = if (isLive) Modifier.shimmer(true) else Modifier
     )
@@ -538,6 +564,13 @@ private fun ExpandedActivityContent(item: ActivityItem) {
                 "Reasoned for ${formatDuration(item.durationMs)}"
             } else {
                 "Reasoned"
+            }
+        }
+        ActivityType.OCR -> {
+            if (item.count > 1) {
+                stringResource(R.string.activity_pill_ocr_done_count, item.count)
+            } else {
+                stringResource(R.string.activity_pill_ocr_done)
             }
         }
         ActivityType.SEARCH -> "Searched the Web"
@@ -661,7 +694,7 @@ private fun ReasoningPill(
             tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
-            text = "Reasoning",
+            text = stringResource(R.string.activity_timeline_reasoning),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = if (isLive) Modifier.shimmer(true) else Modifier
@@ -743,6 +776,13 @@ private fun ExpandedActivityPill(
                     "Reasoned"
                 }
             }
+            ActivityType.OCR -> {
+                if (item.count > 1) {
+                    stringResource(R.string.activity_pill_ocr_done_count, item.count)
+                } else {
+                    stringResource(R.string.activity_pill_ocr_done)
+                }
+            }
             ActivityType.SEARCH -> {
                 if (item.count > 1) "Searched Ã—${item.count}" else "Searched the Web"
             }
@@ -799,6 +839,7 @@ private fun CompactActivityPill(
             ActivityType.REASONING -> {
                 item.durationMs?.let { formatDuration(it) }
             }
+            ActivityType.OCR -> null
             else -> null
         }
         

@@ -2222,14 +2222,20 @@ private fun ProviderOverrideSettings(
                                 showProviderConfig = true
                             }
                         ) {
-                            Icon(Icons.Rounded.Edit, contentDescription = "Edit override")
+                            Icon(
+                                Icons.Rounded.Edit,
+                                contentDescription = stringResource(R.string.a11y_edit_provider_override)
+                            )
                         }
                         IconButton(
                             onClick = {
                                 onUpdateProviderOverride(null)
                             }
                         ) {
-                            Icon(Icons.Rounded.Close, contentDescription = "Remove override")
+                            Icon(
+                                Icons.Rounded.Close,
+                                contentDescription = stringResource(R.string.a11y_remove_provider_override)
+                            )
                         }
                     }
                 }

@@ -93,6 +93,7 @@
     "delete_attachment_failed": "Failed to delete attachment",
     "upload_image": "Upload Image",
     "upload_document": "Upload Document",
+    "no_image_input_hint": "This model does not accept images directly. Uploaded images will be converted to text when available.",
     "export_conversation": "Export Conversation as Markdown",
     "export_conversation_with_reasoning": "Export Conversation as Markdown (with reasoning)",
     "unsupported_file_skipped": "{{count}} file(s) skipped due to unsupported format",

@@ -44,10 +44,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.Placeholder
@@ -59,11 +61,13 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -80,6 +84,9 @@ import kotlinx.coroutines.flow.mapLatest
 import me.rerere.rikkahub.data.datastore.RpStyleRule
 import me.rerere.rikkahub.ui.components.table.DataTable
 import me.rerere.rikkahub.ui.context.LocalSettings
+import me.rerere.rikkahub.utils.BidiDirection
+import me.rerere.rikkahub.utils.appLocale
+import me.rerere.rikkahub.utils.resolveBidiDirection
 import me.rerere.rikkahub.utils.toDp
 import me.rerere.rikkahub.utils.saveToDownloads
 import androidx.compose.runtime.rememberCoroutineScope
@@ -253,6 +260,22 @@ private fun preProcess(content: String): String {
     }
 
     return result
+}
+
+@Composable
+private fun rememberContentDirection(text: String): BidiDirection {
+    val appLocale = LocalContext.current.appLocale()
+    return remember(text, appLocale) {
+        resolveBidiDirection(text = text, fallbackLocale = appLocale)
+    }
+}
+
+private fun BidiDirection.toComposeTextDirection(): TextDirection {
+    return if (this == BidiDirection.Rtl) TextDirection.ContentOrRtl else TextDirection.ContentOrLtr
+}
+
+private fun BidiDirection.toLayoutDirection(): LayoutDirection {
+    return if (this == BidiDirection.Rtl) LayoutDirection.Rtl else LayoutDirection.Ltr
 }
 
 
@@ -441,18 +464,16 @@ private fun MarkdownNode(
             val rpColor = getRpColor(pattern)
             val style = if (rpColor != null) baseStyle.copy(color = rpColor) else baseStyle
             ProvideTextStyle(value = style) {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    node.children.fastForEach { node ->
-                        if (node.type == MarkdownTokenTypes.ATX_CONTENT) {
-                            Paragraph(
-                                node = node,
-                                content = content,
-                                onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
-                                onClickCitation = onClickCitation,
-                                modifier = modifier.padding(vertical = 16.dp),
-                                trim = true,
-                            )
-                        }
+                node.children.fastForEach { child ->
+                    if (child.type == MarkdownTokenTypes.ATX_CONTENT) {
+                        Paragraph(
+                            node = child,
+                            content = content,
+                            onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
+                            onClickCitation = onClickCitation,
+                            modifier = modifier.padding(vertical = 16.dp),
+                            trim = true,
+                        )
                     }
                 }
             }
@@ -510,6 +531,8 @@ private fun MarkdownNode(
         MarkdownElementTypes.BLOCK_QUOTE -> {
             // Get RP color for blockquotes
             val rpColor = getRpColor(">")
+            val quoteDirection = rememberContentDirection(node.getTextInNode(content))
+            val quoteLayoutDirection = quoteDirection.toLayoutDirection()
             val textStyle = LocalTextStyle.current.copy(
                 fontStyle = FontStyle.Italic,
                 color = rpColor ?: Color.Unspecified
@@ -517,25 +540,33 @@ private fun MarkdownNode(
             ProvideTextStyle(textStyle) {
                 val borderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
                 val bgColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
-                Column(
-                    modifier = Modifier
-                        .drawWithContent {
-                            drawContent()
-                            drawRect(
-                                color = bgColor, size = size
-                            )
-                            drawRect(
-                                color = borderColor, size = Size(10f, size.height)
+                CompositionLocalProvider(LocalLayoutDirection provides quoteLayoutDirection) {
+                    Column(
+                        modifier = Modifier
+                            .drawWithContent {
+                                drawContent()
+                                drawRect(color = bgColor, size = size)
+                                val borderOffset = if (quoteLayoutDirection == LayoutDirection.Rtl) {
+                                    Offset(size.width - 10f, 0f)
+                                } else {
+                                    Offset.Zero
+                                }
+                                drawRect(
+                                    color = borderColor,
+                                    topLeft = borderOffset,
+                                    size = Size(10f, size.height)
+                                )
+                            }
+                            .padding(8.dp)
+                    ) {
+                        node.children.fastForEach { child ->
+                            MarkdownNode(
+                                node = child,
+                                content = content,
+                                onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
+                                onClickCitation = onClickCitation
                             )
                         }
-                        .padding(8.dp)) {
-                    node.children.fastForEach { child ->
-                        MarkdownNode(
-                            node = child,
-                            content = content,
-                            onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
-                            onClickCitation = onClickCitation
-                        )
                     }
                 }
             }
@@ -822,33 +853,53 @@ private fun ListItemNode(
     Column {
         // 分离列表项的直接内容和嵌套列表
         val (directContent, nestedLists) = separateContentAndLists(node)
+        val itemDirection = rememberContentDirection(
+            directContent.joinToString(separator = " ") { it.getTextInNode(content) }
+                .ifBlank { node.getTextInNode(content) }
+        )
         // directContent 渲染处理
         if (directContent.isNotEmpty()) {
-            Row {
-                Text(
-                    text = bulletText, modifier = Modifier.alignByBaseline()
-                )
-                FlowRow(
+            CompositionLocalProvider(LocalLayoutDirection provides itemDirection.toLayoutDirection()) {
+                Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    itemVerticalAlignment = Alignment.CenterVertically,
+                    verticalAlignment = Alignment.Top,
                 ) {
-                    directContent.fastForEach { contentChild ->
-                        MarkdownNode(
-                            node = contentChild,
-                            content = content,
-                            onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
-                            onClickCitation = onClickCitation,
-                            listLevel = level,
-                        )
+                    val contentColumn: @Composable () -> Unit = {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            directContent.fastForEach { contentChild ->
+                                MarkdownNode(
+                                    node = contentChild,
+                                    content = content,
+                                    onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
+                                    onClickCitation = onClickCitation,
+                                    listLevel = level,
+                                )
+                            }
+                        }
+                    }
+                    if (itemDirection == BidiDirection.Rtl) {
+                        contentColumn()
+                        Text(text = bulletText)
+                    } else {
+                        Text(text = bulletText)
+                        contentColumn()
                     }
                 }
             }
         }
         // nestedLists 渲染处理
         nestedLists.fastForEach { nestedList ->
-            MarkdownNode(
-                node = nestedList, content = content, onClickCitation = onClickCitation, listLevel = level + 1 // 增加层级
-            )
+            CompositionLocalProvider(LocalLayoutDirection provides itemDirection.toLayoutDirection()) {
+                MarkdownNode(
+                    node = nestedList,
+                    content = content,
+                    onClickCitation = onClickCitation,
+                    listLevel = level + 1 // 增加层级
+                )
+            }
         }
     }
 }
@@ -881,15 +932,18 @@ private fun Paragraph(
     modifier: Modifier,
 ) {
     // dumpAst(node, content)
+    val paragraphDirection = rememberContentDirection(node.getTextInNode(content))
     if (node.findChildOfTypeRecursive(MarkdownElementTypes.IMAGE, GFMElementTypes.BLOCK_MATH) != null) {
-        FlowRow(modifier = modifier) {
-            node.children.fastForEach { child ->
-                MarkdownNode(
-                    node = child,
-                    content = content,
-                    onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
-                    onClickCitation = onClickCitation
-                )
+        CompositionLocalProvider(LocalLayoutDirection provides paragraphDirection.toLayoutDirection()) {
+            FlowRow(modifier = modifier) {
+                node.children.fastForEach { child ->
+                    MarkdownNode(
+                        node = child,
+                        content = content,
+                        onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
+                        onClickCitation = onClickCitation
+                    )
+                }
             }
         }
         return
@@ -906,37 +960,36 @@ private fun Paragraph(
     val textStyle = LocalTextStyle.current
     val density = LocalDensity.current
     val rpStyleRules = LocalSettings.current.displaySetting.rpStyleRules
-    FlowRow(
-        modifier = modifier.then(
-            if (node.nextSibling() != null) Modifier.padding(bottom = 4.dp)
-            else Modifier
-        )
-    ) {
-        val annotatedString = remember(content, rpStyleRules) {
-            buildAnnotatedString {
-                node.children.fastForEach { child ->
-                    appendMarkdownNodeContent(
-                        node = child,
-                        content = content,
-                        inlineContents = inlineContents,
-                        colorScheme = colorScheme,
-                        onClickCitation = onClickCitation,
-                        style = textStyle,
-                        density = density,
-                        trim = trim,
-                        rpStyleRules = rpStyleRules,
-                    )
-                }
+    val annotatedString = remember(content, rpStyleRules) {
+        buildAnnotatedString {
+            node.children.fastForEach { child ->
+                appendMarkdownNodeContent(
+                    node = child,
+                    content = content,
+                    inlineContents = inlineContents,
+                    colorScheme = colorScheme,
+                    onClickCitation = onClickCitation,
+                    style = textStyle,
+                    density = density,
+                    trim = trim,
+                    rpStyleRules = rpStyleRules,
+                )
             }
         }
+    }
+    CompositionLocalProvider(LocalLayoutDirection provides paragraphDirection.toLayoutDirection()) {
         Text(
             text = annotatedString,
-            modifier = Modifier,
+            modifier = modifier.then(
+                if (node.nextSibling() != null) Modifier.padding(bottom = 4.dp)
+                else Modifier
+            ),
             inlineContent = inlineContents,
             softWrap = true,
             overflow = TextOverflow.Visible,
-            style = LocalTextStyle.current.copy(
-                lineHeight = if (hasInlineMath) TextUnit.Unspecified else LocalTextStyle.current.lineHeight
+            style = textStyle.copy(
+                lineHeight = if (hasInlineMath) TextUnit.Unspecified else textStyle.lineHeight,
+                textDirection = paragraphDirection.toComposeTextDirection()
             )
         )
     }

@@ -33,6 +33,7 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Summarize
 import androidx.compose.material.icons.rounded.Translate
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -70,11 +71,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import me.rerere.ai.provider.ModelType
+import me.rerere.rikkahub.data.datastore.findModelById
+import me.rerere.rikkahub.data.datastore.getTextSelectionActionModel
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.model.DEFAULT_TEXT_SELECTION_ACTIONS
 import me.rerere.rikkahub.data.model.TextSelectionAction
 import me.rerere.rikkahub.data.model.TextSelectionConfig
+import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.textselection.QuickAskInnerShape
@@ -222,7 +227,7 @@ fun SettingAndroidIntegrationPage(
                         // Reset to defaults button
                         SettingGroupItem(
                             title = stringResource(R.string.reset),
-                            subtitle = "Restore default actions",
+                            subtitle = stringResource(R.string.setting_android_integration_reset_actions),
                             onClick = { showResetDialog = true }
                         )
                     }
@@ -234,6 +239,21 @@ fun SettingAndroidIntegrationPage(
                         config.actions.forEachIndexed { index, action ->
                             ActionCard(
                                 action = action,
+                                settings = settings,
+                                onModelSelected = { modelId ->
+                                    scope.launch {
+                                        val newActions = config.actions.map { currentAction ->
+                                            if (currentAction.id == action.id) {
+                                                currentAction.copy(modelId = modelId)
+                                            } else {
+                                                currentAction
+                                            }
+                                        }
+                                        settingsStore.update {
+                                            it.copy(textSelectionConfig = config.copy(actions = newActions))
+                                        }
+                                    }
+                                },
                                 onClick = { editingAction = action }
                             )
                             if (index < config.actions.lastIndex) {
@@ -272,7 +292,7 @@ fun SettingAndroidIntegrationPage(
         AlertDialog(
             onDismissRequest = { showResetDialog = false },
             title = { Text(stringResource(R.string.reset)) },
-            text = { Text("Are you sure you want to restore default actions? This will replace all your custom actions.") },
+            text = { Text(stringResource(R.string.setting_android_integration_reset_actions_confirm)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -285,7 +305,7 @@ fun SettingAndroidIntegrationPage(
                             }
                         }
                         toaster.show(
-                            message = "Actions reset to defaults",
+                            message = context.getString(R.string.setting_android_integration_reset_actions_success),
                             action = ToastAction(
                                 label = context.getString(R.string.undo),
                                 onClick = {
@@ -461,42 +481,71 @@ private fun PreviewActionButton(
 @Composable
 private fun ActionCard(
     action: TextSelectionAction,
+    settings: me.rerere.rikkahub.data.datastore.Settings,
+    onModelSelected: (kotlin.uuid.Uuid?) -> Unit,
     onClick: () -> Unit
 ) {
-    Card(
-        onClick = onClick,
-        colors = CardDefaults.cardColors(
-            containerColor = if (LocalDarkMode.current) 
-                MaterialTheme.colorScheme.surfaceContainerLow 
-            else MaterialTheme.colorScheme.surfaceContainerHigh
-        ),
-        shape = AppShapes.CardLarge
+    val configuredModel = action.modelId?.let(settings::findModelById)
+    val containerColor = if (LocalDarkMode.current) {
+        MaterialTheme.colorScheme.surfaceContainerLow
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerHighest
+    }
+    val promptPreview = action.prompt
+        .take(72)
+        .replace("\n", " ")
+        .let { preview ->
+            if (action.prompt.length > 72) "$preview..." else preview
+        }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(24.dp)),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        ListItem(
-            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-            headlineContent = {
-                Text(
-                    text = action.name,
-                    style = MaterialTheme.typography.titleMedium
-                )
-            },
-            supportingContent = {
-                Text(
-                    text = action.prompt.take(60).replace("\n", " ") + 
-                        if (action.prompt.length > 60) "..." else "",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1
-                )
-            },
-            leadingContent = {
-                Icon(
-                    imageVector = getIconForName(action.icon),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            },
-            trailingContent = {
+        Surface(
+            onClick = onClick,
+            modifier = Modifier.fillMaxWidth(),
+            color = containerColor,
+            shape = RoundedCornerShape(10.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Box(
+                    modifier = Modifier.size(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = getIconForName(action.icon),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = action.name,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = promptPreview,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
                 if (action.isCustomPrompt) {
                     Surface(
                         shape = RoundedCornerShape(8.dp),
@@ -509,9 +558,57 @@ private fun ActionCard(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
+                } else {
+                    Icon(
+                        imageVector = Icons.Rounded.Edit,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.size(16.dp)
+                    )
                 }
             }
-        )
+        }
+
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = containerColor,
+            shape = RoundedCornerShape(10.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "Model",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = configuredModel?.displayName ?: "Use default",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                ModelSelector(
+                    modelId = configuredModel?.id,
+                    providers = settings.providers,
+                    type = ModelType.CHAT,
+                    allowClear = true,
+                    onSelect = { selectedModel ->
+                        onModelSelected(settings.findModelById(selectedModel.id)?.id)
+                    }
+                )
+            }
+        }
     }
 }
 

@@ -38,6 +38,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -61,9 +62,11 @@ fun ContextRefreshDialog(
     onRefresh: suspend () -> ChatService.ContextRefreshResult,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var state by remember { mutableStateOf(RefreshDialogState.CONFIRM) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var errorResId by remember { mutableStateOf<Int?>(null) }
+    var errorArgs by remember { mutableStateOf<List<Any>>(emptyList()) }
     var summarizedCount by remember { mutableIntStateOf(0) }
     var tokensSaved by remember { mutableIntStateOf(0) }
     
@@ -91,6 +94,9 @@ fun ContextRefreshDialog(
         dampingRatio = Spring.DampingRatioMediumBouncy,
         stiffness = Spring.StiffnessLow
     )
+    val displayedErrorMessage = errorResId?.let { resId ->
+        context.getString(resId, *errorArgs.toTypedArray())
+    } ?: stringResource(R.string.context_refresh_no_summarizer)
 
     AlertDialog(
         onDismissRequest = { if (state != RefreshDialogState.LOADING) onDismiss() },
@@ -133,7 +139,7 @@ fun ContextRefreshDialog(
                     }
                     RefreshDialogState.ERROR -> {
                         Text(
-                            text = "Error",
+                            text = stringResource(R.string.context_refresh_error_title),
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.error
@@ -197,7 +203,11 @@ fun ContextRefreshDialog(
                             }
                             
                             Text(
-                                text = "$messagesToSummarize messages will be summarized and ~$tokensToCleanUp tokens will be cleaned up.",
+                                text = stringResource(
+                                    R.string.context_refresh_summary_impact,
+                                    messagesToSummarize,
+                                    tokensToCleanUp
+                                ),
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -206,7 +216,7 @@ fun ContextRefreshDialog(
                             // Show previous summary if exists
                             if (hasPreviousSummary) {
                                 Text(
-                                    text = "Previous summary:",
+                                    text = stringResource(R.string.context_refresh_previous_summary),
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.primary,
                                     fontWeight = FontWeight.Medium
@@ -257,7 +267,7 @@ fun ContextRefreshDialog(
                             )
                             if (tokensSaved > 0) {
                                 Text(
-                                    text = "~$tokensSaved tokens saved",
+                                    text = stringResource(R.string.context_refresh_tokens_saved, tokensSaved),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.primary,
                                     textAlign = TextAlign.Center
@@ -280,7 +290,7 @@ fun ContextRefreshDialog(
                                 modifier = Modifier.size(48.dp)
                             )
                             Text(
-                                text = errorMessage ?: stringResource(R.string.context_refresh_no_summarizer),
+                                text = displayedErrorMessage,
                                 style = MaterialTheme.typography.bodyMedium,
                                 textAlign = TextAlign.Center,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -311,7 +321,8 @@ fun ContextRefreshDialog(
                                         tokensSaved = result.tokensSaved
                                         state = RefreshDialogState.SUCCESS
                                     } else {
-                                        errorMessage = result.errorMessage
+                                        errorResId = result.errorResId
+                                        errorArgs = result.errorArgs
                                         state = RefreshDialogState.ERROR
                                     }
                                 }
@@ -331,7 +342,7 @@ fun ContextRefreshDialog(
                     }
                     RefreshDialogState.SUCCESS, RefreshDialogState.ERROR -> {
                         Button(onClick = onDismiss) {
-                            Text("OK")
+                            Text(stringResource(android.R.string.ok))
                         }
                     }
                     RefreshDialogState.LOADING -> {

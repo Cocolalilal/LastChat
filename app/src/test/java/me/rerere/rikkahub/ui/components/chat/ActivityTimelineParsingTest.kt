@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -14,6 +15,67 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ActivityTimelineParsingTest {
+    @Test
+    fun buildTimelineEntries_createsOcrEntryFromAnnotations() {
+        val entries = buildTimelineEntries(
+            parts = emptyList(),
+            annotations = listOf(
+                UIMessageAnnotation.OcrActivity(
+                    source = UIMessageAnnotation.OcrActivity.Source.PDF,
+                    fileName = "scan.pdf",
+                    pageNumbers = listOf(2, 4)
+                )
+            ),
+        )
+
+        val entry = entries.single() as TimelineEntry.Ocr
+        assertEquals(UIMessageAnnotation.OcrActivity.Source.PDF, entry.source)
+        assertEquals("scan.pdf", entry.fileName)
+        assertEquals(listOf(2, 4), entry.pageNumbers)
+        assertFalse(entry.isInProgress)
+    }
+
+    @Test
+    fun deriveActivityState_showsLiveOcrBeforeFirstAssistantToken() {
+        val state = deriveActivityState(
+            parts = emptyList(),
+            annotations = listOf(
+                UIMessageAnnotation.OcrActivity(
+                    source = UIMessageAnnotation.OcrActivity.Source.IMAGE,
+                    fileName = "diagram.png",
+                )
+            ),
+            loading = true
+        )
+
+        assertEquals(ActivityState.Ocr, state)
+    }
+
+    @Test
+    fun deriveActivityState_completedTurnIncludesOcrAsActivityCategory() {
+        val state = deriveActivityState(
+            parts = listOf(
+                UIMessagePart.ToolCall(
+                    toolCallId = "search-1",
+                    toolName = "search_web",
+                    arguments = """{"query":"ocr timeline"}"""
+                )
+            ),
+            annotations = listOf(
+                UIMessageAnnotation.OcrActivity(
+                    source = UIMessageAnnotation.OcrActivity.Source.PDF,
+                    fileName = "scan.pdf",
+                    pageNumbers = listOf(1, 3)
+                )
+            ),
+            loading = false
+        )
+
+        val completed = state as ActivityState.CompletedMultiple
+        assertTrue(completed.activityTypes.contains(ActivityType.OCR))
+        assertTrue(completed.activityTypes.contains(ActivityType.SEARCH))
+    }
+
     @Test
     fun buildTimelineEntries_keepsMemoryActionsWithInvalidJson() {
         val entries = buildTimelineEntries(

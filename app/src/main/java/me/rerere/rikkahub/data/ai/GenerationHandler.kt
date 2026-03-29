@@ -4,11 +4,13 @@ import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -31,16 +33,20 @@ import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.handleMessageChunk
 import me.rerere.ai.ui.limitContext
 import me.rerere.ai.ui.truncate
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
+import me.rerere.rikkahub.data.ai.tools.parseJsonElementWithRecovery
+import me.rerere.rikkahub.data.ai.tools.recoverInlineAskUserToolCall
 import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.MessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.OutputMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.onGenerationFinish
+import me.rerere.rikkahub.data.ai.transformers.transformInput
 import me.rerere.rikkahub.data.ai.transformers.transforms
 import me.rerere.rikkahub.data.ai.transformers.visualTransforms
 import me.rerere.rikkahub.data.datastore.Settings
@@ -53,6 +59,7 @@ import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.LorebookActivationType
 import me.rerere.rikkahub.data.model.LorebookEntry
 import me.rerere.rikkahub.data.model.ModeAttachmentType
+import me.rerere.rikkahub.data.repository.ChatAttachmentRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.utils.applyPlaceholders
@@ -395,6 +402,7 @@ class GenerationHandler(
     private val providerManager: ProviderManager,
     private val json: Json,
     private val memoryRepo: MemoryRepository,
+    private val chatAttachmentRepository: ChatAttachmentRepository,
     private val conversationRepo: ConversationRepository,
     private val aiLoggingManager: AILoggingManager,
     private val embeddingService: me.rerere.rikkahub.data.ai.rag.EmbeddingService,
@@ -411,7 +419,7 @@ class GenerationHandler(
         truncateIndex: Int = -1,
         maxSteps: Int = 256,
         enabledModeIds: Set<Uuid> = emptySet(),
-    ): Flow<GenerationChunk> = flow {
+    ): Flow<GenerationChunk> = channelFlow {
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = providerManager.getProviderByType(provider)
 
@@ -467,7 +475,7 @@ class GenerationHandler(
                         model = model,
                         assistant = assistant
                     )
-                    emit(
+                    send(
                         GenerationChunk.Messages(
                             messages.visualTransforms(
                                 transformers = outputTransformers,
@@ -501,7 +509,8 @@ class GenerationHandler(
                 model = model,
                 assistant = assistant
             )
-            emit(GenerationChunk.Messages(messages))
+            messages = messages.recoverInlineAskUserToolCall(json)
+            send(GenerationChunk.Messages(messages))
 
             val toolCalls = messages.last().getToolCalls()
             if (toolCalls.isEmpty()) {
@@ -552,13 +561,13 @@ class GenerationHandler(
             }
             if (pendingToolCallIds.isNotEmpty()) {
                 messages = messages.markPendingToolCalls(pendingToolCallIds)
-                emit(GenerationChunk.Messages(messages))
+                send(GenerationChunk.Messages(messages))
                 if (results.isNotEmpty()) {
                     messages = messages + UIMessage(
                         role = MessageRole.TOOL,
                         parts = results
                     )
-                    emit(
+                    send(
                         GenerationChunk.Messages(
                             messages.transforms(
                                 transformers = outputTransformers,
@@ -575,7 +584,7 @@ class GenerationHandler(
                 role = MessageRole.TOOL,
                 parts = results
             )
-            emit(
+            send(
                 GenerationChunk.Messages(
                     messages.transforms(
                         transformers = outputTransformers,
@@ -852,9 +861,13 @@ class GenerationHandler(
                 } else historyLimitedMessages
             } else historyLimitedMessages
         } ?: historyLimitedMessages
+        val imageArchivedMessages = archiveOldImageMessages(
+            messages = searchPrunedMessages,
+            assistant = assistant,
+        )
         
         // Chat History (reverse order to prioritize recent)
-        val chatHistoryCandidates = searchPrunedMessages.truncate(truncateIndex).reversed()
+        val chatHistoryCandidates = imageArchivedMessages.truncate(truncateIndex).reversed()
         
         // Memories (Prepare effective memories including recent chats if enabled)
         val effectiveMemoriesCandidates = if (assistant.enableMemory) {
@@ -1081,6 +1094,56 @@ class GenerationHandler(
         )
     }
 
+    private suspend fun archiveOldImageMessages(
+        messages: List<UIMessage>,
+        assistant: Assistant,
+    ): List<UIMessage> {
+        val threshold = assistant.archiveImagesAfterMessageAge?.takeIf { it > 0 } ?: return messages
+        val archiveBeforeIndex = (messages.size - threshold).coerceAtLeast(0)
+        if (archiveBeforeIndex <= 0) {
+            return messages
+        }
+
+        return messages.mapIndexed { index, message ->
+            if (index >= archiveBeforeIndex) {
+                return@mapIndexed message
+            }
+
+            var changed = false
+            val updatedParts = buildList {
+                message.parts.forEach { part ->
+                    if (part is UIMessagePart.Image) {
+                        val ocrText = chatAttachmentRepository.resolveAttachmentOcrText(
+                            part = part,
+                            ensureAvailable = true,
+                        )
+                        if (!ocrText.isNullOrBlank()) {
+                            changed = true
+                            add(
+                                UIMessagePart.Text(
+                                    """
+                                    [Archived image OCR]
+                                    $ocrText
+                                    """.trimIndent()
+                                )
+                            )
+                        } else {
+                            add(part)
+                        }
+                    } else {
+                        add(part)
+                    }
+                }
+            }
+
+            if (changed) {
+                message.copy(parts = updatedParts)
+            } else {
+                message
+            }
+        }
+    }
+
     private suspend fun generateInternal(
         assistant: Assistant,
         settings: Settings,
@@ -1108,13 +1171,40 @@ class GenerationHandler(
             conversationEnabledModeIds = conversationEnabledModeIds,
             turnScopedEnabledModeIds = turnScopedEnabledModeIds,
         )
-        val internalMessages = buildResult.messages.transforms(transformers, context, model, assistant)
+        var uiMessages = messages
+        val transformedInput = buildResult.messages.transformInput(
+            transformers = transformers,
+            context = context,
+            model = model,
+            assistant = assistant,
+            onProgressAnnotationsChanged = { annotations ->
+                val updatedMessages = uiMessages.upsertOcrPlaceholder(annotations)
+                if (updatedMessages != uiMessages) {
+                    uiMessages = updatedMessages
+                    onUpdateMessages(uiMessages)
+                }
+            },
+        )
+        val internalMessages = transformedInput.messages
         val usedLorebookEntries = buildResult.activatedLorebookEntries
         val usedModes = buildResult.usedModes
         val usedMemories = buildResult.usedMemories
         val hasContextSources = usedLorebookEntries.isNotEmpty() || usedModes.isNotEmpty() || usedMemories.isNotEmpty()
 
-        var messages: List<UIMessage> = messages
+        var messages: List<UIMessage> = uiMessages
+        if (transformedInput.annotations.isNotEmpty()) {
+            val updatedMessages = messages.upsertOcrPlaceholder(transformedInput.annotations)
+            if (updatedMessages != messages) {
+                messages = updatedMessages
+                onUpdateMessages(messages)
+            }
+        } else {
+            val updatedMessages = messages.dropTrailingOcrPlaceholder()
+            if (updatedMessages != messages) {
+                messages = updatedMessages
+                onUpdateMessages(messages)
+            }
+        }
         val params = TextGenerationParams(
             model = model,
             temperature = assistant.temperature,
@@ -1483,45 +1573,49 @@ class GenerationHandler(
      * Attempts to sanitize malformed JSON from streamed tool call arguments.
      * Handles cases where the model outputs content after a valid JSON object.
      */
-    private fun parseToolCallArguments(arguments: String) = runCatching {
-        json.parseToJsonElement(arguments.ifBlank { "{}" })
-    }.getOrElse {
-        Log.w(TAG, "Failed to parse tool arguments, attempting sanitization: ${it.message}")
-        val sanitized = sanitizeToolCallArguments(arguments)
-        json.parseToJsonElement(sanitized)
+    private fun parseToolCallArguments(arguments: String): JsonElement {
+        return parseJsonElementWithRecovery(arguments, json) ?: run {
+            Log.w(TAG, "Failed to parse tool arguments after recovery: ${arguments.take(200)}")
+            error("Invalid tool arguments")
+        }
+    }
+}
+
+internal fun List<UIMessage>.upsertOcrPlaceholder(
+    annotations: List<UIMessageAnnotation>,
+): List<UIMessage> {
+    if (annotations.isEmpty()) {
+        return dropTrailingOcrPlaceholder()
     }
 
-    private fun sanitizeToolCallArguments(arguments: String): String {
-        if (arguments.isBlank()) return "{}"
-        val trimmed = arguments.trim()
-        
-        // Find the first complete JSON object
-        var braceCount = 0
-        var inString = false
-        var escape = false
-        
-        for ((index, char) in trimmed.withIndex()) {
-            if (escape) {
-                escape = false
-                continue
-            }
-            when (char) {
-                '\\' -> if (inString) escape = true
-                '"' -> inString = !inString
-                '{' -> if (!inString) braceCount++
-                '}' -> if (!inString) {
-                    braceCount--
-                    if (braceCount == 0) {
-                        // Found complete object, return it
-                        return trimmed.substring(0, index + 1)
-                    }
-                }
-            }
-        }
-        // Couldn't find complete object, return empty
-        Log.w(TAG, "Could not extract valid JSON object from: $trimmed")
-        return "{}"
+    val lastMessage = lastOrNull()
+    val placeholder = UIMessage(
+        role = MessageRole.ASSISTANT,
+        parts = emptyList(),
+        annotations = annotations,
+    )
+
+    return if (lastMessage.isTrailingOcrPlaceholder()) {
+        dropLast(1) + placeholder
+    } else {
+        this + placeholder
     }
+}
+
+internal fun List<UIMessage>.dropTrailingOcrPlaceholder(): List<UIMessage> {
+    return if (lastOrNull().isTrailingOcrPlaceholder()) {
+        dropLast(1)
+    } else {
+        this
+    }
+}
+
+internal fun UIMessage?.isTrailingOcrPlaceholder(): Boolean {
+    return this != null &&
+        role == MessageRole.ASSISTANT &&
+        parts.isEmpty() &&
+        annotations.isNotEmpty() &&
+        annotations.all { annotation -> annotation is UIMessageAnnotation.OcrActivity }
 }
 
 private fun List<UIMessage>.markPendingToolCalls(toolCallIds: Set<String>): List<UIMessage> {

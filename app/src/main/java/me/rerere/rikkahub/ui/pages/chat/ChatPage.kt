@@ -58,6 +58,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -86,6 +87,7 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.repository.ChatAttachmentManager
 import me.rerere.rikkahub.ui.components.ai.MinimalChatInput
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
@@ -97,12 +99,13 @@ import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.service.ChatPersistenceMode
 import me.rerere.rikkahub.ui.theme.AssistantChatTheme
 import me.rerere.rikkahub.utils.base64Decode
-import me.rerere.rikkahub.utils.createChatFilesByContents
 import me.rerere.rikkahub.utils.getFileNameFromUri
 import me.rerere.rikkahub.utils.getFileMimeType
 import me.rerere.rikkahub.utils.navigateToChatPage
+import kotlinx.coroutines.Dispatchers
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
+import kotlinx.coroutines.withContext
 import kotlin.uuid.Uuid
 
 internal fun hasConversationMessages(conversation: Conversation): Boolean {
@@ -122,6 +125,39 @@ internal fun extractDraftFileUrls(parts: List<UIMessagePart>): List<String> {
             is UIMessagePart.Audio -> part.url.takeIf { it.isNotBlank() }
             else -> null
         }
+    }
+}
+
+@Composable
+private fun ChatTopFadeOverlay(
+    fadeHeight: Dp,
+    modifier: Modifier = Modifier,
+) {
+    val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val backgroundColor = MaterialTheme.colorScheme.background
+
+    Column(
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Spacer(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(statusBarHeight)
+                .background(backgroundColor)
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(fadeHeight)
+                .background(
+                    brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                        colors = listOf(
+                            backgroundColor.copy(alpha = 0.98f),
+                            Color.Transparent
+                        )
+                    )
+                )
+        )
     }
 }
 
@@ -170,7 +206,7 @@ internal fun chatTopBarPlacement(settings: Settings): ChatToolbarPlacement {
 }
 
 internal fun chatListTopPadding(placement: ChatToolbarPlacement): androidx.compose.ui.unit.Dp {
-    return if (placement == ChatToolbarPlacement.Top) 72.dp else 16.dp
+    return if (placement == ChatToolbarPlacement.Top) 88.dp else 16.dp
 }
 
 internal fun chatListBottomPadding(placement: ChatToolbarPlacement): androidx.compose.ui.unit.Dp {
@@ -199,11 +235,12 @@ fun ChatPage(
     val toaster = LocalToaster.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val genericErrorMessage = context.getString(R.string.common_error)
 
     // Handle Error
     LaunchedEffect(Unit) {
         vm.errorFlow.collect { error ->
-            toaster.show(error.message ?: "Error", type = ToastType.Error)
+            toaster.show(error.message ?: genericErrorMessage, type = ToastType.Error)
         }
     }
 
@@ -252,46 +289,43 @@ fun ChatPage(
         windowAdaptiveInfo.width > windowAdaptiveInfo.height && windowAdaptiveInfo.width >= 1100.dp
 
     val inputState = rememberChatInputState(
-        message = remember(files) {
-            buildList {
-                files.forEach { sourceFile ->
-                    val mimeType = context.getFileMimeType(sourceFile)
-                    val fileName = context.getFileNameFromUri(sourceFile) ?: "file"
-                    val localFile = if (sourceFile.scheme == "file") {
-                        sourceFile
-                    } else {
-                        context.createChatFilesByContents(listOf(sourceFile)).firstOrNull()
-                    } ?: return@forEach
-                    when {
-                        mimeType?.startsWith("image/") == true -> {
-                            add(UIMessagePart.Image(url = localFile.toString()))
-                        }
-
-                        mimeType?.startsWith("video/") == true -> {
-                            add(UIMessagePart.Video(url = localFile.toString()))
-                        }
-
-                        mimeType?.startsWith("audio/") == true -> {
-                            add(UIMessagePart.Audio(url = localFile.toString()))
-                        }
-
-                        else -> {
-                            add(
-                                UIMessagePart.Document(
-                                    url = localFile.toString(),
-                                    fileName = fileName,
-                                    mime = mimeType ?: "application/octet-stream"
-                                )
-                            )
-                        }
-                    }
-                }
-            }
-        },
         textContent = remember(text) {
             text?.base64Decode() ?: ""
         }
     )
+    LaunchedEffect(files) {
+        if (files.isEmpty() || inputState.messageContent.isNotEmpty()) {
+            return@LaunchedEffect
+        }
+        val importedParts = withContext(Dispatchers.IO) {
+            buildList {
+                files.forEach { sourceFile ->
+                    val mimeType = context.getFileMimeType(sourceFile)
+                    val fileName = context.getFileNameFromUri(sourceFile) ?: "file"
+                    val localFile = ChatAttachmentManager.importChatFile(
+                        uri = sourceFile,
+                        fileNameHint = fileName,
+                        mimeHint = mimeType,
+                    )?.uri ?: return@forEach
+                    when {
+                        mimeType?.startsWith("image/") == true -> add(UIMessagePart.Image(url = localFile.toString()))
+                        mimeType?.startsWith("video/") == true -> add(UIMessagePart.Video(url = localFile.toString()))
+                        mimeType?.startsWith("audio/") == true -> add(UIMessagePart.Audio(url = localFile.toString()))
+                        else -> add(
+                            UIMessagePart.Document(
+                                url = localFile.toString(),
+                                fileName = fileName,
+                                mime = mimeType ?: "application/octet-stream"
+                            )
+                        )
+                    }
+                }
+            }
+        }
+        if (importedParts.isNotEmpty()) {
+            inputState.messageContent = importedParts
+        }
+    }
 
     val chatListState = rememberLazyListState()
     LaunchedEffect(conversation.messageNodes.size) {
@@ -403,6 +437,7 @@ private fun ChatPageContent(
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val context = LocalContext.current
+    val modelRequiredMessage = context.getString(R.string.chat_model_required)
     var previewMode by rememberSaveable { mutableStateOf(false) }
     val activePersistenceMode = when {
         manualTemporaryChat || conversationPersistenceMode == ChatPersistenceMode.TEMPORARY -> ChatPersistenceMode.TEMPORARY
@@ -503,18 +538,8 @@ private fun ChatPageContent(
                     }
                 } else {
                     {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .statusBarsPadding()
-                                .background(
-                                    brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                                        colors = listOf(
-                                            MaterialTheme.colorScheme.background.copy(alpha = 0.95f),
-                                            Color.Transparent
-                                        )
-                                    )
-                                )
+                        ChatTopFadeOverlay(
+                            fadeHeight = 36.dp,
                         )
                     }
                 },
@@ -709,13 +734,9 @@ private fun ChatPageContent(
                             showRegenerateConfirmDialog = false
                             pendingRegenerateMessage = null
                         },
-                        title = { Text("Regenerate Message") },
+                        title = { Text(stringResource(R.string.chat_regenerate_message_title)) },
                         text = {
-                            Text(
-                                "This message contains tool calls or multiple steps. " +
-                                "Regenerating will replace the entire response and you won't be able to go back to the previous version. " +
-                                "Are you sure you want to continue?"
-                            )
+                            Text(stringResource(R.string.chat_regenerate_message_warning))
                         },
                         confirmButton = {
                             TextButton(
@@ -727,7 +748,7 @@ private fun ChatPageContent(
                                     pendingRegenerateMessage = null
                                 }
                             ) {
-                                Text("Regenerate")
+                                Text(stringResource(R.string.regenerate))
                             }
                         },
                         dismissButton = {
@@ -737,7 +758,7 @@ private fun ChatPageContent(
                                     pendingRegenerateMessage = null
                                 }
                             ) {
-                                Text("Cancel")
+                                Text(stringResource(R.string.cancel))
                             }
                         }
                     )
@@ -759,15 +780,15 @@ private fun ChatPageContent(
                                     androidx.compose.ui.graphics.Brush.verticalGradient(
                                         colors = listOf(
                                             Color.Transparent,
-                                            MaterialTheme.colorScheme.background.copy(alpha = 0.6f),
-                                            MaterialTheme.colorScheme.background.copy(alpha = 0.92f)
+                                            MaterialTheme.colorScheme.background.copy(alpha = 0.72f),
+                                            MaterialTheme.colorScheme.background.copy(alpha = 0.97f)
                                         )
                                     )
                                 } else {
                                     androidx.compose.ui.graphics.Brush.verticalGradient(
                                         colors = listOf(
                                             Color.Transparent,
-                                            MaterialTheme.colorScheme.background.copy(alpha = 0.85f)
+                                            MaterialTheme.colorScheme.background.copy(alpha = 0.92f)
                                         )
                                     )
                                 }
@@ -793,7 +814,7 @@ private fun ChatPageContent(
                                 chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
                             }
                         } else {
-                            toaster.show("Please select a model first", type = ToastType.Error)
+                            toaster.show(modelRequiredMessage, type = ToastType.Error)
                         }
                     },
                     onCancelClick = {
@@ -818,7 +839,7 @@ private fun ChatPageContent(
                             )
                         } else {
                             if (currentChatModel == null) {
-                                toaster.show("Please select a model first", type = ToastType.Error)
+                                toaster.show(modelRequiredMessage, type = ToastType.Error)
                                 return@MinimalChatInput
                             }
                             vm.handleMessageSend(
@@ -839,7 +860,7 @@ private fun ChatPageContent(
                             )
                         } else {
                             if (currentChatModel == null) {
-                                toaster.show("Please select a model first", type = ToastType.Error)
+                                toaster.show(modelRequiredMessage, type = ToastType.Error)
                                 return@MinimalChatInput
                             }
                             vm.handleMessageSend(
@@ -963,19 +984,9 @@ private fun ChatToolbar(
             .fillMaxWidth()
     ) {
         if (placement == ChatToolbarPlacement.Top) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth()
-                    .height(120.dp)
-                    .background(
-                        brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                            colors = listOf(
-                                MaterialTheme.colorScheme.background.copy(alpha = 0.95f),
-                                Color.Transparent
-                            )
-                        )
-                    )
+            ChatTopFadeOverlay(
+                fadeHeight = 96.dp,
+                modifier = Modifier.align(Alignment.TopCenter)
             )
         }
 

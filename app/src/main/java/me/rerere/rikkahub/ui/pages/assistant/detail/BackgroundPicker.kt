@@ -28,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,7 +41,9 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
-import me.rerere.rikkahub.utils.createChatFilesByContents
+import me.rerere.rikkahub.utils.OwnedFileDirectory
+import me.rerere.rikkahub.utils.importOwnedFile
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 @Composable
@@ -52,6 +55,7 @@ fun BackgroundPicker(
 ) {
     val context = LocalContext.current
     val isDarkMode = LocalDarkMode.current
+    val scope = rememberCoroutineScope()
     var showPickOption by remember { mutableStateOf(false) }
     var showUrlInput by remember { mutableStateOf(false) }
     var urlInput by remember { mutableStateOf("") }
@@ -71,9 +75,13 @@ fun BackgroundPicker(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let {
-            val localUris = context.createChatFilesByContents(listOf(it))
-            localUris.firstOrNull()?.let { localUri ->
-                onUpdate(localUri.toString())
+            scope.launch {
+                context.importOwnedFile(
+                    sourceUri = it,
+                    directory = OwnedFileDirectory.ASSISTANT_BACKGROUND,
+                )?.let { localUri ->
+                    onUpdate(localUri.toString())
+                }
             }
         }
     }

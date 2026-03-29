@@ -106,7 +106,7 @@ fun AssistantToolsSubPage(
         // ═══════════════════════════════════════════════════════════════════
         // SEARCH GROUP
         // ═══════════════════════════════════════════════════════════════════
-        SettingsGroup(title = "Search") {
+        SettingsGroup(title = stringResource(R.string.assistant_tools_search_group)) {
             // Build options list for Select
             val currentSearchMode = assistant.searchMode
             
@@ -114,9 +114,10 @@ fun AssistantToolsSubPage(
             data class SearchOption(val mode: AssistantSearchMode, val displayName: String)
             
             val searchOptions = buildList {
-                add(SearchOption(AssistantSearchMode.Off, "Off"))
+                add(SearchOption(AssistantSearchMode.Off, stringResource(R.string.common_off)))
                 settings.searchServices.forEachIndexed { index, service ->
-                    val name = SearchServiceOptions.TYPES[service::class] ?: "Provider ${index + 1}"
+                    val name = SearchServiceOptions.TYPES[service::class]
+                        ?: stringResource(R.string.assistant_tools_provider_fallback, index + 1)
                     add(SearchOption(AssistantSearchMode.Provider(index), name))
                 }
             }
@@ -130,7 +131,7 @@ fun AssistantToolsSubPage(
             } ?: searchOptions.first()
             
             SettingGroupItem(
-                title = "Search Provider",
+                title = stringResource(R.string.assistant_tools_search_provider),
                 subtitle = selectedOption.displayName,
                 trailing = {
                     Select(
@@ -147,8 +148,8 @@ fun AssistantToolsSubPage(
             
             // Prefer Built-in Search
             SettingGroupItem(
-                title = "Prefer Built-in Search",
-                subtitle = "Use model's native search when available",
+                title = stringResource(R.string.assistant_tools_prefer_builtin),
+                subtitle = stringResource(R.string.assistant_tools_prefer_builtin_desc),
                 trailing = {
                     HapticSwitch(
                         checked = assistant.preferBuiltInSearch,
@@ -181,10 +182,9 @@ fun AssistantToolsSubPage(
                 }
             )
             
-            // Notifications
             SettingGroupItem(
-                title = "Notifications",
-                subtitle = "Notifications, notification reading, scheduled follow-ups",
+                title = stringResource(R.string.notification_tools_title),
+                subtitle = stringResource(R.string.notification_tools_desc),
                 trailing = {
                     HapticSwitch(
                         checked = assistant.localTools.contains(LocalToolOption.Notifications),
@@ -277,8 +277,12 @@ fun AssistantToolsSubPage(
                     title = stringResource(R.string.mcp_picker_title),
                     subtitle = when {
                         loading -> stringResource(R.string.mcp_picker_syncing)
-                        enabledServerCount > 0 -> "$enabledServerCount enabled of $availableServerCount"
-                        else -> "Select external tool servers"
+                        enabledServerCount > 0 -> stringResource(
+                            R.string.assistant_tools_mcp_enabled_count,
+                            enabledServerCount,
+                            availableServerCount
+                        )
+                        else -> stringResource(R.string.assistant_tools_mcp_select)
                     },
                     onClick = { showMcpPicker = true }
                 )
@@ -334,10 +338,10 @@ fun AssistantToolsSubPage(
     if (showNotificationAccessDialog && pendingNotificationAccess.specialAccesses.isNotEmpty()) {
         AlertDialog(
             onDismissRequest = { showNotificationAccessDialog = false },
-            title = { Text("Notification Access") },
+            title = { Text(stringResource(R.string.notification_access_title)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Enable the remaining access below so notification tools and scheduled follow-ups work reliably:")
+                    Text(stringResource(R.string.notification_access_desc))
                     PermissionChecker.getFeatureAccessDescriptions(pendingNotificationAccess).forEach { description ->
                         Text("- $description", style = MaterialTheme.typography.bodySmall)
                     }
@@ -353,14 +357,14 @@ fun AssistantToolsSubPage(
                         )
                     }
                 ) {
-                    Text("Open Settings")
+                    Text(stringResource(R.string.open_settings))
                 }
             },
             dismissButton = {
                 TextButton(
                     onClick = { showNotificationAccessDialog = false }
                 ) {
-                    Text("Not now")
+                    Text(stringResource(R.string.not_now))
                 }
             }
         )

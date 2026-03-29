@@ -187,3 +187,34 @@ fun UIMessage.toMessageNode(): MessageNode {
         selectIndex = 0
     )
 }
+
+/**
+ * Returns the canonical snapshot index for each user-visible message version.
+ *
+ * Multiple snapshots can share the same versionTag while a response streams or gets edited.
+ * The selector should treat those as one version and point at the latest snapshot for that tag.
+ */
+fun MessageNode.versionSelectionIndices(): List<Int> {
+    if (messages.isEmpty()) return emptyList()
+
+    val latestIndexByTag = linkedMapOf<String?, Int>()
+    messages.forEachIndexed { index, message ->
+        latestIndexByTag[message.versionTag] = index
+    }
+    return latestIndexByTag.values.toList()
+}
+
+fun MessageNode.versionSelectionPosition(selectedIndex: Int = selectIndex): Int {
+    if (messages.isEmpty()) return -1
+
+    val versionIndices = versionSelectionIndices()
+    val selectedTag = messages.getOrNull(selectedIndex)?.versionTag
+    val tagPosition = versionIndices.indexOfFirst { index ->
+        messages.getOrNull(index)?.versionTag == selectedTag
+    }
+    if (tagPosition >= 0) {
+        return tagPosition
+    }
+
+    return versionIndices.indexOf(selectedIndex)
+}

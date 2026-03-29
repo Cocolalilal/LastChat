@@ -14,6 +14,7 @@ export interface SelectedNodeMessage {
 
 export type ActivityType =
   | "reasoning"
+  | "ocr"
   | "search"
   | "python"
   | "skill"
@@ -24,13 +25,14 @@ export type ActivityState =
   | { type: "hidden" }
   | { type: "waiting" }
   | { type: "replying" }
+  | { type: "ocr" }
   | { type: "reasoning"; startTimeMs: number }
   | { type: "tool_use"; toolName: string; displayName: string; startTimeMs: number }
   | { type: "completed_single"; activityType: ActivityType; durationMs?: number | null; count?: number }
   | {
       type: "completed_multiple";
       reasoningDurationMs?: number | null;
-      toolTypes: ActivityType[];
+      activityTypes: ActivityType[];
       totalActivities: number;
     };
 
@@ -40,6 +42,14 @@ export type TimelineEntry =
       type: "reasoning";
       reasoning: Extract<UIMessagePart, { type: "reasoning" }>;
       durationMs: number | null;
+    }
+  | {
+      id: string;
+      type: "ocr";
+      source: "image" | "pdf";
+      fileName?: string | null;
+      pageNumbers: number[];
+      isLoading: boolean;
     }
   | {
       id: string;
@@ -182,9 +192,31 @@ export function getToolDisplayName(toolName: string): string {
   }
 }
 
-export function buildTimelineEntries(parts: UIMessagePart[]): TimelineEntry[] {
+function getOcrAnnotations(annotations: UIMessageAnnotation[]) {
+  return annotations.filter(
+    (annotation): annotation is Extract<UIMessageAnnotation, { type: "ocr_activity" }> =>
+      annotation.type === "ocr_activity",
+  );
+}
+
+export function buildTimelineEntries(
+  parts: UIMessagePart[],
+  annotations: UIMessageAnnotation[] = [],
+  loading = false,
+): TimelineEntry[] {
   const entries: TimelineEntry[] = [];
   const toolEntryIndexById = new Map<string, number>();
+
+  getOcrAnnotations(annotations).forEach((annotation, index) => {
+    entries.push({
+      id: `ocr-${index}`,
+      type: "ocr",
+      source: annotation.source,
+      fileName: annotation.fileName ?? null,
+      pageNumbers: annotation.pageNumbers,
+      isLoading: loading,
+    });
+  });
 
   parts.forEach((part, index) => {
     if (part.type === "reasoning") {
@@ -224,13 +256,18 @@ export function buildTimelineEntries(parts: UIMessagePart[]): TimelineEntry[] {
   return entries;
 }
 
-export function deriveActivityState(parts: UIMessagePart[], loading: boolean): ActivityState {
+export function deriveActivityState(
+  parts: UIMessagePart[],
+  annotations: UIMessageAnnotation[] = [],
+  loading = false,
+): ActivityState {
   const reasoningParts = parts.filter(
     (part): part is Extract<UIMessagePart, { type: "reasoning" }> => part.type === "reasoning",
   );
   const toolParts = parts.filter(
     (part): part is Extract<UIMessagePart, { type: "tool" }> => part.type === "tool",
   );
+  const ocrAnnotations = getOcrAnnotations(annotations);
   let lastActivityIndex = -1;
   for (let index = parts.length - 1; index >= 0; index -= 1) {
     const part = parts[index];
@@ -250,7 +287,8 @@ export function deriveActivityState(parts: UIMessagePart[], loading: boolean): A
     }, 0);
     const toolTypes = [...new Set(toolParts.map((part) => categorizeToolName(part.toolName)))];
     const hasReasoning = totalReasoningDuration > 0;
-    const activityCount = (hasReasoning ? 1 : 0) + toolTypes.length;
+    const hasOcr = ocrAnnotations.length > 0;
+    const activityCount = (hasReasoning ? 1 : 0) + (hasOcr ? 1 : 0) + toolTypes.length;
 
     if (activityCount === 0) return { type: "hidden" };
     if (activityCount === 1 && hasReasoning) {
@@ -259,6 +297,13 @@ export function deriveActivityState(parts: UIMessagePart[], loading: boolean): A
         activityType: "reasoning",
         durationMs: totalReasoningDuration,
         count: reasoningParts.length,
+      };
+    }
+    if (activityCount === 1 && hasOcr) {
+      return {
+        type: "completed_single",
+        activityType: "ocr",
+        count: ocrAnnotations.length,
       };
     }
     if (activityCount === 1 && toolTypes.length === 1) {
@@ -272,7 +317,7 @@ export function deriveActivityState(parts: UIMessagePart[], loading: boolean): A
     return {
       type: "completed_multiple",
       reasoningDurationMs: hasReasoning ? totalReasoningDuration : null,
-      toolTypes,
+      activityTypes: [...(hasOcr ? ["ocr" as const] : []), ...toolTypes],
       totalActivities: activityCount,
     };
   }
@@ -297,6 +342,10 @@ export function deriveActivityState(parts: UIMessagePart[], loading: boolean): A
 
   if (hasRecentText) {
     return { type: "replying" };
+  }
+
+  if (ocrAnnotations.length > 0) {
+    return { type: "ocr" };
   }
 
   return { type: "waiting" };

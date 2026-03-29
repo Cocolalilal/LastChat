@@ -58,6 +58,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -79,6 +80,7 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Lorebook
+import me.rerere.rikkahub.data.model.collectMediaFileRefs
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.FormItem
@@ -95,7 +97,8 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.LorebookExportImport
-import me.rerere.rikkahub.utils.createChatFilesByContents
+import me.rerere.rikkahub.utils.OwnedFileDirectory
+import me.rerere.rikkahub.utils.importOwnedFile
 import me.rerere.rikkahub.utils.plus
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
@@ -418,6 +421,10 @@ fun LorebooksPageContent(
                                     vm.updateSettings(
                                         settings.copy(lorebooks = settings.lorebooks.filter { it.id != lorebook.id })
                                     )
+                                    vm.cleanupFilesIfUnreferenced(
+                                        fileRefs = deletedLorebook.collectMediaFileRefs(),
+                                        delayMs = 4500L,
+                                    )
                                     toaster.show(
                                         message = context.getString(
                                             R.string.lorebooks_page_deleted,
@@ -611,14 +618,18 @@ internal fun LorebookCreatorSheet(
     var showCoverPicker by remember { mutableStateOf(false) }
     
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: android.net.Uri? ->
         uri?.let {
-            // Copy to app storage and use as cover
-            val localUri = context.createChatFilesByContents(listOf(it)).firstOrNull()
-            if (localUri != null) {
-                cover = Avatar.Image(localUri.toString())
+            scope.launch {
+                context.importOwnedFile(
+                    sourceUri = it,
+                    directory = OwnedFileDirectory.LOREBOOK_COVER,
+                )?.let { localUri ->
+                    cover = Avatar.Image(localUri.toString())
+                }
             }
         }
     }

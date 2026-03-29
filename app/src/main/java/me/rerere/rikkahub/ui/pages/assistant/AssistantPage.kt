@@ -138,7 +138,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                      is AssistantExportImport.ImportResult.Error -> toaster.show(res.message)
                      is AssistantExportImport.ImportResult.Success -> {
                          vm.addAssistant(res.assistant)
-                         toaster.show("Character Imported")
+                         toaster.show(context.getString(R.string.assistant_import_success))
                      }
                      is AssistantExportImport.ImportResult.Configurable -> {
                          pendingImportResult = res
@@ -231,7 +231,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                 trailingIcon = if (searchQuery.isNotEmpty()) {
                     {
                         IconButton(onClick = { searchQuery = "" }) {
-                            Icon(Icons.Rounded.Close, contentDescription = "Clear")
+                            Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.clear_search))
                         }
                     }
                 } else null
@@ -409,7 +409,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                      val finalAssistant = AssistantExportImport.clearMissingModels(assistant)
                      
                      vm.addAssistant(finalAssistant)
-                     toaster.show("Character Imported")
+                     toaster.show(context.getString(R.string.assistant_import_success))
                      pendingImportResult = null
                  }
             }

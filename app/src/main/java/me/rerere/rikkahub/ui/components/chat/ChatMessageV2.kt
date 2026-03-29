@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.chat
 
+import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
@@ -48,10 +49,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastForEach
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.core.net.toUri
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -63,25 +70,36 @@ import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantAffectScope
+import me.rerere.rikkahub.data.model.ChatAttachmentState
 import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.rikkahub.data.model.chatAttachmentDisplayName
+import me.rerere.rikkahub.data.model.chatAttachmentMimeHint
+import me.rerere.rikkahub.data.model.chatAttachmentState
 import me.rerere.rikkahub.data.model.replaceRegexes
+import me.rerere.rikkahub.data.model.versionSelectionIndices
 import me.rerere.rikkahub.ui.components.message.ChatMessageActionButtons
 import me.rerere.rikkahub.ui.components.message.ChatMessageActionsSheet
-import me.rerere.rikkahub.utils.JsonInstant
-import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
 import me.rerere.rikkahub.ui.components.message.ChatMessageCopySheet
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
+import me.rerere.rikkahub.ui.components.ui.DocumentChip
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
+import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.ui.context.LocalSettings
-import me.rerere.rikkahub.utils.formatNumber
+import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.copyMessageToClipboard
-import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
-import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.utils.formatNumber
+import me.rerere.rikkahub.utils.getFileMimeType
+import me.rerere.rikkahub.utils.getFileNameFromUri
+import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
+import me.rerere.rikkahub.utils.openAttachmentUri
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.ai.core.MessageRole as AIMessageRole
 
@@ -96,8 +114,8 @@ data class MessageTurnGroup(
     val firstNode get() = nodes.first()
     val lastNode get() = nodes.last()
     
-    /** Node with the most message versions - used for version switching controls */
-    val nodeWithMostVersions get() = nodes.maxByOrNull { it.messages.size } ?: lastNode
+    /** Node with the most distinct message versions - used for version switching controls */
+    val nodeWithMostVersions get() = nodes.maxByOrNull { it.versionSelectionIndices().size } ?: lastNode
     
     /** The active versionTag from the first node's current message */
     val activeVersionTag: String? get() = firstNode.currentMessage.versionTag
@@ -134,6 +152,9 @@ data class MessageTurnGroup(
     
     /** All message parts from filtered nodes in the group */
     val allParts: List<UIMessagePart> get() = filteredNodes.flatMap { it.currentMessage.parts }
+
+    /** All annotations from filtered nodes in the group */
+    val allAnnotations: List<UIMessageAnnotation> get() = filteredNodes.flatMap { it.currentMessage.annotations }
     
     /** Combined token usage for filtered messages in the group */
     val combinedUsage: TokenUsage? get() {
@@ -192,12 +213,263 @@ fun List<MessageNode>.groupIntoTurns(): List<MessageTurnGroup> {
     return groups
 }
 
+private sealed interface RenderableAttachment {
+    data class Image(
+        val url: String,
+        val archived: Boolean,
+        val label: String,
+    ) : RenderableAttachment
+
+    data class File(
+        val url: String,
+        val fileName: String,
+        val mimeType: String?,
+        val archived: Boolean,
+    ) : RenderableAttachment
+
+    data class Placeholder(
+        val fileName: String,
+        val mimeType: String?,
+    ) : RenderableAttachment
+}
+
+private fun collectRenderableAttachments(
+    context: Context,
+    parts: List<UIMessagePart>,
+    fallbackVideoLabel: String,
+    fallbackAudioLabel: String,
+): List<RenderableAttachment> {
+    return buildList {
+        parts.forEach { part ->
+            val attachmentState = part.chatAttachmentState()
+            when (part) {
+                is UIMessagePart.Image -> {
+                    if (part.url.isNotBlank()) {
+                        add(
+                            RenderableAttachment.Image(
+                                url = part.url,
+                                archived = attachmentState != ChatAttachmentState.ACTIVE,
+                                label = part.chatAttachmentDisplayName().orEmpty().ifBlank {
+                                    resolveAttachmentDisplayName(
+                                        context = context,
+                                        url = part.url,
+                                        fallbackLabel = context.getString(R.string.attachment_image_fallback),
+                                    )
+                                },
+                            )
+                        )
+                    } else if (attachmentState != ChatAttachmentState.ACTIVE) {
+                        add(
+                            RenderableAttachment.Placeholder(
+                                fileName = buildString {
+                                    append(part.chatAttachmentDisplayName().orEmpty().ifBlank { "Image" })
+                                    append(if (attachmentState == ChatAttachmentState.ARCHIVED) " (archived)" else " (deleted)")
+                                },
+                                mimeType = part.chatAttachmentMimeHint() ?: "image/*",
+                            )
+                        )
+                    }
+                }
+
+                is UIMessagePart.Document -> {
+                    if (part.url.isNotBlank() || attachmentState != ChatAttachmentState.ACTIVE) {
+                        add(
+                            RenderableAttachment.File(
+                                url = part.url,
+                                fileName = part.chatAttachmentDisplayName().orEmpty().ifBlank {
+                                    part.fileName.ifBlank {
+                                        resolveAttachmentDisplayName(
+                                            context = context,
+                                            url = part.url,
+                                            fallbackLabel = context.getString(R.string.attachment_file_fallback),
+                                        )
+                                    }
+                                },
+                                mimeType = part.chatAttachmentMimeHint() ?: part.mime,
+                                archived = attachmentState != ChatAttachmentState.ACTIVE,
+                            )
+                        )
+                    }
+                }
+
+                is UIMessagePart.Video -> {
+                    if (part.url.isNotBlank() || attachmentState != ChatAttachmentState.ACTIVE) {
+                        add(
+                            RenderableAttachment.File(
+                                url = part.url,
+                                fileName = part.chatAttachmentDisplayName().orEmpty().ifBlank {
+                                    resolveAttachmentDisplayName(
+                                        context = context,
+                                        url = part.url,
+                                        fallbackLabel = fallbackVideoLabel,
+                                    )
+                                },
+                                mimeType = part.chatAttachmentMimeHint()
+                                    ?: context.getFileMimeType(part.url.toUri())
+                                    ?: "video/*",
+                                archived = attachmentState != ChatAttachmentState.ACTIVE,
+                            )
+                        )
+                    }
+                }
+
+                is UIMessagePart.Audio -> {
+                    if (part.url.isNotBlank() || attachmentState != ChatAttachmentState.ACTIVE) {
+                        add(
+                            RenderableAttachment.File(
+                                url = part.url,
+                                fileName = part.chatAttachmentDisplayName().orEmpty().ifBlank {
+                                    resolveAttachmentDisplayName(
+                                        context = context,
+                                        url = part.url,
+                                        fallbackLabel = fallbackAudioLabel,
+                                    )
+                                },
+                                mimeType = part.chatAttachmentMimeHint()
+                                    ?: context.getFileMimeType(part.url.toUri())
+                                    ?: "audio/*",
+                                archived = attachmentState != ChatAttachmentState.ACTIVE,
+                            )
+                        )
+                    }
+                }
+
+                else -> Unit
+            }
+        }
+    }
+}
+
+private fun resolveAttachmentDisplayName(
+    context: Context,
+    url: String,
+    fallbackLabel: String,
+): String {
+    val uri = runCatching { url.toUri() }.getOrNull() ?: return fallbackLabel
+    val candidate = context.getFileNameFromUri(uri)
+        ?.takeIf { it.isNotBlank() }
+        ?.takeUnless(::looksLikeGeneratedUploadName)
+    return candidate ?: fallbackLabel
+}
+
+private fun looksLikeGeneratedUploadName(fileName: String): Boolean {
+    val baseName = fileName.substringBeforeLast('.', fileName)
+    return Regex(
+        pattern = "^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$"
+    ).matches(baseName)
+}
+
+@Composable
+private fun AttachmentRow(
+    attachments: List<RenderableAttachment>,
+    alignEnd: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    if (attachments.isEmpty()) return
+
+    val context = LocalContext.current
+    val haptics = rememberPremiumHaptics()
+    val horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start
+    val saturationMatrix = remember {
+        android.graphics.ColorMatrix().apply { setSaturation(0f) }
+    }
+    val colorFilter = remember(saturationMatrix) {
+        android.graphics.ColorMatrixColorFilter(saturationMatrix)
+    }
+    val grayscalePaint = remember(colorFilter) {
+        android.graphics.Paint().apply {
+            this.colorFilter = colorFilter
+        }
+    }
+
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp, horizontalAlignment),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        attachments.fastForEach { attachment ->
+            when (attachment) {
+                is RenderableAttachment.Image -> {
+                    val archivedModifier = if (attachment.archived) {
+                        Modifier
+                            .graphicsLayer { alpha = 0.99f }
+                            .drawWithContent {
+                                drawIntoCanvas { canvas ->
+                                    canvas.nativeCanvas.saveLayer(null, grayscalePaint)
+                                    drawContent()
+                                    canvas.nativeCanvas.restore()
+                                }
+                            }
+                            .graphicsLayer(alpha = 0.72f)
+                    } else {
+                        Modifier
+                    }
+                    ZoomableAsyncImage(
+                        model = attachment.url,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .clip(MaterialTheme.shapes.medium)
+                            .height(72.dp)
+                            .then(archivedModifier)
+                    )
+                }
+
+                is RenderableAttachment.File -> {
+                    DocumentChip(
+                        fileName = if (attachment.archived && attachment.url.isBlank()) {
+                            "${attachment.fileName} (archived)"
+                        } else {
+                            attachment.fileName
+                        },
+                        mimeType = attachment.mimeType,
+                        modifier = Modifier.graphicsLayer(alpha = if (attachment.archived) 0.72f else 1f),
+                        onClick = {
+                            if (attachment.url.isNotBlank()) {
+                                haptics.perform(HapticPattern.Pop)
+                                context.openAttachmentUri(
+                                    uri = attachment.url.toUri(),
+                                    mimeType = attachment.mimeType,
+                                )
+                            }
+                        }
+                    )
+                }
+
+                is RenderableAttachment.Placeholder -> {
+                    DocumentChip(
+                        fileName = attachment.fileName,
+                        mimeType = attachment.mimeType,
+                        modifier = Modifier.graphicsLayer(alpha = 0.72f),
+                    )
+                }
+            }
+        }
+    }
+}
+
 /**
  * Build timeline entries from message parts.
  */
-internal fun buildTimelineEntries(parts: List<UIMessagePart>): List<TimelineEntry> {
+internal fun buildTimelineEntries(
+    parts: List<UIMessagePart>,
+    annotations: List<UIMessageAnnotation> = emptyList(),
+    loading: Boolean = false,
+): List<TimelineEntry> {
     val entries = mutableListOf<TimelineEntry>()
     val memoryTools = setOf("create_memory", "edit_memory", "delete_memory")
+    val ocrAnnotations = annotations.filterIsInstance<UIMessageAnnotation.OcrActivity>()
+
+    ocrAnnotations.forEachIndexed { index, annotation ->
+        entries.add(
+            TimelineEntry.Ocr(
+                id = "ocr_$index",
+                source = annotation.source,
+                fileName = annotation.fileName,
+                pageNumbers = annotation.pageNumbers,
+                isInProgress = loading,
+            )
+        )
+    }
     
     // Find tool results to match with tool calls
     val toolResults = parts.filterIsInstance<UIMessagePart.ToolResult>()
@@ -307,9 +579,9 @@ private fun getToolDisplayName(toolName: String): String {
 /**
  * Determine the current activity state from message parts.
  */
-@Composable
-private fun deriveActivityState(
+internal fun deriveActivityState(
     parts: List<UIMessagePart>,
+    annotations: List<UIMessageAnnotation> = emptyList(),
     loading: Boolean
 ): ActivityState {
     val toolResults = parts.filterIsInstance<UIMessagePart.ToolResult>()
@@ -317,6 +589,7 @@ private fun deriveActivityState(
     
     val reasoningParts = parts.filterIsInstance<UIMessagePart.Reasoning>()
     val toolCalls = parts.filterIsInstance<UIMessagePart.ToolCall>()
+    val ocrAnnotations = annotations.filterIsInstance<UIMessageAnnotation.OcrActivity>()
     
     // Only count text AFTER the last tool-related part as "currently replying"
     // This prevents text from before tool calls (e.g. "Let me run that for you") 
@@ -339,15 +612,20 @@ private fun deriveActivityState(
         
         val hasReasoning = totalReasoningMs > 0
         val hasTools = toolCategories.isNotEmpty()
+        val hasOcr = ocrAnnotations.isNotEmpty()
         
         // Count distinct activity categories (not individual tools)
-        val activityCount = (if (hasReasoning) 1 else 0) + toolCategories.size
+        val activityCount = (if (hasReasoning) 1 else 0) + (if (hasOcr) 1 else 0) + toolCategories.size
         
         return when {
             activityCount == 0 -> ActivityState.Hidden  // No activities, hide pill
             activityCount == 1 && hasReasoning -> ActivityState.CompletedSingle(
                 type = ActivityType.REASONING,
                 durationMs = totalReasoningMs
+            )
+            activityCount == 1 && hasOcr -> ActivityState.CompletedSingle(
+                type = ActivityType.OCR,
+                count = ocrAnnotations.size,
             )
             activityCount == 1 && hasTools -> ActivityState.CompletedSingle(
                 type = toolCategories.first(),
@@ -357,7 +635,12 @@ private fun deriveActivityState(
             )
             else -> ActivityState.CompletedMultiple(
                 reasoningDurationMs = if (hasReasoning) totalReasoningMs else null,
-                toolsUsed = toolCalls.map { it.toolName }.distinct()
+                activityTypes = buildList {
+                    if (hasOcr) {
+                        add(ActivityType.OCR)
+                    }
+                    addAll(toolCategories)
+                }
             )
         }
     }
@@ -382,6 +665,10 @@ private fun deriveActivityState(
     if (hasRecentText) {
         // Text is being generated after all tools completed - show "Replying" state
         return ActivityState.Replying
+    }
+
+    if (ocrAnnotations.isNotEmpty()) {
+        return ActivityState.Ocr
     }
     
     return ActivityState.Waiting
@@ -439,11 +726,19 @@ fun ChatMessageTurn(
     
     // Activity state from ALL nodes in the group
     // For multi-node turns (with tools), the current generation is on the last node
-    val activityState = deriveActivityState(group.allParts, loading && isLastTurn)
+    val activityState = deriveActivityState(
+        parts = group.allParts,
+        annotations = group.allAnnotations,
+        loading = loading && isLastTurn,
+    )
     val isTimelineLive = loading && isLastTurn
     
     // Timeline entries from all parts - computed fresh to avoid stale data
-    val timelineEntries = buildTimelineEntries(parts = group.allParts)
+    val timelineEntries = buildTimelineEntries(
+        parts = group.allParts,
+        annotations = group.allAnnotations,
+        loading = loading && isLastTurn,
+    )
 
     // Actions should target the visible assistant content node instead of blindly using lastNode,
     // because the last node in a turn can be a tool node.
@@ -571,44 +866,37 @@ private fun UserMessageTurn(
     showRegenerate: Boolean,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val defaultVideoLabel = stringResource(R.string.chat_message_attachment_video)
+    val defaultAudioLabel = stringResource(R.string.chat_message_attachment_audio)
     val haptics = rememberPremiumHaptics()
+    val attachments = remember(group.filteredNodes, defaultVideoLabel, defaultAudioLabel, context) {
+        collectRenderableAttachments(
+            context = context,
+            parts = group.filteredNodes.flatMap { it.currentMessage.parts },
+            fallbackVideoLabel = defaultVideoLabel,
+            fallbackAudioLabel = defaultAudioLabel,
+        )
+    }
     
     Column(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.End,
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
-        // Collect all images from all nodes
-        val allImages = group.nodes.flatMap { node ->
-            node.currentMessage.parts.filterIsInstance<UIMessagePart.Image>()
-        }
-        
-        // Display images above the text bubbles
-        if (allImages.isNotEmpty()) {
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                allImages.fastForEach { image ->
-                    ZoomableAsyncImage(
-                        model = image.url,
-                        contentDescription = null,
-                        modifier = Modifier
-                            .clip(MaterialTheme.shapes.medium)
-                            .height(72.dp)
-                    )
-                }
-            }
-        }
+        AttachmentRow(
+            attachments = attachments,
+            alignEnd = true,
+        )
         
         // Message bubbles
-        group.nodes.forEachIndexed { nodeIndex, node ->
+        group.filteredNodes.forEachIndexed { nodeIndex, node ->
             val textParts = node.currentMessage.parts.filterIsInstance<UIMessagePart.Text>()
             textParts.forEachIndexed { partIndex, part ->
                 // Calculate bubble position based on overall position in group
                 val isFirst = nodeIndex == 0 && partIndex == 0
-                val isLast = nodeIndex == group.nodes.lastIndex && partIndex == textParts.lastIndex
-                val totalBubbles = group.nodes.sumOf { n -> 
+                val isLast = nodeIndex == group.filteredNodes.lastIndex && partIndex == textParts.lastIndex
+                val totalBubbles = group.filteredNodes.sumOf { n ->
                     n.currentMessage.parts.filterIsInstance<UIMessagePart.Text>().size 
                 }
                 val position = when {
@@ -666,7 +954,7 @@ private fun UserMessageTurn(
                 ) {
                     Icon(
                         imageVector = androidx.compose.material.icons.Icons.Rounded.ContentCopy,
-                        contentDescription = "Copy",
+                        contentDescription = stringResource(R.string.copy),
                         modifier = Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -685,7 +973,7 @@ private fun UserMessageTurn(
                     ) {
                         Icon(
                             imageVector = androidx.compose.material.icons.Icons.Rounded.Refresh,
-                            contentDescription = "Regenerate",
+                            contentDescription = stringResource(R.string.regenerate),
                             modifier = Modifier.size(16.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -704,7 +992,7 @@ private fun UserMessageTurn(
                 ) {
                     Icon(
                         imageVector = androidx.compose.material.icons.Icons.Rounded.MoreHoriz,
-                        contentDescription = "More Options",
+                        contentDescription = stringResource(R.string.more_options),
                         modifier = Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -746,10 +1034,22 @@ private fun AssistantMessageTurn(
     modifier: Modifier = Modifier
 ) {
     val settings = LocalSettings.current
+    val context = LocalContext.current
+    val defaultAssistantName = stringResource(R.string.assistant_page_default_assistant)
+    val defaultVideoLabel = stringResource(R.string.chat_message_attachment_video)
+    val defaultAudioLabel = stringResource(R.string.chat_message_attachment_audio)
     val effectiveDisplay = settings.getEffectiveDisplaySetting(assistant)
     val showIcon = effectiveDisplay.showModelIcon
     val showModelName = effectiveDisplay.showModelName
     val haptics = rememberPremiumHaptics()
+    val attachments = remember(group.filteredNodes, defaultVideoLabel, defaultAudioLabel, context) {
+        collectRenderableAttachments(
+            context = context,
+            parts = group.filteredNodes.flatMap { it.currentMessage.parts },
+            fallbackVideoLabel = defaultVideoLabel,
+            fallbackAudioLabel = defaultAudioLabel,
+        )
+    }
     val showName = showModelName && (!isLastTurn || !loading)
     val nameAlpha by animateFloatAsState(
         targetValue = if (showName) 1f else 0f,
@@ -762,7 +1062,7 @@ private fun AssistantMessageTurn(
     }
     
     // Get avatar info
-    val avatarName = assistant?.name?.ifEmpty { null } ?: model?.displayName ?: "Assistant"
+    val avatarName = assistant?.name?.ifEmpty { null } ?: model?.displayName ?: defaultAssistantName
     val avatarValue = assistant?.avatar ?: Avatar.Dummy
     
     // Check if there's interesting activity (reasoning or tools)
@@ -898,6 +1198,11 @@ private fun AssistantMessageTurn(
                     scrollHandoffMode = TimelineScrollHandoffMode.EdgeGatedToParent,
                 )
             }
+
+            AttachmentRow(
+                attachments = attachments,
+                alignEnd = false,
+            )
             
             // Message bubbles - full width, standard bubble positions (no connection to pills)
             allTextBubbles.forEachIndexed { index, (node, part) ->
@@ -1000,6 +1305,11 @@ private fun AssistantMessageTurn(
                 )
             }
 
+            AttachmentRow(
+                attachments = attachments,
+                alignEnd = false,
+            )
+
             allTextBubbles.forEach { (_, part) ->
                 MarkdownBlock(
                     content = part.text.replaceRegexes(
@@ -1060,6 +1370,16 @@ private fun TokenStatisticsInline(
     modifier: Modifier = Modifier
 ) {
     val grayColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+    val promptTokensText = stringResource(R.string.chat_message_tokens, usage.promptTokens.formatNumber())
+    val cachedTokensText = if (usage.cachedTokens > 0) {
+        stringResource(R.string.chat_message_cached, usage.cachedTokens.formatNumber())
+    } else {
+        null
+    }
+    val completionTokensText = stringResource(
+        R.string.chat_message_tokens,
+        usage.completionTokens.formatNumber()
+    )
     
     // Calculate tokens per second
     val tokensPerSecond: Float? = generationDurationMs?.let { durationMs ->
@@ -1080,15 +1400,16 @@ private fun TokenStatisticsInline(
         ) {
             Icon(
                 imageVector = Icons.Rounded.ArrowUpward,
-                contentDescription = "Sent",
+                contentDescription = stringResource(R.string.chat_message_sent),
                 modifier = Modifier.size(14.dp),
                 tint = grayColor
             )
             Text(
                 text = buildString {
-                    append("${usage.promptTokens.formatNumber()} tokens")
-                    if (usage.cachedTokens > 0) {
-                        append(" (${usage.cachedTokens.formatNumber()} cached)")
+                    append(promptTokensText)
+                    if (cachedTokensText != null) {
+                        append(" ")
+                        append(cachedTokensText)
                     }
                 },
                 style = MaterialTheme.typography.labelSmall,
@@ -1103,12 +1424,12 @@ private fun TokenStatisticsInline(
         ) {
             Icon(
                 imageVector = Icons.Rounded.ArrowDownward,
-                contentDescription = "Received",
+                contentDescription = stringResource(R.string.chat_message_received),
                 modifier = Modifier.size(14.dp),
                 tint = grayColor
             )
             Text(
-                text = "${usage.completionTokens.formatNumber()} tokens",
+                text = completionTokensText,
                 style = MaterialTheme.typography.labelSmall,
                 color = grayColor
             )
@@ -1122,12 +1443,12 @@ private fun TokenStatisticsInline(
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Bolt,
-                    contentDescription = "Speed",
+                    contentDescription = stringResource(R.string.chat_message_speed),
                     modifier = Modifier.size(14.dp),
                     tint = grayColor
                 )
                 Text(
-                    text = "%.1f tok/s".format(tokensPerSecond),
+                    text = stringResource(R.string.chat_message_tokens_per_second, tokensPerSecond),
                     style = MaterialTheme.typography.labelSmall,
                     color = grayColor
                 )

@@ -69,6 +69,8 @@ object WebUploadRegistry {
 
     fun getByRelativePath(relativePath: String): WebUploadedFileRecord? = recordsByPath[relativePath]
 
+    fun listRelativePaths(): Set<String> = recordsByPath.keys.toSet()
+
     suspend fun delete(context: Context, id: Long): Boolean = withContext(Dispatchers.IO) {
         val record = recordsById.remove(id) ?: return@withContext false
         recordsByPath.remove(record.relativePath)

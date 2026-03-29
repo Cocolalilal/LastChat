@@ -255,7 +255,7 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
                 trailingIcon = if (searchQuery.isNotEmpty()) {
                     {
                         IconButton(onClick = { searchQuery = "" }) {
-                            Icon(Icons.Rounded.Close, contentDescription = "Clear")
+                            Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.clear_search))
                         }
                     }
                 } else null
@@ -368,7 +368,7 @@ private fun SearchBarWithToggle(
             trailingIcon = if (searchQuery.isNotEmpty()) {
                 {
                     IconButton(onClick = { onSearchQueryChange("") }) {
-                        Icon(Icons.Rounded.Close, contentDescription = "Clear")
+                        Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.clear_search))
                     }
                 }
             } else null
@@ -376,7 +376,7 @@ private fun SearchBarWithToggle(
         IconButton(onClick = onToggleViewMode) {
             Icon(
                 imageVector = if (viewMode == ProviderViewMode.LIST) Icons.Rounded.GridView else Icons.AutoMirrored.Rounded.ViewList,
-                contentDescription = "Toggle view mode"
+                contentDescription = stringResource(R.string.a11y_toggle_view_mode)
             )
         }
     }
@@ -808,7 +808,7 @@ private fun AddButton(
             showBottomSheet = true
         }
     ) {
-        Icon(Icons.Rounded.Add, "Add")
+        Icon(Icons.Rounded.Add, stringResource(R.string.add))
     }
 
     val haptics = rememberPremiumHaptics(enabled = enableHaptics)
@@ -867,7 +867,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     trailingIcon = if (searchQuery.isNotEmpty()) {
                         {
                             IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Rounded.Close, contentDescription = "Clear")
+                                Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.clear_search))
                             }
                         }
                     } else null

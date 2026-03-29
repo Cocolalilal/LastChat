@@ -40,8 +40,9 @@ import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.utils.ImageUtils
-import me.rerere.rikkahub.utils.createChatFilesByContents
+import me.rerere.rikkahub.utils.OwnedFileDirectory
 import me.rerere.rikkahub.utils.getFileMimeType
+import me.rerere.rikkahub.utils.importOwnedFile
 import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
 import me.rerere.rikkahub.R
 
@@ -259,7 +260,10 @@ private suspend fun importAssistantFromUri(
                     val result = ImageUtils.getTavernCharacterMeta(context, uri)
                     result.map { base64Data ->
                         val json = String(Base64.decode(base64Data, Base64.DEFAULT))
-                        val bg = context.createChatFilesByContents(listOf(uri)).first().toString()
+                        val bg = context.importOwnedFile(
+                            sourceUri = uri,
+                            directory = OwnedFileDirectory.ASSISTANT_BACKGROUND,
+                        )?.toString() ?: error(context.getString(R.string.assistant_importer_read_json_failed))
                         json to bg
                     }.getOrElse { throw it }
                 }

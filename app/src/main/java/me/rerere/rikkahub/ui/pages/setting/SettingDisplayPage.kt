@@ -135,14 +135,14 @@ fun SettingDisplayPage(vm: SettingVM = koinViewModel()) {
                     }
                     
                     SettingGroupItem(
-                        title = "Fonts",
-                        subtitle = "Customize fonts for headers, content, and code",
+                        title = stringResource(R.string.setting_fonts_title),
+                        subtitle = stringResource(R.string.setting_fonts_app_font_desc),
                         onClick = { navController.navigate(me.rerere.rikkahub.Screen.SettingFonts) }
                     )
                     
                     SettingGroupItem(
                         title = stringResource(R.string.setting_ui_customization_title),
-                        subtitle = "Chat display, haptics, code blocks, font size and more",
+                        subtitle = stringResource(R.string.setting_display_ui_customization_desc),
                         onClick = { navController.navigate(me.rerere.rikkahub.Screen.SettingUICustomization) }
                     )
                 }
@@ -187,8 +187,8 @@ fun SettingDisplayPage(vm: SettingVM = koinViewModel()) {
                         }
                     )
                     SettingGroupItem(
-                        title = "Check for Updates",
-                        subtitle = "Automatically check GitHub for new app versions",
+                        title = stringResource(R.string.setting_display_check_updates_title),
+                        subtitle = stringResource(R.string.setting_display_check_updates_desc),
                         trailing = {
                             HapticSwitch(
                                 checked = displaySetting.checkForUpdates,
@@ -225,11 +225,11 @@ fun SettingDisplayPage(vm: SettingVM = koinViewModel()) {
             item {
                 val navController = me.rerere.rikkahub.ui.context.LocalNavController.current
                 SettingsGroup(
-                    title = "Advanced"
+                    title = stringResource(R.string.setting_display_advanced)
                 ) {
                     SettingGroupItem(
-                        title = "RP Optimizations",
-                        subtitle = "Custom text styling for roleplay patterns",
+                        title = stringResource(R.string.setting_rp_optimizations_title),
+                        subtitle = stringResource(R.string.setting_display_rp_optimizations_desc),
                         onClick = { navController.navigate(me.rerere.rikkahub.Screen.SettingRpOptimizations) }
                     )
                 }

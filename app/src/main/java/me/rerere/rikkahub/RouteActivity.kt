@@ -8,12 +8,6 @@ import androidx.lifecycle.lifecycleScope
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.SharedTransitionLayout
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -63,6 +58,14 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.readBooleanPreference
 import me.rerere.rikkahub.ui.hooks.readStringPreference
 import me.rerere.rikkahub.ui.hooks.rememberCustomTtsState
+import me.rerere.rikkahub.ui.motion.LocalMotionPolicy
+import me.rerere.rikkahub.ui.motion.rememberSystemMotionPolicy
+import me.rerere.rikkahub.ui.motion.rootEnterTransition
+import me.rerere.rikkahub.ui.motion.rootExitTransition
+import me.rerere.rikkahub.ui.motion.rootPopEnterTransition
+import me.rerere.rikkahub.ui.motion.rootPopExitTransition
+import me.rerere.rikkahub.ui.motion.lateralEnterTransition
+import me.rerere.rikkahub.ui.motion.lateralExitTransition
 import me.rerere.rikkahub.ui.pages.assistant.AssistantPage
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantDetailPage
 import me.rerere.rikkahub.ui.pages.backup.BackupPage
@@ -71,6 +74,7 @@ import me.rerere.rikkahub.ui.pages.developer.DeveloperPage
 import me.rerere.rikkahub.ui.pages.imggen.ImageGenPage
 import me.rerere.rikkahub.ui.pages.menu.MenuPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAboutPage
+import me.rerere.rikkahub.ui.pages.setting.SettingChatStoragePage
 import me.rerere.rikkahub.ui.pages.setting.SettingDisplayPage
 
 import me.rerere.rikkahub.ui.pages.setting.SettingMcpPage
@@ -290,6 +294,7 @@ class RouteActivity : ComponentActivity() {
                             .background(MaterialTheme.colorScheme.background)
                     )
                 } else {
+                    val context = LocalContext.current
                     ShareHandler(navStack)
                     TextSelectionHandler(navStack)
                     NotificationHandler(navStack)
@@ -565,12 +570,14 @@ class RouteActivity : ComponentActivity() {
         val toastState = rememberAppToasterState()
         val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
         val tts = rememberCustomTtsState()
+        val motionPolicy = rememberSystemMotionPolicy()
         SharedTransitionLayout {
             CompositionLocalProvider(
                 LocalNavController provides navBackStack,
                 LocalSharedTransitionScope provides this,
                 LocalSettings provides settings,
                 LocalHighlighter provides highlighter,
+                LocalMotionPolicy provides motionPolicy,
                 LocalToaster provides toastState,
                 LocalTTSState provides tts,
             ) {
@@ -588,16 +595,34 @@ class RouteActivity : ComponentActivity() {
                         // Build cleanup message
                         val parts = mutableListOf<String>()
                         if (unsupportedBytes > 0) {
-                            parts.add("${unsupportedBytes.fileSizeToString()} of unsupported data")
+                            parts.add(
+                                this@RouteActivity.getString(
+                                    R.string.backup_restore_import_cleanup_unsupported,
+                                    unsupportedBytes.fileSizeToString()
+                                )
+                            )
                         }
                         if (issuesFixed > 0) {
-                            parts.add("$issuesFixed invalid references")
+                            parts.add(
+                                this@RouteActivity.getString(
+                                    R.string.backup_restore_import_cleanup_invalid_references,
+                                    issuesFixed
+                                )
+                            )
                         }
                         if (skippedRows > 0) {
-                            parts.add("$skippedRows corrupt items removed")
+                            parts.add(
+                                this@RouteActivity.getString(
+                                    R.string.backup_restore_import_cleanup_corrupt_removed,
+                                    skippedRows
+                                )
+                            )
                         }
                         
-                        val message = "Import completed: ${parts.joinToString(", ")}"
+                        val message = this@RouteActivity.getString(
+                            R.string.backup_restore_import_cleanup_summary,
+                            parts.joinToString(", ")
+                        )
                         toastState.show(message, type = me.rerere.rikkahub.ui.components.ui.ToastType.Info)
                     }
                 }
@@ -609,31 +634,12 @@ class RouteActivity : ComponentActivity() {
                         .background(MaterialTheme.colorScheme.background),
                     startDestination = startDestination,
                     navController = navBackStack,
-                    enterTransition = { 
-                        slideInHorizontally(
-                            animationSpec = tween(200, easing = FastOutSlowInEasing)
-                        ) { it / 2 } + fadeIn(animationSpec = tween(150))
-                    },
-                    exitTransition = { 
-                        slideOutHorizontally(
-                            animationSpec = tween(200, easing = FastOutSlowInEasing)
-                        ) { -it / 4 } + fadeOut(animationSpec = tween(100))
-                    },
-                    popEnterTransition = {
-                        slideInHorizontally(
-                            animationSpec = tween(200, easing = FastOutSlowInEasing)
-                        ) { -it / 4 } + fadeIn(animationSpec = tween(150))
-                    },
-                    popExitTransition = {
-                        slideOutHorizontally(
-                            animationSpec = tween(200, easing = FastOutSlowInEasing)
-                        ) { it / 2 } + fadeOut(animationSpec = tween(100))
-                    }
+                    enterTransition = { rootEnterTransition(motionPolicy) },
+                    exitTransition = { rootExitTransition(motionPolicy) },
+                    popEnterTransition = { rootPopEnterTransition(motionPolicy) },
+                    popExitTransition = { rootPopExitTransition(motionPolicy) }
                 ) {
-                    composable<Screen.Chat>(
-                        enterTransition = { fadeIn() },
-                        exitTransition = { fadeOut() },
-                    ) { backStackEntry ->
+                    composable<Screen.Chat> { backStackEntry ->
                         val route = backStackEntry.toRoute<Screen.Chat>()
                         ChatPage(
                             id = Uuid.parse(route.id),
@@ -717,6 +723,10 @@ class RouteActivity : ComponentActivity() {
                         SettingAboutPage()
                     }
 
+                    composable<Screen.SettingChatStorage> {
+                        SettingChatStoragePage()
+                    }
+
                     composable<Screen.SettingSearch> {
                         SettingSearchPage()
                     }
@@ -744,36 +754,40 @@ class RouteActivity : ComponentActivity() {
                     composable<Screen.SettingLorebooks>(
                         enterTransition = {
                             if (initialState.destination.route?.contains("SettingSkills") == true) {
-                                slideInHorizontally(
-                                    animationSpec = tween(220, easing = FastOutSlowInEasing)
-                                ) { it } + fadeIn(animationSpec = tween(180))
+                                lateralEnterTransition(
+                                    offset = { it },
+                                    motionPolicy = motionPolicy
+                                )
                             } else {
                                 null
                             }
                         },
                         exitTransition = {
                             if (targetState.destination.route?.contains("SettingSkills") == true) {
-                                slideOutHorizontally(
-                                    animationSpec = tween(220, easing = FastOutSlowInEasing)
-                                ) { it } + fadeOut(animationSpec = tween(150))
+                                lateralExitTransition(
+                                    offset = { it },
+                                    motionPolicy = motionPolicy
+                                )
                             } else {
                                 null
                             }
                         },
                         popEnterTransition = {
                             if (initialState.destination.route?.contains("SettingSkills") == true) {
-                                slideInHorizontally(
-                                    animationSpec = tween(220, easing = FastOutSlowInEasing)
-                                ) { it } + fadeIn(animationSpec = tween(180))
+                                lateralEnterTransition(
+                                    offset = { it },
+                                    motionPolicy = motionPolicy
+                                )
                             } else {
                                 null
                             }
                         },
                         popExitTransition = {
                             if (targetState.destination.route?.contains("SettingSkills") == true) {
-                                slideOutHorizontally(
-                                    animationSpec = tween(220, easing = FastOutSlowInEasing)
-                                ) { it } + fadeOut(animationSpec = tween(150))
+                                lateralExitTransition(
+                                    offset = { it },
+                                    motionPolicy = motionPolicy
+                                )
                             } else {
                                 null
                             }
@@ -790,36 +804,40 @@ class RouteActivity : ComponentActivity() {
                     composable<Screen.SettingSkills>(
                         enterTransition = {
                             if (initialState.destination.route?.contains("SettingLorebooks") == true) {
-                                slideInHorizontally(
-                                    animationSpec = tween(220, easing = FastOutSlowInEasing)
-                                ) { -it } + fadeIn(animationSpec = tween(180))
+                                lateralEnterTransition(
+                                    offset = { -it },
+                                    motionPolicy = motionPolicy
+                                )
                             } else {
                                 null
                             }
                         },
                         exitTransition = {
                             if (targetState.destination.route?.contains("SettingLorebooks") == true) {
-                                slideOutHorizontally(
-                                    animationSpec = tween(220, easing = FastOutSlowInEasing)
-                                ) { -it } + fadeOut(animationSpec = tween(150))
+                                lateralExitTransition(
+                                    offset = { -it },
+                                    motionPolicy = motionPolicy
+                                )
                             } else {
                                 null
                             }
                         },
                         popEnterTransition = {
                             if (initialState.destination.route?.contains("SettingLorebooks") == true) {
-                                slideInHorizontally(
-                                    animationSpec = tween(220, easing = FastOutSlowInEasing)
-                                ) { -it } + fadeIn(animationSpec = tween(180))
+                                lateralEnterTransition(
+                                    offset = { -it },
+                                    motionPolicy = motionPolicy
+                                )
                             } else {
                                 null
                             }
                         },
                         popExitTransition = {
                             if (targetState.destination.route?.contains("SettingLorebooks") == true) {
-                                slideOutHorizontally(
-                                    animationSpec = tween(220, easing = FastOutSlowInEasing)
-                                ) { -it } + fadeOut(animationSpec = tween(150))
+                                lateralExitTransition(
+                                    offset = { -it },
+                                    motionPolicy = motionPolicy
+                                )
                             } else {
                                 null
                             }
@@ -908,6 +926,9 @@ sealed interface Screen {
 
     @Serializable
     data object SettingAbout : Screen
+
+    @Serializable
+    data object SettingChatStorage : Screen
 
     @Serializable
     data object SettingSearch : Screen

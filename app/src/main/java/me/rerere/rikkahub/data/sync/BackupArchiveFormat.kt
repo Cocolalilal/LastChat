@@ -17,10 +17,12 @@ internal object BackupArchiveFormat {
     val MANAGED_FILE_DIRS = listOf(
         "upload",
         "avatars",
+        "assistant_backgrounds",
         "custom_icons",
         "custom_fonts",
         "images",
         "chat_files",
+        "lorebook_covers",
         "lorebook_attachments",
         "python_sandbox",
     )

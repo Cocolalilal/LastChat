@@ -19,12 +19,16 @@ import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.core.net.toFile
 import androidx.core.net.toUri
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.io.OutputStream
+import java.net.URLDecoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import me.rerere.rikkahub.R
 
 private const val TAG = "ContextUtil"
 
@@ -69,7 +73,7 @@ fun Context.writeClipboardText(text: String) {
         Log.i(TAG, "writeClipboardText: $text")
     }.onFailure {
         Log.e(TAG, "writeClipboardText: $text", it)
-        Toast.makeText(this, "Failed to write text into clipboard", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, getString(R.string.clipboard_write_failed), Toast.LENGTH_SHORT).show()
     }
 }
 
@@ -85,7 +89,43 @@ fun Context.openUrl(url: String) {
         intent.launchUrl(this, url.toUri())
     }.onFailure {
         it.printStackTrace()
-        Toast.makeText(this, "Failed to open URL: $url", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, getString(R.string.open_url_failed, url), Toast.LENGTH_SHORT).show()
+    }
+}
+
+fun Context.openAttachmentUri(uri: Uri, mimeType: String? = null): Boolean {
+    val normalizedUri = normalizeAttachmentUriForViewing(uri)
+    val resolvedMimeType = mimeType?.takeIf { it.isNotBlank() } ?: getFileMimeType(uri)
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+        if (normalizedUri.scheme in listOf("http", "https")) {
+            data = normalizedUri
+        } else if (resolvedMimeType != null) {
+            setDataAndType(normalizedUri, resolvedMimeType)
+        } else {
+            data = normalizedUri
+        }
+    }
+
+    return runCatching {
+        startActivity(intent)
+        true
+    }.onFailure { error ->
+        Log.e(TAG, "Failed to open attachment: $normalizedUri", error)
+        Toast.makeText(this, getString(R.string.open_attachment_failed), Toast.LENGTH_SHORT).show()
+    }.getOrDefault(false)
+}
+
+private fun Context.normalizeAttachmentUriForViewing(uri: Uri): Uri {
+    if (uri.scheme != "file") return uri
+
+    val file = runCatching { uri.toFile() }.getOrNull() ?: return uri
+    return runCatching {
+        FileProvider.getUriForFile(this, "${packageName}.fileprovider", file)
+    }.getOrElse {
+        uri
     }
 }
 
@@ -234,10 +274,67 @@ fun shareTextFile(context: Context, fileName: String, content: String) {
             putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(intent, "Export Assistant"))
+        context.startActivity(
+            Intent.createChooser(intent, context.getString(R.string.share_text_file_chooser_title))
+        )
     } catch (e: Exception) {
         e.printStackTrace()
-        Toast.makeText(context, "Export failed: ${e.message}", Toast.LENGTH_SHORT).show()
+        Toast.makeText(
+            context,
+            context.getString(R.string.share_text_file_export_failed, e.message ?: ""),
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+}
+
+internal fun resolveAppOwnedFileProviderFile(
+    authority: String?,
+    encodedPath: String?,
+    expectedAuthority: String,
+    cacheDir: File,
+    filesDir: File,
+    externalFilesDir: File?,
+): File? {
+    if (authority != expectedAuthority || encodedPath.isNullOrBlank()) return null
+
+    val normalizedPath = encodedPath.removePrefix("/")
+    val separatorIndex = normalizedPath.indexOf('/')
+    if (separatorIndex <= 0) return null
+
+    val rootName = normalizedPath.substring(0, separatorIndex)
+    val encodedRelativePath = normalizedPath.substring(separatorIndex + 1)
+    val rootDir = when (rootName) {
+        "cache" -> cacheDir
+        "upload" -> filesDir
+        "external_files" -> externalFilesDir ?: return null
+        else -> return null
+    }
+    val relativePath = URLDecoder.decode(encodedRelativePath, Charsets.UTF_8.name())
+    val candidate = if (relativePath.isBlank()) rootDir else File(rootDir, relativePath)
+    val canonicalRoot = rootDir.canonicalFile
+    val canonicalCandidate = candidate.canonicalFile
+
+    return canonicalCandidate.takeIf { file ->
+        file.path == canonicalRoot.path || file.path.startsWith(canonicalRoot.path + File.separator)
+    }
+}
+
+fun Context.openOwnedUriInputStream(uri: Uri): InputStream? {
+    return when (uri.scheme) {
+        "file" -> runCatching { uri.toFile().inputStream() }.getOrNull()
+        "content" -> {
+            runCatching { contentResolver.openInputStream(uri) }.getOrNull()
+                ?: resolveAppOwnedFileProviderFile(
+                    authority = uri.authority,
+                    encodedPath = uri.encodedPath,
+                    expectedAuthority = "${packageName}.fileprovider",
+                    cacheDir = cacheDir,
+                    filesDir = filesDir,
+                    externalFilesDir = getExternalFilesDir(null),
+                )?.inputStream()
+        }
+
+        else -> null
     }
 }
 
@@ -258,7 +355,11 @@ suspend fun Context.saveToDownloads(uri: Uri, fileName: String) {
                 }
             } else {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@saveToDownloads, "Permission required to save file", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        this@saveToDownloads,
+                        getString(R.string.downloads_permission_required),
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             }
             return
@@ -267,12 +368,16 @@ suspend fun Context.saveToDownloads(uri: Uri, fileName: String) {
 
     withContext(Dispatchers.IO) {
         var outputStream: OutputStream? = null
-        var inputStream: java.io.InputStream? = null
+        var inputStream: InputStream? = null
         try {
-            inputStream = contentResolver.openInputStream(uri)
+            inputStream = openOwnedUriInputStream(uri)
             if (inputStream == null) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@saveToDownloads, "Failed to read source file", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        this@saveToDownloads,
+                        getString(R.string.downloads_read_source_failed),
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
                 return@withContext
             }
@@ -287,11 +392,19 @@ suspend fun Context.saveToDownloads(uri: Uri, fileName: String) {
                     outputStream = contentResolver.openOutputStream(dstUri)
                     inputStream.copyTo(outputStream!!)
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(this@saveToDownloads, "Saved to Downloads: $fileName", Toast.LENGTH_LONG).show()
+                        Toast.makeText(
+                            this@saveToDownloads,
+                            getString(R.string.downloads_saved, fileName),
+                            Toast.LENGTH_LONG
+                        ).show()
                     }
                 } else {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(this@saveToDownloads, "Failed to create download entry", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            this@saveToDownloads,
+                            getString(R.string.downloads_create_entry_failed),
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
                 }
             } else {
@@ -307,13 +420,21 @@ suspend fun Context.saveToDownloads(uri: Uri, fileName: String) {
                 sendBroadcast(mediaScanIntent)
                 
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@saveToDownloads, "Saved to Downloads: $fileName", Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        this@saveToDownloads,
+                        getString(R.string.downloads_saved, fileName),
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to save file to downloads", e)
             withContext(Dispatchers.Main) {
-                Toast.makeText(this@saveToDownloads, "Failed to save: ${e.message}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    this@saveToDownloads,
+                    getString(R.string.downloads_save_failed, e.message ?: ""),
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         } finally {
             try {

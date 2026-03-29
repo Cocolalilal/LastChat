@@ -22,13 +22,13 @@ import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.Migration_6_7
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.sync.WebdavSync
+import me.rerere.rikkahub.utils.appLocale
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import org.koin.dsl.module
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
-import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 val dataSourceModule = module {
@@ -54,7 +54,7 @@ val dataSourceModule = module {
 
     single {
         Room.databaseBuilder(get(), AppDatabase::class.java, "rikka_hub")
-            .addMigrations(Migration_6_7, AppDatabase.MIGRATION_11_12, AppDatabase.MIGRATION_12_13, AppDatabase.MIGRATION_14_16, AppDatabase.MIGRATION_22_23, AppDatabase.MIGRATION_23_24)
+            .addMigrations(Migration_6_7, AppDatabase.MIGRATION_11_12, AppDatabase.MIGRATION_12_13, AppDatabase.MIGRATION_14_16, AppDatabase.MIGRATION_22_23, AppDatabase.MIGRATION_23_24, AppDatabase.MIGRATION_24_25)
             .build()
     }
 
@@ -65,7 +65,7 @@ val dataSourceModule = module {
     single {
         PebbleEngine.Builder()
             .loader(get<AssistantTemplateLoader>())
-            .defaultLocale(Locale.getDefault())
+            .defaultLocale(get<android.content.Context>().appLocale())
             .autoEscaping(false)
             .build()
     }
@@ -74,6 +74,14 @@ val dataSourceModule = module {
 
     single {
         get<AppDatabase>().conversationDao()
+    }
+
+    single {
+        get<AppDatabase>().chatAttachmentDao()
+    }
+
+    single {
+        get<AppDatabase>().conversationAttachmentRefDao()
     }
 
     single {
@@ -108,6 +116,7 @@ val dataSourceModule = module {
             providerManager = get(),
             json = get(),
             memoryRepo = get(),
+            chatAttachmentRepository = get(),
             conversationRepo = get(),
             aiLoggingManager = get(),
             embeddingService = get()

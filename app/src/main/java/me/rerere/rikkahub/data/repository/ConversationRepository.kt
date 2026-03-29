@@ -24,7 +24,6 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.rikkahub.utils.JsonInstant
-import me.rerere.rikkahub.utils.deleteChatFiles
 import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
 import java.time.Instant
 import java.time.LocalDate
@@ -39,6 +38,7 @@ class ConversationRepository(
     private val chatEpisodeDAO: me.rerere.rikkahub.data.db.dao.ChatEpisodeDAO,
     private val dailyActivityDAO: DailyActivityDAO,
     private val usageStatsDAO: UsageStatsDAO,
+    private val chatAttachmentRepository: ChatAttachmentRepository,
 ) {
     companion object {
         private const val PAGE_SIZE = 20
@@ -151,18 +151,20 @@ class ConversationRepository(
     }
 
     suspend fun insertConversation(conversation: Conversation) {
+        val syncedConversation = chatAttachmentRepository.syncConversationAttachments(conversation)
         conversationDAO.insert(
-            conversationToConversationEntity(conversation)
+            conversationToConversationEntity(syncedConversation)
         )
         // Increment persistent conversation counter
         try { usageStatsDAO.incrementConversations() } catch (_: Exception) {}
     }
 
     suspend fun updateConversation(conversation: Conversation) {
+        val syncedConversation = chatAttachmentRepository.syncConversationAttachments(conversation)
         // Invalidation Logic: If a consolidated conversation is updated (e.g. new message),
         // we must invalidate the old memory episode to allow re-consolidation.
-        if (conversation.isConsolidated) {
-            val updatedConversation = conversation.copy(isConsolidated = false)
+        if (syncedConversation.isConsolidated) {
+            val updatedConversation = syncedConversation.copy(isConsolidated = false)
 
             conversationDAO.update(
                 conversationToConversationEntity(updatedConversation)
@@ -174,14 +176,14 @@ class ConversationRepository(
             val deletedCount = chatEpisodeDAO.deleteEpisodeByConversationId(conversation.id.toString())
             if (deletedCount == 0) {
                 chatEpisodeDAO.deleteEpisodeByTimeRange(
-                    assistantId = conversation.assistantId.toString(),
-                    startTime = conversation.createAt.toEpochMilli(),
+                    assistantId = syncedConversation.assistantId.toString(),
+                    startTime = syncedConversation.createAt.toEpochMilli(),
                     endTime = Long.MAX_VALUE
                 )
             }
         } else {
             conversationDAO.update(
-                conversationToConversationEntity(conversation)
+                conversationToConversationEntity(syncedConversation)
             )
         }
     }
@@ -191,9 +193,7 @@ class ConversationRepository(
             conversationToConversationEntity(conversation)
         )
         chatEpisodeDAO.deleteEpisodeByConversationId(conversation.id.toString())
-        if (deleteFiles) {
-            context.deleteChatFiles(conversation.files)
-        }
+        chatAttachmentRepository.removeConversationReferences(conversation.id)
     }
 
     suspend fun deleteConversationOfAssistant(assistantId: Uuid) {

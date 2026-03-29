@@ -10,6 +10,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
@@ -173,6 +174,128 @@ class ActivityTimelinePanelTest {
             composeRule.onAllNodesWithTag("activity_timeline_panel").fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithText(reasoningMarker, substring = true).assertExists()
+    }
+
+    @Test
+    fun chatMessageTurn_liveOcrTimelineOpensFocusedCurrentActivity() {
+        val assistantNode = MessageNode.of(
+            UIMessage(
+                role = MessageRole.ASSISTANT,
+                parts = emptyList(),
+                annotations = listOf(
+                    UIMessageAnnotation.OcrActivity(
+                        source = UIMessageAnnotation.OcrActivity.Source.PDF,
+                        fileName = "scan.pdf",
+                        pageNumbers = listOf(2, 4)
+                    )
+                )
+            )
+        )
+        val group = MessageTurnGroup(
+            nodes = listOf(assistantNode),
+            role = MessageRole.ASSISTANT
+        )
+
+        composeRule.setContent {
+            CompositionLocalProvider(LocalSettings provides Settings()) {
+                MaterialTheme {
+                    ChatMessageTurn(
+                        group = group,
+                        isLastTurn = true,
+                        onCitationClick = {},
+                        loading = true,
+                        showRegenerate = false
+                    )
+                }
+            }
+        }
+
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag("activity_pill_ocr").fetchSemanticsNodes().isNotEmpty()
+        }
+
+        composeRule.onNodeWithTag("activity_pill_ocr").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag("activity_timeline_panel").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("scan.pdf").assertExists()
+        composeRule.onNodeWithText("2, 4", substring = true).assertExists()
+    }
+
+    @Test
+    fun chatMessageTurn_completedTimelineIncludesOcrAlongsideOtherActivities() {
+        val assistantNode = MessageNode.of(
+            UIMessage(
+                role = MessageRole.ASSISTANT,
+                parts = listOf(
+                    UIMessagePart.Reasoning(
+                        reasoning = "Reasoned about OCR results",
+                        createdAt = Clock.System.now() - 2.seconds,
+                        finishedAt = Clock.System.now()
+                    ),
+                    UIMessagePart.ToolCall(
+                        toolCallId = "search-call",
+                        toolName = "search_web",
+                        arguments = """{"query":"ocr timeline"}"""
+                    ),
+                    UIMessagePart.Text("Answer text")
+                ),
+                annotations = listOf(
+                    UIMessageAnnotation.OcrActivity(
+                        source = UIMessageAnnotation.OcrActivity.Source.PDF,
+                        fileName = "scan.pdf",
+                        pageNumbers = listOf(1, 3)
+                    )
+                )
+            )
+        )
+        val toolNode = MessageNode.of(
+            UIMessage(
+                role = MessageRole.TOOL,
+                parts = listOf(
+                    UIMessagePart.ToolResult(
+                        toolCallId = "search-call",
+                        toolName = "search_web",
+                        arguments = buildJsonObject {
+                            put("query", "ocr timeline")
+                        },
+                        content = buildJsonObject {
+                            put("answer", "Search answer")
+                        }
+                    )
+                )
+            )
+        )
+        val group = MessageTurnGroup(
+            nodes = listOf(assistantNode, toolNode),
+            role = MessageRole.ASSISTANT
+        )
+
+        composeRule.setContent {
+            CompositionLocalProvider(LocalSettings provides Settings()) {
+                MaterialTheme {
+                    ChatMessageTurn(
+                        group = group,
+                        isLastTurn = false,
+                        onCitationClick = {},
+                        loading = false,
+                        showRegenerate = false
+                    )
+                }
+            }
+        }
+
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag("activity_pill_ocr").fetchSemanticsNodes().isNotEmpty()
+        }
+
+        composeRule.onNodeWithTag("activity_pill_ocr").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag("activity_timeline_panel").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("timeline_entry_ocr_0").performClick()
+        composeRule.onNodeWithText("scan.pdf").assertExists()
+        composeRule.onNodeWithText("1, 3", substring = true).assertExists()
     }
 
     @Test

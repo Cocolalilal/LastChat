@@ -32,6 +32,7 @@ import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TRANSLATION_PROMPT
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV1Migration
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.data.model.ChatStorageSettings
 import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.Mode
 import me.rerere.rikkahub.data.model.Skill
@@ -136,6 +137,7 @@ class SettingsStore(
         val MODES = stringPreferencesKey("modes")
         val LOREBOOKS = stringPreferencesKey("lorebooks")
         val SKILLS = stringPreferencesKey("skills")
+        val CHAT_STORAGE = stringPreferencesKey("chat_storage")
 
         // Dismissed banners
         val DISMISSED_BANNERS = stringPreferencesKey("dismissed_banners")
@@ -238,13 +240,16 @@ class SettingsStore(
                 skills = preferences[SKILLS]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: emptyList(),
+                chatStorage = preferences[CHAT_STORAGE]?.let {
+                    JsonInstant.decodeFromString<ChatStorageSettings>(it)
+                } ?: ChatStorageSettings(),
                 dismissedBanners = preferences[DISMISSED_BANNERS]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: emptySet(),
                 textSelectionConfig = preferences[TEXT_SELECTION_CONFIG]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: TextSelectionConfig(),
-            )
+            ).normalizeThemeId()
         }
         .map {
             var providers = it.providers.ifEmpty { DEFAULT_PROVIDERS }.toMutableList()
@@ -428,6 +433,7 @@ class SettingsStore(
             .normalizeWebServerSettings()
             .migrateLegacyModesToSkills()
             .normalizeFontSettings()
+            .normalizeThemeId()
 
         // Handle explicit secret deletions (user cleared a field that had a value)
         // This must be called BEFORE migration to remove deleted secrets from SecureStore
@@ -498,6 +504,7 @@ class SettingsStore(
             preferences[MODES] = JsonInstant.encodeToString(normalizedSettings.modes)
             preferences[LOREBOOKS] = JsonInstant.encodeToString(normalizedSettings.lorebooks)
             preferences[SKILLS] = JsonInstant.encodeToString(normalizedSettings.skills)
+            preferences[CHAT_STORAGE] = JsonInstant.encodeToString(normalizedSettings.chatStorage)
             preferences[DISMISSED_BANNERS] = JsonInstant.encodeToString(normalizedSettings.dismissedBanners)
             preferences[TEXT_SELECTION_CONFIG] = JsonInstant.encodeToString(normalizedSettings.textSelectionConfig)
         }

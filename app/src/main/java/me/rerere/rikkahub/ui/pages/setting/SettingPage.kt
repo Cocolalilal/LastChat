@@ -1,8 +1,5 @@
 package me.rerere.rikkahub.ui.pages.setting
 
-import android.content.ActivityNotFoundException
-import android.content.Intent
-import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -32,7 +29,6 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -70,6 +66,8 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.isNotConfigured
+import me.rerere.rikkahub.data.model.AppStorageSnapshot
+import me.rerere.rikkahub.data.repository.AppStorageRepository
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.context.LocalNavController
@@ -78,19 +76,26 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.hooks.rememberColorMode
 import me.rerere.rikkahub.ui.theme.ColorMode
-import me.rerere.rikkahub.utils.countChatFiles
+import me.rerere.rikkahub.utils.fileSizeToString
 import me.rerere.rikkahub.utils.openUrl
 import me.rerere.rikkahub.utils.plus
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
 
 @Composable
-fun SettingPage(vm: SettingVM = koinViewModel()) {
+fun SettingPage(
+    vm: SettingVM = koinViewModel(),
+    appStorageRepository: AppStorageRepository = koinInject(),
+) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val navController = LocalNavController.current
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val storageSnapshot by appStorageRepository.observeSnapshot()
+        .collectAsStateWithLifecycle(initialValue = AppStorageSnapshot())
     val lazyListState = rememberLazyListState()
+    val mainSettingItemPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp)
     
     Scaffold(
         topBar = {
@@ -107,7 +112,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                                 navController.navigate(Screen.Developer)
                             }
                         ) {
-                            Icon(Icons.Rounded.Build, "Developer")
+                            Icon(Icons.Rounded.Build, stringResource(R.string.developer))
                         }
                     }
                 }
@@ -144,6 +149,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_color_mode),
                         icon = { Icon(Icons.Rounded.InvertColors, null, modifier = Modifier.size(20.dp)) },
+                        contentPadding = mainSettingItemPadding,
                         trailing = {
                             Select(
                                 options = ColorMode.entries,
@@ -170,6 +176,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         title = stringResource(R.string.setting_page_display_setting),
                         subtitle = stringResource(R.string.setting_page_display_setting_desc),
                         icon = { Icon(Icons.Rounded.DesktopWindows, null, modifier = Modifier.size(20.dp)) },
+                        contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingDisplay) }
                     )
 
@@ -177,6 +184,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         title = stringResource(R.string.setting_page_assistant),
                         subtitle = stringResource(R.string.setting_page_assistant_desc),
                         icon = { Icon(Icons.Rounded.Group, null, modifier = Modifier.size(20.dp)) },
+                        contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.Assistant) }
                     )
 
@@ -184,6 +192,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         title = stringResource(R.string.setting_page_prompt_injections),
                         subtitle = stringResource(R.string.setting_page_prompt_injections_desc),
                         icon = { Icon(Icons.Rounded.Category, null, modifier = Modifier.size(20.dp)) },
+                        contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingPromptInjections) }
                     )
                 }
@@ -198,6 +207,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         title = stringResource(R.string.setting_page_default_model),
                         subtitle = stringResource(R.string.setting_page_default_model_desc),
                         icon = { Icon(Icons.Rounded.AccountTree, null, modifier = Modifier.size(20.dp)) },
+                        contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingModels) }
                     )
 
@@ -205,6 +215,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         title = stringResource(R.string.setting_page_providers),
                         subtitle = stringResource(R.string.setting_page_providers_desc),
                         icon = { Icon(Icons.Rounded.Cloud, null, modifier = Modifier.size(20.dp)) },
+                        contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingProvider) }
                     )
 
@@ -212,6 +223,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         title = stringResource(R.string.setting_page_search_service),
                         subtitle = stringResource(R.string.setting_page_search_service_desc),
                         icon = { Icon(Icons.Rounded.Public, null, modifier = Modifier.size(20.dp)) },
+                        contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingSearch) }
                     )
 
@@ -219,6 +231,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         title = stringResource(R.string.setting_page_tts_service),
                         subtitle = stringResource(R.string.setting_page_tts_service_desc),
                         icon = { Icon(Icons.Rounded.RecordVoiceOver, null, modifier = Modifier.size(20.dp)) },
+                        contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingTTS) }
                     )
 
@@ -226,6 +239,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         title = stringResource(R.string.setting_page_mcp),
                         subtitle = stringResource(R.string.setting_page_mcp_desc),
                         icon = { Icon(Icons.Rounded.Code, null, modifier = Modifier.size(20.dp)) },
+                        contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingMcp) }
                     )
 
@@ -233,6 +247,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         title = stringResource(R.string.setting_page_web_server),
                         subtitle = stringResource(R.string.setting_page_web_server_desc),
                         icon = { Icon(Icons.Rounded.Language, null, modifier = Modifier.size(20.dp)) },
+                        contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingWeb) }
                     )
 
@@ -240,6 +255,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         title = stringResource(R.string.setting_android_integration),
                         subtitle = stringResource(R.string.setting_android_integration_desc),
                         icon = { Icon(Icons.Rounded.PhoneAndroid, null, modifier = Modifier.size(20.dp)) },
+                        contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingAndroidIntegration) }
                     )
                 }
@@ -254,24 +270,23 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         title = stringResource(R.string.setting_page_data_backup),
                         subtitle = stringResource(R.string.setting_page_data_backup_desc),
                         icon = { Icon(Icons.Rounded.CloudUpload, null, modifier = Modifier.size(20.dp)) },
+                        contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.Backup) }
                     )
-                    val context = LocalContext.current
-                    val storageState by produceState(-1 to 0L) {
-                        value = context.countChatFiles()
-                    }
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_chat_storage),
-                        subtitle = if (storageState.first == -1) {
-                            stringResource(R.string.calculating)
+                        subtitle = if (storageSnapshot.isScanning) {
+                            stringResource(R.string.setting_storage_scanning)
                         } else {
                             stringResource(
-                                R.string.setting_page_chat_storage_desc,
-                                storageState.first,
-                                storageState.second / 1024 / 1024.0
+                                R.string.setting_storage_summary,
+                                storageSnapshot.totalBytes.fileSizeToString(),
+                                storageSnapshot.chatBytes.fileSizeToString()
                             )
                         },
-                        icon = { Icon(Icons.Rounded.Storage, null, modifier = Modifier.size(20.dp)) }
+                        icon = { Icon(Icons.Rounded.Storage, null, modifier = Modifier.size(20.dp)) },
+                        contentPadding = mainSettingItemPadding,
+                        onClick = { navController.navigate(Screen.SettingChatStorage) }
                     )
                 }
             }
@@ -285,14 +300,15 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         title = stringResource(R.string.setting_page_about),
                         subtitle = stringResource(R.string.setting_page_about_desc),
                         icon = { Icon(Icons.Rounded.Info, null, modifier = Modifier.size(20.dp)) },
+                        contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingAbout) }
                     )
                     
                     val context = LocalContext.current
                     SettingGroupItem(
-                        title = "Buy Me a Coffee",
-                        subtitle = "Support the development",
+                        title = stringResource(R.string.buy_me_a_coffee),
                         icon = { Icon(Icons.Rounded.Favorite, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error) },
+                        contentPadding = mainSettingItemPadding,
                         onClick = { 
                             context.openUrl("https://buymeacoffee.com/cocolalilal")
                         }
@@ -441,12 +457,12 @@ private fun UpdateAvailableBanner(
                         )
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Update Available",
+                                text = stringResource(R.string.update_available),
                                 style = MaterialTheme.typography.titleSmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                             Text(
-                                text = "Version ${updateInfo.version} is available",
+                                text = stringResource(R.string.update_available_version, updateInfo.version),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                             )
@@ -462,18 +478,18 @@ private fun UpdateAvailableBanner(
                 if (showUpdateDialog) {
                     AlertDialog(
                         onDismissRequest = { showUpdateDialog = false },
-                        title = { Text("Update to ${updateInfo.version}") },
+                        title = { Text(stringResource(R.string.update_dialog_title, updateInfo.version)) },
                         text = {
                             Column(
                                 modifier = Modifier.verticalScroll(rememberScrollState()),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Text(
-                                    text = "Changelog:",
+                                    text = stringResource(R.string.update_changelog),
                                     style = MaterialTheme.typography.titleSmall
                                 )
                                 Text(
-                                    text = updateInfo.changelog.ifEmpty { "No changelog available" },
+                                    text = updateInfo.changelog.ifEmpty { context.getString(R.string.update_no_changelog) },
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             }
@@ -487,12 +503,12 @@ private fun UpdateAvailableBanner(
                                     showUpdateDialog = false
                                 }
                             ) {
-                                Text("Download")
+                                Text(stringResource(R.string.download))
                             }
                         },
                         dismissButton = {
                             TextButton(onClick = { showUpdateDialog = false }) {
-                                Text("Later")
+                                Text(stringResource(R.string.later))
                             }
                         }
                     )

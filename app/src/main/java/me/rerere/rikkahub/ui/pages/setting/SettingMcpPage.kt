@@ -299,7 +299,7 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
                 Text(stringResource(R.string.confirm_delete))
             },
             text = {
-                Text("Are you sure you want to delete this MCP server?")
+                Text(stringResource(R.string.setting_mcp_delete_server))
             },
             dismissButton = {
                 TextButton(onClick = { 
@@ -463,8 +463,8 @@ private fun McpServerItem(
                     }
                     Tag(type = TagType.SUCCESS) {
                         when (item) {
-                            is McpServerConfig.SseTransportServer -> Text("SSE")
-                            is McpServerConfig.StreamableHTTPServer -> Text("Streamable HTTP")
+                            is McpServerConfig.SseTransportServer -> Text(stringResource(R.string.setting_mcp_transport_sse))
+                            is McpServerConfig.StreamableHTTPServer -> Text(stringResource(R.string.setting_mcp_transport_streamable_http))
                         }
                     }
                 }
@@ -676,8 +676,8 @@ private fun McpCommonOptionsConfigure(
             }
         ) {
             val transportTypes = listOf(
-                "SSE",
-                "Streamable HTTP"
+                stringResource(R.string.setting_mcp_transport_sse),
+                stringResource(R.string.setting_mcp_transport_streamable_http)
             )
             val currentTypeIndex = when (config) {
                 is McpServerConfig.SseTransportServer -> 0
@@ -1043,7 +1043,7 @@ private fun McpImportModal(
                     .fillMaxWidth()
                     .weight(1f),
                 placeholder = {
-                    Text("{ \"mcpServers\": { ... } }")
+                    Text(stringResource(R.string.setting_mcp_import_placeholder))
                 },
                 isError = errorMessage != null,
                 supportingText = errorMessage?.let { message ->

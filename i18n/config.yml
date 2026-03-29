@@ -1,7 +1,8 @@
 # 目标语言列表（Android 资源目录后缀）
 # 例如：zh（简体中文）、ja（日语）、zh-rTW（繁体中文）
 targets:
-  - zh
+  - ar
+  - b+zh+Hans
   - ja
   - zh-rTW
   - ko-rKR
@@ -13,10 +14,7 @@ workspaceRoot: ".."
 # 扫描哪些模块（相对 workspaceRoot）
 modules:
   - app
-  - ai
-  - highlight
   - search
-  - rag
 
 # 并发翻译请求数（可选，默认 1）
 concurrency: 4

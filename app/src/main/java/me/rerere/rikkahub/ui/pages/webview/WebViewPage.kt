@@ -26,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Refresh
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.webview.WebView
 import me.rerere.rikkahub.ui.components.webview.rememberWebViewState
@@ -83,28 +85,28 @@ fun WebViewPage(url: String, content: String) {
                 },
                 actions = {
                     IconButton(onClick = { state.reload() }) {
-                        Icon(Icons.Rounded.Refresh, contentDescription = "Refresh")
+                        Icon(Icons.Rounded.Refresh, contentDescription = stringResource(R.string.webview_refresh))
                     }
 
                     IconButton(
                         onClick = { state.goForward() },
                         enabled = state.canGoForward
                     ) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = "Forward")
+                        Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = stringResource(R.string.webview_forward))
                     }
 
                     val urlHandler = LocalUriHandler.current
                     IconButton(
                         onClick = { showDropdown = true }
                     ) {
-                        Icon(Icons.Rounded.MoreVert, contentDescription = "More options")
+                        Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(R.string.webview_more_options))
 
                         DropdownMenu(
                             expanded = showDropdown,
                             onDismissRequest = { showDropdown = false }
                         ) {
                             DropdownMenuItem(
-                                text = { Text("Open in Browser") },
+                                text = { Text(stringResource(R.string.webview_open_in_browser)) },
                                 leadingIcon = { Icon(Icons.Rounded.Public, contentDescription = null) },
                                 onClick = {
                                     showDropdown = false
@@ -116,7 +118,7 @@ fun WebViewPage(url: String, content: String) {
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("Console Logs") },
+                                text = { Text(stringResource(R.string.webview_console_logs)) },
                                 leadingIcon = { Icon(Icons.Rounded.BugReport, contentDescription = null) },
                                 onClick = {
                                     showDropdown = false
@@ -149,7 +151,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     .padding(16.dp)
             ) {
                 Text(
-                    text = "Console Logs",
+                    text = stringResource(R.string.webview_console_logs),
                     style = MaterialTheme.typography.headlineSmall,
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
@@ -159,7 +161,11 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         items(state.consoleMessages) { message ->
                             Text(
                                 text = "${message.messageLevel().name}: ${message.message()}\n" +
-                                    "Source: ${message.sourceId()}:${message.lineNumber()}",
+                                    stringResource(
+                                        R.string.webview_console_source,
+                                        message.sourceId(),
+                                        message.lineNumber()
+                                    ),
                                 style = MaterialTheme.typography.bodySmall,
                                 fontFamily = FontFamily.Monospace,
                                 modifier = Modifier
@@ -177,7 +183,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
 
                 if (state.consoleMessages.isEmpty()) {
                     Text(
-                        text = "No console messages",
+                        text = stringResource(R.string.webview_console_empty),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(16.dp)

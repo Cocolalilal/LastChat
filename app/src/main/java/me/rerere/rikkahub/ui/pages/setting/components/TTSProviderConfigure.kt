@@ -35,6 +35,11 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.tts.provider.TTSProviderSetting
 
 @Composable
+private fun visibilityToggleDescription(isVisible: Boolean): String {
+    return stringResource(if (isVisible) R.string.a11y_hide else R.string.a11y_show)
+}
+
+@Composable
 fun TTSProviderConfigure(
     setting: TTSProviderSetting,
     modifier: Modifier = Modifier,
@@ -98,7 +103,7 @@ private fun OpenAITTSConfiguration(
                 IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
                     Icon(
                         imageVector = if (apiKeyVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
-                        contentDescription = if (apiKeyVisible) "Hide" else "Show"
+                        contentDescription = visibilityToggleDescription(apiKeyVisible)
                     )
                 }
             },
@@ -205,7 +210,7 @@ private fun MiniMaxTTSConfiguration(
                 IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
                     Icon(
                         imageVector = if (apiKeyVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
-                        contentDescription = if (apiKeyVisible) "Hide" else "Show"
+                        contentDescription = visibilityToggleDescription(apiKeyVisible)
                     )
                 }
             },
@@ -384,7 +389,7 @@ private fun GeminiTTSConfiguration(
                 IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
                     Icon(
                         imageVector = if (apiKeyVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
-                        contentDescription = if (apiKeyVisible) "Hide" else "Show"
+                        contentDescription = visibilityToggleDescription(apiKeyVisible)
                     )
                 }
             },
@@ -505,7 +510,7 @@ private fun QwenTTSConfiguration(
                 IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
                     Icon(
                         imageVector = if (apiKeyVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
-                        contentDescription = if (apiKeyVisible) "Hide" else "Show"
+                        contentDescription = visibilityToggleDescription(apiKeyVisible)
                     )
                 }
             },
@@ -642,7 +647,7 @@ private fun ElevenLabsTTSConfiguration(
     var apiKeyVisible by remember { mutableStateOf(false) }
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_api_key)) },
-        description = { Text("Your ElevenLabs API key from your account settings") }
+        description = { Text(stringResource(R.string.setting_tts_page_api_key_description_elevenlabs)) }
     ) {
         OutlinedTextField(
             value = setting.apiKey,
@@ -658,7 +663,7 @@ private fun ElevenLabsTTSConfiguration(
                 IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
                     Icon(
                         imageVector = if (apiKeyVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
-                        contentDescription = if (apiKeyVisible) "Hide" else "Show"
+                        contentDescription = visibilityToggleDescription(apiKeyVisible)
                     )
                 }
             },
@@ -668,8 +673,8 @@ private fun ElevenLabsTTSConfiguration(
 
     // Voice ID
     FormItem(
-        label = { Text("Voice ID") },
-        description = { Text("The ID of the voice to use. Find voice IDs in ElevenLabs Voice Library.") }
+        label = { Text(stringResource(R.string.setting_tts_page_voice_id)) },
+        description = { Text(stringResource(R.string.setting_tts_page_voice_id_description_elevenlabs)) }
     ) {
         OutlinedTextField(
             value = setting.voiceId,
@@ -692,8 +697,8 @@ private fun ElevenLabsTTSConfiguration(
     )
 
     FormItem(
-        label = { Text("Model") },
-        description = { Text("The TTS model to use. Multilingual v2 supports 29 languages.") }
+        label = { Text(stringResource(R.string.setting_tts_page_model)) },
+        description = { Text(stringResource(R.string.setting_tts_page_model_description_elevenlabs)) }
     ) {
         ExposedDropdownMenuBox(
             expanded = modelExpanded,

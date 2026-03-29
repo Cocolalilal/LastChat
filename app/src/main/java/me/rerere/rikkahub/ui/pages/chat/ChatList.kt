@@ -51,6 +51,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.surfaceColorAtElevation
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -107,12 +108,14 @@ import me.rerere.rikkahub.ui.hooks.ImeLazyListAutoScroller
 import me.rerere.rikkahub.utils.plus
 import kotlin.uuid.Uuid
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.utils.openUrl
+import androidx.compose.ui.unit.LayoutDirection
 
 private const val TAG = "ChatList"
 private const val LoadingIndicatorKey = "LoadingIndicator"
@@ -331,150 +334,152 @@ private fun SharedTransitionScope.ChatListNormal(
             turnGroups
         }
         
-        LazyColumn(
-            state = state,
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 16.dp) + PaddingValues(bottom = 32.dp) + innerPadding + androidx.compose.foundation.layout.WindowInsets.ime.asPaddingValues(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier
-                .sharedBounds(
-                    sharedContentState = rememberSharedContentState(key = "conversation_list"),
-                    animatedVisibilityScope = animatedVisibilityScope
-                )
-                .fillMaxSize(),
-        ) {
-            itemsIndexed(
-                items = displayGroups,
-                key = { index, group ->
-                    if (group.role == me.rerere.ai.core.MessageRole.ASSISTANT && index == displayGroups.lastIndex) {
-                        "pending_assistant"
-                    } else {
-                        group.firstNode.id
-                    }
-                },
-            ) { index, group ->
-                Column {
-                    // Check if any node in group is selected
-                    val isSelected by remember(group.nodes.map { it.id }) {
-                        derivedStateOf { group.nodes.any { selectedItems.contains(it.id) } }
-                    }
-                    ListSelectableItem(
-                        isSelected = isSelected,
-                        onSelectChange = { checked ->
-                            if (checked) {
-                                group.nodes.forEach { selectedItems.add(it.id) }
-                            } else {
-                                group.nodes.forEach { selectedItems.remove(it.id) }
-                            }
-                        },
-                        enabled = selecting,
-                    ) {
-                        val isLastTurn = index == displayGroups.lastIndex
-                        val showRegenerate by remember(group.role, isLastTurn) {
-                            derivedStateOf {
-                                when (group.role) {
-                                    me.rerere.ai.core.MessageRole.USER -> true
-                                    else -> isLastTurn
-                                }
-                            }
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+            LazyColumn(
+                state = state,
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 16.dp) + PaddingValues(bottom = 32.dp) + innerPadding + androidx.compose.foundation.layout.WindowInsets.ime.asPaddingValues(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier
+                    .sharedBounds(
+                        sharedContentState = rememberSharedContentState(key = "conversation_list"),
+                        animatedVisibilityScope = animatedVisibilityScope
+                    )
+                    .fillMaxSize(),
+            ) {
+                itemsIndexed(
+                    items = displayGroups,
+                    key = { index, group ->
+                        if (group.role == me.rerere.ai.core.MessageRole.ASSISTANT && index == displayGroups.lastIndex) {
+                            "pending_assistant"
+                        } else {
+                            group.firstNode.id
                         }
-                        ChatMessageTurn(
-                            group = group,
-                            isLastTurn = isLastTurn,
-                            onCitationClick = onCitationClick,
-                            model = group.lastNode.currentMessage.modelId?.let { settings.findModelById(it) },
-                            assistant = settings.getAssistantById(conversation.assistantId),
-                            loading = loading && isLastTurn,
-                            onRegenerate = { node ->
-                                onRegenerate(node.currentMessage)
-                            },
-                            onEdit = { node ->
-                                onEdit(node.currentMessage)
-                            },
-                            onFork = { node ->
-                                onForkMessage(node.currentMessage)
-                            },
-                            onDelete = { node ->
-                                onDelete(node.currentMessage)
-                            },
-                            onShare = { node ->
-                                selecting = true
-                                selectedItems.clear()
-                                val nodeIndex = conversation.messageNodes.indexOf(node)
-                                if (nodeIndex >= 0) {
-                                    selectedItems.addAll(conversation.messageNodes
-                                        .subList(0, nodeIndex + 1)
-                                        .map { it.id })
+                    },
+                ) { index, group ->
+                    Column {
+                        // Check if any node in group is selected
+                        val isSelected by remember(group.nodes.map { it.id }) {
+                            derivedStateOf { group.nodes.any { selectedItems.contains(it.id) } }
+                        }
+                        ListSelectableItem(
+                            isSelected = isSelected,
+                            onSelectChange = { checked ->
+                                if (checked) {
+                                    group.nodes.forEach { selectedItems.add(it.id) }
+                                } else {
+                                    group.nodes.forEach { selectedItems.remove(it.id) }
                                 }
                             },
-                            onUpdate = {
-                                onUpdateMessage(it)
-                            },
-                            onEditLorebookEntry = { entry ->
-                                navController.navigate(Screen.SettingLorebookDetail(entry.lorebookId, entry.entryId))
-                            },
-                            onModeClick = { mode ->
-                                navController.navigate(Screen.SettingSkills(scrollToSkillId = mode.modeId))
-                            },
-                            onMemoryClick = { memory ->
-                                navController.navigate(
-                                    Screen.AssistantDetail(
-                                        id = conversation.assistantId.toString(),
-                                        startRoute = "memory",
-                                        initialMemoryTab = memory.memoryType,
-                                        scrollToMemoryId = memory.memoryId
+                            enabled = selecting,
+                        ) {
+                            val isLastTurn = index == displayGroups.lastIndex
+                            val showRegenerate by remember(group.role, isLastTurn) {
+                                derivedStateOf {
+                                    when (group.role) {
+                                        me.rerere.ai.core.MessageRole.USER -> true
+                                        else -> isLastTurn
+                                    }
+                                }
+                            }
+                            ChatMessageTurn(
+                                group = group,
+                                isLastTurn = isLastTurn,
+                                onCitationClick = onCitationClick,
+                                model = group.lastNode.currentMessage.modelId?.let { settings.findModelById(it) },
+                                assistant = settings.getAssistantById(conversation.assistantId),
+                                loading = loading && isLastTurn,
+                                onRegenerate = { node ->
+                                    onRegenerate(node.currentMessage)
+                                },
+                                onEdit = { node ->
+                                    onEdit(node.currentMessage)
+                                },
+                                onFork = { node ->
+                                    onForkMessage(node.currentMessage)
+                                },
+                                onDelete = { node ->
+                                    onDelete(node.currentMessage)
+                                },
+                                onShare = { node ->
+                                    selecting = true
+                                    selectedItems.clear()
+                                    val nodeIndex = conversation.messageNodes.indexOf(node)
+                                    if (nodeIndex >= 0) {
+                                        selectedItems.addAll(conversation.messageNodes
+                                            .subList(0, nodeIndex + 1)
+                                            .map { it.id })
+                                    }
+                                },
+                                onUpdate = {
+                                    onUpdateMessage(it)
+                                },
+                                onEditLorebookEntry = { entry ->
+                                    navController.navigate(Screen.SettingLorebookDetail(entry.lorebookId, entry.entryId))
+                                },
+                                onModeClick = { mode ->
+                                    navController.navigate(Screen.SettingSkills(scrollToSkillId = mode.modeId))
+                                },
+                                onMemoryClick = { memory ->
+                                    navController.navigate(
+                                        Screen.AssistantDetail(
+                                            id = conversation.assistantId.toString(),
+                                            startRoute = "memory",
+                                            initialMemoryTab = memory.memoryType,
+                                            scrollToMemoryId = memory.memoryId
+                                        )
                                     )
-                                )
-                            },
-                            showRegenerate = showRegenerate,
-                            onExpandedStreamingCodeBlockChanged = if (loading && isLastTurn) {
-                                {
-                                    if (!userScrolledUp) {
-                                        scope.launch {
-                                            val targetIndex = state.layoutInfo.totalItemsCount - 1
-                                            if (targetIndex >= 0) {
-                                                state.animateScrollToItem(targetIndex)
+                                },
+                                showRegenerate = showRegenerate,
+                                onExpandedStreamingCodeBlockChanged = if (loading && isLastTurn) {
+                                    {
+                                        if (!userScrolledUp) {
+                                            scope.launch {
+                                                val targetIndex = state.layoutInfo.totalItemsCount - 1
+                                                if (targetIndex >= 0) {
+                                                    state.animateScrollToItem(targetIndex)
+                                                }
                                             }
                                         }
                                     }
-                                }
-                            } else {
-                                null
-                            },
-                        )
-                    }
-                    // Show truncate indicator if any node in this group is at the truncate point
-                    val truncateNode = group.nodes.find { node ->
-                        conversation.messageNodes.indexOf(node) == conversation.truncateIndex - 1
-                    }
-                    if (truncateNode != null) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier
-                                .padding(vertical = 8.dp)
-                                .fillMaxWidth()
-                        ) {
-                            HorizontalDivider(modifier = Modifier.weight(1f))
-                            Text(
-                                text = stringResource(R.string.chat_page_clear_context),
-                                style = MaterialTheme.typography.bodySmall
+                                } else {
+                                    null
+                                },
                             )
-                            HorizontalDivider(modifier = Modifier.weight(1f))
+                        }
+                        // Show truncate indicator if any node in this group is at the truncate point
+                        val truncateNode = group.nodes.find { node ->
+                            conversation.messageNodes.indexOf(node) == conversation.truncateIndex - 1
+                        }
+                        if (truncateNode != null) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier
+                                    .padding(vertical = 8.dp)
+                                    .fillMaxWidth()
+                            ) {
+                                HorizontalDivider(modifier = Modifier.weight(1f))
+                                Text(
+                                    text = stringResource(R.string.chat_page_clear_context),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                HorizontalDivider(modifier = Modifier.weight(1f))
+                            }
                         }
                     }
                 }
-            }
 
-            // Phantom loading turn now handled as a synthetic assistant group for morphing.
+                // Phantom loading turn now handled as a synthetic assistant group for morphing.
 
-            // 为了能正确滚动到这
-            item(ScrollBottomKey) {
-                Spacer(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(5.dp)
-                )
+                // 为了能正确滚动到这
+                item(ScrollBottomKey) {
+                    Spacer(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(5.dp)
+                    )
+                }
             }
         }
 
@@ -501,7 +506,7 @@ private fun SharedTransitionScope.ChatListNormal(
                 ) {
                     Tooltip(
                         tooltip = {
-                            Text("Clear selection")
+                            Text(stringResource(R.string.chat_clear_selection))
                         }
                     ) {
                         IconButton(
@@ -515,7 +520,7 @@ private fun SharedTransitionScope.ChatListNormal(
                     }
                     Tooltip(
                         tooltip = {
-                            Text("Select all")
+                            Text(stringResource(R.string.select_all))
                         }
                     ) {
                         IconButton(
@@ -532,7 +537,7 @@ private fun SharedTransitionScope.ChatListNormal(
                     }
                     Tooltip(
                         tooltip = {
-                            Text("Confirm")
+                            Text(stringResource(R.string.confirm))
                         }
                     ) {
                         FilledIconButton(
@@ -568,12 +573,14 @@ private fun SharedTransitionScope.ChatListNormal(
             )
 
             // 消息快速跳转
-            MessageJumper(
-                show = isRecentScroll && !state.isScrollInProgress && effectiveDisplay.showMessageJumper && !captureProgress,
-                onLeft = effectiveDisplay.messageJumperOnLeft,
-                scope = scope,
-                state = state
-            )
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                MessageJumper(
+                    show = isRecentScroll && !state.isScrollInProgress && effectiveDisplay.showMessageJumper && !captureProgress,
+                    onLeft = effectiveDisplay.messageJumperOnLeft,
+                    scope = scope,
+                    state = state
+                )
+            }
         }
     }
 }
@@ -692,7 +699,7 @@ private fun SharedTransitionScope.ChatListPreview(
                     IconButton(onClick = { searchQuery = "" }) {
                         Icon(
                             imageVector = Icons.Rounded.Close,
-                            contentDescription = "Clear",
+                            contentDescription = stringResource(R.string.clear_search),
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -704,63 +711,65 @@ private fun SharedTransitionScope.ChatListPreview(
         )
 
         // 消息预览
-        LazyColumn(
-            contentPadding = PaddingValues(16.dp) + PaddingValues(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier
-                .sharedBounds(
-                    sharedContentState = rememberSharedContentState(key = "conversation_list"),
-                    animatedVisibilityScope = animatedVisibilityScope
-                )
-                .fillMaxWidth()
-                .weight(1f),
-        ) {
-            itemsIndexed(
-                items = filteredMessages,
-                key = { index, item -> item.id },
-            ) { _, node ->
-                val message = node.currentMessage
-                val isUser = message.role == me.rerere.ai.core.MessageRole.USER
-                val originalIndex = conversation.messageNodes.indexOf(node)
-                Column(
-                    modifier = Modifier.fillMaxWidth()
-                        .then(
-                            if (!isUser) Modifier.padding(end = 24.dp) else Modifier
-                        ),
-                    horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
-                ) {
-                    Surface(
-                        shape = MaterialTheme.shapes.medium,
-                        color = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer,
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+            LazyColumn(
+                contentPadding = PaddingValues(16.dp) + PaddingValues(bottom = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .sharedBounds(
+                        sharedContentState = rememberSharedContentState(key = "conversation_list"),
+                        animatedVisibilityScope = animatedVisibilityScope
+                    )
+                    .fillMaxWidth()
+                    .weight(1f),
+            ) {
+                itemsIndexed(
+                    items = filteredMessages,
+                    key = { index, item -> item.id },
+                ) { _, node ->
+                    val message = node.currentMessage
+                    val isUser = message.role == me.rerere.ai.core.MessageRole.USER
+                    val originalIndex = conversation.messageNodes.indexOf(node)
+                    Column(
+                        modifier = Modifier.fillMaxWidth()
+                            .then(
+                                if (!isUser) Modifier.padding(end = 24.dp) else Modifier
+                            ),
+                        horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .clickable {
-                                    onJumpToMessage(originalIndex)
-                                }
-                                .padding(horizontal = 8.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        Surface(
+                            shape = MaterialTheme.shapes.medium,
+                            color = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer,
                         ) {
-                            val highlightColor = MaterialTheme.colorScheme.tertiaryContainer
-                            val highlightedText = remember(searchQuery, message) {
-                                val fullText = message.toText().trim().ifBlank { "[...]" }
-                                val messageText = extractMatchingSnippet(
-                                    text = fullText,
-                                    query = searchQuery
-                                )
-                                buildHighlightedText(
-                                    text = messageText,
-                                    query = searchQuery,
-                                    highlightColor = highlightColor
+                            Row(
+                                modifier = Modifier
+                                    .clickable {
+                                        onJumpToMessage(originalIndex)
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val highlightColor = MaterialTheme.colorScheme.tertiaryContainer
+                                val highlightedText = remember(searchQuery, message) {
+                                    val fullText = message.toText().trim().ifBlank { "[...]" }
+                                    val messageText = extractMatchingSnippet(
+                                        text = fullText,
+                                        query = searchQuery
+                                    )
+                                    buildHighlightedText(
+                                        text = messageText,
+                                        query = searchQuery,
+                                        highlightColor = highlightColor
+                                    )
+                                }
+                                Text(
+                                    text = highlightedText,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
-                            Text(
-                                text = highlightedText,
-                                style = MaterialTheme.typography.bodyMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
                         }
                     }
                 }

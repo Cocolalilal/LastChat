@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -11,6 +12,7 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.ai.mcp.McpManager
+import me.rerere.rikkahub.data.repository.AppStorageRepository
 import me.rerere.rikkahub.utils.IconStorageManager
 import okhttp3.OkHttpClient
 
@@ -18,7 +20,8 @@ class SettingVM(
     private val settingsStore: SettingsStore,
     private val mcpManager: McpManager,
     private val context: Context,
-    private val okHttpClient: OkHttpClient
+    private val okHttpClient: OkHttpClient,
+    private val appStorageRepository: AppStorageRepository,
 ) :
     ViewModel() {
     val settings: StateFlow<Settings> = settingsStore.settingsFlow
@@ -76,5 +79,20 @@ class SettingVM(
         }
         
         iconManager.cleanupUnusedIcons(usedKeys)
+    }
+
+    fun cleanupFilesIfUnreferenced(
+        fileRefs: Collection<String>,
+        delayMs: Long = 0L,
+    ) {
+        if (fileRefs.isEmpty()) {
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            if (delayMs > 0L) {
+                delay(delayMs)
+            }
+            appStorageRepository.deleteFilesIfUnreferenced(fileRefs)
+        }
     }
 }

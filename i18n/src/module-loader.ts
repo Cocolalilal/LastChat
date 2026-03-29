@@ -1,4 +1,4 @@
-import { existsSync } from 'fs';
+import { existsSync, readdirSync } from 'fs';
 import path from 'path';
 import { I18nConfig, getModulePaths, getStringResourcePath } from './config';
 import { parseXmlFile, StringResource, ModuleStrings, findMissingTranslations } from './xml-parser';
@@ -12,6 +12,36 @@ export interface TranslationStats {
 
 export interface ModuleInfo extends ModuleStrings {
   stats: Record<string, TranslationStats>;
+}
+
+async function loadStringResourcesFromValuesDir(modulePath: string, locale?: string): Promise<StringResource[]> {
+  const valuesDir = path.join(
+    modulePath,
+    'src',
+    'main',
+    'res',
+    locale ? `values-${locale}` : 'values'
+  );
+
+  if (!existsSync(valuesDir)) {
+    return [];
+  }
+
+  const files = readdirSync(valuesDir)
+    .filter(fileName => fileName.startsWith('strings') && fileName.endsWith('.xml'))
+    .sort((a, b) => a.localeCompare(b));
+
+  const merged = new Map<string, StringResource>();
+
+  for (const fileName of files) {
+    const filePath = path.join(valuesDir, fileName);
+    const resources = await parseXmlFile(filePath);
+    for (const resource of resources) {
+      merged.set(resource.key, resource);
+    }
+  }
+
+  return Array.from(merged.values());
 }
 
 export async function loadModules(config: I18nConfig): Promise<ModuleInfo[]> {
@@ -28,16 +58,13 @@ export async function loadModules(config: I18nConfig): Promise<ModuleInfo[]> {
     }
 
     try {
-      const defaultStrings = await parseXmlFile(defaultStringsPath);
+      const defaultStrings = await loadStringResourcesFromValuesDir(modulePath);
       const translations: Record<string, StringResource[]> = {};
       const stats: Record<string, TranslationStats> = {};
 
       // Load translations for each target language
       for (const locale of config.targets) {
-        const translationPath = getStringResourcePath(modulePath, locale);
-        const translatedStrings = existsSync(translationPath) 
-          ? await parseXmlFile(translationPath)
-          : [];
+        const translatedStrings = await loadStringResourcesFromValuesDir(modulePath, locale);
         
         translations[locale] = translatedStrings;
         

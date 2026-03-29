@@ -62,7 +62,7 @@ fun AssistantModelSubPage(
         // ═══════════════════════════════════════════════════════════════════
         // MODELS GROUP
         // ═══════════════════════════════════════════════════════════════════
-        SettingsGroup(title = "Models") {
+        SettingsGroup(title = stringResource(R.string.assistant_model_group_models)) {
             // Chat Model (Primary)
             Surface(
                 modifier = Modifier.fillMaxWidth(),
@@ -109,12 +109,12 @@ fun AssistantModelSubPage(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "Background Model",
+                        text = stringResource(R.string.assistant_model_background_model),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "For notifications and background tasks",
+                        text = stringResource(R.string.assistant_model_background_model_desc),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -132,17 +132,17 @@ fun AssistantModelSubPage(
         // ═══════════════════════════════════════════════════════════════════
         // GENERATION GROUP
         // ═══════════════════════════════════════════════════════════════════
-        SettingsGroup(title = "Generation") {
+        SettingsGroup(title = stringResource(R.string.assistant_model_group_generation)) {
             // Temperature
             val tempLabel = if (assistant.temperature != null) {
                 val temp = assistant.temperature
                 when (temp) {
-                    in 0.0f..0.3f -> "Strict ($temp)"
-                    in 0.3f..1.0f -> "Balanced ($temp)"
-                    in 1.0f..1.5f -> "Creative ($temp)"
-                    else -> "Chaotic ($temp)"
+                    in 0.0f..0.3f -> stringResource(R.string.assistant_model_temp_strict_value, temp)
+                    in 0.3f..1.0f -> stringResource(R.string.assistant_model_temp_balanced_value, temp)
+                    in 1.0f..1.5f -> stringResource(R.string.assistant_model_temp_creative_value, temp)
+                    else -> stringResource(R.string.assistant_model_temp_chaotic_value, temp)
                 }
-            } else "Default"
+            } else stringResource(R.string.common_default)
             
             SettingGroupItem(
                 title = stringResource(R.string.assistant_page_temperature),
@@ -205,7 +205,11 @@ fun AssistantModelSubPage(
             // Top-P
             SettingGroupItem(
                 title = stringResource(R.string.assistant_page_top_p),
-                subtitle = if (assistant.topP != null) "Enabled (${assistant.topP})" else "Default",
+                subtitle = if (assistant.topP != null) {
+                    stringResource(R.string.common_enabled_value, assistant.topP.toString())
+                } else {
+                    stringResource(R.string.common_default)
+                },
                 trailing = {
                     HapticSwitch(
                         checked = assistant.topP != null,
@@ -245,7 +249,7 @@ fun AssistantModelSubPage(
         // ═══════════════════════════════════════════════════════════════════
         // OUTPUT GROUP
         // ═══════════════════════════════════════════════════════════════════
-        SettingsGroup(title = "Output") {
+        SettingsGroup(title = stringResource(R.string.assistant_model_group_output)) {
             // Stream Output
             SettingGroupItem(
                 title = stringResource(R.string.assistant_page_stream_output),
@@ -293,7 +297,7 @@ fun AssistantModelSubPage(
                             onUpdate(assistant.copy(maxTokens = tokens))
                         },
                         modifier = Modifier.width(100.dp),
-                        placeholder = { Text("Auto") },
+                        placeholder = { Text(stringResource(R.string.assistant_model_auto)) },
                         singleLine = true,
                         textStyle = MaterialTheme.typography.bodySmall,
                         shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,

@@ -92,6 +92,7 @@ data class Assistant(
     val maxHistoryMessages: Int? = null, // null = unlimited (use token budgeting only)
     val enableHistorySummarization: Boolean = false, // Generate summaries of pruned messages
     val maxSearchResultsRetained: Int? = null, // null = keep all, e.g. 2 = keep last 2 search results
+    val archiveImagesAfterMessageAge: Int? = null, // null = disabled
     val enableTimeAwareness: Boolean = false, // Inject current time and notable timeline cues into context
     val enableContextRefresh: Boolean = false, // Legacy compatibility field; manual summarization is always available
     val autoRegenerateSummary: Boolean = false, // Automatically summarize when maxHistoryMessages reached

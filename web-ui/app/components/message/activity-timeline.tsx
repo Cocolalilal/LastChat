@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ChevronUp,
   Globe,
+  Image,
   Lightbulb,
   Memory,
   Terminal,
@@ -42,6 +43,8 @@ function getActivityIcon(type: ActivityType) {
   switch (type) {
     case "reasoning":
       return Lightbulb;
+    case "ocr":
+      return Image;
     case "search":
       return Globe;
     case "python":
@@ -57,7 +60,20 @@ function getActivityIcon(type: ActivityType) {
 
 function entryMatchesType(entry: TimelineEntry, type: ActivityType | null) {
   if (!type) return false;
-  return entry.type === "reasoning" ? type === "reasoning" : entry.activityType === type;
+  if (entry.type === "reasoning") return type === "reasoning";
+  if (entry.type === "ocr") return type === "ocr";
+  return entry.activityType === type;
+}
+
+function buildOcrPreview(
+  entry: Extract<TimelineEntry, { type: "ocr" }>,
+  t: (key: string, options?: Record<string, unknown>) => string,
+) {
+  const pages =
+    entry.pageNumbers.length > 0
+      ? t("activity.timeline_ocr_pages", { pages: entry.pageNumbers.join(", ") })
+      : null;
+  return [entry.fileName, pages].filter(Boolean).join(" - ");
 }
 
 function TimelineDetail({
@@ -231,6 +247,80 @@ export function ActivityTimeline({
                             className="text-sm"
                             displaySetting={displaySetting}
                           />
+                        </TimelineDetail>
+                      ) : null}
+                    </AnimatePresence>
+                  </motion.div>
+                );
+              }
+
+              if (entry.type === "ocr") {
+                const Icon = getActivityIcon("ocr");
+                const preview = buildOcrPreview(entry, t);
+                const sourceLabel =
+                  entry.source === "image"
+                    ? t("activity.timeline_ocr_source_image")
+                    : t("activity.timeline_ocr_source_pdf");
+
+                return (
+                  <motion.div
+                    key={entry.id}
+                    initial={initialAnimation}
+                    animate={{
+                      opacity: 1,
+                      y: 0,
+                      scale: 1,
+                      transition: reducedMotion
+                        ? { duration: 0.01 }
+                        : {
+                          opacity: { duration: CHAT_MOTION_DURATION.fast, delay: index * CHAT_MOTION_DURATION.stagger },
+                          y: { ...getChatLayoutTransition(false), delay: index * CHAT_MOTION_DURATION.stagger },
+                          scale: { ...getChatLayoutTransition(false), delay: index * CHAT_MOTION_DURATION.stagger },
+                        },
+                    }}
+                    className="overflow-hidden rounded-[var(--radius-card-inner)] border border-border/80 bg-background"
+                  >
+                    <button
+                      type="button"
+                      onClick={toggleExpanded}
+                      className="flex w-full items-center gap-3 px-4 py-3 text-left"
+                    >
+                      <Icon className={cn("size-4 text-primary", entry.isLoading && "animate-pulse")} />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium">{t("activity.type.ocr")}</div>
+                        {preview ? (
+                          <div className="line-clamp-1 text-xs text-muted-foreground">{preview}</div>
+                        ) : null}
+                      </div>
+                      <motion.span
+                        animate={{ rotate: expanded ? 180 : 0 }}
+                        transition={getChatLayoutTransition(reducedMotion)}
+                        className="text-muted-foreground"
+                      >
+                        <ChevronDown className="size-4" />
+                      </motion.span>
+                    </button>
+                    <AnimatePresence initial={false}>
+                      {expanded ? (
+                        <TimelineDetail reducedMotion={reducedMotion}>
+                          <div className="space-y-3 text-sm text-muted-foreground">
+                            {entry.fileName ? (
+                              <div className="space-y-1">
+                                <div className="text-xs font-medium text-foreground/80">{t("chat_message.copy_document")}</div>
+                                <div>{entry.fileName}</div>
+                              </div>
+                            ) : null}
+                            <div className="space-y-1">
+                              <div className="text-xs font-medium text-foreground/80">{t("activity.timeline_ocr_source")}</div>
+                              <div>{sourceLabel}</div>
+                            </div>
+                            {entry.pageNumbers.length > 0 ? (
+                              <div className="space-y-1">
+                                <div className="text-xs font-medium text-foreground/80">{t("activity.timeline_ocr_pages_label")}</div>
+                                <div>{entry.pageNumbers.join(", ")}</div>
+                              </div>
+                            ) : null}
+                          </div>
                         </TimelineDetail>
                       ) : null}
                     </AnimatePresence>

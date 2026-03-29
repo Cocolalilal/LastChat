@@ -643,7 +643,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 ) {
                                     Icon(
                                         Icons.Rounded.Delete,
-                                        contentDescription = "Delete memory"
+                                        contentDescription = stringResource(R.string.a11y_delete_memory)
                                     )
                                 }
                             }
@@ -681,7 +681,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 ) {
                                     Icon(
                                         imageVector = Icons.Rounded.ContentCopy,
-                                        contentDescription = "Copy arguments",
+                                        contentDescription = stringResource(R.string.a11y_copy_arguments),
                                         modifier = Modifier.size(14.dp)
                                     )
                                 }
@@ -727,7 +727,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 ) {
                                     Icon(
                                         imageVector = Icons.Rounded.ContentCopy,
-                                        contentDescription = "Copy result",
+                                        contentDescription = stringResource(R.string.a11y_copy_result),
                                         modifier = Modifier.size(14.dp)
                                     )
                                 }

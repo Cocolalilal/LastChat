@@ -14,8 +14,12 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.core.view.WindowCompat
 import kotlinx.serialization.Serializable
 
@@ -70,6 +74,7 @@ fun RikkahubTheme(
         }
     }
     val extendColors = if (darkTheme) ExtendDarkColors else ExtendLightColors
+    val statusBarColor = colorSchemeConverted.background
 
     // 更新状态栏图标颜色
     val view = LocalView.current
@@ -77,17 +82,19 @@ fun RikkahubTheme(
         SideEffect {
             val window = (view.context as Activity).window
             WindowCompat.getInsetsController(window, view).apply {
-                isAppearanceLightStatusBars = !darkTheme
+                isAppearanceLightStatusBars = statusBarColor.luminance() > 0.5f
                 isAppearanceLightNavigationBars = !darkTheme
             }
+            view.layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR
             @Suppress("DEPRECATION")
             window.navigationBarColor = android.graphics.Color.TRANSPARENT
             @Suppress("DEPRECATION")
-            window.statusBarColor = android.graphics.Color.TRANSPARENT
+            window.statusBarColor = statusBarColor.toArgb()
         }
     }
 
     CompositionLocalProvider(
+        LocalLayoutDirection provides LayoutDirection.Ltr,
         LocalDarkMode provides darkTheme,
         LocalExtendColors provides extendColors
     ) {

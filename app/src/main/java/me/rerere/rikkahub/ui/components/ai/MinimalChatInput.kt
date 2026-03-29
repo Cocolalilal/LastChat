@@ -140,7 +140,6 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
-import me.rerere.rikkahub.utils.createChatFilesByContents
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
 import me.rerere.rikkahub.data.ai.tools.AskUserAnswer
 import me.rerere.rikkahub.data.ai.tools.AskUserAnswerPayload
@@ -148,6 +147,7 @@ import me.rerere.rikkahub.data.ai.tools.AskUserOption
 import me.rerere.rikkahub.data.ai.tools.AskUserQuestionnaire
 import me.rerere.rikkahub.data.ai.tools.findPendingAskUserToolCall
 import me.rerere.rikkahub.data.ai.tools.toJsonElement
+import me.rerere.rikkahub.data.repository.ChatAttachmentManager
 import me.rerere.rikkahub.utils.JsonInstantPretty
 import java.io.File
 import kotlin.uuid.Uuid
@@ -179,7 +179,12 @@ fun MinimalChatInput(
     onSendClick: () -> Unit,
     onLongSendClick: () -> Unit,
     onNavigateToLorebook: (String) -> Unit = {},
-    onRefreshContext: suspend () -> ChatService.ContextRefreshResult = { ChatService.ContextRefreshResult(false, errorMessage = "Not configured") },
+    onRefreshContext: suspend () -> ChatService.ContextRefreshResult = {
+        ChatService.ContextRefreshResult(
+            success = false,
+            errorResId = R.string.context_refresh_no_summarizer,
+        )
+    },
     onDeleteFile: (Uri) -> Unit = {},
     bottomAccessory: @Composable (() -> Unit)? = null,
     bottomPadding: androidx.compose.ui.unit.Dp = 24.dp,
@@ -420,11 +425,14 @@ fun MinimalChatInput(
                         transferableContent.hasMediaType(MediaType.Image) -> {
                             transferableContent.consume { item ->
                                 item.uri?.let { uri ->
-                                    state.addImages(
-                                        context.createChatFilesByContents(
-                                            listOf(uri)
-                                        )
-                                    )
+                                    scope.launch {
+                                        val importedUris = withContext(Dispatchers.IO) {
+                                            ChatAttachmentManager.importChatFiles(listOf(uri))
+                                        }
+                                        if (importedUris.isNotEmpty()) {
+                                            state.addImages(importedUris)
+                                        }
+                                    }
                                 }
                                 item.uri != null
                             }
@@ -933,11 +941,11 @@ private fun MinimalPickerContent(
 
         scope.launch {
             val importedUris = withContext(Dispatchers.IO) {
-                context.createChatFilesByContents(uris)
+                ChatAttachmentManager.importChatFiles(uris)
             }
             if (importedUris.isEmpty()) {
                 Log.w("MinimalChatInput", "Failed to import ${uris.size} selected image(s)")
-                toaster.show("Couldn't add the selected image. Please try again.")
+                toaster.show(context.getString(R.string.chat_input_selected_image_failed))
             } else {
                 state.addImages(importedUris)
                 if (dismissOnSuccess) {
@@ -1033,10 +1041,15 @@ private fun MinimalPickerContent(
                 }
 
                 importedFiles.unsupportedFileNames.forEach { fileName ->
-                    toaster.show("Unsupported file type: $fileName (Enable Python tool to use this file)")
+                    toaster.show(
+                        context.getString(
+                            R.string.chat_input_unsupported_file_type,
+                            fileName
+                        )
+                    )
                 }
                 importedFiles.failedFileNames.forEach { fileName ->
-                    toaster.show("Couldn't add file: $fileName")
+                    toaster.show(context.getString(R.string.chat_input_add_file_failed, fileName))
                 }
 
                 if (importedFiles.imageUris.isNotEmpty()) {

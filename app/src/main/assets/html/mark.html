@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{LANGUAGE_TAG}}" dir="{{BASE_DIR}}" data-base-dir="{{BASE_DIR}}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -20,6 +20,8 @@
             margin: 0;
             padding: 16px;
             background: {{BACKGROUND_COLOR}};
+            direction: inherit;
+            text-align: start;
         }
 
         /* Responsive design */
@@ -37,6 +39,7 @@
             margin-bottom: 16px;
             font-weight: 600;
             line-height: 1.25;
+            text-align: start;
         }
 
         h1 { font-size: 2em; border-bottom: 1px solid {{OUTLINE_VARIANT_COLOR}}; padding-bottom: 8px; }
@@ -48,6 +51,7 @@
 
         p {
             margin-bottom: 16px;
+            text-align: start;
         }
 
         /* Code styling */
@@ -58,6 +62,8 @@
             margin: 0;
             padding: 0.2em 0.4em;
             font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', monospace;
+            direction: ltr;
+            unicode-bidi: isolate;
         }
 
         pre {
@@ -68,6 +74,9 @@
             overflow: auto;
             padding: 16px;
             margin-bottom: 16px;
+            direction: ltr;
+            unicode-bidi: isolate;
+            text-align: left;
         }
 
         pre code {
@@ -106,19 +115,21 @@
         /* Lists */
         ul, ol {
             margin-bottom: 16px;
-            padding-left: 2em;
+            padding-inline-start: 2em;
         }
 
         li {
             margin-bottom: 4px;
+            text-align: start;
         }
 
         /* Blockquotes */
         blockquote {
-            border-left: 4px solid {{OUTLINE_VARIANT_COLOR}};
+            border-inline-start: 4px solid {{OUTLINE_VARIANT_COLOR}};
             color: {{ON_SURFACE_VARIANT_COLOR}};
             margin: 0 0 16px 0;
-            padding: 0 16px;
+            padding-inline: 16px;
+            text-align: start;
         }
 
         /* Links */
@@ -169,7 +180,7 @@
         }
 
         .task-list-item input[type="checkbox"] {
-            margin-right: 8px;
+            margin-inline-end: 8px;
         }
 
         /* Theme colors are dynamically replaced by the Android app */

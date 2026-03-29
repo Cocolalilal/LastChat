@@ -30,6 +30,8 @@ function logToFile(message: string): void {
 }
 
 const LANGUAGE_NAMES: Record<string, string> = {
+  'ar': 'Arabic (العربية)',
+  'b+zh+Hans': 'Simplified Chinese (简体中文)',
   'zh': 'Simplified Chinese (简体中文)',
   'zh-rTW': 'Traditional Chinese (繁體中文)',
   'ja': 'Japanese (日本語)',
