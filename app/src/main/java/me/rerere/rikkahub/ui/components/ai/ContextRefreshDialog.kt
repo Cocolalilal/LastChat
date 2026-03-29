@@ -38,6 +38,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -61,9 +62,11 @@ fun ContextRefreshDialog(
     onRefresh: suspend () -> ChatService.ContextRefreshResult,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var state by remember { mutableStateOf(RefreshDialogState.CONFIRM) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var errorResId by remember { mutableStateOf<Int?>(null) }
+    var errorArgs by remember { mutableStateOf<List<Any>>(emptyList()) }
     var summarizedCount by remember { mutableIntStateOf(0) }
     var tokensSaved by remember { mutableIntStateOf(0) }
     
@@ -91,6 +94,9 @@ fun ContextRefreshDialog(
         dampingRatio = Spring.DampingRatioMediumBouncy,
         stiffness = Spring.StiffnessLow
     )
+    val displayedErrorMessage = errorResId?.let { resId ->
+        context.getString(resId, *errorArgs.toTypedArray())
+    } ?: stringResource(R.string.context_refresh_no_summarizer)
 
     AlertDialog(
         onDismissRequest = { if (state != RefreshDialogState.LOADING) onDismiss() },
@@ -284,7 +290,7 @@ fun ContextRefreshDialog(
                                 modifier = Modifier.size(48.dp)
                             )
                             Text(
-                                text = errorMessage ?: stringResource(R.string.context_refresh_no_summarizer),
+                                text = displayedErrorMessage,
                                 style = MaterialTheme.typography.bodyMedium,
                                 textAlign = TextAlign.Center,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -315,7 +321,8 @@ fun ContextRefreshDialog(
                                         tokensSaved = result.tokensSaved
                                         state = RefreshDialogState.SUCCESS
                                     } else {
-                                        errorMessage = result.errorMessage
+                                        errorResId = result.errorResId
+                                        errorArgs = result.errorArgs
                                         state = RefreshDialogState.ERROR
                                     }
                                 }

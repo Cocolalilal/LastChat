@@ -285,7 +285,7 @@ fun ChatDrawerContent(
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Text(
-                                    text = "Imagine",
+                                    text = stringResource(R.string.chat_drawer_imagine),
                                     style = MaterialTheme.typography.titleMedium,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
@@ -315,7 +315,7 @@ fun ChatDrawerContent(
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Text(
-                                    text = "Stats",
+                                    text = stringResource(R.string.menu_statistics_title),
                                     style = MaterialTheme.typography.titleMedium,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )

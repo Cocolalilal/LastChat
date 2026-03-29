@@ -125,7 +125,7 @@ fun ClickableIconPicker(
                 // Show custom icon
                 AsyncImage(
                     model = Uri.parse(currentIconUri),
-                    contentDescription = "Custom icon",
+                    contentDescription = stringResource(R.string.a11y_custom_icon),
                     modifier = Modifier.size(iconSize),
                     contentScale = ContentScale.Fit
                 )
@@ -148,7 +148,7 @@ fun ClickableIconPicker(
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Close,
-                    contentDescription = "Clear icon",
+                    contentDescription = stringResource(R.string.a11y_clear_icon),
                     modifier = Modifier
                         .size(12.dp)
                         .padding(1.dp),

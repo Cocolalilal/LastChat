@@ -297,6 +297,11 @@ private fun MemoryItem(
 ) {
     val isDarkMode = LocalDarkMode.current
     val isCore = memory.memoryType == 0
+    val memoryTypeLabel = when {
+        isCore -> stringResource(R.string.activity_timeline_memory_core)
+        memory.memoryId < 0 -> stringResource(R.string.context_sources_recent_chat)
+        else -> stringResource(R.string.activity_timeline_memory_episodic)
+    }
     
     val backgroundColor = if (isCore) {
         MaterialTheme.colorScheme.primaryContainer
@@ -349,7 +354,7 @@ private fun MemoryItem(
                     isCore -> {
                         Icon(
                             imageVector = Icons.Rounded.Memory,
-                            contentDescription = "Core Memory",
+                            contentDescription = memoryTypeLabel,
                             modifier = Modifier.size(24.dp),
                             tint = contentColor
                         )
@@ -358,7 +363,7 @@ private fun MemoryItem(
                         // Recent chat reference (non-RAG mode)
                         Icon(
                             imageVector = Icons.Rounded.History,
-                            contentDescription = "Recent Chat",
+                            contentDescription = memoryTypeLabel,
                             modifier = Modifier.size(24.dp),
                             tint = contentColor
                         )
@@ -367,7 +372,7 @@ private fun MemoryItem(
                         // True episodic memory (RAG mode)
                         Image(
                             painter = painterResource(R.drawable.search_activity_24),
-                            contentDescription = "Episodic Memory",
+                            contentDescription = memoryTypeLabel,
                             modifier = Modifier.size(24.dp),
                             colorFilter = ColorFilter.tint(contentColor)
                         )
@@ -381,11 +386,7 @@ private fun MemoryItem(
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 Text(
-                    text = when {
-                        isCore -> "Core Memory"
-                        memory.memoryId < 0 -> "Recent Chat"  // Recent chat reference (non-RAG mode)
-                        else -> "Episodic Memory"  // True episodic memory (RAG mode)
-                    },
+                    text = memoryTypeLabel,
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

@@ -28,6 +28,7 @@ import java.io.OutputStream
 import java.net.URLDecoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import me.rerere.rikkahub.R
 
 private const val TAG = "ContextUtil"
 
@@ -72,7 +73,7 @@ fun Context.writeClipboardText(text: String) {
         Log.i(TAG, "writeClipboardText: $text")
     }.onFailure {
         Log.e(TAG, "writeClipboardText: $text", it)
-        Toast.makeText(this, "Failed to write text into clipboard", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, getString(R.string.clipboard_write_failed), Toast.LENGTH_SHORT).show()
     }
 }
 
@@ -88,7 +89,7 @@ fun Context.openUrl(url: String) {
         intent.launchUrl(this, url.toUri())
     }.onFailure {
         it.printStackTrace()
-        Toast.makeText(this, "Failed to open URL: $url", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, getString(R.string.open_url_failed, url), Toast.LENGTH_SHORT).show()
     }
 }
 
@@ -113,7 +114,7 @@ fun Context.openAttachmentUri(uri: Uri, mimeType: String? = null): Boolean {
         true
     }.onFailure { error ->
         Log.e(TAG, "Failed to open attachment: $normalizedUri", error)
-        Toast.makeText(this, "Unable to open attachment", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, getString(R.string.open_attachment_failed), Toast.LENGTH_SHORT).show()
     }.getOrDefault(false)
 }
 
@@ -273,10 +274,16 @@ fun shareTextFile(context: Context, fileName: String, content: String) {
             putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(intent, "Export Assistant"))
+        context.startActivity(
+            Intent.createChooser(intent, context.getString(R.string.share_text_file_chooser_title))
+        )
     } catch (e: Exception) {
         e.printStackTrace()
-        Toast.makeText(context, "Export failed: ${e.message}", Toast.LENGTH_SHORT).show()
+        Toast.makeText(
+            context,
+            context.getString(R.string.share_text_file_export_failed, e.message ?: ""),
+            Toast.LENGTH_SHORT
+        ).show()
     }
 }
 
@@ -348,7 +355,11 @@ suspend fun Context.saveToDownloads(uri: Uri, fileName: String) {
                 }
             } else {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@saveToDownloads, "Permission required to save file", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        this@saveToDownloads,
+                        getString(R.string.downloads_permission_required),
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             }
             return
@@ -362,7 +373,11 @@ suspend fun Context.saveToDownloads(uri: Uri, fileName: String) {
             inputStream = openOwnedUriInputStream(uri)
             if (inputStream == null) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@saveToDownloads, "Failed to read source file", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        this@saveToDownloads,
+                        getString(R.string.downloads_read_source_failed),
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
                 return@withContext
             }
@@ -377,11 +392,19 @@ suspend fun Context.saveToDownloads(uri: Uri, fileName: String) {
                     outputStream = contentResolver.openOutputStream(dstUri)
                     inputStream.copyTo(outputStream!!)
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(this@saveToDownloads, "Saved to Downloads: $fileName", Toast.LENGTH_LONG).show()
+                        Toast.makeText(
+                            this@saveToDownloads,
+                            getString(R.string.downloads_saved, fileName),
+                            Toast.LENGTH_LONG
+                        ).show()
                     }
                 } else {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(this@saveToDownloads, "Failed to create download entry", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            this@saveToDownloads,
+                            getString(R.string.downloads_create_entry_failed),
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
                 }
             } else {
@@ -397,13 +420,21 @@ suspend fun Context.saveToDownloads(uri: Uri, fileName: String) {
                 sendBroadcast(mediaScanIntent)
                 
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@saveToDownloads, "Saved to Downloads: $fileName", Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        this@saveToDownloads,
+                        getString(R.string.downloads_saved, fileName),
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to save file to downloads", e)
             withContext(Dispatchers.Main) {
-                Toast.makeText(this@saveToDownloads, "Failed to save: ${e.message}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    this@saveToDownloads,
+                    getString(R.string.downloads_save_failed, e.message ?: ""),
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         } finally {
             try {

@@ -52,11 +52,13 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import kotlin.math.absoluteValue
@@ -417,7 +419,7 @@ private fun ToastContent(
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Default.ExpandMore,
-                            contentDescription = "Show more",
+                            contentDescription = stringResource(R.string.a11y_show_more),
                             modifier = Modifier.size(18.dp),
                             tint = contentColor
                         )

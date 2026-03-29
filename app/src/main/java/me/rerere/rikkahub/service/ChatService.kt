@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.util.Log
+import androidx.annotation.StringRes
 import androidx.core.net.toUri
 import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.utils.LogUtil
@@ -1933,7 +1934,17 @@ class ChatService(
         val summary: String = "",
         val messagesSummarized: Int = 0,
         val tokensSaved: Int = 0,
-        val errorMessage: String? = null
+        @param:StringRes val errorResId: Int? = null,
+        val errorArgs: List<Any> = emptyList()
+    )
+
+    private fun contextRefreshError(
+        @StringRes errorResId: Int,
+        vararg errorArgs: Any
+    ): ContextRefreshResult = ContextRefreshResult(
+        success = false,
+        errorResId = errorResId,
+        errorArgs = errorArgs.toList(),
     )
 
     // Check if auto-summarization threshold is reached and trigger if needed
@@ -1974,7 +1985,7 @@ class ChatService(
                 if (result.success) {
                     Log.i(TAG, "Auto-summarization completed: ${result.messagesSummarized} messages summarized, ${result.tokensSaved} tokens saved")
                 } else {
-                    Log.w(TAG, "Auto-summarization failed: ${result.errorMessage}")
+                    Log.w(TAG, "Auto-summarization failed: ${result.errorResId}, args=${result.errorArgs}")
                 }
             }
         } catch (e: Exception) {
@@ -1988,7 +1999,7 @@ class ChatService(
             val settings = settingsStore.settingsFlow.first()
             val conversation = normalizeConversation(
                 conversationRepo.getConversationById(conversationId)
-                ?: return@withContext ContextRefreshResult(false, errorMessage = "Conversation not found")
+                    ?: return@withContext contextRefreshError(R.string.context_refresh_error_conversation_not_found)
             )
             val conversationContext = settings.resolveConversationContext(conversation)
             val assistant = conversationContext.assistant
@@ -1996,15 +2007,15 @@ class ChatService(
             // Check for empty messages FIRST before model lookup
             val messages = conversation.currentMessages
             if (messages.isEmpty()) {
-                return@withContext ContextRefreshResult(false, errorMessage = "No messages to summarize")
+                return@withContext contextRefreshError(R.string.context_refresh_error_no_messages)
             }
 
             // Get the summarizer model (fall back to chat model)
             val model = settings.summarizerModelId?.let(settings::findModelById)
                 ?: conversationContext.chatModel
-                ?: return@withContext ContextRefreshResult(false, errorMessage = "No model configured")
+                ?: return@withContext contextRefreshError(R.string.context_refresh_error_no_model)
             val provider = model.findProvider(settings.providers)
-                ?: return@withContext ContextRefreshResult(false, errorMessage = "No provider found")
+                ?: return@withContext contextRefreshError(R.string.context_refresh_error_no_provider)
 
 
 
@@ -2031,7 +2042,7 @@ class ChatService(
             }
             
             if (messagesToSummarize.isEmpty()) {
-                return@withContext ContextRefreshResult(false, errorMessage = "No new messages to summarize (keeping last exchange)")
+                return@withContext contextRefreshError(R.string.context_refresh_error_no_new_messages)
             }
 
             // Build summarization prompt - only include NEW messages
@@ -2096,7 +2107,7 @@ class ChatService(
             )
 
             val summary = response.choices.firstOrNull()?.message?.toContentText()
-                ?: return@withContext ContextRefreshResult(false, errorMessage = "Empty response from model")
+                ?: return@withContext contextRefreshError(R.string.context_refresh_error_empty_response)
 
             // Estimate new tokens
             val summaryTokens = summary.length / 4
@@ -2123,7 +2134,12 @@ class ChatService(
             )
         } catch (e: Exception) {
             Log.e(TAG, "summarizeAndRefresh failed", e)
-            ContextRefreshResult(false, errorMessage = e.message ?: "Unknown error")
+            val errorMessage = e.message?.takeIf { it.isNotBlank() }
+            if (errorMessage != null) {
+                contextRefreshError(R.string.context_refresh_error_unexpected, errorMessage)
+            } else {
+                contextRefreshError(R.string.context_refresh_error_unknown)
+            }
         }
     }
 

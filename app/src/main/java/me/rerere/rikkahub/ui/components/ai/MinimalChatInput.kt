@@ -179,7 +179,12 @@ fun MinimalChatInput(
     onSendClick: () -> Unit,
     onLongSendClick: () -> Unit,
     onNavigateToLorebook: (String) -> Unit = {},
-    onRefreshContext: suspend () -> ChatService.ContextRefreshResult = { ChatService.ContextRefreshResult(false, errorMessage = "Not configured") },
+    onRefreshContext: suspend () -> ChatService.ContextRefreshResult = {
+        ChatService.ContextRefreshResult(
+            success = false,
+            errorResId = R.string.context_refresh_no_summarizer,
+        )
+    },
     onDeleteFile: (Uri) -> Unit = {},
     bottomAccessory: @Composable (() -> Unit)? = null,
     bottomPadding: androidx.compose.ui.unit.Dp = 24.dp,

@@ -69,6 +69,7 @@ import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastAny
 import androidx.compose.ui.util.fastFilter
@@ -314,7 +315,7 @@ internal fun ColumnScope.ModelList(
         val favoriteIndex = favoriteModels.indexOfFirst { it.first.id == currentModel }
         if (favoriteIndex >= 0) {
             if (favoriteModels.isNotEmpty()) {
-                position += 1 // favorite sticky header
+                position += 1 // favorite header
             }
             position += favoriteIndex
             return@remember position
@@ -322,7 +323,7 @@ internal fun ColumnScope.ModelList(
 
         // Skip all favorites
         if (favoriteModels.isNotEmpty()) {
-            position += 1 // favorite sticky header
+            position += 1 // favorite header
             position += favoriteModels.size
         }
 
@@ -461,13 +462,10 @@ internal fun ColumnScope.ModelList(
             }
 
             if (favoriteModels.isNotEmpty()) {
-                stickyHeader {
-                    Text(
-                        text = stringResource(R.string.model_list_favorite),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier
-                            .padding(bottom = 4.dp, top = 8.dp)
+                item(key = "favorite-header") {
+                    ModelSectionHeader(
+                        title = stringResource(R.string.model_list_favorite),
+                        topPadding = 8.dp
                     )
                 }
 
@@ -541,19 +539,9 @@ internal fun ColumnScope.ModelList(
             ) { item ->
                 when (item) {
                     is ProviderListItem.Header -> {
-                        Row(
-                            modifier = Modifier
-                                .padding(bottom = 4.dp, top = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
+                        ModelSectionHeader(
+                            title = item.provider.name
                         ) {
-                            Text(
-                                text = item.provider.name,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-
-                            Spacer(modifier = Modifier.weight(1f))
-
                             ProviderBalanceText(
                                 providerSetting = item.provider,
                                 style = MaterialTheme.typography.labelMedium,
@@ -686,6 +674,32 @@ private sealed class ProviderListItem {
         val isFavorite: Boolean
     ) : ProviderListItem()
 }
+
+@Composable
+private fun ModelSectionHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+    topPadding: Dp = 12.dp,
+    trailingContent: @Composable RowScope.() -> Unit = {}
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(top = topPadding, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        trailingContent()
+    }
+}
+
 @Composable
 private fun ModelItem(
     model: Model,

@@ -114,7 +114,7 @@ object DefaultPlaceholderProvider : PlaceholderProvider {
 
 
 
-        placeholder("location", { Text("Location") }) {
+        placeholder("location", { Text(stringResource(R.string.placeholder_location)) }) {
             if (androidx.core.app.ActivityCompat.checkSelfPermission(
                     it.context,
                     android.Manifest.permission.ACCESS_COARSE_LOCATION
@@ -158,7 +158,7 @@ object DefaultPlaceholderProvider : PlaceholderProvider {
                     }
                 } ?: "unknown"
             } else {
-                "[Location unavailable - grant location permission in Settings > Apps > LastChat]"
+                it.context.getString(R.string.placeholder_location_unavailable)
             }
         }
 

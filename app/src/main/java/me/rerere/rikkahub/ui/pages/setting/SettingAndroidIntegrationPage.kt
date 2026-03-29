@@ -227,7 +227,7 @@ fun SettingAndroidIntegrationPage(
                         // Reset to defaults button
                         SettingGroupItem(
                             title = stringResource(R.string.reset),
-                            subtitle = "Restore default actions",
+                            subtitle = stringResource(R.string.setting_android_integration_reset_actions),
                             onClick = { showResetDialog = true }
                         )
                     }
@@ -292,7 +292,7 @@ fun SettingAndroidIntegrationPage(
         AlertDialog(
             onDismissRequest = { showResetDialog = false },
             title = { Text(stringResource(R.string.reset)) },
-            text = { Text("Are you sure you want to restore default actions? This will replace all your custom actions.") },
+            text = { Text(stringResource(R.string.setting_android_integration_reset_actions_confirm)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -305,7 +305,7 @@ fun SettingAndroidIntegrationPage(
                             }
                         }
                         toaster.show(
-                            message = "Actions reset to defaults",
+                            message = context.getString(R.string.setting_android_integration_reset_actions_success),
                             action = ToastAction(
                                 label = context.getString(R.string.undo),
                                 onClick = {

@@ -154,4 +154,5 @@
         <item quantity="one">تمت إزالة %1$d ملف تحميل يتيم</item>
         <item quantity="other">تمت إزالة %1$d ملفات تحميل يتيمة</item>
     </plurals>
+    <string name="context_sources_recent_chat">المحادثة الأخيرة</string>
 </resources>

@@ -310,7 +310,7 @@ fun CropImageScreen(
                     ) {
                         Icon(
                             Icons.AutoMirrored.Rounded.RotateRight,
-                            contentDescription = "Rotate",
+                            contentDescription = stringResource(R.string.a11y_rotate),
                             modifier = Modifier.graphicsLayer {
                                 rotationZ = rotateIconRotation
                             }

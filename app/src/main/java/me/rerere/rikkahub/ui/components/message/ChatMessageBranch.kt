@@ -17,10 +17,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.versionSelectionIndices
 import me.rerere.rikkahub.data.model.versionSelectionPosition
@@ -49,7 +51,7 @@ fun ChatMessageBranchSelector(
 
             Icon(
                 imageVector = Icons.Rounded.ChevronLeft,
-                contentDescription = "Prev",
+                contentDescription = stringResource(R.string.previous),
                 modifier = Modifier
                     .clip(CircleShape)
                     .alpha(if (canGoPrev) 1f else 0.5f)
@@ -74,7 +76,7 @@ fun ChatMessageBranchSelector(
 
             Icon(
                 imageVector = Icons.Rounded.ChevronRight,
-                contentDescription = "Next",
+                contentDescription = stringResource(R.string.next),
                 modifier = Modifier
                     .clip(CircleShape)
                     .alpha(if (canGoNext) 1f else 0.5f)

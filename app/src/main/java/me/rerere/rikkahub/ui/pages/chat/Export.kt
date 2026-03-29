@@ -131,7 +131,10 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 Text(text = stringResource(id = R.string.chat_page_export_format))
 
                 val markdownSuccessMessage =
-                    stringResource(id = R.string.chat_page_export_success, "Markdown")
+                    stringResource(
+                        id = R.string.chat_page_export_success,
+                        stringResource(R.string.chat_page_export_markdown)
+                    )
                 OutlinedCard(
                     onClick = {
                         exportToMarkdown(context, conversation, selectedMessages)
@@ -157,7 +160,10 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 }
 
                 val imageSuccessMessage =
-                    stringResource(id = R.string.chat_page_export_success, "Image")
+                    stringResource(
+                        id = R.string.chat_page_export_success,
+                        stringResource(R.string.chat_page_export_image)
+                    )
                 OutlinedCard(
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -210,7 +216,10 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                         }.onFailure {
                                             it.printStackTrace()
                                             toaster.show(
-                                                message = "Failed to export image: ${it.message}",
+                                                message = context.getString(
+                                                    R.string.chat_page_export_image_failed,
+                                                    it.message ?: ""
+                                                ),
                                                 type = ToastType.Error
                                             )
                                         }
@@ -318,7 +327,11 @@ private suspend fun exportToImage(
     val activity = context.getActivity()
     if (activity == null) {
         withContext(Dispatchers.Main) {
-            Toast.makeText(context, "Failed to get activity", Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                context,
+                context.getString(R.string.chat_page_export_activity_failed),
+                Toast.LENGTH_SHORT
+            ).show()
         }
         return
     }
@@ -365,7 +378,11 @@ private suspend fun exportToImage(
     } catch (e: Exception) {
         e.printStackTrace()
         withContext(Dispatchers.Main) {
-            Toast.makeText(context, "Failed to export image: ${e.message}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                context,
+                context.getString(R.string.chat_page_export_image_failed, e.message ?: ""),
+                Toast.LENGTH_SHORT
+            ).show()
         }
     } finally {
         bitmap.recycle()
@@ -418,7 +435,7 @@ private fun ExportedChatImage(
                         val painter = painterResource(id = R.mipmap.ic_launcher_lastchat_foreground)
                         Image(
                             painter = painter,
-                            contentDescription = "Logo",
+                            contentDescription = stringResource(R.string.a11y_logo),
                             modifier = Modifier.size(60.dp)
                         )
                     }
@@ -501,7 +518,7 @@ private fun ExportedChatMessage(
                                 .allowHardware(false)
                                 .crossfade(false)
                                 .build(),
-                            contentDescription = "Image",
+                            contentDescription = stringResource(R.string.a11y_image),
                             modifier = Modifier
                                 .sizeIn(maxHeight = 300.dp)
                                 .clip(RoundedCornerShape(12.dp)),

@@ -50,10 +50,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import kotlin.math.absoluteValue
@@ -239,7 +241,7 @@ fun PhysicsSwipeToDelete(
                 ) {
                     Icon(
                         Icons.Rounded.Close,
-                        contentDescription = "Cancel",
+                        contentDescription = stringResource(R.string.cancel),
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -257,7 +259,7 @@ fun PhysicsSwipeToDelete(
                 ) {
                     Icon(
                         Icons.Rounded.Delete,
-                        contentDescription = "Delete",
+                        contentDescription = stringResource(R.string.delete),
                         tint = MaterialTheme.colorScheme.error,
                         modifier = Modifier.size(22.dp)
                     )

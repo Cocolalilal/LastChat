@@ -21,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -293,6 +294,7 @@ class RouteActivity : ComponentActivity() {
                             .background(MaterialTheme.colorScheme.background)
                     )
                 } else {
+                    val context = LocalContext.current
                     ShareHandler(navStack)
                     TextSelectionHandler(navStack)
                     NotificationHandler(navStack)
@@ -593,16 +595,34 @@ class RouteActivity : ComponentActivity() {
                         // Build cleanup message
                         val parts = mutableListOf<String>()
                         if (unsupportedBytes > 0) {
-                            parts.add("${unsupportedBytes.fileSizeToString()} of unsupported data")
+                            parts.add(
+                                this@RouteActivity.getString(
+                                    R.string.backup_restore_import_cleanup_unsupported,
+                                    unsupportedBytes.fileSizeToString()
+                                )
+                            )
                         }
                         if (issuesFixed > 0) {
-                            parts.add("$issuesFixed invalid references")
+                            parts.add(
+                                this@RouteActivity.getString(
+                                    R.string.backup_restore_import_cleanup_invalid_references,
+                                    issuesFixed
+                                )
+                            )
                         }
                         if (skippedRows > 0) {
-                            parts.add("$skippedRows corrupt items removed")
+                            parts.add(
+                                this@RouteActivity.getString(
+                                    R.string.backup_restore_import_cleanup_corrupt_removed,
+                                    skippedRows
+                                )
+                            )
                         }
                         
-                        val message = "Import completed: ${parts.joinToString(", ")}"
+                        val message = this@RouteActivity.getString(
+                            R.string.backup_restore_import_cleanup_summary,
+                            parts.joinToString(", ")
+                        )
                         toastState.show(message, type = me.rerere.rikkahub.ui.components.ui.ToastType.Info)
                     }
                 }

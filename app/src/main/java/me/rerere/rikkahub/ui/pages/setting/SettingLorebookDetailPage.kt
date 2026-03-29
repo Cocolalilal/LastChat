@@ -394,7 +394,10 @@ fun SettingLorebookDetailPage(
                             trailingIcon = if (searchQuery.isNotEmpty()) {
                                 {
                                     IconButton(onClick = { searchQuery = "" }) {
-                                        Icon(Icons.Rounded.Close, contentDescription = "Clear")
+                                        Icon(
+                                            Icons.Rounded.Close,
+                                            contentDescription = stringResource(R.string.clear_search)
+                                        )
                                     }
                                 }
                             } else null
@@ -566,7 +569,10 @@ fun SettingLorebookDetailPage(
                             )
                         } catch (e: Exception) {
                             android.util.Log.w("LorebookDetail", "Failed to generate embedding", e)
-                            toaster.show("Failed to generate embedding: ${e.message}", me.rerere.rikkahub.ui.components.ui.ToastType.Error)
+                            toaster.show(
+                                context.getString(R.string.lorebook_embedding_failed, e.message ?: ""),
+                                me.rerere.rikkahub.ui.components.ui.ToastType.Error
+                            )
                             savedEntry.copy(hasEmbedding = false)
                         }
                     } else {

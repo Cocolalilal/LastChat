@@ -340,7 +340,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     ) {
                         Icon(
                             Icons.Rounded.Close,
-                            contentDescription = "Close"
+                            contentDescription = stringResource(R.string.a11y_close)
                         )
                     }
                 }

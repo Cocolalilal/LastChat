@@ -154,4 +154,5 @@
         <item quantity="one">已移除 %1$d 个孤立上传</item>
         <item quantity="other">已移除 %1$d 个孤立上传</item>
     </plurals>
+    <string name="context_sources_recent_chat">最近聊天</string>
 </resources>

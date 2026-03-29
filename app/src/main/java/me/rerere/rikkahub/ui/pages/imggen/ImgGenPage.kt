@@ -595,7 +595,7 @@ private fun FloatingInputBar(
                                 ) {
                                     AsyncImage(
                                         model = selectedImage,
-                                        contentDescription = "Selected image",
+                                        contentDescription = stringResource(R.string.a11y_selected_image),
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier
                                             .fillMaxSize()
@@ -612,7 +612,7 @@ private fun FloatingInputBar(
                                     ) {
                                         Icon(
                                             imageVector = Icons.Rounded.Close,
-                                            contentDescription = "Remove image",
+                                            contentDescription = stringResource(R.string.a11y_remove_image),
                                             modifier = Modifier.padding(2.dp),
                                             tint = MaterialTheme.colorScheme.onSurface
                                         )
@@ -630,7 +630,7 @@ private fun FloatingInputBar(
                                 ) {
                                     Icon(
                                         Icons.Rounded.Photo,
-                                        contentDescription = "Add image",
+                                        contentDescription = stringResource(R.string.a11y_add_image),
                                         tint = MaterialTheme.colorScheme.onSurface
                                     )
                                 }
@@ -826,17 +826,17 @@ private fun ImageGalleryScreen(
                                                             ClipData.newPlainText(null, it.prompt)
                                                         )
                                                     )
-                                                    toaster.show(
-                                                        message = "Prompt copied to clipboard",
-                                                        type = ToastType.Success
-                                                    )
+                                            toaster.show(
+                                                message = context.getString(R.string.imggen_page_prompt_copied),
+                                                type = ToastType.Success
+                                            )
                                                 }
                                             },
                                             modifier = Modifier.size(32.dp)
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Rounded.ContentCopy,
-                                                contentDescription = "Copy prompt",
+                                                contentDescription = stringResource(R.string.a11y_copy_prompt),
                                                 modifier = Modifier.size(16.dp)
                                             )
                                         }

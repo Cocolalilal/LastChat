@@ -154,4 +154,5 @@
         <item quantity="one">Removed %1$d orphaned upload</item>
         <item quantity="other">Removed %1$d orphaned uploads</item>
     </plurals>
+    <string name="context_sources_recent_chat">Recent chat</string>
 </resources>

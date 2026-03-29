@@ -151,7 +151,7 @@ class AssistantWidget : GlanceAppWidget() {
         ) {
             Image(
                 provider = ImageProvider(avatarBitmap),
-                contentDescription = "Assistant",
+                contentDescription = context.getString(R.string.a11y_assistant_widget),
                 modifier = GlanceModifier.fillMaxSize(),
                 contentScale = ContentScale.Fit
             )

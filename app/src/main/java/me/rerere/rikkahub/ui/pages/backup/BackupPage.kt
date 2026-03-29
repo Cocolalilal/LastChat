@@ -524,15 +524,18 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 showPermissionDialog = false
                 showRestartDialog = true
             },
-            title = { Text("Permissions Required") },
+            title = { Text(stringResource(R.string.backup_restore_permissions_required)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Your restored backup includes notification features that need additional access:")
+                    Text(stringResource(R.string.backup_restore_permissions_message))
                     PermissionChecker.getFeatureAccessDescriptions(pendingFeatureAccess).forEach { description ->
                         val desc = description
                         Text("- $desc", style = MaterialTheme.typography.bodySmall)
                     }
-                    Text("Grant or enable them so notifications and scheduled follow-ups work properly.", style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        stringResource(R.string.backup_restore_permissions_follow_up),
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 }
             },
             confirmButton = {
@@ -558,9 +561,9 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 ) {
                     Text(
                         if (pendingFeatureAccess.runtimePermissions.isNotEmpty()) {
-                            "Grant Permissions"
+                            stringResource(R.string.backup_restore_grant_permissions)
                         } else {
-                            "Open Settings"
+                            stringResource(R.string.open_settings)
                         }
                     )
                 }
@@ -572,7 +575,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         showRestartDialog = true
                     }
                 ) {
-                    Text("Skip")
+                    Text(stringResource(R.string.backup_restore_skip))
                 }
             }
         )
@@ -1018,15 +1021,18 @@ private fun ImportExportPage(
                 showPermissionDialog = false
                 showRestartDialog = true
             },
-            title = { Text("Permissions Required") },
+            title = { Text(stringResource(R.string.backup_restore_permissions_required)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Your restored backup includes notification features that need additional access:")
+                    Text(stringResource(R.string.backup_restore_permissions_message))
                     PermissionChecker.getFeatureAccessDescriptions(pendingFeatureAccess).forEach { description ->
                         val desc = description
                         Text("- $desc", style = MaterialTheme.typography.bodySmall)
                     }
-                    Text("Grant or enable them so notifications and scheduled follow-ups work properly.", style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        stringResource(R.string.backup_restore_permissions_follow_up),
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 }
             },
             confirmButton = {
@@ -1052,9 +1058,9 @@ private fun ImportExportPage(
                 ) {
                     Text(
                         if (pendingFeatureAccess.runtimePermissions.isNotEmpty()) {
-                            "Grant Permissions"
+                            stringResource(R.string.backup_restore_grant_permissions)
                         } else {
-                            "Open Settings"
+                            stringResource(R.string.open_settings)
                         }
                     )
                 }
@@ -1066,7 +1072,7 @@ private fun ImportExportPage(
                         showRestartDialog = true
                     }
                 ) {
-                    Text("Skip")
+                    Text(stringResource(R.string.backup_restore_skip))
                 }
             }
         )
@@ -1106,17 +1112,32 @@ private fun BackupDialog(
                         ) {
                             Column(modifier = Modifier.padding(8.dp)) {
                                 Text(
-                                    text = "Restore Report:",
+                                    text = stringResource(R.string.backup_restore_report_title),
                                     style = MaterialTheme.typography.labelMedium
                                 )
                                 if (it.sanitization.skippedRows > 0) {
-                                    Text("- Removed ${it.sanitization.skippedRows} corrupt/invalid items")
+                                    Text(
+                                        text = stringResource(
+                                            R.string.backup_restore_report_removed_items,
+                                            it.sanitization.skippedRows
+                                        )
+                                    )
                                 }
                                 if (it.settingsCleanup.totalIssuesFixed > 0) {
-                                    Text("- Fixed ${it.settingsCleanup.totalIssuesFixed} setting issues")
+                                    Text(
+                                        text = stringResource(
+                                            R.string.backup_restore_report_fixed_settings,
+                                            it.settingsCleanup.totalIssuesFixed
+                                        )
+                                    )
                                 }
                                 if (it.settingsCleanup.unsupportedZipEntriesBytes > 0) {
-                                    Text("- Cleaned ${it.settingsCleanup.unsupportedZipEntriesBytes.fileSizeToString()} of junk data")
+                                    Text(
+                                        text = stringResource(
+                                            R.string.backup_restore_report_cleaned_data,
+                                            it.settingsCleanup.unsupportedZipEntriesBytes.fileSizeToString()
+                                        )
+                                    )
                                 }
                             }
                         }

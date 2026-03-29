@@ -19,11 +19,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Description
 import kotlinx.coroutines.launch
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.AILogging
 import org.koin.androidx.compose.koinViewModel
 
@@ -36,7 +38,7 @@ fun DeveloperPage(vm: DeveloperVM = koinViewModel()) {
             TopAppBar(
                 title = {
                     Text(
-                        text = "Developer Page",
+                        text = stringResource(R.string.developer),
                         maxLines = 1,
                     )
                 }
@@ -48,7 +50,7 @@ fun DeveloperPage(vm: DeveloperVM = koinViewModel()) {
                     selected = pager.currentPage == 0,
                     onClick = { scope.launch { pager.animateScrollToPage(0) } },
                     label = {
-                        Text(text = "Developer")
+                        Text(text = stringResource(R.string.developer))
                     },
                     icon = {
                         Icon(Icons.Rounded.Description, null)

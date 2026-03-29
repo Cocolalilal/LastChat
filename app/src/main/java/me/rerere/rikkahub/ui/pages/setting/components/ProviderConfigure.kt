@@ -63,7 +63,7 @@ fun ProviderConfigure(
             )
             if (showSavingIndicator) {
                 Text(
-                    text = "Saving...",
+                    text = stringResource(R.string.setting_provider_page_saving),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.outline
                 )
@@ -545,7 +545,7 @@ private fun ColumnScope.ProviderConfigureGoogle(
             isError = !localBaseUrl.endsWith("/v1beta"),
             supportingText = if (!localBaseUrl.endsWith("/v1beta")) {
                 {
-                    Text("The base URL usually ends with `/v1beta`")
+                    Text(stringResource(R.string.setting_provider_page_vertex_ai_base_url_hint))
                 }
             } else null,
             shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
