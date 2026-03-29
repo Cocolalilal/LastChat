@@ -22,6 +22,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
 import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.rikkahub.data.model.versionSelectionIndices
+import me.rerere.rikkahub.data.model.versionSelectionPosition
 
 @Composable
 fun ChatMessageBranchSelector(
@@ -29,29 +31,36 @@ fun ChatMessageBranchSelector(
     modifier: Modifier = Modifier,
     onUpdate: (MessageNode) -> Unit,
 ) {
+    val versionIndices = remember(node.messages) {
+        node.versionSelectionIndices()
+    }
+    val currentVersionPosition = remember(node.messages, node.selectIndex) {
+        node.versionSelectionPosition()
+    }
+
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (node.messages.size > 1) {
+        if (versionIndices.size > 1 && currentVersionPosition >= 0) {
+            val canGoPrev = currentVersionPosition > 0
+            val canGoNext = currentVersionPosition < versionIndices.lastIndex
+
             Icon(
                 imageVector = Icons.Rounded.ChevronLeft,
                 contentDescription = "Prev",
                 modifier = Modifier
                     .clip(CircleShape)
-                    .alpha(if (node.selectIndex == 0) 0.5f else 1f)
+                    .alpha(if (canGoPrev) 1f else 0.5f)
                     .clickable(
+                        enabled = canGoPrev,
                         interactionSource = remember { MutableInteractionSource() },
                         indication = LocalIndication.current,
                         onClick = {
-                            if (node.selectIndex > 0) {
-                                onUpdate(
-                                    node.copy(
-                                        selectIndex = node.selectIndex - 1
-                                    )
-                                )
-                            }
+                            val targetIndex = versionIndices.getOrNull(currentVersionPosition - 1)
+                                ?: return@clickable
+                            onUpdate(node.copy(selectIndex = targetIndex))
                         }
                     )
                     .padding(8.dp)
@@ -59,7 +68,7 @@ fun ChatMessageBranchSelector(
             )
 
             Text(
-                text = "${node.selectIndex + 1}/${node.messages.size}",
+                text = "${currentVersionPosition + 1}/${versionIndices.size}",
                 style = MaterialTheme.typography.bodySmall
             )
 
@@ -68,18 +77,15 @@ fun ChatMessageBranchSelector(
                 contentDescription = "Next",
                 modifier = Modifier
                     .clip(CircleShape)
-                    .alpha(if (node.selectIndex == node.messages.lastIndex) 0.5f else 1f)
+                    .alpha(if (canGoNext) 1f else 0.5f)
                     .clickable(
+                        enabled = canGoNext,
                         interactionSource = remember { MutableInteractionSource() },
                         indication = LocalIndication.current,
                         onClick = {
-                            if (node.selectIndex < node.messages.lastIndex) {
-                                onUpdate(
-                                    node.copy(
-                                        selectIndex = node.selectIndex + 1
-                                    )
-                                )
-                            }
+                            val targetIndex = versionIndices.getOrNull(currentVersionPosition + 1)
+                                ?: return@clickable
+                            onUpdate(node.copy(selectIndex = targetIndex))
                         }
                     )
                     .padding(8.dp)

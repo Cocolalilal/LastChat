@@ -235,11 +235,12 @@ fun ChatPage(
     val toaster = LocalToaster.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val genericErrorMessage = context.getString(R.string.common_error)
 
     // Handle Error
     LaunchedEffect(Unit) {
         vm.errorFlow.collect { error ->
-            toaster.show(error.message ?: "Error", type = ToastType.Error)
+            toaster.show(error.message ?: genericErrorMessage, type = ToastType.Error)
         }
     }
 
@@ -436,6 +437,7 @@ private fun ChatPageContent(
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val context = LocalContext.current
+    val modelRequiredMessage = context.getString(R.string.chat_model_required)
     var previewMode by rememberSaveable { mutableStateOf(false) }
     val activePersistenceMode = when {
         manualTemporaryChat || conversationPersistenceMode == ChatPersistenceMode.TEMPORARY -> ChatPersistenceMode.TEMPORARY
@@ -732,13 +734,9 @@ private fun ChatPageContent(
                             showRegenerateConfirmDialog = false
                             pendingRegenerateMessage = null
                         },
-                        title = { Text("Regenerate Message") },
+                        title = { Text(stringResource(R.string.chat_regenerate_message_title)) },
                         text = {
-                            Text(
-                                "This message contains tool calls or multiple steps. " +
-                                "Regenerating will replace the entire response and you won't be able to go back to the previous version. " +
-                                "Are you sure you want to continue?"
-                            )
+                            Text(stringResource(R.string.chat_regenerate_message_warning))
                         },
                         confirmButton = {
                             TextButton(
@@ -750,7 +748,7 @@ private fun ChatPageContent(
                                     pendingRegenerateMessage = null
                                 }
                             ) {
-                                Text("Regenerate")
+                                Text(stringResource(R.string.regenerate))
                             }
                         },
                         dismissButton = {
@@ -760,7 +758,7 @@ private fun ChatPageContent(
                                     pendingRegenerateMessage = null
                                 }
                             ) {
-                                Text("Cancel")
+                                Text(stringResource(R.string.cancel))
                             }
                         }
                     )
@@ -816,7 +814,7 @@ private fun ChatPageContent(
                                 chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
                             }
                         } else {
-                            toaster.show("Please select a model first", type = ToastType.Error)
+                            toaster.show(modelRequiredMessage, type = ToastType.Error)
                         }
                     },
                     onCancelClick = {
@@ -841,7 +839,7 @@ private fun ChatPageContent(
                             )
                         } else {
                             if (currentChatModel == null) {
-                                toaster.show("Please select a model first", type = ToastType.Error)
+                                toaster.show(modelRequiredMessage, type = ToastType.Error)
                                 return@MinimalChatInput
                             }
                             vm.handleMessageSend(
@@ -862,7 +860,7 @@ private fun ChatPageContent(
                             )
                         } else {
                             if (currentChatModel == null) {
-                                toaster.show("Please select a model first", type = ToastType.Error)
+                                toaster.show(modelRequiredMessage, type = ToastType.Error)
                                 return@MinimalChatInput
                             }
                             vm.handleMessageSend(

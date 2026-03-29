@@ -2,6 +2,8 @@
 
 package me.rerere.rikkahub.ui.pages.setting
 
+import android.content.Context
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -77,6 +79,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -87,6 +91,7 @@ import androidx.work.WorkManager
 import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.launch
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.AppStorageSnapshot
 import me.rerere.rikkahub.data.model.ChatAttachmentKind
 import me.rerere.rikkahub.data.model.OtherUploadFile
@@ -133,20 +138,20 @@ private const val CATEGORY_OTHER_UPLOADS = "other_uploads"
 private const val CATEGORY_OTHER_APP_DATA = "other_app_data"
 
 private enum class StorageFilter(
-    val label: String,
+    @StringRes val labelRes: Int,
     val kind: ChatAttachmentKind?,
 ) {
-    ALL("All", null),
-    IMAGES("Images", ChatAttachmentKind.IMAGE),
-    DOCS("Docs", ChatAttachmentKind.DOCUMENT),
-    VIDEOS("Videos", ChatAttachmentKind.VIDEO),
-    AUDIO("Audio", ChatAttachmentKind.AUDIO),
+    ALL(R.string.setting_chat_storage_filter_all, null),
+    IMAGES(R.string.setting_chat_storage_filter_images, ChatAttachmentKind.IMAGE),
+    DOCS(R.string.setting_chat_storage_filter_docs, ChatAttachmentKind.DOCUMENT),
+    VIDEOS(R.string.setting_chat_storage_filter_videos, ChatAttachmentKind.VIDEO),
+    AUDIO(R.string.setting_chat_storage_filter_audio, ChatAttachmentKind.AUDIO),
 }
 
-private enum class StorageSort(val label: String) {
-    RECENT("Recent"),
-    SIZE("Size"),
-    NAME("Name"),
+private enum class StorageSort(@StringRes val labelRes: Int) {
+    RECENT(R.string.setting_chat_storage_sort_recent),
+    SIZE(R.string.setting_chat_storage_sort_size),
+    NAME(R.string.setting_chat_storage_sort_name),
 }
 
 private val RESOLUTION_OPTIONS = listOf<Int?>(null, 512, 640, 768, 960, 1024, 1280, 1600, 1920, 2048, 2560, 3072, 4096)
@@ -206,7 +211,7 @@ fun SettingChatStoragePage(
     Scaffold(
         topBar = {
             OneUITopAppBar(
-                title = "Chat Storage",
+                title = stringResource(R.string.setting_page_chat_storage),
                 scrollBehavior = scrollBehavior,
                 navigationIcon = { BackButton() },
             )
@@ -238,7 +243,7 @@ fun SettingChatStoragePage(
 
             item(span = StaggeredGridItemSpan.FullLine) {
                 SettingsGroup(
-                    title = "App storage",
+                    title = stringResource(R.string.setting_chat_storage_app_storage_title),
                     horizontalPadding = 4.dp,
                     titleStartPadding = 4.dp,
                 ) {
@@ -247,8 +252,8 @@ fun SettingChatStoragePage(
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         if (appStorageSnapshot.isScanning && appStorageSnapshot.categories.isEmpty()) {
                             SettingGroupItem(
-                                title = "Scanning storage",
-                                subtitle = "Reading app files and categories.",
+                                title = stringResource(R.string.setting_chat_storage_scanning_title),
+                                subtitle = stringResource(R.string.setting_chat_storage_scanning_desc),
                                 icon = { Icon(Icons.Rounded.Storage, null) },
                             )
                         } else {
@@ -271,14 +276,17 @@ fun SettingChatStoragePage(
                             if (secondaryCategories.isNotEmpty()) {
                                 SettingGroupItem(
                                     title = if (showAllStorageCategories) {
-                                        "Hide more categories"
+                                        stringResource(R.string.setting_chat_storage_hide_more_categories)
                                     } else {
-                                        "Show more categories"
+                                        stringResource(R.string.setting_chat_storage_show_more_categories)
                                     },
                                     subtitle = if (showAllStorageCategories) {
-                                        "Hide read-only app data details."
+                                        stringResource(R.string.setting_chat_storage_hide_more_categories_desc)
                                     } else {
-                                        "${secondaryCategories.size} more categories"
+                                        stringResource(
+                                            R.string.setting_chat_storage_more_categories_count,
+                                            secondaryCategories.size
+                                        )
                                     },
                                     icon = { Icon(Icons.Rounded.FolderOpen, null) },
                                     trailing = {
@@ -323,7 +331,7 @@ fun SettingChatStoragePage(
 
             item(span = StaggeredGridItemSpan.FullLine) {
                 SettingsGroup(
-                    title = "Chat settings",
+                    title = stringResource(R.string.setting_chat_storage_chat_settings),
                     horizontalPadding = 4.dp,
                     titleStartPadding = 4.dp,
                 ) {
@@ -354,15 +362,15 @@ fun SettingChatStoragePage(
 
                         if (chatSummary.overview.duplicateSizeBytes > 0L) {
                             SettingGroupItem(
-                                title = "Duplicate space",
+                                title = stringResource(R.string.setting_chat_storage_duplicate_space),
                                 subtitle = chatSummary.overview.duplicateSizeBytes.fileSizeToString(),
                                 icon = { Icon(Icons.Rounded.Inventory2, null) },
                             )
                         }
 
                         SettingGroupInputItem(
-                            title = "Maintenance",
-                            subtitle = "Reindex and compact chat files now.",
+                            title = stringResource(R.string.setting_chat_storage_maintenance_title),
+                            subtitle = stringResource(R.string.setting_chat_storage_maintenance_desc),
                             icon = { Icon(Icons.Rounded.CleaningServices, null) },
                         ) {
                             FilledTonalButton(
@@ -371,7 +379,10 @@ fun SettingChatStoragePage(
                                     WorkManager.getInstance(context).enqueue(
                                         OneTimeWorkRequestBuilder<ChatStorageMaintenanceWorker>().build()
                                     )
-                                    toaster.show("Chat storage maintenance queued", type = ToastType.Info)
+                                    toaster.show(
+                                        context.getString(R.string.setting_chat_storage_maintenance_queued),
+                                        type = ToastType.Info
+                                    )
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = AppShapes.ButtonPill,
@@ -382,7 +393,7 @@ fun SettingChatStoragePage(
                                     modifier = Modifier.size(18.dp),
                                 )
                                 Text(
-                                    text = "Run maintenance now",
+                                    text = stringResource(R.string.setting_chat_storage_run_maintenance),
                                     modifier = Modifier.padding(start = 8.dp),
                                 )
                             }
@@ -393,13 +404,13 @@ fun SettingChatStoragePage(
 
             item(span = StaggeredGridItemSpan.FullLine) {
                 SettingsGroup(
-                    title = "Files",
+                    title = stringResource(R.string.setting_chat_storage_files_title),
                     horizontalPadding = 4.dp,
                     titleStartPadding = 4.dp,
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         CompactChipSection(
-                            title = "Filter",
+                            title = stringResource(R.string.setting_chat_storage_filter_title),
                             icon = Icons.Rounded.FilterAlt,
                         ) {
                             StorageFilter.entries.forEach { option ->
@@ -409,13 +420,13 @@ fun SettingChatStoragePage(
                                         haptics.perform(HapticPattern.Pop)
                                         filter = option
                                     },
-                                    label = { Text(option.label) },
+                                    label = { Text(stringResource(option.labelRes)) },
                                 )
                             }
                         }
 
                         CompactChipSection(
-                            title = "Sort",
+                            title = stringResource(R.string.setting_chat_storage_sort_title),
                             icon = Icons.AutoMirrored.Rounded.Sort,
                         ) {
                             StorageSort.entries.forEach { option ->
@@ -425,7 +436,7 @@ fun SettingChatStoragePage(
                                         haptics.perform(HapticPattern.Pop)
                                         sort = option
                                     },
-                                    label = { Text(option.label) },
+                                    label = { Text(stringResource(option.labelRes)) },
                                 )
                             }
                         }
@@ -456,11 +467,17 @@ fun SettingChatStoragePage(
     }
 
     pendingDeletion?.let { attachment ->
+        val fallbackFileName = stringResource(R.string.setting_chat_storage_file_fallback)
         AlertDialog(
             onDismissRequest = { pendingDeletion = null },
-            title = { Text("Delete stored file?") },
+            title = { Text(stringResource(R.string.setting_chat_storage_delete_stored_file_title)) },
             text = {
-                Text("Remove ${attachment.displayName.ifBlank { "this file" }} from chat storage?")
+                Text(
+                    context.getString(
+                        R.string.setting_chat_storage_delete_stored_file_message,
+                        attachment.displayName.ifBlank { fallbackFileName }
+                    )
+                )
             },
             confirmButton = {
                 Button(
@@ -470,27 +487,36 @@ fun SettingChatStoragePage(
                         scope.launch {
                             repository.deleteAttachment(target.id)
                             appStorageRepository.refreshNow()
-                            toaster.show("Removed from chat storage", type = ToastType.Info)
+                            toaster.show(
+                                context.getString(R.string.setting_chat_storage_removed_from_chat),
+                                type = ToastType.Info
+                            )
                         }
                     }
                 ) {
-                    Text("Delete")
+                    Text(stringResource(R.string.delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { pendingDeletion = null }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.cancel))
                 }
             }
         )
     }
 
     pendingOtherUploadDeletion?.let { file ->
+        val fallbackFileName = stringResource(R.string.setting_chat_storage_file_fallback)
         AlertDialog(
             onDismissRequest = { pendingOtherUploadDeletion = null },
-            title = { Text("Delete untracked file?") },
+            title = { Text(stringResource(R.string.setting_chat_storage_delete_untracked_file_title)) },
             text = {
-                Text("Remove ${file.displayName.ifBlank { "this file" }} from the shared upload folder?")
+                Text(
+                    context.getString(
+                        R.string.setting_chat_storage_delete_untracked_file_message,
+                        file.displayName.ifBlank { fallbackFileName }
+                    )
+                )
             },
             confirmButton = {
                 Button(
@@ -501,19 +527,25 @@ fun SettingChatStoragePage(
                             val deleted = appStorageRepository.deleteOtherUploadFile(target.path)
                             if (deleted) {
                                 otherUploadFiles = appStorageRepository.listOtherUploadFiles()
-                                toaster.show("Removed from other uploads", type = ToastType.Info)
+                                toaster.show(
+                                    context.getString(R.string.setting_chat_storage_removed_from_uploads),
+                                    type = ToastType.Info
+                                )
                             } else {
-                                toaster.show("Unable to remove file", type = ToastType.Error)
+                                toaster.show(
+                                    context.getString(R.string.setting_chat_storage_remove_failed),
+                                    type = ToastType.Error
+                                )
                             }
                         }
                     }
                 ) {
-                    Text("Delete")
+                    Text(stringResource(R.string.delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { pendingOtherUploadDeletion = null }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.cancel))
                 }
             }
         )
@@ -522,9 +554,9 @@ fun SettingChatStoragePage(
     if (pendingDeleteAllOtherUploads) {
         AlertDialog(
             onDismissRequest = { pendingDeleteAllOtherUploads = false },
-            title = { Text("Delete all orphaned uploads?") },
+            title = { Text(stringResource(R.string.setting_chat_storage_delete_orphaned_title)) },
             text = {
-                Text("Remove all files currently listed here? These files are no longer referenced by chats, saved settings content, or active web uploads.")
+                Text(stringResource(R.string.setting_chat_storage_delete_orphaned_message))
             },
             confirmButton = {
                 Button(
@@ -535,21 +567,25 @@ fun SettingChatStoragePage(
                             otherUploadFiles = appStorageRepository.listOtherUploadFiles()
                             toaster.show(
                                 if (deletedCount > 0) {
-                                    "Removed $deletedCount orphaned uploads"
+                                    context.resources.getQuantityString(
+                                        R.plurals.setting_chat_storage_orphaned_removed,
+                                        deletedCount,
+                                        deletedCount
+                                    )
                                 } else {
-                                    "No orphaned uploads to remove"
+                                    context.getString(R.string.setting_chat_storage_orphaned_none)
                                 },
                                 type = ToastType.Info,
                             )
                         }
                     }
                 ) {
-                    Text("Delete all")
+                    Text(stringResource(R.string.setting_chat_storage_delete_all))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { pendingDeleteAllOtherUploads = false }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.cancel))
                 }
             }
         )
@@ -634,13 +670,13 @@ private fun AppStorageHeroCard(
                     )
                     Column {
                         Text(
-                            text = "App storage",
+                            text = stringResource(R.string.setting_chat_storage_app_storage_title),
                             style = MaterialTheme.typography.headlineSmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
                         Text(
                             text = if (snapshot.isScanning) {
-                                "Scanning app storage..."
+                                stringResource(R.string.setting_storage_scanning)
                             } else {
                                 snapshot.totalBytes.fileSizeToString()
                             },
@@ -659,9 +695,13 @@ private fun AppStorageHeroCard(
             ) {
                 Text(
                     text = if (snapshot.isScanning) {
-                        "Aligning app totals and chat files."
+                        stringResource(R.string.setting_chat_storage_chat_usage_scanning)
                     } else {
-                        "Chat uses ${snapshot.chatBytes.fileSizeToString()} across ${snapshot.chatCount} files."
+                        stringResource(
+                            R.string.setting_chat_storage_chat_usage_value,
+                            snapshot.chatBytes.fileSizeToString(),
+                            snapshot.chatCount
+                        )
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -671,11 +711,31 @@ private fun AppStorageHeroCard(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        StorageStatPill(text = "App ${snapshot.appBytes.fileSizeToString()}")
-                        StorageStatPill(text = "Data ${snapshot.dataBytes.fileSizeToString()}")
-                        StorageStatPill(text = "Cache ${snapshot.cacheBytes.fileSizeToString()}")
+                        StorageStatPill(
+                            text = stringResource(
+                                R.string.setting_chat_storage_stat_app,
+                                snapshot.appBytes.fileSizeToString()
+                            )
+                        )
+                        StorageStatPill(
+                            text = stringResource(
+                                R.string.setting_chat_storage_stat_data,
+                                snapshot.dataBytes.fileSizeToString()
+                            )
+                        )
+                        StorageStatPill(
+                            text = stringResource(
+                                R.string.setting_chat_storage_stat_cache,
+                                snapshot.cacheBytes.fileSizeToString()
+                            )
+                        )
                         if (chatSummary.overview.duplicateSizeBytes > 0L) {
-                            StorageStatPill(text = "Chat dupes ${chatSummary.overview.duplicateSizeBytes.fileSizeToString()}")
+                            StorageStatPill(
+                                text = stringResource(
+                                    R.string.setting_chat_storage_stat_chat_dupes,
+                                    chatSummary.overview.duplicateSizeBytes.fileSizeToString()
+                                )
+                            )
                         }
                     }
                 }
@@ -709,9 +769,11 @@ private fun StorageCategoryRow(
     toaster: AppToasterState,
     onInspect: (() -> Unit)? = null,
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val categoryLabel = remember(category, context) { category.localizedLabel(context) }
     SettingGroupItem(
-        title = category.label,
+        title = categoryLabel,
         subtitle = category.bytes.fileSizeToString(),
         icon = { Icon(category.icon(), null) },
         trailing = when {
@@ -723,13 +785,16 @@ private fun StorageCategoryRow(
                             scope.launch {
                                 appStorageRepository.clearCategory(category.id)
                                 toaster.show(
-                                    "${category.label} cleared",
+                                    context.getString(
+                                        R.string.setting_chat_storage_category_cleared,
+                                        categoryLabel
+                                    ),
                                     type = ToastType.Info,
                                 )
                             }
                         }
                     ) {
-                        Text("Clear")
+                        Text(stringResource(R.string.setting_chat_storage_clear_action))
                     }
                 }
             }
@@ -737,7 +802,7 @@ private fun StorageCategoryRow(
             onInspect != null -> {
                 {
                     TextButton(onClick = onInspect) {
-                        Text("Inspect")
+                        Text(stringResource(R.string.setting_chat_storage_inspect_action))
                     }
                 }
             }
@@ -758,12 +823,14 @@ private fun ResolutionSliderCard(
     var sliderValue by remember(selectedValue) { mutableFloatStateOf(selectedIndex.toFloat()) }
 
     SettingGroupInputItem(
-        title = "Image resolution",
-        subtitle = "Scale down large chat images before saving.",
+        title = stringResource(R.string.setting_chat_storage_image_resolution_title),
+        subtitle = stringResource(R.string.setting_chat_storage_image_resolution_desc),
         icon = { Icon(Icons.Rounded.PhotoSizeSelectLarge, null) },
     ) {
         Text(
-            text = selectedValue?.let { "$it px long edge" } ?: "Original size",
+            text = selectedValue?.let {
+                stringResource(R.string.setting_chat_storage_px_long_edge, it)
+            } ?: stringResource(R.string.setting_chat_storage_original_size),
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.primary,
         )
@@ -792,12 +859,14 @@ private fun AutoDeleteSliderCard(
     var sliderValue by remember(selectedValue) { mutableFloatStateOf(selectedIndex.toFloat()) }
 
     SettingGroupInputItem(
-        title = "Delete old chat images",
-        subtitle = "Delete by age for chat attachments only.",
+        title = stringResource(R.string.setting_chat_storage_delete_old_images_title),
+        subtitle = stringResource(R.string.setting_chat_storage_delete_old_images_desc),
         icon = { Icon(Icons.Rounded.Schedule, null) },
     ) {
         Text(
-            text = selectedValue?.let { "$it days" } ?: "Never",
+            text = selectedValue?.let {
+                stringResource(R.string.setting_chat_storage_days_value, it)
+            } ?: stringResource(R.string.setting_chat_storage_never),
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.primary,
         )
@@ -850,16 +919,20 @@ private fun EmptyFilesCard(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
-                text = if (isSyncing) "Scanning chat attachments" else "No files here",
+                text = if (isSyncing) {
+                    stringResource(R.string.setting_chat_storage_empty_scanning)
+                } else {
+                    stringResource(R.string.setting_chat_storage_empty_none)
+                },
                 style = MaterialTheme.typography.titleMedium,
             )
             Text(
                 text = if (isSyncing) {
-                    "Counts will update when the scan finishes."
+                    stringResource(R.string.setting_chat_storage_empty_scanning_desc)
                 } else if (hasFilters) {
-                    "Try another filter."
+                    stringResource(R.string.setting_chat_storage_empty_filtered_desc)
                 } else {
-                    "Saved chat attachments will appear here."
+                    stringResource(R.string.setting_chat_storage_empty_default_desc)
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -896,6 +969,7 @@ private fun StorageImageTile(
     attachment: ChatAttachmentUsage,
     onDelete: () -> Unit,
 ) {
+    val context = LocalContext.current
     Surface(
         shape = AppShapes.CardMedium,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -928,7 +1002,9 @@ private fun StorageImageTile(
             ) {
                 Text(
                     text = compactChatAttachmentDisplayName(
-                        attachment.displayName.ifBlank { "Image" },
+                        attachment.displayName.ifBlank {
+                            context.getString(R.string.setting_chat_storage_image_fallback)
+                        },
                         maxLength = 24,
                     ),
                     style = MaterialTheme.typography.titleSmall,
@@ -954,6 +1030,7 @@ private fun StorageFileTile(
     onDelete: () -> Unit,
 ) {
     val context = LocalContext.current
+    val defaultName = remember(attachment.kind, context) { attachment.kind.defaultName(context) }
 
     Surface(
         onClick = {
@@ -986,8 +1063,8 @@ private fun StorageFileTile(
                     )
                     Text(
                         text = attachment.mime
-                            .substringAfterLast('/', attachment.kind.defaultName())
-                            .ifBlank { attachment.kind.defaultName() }
+                            .substringAfterLast('/', defaultName)
+                            .ifBlank { defaultName }
                             .uppercase()
                             .take(8),
                         style = MaterialTheme.typography.labelLarge,
@@ -1008,7 +1085,7 @@ private fun StorageFileTile(
             ) {
                 Text(
                     text = compactChatAttachmentDisplayName(
-                        attachment.displayName.ifBlank { attachment.kind.defaultName() },
+                        attachment.displayName.ifBlank { defaultName },
                         maxLength = 24,
                     ),
                     style = MaterialTheme.typography.titleSmall,
@@ -1016,7 +1093,7 @@ private fun StorageFileTile(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = fileMetadataLabel(attachment),
+                    text = fileMetadataLabel(context, attachment),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
@@ -1040,7 +1117,7 @@ private fun DeleteButton(
         IconButton(onClick = onDelete) {
             Icon(
                 imageVector = Icons.Rounded.Delete,
-                contentDescription = "Delete",
+                contentDescription = stringResource(R.string.delete),
                 tint = MaterialTheme.colorScheme.error,
             )
         }
@@ -1066,12 +1143,19 @@ private fun imageMetadataLabel(
 }
 
 private fun fileMetadataLabel(
+    context: Context,
     attachment: ChatAttachmentUsage,
 ): String {
     return buildString {
         append(attachment.sizeBytes.fileSizeToString())
         append(" | ")
-        append("${attachment.referenceCount} chats")
+        append(
+            context.resources.getQuantityString(
+                R.plurals.setting_chat_storage_chats_count,
+                attachment.referenceCount,
+                attachment.referenceCount
+            )
+        )
         attachment.lastUsedAt?.let {
             append(" | ")
             append(DateFormat.getDateInstance(DateFormat.SHORT).format(Date(it)))
@@ -1088,12 +1172,32 @@ private fun ChatAttachmentKind.icon(): ImageVector {
     }
 }
 
-private fun ChatAttachmentKind.defaultName(): String {
+private fun ChatAttachmentKind.defaultName(context: Context): String {
     return when (this) {
-        ChatAttachmentKind.IMAGE -> "Image"
-        ChatAttachmentKind.DOCUMENT -> "Document"
-        ChatAttachmentKind.VIDEO -> "Video"
-        ChatAttachmentKind.AUDIO -> "Audio"
+        ChatAttachmentKind.IMAGE -> context.getString(R.string.setting_chat_storage_image_fallback)
+        ChatAttachmentKind.DOCUMENT -> context.getString(R.string.setting_chat_storage_document_fallback)
+        ChatAttachmentKind.VIDEO -> context.getString(R.string.video)
+        ChatAttachmentKind.AUDIO -> context.getString(R.string.audio)
+    }
+}
+
+private fun StorageCategoryUsage.localizedLabel(context: Context): String {
+    return when (id) {
+        CATEGORY_CHAT -> context.getString(R.string.setting_chat_storage_category_chat_attachments)
+        CATEGORY_ASSISTANT_MEDIA -> context.getString(R.string.setting_chat_storage_category_assistant_media)
+        CATEGORY_LOREBOOK_MEDIA -> context.getString(R.string.setting_chat_storage_category_lorebook_media)
+        CATEGORY_GENERATED_MEDIA -> context.getString(R.string.setting_chat_storage_category_generated_media)
+        CATEGORY_PYTHON_SANDBOX -> context.getString(R.string.setting_chat_storage_category_python_sandbox)
+        CATEGORY_ICONS_AND_FONTS -> context.getString(R.string.setting_chat_storage_category_icons_and_fonts)
+        CATEGORY_DATABASES -> context.getString(R.string.setting_chat_storage_category_settings_database)
+        CATEGORY_ICON_CACHE -> context.getString(R.string.setting_chat_storage_category_icon_cache)
+        CATEGORY_OCR_CACHE -> context.getString(R.string.setting_chat_storage_category_ocr_cache)
+        CATEGORY_TEMP_FILES -> context.getString(R.string.setting_chat_storage_category_temp_files)
+        CATEGORY_APP_CACHE -> context.getString(R.string.setting_chat_storage_category_app_cache)
+        CATEGORY_CODE_CACHE -> context.getString(R.string.setting_chat_storage_category_code_cache)
+        CATEGORY_OTHER_UPLOADS -> context.getString(R.string.setting_chat_storage_category_other_uploads)
+        CATEGORY_OTHER_APP_DATA -> context.getString(R.string.setting_chat_storage_category_other_app_data)
+        else -> label
     }
 }
 
@@ -1129,6 +1233,7 @@ private fun OtherUploadsSheet(
     onDeleteFile: (OtherUploadFile) -> Unit,
     onDeleteAll: (() -> Unit)?,
 ) {
+    val context = LocalContext.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1137,14 +1242,14 @@ private fun OtherUploadsSheet(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text(
-            text = "Other uploads",
+            text = stringResource(R.string.setting_chat_storage_other_uploads_title),
             style = MaterialTheme.typography.headlineSmall,
         )
         Text(
             text = if (isLoading) {
-                "Scanning the shared upload folder."
+                stringResource(R.string.setting_chat_storage_other_uploads_scanning)
             } else {
-                "Files left in upload that are no longer referenced by the app."
+                stringResource(R.string.setting_chat_storage_other_uploads_desc)
             },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1175,12 +1280,17 @@ private fun OtherUploadsSheet(
                     modifier = Modifier.size(18.dp),
                 )
                 Text(
-                    text = "Delete all orphaned uploads",
+                    text = stringResource(R.string.setting_chat_storage_delete_all_orphaned),
                     modifier = Modifier.padding(start = 8.dp),
                 )
             }
             Text(
-                text = "${files.size} files • ${files.sumOf { it.sizeBytes }.fileSizeToString()}",
+                text = context.resources.getQuantityString(
+                    R.plurals.setting_chat_storage_file_count_size,
+                    files.size,
+                    files.size,
+                    files.sumOf { it.sizeBytes }.fileSizeToString()
+                ),
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.primary,
             )
@@ -1211,6 +1321,7 @@ private fun OtherUploadTile(
     onOpen: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val context = LocalContext.current
     if (file.isImage) {
         Surface(
             onClick = onOpen,
@@ -1243,7 +1354,9 @@ private fun OtherUploadTile(
                 ) {
                     Text(
                         text = compactChatAttachmentDisplayName(
-                            file.displayName.ifBlank { "Image" },
+                            file.displayName.ifBlank {
+                                context.getString(R.string.setting_chat_storage_image_fallback)
+                            },
                             maxLength = 24,
                         ),
                         style = MaterialTheme.typography.titleSmall,
@@ -1287,10 +1400,12 @@ private fun OtherUploadTile(
                         Text(
                             text = file.mime
                                 ?.substringAfterLast('/')
-                                ?.ifBlank { "FILE" }
+                                ?.ifBlank {
+                                    context.getString(R.string.setting_chat_storage_file_fallback).uppercase()
+                                }
                                 ?.uppercase()
                                 ?.take(8)
-                                ?: "FILE",
+                                ?: context.getString(R.string.setting_chat_storage_file_fallback).uppercase(),
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.82f),
                             fontWeight = FontWeight.Bold,
@@ -1309,7 +1424,9 @@ private fun OtherUploadTile(
                 ) {
                     Text(
                         text = compactChatAttachmentDisplayName(
-                            file.displayName.ifBlank { "File" },
+                            file.displayName.ifBlank {
+                                context.getString(R.string.setting_chat_storage_file_fallback)
+                            },
                             maxLength = 24,
                         ),
                         style = MaterialTheme.typography.titleSmall,

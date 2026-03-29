@@ -16,7 +16,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import me.rerere.rikkahub.R
 
 @Composable
 fun ExportOptionsDialog(
@@ -46,7 +48,10 @@ fun ExportOptionsDialog(
                             checked = includeMemories,
                             onCheckedChange = { includeMemories = it }
                         )
-                        Text("Include Memories", modifier = Modifier.padding(start = 8.dp))
+                        Text(
+                            stringResource(R.string.export_include_memories),
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
                     }
                 }
                 
@@ -62,12 +67,15 @@ fun ExportOptionsDialog(
                             checked = includeLorebooks,
                             onCheckedChange = { includeLorebooks = it }
                         )
-                        Text("Include Linked Lorebooks", modifier = Modifier.padding(start = 8.dp))
+                        Text(
+                            stringResource(R.string.export_include_linked_lorebooks),
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
                     }
                 }
                 
                 Text(
-                    "Character settings and profile are always included.",
+                    stringResource(R.string.export_character_always_included),
                     style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 8.dp, start = 4.dp)
                 )
@@ -77,12 +85,12 @@ fun ExportOptionsDialog(
             TextButton(
                 onClick = { onConfirm(includeMemories, includeLorebooks) }
             ) {
-                Text("Export")
+                Text(stringResource(R.string.export_label))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismissRequest) {
-                Text("Cancel")
+                Text(stringResource(R.string.cancel))
             }
         }
     )

@@ -17,7 +17,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.core.view.WindowCompat
 import kotlinx.serialization.Serializable
 
@@ -83,6 +85,7 @@ fun RikkahubTheme(
                 isAppearanceLightStatusBars = statusBarColor.luminance() > 0.5f
                 isAppearanceLightNavigationBars = !darkTheme
             }
+            view.layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR
             @Suppress("DEPRECATION")
             window.navigationBarColor = android.graphics.Color.TRANSPARENT
             @Suppress("DEPRECATION")
@@ -91,6 +94,7 @@ fun RikkahubTheme(
     }
 
     CompositionLocalProvider(
+        LocalLayoutDirection provides LayoutDirection.Ltr,
         LocalDarkMode provides darkTheme,
         LocalExtendColors provides extendColors
     ) {

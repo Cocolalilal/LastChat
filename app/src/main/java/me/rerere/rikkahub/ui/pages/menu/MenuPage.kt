@@ -52,6 +52,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -64,6 +66,7 @@ import me.rerere.rikkahub.ui.modifier.shimmer
 import me.rerere.rikkahub.ui.motion.LocalMotionPolicy
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.plus
+import me.rerere.rikkahub.R
 import kotlinx.coroutines.delay
 import org.koin.androidx.compose.koinViewModel
 import java.time.LocalDate
@@ -87,7 +90,7 @@ fun MenuPage() {
                 },
                 title = {
                     Text(
-                        text = "Statistics",
+                        text = stringResource(R.string.menu_statistics_title),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
@@ -161,9 +164,9 @@ private fun MenuStatsContent(
                     val stats = checkNotNull(loadedStats)
                     StatsRow {
                         StatCard(
-                            title = "Daily Streak",
+                            title = stringResource(R.string.menu_stat_daily_streak),
                             value = "${stats.dailyChatStreak}",
-                            subtitle = "days",
+                            subtitle = stringResource(R.string.menu_stat_days),
                             icon = Icons.Rounded.LocalFireDepartment,
                             containerColor = MaterialTheme.colorScheme.errorContainer,
                             contentColor = MaterialTheme.colorScheme.onErrorContainer,
@@ -172,7 +175,7 @@ private fun MenuStatsContent(
                                 .fillMaxHeight()
                         )
                         StatCard(
-                            title = "Conversations",
+                            title = stringResource(R.string.menu_stat_conversations),
                             value = formatCount(stats.usageStats.totalConversations),
                             icon = Icons.AutoMirrored.Rounded.Chat,
                             containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -207,7 +210,7 @@ private fun MenuStatsContent(
                     val stats = checkNotNull(loadedStats)
                     StatsRow {
                         StatCard(
-                            title = "Messages",
+                            title = stringResource(R.string.menu_stat_messages),
                             value = formatCount(stats.usageStats.totalMessages),
                             icon = Icons.AutoMirrored.Rounded.Message,
                             containerColor = MaterialTheme.colorScheme.tertiaryContainer,
@@ -217,7 +220,7 @@ private fun MenuStatsContent(
                                 .fillMaxHeight()
                         )
                         StatCard(
-                            title = "Input Tokens",
+                            title = stringResource(R.string.menu_stat_input_tokens),
                             value = formatTokenCount(stats.usageStats.inputTokens),
                             icon = Icons.AutoMirrored.Rounded.Input,
                             containerColor = if (LocalDarkMode.current) {
@@ -256,7 +259,7 @@ private fun MenuStatsContent(
                     val stats = checkNotNull(loadedStats)
                     StatsRow {
                         StatCard(
-                            title = "Output Tokens",
+                            title = stringResource(R.string.menu_stat_output_tokens),
                             value = formatTokenCount(stats.usageStats.outputTokens),
                             icon = Icons.Rounded.Output,
                             containerColor = if (LocalDarkMode.current) {
@@ -270,7 +273,7 @@ private fun MenuStatsContent(
                                 .fillMaxHeight()
                         )
                         StatCard(
-                            title = "Cached Tokens",
+                            title = stringResource(R.string.menu_stat_cached_tokens),
                             value = formatTokenCount(stats.usageStats.cachedTokens),
                             icon = Icons.Rounded.Savings,
                             containerColor = MaterialTheme.colorScheme.secondaryContainer,
@@ -655,14 +658,14 @@ private fun ChatHeatmapCard(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                text = "Activity",
+                text = stringResource(R.string.menu_activity_title),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
 
             if (showEmptyState || heatmapData.isEmpty()) {
                 Text(
-                    text = "No activity yet",
+                    text = stringResource(R.string.menu_activity_empty),
                     style = MaterialTheme.typography.bodyMedium,
                     color = contentColor.copy(alpha = 0.7f)
                 )
@@ -707,10 +710,24 @@ private fun ChatHeatmapCard(
                 layout.months.firstOrNull { it.month == selectedMonth }
             }
             val activeLocale = currentAppLocale()
+            val weekdayLabels = listOf(
+                stringResource(R.string.menu_weekday_monday),
+                "",
+                stringResource(R.string.menu_weekday_wednesday),
+                "",
+                stringResource(R.string.menu_weekday_friday),
+                "",
+                stringResource(R.string.menu_weekday_sunday),
+            )
             val selectedMonthLabel = selectedMonthMetadata?.let {
                 "${it.month.month.getDisplayName(TextStyle.FULL, activeLocale)} ${it.month.year}"
-            } ?: "Activity Timeline"
+            } ?: stringResource(R.string.activity_timeline_title)
             val selectedMonthCount = selectedMonthMetadata?.totalMessageCount?.toLong() ?: 0L
+            val selectedMonthCountText = pluralStringResource(
+                R.plurals.menu_messages_count,
+                selectedMonthCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                formatCount(selectedMonthCount)
+            )
             val scrollState = rememberScrollState()
             val density = LocalDensity.current
             LaunchedEffect(layout.months, scrollState.maxValue, cellSize, cellSpacing, monthSpacing) {
@@ -747,7 +764,7 @@ private fun ChatHeatmapCard(
                     color = contentColor.copy(alpha = 0.7f)
                 )
                 Text(
-                    text = "${formatCount(selectedMonthCount)} messages",
+                    text = selectedMonthCountText,
                     style = MaterialTheme.typography.labelSmall,
                     color = contentColor.copy(alpha = 0.6f)
                 )
@@ -761,7 +778,7 @@ private fun ChatHeatmapCard(
                     modifier = Modifier.padding(top = headerHeight + cellSpacing),
                     verticalArrangement = Arrangement.spacedBy(cellSpacing)
                 ) {
-                    listOf("Mon", "", "Wed", "", "Fri", "", "Sun").forEach { label ->
+                    weekdayLabels.forEach { label ->
                         Box(
                             modifier = Modifier.height(cellSize),
                             contentAlignment = Alignment.CenterStart
@@ -925,7 +942,7 @@ private fun ChatHeatmapCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Less",
+                    text = stringResource(R.string.menu_activity_less),
                     style = MaterialTheme.typography.labelSmall,
                     color = contentColor.copy(alpha = 0.5f)
                 )
@@ -943,7 +960,7 @@ private fun ChatHeatmapCard(
                     Spacer(modifier = Modifier.width(2.dp))
                 }
                 Text(
-                    text = "More",
+                    text = stringResource(R.string.menu_activity_more),
                     style = MaterialTheme.typography.labelSmall,
                     color = contentColor.copy(alpha = 0.5f)
                 )
@@ -1038,19 +1055,21 @@ private fun StatCard(
 }
 
 private fun formatCount(count: Long): String {
+    val locale = currentAppLocale()
     return when {
-        count >= 1_000_000 -> String.format("%.1fM", count / 1_000_000.0)
-        count >= 10_000 -> String.format("%.1fK", count / 1_000.0)
-        count >= 1_000 -> String.format("%.1fK", count / 1_000.0)
+        count >= 1_000_000 -> String.format(locale, "%.1fM", count / 1_000_000.0)
+        count >= 10_000 -> String.format(locale, "%.1fK", count / 1_000.0)
+        count >= 1_000 -> String.format(locale, "%.1fK", count / 1_000.0)
         else -> count.toString()
     }
 }
 
 private fun formatTokenCount(count: Long): String {
+    val locale = currentAppLocale()
     return when {
-        count >= 1_000_000_000 -> String.format("%.1fB", count / 1_000_000_000.0)
-        count >= 1_000_000 -> String.format("%.1fM", count / 1_000_000.0)
-        count >= 1_000 -> String.format("%.1fK", count / 1_000.0)
+        count >= 1_000_000_000 -> String.format(locale, "%.1fB", count / 1_000_000_000.0)
+        count >= 1_000_000 -> String.format(locale, "%.1fM", count / 1_000_000.0)
+        count >= 1_000 -> String.format(locale, "%.1fK", count / 1_000.0)
         else -> count.toString()
     }
 }

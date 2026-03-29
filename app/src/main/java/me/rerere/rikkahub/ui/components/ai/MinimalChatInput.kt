@@ -940,7 +940,7 @@ private fun MinimalPickerContent(
             }
             if (importedUris.isEmpty()) {
                 Log.w("MinimalChatInput", "Failed to import ${uris.size} selected image(s)")
-                toaster.show("Couldn't add the selected image. Please try again.")
+                toaster.show(context.getString(R.string.chat_input_selected_image_failed))
             } else {
                 state.addImages(importedUris)
                 if (dismissOnSuccess) {
@@ -1036,10 +1036,15 @@ private fun MinimalPickerContent(
                 }
 
                 importedFiles.unsupportedFileNames.forEach { fileName ->
-                    toaster.show("Unsupported file type: $fileName (Enable Python tool to use this file)")
+                    toaster.show(
+                        context.getString(
+                            R.string.chat_input_unsupported_file_type,
+                            fileName
+                        )
+                    )
                 }
                 importedFiles.failedFileNames.forEach { fileName ->
-                    toaster.show("Couldn't add file: $fileName")
+                    toaster.show(context.getString(R.string.chat_input_add_file_failed, fileName))
                 }
 
                 if (importedFiles.imageUris.isNotEmpty()) {

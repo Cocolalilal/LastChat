@@ -445,6 +445,7 @@ private fun ConversationItem(
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val haptics = rememberPremiumHaptics()
+    val loadingDescription = stringResource(R.string.loading)
 
     // Fade-in animation for recently restored items
     var hasAnimated by remember { mutableStateOf(!isRecentlyRestored) }
@@ -550,7 +551,7 @@ private fun ConversationItem(
             AnimatedVisibility(conversation.isPinned) {
                 Icon(
                     imageVector = Icons.Rounded.PushPin,
-                    contentDescription = "Pinned",
+                    contentDescription = stringResource(R.string.chat_message_pinned),
                     modifier = Modifier.size(12.dp),
                     tint = MaterialTheme.colorScheme.primary
                 )
@@ -562,7 +563,7 @@ private fun ConversationItem(
                         .background(MaterialTheme.extendColors.green6)
                         .size(4.dp)
                         .semantics {
-                            contentDescription = "Loading"
+                            contentDescription = loadingDescription
                         }
                 )
             }

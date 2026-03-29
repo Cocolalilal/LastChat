@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Download
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.BuildConfig
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.useThrottle
@@ -50,6 +51,7 @@ fun UpdateCard(vm: ChatVM) {
     val state by vm.updateState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val toaster = LocalToaster.current
+    val genericErrorMessage = context.getString(R.string.common_error)
     state.onError {
         Card {
             Column(
@@ -59,12 +61,12 @@ fun UpdateCard(vm: ChatVM) {
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = "Failed to check for updates",
+                    text = context.getString(R.string.update_check_failed),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.error
                 )
                 Text(
-                    text = it.message ?: "Unknown error",
+                    text = it.message ?: genericErrorMessage,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error
                 )
@@ -88,7 +90,7 @@ fun UpdateCard(vm: ChatVM) {
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "New version available: ${info.version}",
+                        text = context.getString(R.string.update_new_version_available, info.version),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -104,7 +106,7 @@ fun UpdateCard(vm: ChatVM) {
             val downloadHandler = useThrottle<UpdateDownload>(500) { item ->
                 vm.updateChecker.downloadUpdate(context, item)
                 showDetail = false
-                toaster.show("Download started, check status bar for progress", type = ToastType.Info)
+                toaster.show(context.getString(R.string.update_download_started), type = ToastType.Info)
             }
             ModalBottomSheet(
 containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,

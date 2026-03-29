@@ -27,12 +27,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import kotlinx.serialization.json.Json
 import me.rerere.ai.ui.UsedLorebookEntry
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import androidx.compose.material.icons.Icons
@@ -88,7 +90,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
         ) {
             // Header
             Text(
-                text = "Lorebook Entries Used",
+                text = stringResource(R.string.used_lorebooks_title),
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(start = 4.dp)
             )

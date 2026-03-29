@@ -447,7 +447,7 @@ private fun AnimatedSinglePill(
                     
                     is ActivityState.Replying -> {
                         Text(
-                            text = "Replying",
+                            text = stringResource(R.string.activity_pill_replying),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.shimmer(isLoading = true)
@@ -496,7 +496,7 @@ private fun ReasoningContent(startTimeMs: Long, isLive: Boolean) {
         tint = MaterialTheme.colorScheme.onSurfaceVariant
     )
     Text(
-        text = "Reasoning",
+        text = stringResource(R.string.activity_timeline_reasoning),
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = if (isLive) Modifier.shimmer(true) else Modifier
@@ -694,7 +694,7 @@ private fun ReasoningPill(
             tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
-            text = "Reasoning",
+            text = stringResource(R.string.activity_timeline_reasoning),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = if (isLive) Modifier.shimmer(true) else Modifier

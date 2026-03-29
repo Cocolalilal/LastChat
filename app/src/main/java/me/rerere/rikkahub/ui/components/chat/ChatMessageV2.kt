@@ -81,6 +81,7 @@ import me.rerere.rikkahub.data.model.chatAttachmentDisplayName
 import me.rerere.rikkahub.data.model.chatAttachmentMimeHint
 import me.rerere.rikkahub.data.model.chatAttachmentState
 import me.rerere.rikkahub.data.model.replaceRegexes
+import me.rerere.rikkahub.data.model.versionSelectionIndices
 import me.rerere.rikkahub.ui.components.message.ChatMessageActionButtons
 import me.rerere.rikkahub.ui.components.message.ChatMessageActionsSheet
 import me.rerere.rikkahub.ui.components.message.ChatMessageCopySheet
@@ -113,8 +114,8 @@ data class MessageTurnGroup(
     val firstNode get() = nodes.first()
     val lastNode get() = nodes.last()
     
-    /** Node with the most message versions - used for version switching controls */
-    val nodeWithMostVersions get() = nodes.maxByOrNull { it.messages.size } ?: lastNode
+    /** Node with the most distinct message versions - used for version switching controls */
+    val nodeWithMostVersions get() = nodes.maxByOrNull { it.versionSelectionIndices().size } ?: lastNode
     
     /** The active versionTag from the first node's current message */
     val activeVersionTag: String? get() = firstNode.currentMessage.versionTag
@@ -252,7 +253,7 @@ private fun collectRenderableAttachments(
                                     resolveAttachmentDisplayName(
                                         context = context,
                                         url = part.url,
-                                        fallbackLabel = "Image",
+                                        fallbackLabel = context.getString(R.string.attachment_image_fallback),
                                     )
                                 },
                             )
@@ -280,7 +281,7 @@ private fun collectRenderableAttachments(
                                         resolveAttachmentDisplayName(
                                             context = context,
                                             url = part.url,
-                                            fallbackLabel = "File",
+                                            fallbackLabel = context.getString(R.string.attachment_file_fallback),
                                         )
                                     }
                                 },
@@ -953,7 +954,7 @@ private fun UserMessageTurn(
                 ) {
                     Icon(
                         imageVector = androidx.compose.material.icons.Icons.Rounded.ContentCopy,
-                        contentDescription = "Copy",
+                        contentDescription = stringResource(R.string.copy),
                         modifier = Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -972,7 +973,7 @@ private fun UserMessageTurn(
                     ) {
                         Icon(
                             imageVector = androidx.compose.material.icons.Icons.Rounded.Refresh,
-                            contentDescription = "Regenerate",
+                            contentDescription = stringResource(R.string.regenerate),
                             modifier = Modifier.size(16.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -991,7 +992,7 @@ private fun UserMessageTurn(
                 ) {
                     Icon(
                         imageVector = androidx.compose.material.icons.Icons.Rounded.MoreHoriz,
-                        contentDescription = "More Options",
+                        contentDescription = stringResource(R.string.more_options),
                         modifier = Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1034,6 +1035,7 @@ private fun AssistantMessageTurn(
 ) {
     val settings = LocalSettings.current
     val context = LocalContext.current
+    val defaultAssistantName = stringResource(R.string.assistant_page_default_assistant)
     val defaultVideoLabel = stringResource(R.string.chat_message_attachment_video)
     val defaultAudioLabel = stringResource(R.string.chat_message_attachment_audio)
     val effectiveDisplay = settings.getEffectiveDisplaySetting(assistant)
@@ -1060,7 +1062,7 @@ private fun AssistantMessageTurn(
     }
     
     // Get avatar info
-    val avatarName = assistant?.name?.ifEmpty { null } ?: model?.displayName ?: "Assistant"
+    val avatarName = assistant?.name?.ifEmpty { null } ?: model?.displayName ?: defaultAssistantName
     val avatarValue = assistant?.avatar ?: Avatar.Dummy
     
     // Check if there's interesting activity (reasoning or tools)
@@ -1368,6 +1370,16 @@ private fun TokenStatisticsInline(
     modifier: Modifier = Modifier
 ) {
     val grayColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+    val promptTokensText = stringResource(R.string.chat_message_tokens, usage.promptTokens.formatNumber())
+    val cachedTokensText = if (usage.cachedTokens > 0) {
+        stringResource(R.string.chat_message_cached, usage.cachedTokens.formatNumber())
+    } else {
+        null
+    }
+    val completionTokensText = stringResource(
+        R.string.chat_message_tokens,
+        usage.completionTokens.formatNumber()
+    )
     
     // Calculate tokens per second
     val tokensPerSecond: Float? = generationDurationMs?.let { durationMs ->
@@ -1388,15 +1400,16 @@ private fun TokenStatisticsInline(
         ) {
             Icon(
                 imageVector = Icons.Rounded.ArrowUpward,
-                contentDescription = "Sent",
+                contentDescription = stringResource(R.string.chat_message_sent),
                 modifier = Modifier.size(14.dp),
                 tint = grayColor
             )
             Text(
                 text = buildString {
-                    append("${usage.promptTokens.formatNumber()} tokens")
-                    if (usage.cachedTokens > 0) {
-                        append(" (${usage.cachedTokens.formatNumber()} cached)")
+                    append(promptTokensText)
+                    if (cachedTokensText != null) {
+                        append(" ")
+                        append(cachedTokensText)
                     }
                 },
                 style = MaterialTheme.typography.labelSmall,
@@ -1411,12 +1424,12 @@ private fun TokenStatisticsInline(
         ) {
             Icon(
                 imageVector = Icons.Rounded.ArrowDownward,
-                contentDescription = "Received",
+                contentDescription = stringResource(R.string.chat_message_received),
                 modifier = Modifier.size(14.dp),
                 tint = grayColor
             )
             Text(
-                text = "${usage.completionTokens.formatNumber()} tokens",
+                text = completionTokensText,
                 style = MaterialTheme.typography.labelSmall,
                 color = grayColor
             )
@@ -1430,12 +1443,12 @@ private fun TokenStatisticsInline(
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Bolt,
-                    contentDescription = "Speed",
+                    contentDescription = stringResource(R.string.chat_message_speed),
                     modifier = Modifier.size(14.dp),
                     tint = grayColor
                 )
                 Text(
-                    text = "%.1f tok/s".format(tokensPerSecond),
+                    text = stringResource(R.string.chat_message_tokens_per_second, tokensPerSecond),
                     style = MaterialTheme.typography.labelSmall,
                     color = grayColor
                 )

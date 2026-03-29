@@ -41,4 +41,29 @@ class MessageTurnGroupingTest {
         assertEquals(MessageRole.ASSISTANT, groups.single().role)
         assertTrue(groups.single().nodes.size == 2)
     }
+
+    @Test
+    fun nodeWithMostVersionsUsesDistinctVersionsInsteadOfRawSnapshotCount() {
+        val canonicalVersionNode = MessageNode(
+            messages = listOf(
+                UIMessage.assistant("Original reply"),
+                UIMessage.assistant("Regenerated reply").copy(versionTag = "regen"),
+            ),
+            selectIndex = 1,
+        )
+        val streamingSnapshotNode = MessageNode(
+            messages = listOf(
+                UIMessage.assistant("").copy(versionTag = "regen"),
+                UIMessage.assistant("Partial regen").copy(versionTag = "regen"),
+                UIMessage.assistant("Final regen").copy(versionTag = "regen"),
+            ),
+            selectIndex = 2,
+        )
+
+        val group = listOf(canonicalVersionNode, streamingSnapshotNode)
+            .groupIntoTurns()
+            .single()
+
+        assertEquals(canonicalVersionNode.id, group.nodeWithMostVersions.id)
+    }
 }

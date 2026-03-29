@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -108,7 +109,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
         ) {
             // Header - centered
             Text(
-                text = "Context Sources",
+                text = stringResource(R.string.context_sources_title),
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center
@@ -119,7 +120,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
             ) {
                 // Skills Section
                 if (sortedModes.isNotEmpty()) {
-                    item { SectionHeader("Skills") }
+                    item { SectionHeader(stringResource(R.string.context_sources_skills)) }
                     itemsIndexed(sortedModes) { index, mode ->
                         val shape = getGroupedShape(index, sortedModes.size)
                         ModeItem(
@@ -135,7 +136,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 
                 // Memories Section
                 if (sortedMemories.isNotEmpty()) {
-                    item { SectionHeader("Memories") }
+                    item { SectionHeader(stringResource(R.string.context_sources_memories)) }
                     itemsIndexed(sortedMemories) { index, memory ->
                         val shape = getGroupedShape(index, sortedMemories.size)
                         MemoryItem(
@@ -151,7 +152,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 
                 // Lorebook Entries Section
                 if (sortedEntries.isNotEmpty()) {
-                    item { SectionHeader("Lorebook Entries") }
+                    item { SectionHeader(stringResource(R.string.context_sources_lorebook_entries)) }
                     itemsIndexed(sortedEntries) { index, entry ->
                         val shape = getGroupedShape(index, sortedEntries.size)
                         LorebookEntryItem(
@@ -263,7 +264,7 @@ private fun ModeItem(
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 Text(
-                    text = "Skill",
+                    text = stringResource(R.string.context_sources_skill),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

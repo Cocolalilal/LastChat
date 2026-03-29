@@ -160,7 +160,7 @@ fun ModelSelector(
                 ) {
                     Icon(
                         Icons.Rounded.Close,
-                        contentDescription = "Clear"
+                        contentDescription = stringResource(R.string.clear_search)
                     )
                 }
             }
