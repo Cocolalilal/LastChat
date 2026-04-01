@@ -2,6 +2,6 @@
 <resources>
   <string name="bing_desc">لاحظ أن بحث Bing يعتمد على الزاحف، وهو ما قد يكون غير مستقر ولا يوصى به.</string>
   <string name="click_to_get_api_key">انقر للحصول على مفتاح API</string>
-  <string name="searxng_desc_1">يحتاج settings.yml إلى تمكين دعم تنسيق json:</string>
-  <string name="searxng_desc_2">البحث:\n التنسيقات:\n - html\n - json</string>
+  <string name="searxng_desc_1">يجب تفعيل دعم تنسيق JSON في settings.yml:</string>
+  <string name="searxng_desc_2">search:\n  formats:\n    - html\n    - json</string>
 </resources>

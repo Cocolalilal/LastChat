@@ -30,4 +30,20 @@ class MarkdownWebTest {
 
         assertTrue(html.contains("dir=\"rtl\""))
     }
+
+    @Test
+    fun `preview html keeps rtl dir for arabic tables`() {
+        val html = renderMarkdownPreviewHtml(
+            htmlTemplate = "<html lang=\"{{LANGUAGE_TAG}}\" dir=\"{{BASE_DIR}}\"></html>",
+            markdown = """
+                | الصنف | الكمية |
+                | --- | --- |
+                | طماطم | 3 |
+            """.trimIndent(),
+            colorScheme = lightColorScheme(),
+            appLocale = Locale("ar")
+        )
+
+        assertTrue(html.contains("dir=\"rtl\""))
+    }
 }

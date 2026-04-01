@@ -49,6 +49,9 @@ import org.jsoup.nodes.Element
 import org.jsoup.nodes.Node
 import org.jsoup.nodes.TextNode
 
+private const val LTR_ISOLATE = '\u2066'
+private const val POP_DIRECTIONAL_ISOLATE = '\u2069'
+
 @Composable
 private fun rememberElementDirection(text: String): BidiDirection {
     val appLocale = LocalContext.current.appLocale()
@@ -77,19 +80,22 @@ fun SimpleHtmlBlock(
     }
 
     val uriHandler = LocalUriHandler.current
+    val blockDirection = rememberElementDirection(document.body().text())
 
-    Column(modifier = modifier) {
-        document.body().childNodes().forEach { node ->
-            RenderNode(
-                node = node,
-                onLinkClick = { url ->
-                    try {
-                        uriHandler.openUri(url)
-                    } catch (e: Exception) {
-                        // Handle link click error silently
+    CompositionLocalProvider(LocalLayoutDirection provides blockDirection.toLayoutDirection()) {
+        Column(modifier = modifier) {
+            document.body().childNodes().forEach { node ->
+                RenderNode(
+                    node = node,
+                    onLinkClick = { url ->
+                        try {
+                            uriHandler.openUri(url)
+                        } catch (e: Exception) {
+                            // Handle link click error silently
+                        }
                     }
-                }
-            )
+                )
+            }
         }
     }
 }
@@ -103,13 +109,15 @@ private fun RenderNode(
         is TextNode -> {
             if (node.text().isNotBlank()) {
                 val direction = rememberElementDirection(node.text())
-                Text(
-                    text = node.text(),
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        color = LocalContentColor.current,
-                        textDirection = direction.toComposeTextDirection()
+                CompositionLocalProvider(LocalLayoutDirection provides direction.toLayoutDirection()) {
+                    Text(
+                        text = node.text(),
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            color = LocalContentColor.current,
+                            textDirection = direction.toComposeTextDirection()
+                        )
                     )
-                )
+                }
             }
         }
 
@@ -455,6 +463,7 @@ private fun processElementNodes(
                     }
 
                     "code" -> {
+                        builder.append(LTR_ISOLATE)
                         val start = builder.length
                         processElementNodes(node, builder, onLinkClick)
                         builder.addStyle(
@@ -465,6 +474,7 @@ private fun processElementNodes(
                             start,
                             builder.length
                         )
+                        builder.append(POP_DIRECTIONAL_ISOLATE)
                     }
 
                     "br" -> {
@@ -707,6 +717,7 @@ private fun RenderTable(
 ) {
     val rows = mutableListOf<List<@Composable () -> Unit>>()
     var headers = emptyList<@Composable () -> Unit>()
+    val tableDirection = rememberElementDirection(tableElement.text())
 
     // Extract table headers and rows
     tableElement.select("tr").forEach { tr ->
@@ -716,12 +727,16 @@ private fun RenderTable(
             cells.add {
                 val annotatedString = buildAnnotatedStringFromElement(cell, onLinkClick)
                 if (annotatedString.text.isNotBlank()) {
-                    Text(
-                        text = annotatedString,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            color = LocalContentColor.current
+                    val direction = rememberElementDirection(annotatedString.text)
+                    CompositionLocalProvider(LocalLayoutDirection provides direction.toLayoutDirection()) {
+                        Text(
+                            text = annotatedString,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                color = LocalContentColor.current,
+                                textDirection = direction.toComposeTextDirection()
+                            )
                         )
-                    )
+                    }
                 }
             }
         }
@@ -746,13 +761,15 @@ private fun RenderTable(
 
     if (headers.isNotEmpty() || rows.isNotEmpty()) {
         Box(modifier = Modifier.padding(vertical = 8.dp)) {
-            DataTable(
-                headers = headers,
-                rows = rows,
-                cellBorder = null,
-                headerBackground = Color.Transparent,
-                zebraStriping = false
-            )
+            CompositionLocalProvider(LocalLayoutDirection provides tableDirection.toLayoutDirection()) {
+                DataTable(
+                    headers = headers,
+                    rows = rows,
+                    cellBorder = null,
+                    headerBackground = Color.Transparent,
+                    zebraStriping = false
+                )
+            }
         }
     }
 }

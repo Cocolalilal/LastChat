@@ -1492,4 +1492,5 @@
     <string name="a11y_remove_provider_override">移除覆盖</string>
     <string name="a11y_toggle_view_mode">切换视图模式</string>
     <string name="a11y_assistant_widget">助手</string>
+    <string name="summarizer_model_tip_banner">在“设置 &gt; 默认模型”中选择专用的摘要模型，以获得更好的摘要效果。</string>
 </resources>

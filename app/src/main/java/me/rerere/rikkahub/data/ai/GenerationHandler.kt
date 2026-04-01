@@ -1211,6 +1211,7 @@ class GenerationHandler(
             topP = assistant.topP,
             maxTokens = assistant.maxTokens,
             tools = tools,
+            builtInTools = resolveActiveBuiltInTools(model, assistant),
             thinkingBudget = assistant.thinkingBudget,
             customHeaders = buildList {
                 addAll(assistant.customHeaders)
