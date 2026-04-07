@@ -30,6 +30,9 @@ class MarkdownRtlRegressionTest {
 
             - ملح حسب الذوق
             - كزبرة مجففة
+
+            1. اغسل الخضروات
+            2. قطّع الطماطم
         """.trimIndent()
 
         composeRule.setContent {
@@ -55,8 +58,16 @@ class MarkdownRtlRegressionTest {
             .onAllNodesWithText("\u2022", substring = true, useUnmergedTree = true)
             .fetchSemanticsNodes()
             .first()
+        val firstStep = composeRule
+            .onNodeWithText("اغسل الخضروات", useUnmergedTree = true)
+            .fetchSemanticsNode()
+        val numberMarker = composeRule
+            .onAllNodesWithText("1.", substring = true, useUnmergedTree = true)
+            .fetchSemanticsNodes()
+            .first()
 
         assertTrue(itemHeader.boundsInRoot.left > quantityHeader.boundsInRoot.left)
-        assertTrue(bullet.boundsInRoot.left < saltItem.boundsInRoot.left)
+        assertTrue(bullet.boundsInRoot.left > saltItem.boundsInRoot.left)
+        assertTrue(numberMarker.boundsInRoot.left > firstStep.boundsInRoot.left)
     }
 }

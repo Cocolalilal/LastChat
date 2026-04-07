@@ -2,6 +2,7 @@ package me.rerere.rikkahub.ui.components.richtext
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
@@ -242,47 +244,52 @@ private fun RenderList(
     onLinkClick: (String) -> Unit
 ) {
     val listDirection = rememberElementDirection(listElement.text())
+    val listItems = remember(listElement) {
+        listElement.children().filter { it.tagName().lowercase() == "li" }
+    }
+    val maxMarkerLength = if (isOrdered) {
+        listItems.size.toString().length + 1
+    } else {
+        1
+    }
+    val markerSlotWidth = 20.dp + ((maxMarkerLength - 1).coerceAtLeast(0) * 8).dp
     CompositionLocalProvider(LocalLayoutDirection provides listDirection.toLayoutDirection()) {
         Column(modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)) {
-        listElement.children().forEachIndexed { index, item ->
-            if (item.tagName().lowercase() == "li") {
+            listItems.forEachIndexed { index, item ->
                 val itemDirection = rememberElementDirection(item.text())
-                Row(modifier = Modifier.padding(vertical = 2.dp)) {
-                    val markerText = if (isOrdered) "${index + 1}. " else "• "
-                    val marker: @Composable () -> Unit = {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    val markerText = if (isOrdered) "${index + 1}." else "\u2022"
+                    Box(
+                        modifier = Modifier.widthIn(min = markerSlotWidth),
+                        contentAlignment = Alignment.TopEnd,
+                    ) {
                         Text(
                             text = markerText,
                             style = MaterialTheme.typography.bodyMedium.copy(
-                                color = LocalContentColor.current
+                                color = LocalContentColor.current,
+                                textDirection = TextDirection.ContentOrLtr
                             )
                         )
                     }
-                    val content: @Composable () -> Unit = {
-                        val annotatedString = buildAnnotatedStringFromElement(item, onLinkClick)
-                        if (annotatedString.text.isNotBlank()) {
-                            Text(
-                                text = annotatedString,
-                                style = MaterialTheme.typography.bodyMedium.copy(
-                                    color = LocalContentColor.current,
-                                    textDirection = itemDirection.toComposeTextDirection()
-                                ),
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-                    if (itemDirection == BidiDirection.Rtl) {
-                        content()
-                        Spacer(modifier = Modifier.width(4.dp))
-                        marker()
-                    } else {
-                        marker()
-                        Spacer(modifier = Modifier.width(4.dp))
-                        content()
+                    val annotatedString = buildAnnotatedStringFromElement(item, onLinkClick)
+                    if (annotatedString.text.isNotBlank()) {
+                        Text(
+                            text = annotatedString,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                color = LocalContentColor.current,
+                                textDirection = itemDirection.toComposeTextDirection()
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
                     }
                 }
             }
         }
-    }
     }
 }
 
