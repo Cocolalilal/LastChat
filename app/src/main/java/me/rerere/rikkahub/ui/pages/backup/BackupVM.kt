@@ -18,6 +18,7 @@ import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.rikkahub.data.ai.models.ModelMetadataResolver
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.model.Assistant
@@ -33,6 +34,7 @@ private const val TAG = "BackupVM"
 class BackupVM(
     private val settingsStore: SettingsStore,
     private val webdavSync: WebdavSync,
+    private val modelMetadataResolver: ModelMetadataResolver,
 ) : ViewModel() {
     val settings = settingsStore.settingsFlow.stateIn(
         scope = viewModelScope,
@@ -178,14 +180,16 @@ class BackupVM(
             importProviders.toList()
         }
 
-        if (importedProviders.isEmpty()) {
+        val resolvedProviders = importedProviders.map(modelMetadataResolver::applyToProvider)
+
+        if (resolvedProviders.isEmpty()) {
             throw IllegalArgumentException("No importable providers found in ChatBox export")
         }
 
-        Log.i(TAG, "restoreFromChatBox: import ${importedProviders.size} providers: $importedProviders")
+        Log.i(TAG, "restoreFromChatBox: import ${resolvedProviders.size} providers: $resolvedProviders")
         settingsStore.update { current ->
             current.copy(
-                providers = mergeImportedProviders(current.providers, importedProviders)
+                providers = mergeImportedProviders(current.providers, resolvedProviders)
             )
         }
     }
@@ -195,14 +199,16 @@ class BackupVM(
             CherryStudioProviderImporter.importProviders(file)
         }
 
-        if (importedProviders.isEmpty()) {
+        val resolvedProviders = importedProviders.map(modelMetadataResolver::applyToProvider)
+
+        if (resolvedProviders.isEmpty()) {
             throw IllegalArgumentException("No importable providers found in Cherry Studio backup")
         }
 
-        Log.i(TAG, "restoreFromCherryStudio: import ${importedProviders.size} providers: $importedProviders")
+        Log.i(TAG, "restoreFromCherryStudio: import ${resolvedProviders.size} providers: $resolvedProviders")
         settingsStore.update { current ->
             current.copy(
-                providers = mergeImportedProviders(current.providers, importedProviders)
+                providers = mergeImportedProviders(current.providers, resolvedProviders)
             )
         }
     }

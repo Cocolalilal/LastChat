@@ -10,12 +10,17 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.rerere.ai.provider.ImageGenerationParams
+import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.ModelAbility
+import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.provider.providers.openai.ChatCompletionsAPI
 import me.rerere.ai.provider.providers.openai.ResponseAPI
+import me.rerere.ai.registry.ModelDisplayNameGenerator
+import me.rerere.ai.registry.ModelIdNormalizer
 import me.rerere.ai.ui.ImageAspectRatio
 import me.rerere.ai.ui.ImageGenerationItem
 import me.rerere.ai.ui.ImageGenerationResult
@@ -114,14 +119,26 @@ class OpenAIProvider(
             // 4. Forced by forceEmbeddingType parameter (for OpenRouter embedding endpoint)
             val architecture = modelObj["architecture"]?.jsonObject
             val modality = architecture?.get("modality")?.jsonPrimitive?.contentOrNull
-            val outputModalities = architecture?.get("output_modalities")?.jsonArray
+            val inputModalitiesRaw = architecture?.get("input_modalities")?.jsonArray
                 ?.mapNotNull { it.jsonPrimitive.contentOrNull }
+                ?: emptyList()
+            val outputModalitiesRaw = architecture?.get("output_modalities")?.jsonArray
+                ?.mapNotNull { it.jsonPrimitive.contentOrNull }
+                ?: emptyList()
+            val inputModalities = inputModalitiesRaw.toModalities().ifEmpty { listOf(Modality.TEXT) }
+            val outputModalities = outputModalitiesRaw.toModalities().ifEmpty { listOf(Modality.TEXT) }
+            val supportedParameters = modelObj["supported_parameters"]?.jsonArray
+                ?.mapNotNull { it.jsonPrimitive.contentOrNull?.lowercase() }
                 ?: emptyList()
             
             val isEmbedding = forceEmbeddingType ||
                 id.contains("embed", ignoreCase = true) ||
                 modality?.contains("embedding", ignoreCase = true) == true ||
-                outputModalities.any { it.contains("embedding", ignoreCase = true) }
+                outputModalitiesRaw.any { it.contains("embedding", ignoreCase = true) }
+
+            val isImageModel = !isEmbedding &&
+                outputModalities.contains(Modality.IMAGE) &&
+                !outputModalities.contains(Modality.TEXT)
             
             // Extract icon URL if available (some APIs provide this)
             val iconUrl = modelObj["icon"]?.jsonPrimitive?.contentOrNull
@@ -130,12 +147,28 @@ class OpenAIProvider(
             // Extract provider slug from model ID (e.g., "anthropic/claude-3.5" -> "anthropic")
             // Used for LobeHub CDN icon lookup
             val providerSlug = if (id.contains("/")) id.substringBefore("/") else null
+            val canonicalSlug = modelObj["canonical_slug"]?.jsonPrimitive?.contentOrNull
+            val abilities = buildList {
+                if (supportedParameters.any { it == "tools" || it == "tool_choice" }) {
+                    add(ModelAbility.TOOL)
+                }
+                if (supportedParameters.any { it in setOf("reasoning", "include_reasoning", "reasoning_effort", "thinking") }) {
+                    add(ModelAbility.REASONING)
+                }
+            }
             
             Model(
                 modelId = id,
-                displayName = modelObj["name"]?.jsonPrimitive?.contentOrNull ?: id,
-                type = if (isEmbedding) me.rerere.ai.provider.ModelType.EMBEDDING else me.rerere.ai.provider.ModelType.CHAT,
-                outputModalities = listOf(me.rerere.ai.provider.Modality.TEXT),
+                displayName = ModelDisplayNameGenerator.generate(id, canonicalSlug),
+                canonicalModelId = ModelIdNormalizer.canonicalize(id, canonicalSlug),
+                type = when {
+                    isEmbedding -> ModelType.EMBEDDING
+                    isImageModel -> ModelType.IMAGE
+                    else -> ModelType.CHAT
+                },
+                inputModalities = inputModalities,
+                outputModalities = if (isEmbedding) listOf(Modality.TEXT) else outputModalities,
+                abilities = abilities,
                 iconUrl = iconUrl,
                 providerSlug = providerSlug
             )
@@ -310,4 +343,15 @@ class OpenAIProvider(
                 ?: error("No embedding in response")
         }
     }
+}
+
+private fun List<String>.toModalities(): List<Modality> {
+    val modalities = linkedSetOf<Modality>()
+    forEach { raw ->
+        when (raw.lowercase()) {
+            "text" -> modalities += Modality.TEXT
+            "image" -> modalities += Modality.IMAGE
+        }
+    }
+    return modalities.toList()
 }

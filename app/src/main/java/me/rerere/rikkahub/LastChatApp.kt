@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.ai.models.ModelCatalogService
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
@@ -175,6 +176,14 @@ class LastChatApp : Application() {
                 } catch (e: Exception) {
                     Log.e(TAG, "Daily activity migration failed", e)
                 }
+            }
+        }
+
+        get<AppScope>().launch(Dispatchers.IO) {
+            runCatching {
+                get<ModelCatalogService>().warmUp()
+            }.onFailure {
+                Log.w(TAG, "Model catalog warm-up failed", it)
             }
         }
     }

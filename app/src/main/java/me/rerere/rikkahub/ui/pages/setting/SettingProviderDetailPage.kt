@@ -119,6 +119,8 @@ import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.ai.models.ModelMetadataResolver
+import me.rerere.rikkahub.data.ai.models.ModelResolutionOptions
 import me.rerere.rikkahub.ui.components.ai.ModelAbilityTag
 import me.rerere.rikkahub.ui.components.ai.ModelModalityTag
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
@@ -154,6 +156,19 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 import kotlin.uuid.Uuid
 import me.rerere.rikkahub.data.model.Tag as DataTag
 import me.rerere.rikkahub.ui.components.ui.FormItem
+
+private val providerModelResolutionOptions = ModelResolutionOptions(
+    preserveDisplayName = false,
+    preserveExistingCapabilities = true,
+    preserveExistingType = true,
+)
+
+private fun resolveProviderModel(
+    resolver: ModelMetadataResolver,
+    model: Model,
+): Model {
+    return resolver.applyToModel(model, providerModelResolutionOptions)
+}
 
 @Composable
 fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
@@ -856,21 +871,20 @@ private fun ModelSettingsForm(
 ) {
     val pagerState = rememberPagerState { 2 }
     val scope = rememberCoroutineScope()
+    val modelMetadataResolver = koinInject<ModelMetadataResolver>()
 
     fun setModelId(id: String) {
-        val inputModality = ModelRegistry.MODEL_INPUT_MODALITIES.getData(id)
-        val outputModality = ModelRegistry.MODEL_OUTPUT_MODALITIES.getData(id)
-        val abilities = ModelRegistry.MODEL_ABILITIES.getData(id)
         // Extract providerSlug from model ID if it contains "/" (e.g., "anthropic/claude-3.5" -> "anthropic")
         val providerSlug = if (id.contains("/")) id.substringBefore("/") else null
         onModelChange(
-            model.copy(
-                modelId = id,
-                displayName = id.uppercase(),
-                inputModalities = inputModality,
-                outputModalities = outputModality,
-                abilities = abilities,
-                providerSlug = providerSlug
+            modelMetadataResolver.applyToModel(
+                model.copy(
+                    modelId = id,
+                    providerSlug = providerSlug
+                ),
+                ModelResolutionOptions(
+                    preserveExistingType = model.type != ModelType.CHAT,
+                )
             )
         )
     }
@@ -1070,6 +1084,7 @@ private fun AddModelButton(
 ) {
     val dialogState = useEditState<Model> { onAddModel(it) }
     val scope = rememberCoroutineScope()
+    val modelMetadataResolver = koinInject<ModelMetadataResolver>()
 
     Row(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -1079,16 +1094,7 @@ private fun AddModelButton(
             models = models,
             selectedModels = selectedModels,
             onModelSelected = { model ->
-                val inputModalities = ModelRegistry.MODEL_INPUT_MODALITIES.getData(model.modelId)
-                val outputModalities = ModelRegistry.MODEL_OUTPUT_MODALITIES.getData(model.modelId)
-                val abilities = ModelRegistry.MODEL_ABILITIES.getData(model.modelId)
-                onAddModel(
-                    model.copy(
-                        inputModalities = inputModalities,
-                        outputModalities = outputModalities,
-                        abilities = abilities
-                    )
-                )
+                onAddModel(resolveProviderModel(modelMetadataResolver, model))
             },
             onModelDeselected = { model ->
                 onRemoveModel(model)
@@ -1215,6 +1221,7 @@ private fun ModelPickerFab(
 ) {
     var showPicker by remember { mutableStateOf(false) }
     val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
+    val modelMetadataResolver = koinInject<ModelMetadataResolver>()
     
     FloatingActionButton(
         onClick = { 
@@ -1279,16 +1286,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     TextButton(onClick = {
                         val modelsToAdd = filteredModels.filter { model ->
                             !selectedModels.any { it.modelId == model.modelId }
-                        }.map { model ->
-                            val inputModalities = ModelRegistry.MODEL_INPUT_MODALITIES.getData(model.modelId)
-                            val outputModalities = ModelRegistry.MODEL_OUTPUT_MODALITIES.getData(model.modelId)
-                            val abilities = ModelRegistry.MODEL_ABILITIES.getData(model.modelId)
-                            model.copy(
-                                inputModalities = inputModalities,
-                                outputModalities = outputModalities,
-                                abilities = abilities
-                            )
-                        }
+                        }.map { model -> resolveProviderModel(modelMetadataResolver, model) }
                         if (modelsToAdd.isNotEmpty()) {
                             onAddModels(modelsToAdd)
                         }
@@ -1362,11 +1360,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                         horizontalArrangement = Arrangement.spacedBy(2.dp)
                                     ) {
                                         val modelMeta = remember(model) {
-                                            model.copy(
-                                                inputModalities = ModelRegistry.MODEL_INPUT_MODALITIES.getData(model.modelId),
-                                                outputModalities = ModelRegistry.MODEL_OUTPUT_MODALITIES.getData(model.modelId),
-                                                abilities = ModelRegistry.MODEL_ABILITIES.getData(model.modelId),
-                                            )
+                                            resolveProviderModel(modelMetadataResolver, model)
                                         }
                                         ModelModalityTag(model = modelMeta)
                                     }
@@ -1376,16 +1370,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                         if (isSelected) {
                                             onRemoveModel(model)
                                         } else {
-                                            val inputModalities = ModelRegistry.MODEL_INPUT_MODALITIES.getData(model.modelId)
-                                            val outputModalities = ModelRegistry.MODEL_OUTPUT_MODALITIES.getData(model.modelId)
-                                            val abilities = ModelRegistry.MODEL_ABILITIES.getData(model.modelId)
-                                            onAddModel(
-                                                model.copy(
-                                                    inputModalities = inputModalities,
-                                                    outputModalities = outputModalities,
-                                                    abilities = abilities
-                                                )
-                                            )
+                                            onAddModel(resolveProviderModel(modelMetadataResolver, model))
                                         }
                                     }
                                 ) {

@@ -10,6 +10,8 @@ import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.data.ai.AIRequestInterceptor
 import me.rerere.rikkahub.data.ai.transformers.AssistantTemplateLoader
 import me.rerere.rikkahub.data.ai.GenerationHandler
+import me.rerere.rikkahub.data.ai.models.ModelCatalogService
+import me.rerere.rikkahub.data.ai.models.ModelMetadataResolver
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
 import me.rerere.rikkahub.data.api.LastChatAPI
 import me.rerere.rikkahub.data.api.SponsorAPI
@@ -153,6 +155,14 @@ val dataSourceModule = module {
 
     single {
         ProviderManager(client = get())
+    }
+
+    single {
+        ModelCatalogService(context = get())
+    }
+
+    single {
+        ModelMetadataResolver(snapshotProvider = { get<ModelCatalogService>().snapshotOrNull() })
     }
 
     single {

@@ -34,6 +34,8 @@ import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageChoice
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.registry.ModelDisplayNameGenerator
+import me.rerere.ai.registry.ModelIdNormalizer
 import me.rerere.ai.util.configureClientWithProxy
 import me.rerere.ai.util.configureReferHeaders
 import me.rerere.ai.util.encodeBase64
@@ -83,7 +85,8 @@ class ClaudeProvider(private val client: OkHttpClient) : Provider<ProviderSettin
 
                 Model(
                     modelId = id,
-                    displayName = displayName,
+                    displayName = ModelDisplayNameGenerator.generate(id),
+                    canonicalModelId = ModelIdNormalizer.canonicalize(id),
                 )
             }
         }
