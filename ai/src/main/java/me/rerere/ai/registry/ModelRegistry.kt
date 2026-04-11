@@ -1,12 +1,5 @@
 package me.rerere.ai.registry
 
-import me.rerere.ai.provider.Modality
-import me.rerere.ai.provider.ModelAbility
-
-fun interface ModelData<T> {
-    fun getData(modelId: String): T
-}
-
 object ModelRegistry {
     private val GPT4O = ModelMatcher.containsRegex("(?<!chat)gpt-4o")
     private val GPT_4_1 = ModelMatcher.containsRegex("gpt-4\\.1")
@@ -56,43 +49,4 @@ object ModelRegistry {
     val REASONING_MODELS =
         GPT_OSS + GPT_5 + OPENAI_O_MODELS + GEMINI_2_5_FLASH + GEMINI_2_5_PRO + GEMINI_3_SERIES + GEMINI_LATEST + CLAUDE_SERIES + QWEN_3 + DOUBAO_1_6 + GROK_4 + KIMI_K2 + STEP_3 + INTERN_S1 + GLM_4_5 + DEEPSEEK_R1 + DEEPSEEK_V3_1 + DEEPSEEK_V3_2 + GLM_4_6 + MINIMAX_M2
     val CHAT_IMAGE_GEN_MODELS = GEMINI_2_5_IMAGE
-
-    fun regexInputModalities(modelId: String): List<Modality> {
-        return if (VISION_MODELS.match(modelId)) {
-            listOf(Modality.TEXT, Modality.IMAGE)
-        } else {
-            listOf(Modality.TEXT)
-        }
-    }
-
-    fun regexOutputModalities(modelId: String): List<Modality> {
-        return if (CHAT_IMAGE_GEN_MODELS.match(modelId)) {
-            listOf(Modality.TEXT, Modality.IMAGE)
-        } else {
-            listOf(Modality.TEXT)
-        }
-    }
-
-    fun regexAbilities(modelId: String): List<ModelAbility> {
-        return buildList {
-            if (TOOL_MODELS.match(modelId)) {
-                add(ModelAbility.TOOL)
-            }
-            if (REASONING_MODELS.match(modelId)) {
-                add(ModelAbility.REASONING)
-            }
-        }
-    }
-
-    val MODEL_INPUT_MODALITIES = ModelData { modelId ->
-        regexInputModalities(modelId)
-    }
-
-    val MODEL_OUTPUT_MODALITIES = ModelData { modelId ->
-        regexOutputModalities(modelId)
-    }
-
-    val MODEL_ABILITIES = ModelData { modelId ->
-        regexAbilities(modelId)
-    }
 }

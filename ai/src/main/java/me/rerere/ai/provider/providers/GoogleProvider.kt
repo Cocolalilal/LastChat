@@ -34,7 +34,6 @@ import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.provider.providers.vertex.ServiceAccountTokenProvider
-import me.rerere.ai.registry.ModelDisplayNameGenerator
 import me.rerere.ai.registry.ModelIdNormalizer
 import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.ImageAspectRatio
@@ -186,14 +185,15 @@ class GoogleProvider(private val client: OkHttpClient) : Provider<ProviderSettin
                         return@mapNotNull null
                     }
 
+                    val modelId = modelObject["name"]!!.jsonPrimitive.content.substringAfter("/")
+                    val displayName = modelObject["displayName"]?.jsonPrimitive?.contentOrNull
+                        ?.ifBlank { null }
+                        ?: modelId
+
                     Model(
-                        modelId = modelObject["name"]!!.jsonPrimitive.content.substringAfter("/"),
-                        displayName = ModelDisplayNameGenerator.generate(
-                            modelObject["name"]!!.jsonPrimitive.content.substringAfter("/")
-                        ),
-                        canonicalModelId = ModelIdNormalizer.canonicalize(
-                            modelObject["name"]!!.jsonPrimitive.content.substringAfter("/")
-                        ),
+                        modelId = modelId,
+                        displayName = displayName,
+                        canonicalModelId = ModelIdNormalizer.canonicalize(modelId),
                         type = if ("generateContent" in supportedGenerationMethods) ModelType.CHAT else ModelType.EMBEDDING,
                     )
                 }

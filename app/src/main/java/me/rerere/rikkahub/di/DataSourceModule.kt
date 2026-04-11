@@ -158,7 +158,10 @@ val dataSourceModule = module {
     }
 
     single {
-        ModelCatalogService(context = get())
+        ModelCatalogService(
+            context = get(),
+            client = get(),
+        )
     }
 
     single {

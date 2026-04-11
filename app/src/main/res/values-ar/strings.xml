@@ -1117,4 +1117,21 @@
     <string name="update_download_failed">فشل تنزيل التحديث</string>
     <string name="placeholder_location">الموقع</string>
     <string name="placeholder_location_unavailable">[الموقع غير متاح - امنح إذن الموقع من الإعدادات &gt; التطبيقات &gt; LastChat]</string>
+    <string name="setting_provider_page_probe_capabilities">Probe API capabilities</string>
+    <string name="setting_provider_page_probe_capabilities_loading">Probing API capabilities...</string>
+    <string name="setting_provider_page_probe_capabilities_progress">Checking this exact model with the provider API</string>
+    <string name="setting_provider_page_probe_capabilities_not_found">This model was not returned by the provider API</string>
+    <string name="setting_provider_page_probe_capabilities_no_data">The provider API did not expose capability metadata for this model</string>
+    <string name="setting_provider_page_probe_capabilities_unchanged">Capabilities already match the provider API</string>
+    <string name="setting_provider_page_probe_capabilities_success">Model capabilities updated from the provider API</string>
+    <string name="setting_provider_page_probe_capabilities_error">Failed to probe model capabilities: %1$s</string>
+    <string name="setting_display_model_catalog_title">Update model catalog</string>
+    <string name="setting_display_model_catalog_source_bundled">Bundled</string>
+    <string name="setting_display_model_catalog_source_downloaded">Downloaded</string>
+    <string name="setting_display_model_catalog_subtitle_bundled">%1$s LiteLLM list • %2$d entries</string>
+    <string name="setting_display_model_catalog_subtitle_downloaded">%1$s LiteLLM list • %2$d entries • Updated %3$s</string>
+    <string name="setting_display_model_catalog_refresh_button">Fetch latest LiteLLM list</string>
+    <string name="setting_display_model_catalog_refreshing">Updating the LiteLLM model list...</string>
+    <string name="setting_display_model_catalog_refresh_success">Model catalog updated</string>
+    <string name="setting_display_model_catalog_refresh_error">Failed to update model catalog: %1$s</string>
 </resources>

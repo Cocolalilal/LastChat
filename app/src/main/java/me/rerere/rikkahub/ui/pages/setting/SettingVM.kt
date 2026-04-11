@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import me.rerere.rikkahub.data.ai.models.ModelCatalogService
+import me.rerere.rikkahub.data.ai.models.ModelCatalogStatus
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.ai.mcp.McpManager
@@ -22,10 +24,12 @@ class SettingVM(
     private val context: Context,
     private val okHttpClient: OkHttpClient,
     private val appStorageRepository: AppStorageRepository,
+    private val modelCatalogService: ModelCatalogService,
 ) :
     ViewModel() {
     val settings: StateFlow<Settings> = settingsStore.settingsFlow
         .stateIn(viewModelScope, SharingStarted.Lazily, Settings(init = true, providers = emptyList()))
+    val modelCatalogStatus: StateFlow<ModelCatalogStatus> = modelCatalogService.status
 
     fun updateSettings(
         newSettings: Settings,
@@ -93,6 +97,21 @@ class SettingVM(
                 delay(delayMs)
             }
             appStorageRepository.deleteFilesIfUnreferenced(fileRefs)
+        }
+    }
+
+    fun refreshModelCatalog(
+        onSuccess: () -> Unit = {},
+        onError: (Throwable) -> Unit = {},
+    ) {
+        viewModelScope.launch {
+            runCatching {
+                modelCatalogService.refreshCatalog()
+            }.onSuccess {
+                onSuccess()
+            }.onFailure {
+                onError(it)
+            }
         }
     }
 }

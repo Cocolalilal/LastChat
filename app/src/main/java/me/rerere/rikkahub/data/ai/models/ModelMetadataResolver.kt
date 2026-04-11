@@ -7,7 +7,6 @@ import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.registry.ModelDisplayNameGenerator
 import me.rerere.ai.registry.ModelIdNormalizer
-import me.rerere.ai.registry.ModelRegistry
 
 data class ModelResolutionOptions(
     val preserveDisplayName: Boolean = false,
@@ -20,11 +19,12 @@ class ModelMetadataResolver(
 ) {
     fun applyToModel(
         model: Model,
+        providerHint: ProviderSetting? = null,
         options: ModelResolutionOptions = ModelResolutionOptions(),
     ): Model {
         if (model.modelId.isBlank()) return model
 
-        val catalogEntry = resolveCatalogEntry(model)
+        val catalogEntry = resolveCatalogEntry(model = model, providerHint = providerHint)
         val canonicalModelId = model.canonicalModelId
             ?.takeIf { it.isNotBlank() }
             ?.let { ModelIdNormalizer.canonicalize(model.modelId, it) }
@@ -53,7 +53,8 @@ class ModelMetadataResolver(
             inputModalities = inputModalities,
             outputModalities = outputModalities,
             abilities = abilities,
-            providerSlug = model.providerSlug ?: model.modelId.substringBefore("/").takeIf { model.modelId.contains("/") },
+            providerSlug = model.providerSlug ?: model.modelId.substringBefore("/")
+                .takeIf { model.modelId.contains("/") },
         )
     }
 
@@ -66,7 +67,7 @@ class ModelMetadataResolver(
         ),
     ): ProviderSetting {
         return provider.copyProvider(
-            models = provider.models.map { applyToModel(it, options) }
+            models = provider.models.map { applyToModel(it, providerHint = provider, options = options) }
         )
     }
 
@@ -75,21 +76,58 @@ class ModelMetadataResolver(
         promptTokens: Int,
         completionTokens: Int,
     ): Double? {
-        val catalogEntry = resolveCatalogEntry(model) ?: return null
+        val catalogEntry = resolveCatalogEntry(model = model) ?: return null
         val inputCost = catalogEntry.inputCostPerToken ?: return null
         val outputCost = catalogEntry.outputCostPerToken ?: return null
         return (promptTokens * inputCost) + (completionTokens * outputCost)
     }
 
-    private fun resolveCatalogEntry(model: Model): ModelCatalogEntry? {
+    private fun resolveCatalogEntry(
+        model: Model,
+        providerHint: ProviderSetting? = null,
+    ): ModelCatalogEntry? {
         val snapshot = snapshotProvider() ?: return null
+
+        snapshot.exactEntries[model.modelId.lowercase()]?.let { return it }
+
+        val storedCanonicalKey = model.canonicalModelId
+            ?.takeIf { it.isNotBlank() }
+            ?.let { ModelIdNormalizer.canonicalize(model.modelId, it) }
+        if (storedCanonicalKey != null) {
+            snapshot.exactEntries[storedCanonicalKey]?.let { return it }
+            snapshot.canonicalEntries[storedCanonicalKey]
+                ?.let { selectCatalogCandidate(it, model, providerHint) }
+                ?.let { return it }
+        }
+
         val canonicalModelId = ModelIdNormalizer.canonicalize(
             modelId = model.modelId,
             canonicalHint = model.canonicalModelId,
         )
-        return snapshot.exactEntries[model.modelId.lowercase()]
-            ?: snapshot.exactEntries[(model.canonicalModelId ?: "").lowercase()]
-            ?: snapshot.canonicalEntries[canonicalModelId]
+        snapshot.exactEntries[canonicalModelId]?.let { return it }
+        val candidates = snapshot.canonicalEntries[canonicalModelId] ?: return null
+        return selectCatalogCandidate(candidates, model, providerHint)
+    }
+
+    private fun selectCatalogCandidate(
+        candidates: List<ModelCatalogEntry>,
+        model: Model,
+        providerHint: ProviderSetting?,
+    ): ModelCatalogEntry? {
+        if (candidates.isEmpty()) return null
+        if (candidates.size == 1) return candidates.single()
+
+        val slugMatches = candidates.filter { candidate ->
+            candidate.matchesProviderSlug(model.providerSlug)
+        }
+        if (slugMatches.size == 1) {
+            return slugMatches.single()
+        }
+
+        val providerMatches = candidates.filter { candidate ->
+            candidate.matchesProviderHint(providerHint)
+        }
+        return providerMatches.singleOrNull()
     }
 
     private fun resolveType(
@@ -105,8 +143,7 @@ class ModelMetadataResolver(
             return model.type
         }
 
-        val catalogType = catalogEntry?.mode.toModelTypeOrNull()
-        return catalogType ?: model.type
+        return catalogEntry?.mode.toModelTypeOrNull() ?: model.type
     }
 
     private fun resolveInputModalities(
@@ -115,17 +152,17 @@ class ModelMetadataResolver(
         resolvedType: ModelType,
         options: ModelResolutionOptions,
     ): List<Modality> {
-        val hasImageInput = linkedSetOf<Modality>().apply {
-            if (options.preserveExistingCapabilities && model.inputModalities.contains(Modality.IMAGE)) {
-                add(Modality.IMAGE)
-            }
-            if (catalogEntry?.supportsVision == true) add(Modality.IMAGE)
-            if (ModelRegistry.regexInputModalities(model.modelId).contains(Modality.IMAGE)) add(Modality.IMAGE)
+        val inputs = linkedSetOf(Modality.TEXT)
+        if (options.preserveExistingCapabilities && model.inputModalities.contains(Modality.IMAGE)) {
+            inputs += Modality.IMAGE
+        }
+        if (catalogEntry?.supportsVision == true || catalogEntry?.supportedModalities?.contains(Modality.IMAGE) == true) {
+            inputs += Modality.IMAGE
         }
 
         return when (resolvedType) {
-            ModelType.CHAT -> listOf(Modality.TEXT) + hasImageInput
-            ModelType.IMAGE -> listOf(Modality.TEXT) + hasImageInput
+            ModelType.CHAT -> inputs.toList()
+            ModelType.IMAGE -> inputs.toList()
             ModelType.EMBEDDING -> listOf(Modality.TEXT)
         }
     }
@@ -136,22 +173,22 @@ class ModelMetadataResolver(
         resolvedType: ModelType,
         options: ModelResolutionOptions,
     ): List<Modality> {
-        val imageOutput = linkedSetOf<Modality>().apply {
-            if (options.preserveExistingCapabilities && model.outputModalities.contains(Modality.IMAGE)) {
-                add(Modality.IMAGE)
-            }
-            if (ModelRegistry.regexOutputModalities(model.modelId).contains(Modality.IMAGE)) add(Modality.IMAGE)
-        }
-
         return when (resolvedType) {
-            ModelType.CHAT -> listOf(Modality.TEXT) + imageOutput
-            ModelType.IMAGE -> {
-                val outputs = linkedSetOf(Modality.IMAGE)
-                if (options.preserveExistingCapabilities && model.outputModalities.contains(Modality.TEXT)) {
-                    outputs += Modality.TEXT
+            ModelType.CHAT -> buildList {
+                add(Modality.TEXT)
+                if (options.preserveExistingCapabilities && model.outputModalities.contains(Modality.IMAGE)) {
+                    add(Modality.IMAGE)
                 }
-                outputs.toList()
-            }
+            }.distinct()
+
+            ModelType.IMAGE -> buildList {
+                if (options.preserveExistingCapabilities && model.outputModalities.contains(Modality.TEXT)) {
+                    add(Modality.TEXT)
+                } else if (catalogEntry?.supportedModalities?.contains(Modality.TEXT) == true) {
+                    add(Modality.TEXT)
+                }
+                add(Modality.IMAGE)
+            }.distinct()
 
             ModelType.EMBEDDING -> listOf(Modality.TEXT)
         }
@@ -162,20 +199,19 @@ class ModelMetadataResolver(
         catalogEntry: ModelCatalogEntry?,
         options: ModelResolutionOptions,
     ): List<ModelAbility> {
-        val abilities = linkedSetOf<ModelAbility>().apply {
-            if (options.preserveExistingCapabilities && model.abilities.contains(ModelAbility.TOOL)) {
-                add(ModelAbility.TOOL)
-            }
-            if (catalogEntry?.supportsFunctionCalling == true) add(ModelAbility.TOOL)
-            if (ModelRegistry.regexAbilities(model.modelId).contains(ModelAbility.TOOL)) add(ModelAbility.TOOL)
-
-            if (options.preserveExistingCapabilities && model.abilities.contains(ModelAbility.REASONING)) {
-                add(ModelAbility.REASONING)
-            }
-            if (catalogEntry?.supportsReasoning == true) add(ModelAbility.REASONING)
-            if (ModelRegistry.regexAbilities(model.modelId).contains(ModelAbility.REASONING)) add(ModelAbility.REASONING)
+        val abilities = linkedSetOf<ModelAbility>()
+        if (options.preserveExistingCapabilities && model.abilities.contains(ModelAbility.TOOL)) {
+            abilities += ModelAbility.TOOL
         }
-
+        if (catalogEntry?.supportsFunctionCalling == true) {
+            abilities += ModelAbility.TOOL
+        }
+        if (options.preserveExistingCapabilities && model.abilities.contains(ModelAbility.REASONING)) {
+            abilities += ModelAbility.REASONING
+        }
+        if (catalogEntry?.supportsReasoning == true) {
+            abilities += ModelAbility.REASONING
+        }
         return ModelAbility.entries.filter { it in abilities }
     }
 }
@@ -186,4 +222,47 @@ private fun String?.toModelTypeOrNull(): ModelType? {
         "image_generation", "image" -> ModelType.IMAGE
         else -> null
     }
+}
+
+private fun ModelCatalogEntry.matchesProviderSlug(providerSlug: String?): Boolean {
+    val normalizedSlug = providerSlug?.normalizeProviderToken() ?: return false
+    val keyProvider = key.substringBefore("/").takeIf { key.contains("/") }?.normalizeProviderToken()
+    val litellmProviderToken = litellmProvider?.normalizeProviderToken()
+    return keyProvider == normalizedSlug || litellmProviderToken == normalizedSlug
+}
+
+private fun ModelCatalogEntry.matchesProviderHint(providerHint: ProviderSetting?): Boolean {
+    val allowedProviders = when (providerHint) {
+        is ProviderSetting.Claude -> setOf("anthropic")
+        is ProviderSetting.Google -> {
+            if (providerHint.vertexAI) {
+                setOf("vertex-ai", "vertex-ai-language-models")
+            } else {
+                setOf("gemini", "google-ai-studio")
+            }
+        }
+
+        is ProviderSetting.OpenAI -> {
+            if (providerHint.baseUrl.contains("api.openai.com", ignoreCase = true)) {
+                setOf("openai")
+            } else {
+                emptySet()
+            }
+        }
+
+        null -> emptySet()
+    }
+    if (allowedProviders.isEmpty()) return false
+
+    val keyProvider = key.substringBefore("/").takeIf { key.contains("/") }?.normalizeProviderToken()
+    val litellmProviderToken = litellmProvider?.normalizeProviderToken()
+    return allowedProviders.any { candidate ->
+        candidate == keyProvider || candidate == litellmProviderToken
+    }
+}
+
+private fun String.normalizeProviderToken(): String {
+    return lowercase()
+        .replace('_', '-')
+        .replace('.', '-')
 }

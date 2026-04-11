@@ -3,8 +3,12 @@ package me.rerere.rikkahub.ui.pages.setting
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -116,7 +120,6 @@ import me.rerere.ai.provider.ImageGenerationMethod
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
-import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.models.ModelMetadataResolver
@@ -135,6 +138,7 @@ import me.rerere.rikkahub.ui.components.ui.ShareSheet
 import me.rerere.rikkahub.ui.components.ui.SiliconFlowPowerByIcon
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
+import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.components.ui.TagsInput
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
@@ -157,17 +161,22 @@ import kotlin.uuid.Uuid
 import me.rerere.rikkahub.data.model.Tag as DataTag
 import me.rerere.rikkahub.ui.components.ui.FormItem
 
-private val providerModelResolutionOptions = ModelResolutionOptions(
-    preserveDisplayName = false,
+private val providerPickerResolutionOptions = ModelResolutionOptions(
+    preserveDisplayName = true,
     preserveExistingCapabilities = true,
     preserveExistingType = true,
 )
 
 private fun resolveProviderModel(
     resolver: ModelMetadataResolver,
+    provider: ProviderSetting,
     model: Model,
 ): Model {
-    return resolver.applyToModel(model, providerModelResolutionOptions)
+    return resolver.applyToModel(
+        model = model,
+        providerHint = provider,
+        options = providerPickerResolutionOptions,
+    )
 }
 
 @Composable
@@ -872,6 +881,10 @@ private fun ModelSettingsForm(
     val pagerState = rememberPagerState { 2 }
     val scope = rememberCoroutineScope()
     val modelMetadataResolver = koinInject<ModelMetadataResolver>()
+    val providerManager = koinInject<ProviderManager>()
+    val toaster = LocalToaster.current
+    val context = LocalContext.current
+    var isProbingCapabilities by remember(model.id, parentProvider?.id) { mutableStateOf(false) }
 
     fun setModelId(id: String) {
         // Extract providerSlug from model ID if it contains "/" (e.g., "anthropic/claude-3.5" -> "anthropic")
@@ -882,7 +895,8 @@ private fun ModelSettingsForm(
                     modelId = id,
                     providerSlug = providerSlug
                 ),
-                ModelResolutionOptions(
+                providerHint = parentProvider,
+                options = ModelResolutionOptions(
                     preserveExistingType = model.type != ModelType.CHAT,
                 )
             )
@@ -992,6 +1006,77 @@ private fun ModelSettingsForm(
                             }
                         )
 
+                        if (model.type == ModelType.CHAT && parentProvider != null) {
+                            ModelCapabilityProbeButton(
+                                enabled = model.modelId.isNotBlank(),
+                                isLoading = isProbingCapabilities,
+                                onClick = {
+                                    scope.launch {
+                                        isProbingCapabilities = true
+                                        runCatching {
+                                            providerManager.getProviderByType(parentProvider)
+                                                .listModels(parentProvider)
+                                        }.onSuccess { apiModels ->
+                                            val apiModel = apiModels.firstOrNull { it.modelId == model.modelId }
+                                                ?: apiModels.firstOrNull {
+                                                    it.modelId.equals(model.modelId, ignoreCase = true)
+                                                }
+                                            val probedCapabilities = apiModel?.let(::extractProbedCapabilities)
+
+                                            when {
+                                                apiModel == null -> {
+                                                    toaster.show(
+                                                        context.getString(R.string.setting_provider_page_probe_capabilities_not_found),
+                                                        type = ToastType.Info,
+                                                    )
+                                                }
+
+                                                probedCapabilities == null -> {
+                                                    toaster.show(
+                                                        context.getString(R.string.setting_provider_page_probe_capabilities_no_data),
+                                                        type = ToastType.Info,
+                                                    )
+                                                }
+
+                                                else -> {
+                                                    val updatedModel = model.copy(
+                                                        inputModalities = probedCapabilities.inputModalities,
+                                                        outputModalities = probedCapabilities.outputModalities,
+                                                        abilities = probedCapabilities.abilities,
+                                                    )
+                                                    if (
+                                                        updatedModel.inputModalities == model.inputModalities &&
+                                                        updatedModel.outputModalities == model.outputModalities &&
+                                                        updatedModel.abilities == model.abilities
+                                                    ) {
+                                                        toaster.show(
+                                                            context.getString(R.string.setting_provider_page_probe_capabilities_unchanged),
+                                                            type = ToastType.Info,
+                                                        )
+                                                    } else {
+                                                        onModelChange(updatedModel)
+                                                        toaster.show(
+                                                            context.getString(R.string.setting_provider_page_probe_capabilities_success),
+                                                            type = ToastType.Success,
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }.onFailure { error ->
+                                            toaster.show(
+                                                context.getString(
+                                                    R.string.setting_provider_page_probe_capabilities_error,
+                                                    error.message ?: context.getString(R.string.backup_page_unknown_error),
+                                                ),
+                                                type = ToastType.Error,
+                                            )
+                                        }
+                                        isProbingCapabilities = false
+                                    }
+                                },
+                            )
+                        }
+
                         // Image Generation Method selector (only for IMAGE type)
                         if (model.type == ModelType.IMAGE) {
                             ImageGenerationMethodSelector(
@@ -1072,144 +1157,6 @@ private fun ModelSettingsForm(
 }
 
 @Composable
-private fun AddModelButton(
-    models: List<Model>,
-    selectedModels: List<Model>,
-    expanded: Boolean,
-    onAddModel: (Model) -> Unit,
-    onRemoveModel: (Model) -> Unit,
-    onAddModels: (List<Model>) -> Unit,
-    onRemoveModels: (List<Model>) -> Unit,
-    parentProvider: ProviderSetting
-) {
-    val dialogState = useEditState<Model> { onAddModel(it) }
-    val scope = rememberCoroutineScope()
-    val modelMetadataResolver = koinInject<ModelMetadataResolver>()
-
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ModelPicker(
-            models = models,
-            selectedModels = selectedModels,
-            onModelSelected = { model ->
-                onAddModel(resolveProviderModel(modelMetadataResolver, model))
-            },
-            onModelDeselected = { model ->
-                onRemoveModel(model)
-            },
-            onModelsSelected = { modelList ->
-                onAddModels(modelList)
-            },
-            onModelsDeselected = { modelList ->
-                onRemoveModels(modelList)
-            },
-            parentProvider = parentProvider
-        )
-
-        Button(
-            onClick = {
-                dialogState.open(Model())
-            }
-        ) {
-            Row(
-                modifier = Modifier,
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Rounded.Add,
-                    contentDescription = stringResource(R.string.setting_provider_page_add_model)
-                )
-                AnimatedVisibility(expanded) {
-                    Spacer(modifier = Modifier.size(8.dp))
-                    Text(
-                        stringResource(R.string.setting_provider_page_add_new_model),
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                }
-            }
-        }
-    }
-
-    if (dialogState.isEditing) {
-        dialogState.currentState?.let { modelState ->
-            val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-            ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
-                onDismissRequest = {
-                    dialogState.dismiss()
-                },
-                sheetState = sheetState,
-                sheetGesturesEnabled = false,
-                dragHandle = {
-                    IconButton(
-                        onClick = {
-                            scope.launch {
-                                sheetState.hide()
-                                dialogState.dismiss()
-                            }
-                        }
-                    ) {
-                        Icon(Icons.Rounded.KeyboardArrowDown, null)
-                    }
-                }
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight(0.95f)
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text(
-                        text = stringResource(R.string.setting_provider_page_add_model),
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                    ) {
-                        ModelSettingsForm(
-                            model = modelState,
-                            onModelChange = { dialogState.currentState = it },
-                            isEdit = false,
-                            parentProvider = parentProvider
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                    ) {
-                        TextButton(
-                            onClick = {
-                                dialogState.dismiss()
-                            },
-                        ) {
-                            Text(stringResource(R.string.cancel))
-                        }
-                        TextButton(
-                            onClick = {
-                                if (modelState.modelId.isNotBlank() && modelState.displayName.isNotBlank()) {
-                                    dialogState.confirm()
-                                }
-                            },
-                        ) {
-                            Text(stringResource(R.string.setting_provider_page_add))
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun ModelPickerFab(
     models: List<Model>,
     selectedModels: List<Model>,
@@ -1246,7 +1193,12 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
         ) {
             var filterText by remember { mutableStateOf("") }
             val filterKeywords = filterText.split(" ").filter { it.isNotBlank() }
-            val filteredModels = models.fastFilter {
+            val resolvedModels = remember(models, parentProvider) {
+                models.map { model ->
+                    resolveProviderModel(modelMetadataResolver, parentProvider, model)
+                }
+            }
+            val filteredModels = resolvedModels.fastFilter {
                 if (filterKeywords.isEmpty()) {
                     true
                 } else {
@@ -1286,7 +1238,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     TextButton(onClick = {
                         val modelsToAdd = filteredModels.filter { model ->
                             !selectedModels.any { it.modelId == model.modelId }
-                        }.map { model -> resolveProviderModel(modelMetadataResolver, model) }
+                        }
                         if (modelsToAdd.isNotEmpty()) {
                             onAddModels(modelsToAdd)
                         }
@@ -1352,17 +1304,21 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                     modifier = Modifier.weight(1f),
                                 ) {
                                     Text(
-                                        text = model.modelId,
+                                        text = model.displayName,
                                         style = MaterialTheme.typography.titleSmall,
                                     )
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                    Text(
+                                        text = model.modelId,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    FlowRow(
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp),
                                     ) {
-                                        val modelMeta = remember(model) {
-                                            resolveProviderModel(modelMetadataResolver, model)
-                                        }
-                                        ModelModalityTag(model = modelMeta)
+                                        ModelTypeTag(model = model)
+                                        ModelModalityTag(model = model)
+                                        ModelAbilityTag(model = model)
                                     }
                                 }
                                 IconButton(
@@ -1370,7 +1326,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                         if (isSelected) {
                                             onRemoveModel(model)
                                         } else {
-                                            onAddModel(resolveProviderModel(modelMetadataResolver, model))
+                                            onAddModel(model)
                                         }
                                     }
                                 ) {
@@ -1504,6 +1460,7 @@ private fun ModelPicker(
     parentProvider: ProviderSetting
 ) {
     var showModal by remember { mutableStateOf(false) }
+    val modelMetadataResolver = koinInject<ModelMetadataResolver>()
     if (showModal) {
         ModalBottomSheet(
 containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
@@ -1555,14 +1512,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         val modelsToAdd = filteredModels.filter { model ->
                             !selectedModels.any { it.modelId == model.modelId }
                         }.map { model ->
-                            val inputModalities = ModelRegistry.MODEL_INPUT_MODALITIES.getData(model.modelId)
-                            val outputModalities = ModelRegistry.MODEL_OUTPUT_MODALITIES.getData(model.modelId)
-                            val abilities = ModelRegistry.MODEL_ABILITIES.getData(model.modelId)
-                            model.copy(
-                                inputModalities = inputModalities,
-                                outputModalities = outputModalities,
-                                abilities = abilities
-                            )
+                            resolveProviderModel(modelMetadataResolver, parentProvider, model)
                         }
                         if (modelsToAdd.isNotEmpty()) {
                             onModelsSelected(modelsToAdd)
@@ -1637,21 +1587,25 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                     modifier = Modifier.weight(1f),
                                 ) {
                                     Text(
-                                        text = it.modelId,
+                                        text = it.displayName,
                                         style = MaterialTheme.typography.titleSmall,
                                     )
+                                    Text(
+                                        text = it.modelId,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
 
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                    FlowRow(
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp),
                                     ) {
                                         val modelMeta = remember(it) {
-                                            it.copy(
-                                                inputModalities = ModelRegistry.MODEL_INPUT_MODALITIES.getData(it.modelId),
-                                                outputModalities = ModelRegistry.MODEL_OUTPUT_MODALITIES.getData(it.modelId),
-                                                abilities = ModelRegistry.MODEL_ABILITIES.getData(it.modelId),
-                                            )
+                                            resolveProviderModel(modelMetadataResolver, parentProvider, it)
                                         }
+                                        ModelTypeTag(
+                                            model = modelMeta,
+                                        )
                                         ModelModalityTag(
                                             model = modelMeta,
                                         )
@@ -1667,7 +1621,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                             onModelDeselected(selectedModels.firstOrNull { model -> model.modelId == it.modelId }
                                                 ?: it)
                                         } else {
-                                            onModelSelected(it)
+                                            onModelSelected(resolveProviderModel(modelMetadataResolver, parentProvider, it))
                                         }
                                     }
                                 ) {
@@ -1712,6 +1666,104 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
             }
         ) {
             Icon(Icons.Rounded.Widgets, null)
+        }
+    }
+}
+
+private data class ProbedModelCapabilities(
+    val inputModalities: List<Modality>,
+    val outputModalities: List<Modality>,
+    val abilities: List<ModelAbility>,
+)
+
+private fun extractProbedCapabilities(model: Model): ProbedModelCapabilities? {
+    val inputModalities = model.inputModalities.ifEmpty { listOf(Modality.TEXT) }.distinct()
+    val outputModalities = model.outputModalities.ifEmpty { listOf(Modality.TEXT) }.distinct()
+    val abilities = model.abilities.distinct()
+    val hasProbeSignal = abilities.isNotEmpty() ||
+        inputModalities.contains(Modality.IMAGE) ||
+        outputModalities.contains(Modality.IMAGE)
+    if (!hasProbeSignal) return null
+
+    return ProbedModelCapabilities(
+        inputModalities = inputModalities,
+        outputModalities = outputModalities,
+        abilities = abilities,
+    )
+}
+
+@Composable
+private fun ModelCapabilityProbeButton(
+    enabled: Boolean,
+    isLoading: Boolean,
+    onClick: () -> Unit,
+) {
+    val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (enabled && !isLoading && isPressed) 0.85f else 1f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        label = "probeCapabilityScale",
+    )
+
+    Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Surface(
+            onClick = {
+                haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
+                onClick()
+            },
+            enabled = enabled && !isLoading,
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.ButtonPill,
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            interactionSource = interactionSource,
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                },
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.NetworkCheck,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.size(8.dp))
+                Text(
+                    text = stringResource(
+                        if (isLoading) {
+                            R.string.setting_provider_page_probe_capabilities_loading
+                        } else {
+                            R.string.setting_provider_page_probe_capabilities
+                        }
+                    ),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+            }
+        }
+
+        if (isLoading) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                LinearWavyProgressIndicator(modifier = Modifier.fillMaxWidth())
+                Text(
+                    text = stringResource(R.string.setting_provider_page_probe_capabilities_progress),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

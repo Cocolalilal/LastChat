@@ -19,7 +19,6 @@ import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.provider.providers.openai.ChatCompletionsAPI
 import me.rerere.ai.provider.providers.openai.ResponseAPI
-import me.rerere.ai.registry.ModelDisplayNameGenerator
 import me.rerere.ai.registry.ModelIdNormalizer
 import me.rerere.ai.ui.ImageAspectRatio
 import me.rerere.ai.ui.ImageGenerationItem
@@ -148,6 +147,7 @@ class OpenAIProvider(
             // Used for LobeHub CDN icon lookup
             val providerSlug = if (id.contains("/")) id.substringBefore("/") else null
             val canonicalSlug = modelObj["canonical_slug"]?.jsonPrimitive?.contentOrNull
+            val displayName = modelObj["name"]?.jsonPrimitive?.contentOrNull?.ifBlank { null } ?: id
             val abilities = buildList {
                 if (supportedParameters.any { it == "tools" || it == "tool_choice" }) {
                     add(ModelAbility.TOOL)
@@ -159,7 +159,7 @@ class OpenAIProvider(
             
             Model(
                 modelId = id,
-                displayName = ModelDisplayNameGenerator.generate(id, canonicalSlug),
+                displayName = displayName,
                 canonicalModelId = ModelIdNormalizer.canonicalize(id, canonicalSlug),
                 type = when {
                     isEmbedding -> ModelType.EMBEDDING
