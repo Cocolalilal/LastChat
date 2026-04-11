@@ -671,6 +671,7 @@ fun SkillEditorSheet(
     var description by remember { mutableStateOf(skill?.description ?: "") }
     var icon by remember { mutableStateOf(skill?.icon) }
     var instructions by remember { mutableStateOf(skill?.instructions ?: "") }
+    var alwaysEnabled by remember { mutableStateOf(skill?.alwaysEnabled ?: false) }
     var autonomousAssistantIds by remember { mutableStateOf(skill?.autonomousAssistantIds ?: emptySet()) }
     var autonomousForAllAssistants by remember { mutableStateOf(skill?.autonomousForAllAssistants ?: false) }
     var showIconPicker by remember { mutableStateOf(false) }
@@ -800,6 +801,7 @@ fun SkillEditorSheet(
                     )
                 }
 
+                // Always-enabled toggle card
                 Card(
                     colors = CardDefaults.cardColors(
                         containerColor = if (LocalDarkMode.current) {
@@ -810,59 +812,92 @@ fun SkillEditorSheet(
                     ),
                     shape = AppShapes.CardLarge
                 ) {
-                    Column {
-                        ListItem(
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                            headlineContent = { Text(stringResource(R.string.skills_page_available_for_all_characters)) },
-                            supportingContent = { Text(stringResource(R.string.skills_page_available_for_characters_desc)) },
-                            trailingContent = {
-                                HapticSwitch(
-                                    checked = autonomousForAllAssistants,
-                                    onCheckedChange = { checked ->
-                                        autonomousForAllAssistants = checked
-                                        if (checked) autonomousAssistantIds = emptySet()
+                    ListItem(
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        headlineContent = { Text(stringResource(R.string.skills_page_always_enabled)) },
+                        supportingContent = { Text(stringResource(R.string.skills_page_always_enabled_desc)) },
+                        trailingContent = {
+                            HapticSwitch(
+                                checked = alwaysEnabled,
+                                onCheckedChange = { checked ->
+                                    alwaysEnabled = checked
+                                    if (checked) {
+                                        // Clear autonomous settings when always-enabled
+                                        autonomousForAllAssistants = false
+                                        autonomousAssistantIds = emptySet()
                                     }
-                                )
+                                }
+                            )
+                        }
+                    )
+                }
+
+                // Autonomous toggle card — hidden when always-enabled
+                AnimatedVisibility(visible = !alwaysEnabled) {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (LocalDarkMode.current) {
+                                MaterialTheme.colorScheme.surfaceContainerLow
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerHighest
                             }
-                        )
-                        AnimatedVisibility(visible = !autonomousForAllAssistants) {
-                            Column(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                assistants.forEach { assistant ->
-                                    val enabledForAssistant = autonomousAssistantIds.contains(assistant.id)
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        UIAvatar(
-                                            value = assistant.avatar,
-                                            name = assistant.name.ifBlank { stringResource(R.string.text_selection_assistant) },
-                                            modifier = Modifier.size(32.dp),
-                                        )
-                                        Text(
-                                            text = assistant.name.ifBlank { stringResource(R.string.text_selection_assistant) },
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            modifier = Modifier.weight(1f),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        HapticSwitch(
-                                            checked = enabledForAssistant,
-                                            onCheckedChange = { checked ->
-                                                autonomousAssistantIds = if (checked) {
-                                                    autonomousAssistantIds + assistant.id
-                                                } else {
-                                                    autonomousAssistantIds - assistant.id
+                        ),
+                        shape = AppShapes.CardLarge
+                    ) {
+                        Column {
+                            ListItem(
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                headlineContent = { Text(stringResource(R.string.skills_page_available_for_all_characters)) },
+                                supportingContent = { Text(stringResource(R.string.skills_page_available_for_characters_desc)) },
+                                trailingContent = {
+                                    HapticSwitch(
+                                        checked = autonomousForAllAssistants,
+                                        onCheckedChange = { checked ->
+                                            autonomousForAllAssistants = checked
+                                            if (checked) autonomousAssistantIds = emptySet()
+                                        }
+                                    )
+                                }
+                            )
+                            AnimatedVisibility(visible = !autonomousForAllAssistants) {
+                                Column(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    assistants.forEach { assistant ->
+                                        val enabledForAssistant = autonomousAssistantIds.contains(assistant.id)
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            UIAvatar(
+                                                value = assistant.avatar,
+                                                name = assistant.name.ifBlank { stringResource(R.string.text_selection_assistant) },
+                                                modifier = Modifier.size(32.dp),
+                                            )
+                                            Text(
+                                                text = assistant.name.ifBlank { stringResource(R.string.text_selection_assistant) },
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                modifier = Modifier.weight(1f),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            HapticSwitch(
+                                                checked = enabledForAssistant,
+                                                onCheckedChange = { checked ->
+                                                    autonomousAssistantIds = if (checked) {
+                                                        autonomousAssistantIds + assistant.id
+                                                    } else {
+                                                        autonomousAssistantIds - assistant.id
+                                                    }
                                                 }
-                                            }
-                                        )
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -892,9 +927,10 @@ fun SkillEditorSheet(
                                 instructions = instructions,
                                 attachments = emptyList(),
                                 enabled = true,
+                                alwaysEnabled = alwaysEnabled,
                                 availableAssistantIds = emptySet(),
-                                autonomousForAllAssistants = autonomousForAllAssistants,
-                                autonomousAssistantIds = if (autonomousForAllAssistants) {
+                                autonomousForAllAssistants = if (alwaysEnabled) false else autonomousForAllAssistants,
+                                autonomousAssistantIds = if (alwaysEnabled || autonomousForAllAssistants) {
                                     emptySet()
                                 } else {
                                     autonomousAssistantIds
@@ -927,9 +963,10 @@ fun SkillEditorSheet(
                 instructions = instructions,
                 attachments = emptyList(),
                 enabled = true,
+                alwaysEnabled = alwaysEnabled,
                 availableAssistantIds = emptySet(),
-                autonomousForAllAssistants = autonomousForAllAssistants,
-                autonomousAssistantIds = if (autonomousForAllAssistants) {
+                autonomousForAllAssistants = if (alwaysEnabled) false else autonomousForAllAssistants,
+                autonomousAssistantIds = if (alwaysEnabled || autonomousForAllAssistants) {
                     emptySet()
                 } else {
                     autonomousAssistantIds

@@ -32,13 +32,23 @@ fun AssistantChatTheme(
 ) {
     val context = LocalContext.current
     val darkTheme = LocalDarkMode.current
-    val seedColor by produceState<Color?>(initialValue = null, assistant) {
+    val seedColor by produceState<Color?>(
+        initialValue = null,
+        assistant.useAssistantMaterialYouColors,
+        assistant.materialYouColorIndex,
+        assistant.avatar,
+        assistant.background
+    ) {
         if (!assistant.useAssistantMaterialYouColors) {
             value = null
             return@produceState
         }
         value = withContext(Dispatchers.IO) {
-            extractSeedColor(context = context, assistant = assistant)
+            extractSeedColor(
+                context = context,
+                assistant = assistant,
+                colorIndex = assistant.materialYouColorIndex
+            )
         }
     }
 
@@ -72,26 +82,80 @@ fun AssistantChatTheme(
 
 private fun extractSeedColor(
     context: Context,
-    assistant: Assistant
+    assistant: Assistant,
+    colorIndex: Int = 0
 ): Color? {
-    val backgroundSource = assistant.background
-    val backgroundColor = backgroundSource?.let { source ->
-        extractSeedColorFromSource(context = context, source = source)
-    }
-    if (backgroundColor != null) {
-        return backgroundColor
-    }
+    val candidates = extractColorCandidates(context, assistant)
+    if (candidates.isEmpty()) return null
+    return candidates[colorIndex.coerceIn(candidates.indices)]
+}
 
-    val avatar = assistant.avatar
-    return when (avatar) {
-        is Avatar.Image -> extractSeedColorFromSource(context = context, source = avatar.url)
-        is Avatar.Resource -> {
-            val bitmap = BitmapFactory.decodeResource(context.resources, avatar.id) ?: return null
-            extractSeedColorFromBitmap(bitmap)
-        }
+/**
+ * Extract up to 4 distinct seed color candidates from the assistant's
+ * background and/or avatar images.
+ *
+ * The first candidate (index 0) always matches the legacy single-color
+ * behavior: background takes priority, falls back to avatar. The remaining
+ * slots are filled from both sources (if available) to give variety.
+ */
+fun extractColorCandidates(
+    context: Context,
+    assistant: Assistant
+): List<Color> {
+    val backgroundSource = assistant.background
+    val avatarSource = when (val avatar = assistant.avatar) {
+        is Avatar.Image -> avatar.url
+        is Avatar.Resource -> null // handled separately below
         else -> null
     }
+    val avatarResourceId = (assistant.avatar as? Avatar.Resource)?.id
+
+    val bgCandidates = backgroundSource?.let { source ->
+        loadBitmap(context, source)?.let { extractCandidatesFromBitmap(it) }
+    } ?: emptyList()
+
+    val avatarCandidates = when {
+        avatarSource != null -> {
+            loadBitmap(context, avatarSource)?.let { extractCandidatesFromBitmap(it) }
+        }
+        avatarResourceId != null -> {
+            BitmapFactory.decodeResource(context.resources, avatarResourceId)
+                ?.let { extractCandidatesFromBitmap(it) }
+        }
+        else -> null
+    } ?: emptyList()
+
+    // The "primary" source is whichever one the old code would have used:
+    // background first, then avatar.
+    val primaryCandidates: List<Color>
+    val secondaryCandidates: List<Color>
+    if (bgCandidates.isNotEmpty()) {
+        primaryCandidates = bgCandidates
+        secondaryCandidates = avatarCandidates
+    } else {
+        primaryCandidates = avatarCandidates
+        secondaryCandidates = emptyList()
+    }
+
+    if (primaryCandidates.isEmpty()) return emptyList()
+
+    // Slot 0 = the old default (first from primary source).
+    // Fill remaining slots: first from primary extras, then secondary.
+    val result = mutableListOf(primaryCandidates.first())
+    val remaining = primaryCandidates.drop(1) + secondaryCandidates
+    for (candidate in remaining) {
+        if (result.size >= 4) break
+        // Only add if visually distinct from what we already have
+        if (result.none { existing -> existing.isColorClose(candidate) }) {
+            result.add(candidate)
+        }
+    }
+    return result
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Color scheme building
+// ═══════════════════════════════════════════════════════════════════════════
 
 private fun buildAssistantColorScheme(
     baseScheme: ColorScheme,
@@ -185,44 +249,88 @@ private fun Color.toArgbInt(): Int {
     return a or r or g or b
 }
 
-private fun extractSeedColorFromSource(
-    context: Context,
-    source: String
-): Color? {
-    val bitmap = loadBitmap(context, source) ?: return null
-    return extractSeedColorFromBitmap(bitmap)
-}
+// ═══════════════════════════════════════════════════════════════════════════
+// Bitmap palette extraction
+// ═══════════════════════════════════════════════════════════════════════════
 
-private fun extractSeedColorFromBitmap(
+/**
+ * Extract up to 4 distinct, normalized seed colors from a single bitmap.
+ * The first color matches the legacy auto-pick (dominant → muted → vibrant).
+ */
+private fun extractCandidatesFromBitmap(
     bitmap: Bitmap
-): Color? {
+): List<Color> {
     val scaled = scaleBitmap(bitmap, PALETTE_TARGET_SIZE)
     if (scaled != bitmap) {
         bitmap.recycle()
     }
 
     val palette = Palette.from(scaled).generate()
-    // Prefer dominant/muted swatches so browns and pastels aren't
-    // replaced by a louder vibrant swatch from a small accent region.
-    val swatch = palette.dominantSwatch
-        ?: palette.mutedSwatch
-        ?: palette.vibrantSwatch
-        ?: palette.lightMutedSwatch
-        ?: palette.lightVibrantSwatch
-        ?: palette.darkMutedSwatch
-        ?: palette.darkVibrantSwatch
-    val color = swatch?.rgb?.let { Color(it) }?.let { normalizeSeedColor(it) }
     scaled.recycle()
-    return color
+
+    // Ordered swatch priority – first non-null becomes candidate 0 (the default).
+    // Remaining distinct swatches fill slots 1-3.
+    val swatchesInPriority = listOfNotNull(
+        palette.dominantSwatch,
+        palette.mutedSwatch,
+        palette.vibrantSwatch,
+        palette.lightMutedSwatch,
+        palette.lightVibrantSwatch,
+        palette.darkMutedSwatch,
+        palette.darkVibrantSwatch
+    )
+
+    if (swatchesInPriority.isEmpty()) return emptyList()
+
+    val normalized = swatchesInPriority.map { swatch -> normalizeSeedColor(Color(swatch.rgb)) }
+
+    // Keep first (default), then pick those that are visually distinct.
+    val result = mutableListOf(normalized.first())
+    for (i in 1 until normalized.size) {
+        if (result.size >= 4) break
+        val candidate = normalized[i]
+        if (result.none { existing -> existing.isColorClose(candidate) }) {
+            result.add(candidate)
+        }
+    }
+    return result
 }
+
+/**
+ * Check if two normalized seed colors are too visually similar to both
+ * appear in the picker. Uses weighted HSL distance so that after
+ * normalization (which clamps saturation & lightness to narrow bands)
+ * we still get meaningful differentiation.
+ */
+private fun Color.isColorClose(other: Color): Boolean {
+    val hsl1 = floatArrayOf(0f, 0f, 0f)
+    val hsl2 = floatArrayOf(0f, 0f, 0f)
+    ColorUtils.colorToHSL(toArgbInt(), hsl1)
+    ColorUtils.colorToHSL(other.toArgbInt(), hsl2)
+
+    // Circular hue distance (0–180)
+    val hueDiff = kotlin.math.abs(hsl1[0] - hsl2[0]).let { minOf(it, 360f - it) }
+    val satDiff = kotlin.math.abs(hsl1[1] - hsl2[1])
+    val litDiff = kotlin.math.abs(hsl1[2] - hsl2[2])
+
+    // Weighted: hue matters most on [0-360], sat/lightness on [0-1]
+    // Scale hue to roughly same range as sat/lightness for comparison
+    val normalizedHueDist = hueDiff / 360f  // 0–0.5
+    val distance = normalizedHueDist * 2f + satDiff + litDiff
+    return distance < 0.12f // ~43° hue-only or equivalent combined distance
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Seed normalization
+// ═══════════════════════════════════════════════════════════════════════════
 
 /**
  * Normalize a raw extracted color into a well-behaved seed.
  *
  * Clamps the HSL values to:
- * - **Saturation**: 0.30 – 0.75 → prevents both desaturated "gray" seeds
+ * - **Saturation**: 0.12 – 0.75 → prevents both desaturated "gray" seeds
  *   and over-saturated "neon" seeds.
- * - **Lightness**: 0.35 – 0.55 → the mid-tone sweet spot that works as a
+ * - **Lightness**: 0.30 – 0.58 → the mid-tone sweet spot that works as a
  *   starting point for both dark-mode and light-mode tone mapping.
  *
  * The hue is always preserved so the theme still "feels" like the character.
@@ -249,6 +357,10 @@ private const val MIN_SEED_SATURATION = 0.12f
 private const val MAX_SEED_SATURATION = 0.75f
 private const val MIN_SEED_LIGHTNESS = 0.30f
 private const val MAX_SEED_LIGHTNESS = 0.58f
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bitmap loading utilities
+// ═══════════════════════════════════════════════════════════════════════════
 
 private fun scaleBitmap(bitmap: Bitmap, targetSize: Int): Bitmap {
     val width = bitmap.width

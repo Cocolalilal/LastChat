@@ -34,6 +34,8 @@
     <string name="assistant_page_chat_background_desc">Set background image for character chat page</string>
     <string name="assistant_page_material_you_from_character">Use Character Colors</string>
     <string name="assistant_page_material_you_from_character_desc">Extract Material You colors from background or avatar</string>
+    <string name="assistant_page_theme_color">Theme Color</string>
+    <string name="assistant_page_theme_color_desc">Choose a color palette extracted from your images</string>
     <string name="assistant_page_background_intensity">Background Intensity</string>
     <string name="assistant_page_background_intensity_desc">Darken in dark mode, lighten in light mode</string>
     <string name="assistant_page_chat_model">Chat Model</string>
@@ -957,6 +959,8 @@
     <string name="skills_page_enable_by_default">Enable by default</string>
     <string name="skills_page_available_for_all_characters">All characters can auto-toggle this skill</string>
     <string name="skills_page_available_for_characters_desc">Choose which characters can autonomously enable or disable this skill</string>
+    <string name="skills_page_always_enabled">Always enabled</string>
+    <string name="skills_page_always_enabled_desc">This skill is always active in every chat. Only you can disable it per-chat.</string>
     <string name="skills_page_available_in_all">All characters</string>
     <string name="skills_page_available_in_count">%d characters</string>
     <string name="skills_page_injection_position">Injection Position</string>

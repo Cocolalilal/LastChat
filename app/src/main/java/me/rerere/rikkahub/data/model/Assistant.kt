@@ -84,6 +84,7 @@ data class Assistant(
     val background: String? = null,
     val backgroundDim: Float = 0.6f,
     val useAssistantMaterialYouColors: Boolean = false,
+    val materialYouColorIndex: Int = 0, // 0 = auto (default pick), 1-3 = alternative palette colors
     val learningMode: Boolean = false,
     val enabledLorebookIds: Set<Uuid> = emptySet(), // Lorebooks enabled for this assistant
     val enabledSkillIds: Set<Uuid> = emptySet(), // Skills enabled for this assistant

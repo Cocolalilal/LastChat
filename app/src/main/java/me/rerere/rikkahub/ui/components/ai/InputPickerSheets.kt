@@ -68,13 +68,14 @@ internal fun SkillsPickerSheet(
 
     val availableSkills = remember(settings.skills) { settings.skills }
     val availableSkillIds = remember(availableSkills) { availableSkills.map { it.id }.toSet() }
-    val effectiveEnabledIds = remember(conversation.enabledModeIds, assistant.enabledSkillIds, availableSkillIds) {
+    val alwaysEnabledSkillIds = remember(availableSkills) { availableSkills.filter { it.alwaysEnabled }.map { it.id }.toSet() }
+    val effectiveEnabledIds = remember(conversation.enabledModeIds, assistant.enabledSkillIds, availableSkillIds, alwaysEnabledSkillIds) {
         val base = if (conversation.enabledModeIds.isNotEmpty()) {
             conversation.enabledModeIds
         } else {
             assistant.enabledSkillIds
         }
-        base.intersect(availableSkillIds)
+        (base + alwaysEnabledSkillIds).intersect(availableSkillIds)
     }
 
     var localEnabledIds by remember(conversation.id, conversation.enabledModeIds, assistant.enabledSkillIds) {
