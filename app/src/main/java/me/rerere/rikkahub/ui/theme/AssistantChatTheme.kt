@@ -202,13 +202,15 @@ private fun extractSeedColorFromBitmap(
     }
 
     val palette = Palette.from(scaled).generate()
-    val swatch = palette.vibrantSwatch
-        ?: palette.dominantSwatch
+    // Prefer dominant/muted swatches so browns and pastels aren't
+    // replaced by a louder vibrant swatch from a small accent region.
+    val swatch = palette.dominantSwatch
         ?: palette.mutedSwatch
-        ?: palette.lightVibrantSwatch
-        ?: palette.darkVibrantSwatch
+        ?: palette.vibrantSwatch
         ?: palette.lightMutedSwatch
+        ?: palette.lightVibrantSwatch
         ?: palette.darkMutedSwatch
+        ?: palette.darkVibrantSwatch
     val color = swatch?.rgb?.let { Color(it) }?.let { normalizeSeedColor(it) }
     scaled.recycle()
     return color
@@ -241,11 +243,12 @@ private fun normalizeSeedColor(color: Color): Color {
     return Color(ColorUtils.HSLToColor(hsl))
 }
 
-// Seed normalization bounds
-private const val MIN_SEED_SATURATION = 0.30f
+// Seed normalization bounds – intentionally wide so that soft
+// palettes (browns, pastels) are not pushed to stronger colors.
+private const val MIN_SEED_SATURATION = 0.12f
 private const val MAX_SEED_SATURATION = 0.75f
-private const val MIN_SEED_LIGHTNESS = 0.35f
-private const val MAX_SEED_LIGHTNESS = 0.55f
+private const val MIN_SEED_LIGHTNESS = 0.30f
+private const val MAX_SEED_LIGHTNESS = 0.58f
 
 private fun scaleBitmap(bitmap: Bitmap, targetSize: Int): Bitmap {
     val width = bitmap.width

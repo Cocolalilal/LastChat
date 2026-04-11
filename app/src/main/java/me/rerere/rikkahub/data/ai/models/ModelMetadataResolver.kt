@@ -71,9 +71,39 @@ class ModelMetadataResolver(
             preserveExistingType = true,
         ),
     ): ProviderSetting {
-        return provider.copyProvider(
-            models = provider.models.map { applyToModel(it, providerHint = provider, options = options) }
-        )
+        // Step 1: Resolve all models individually for capabilities, type, icon, etc.
+        val resolvedModels = provider.models.map { applyToModel(it, providerHint = provider, options = options) }
+
+        // Step 2: Compute batch-aware display names for context-aware disambiguation
+        // Collect which models need name generation (skip preserved names)
+        val needsNameGen = resolvedModels.mapIndexed { index, model ->
+            val original = provider.models[index]
+            val isPreserved = options.preserveDisplayName &&
+                    original.displayName.isNotBlank() &&
+                    original.displayName != original.modelId
+            !isPreserved
+        }
+
+        val batchEntries = resolvedModels.mapIndexedNotNull { index, model ->
+            if (needsNameGen[index]) {
+                index to (model.modelId to model.canonicalModelId)
+            } else null
+        }
+
+        if (batchEntries.isNotEmpty()) {
+            val batchInput = batchEntries.map { it.second }
+            val batchNames = ModelDisplayNameGenerator.generateBatch(batchInput)
+
+            val finalModels = resolvedModels.toMutableList()
+            batchEntries.forEachIndexed { batchIdx, (originalIdx, _) ->
+                finalModels[originalIdx] = finalModels[originalIdx].copy(
+                    displayName = batchNames[batchIdx]
+                )
+            }
+            return provider.copyProvider(models = finalModels)
+        }
+
+        return provider.copyProvider(models = resolvedModels)
     }
 
     fun estimateCostUsd(

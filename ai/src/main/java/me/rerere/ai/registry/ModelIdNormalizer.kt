@@ -76,6 +76,56 @@ object ModelIdNormalizer {
         return working
     }
 
+    /**
+     * Prepares a model ID in the same way canonicalize does (lowercasing, stripping
+     * provider namespace, etc.) but WITHOUT removing noise suffixes, dates, or versions.
+     * This preserves all differentiating tokens for comparison.
+     */
+    fun preprocess(modelId: String, canonicalHint: String? = null): String {
+        val raw = canonicalHint?.ifBlank { null } ?: modelId
+        if (raw.isBlank()) return ""
+
+        var working = raw.trim()
+            .lowercase(Locale.US)
+            .substringBefore('?')
+            .substringBefore('#')
+            .replace('_', '-')
+            .trim('/')
+
+        working = working.substringAfterLast("/")
+        working = working.substringAfterLast("models/")
+        working = stripProviderNamespace(working)
+        working = working.replace(Regex(":(?:\\d+|[a-z0-9._-]+)$"), "")
+        working = normalizeVersionTokens(working)
+        working = working.replace(Regex("-{2,}"), "-").trim('-')
+
+        return working
+    }
+
+    /**
+     * Returns the set of tokens present in the preprocessed model ID but absent
+     * from the canonical ID. These are the tokens that were stripped during
+     * canonicalization and are candidates for restoring during disambiguation.
+     */
+    fun extractStrippedTokens(modelId: String, canonicalHint: String? = null): List<String> {
+        val preprocessed = preprocess(modelId, canonicalHint)
+        val canonical = canonicalize(modelId, canonicalHint)
+
+        val preprocessedTokens = preprocessed.split('-').filter { it.isNotBlank() }
+        val canonicalTokens = canonical.split('-').filter { it.isNotBlank() }.toMutableList()
+
+        val stripped = mutableListOf<String>()
+        for (token in preprocessedTokens) {
+            val idx = canonicalTokens.indexOf(token)
+            if (idx >= 0) {
+                canonicalTokens.removeAt(idx)
+            } else {
+                stripped += token
+            }
+        }
+        return stripped
+    }
+
     private fun stripProviderNamespace(value: String): String {
         providerNamespaces.firstOrNull { value.startsWith(it) }?.let { prefix ->
             return value.removePrefix(prefix)
