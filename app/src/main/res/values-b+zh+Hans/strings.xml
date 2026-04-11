@@ -221,7 +221,6 @@
   <string name="activity_pill_ocr_done">冉OCR</string>
   <string name="activity_pill_ocr_done_count">运行 OCR x %1$d</string>
   <string name="activity_timeline_title">活动时间表</string>
-  <string name="activity_timeline_description">%1$d 个活动步骤</string>
   <string name="activity_timeline_empty">没有记录任何活动</string>
   <string name="activity_timeline_reasoning">推理</string>
   <string name="activity_timeline_ocr">OCR</string>

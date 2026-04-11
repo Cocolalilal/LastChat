@@ -221,7 +221,6 @@
   <string name="activity_pill_ocr_done">ركض التعرف الضوئي على الحروف</string>
   <string name="activity_pill_ocr_done_count">تم تشغيل التعرف الضوئي على الحروف x%1$d</string>
   <string name="activity_timeline_title">الجدول الزمني للنشاط</string>
-  <string name="activity_timeline_description">%1$d خطوات النشاط</string>
   <string name="activity_timeline_empty">لم يتم تسجيل أي نشاط</string>
   <string name="activity_timeline_reasoning">الاستدلال</string>
   <string name="activity_timeline_ocr">التعرف الضوئي على الحروف</string>

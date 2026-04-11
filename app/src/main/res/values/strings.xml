@@ -221,7 +221,10 @@
     <string name="activity_pill_ocr_done">Ran OCR</string>
     <string name="activity_pill_ocr_done_count">Ran OCR x%1$d</string>
     <string name="activity_timeline_title">Activity Timeline</string>
-    <string name="activity_timeline_description">%1$d activity step(s)</string>
+    <plurals name="activity_timeline_steps">
+        <item quantity="one">%1$d activity step</item>
+        <item quantity="other">%1$d activity steps</item>
+    </plurals>
     <string name="activity_timeline_empty">No activity recorded</string>
     <string name="activity_timeline_reasoning">Reasoning</string>
     <string name="activity_timeline_ocr">OCR</string>
