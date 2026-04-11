@@ -53,8 +53,13 @@ class ModelMetadataResolver(
             inputModalities = inputModalities,
             outputModalities = outputModalities,
             abilities = abilities,
-            providerSlug = model.providerSlug ?: model.modelId.substringBefore("/")
-                .takeIf { model.modelId.contains("/") },
+            providerSlug = model.providerSlug
+                ?.takeIf { it.isNotBlank() }
+                ?.toIconProviderSlug()
+                ?: catalogEntry?.iconProviderSlug()
+                ?: model.modelId.substringBefore("/")
+                    .takeIf { model.modelId.contains("/") }
+                    ?.toIconProviderSlug(),
         )
     }
 
@@ -258,6 +263,27 @@ private fun ModelCatalogEntry.matchesProviderHint(providerHint: ProviderSetting?
     val litellmProviderToken = litellmProvider?.normalizeProviderToken()
     return allowedProviders.any { candidate ->
         candidate == keyProvider || candidate == litellmProviderToken
+    }
+}
+
+private fun ModelCatalogEntry.iconProviderSlug(): String? {
+    return litellmProvider?.toIconProviderSlug()
+        ?: key.substringBefore("/")
+            .takeIf { key.contains("/") }
+            ?.toIconProviderSlug()
+}
+
+private fun String.toIconProviderSlug(): String {
+    return when (normalizeProviderToken()) {
+        "gemini",
+        "google-ai-studio",
+        "vertex-ai",
+        "vertex-ai-language-models" -> "google"
+        "azure-openai",
+        "azure-ai",
+        "azure" -> "azure"
+        "bedrock-converse" -> "bedrock"
+        else -> normalizeProviderToken()
     }
 }
 

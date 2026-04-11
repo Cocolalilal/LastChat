@@ -82,10 +82,30 @@ fun UIMessagePart.Audio.encodeBase64(withPrefix: Boolean = true): Result<String>
 }
 
 private fun convertToJpeg(file: File) = runCatching {
-    val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+    // First pass: decode bounds only to avoid OOM on huge images
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(file.absolutePath, bounds)
+
+    // Calculate sample size to keep the decoded bitmap within reasonable memory
+    val maxDimension = 4096
+    var inSampleSize = 1
+    if (bounds.outWidth > maxDimension || bounds.outHeight > maxDimension) {
+        val halfW = bounds.outWidth / 2
+        val halfH = bounds.outHeight / 2
+        while ((halfW / inSampleSize) >= maxDimension && (halfH / inSampleSize) >= maxDimension) {
+            inSampleSize *= 2
+        }
+    }
+
+    val opts = BitmapFactory.Options().apply {
+        this.inSampleSize = inSampleSize
+    }
+    val bitmap = BitmapFactory.decodeFile(file.absolutePath, opts)
+        ?: throw IllegalStateException("Failed to decode image: ${file.absolutePath}")
     FileOutputStream(file).use { outputStream ->
         bitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
     }
+    bitmap.recycle()
 }
 
 private fun File.isSupportedType(): Boolean {

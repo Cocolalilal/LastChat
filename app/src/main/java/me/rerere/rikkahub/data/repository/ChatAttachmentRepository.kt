@@ -634,6 +634,9 @@ class ChatAttachmentRepository(
             )
         )
         file.writeBytes(outputBytes)
+        // Use inJustDecodeBounds to get dimensions without allocating a full bitmap
+        val outputBounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(outputBytes, 0, outputBytes.size, outputBounds)
         val entity = ChatAttachmentEntity(
             id = Uuid.random().toString(),
             filePath = file.absolutePath,
@@ -642,8 +645,8 @@ class ChatAttachmentRepository(
             mime = outputMime,
             kind = ChatAttachmentKind.IMAGE.name,
             sizeBytes = file.length(),
-            width = BitmapFactory.decodeByteArray(outputBytes, 0, outputBytes.size)?.width ?: imageInfo?.width,
-            height = BitmapFactory.decodeByteArray(outputBytes, 0, outputBytes.size)?.height ?: imageInfo?.height,
+            width = outputBounds.outWidth.takeIf { it > 0 } ?: imageInfo?.width,
+            height = outputBounds.outHeight.takeIf { it > 0 } ?: imageInfo?.height,
             ocrStatus = ChatAttachmentOcrStatus.NONE.name,
             createdAt = System.currentTimeMillis(),
             updatedAt = System.currentTimeMillis(),

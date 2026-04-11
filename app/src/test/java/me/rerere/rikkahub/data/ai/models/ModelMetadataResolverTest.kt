@@ -168,6 +168,25 @@ class ModelMetadataResolverTest {
         assertEquals(emptyList<ModelAbility>(), resolved.abilities)
     }
 
+    @Test
+    fun usesLitellmProviderForIconSlugFallback() {
+        val resolver = resolverFor(
+            """
+            {
+              "sample_spec": {},
+              "my-custom-google-model": {
+                "litellm_provider": "vertex_ai",
+                "mode": "chat"
+              }
+            }
+            """.trimIndent()
+        )
+
+        val resolved = resolver.applyToModel(Model(modelId = "my-custom-google-model"))
+
+        assertEquals("google", resolved.providerSlug)
+    }
+
     private fun resolverFor(rawJson: String): ModelMetadataResolver {
         val snapshot = ModelCatalogParser.parse(rawJson)
         return ModelMetadataResolver(snapshotProvider = { snapshot })

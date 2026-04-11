@@ -111,16 +111,28 @@ import androidx.compose.material.icons.rounded.ViewModule
 import androidx.compose.material.icons.rounded.Widgets
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import me.rerere.ai.core.InputSchema
+import me.rerere.ai.core.ReasoningLevel
+import me.rerere.ai.core.Tool
+import me.rerere.ai.provider.CustomBody
 import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ImageGenerationMethod
+import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
+import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.models.ModelMetadataResolver
 import me.rerere.rikkahub.data.ai.models.ModelResolutionOptions
@@ -1014,52 +1026,38 @@ private fun ModelSettingsForm(
                                     scope.launch {
                                         isProbingCapabilities = true
                                         runCatching {
-                                            providerManager.getProviderByType(parentProvider)
-                                                .listModels(parentProvider)
-                                        }.onSuccess { apiModels ->
-                                            val apiModel = apiModels.firstOrNull { it.modelId == model.modelId }
-                                                ?: apiModels.firstOrNull {
-                                                    it.modelId.equals(model.modelId, ignoreCase = true)
-                                                }
-                                            val probedCapabilities = apiModel?.let(::extractProbedCapabilities)
-
-                                            when {
-                                                apiModel == null -> {
+                                            probeModelCapabilities(
+                                                providerManager = providerManager,
+                                                provider = parentProvider,
+                                                model = model,
+                                            )
+                                        }.onSuccess { probedCapabilities ->
+                                            if (probedCapabilities == null) {
+                                                toaster.show(
+                                                    context.getString(R.string.setting_provider_page_probe_capabilities_no_data),
+                                                    type = ToastType.Info,
+                                                )
+                                            } else {
+                                                val updatedModel = model.copy(
+                                                    inputModalities = probedCapabilities.inputModalities,
+                                                    outputModalities = probedCapabilities.outputModalities,
+                                                    abilities = probedCapabilities.abilities,
+                                                )
+                                                if (
+                                                    updatedModel.inputModalities == model.inputModalities &&
+                                                    updatedModel.outputModalities == model.outputModalities &&
+                                                    updatedModel.abilities == model.abilities
+                                                ) {
                                                     toaster.show(
-                                                        context.getString(R.string.setting_provider_page_probe_capabilities_not_found),
+                                                        context.getString(R.string.setting_provider_page_probe_capabilities_unchanged),
                                                         type = ToastType.Info,
                                                     )
-                                                }
-
-                                                probedCapabilities == null -> {
+                                                } else {
+                                                    onModelChange(updatedModel)
                                                     toaster.show(
-                                                        context.getString(R.string.setting_provider_page_probe_capabilities_no_data),
-                                                        type = ToastType.Info,
+                                                        context.getString(R.string.setting_provider_page_probe_capabilities_success),
+                                                        type = ToastType.Success,
                                                     )
-                                                }
-
-                                                else -> {
-                                                    val updatedModel = model.copy(
-                                                        inputModalities = probedCapabilities.inputModalities,
-                                                        outputModalities = probedCapabilities.outputModalities,
-                                                        abilities = probedCapabilities.abilities,
-                                                    )
-                                                    if (
-                                                        updatedModel.inputModalities == model.inputModalities &&
-                                                        updatedModel.outputModalities == model.outputModalities &&
-                                                        updatedModel.abilities == model.abilities
-                                                    ) {
-                                                        toaster.show(
-                                                            context.getString(R.string.setting_provider_page_probe_capabilities_unchanged),
-                                                            type = ToastType.Info,
-                                                        )
-                                                    } else {
-                                                        onModelChange(updatedModel)
-                                                        toaster.show(
-                                                            context.getString(R.string.setting_provider_page_probe_capabilities_success),
-                                                            type = ToastType.Success,
-                                                        )
-                                                    }
                                                 }
                                             }
                                         }.onFailure { error ->
@@ -1676,20 +1674,266 @@ private data class ProbedModelCapabilities(
     val abilities: List<ModelAbility>,
 )
 
-private fun extractProbedCapabilities(model: Model): ProbedModelCapabilities? {
-    val inputModalities = model.inputModalities.ifEmpty { listOf(Modality.TEXT) }.distinct()
-    val outputModalities = model.outputModalities.ifEmpty { listOf(Modality.TEXT) }.distinct()
-    val abilities = model.abilities.distinct()
-    val hasProbeSignal = abilities.isNotEmpty() ||
-        inputModalities.contains(Modality.IMAGE) ||
-        outputModalities.contains(Modality.IMAGE)
-    if (!hasProbeSignal) return null
+private const val CAPABILITY_PROBE_TOOL_NAME = "lastchat_capability_probe_tool"
+private const val CAPABILITY_PROBE_IMAGE_DATA_URI =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF9sAAAAASUVORK5CYII="
+
+private suspend fun probeModelCapabilities(
+    providerManager: ProviderManager,
+    provider: ProviderSetting,
+    model: Model,
+): ProbedModelCapabilities? {
+    return when (provider) {
+        is ProviderSetting.OpenAI -> probeModelCapabilities(
+            providerInstance = providerManager.getProviderByType(provider),
+            provider = provider,
+            model = model,
+        )
+
+        is ProviderSetting.Google -> probeModelCapabilities(
+            providerInstance = providerManager.getProviderByType(provider),
+            provider = provider,
+            model = model,
+        )
+
+        is ProviderSetting.Claude -> probeModelCapabilities(
+            providerInstance = providerManager.getProviderByType(provider),
+            provider = provider,
+            model = model,
+        )
+    }
+}
+
+private suspend fun <T : ProviderSetting> probeModelCapabilities(
+    providerInstance: Provider<T>,
+    provider: T,
+    model: Model,
+): ProbedModelCapabilities? {
+    val apiModel = runCatching { providerInstance.listModels(provider).findExactModel(model.modelId) }
+        .getOrNull()
+
+    ensureModelResponds(
+        providerInstance = providerInstance,
+        provider = provider,
+        model = model,
+    )
+
+    val supportsVisionInput = apiModel?.inputModalities?.contains(Modality.IMAGE) == true ||
+        runCatching {
+            probeVisionInputSupport(
+                providerInstance = providerInstance,
+                provider = provider,
+                model = model,
+            )
+        }.getOrDefault(false)
+
+    val supportsToolCalling = apiModel?.abilities?.contains(ModelAbility.TOOL) == true ||
+        runCatching {
+            probeToolSupport(
+                providerInstance = providerInstance,
+                provider = provider,
+                model = model,
+            )
+        }.getOrDefault(false)
+
+    val supportsReasoning = apiModel?.abilities?.contains(ModelAbility.REASONING) == true ||
+        runCatching {
+            probeReasoningSupport(
+                providerInstance = providerInstance,
+                provider = provider,
+                model = model,
+            )
+        }.getOrDefault(false)
+
+    val hasExternalSignal = apiModel != null || supportsVisionInput || supportsToolCalling || supportsReasoning
+    if (!hasExternalSignal) {
+        return null
+    }
+
+    val inputModalities = linkedSetOf<Modality>().apply {
+        addAll(model.inputModalities.ifEmpty { listOf(Modality.TEXT) })
+        add(Modality.TEXT)
+        addAll(apiModel?.inputModalities.orEmpty())
+        if (supportsVisionInput) {
+            add(Modality.IMAGE)
+        }
+    }.toList()
+
+    val outputModalities = linkedSetOf<Modality>().apply {
+        addAll(model.outputModalities.ifEmpty { listOf(Modality.TEXT) })
+        add(Modality.TEXT)
+        addAll(apiModel?.outputModalities.orEmpty())
+    }.toList()
+
+    val abilities = linkedSetOf<ModelAbility>().apply {
+        addAll(model.abilities)
+        addAll(apiModel?.abilities.orEmpty())
+        if (supportsToolCalling) {
+            add(ModelAbility.TOOL)
+        }
+        if (supportsReasoning) {
+            add(ModelAbility.REASONING)
+        }
+    }.toList()
 
     return ProbedModelCapabilities(
         inputModalities = inputModalities,
         outputModalities = outputModalities,
         abilities = abilities,
     )
+}
+
+private suspend fun <T : ProviderSetting> ensureModelResponds(
+    providerInstance: Provider<T>,
+    provider: T,
+    model: Model,
+) {
+    providerInstance.generateText(
+        providerSetting = provider,
+        messages = listOf(UIMessage.user("Reply with OK only.")),
+        params = TextGenerationParams(
+            model = model.copy(abilities = emptyList()),
+            maxTokens = 8,
+            thinkingBudget = 0,
+            customHeaders = model.customHeaders,
+            customBody = model.customBodies,
+        ),
+    )
+}
+
+private suspend fun <T : ProviderSetting> probeToolSupport(
+    providerInstance: Provider<T>,
+    provider: T,
+    model: Model,
+): Boolean {
+    val response = providerInstance.generateText(
+        providerSetting = provider,
+        messages = listOf(
+            UIMessage.system("You are testing tool support. Call the provided tool immediately and do not answer with plain text."),
+            UIMessage.user("Call the capability probe tool now."),
+        ),
+        params = TextGenerationParams(
+            model = model.copy(
+                abilities = (model.abilities + ModelAbility.TOOL).distinct(),
+            ),
+            maxTokens = 32,
+            tools = listOf(
+                Tool(
+                    name = CAPABILITY_PROBE_TOOL_NAME,
+                    description = "Simple capability probe tool.",
+                    parameters = {
+                        InputSchema.Obj(
+                            properties = JsonObject(emptyMap()),
+                            required = emptyList(),
+                        )
+                    },
+                    execute = { JsonNull },
+                )
+            ),
+            thinkingBudget = 0,
+            customHeaders = model.customHeaders,
+            customBody = model.customBodies + buildToolProbeCustomBodies(provider),
+        ),
+    )
+
+    return response.primaryMessage()
+        ?.parts
+        ?.filterIsInstance<UIMessagePart.ToolCall>()
+        ?.any { it.toolName == CAPABILITY_PROBE_TOOL_NAME }
+        ?: false
+}
+
+private suspend fun <T : ProviderSetting> probeReasoningSupport(
+    providerInstance: Provider<T>,
+    provider: T,
+    model: Model,
+): Boolean {
+    val response = providerInstance.generateText(
+        providerSetting = provider,
+        messages = listOf(UIMessage.user("Reply with the single word OK.")),
+        params = TextGenerationParams(
+            model = model.copy(
+                abilities = (model.abilities + ModelAbility.REASONING).distinct(),
+            ),
+            maxTokens = 32,
+            thinkingBudget = ReasoningLevel.LOW.budgetTokens,
+            customHeaders = model.customHeaders,
+            customBody = model.customBodies,
+        ),
+    )
+
+    return response.primaryMessage()
+        ?.parts
+        ?.any { part ->
+            part is UIMessagePart.Reasoning && part.reasoning.isNotBlank()
+        }
+        ?: false
+}
+
+private suspend fun <T : ProviderSetting> probeVisionInputSupport(
+    providerInstance: Provider<T>,
+    provider: T,
+    model: Model,
+): Boolean {
+    providerInstance.generateText(
+        providerSetting = provider,
+        messages = listOf(
+            UIMessage(
+                role = me.rerere.ai.core.MessageRole.USER,
+                parts = listOf(
+                    UIMessagePart.Text("Reply with OK only."),
+                    UIMessagePart.Image(CAPABILITY_PROBE_IMAGE_DATA_URI),
+                ),
+            )
+        ),
+        params = TextGenerationParams(
+            model = model,
+            maxTokens = 8,
+            thinkingBudget = 0,
+            customHeaders = model.customHeaders,
+            customBody = model.customBodies,
+        ),
+    )
+
+    return true
+}
+
+private fun List<Model>.findExactModel(modelId: String): Model? {
+    return firstOrNull { it.modelId == modelId }
+        ?: firstOrNull { it.modelId.equals(modelId, ignoreCase = true) }
+}
+
+private fun MessageChunk.primaryMessage() = choices.firstOrNull()?.message ?: choices.firstOrNull()?.delta
+
+private fun buildToolProbeCustomBodies(provider: ProviderSetting): List<CustomBody> {
+    return when (provider) {
+        is ProviderSetting.OpenAI -> listOf(
+            CustomBody(
+                key = "tool_choice",
+                value = JsonPrimitive("required"),
+            )
+        )
+
+        is ProviderSetting.Claude -> listOf(
+            CustomBody(
+                key = "tool_choice",
+                value = buildJsonObject {
+                    put("type", "any")
+                },
+            )
+        )
+
+        is ProviderSetting.Google -> listOf(
+            CustomBody(
+                key = "toolConfig",
+                value = buildJsonObject {
+                    put("functionCallingConfig", buildJsonObject {
+                        put("mode", "ANY")
+                    })
+                },
+            )
+        )
+    }
 }
 
 @Composable

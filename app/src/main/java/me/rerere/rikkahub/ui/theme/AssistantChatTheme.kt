@@ -11,8 +11,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.graphics.ColorUtils
 import androidx.palette.graphics.Palette
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -98,39 +98,91 @@ private fun buildAssistantColorScheme(
     seedColor: Color,
     darkTheme: Boolean
 ): ColorScheme {
-    val primary = seedColor
-    val secondary = lerp(seedColor, baseScheme.secondary, 0.4f)
-    val tertiary = lerp(seedColor, baseScheme.tertiary, 0.6f)
-    val containerBlend = if (darkTheme) 0.35f else 0.82f
+    // Derive mode-appropriate tones from the normalized seed hue & saturation.
+    // In dark mode, primary needs to be bright enough to read on dark backgrounds.
+    // In light mode, primary needs to be dark enough to read on light backgrounds.
+    val primary = adjustTone(seedColor, if (darkTheme) 0.72f else 0.40f)
+    val secondary = adjustTone(
+        lerp(seedColor, baseScheme.secondary, 0.35f),
+        if (darkTheme) 0.68f else 0.42f
+    )
+    val tertiary = adjustTone(
+        lerp(seedColor, baseScheme.tertiary, 0.50f),
+        if (darkTheme) 0.68f else 0.42f
+    )
 
-    val primaryContainer = lerp(primary, baseScheme.surface, containerBlend)
-    val secondaryContainer = lerp(secondary, baseScheme.surface, containerBlend)
-    val tertiaryContainer = lerp(tertiary, baseScheme.surface, containerBlend)
-    val inversePrimary = if (darkTheme) {
-        lerp(primary, Color.White, 0.55f)
-    } else {
-        lerp(primary, Color.Black, 0.3f)
-    }
+    // Containers: subtle tinted surfaces
+    val primaryContainer = adjustTone(seedColor, if (darkTheme) 0.22f else 0.90f)
+    val secondaryContainer = adjustTone(
+        lerp(seedColor, baseScheme.secondary, 0.35f),
+        if (darkTheme) 0.20f else 0.92f
+    )
+    val tertiaryContainer = adjustTone(
+        lerp(seedColor, baseScheme.tertiary, 0.50f),
+        if (darkTheme) 0.20f else 0.92f
+    )
+
+    // onContainer: high contrast text on containers
+    val onPrimaryContainer = adjustTone(seedColor, if (darkTheme) 0.92f else 0.10f)
+    val onSecondaryContainer = adjustTone(
+        lerp(seedColor, baseScheme.secondary, 0.35f),
+        if (darkTheme) 0.92f else 0.10f
+    )
+    val onTertiaryContainer = adjustTone(
+        lerp(seedColor, baseScheme.tertiary, 0.50f),
+        if (darkTheme) 0.92f else 0.10f
+    )
+
+    val inversePrimary = adjustTone(seedColor, if (darkTheme) 0.38f else 0.75f)
 
     return baseScheme.copy(
         primary = primary,
-        onPrimary = onColorFor(primary),
+        onPrimary = contrastSafeOnColor(primary),
         primaryContainer = primaryContainer,
-        onPrimaryContainer = onColorFor(primaryContainer),
+        onPrimaryContainer = onPrimaryContainer,
         inversePrimary = inversePrimary,
         secondary = secondary,
-        onSecondary = onColorFor(secondary),
+        onSecondary = contrastSafeOnColor(secondary),
         secondaryContainer = secondaryContainer,
-        onSecondaryContainer = onColorFor(secondaryContainer),
+        onSecondaryContainer = onSecondaryContainer,
         tertiary = tertiary,
-        onTertiary = onColorFor(tertiary),
+        onTertiary = contrastSafeOnColor(tertiary),
         tertiaryContainer = tertiaryContainer,
-        onTertiaryContainer = onColorFor(tertiaryContainer),
+        onTertiaryContainer = onTertiaryContainer,
     )
 }
 
-private fun onColorFor(color: Color): Color {
-    return if (color.luminance() > 0.5f) Color.Black else Color.White
+/**
+ * Shift a color to a target HSL lightness while preserving hue and saturation.
+ */
+private fun adjustTone(color: Color, targetLightness: Float): Color {
+    val hsl = floatArrayOf(0f, 0f, 0f)
+    ColorUtils.colorToHSL(color.toArgbInt(), hsl)
+    hsl[2] = targetLightness
+    return Color(ColorUtils.HSLToColor(hsl))
+}
+
+/**
+ * Returns black or white, whichever provides at least 4.5:1 contrast ratio
+ * against [color]. Falls back to the higher-contrast option if neither meets
+ * the threshold exactly.
+ */
+private fun contrastSafeOnColor(color: Color): Color {
+    val argb = color.toArgbInt()
+    val contrastWhite = ColorUtils.calculateContrast(0xFFFFFFFF.toInt(), argb)
+    val contrastBlack = ColorUtils.calculateContrast(0xFF000000.toInt(), argb)
+    return if (contrastWhite >= contrastBlack) Color.White else Color.Black
+}
+
+/**
+ * Convert Compose [Color] to an ARGB int suitable for [ColorUtils].
+ */
+private fun Color.toArgbInt(): Int {
+    val a = (alpha * 255 + 0.5f).toInt() shl 24
+    val r = (red * 255 + 0.5f).toInt() shl 16
+    val g = (green * 255 + 0.5f).toInt() shl 8
+    val b = (blue * 255 + 0.5f).toInt()
+    return a or r or g or b
 }
 
 private fun extractSeedColorFromSource(
@@ -157,10 +209,43 @@ private fun extractSeedColorFromBitmap(
         ?: palette.darkVibrantSwatch
         ?: palette.lightMutedSwatch
         ?: palette.darkMutedSwatch
-    val color = swatch?.rgb?.let { Color(it) }
+    val color = swatch?.rgb?.let { Color(it) }?.let { normalizeSeedColor(it) }
     scaled.recycle()
     return color
 }
+
+/**
+ * Normalize a raw extracted color into a well-behaved seed.
+ *
+ * Clamps the HSL values to:
+ * - **Saturation**: 0.30 – 0.75 → prevents both desaturated "gray" seeds
+ *   and over-saturated "neon" seeds.
+ * - **Lightness**: 0.35 – 0.55 → the mid-tone sweet spot that works as a
+ *   starting point for both dark-mode and light-mode tone mapping.
+ *
+ * The hue is always preserved so the theme still "feels" like the character.
+ *
+ * For very low-chroma colors (near grayscale, saturation < 0.08), we
+ * bump the saturation to a subtle minimum so the theme isn't completely flat.
+ */
+private fun normalizeSeedColor(color: Color): Color {
+    val hsl = floatArrayOf(0f, 0f, 0f)
+    ColorUtils.colorToHSL(color.toArgbInt(), hsl)
+
+    // Clamp saturation: avoid gray & neon
+    hsl[1] = hsl[1].coerceIn(MIN_SEED_SATURATION, MAX_SEED_SATURATION)
+
+    // Clamp lightness: avoid too-dark & too-bright seeds
+    hsl[2] = hsl[2].coerceIn(MIN_SEED_LIGHTNESS, MAX_SEED_LIGHTNESS)
+
+    return Color(ColorUtils.HSLToColor(hsl))
+}
+
+// Seed normalization bounds
+private const val MIN_SEED_SATURATION = 0.30f
+private const val MAX_SEED_SATURATION = 0.75f
+private const val MIN_SEED_LIGHTNESS = 0.35f
+private const val MAX_SEED_LIGHTNESS = 0.55f
 
 private fun scaleBitmap(bitmap: Bitmap, targetSize: Int): Bitmap {
     val width = bitmap.width
