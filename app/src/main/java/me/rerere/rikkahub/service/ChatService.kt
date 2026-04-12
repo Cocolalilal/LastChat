@@ -783,10 +783,41 @@ class ChatService(
             .firstOrNull { it.id == messageId }
             ?: return
 
-        val relatedMessages = collectRelatedMessages(currentConversation, message)
-        var updatedConversation = deleteMessageInternal(currentConversation, message)
-        relatedMessages.forEach { related ->
-            updatedConversation = deleteMessageInternal(updatedConversation, related)
+        val updatedConversation = if (message.role == MessageRole.USER) {
+            // User message: delete this message and ALL messages after it
+            val node = currentConversation.getMessageNodeByMessageId(messageId) ?: return
+            val nodeIndex = currentConversation.messageNodes.indexOf(node)
+            if (nodeIndex == -1) return
+
+            if (node.messages.size > 1) {
+                // Multi-version node: remove just this version and truncate everything after
+                val remainingMessages = node.messages.filter { it.id != messageId }
+                val updatedNode = node.copy(
+                    messages = remainingMessages,
+                    selectIndex = if (node.selectIndex >= remainingMessages.size) {
+                        remainingMessages.lastIndex
+                    } else {
+                        node.selectIndex
+                    }
+                )
+                currentConversation.copy(
+                    messageNodes = currentConversation.messageNodes.subList(0, nodeIndex) +
+                        listOf(updatedNode)
+                )
+            } else {
+                // Single-version node: truncate everything from this node onward
+                currentConversation.copy(
+                    messageNodes = currentConversation.messageNodes.subList(0, nodeIndex)
+                )
+            }
+        } else {
+            // Assistant/Tool message: existing behavior
+            val relatedMessages = collectRelatedMessages(currentConversation, message)
+            var result = deleteMessageInternal(currentConversation, message)
+            relatedMessages.forEach { related ->
+                result = deleteMessageInternal(result, related)
+            }
+            result
         }
 
         saveConversation(

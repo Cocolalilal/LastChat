@@ -449,6 +449,12 @@ private fun ChatPageContent(
     // State for regeneration confirmation dialog
     var showRegenerateConfirmDialog by rememberSaveable { mutableStateOf(false) }
     var pendingRegenerateMessage by rememberSaveable { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
+    // State for user message regeneration confirmation dialog
+    var showUserRegenerateConfirmDialog by rememberSaveable { mutableStateOf(false) }
+    var pendingUserRegenerateMessage by rememberSaveable { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
+    // State for user message delete confirmation dialog
+    var showDeleteConfirmDialog by rememberSaveable { mutableStateOf(false) }
+    var pendingDeleteMessage by rememberSaveable { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
     val toolbarPlacement = chatTopBarPlacement(setting)
     
     // Auto-scroll to first matching message when opened from search
@@ -572,13 +578,15 @@ private fun ChatPageContent(
                             }
                         },
                         onRegenerate = { message ->
-                            // Check if this is a simple message (can preserve version history)
-                            // or complex message (will wipe old version)
-                            if (vm.canPreserveVersionHistory(message)) {
-                                // Simple message - regenerate with version history
+                            if (message.role == me.rerere.ai.core.MessageRole.USER) {
+                                // User message regeneration always truncates - show confirmation
+                                pendingUserRegenerateMessage = message
+                                showUserRegenerateConfirmDialog = true
+                            } else if (vm.canPreserveVersionHistory(message)) {
+                                // Simple assistant message - regenerate with version history
                                 vm.regenerateAtMessage(message, forceWipe = false)
                             } else {
-                                // Complex message - show confirmation dialog
+                                // Complex assistant message - show confirmation dialog
                                 pendingRegenerateMessage = message
                                 showRegenerateConfirmDialog = true
                             }
@@ -588,20 +596,27 @@ private fun ChatPageContent(
                             inputState.setContents(it.parts)
                         },
 
-                        onDelete = {
-                            scope.launch {
-                                val backup = conversation
-                                val removedIds = vm.deleteMessage(it)
-                                toaster.show(
-                                    message = context.getString(R.string.message_deleted),
-                                    action = me.rerere.rikkahub.ui.components.ui.ToastAction(
-                                        label = context.getString(R.string.undo),
-                                        onClick = {
-                                            vm.updateConversation(backup)
-                                            vm.markNodesAsRestored(removedIds)
-                                        }
+                        onDelete = { message ->
+                            if (message.role == me.rerere.ai.core.MessageRole.USER) {
+                                // User message deletion removes all messages after - show confirmation
+                                pendingDeleteMessage = message
+                                showDeleteConfirmDialog = true
+                            } else {
+                                // Assistant message deletion - keep existing behavior with undo toast
+                                scope.launch {
+                                    val backup = conversation
+                                    val removedIds = vm.deleteMessage(message)
+                                    toaster.show(
+                                        message = context.getString(R.string.message_deleted),
+                                        action = me.rerere.rikkahub.ui.components.ui.ToastAction(
+                                            label = context.getString(R.string.undo),
+                                            onClick = {
+                                                vm.updateConversation(backup)
+                                                vm.markNodesAsRestored(removedIds)
+                                            }
+                                        )
                                     )
-                                )
+                                }
                             }
                         },
                         onUpdateMessage = { newNode ->
@@ -756,6 +771,93 @@ private fun ChatPageContent(
                                 onClick = {
                                     showRegenerateConfirmDialog = false
                                     pendingRegenerateMessage = null
+                                }
+                            ) {
+                                Text(stringResource(R.string.cancel))
+                            }
+                        }
+                    )
+                }
+
+                // User message regeneration confirmation dialog
+                if (showUserRegenerateConfirmDialog && pendingUserRegenerateMessage != null) {
+                    AlertDialog(
+                        onDismissRequest = {
+                            showUserRegenerateConfirmDialog = false
+                            pendingUserRegenerateMessage = null
+                        },
+                        title = { Text(stringResource(R.string.chat_regenerate_user_message_title)) },
+                        text = {
+                            Text(stringResource(R.string.chat_regenerate_user_message_warning))
+                        },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    pendingUserRegenerateMessage?.let { message ->
+                                        vm.regenerateAtMessage(message, forceWipe = false)
+                                    }
+                                    showUserRegenerateConfirmDialog = false
+                                    pendingUserRegenerateMessage = null
+                                }
+                            ) {
+                                Text(stringResource(R.string.regenerate))
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(
+                                onClick = {
+                                    showUserRegenerateConfirmDialog = false
+                                    pendingUserRegenerateMessage = null
+                                }
+                            ) {
+                                Text(stringResource(R.string.cancel))
+                            }
+                        }
+                    )
+                }
+
+                // User message delete confirmation dialog
+                if (showDeleteConfirmDialog && pendingDeleteMessage != null) {
+                    AlertDialog(
+                        onDismissRequest = {
+                            showDeleteConfirmDialog = false
+                            pendingDeleteMessage = null
+                        },
+                        title = { Text(stringResource(R.string.chat_delete_user_message_title)) },
+                        text = {
+                            Text(stringResource(R.string.chat_delete_user_message_warning))
+                        },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    pendingDeleteMessage?.let { message ->
+                                        scope.launch {
+                                            val backup = conversation
+                                            val removedIds = vm.deleteMessage(message)
+                                            toaster.show(
+                                                message = context.getString(R.string.message_deleted),
+                                                action = me.rerere.rikkahub.ui.components.ui.ToastAction(
+                                                    label = context.getString(R.string.undo),
+                                                    onClick = {
+                                                        vm.updateConversation(backup)
+                                                        vm.markNodesAsRestored(removedIds)
+                                                    }
+                                                )
+                                            )
+                                        }
+                                    }
+                                    showDeleteConfirmDialog = false
+                                    pendingDeleteMessage = null
+                                }
+                            ) {
+                                Text(stringResource(R.string.delete))
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(
+                                onClick = {
+                                    showDeleteConfirmDialog = false
+                                    pendingDeleteMessage = null
                                 }
                             ) {
                                 Text(stringResource(R.string.cancel))

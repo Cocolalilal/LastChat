@@ -68,6 +68,7 @@ data class Assistant(
     val lastNotificationTime: Long = 0L, // Timestamp of last spontaneous notification
     val lastNotificationContent: String = "", // Content of last spontaneous notification to reduce repetition
     val enableSpontaneous: Boolean = false,
+    val spontaneousMessageMode: SpontaneousMessageMode = SpontaneousMessageMode.BOTH,
     val spontaneousPrompt: String = "",
 
     val messageTemplate: String = "{{ message }}",
@@ -157,6 +158,13 @@ enum class ContextPriority {
     CHAT_HISTORY,
     BALANCED,
     MEMORIES
+}
+
+@Serializable
+enum class SpontaneousMessageMode {
+    BOTH,
+    CONTINUE_ONLY,
+    NEW_ONLY,
 }
 
 @Serializable

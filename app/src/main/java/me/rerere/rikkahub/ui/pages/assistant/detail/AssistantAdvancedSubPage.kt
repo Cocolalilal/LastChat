@@ -33,6 +33,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.model.SpontaneousMessageMode
+import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
@@ -210,6 +212,33 @@ fun AssistantAdvancedSubPage(
                 }
             }
 
+
+            AnimatedVisibility(
+                visible = assistant.enableSpontaneous,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically(),
+            ) {
+                SettingGroupItem(
+                    title = stringResource(R.string.assistant_advanced_message_type),
+                    subtitle = stringResource(R.string.assistant_advanced_message_type_desc),
+                    trailing = {
+                        Select(
+                            options = SpontaneousMessageMode.entries.toList(),
+                            selectedOption = assistant.spontaneousMessageMode,
+                            onOptionSelected = { mode ->
+                                onUpdate(assistant.copy(spontaneousMessageMode = mode))
+                            },
+                            optionToString = { mode ->
+                                when (mode) {
+                                    SpontaneousMessageMode.BOTH -> stringResource(R.string.assistant_advanced_message_type_both)
+                                    SpontaneousMessageMode.CONTINUE_ONLY -> stringResource(R.string.assistant_advanced_message_type_continue)
+                                    SpontaneousMessageMode.NEW_ONLY -> stringResource(R.string.assistant_advanced_message_type_new)
+                                }
+                            },
+                        )
+                    }
+                )
+            }
             AnimatedVisibility(
                 visible = assistant.enableSpontaneous,
                 enter = fadeIn() + expandVertically(),
