@@ -96,7 +96,7 @@ private fun extractSeedColor(
  *
  * The first candidate (index 0) always matches the legacy single-color
  * behavior: background takes priority, falls back to avatar. The remaining
- * slots are filled from both sources (if available) to give variety.
+ * slots (up to 6 total) are filled from both sources (if available) to give variety.
  */
 fun extractColorCandidates(
     context: Context,
@@ -144,7 +144,7 @@ fun extractColorCandidates(
     val result = mutableListOf(primaryCandidates.first())
     val remaining = primaryCandidates.drop(1) + secondaryCandidates
     for (candidate in remaining) {
-        if (result.size >= 4) break
+        if (result.size >= 6) break
         // Only add if visually distinct from what we already have
         if (result.none { existing -> existing.isColorClose(candidate) }) {
             result.add(candidate)
@@ -269,7 +269,7 @@ private fun extractCandidatesFromBitmap(
     scaled.recycle()
 
     // Ordered swatch priority – first non-null becomes candidate 0 (the default).
-    // Remaining distinct swatches fill slots 1-3.
+    // Remaining distinct swatches fill slots 1-5.
     val swatchesInPriority = listOfNotNull(
         palette.dominantSwatch,
         palette.mutedSwatch,
@@ -287,7 +287,7 @@ private fun extractCandidatesFromBitmap(
     // Keep first (default), then pick those that are visually distinct.
     val result = mutableListOf(normalized.first())
     for (i in 1 until normalized.size) {
-        if (result.size >= 4) break
+        if (result.size >= 6) break
         val candidate = normalized[i]
         if (result.none { existing -> existing.isColorClose(candidate) }) {
             result.add(candidate)
@@ -317,7 +317,7 @@ private fun Color.isColorClose(other: Color): Boolean {
     // Scale hue to roughly same range as sat/lightness for comparison
     val normalizedHueDist = hueDiff / 360f  // 0–0.5
     val distance = normalizedHueDist * 2f + satDiff + litDiff
-    return distance < 0.12f // ~43° hue-only or equivalent combined distance
+    return distance < 0.08f // ~29° hue-only or equivalent combined distance
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

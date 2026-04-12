@@ -228,8 +228,10 @@ private fun ColorPalettePicker(
         subtitle = stringResource(R.string.assistant_page_theme_color_desc)
     ) {
         Row(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.padding(top = 4.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp)
         ) {
             candidates.forEachIndexed { index, color ->
                 val isSelected = assistant.materialYouColorIndex == index
