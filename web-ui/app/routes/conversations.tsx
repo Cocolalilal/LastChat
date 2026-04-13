@@ -492,7 +492,7 @@ const ConversationTimeline = React.memo(({
             description={detailError}
           />
         )}
-        {!detailLoading && !detailError && activeId && displayTurns.length === 0 && (
+        {!detailLoading && !detailError && activeId && displayTurns.length === 0 && !isHomeRoute && (
           <ConversationEmptyState
             icon={<MessageSquare className="size-10" />}
             title={t("conversations.empty_state.no_message_title")}
@@ -501,7 +501,7 @@ const ConversationTimeline = React.memo(({
         )}
         {!detailLoading &&
           !detailError &&
-          activeId &&
+          (activeId || isHomeRoute) &&
           displayTurns.map((turn, index) => {
             const message = turn.kind === "assistant" ? turn.displayMessage : turn.message;
             const model = message.modelId ? (modelById.get(message.modelId) ?? null) : null;
@@ -641,8 +641,19 @@ function ConversationsPageInner() {
   const [homeDraftId, setHomeDraftId] = React.useState(() => createHomeDraftId());
   const [editingSession, setEditingSession] = React.useState<EditingSession | null>(null);
 
-  const { detail, detailLoading, detailError, selectedNodeMessages, resetDetail } =
+  const { detail, detailLoading, detailError, selectedNodeMessages: actualSelectedNodeMessages, resetDetail } =
     useConversationDetail(activeId, updateConversationSummary);
+
+  const selectedNodeMessages = React.useMemo(() => {
+    if (activeId || !settings || !currentAssistantId) return actualSelectedNodeMessages;
+    const assistant = settings.assistants.find((a) => a.id === currentAssistantId);
+    const presets = assistant?.presetMessages;
+    if (!presets || presets.length === 0) return actualSelectedNodeMessages;
+    return presets.map((msg, index) => ({
+      node: { id: `preset-${index}`, messages: [msg], selectIndex: 0 } as MessageNodeDto,
+      message: msg,
+    }));
+  }, [activeId, settings, currentAssistantId, actualSelectedNodeMessages]);
 
   const {
     draftKey,
@@ -956,7 +967,7 @@ function ConversationsPageInner() {
     <div
       className={cn(
         "flex min-h-0 flex-1 flex-col overflow-hidden bg-background pt-12",
-        isNewChat && "justify-center",
+        isNewChat && selectedNodeMessages.length === 0 && "justify-center",
       )}
     >
       {(!isNewChat || selectedNodeMessages.length > 0) && (
