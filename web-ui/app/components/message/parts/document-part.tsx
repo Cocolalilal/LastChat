@@ -1,4 +1,4 @@
-import { File, FileText } from "lucide-react";
+import { File, FileText } from "~/lib/material-icons";
 
 import { resolveFileUrl } from "~/lib/files";
 

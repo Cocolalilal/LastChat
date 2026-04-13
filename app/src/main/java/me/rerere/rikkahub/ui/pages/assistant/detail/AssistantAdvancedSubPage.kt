@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
@@ -223,6 +224,7 @@ fun AssistantAdvancedSubPage(
                     subtitle = stringResource(R.string.assistant_advanced_message_type_desc),
                     trailing = {
                         Select(
+                            modifier = Modifier.width(160.dp),
                             options = SpontaneousMessageMode.entries.toList(),
                             selectedOption = assistant.spontaneousMessageMode,
                             onOptionSelected = { mode ->

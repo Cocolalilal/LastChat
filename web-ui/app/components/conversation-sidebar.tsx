@@ -3,8 +3,7 @@ import * as React from "react";
 import dayjs from "dayjs";
 import type { TFunction } from "i18next";
 import { toast } from "sonner";
-import {
-  Check,
+import { Check,
   Laptop,
   Languages,
   Moon,
@@ -20,7 +19,8 @@ import {
   LogOut,
   Sun,
   Trash2,
-} from "lucide-react";
+  ForkLeft,
+} from "~/lib/material-icons";
 import { useTranslation } from "react-i18next";
 
 import { InfiniteScrollArea } from "~/components/extended/infinite-scroll-area";
@@ -276,7 +276,8 @@ const ConversationListRow = React.memo(({
           }}
         >
           <span className="flex w-full items-center gap-2">
-            <span className="flex-1 truncate">
+            <span className="flex-1 truncate flex items-center gap-1">
+              {conversation.isFork && <ForkLeft className="shrink-0 size-4 text-current" aria-hidden />}
               {conversation.title || t("conversation_sidebar.unnamed_conversation")}
             </span>
             {conversation.isPinned && <Pin className="size-3 text-primary" aria-hidden />}

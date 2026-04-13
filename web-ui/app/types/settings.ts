@@ -1,3 +1,4 @@
+import type { MessageDto } from './dto';
 /**
  * Display settings
  * @see app/src/main/java/me/rerere/rikkahub/data/datastore/PreferencesStore.kt - DisplaySetting
@@ -69,6 +70,7 @@ export interface ModeInjectionProfile {
   name: string;
   description?: string;
   enabled?: boolean;
+  alwaysEnabled?: boolean;
   [key: string]: unknown;
 }
 
@@ -93,6 +95,7 @@ export interface AssistantProfile {
   uiSettings?: AssistantUISettings;
   tags: string[];
   quickMessages?: AssistantQuickMessage[];
+  presetMessages?: MessageDto[];
   [key: string]: unknown;
 }
 

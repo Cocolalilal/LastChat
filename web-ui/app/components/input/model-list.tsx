@@ -1,7 +1,7 @@
 import * as React from "react";
 
 import type { TFunction } from "i18next";
-import { Check, ChevronDown, Heart, LoaderCircle, Search } from "lucide-react";
+import { Check, ChevronDown, Heart, LoaderCircle, Search } from "~/lib/material-icons";
 import { useTranslation } from "react-i18next";
 
 import { useCurrentAssistant } from "~/hooks/use-current-assistant";

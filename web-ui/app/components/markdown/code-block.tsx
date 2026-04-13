@@ -1,7 +1,7 @@
 import * as React from "react";
 import type { ComponentProps, CSSProperties, HTMLAttributes } from "react";
 
-import { Check, ChevronDown, ChevronUp, Copy, Download } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Copy, Download } from "~/lib/material-icons";
 import { createJavaScriptRegexEngine } from "@shikijs/engine-javascript";
 import { useTranslation } from "react-i18next";
 import {

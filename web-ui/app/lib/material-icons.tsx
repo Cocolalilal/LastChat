@@ -1,6 +1,7 @@
 import * as React from "react";
 
 import AddSvg from "@material-symbols/svg-400/rounded/add.svg?react";
+import ForkLeftSvg from "@material-symbols/svg-400/rounded/fork_left.svg?react";
 import ArrowDownwardSvg from "@material-symbols/svg-400/rounded/arrow_downward.svg?react";
 import ArrowUpwardSvg from "@material-symbols/svg-400/rounded/arrow_upward.svg?react";
 import AudioFileSvg from "@material-symbols/svg-400/rounded/audio_file.svg?react";
@@ -226,3 +227,7 @@ export const Wrench = createIcon(BuildSvg);
 export const X = createIcon(CloseSvg);
 export const XIcon = X;
 export const Zap = createIcon(BoltSvg);
+
+export const ForkLeft = createIcon(ForkLeftSvg);
+
+

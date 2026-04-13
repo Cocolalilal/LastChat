@@ -245,6 +245,7 @@ internal suspend fun buildForkConversationSnapshot(
             messageNodes = copiedNodes,
             createAt = now,
             updateAt = now,
+            isFork = true,
         )
     )
 }
@@ -265,31 +266,19 @@ private fun repairAssistantTurnSelections(
 }
 
 private fun chooseAssistantTurnVersionTag(turnNodes: List<MessageNode>): String? {
-    val currentTag = turnNodes.firstOrNull()?.currentMessage?.versionTag
-    if (currentTag != null) {
-        return currentTag
+    if (turnNodes.isEmpty()) return null
+    
+    // The first node in the turn acts as the source of truth for the turn's active version.
+    // If it has a tag, we enforce that tag across all sibling nodes in this turn.
+    // If it has a null tag (e.g. from an older generation or a standard model that didn't output a tag),
+    // we must STILL treat 'null' as the source of truth to avoid forcefully switching back to a newer version
+    // during fallback scoring.
+    val firstNode = turnNodes.first()
+    if (firstNode.messages.isEmpty()) {
+        return null
     }
 
-    val candidateTags = linkedSetOf<String?>()
-    turnNodes.forEach { node ->
-        node.messages.asReversed().forEach { message ->
-            candidateTags += message.versionTag
-        }
-    }
-
-    var bestTag: String? = null
-    var bestScore = -1
-    candidateTags.forEach { tag ->
-        val score = turnNodes.count { node ->
-            node.messages.any { it.versionTag == tag }
-        }
-        if (score > bestScore) {
-            bestScore = score
-            bestTag = tag
-        }
-    }
-
-    return bestTag
+    return firstNode.currentMessage.versionTag
 }
 
 private fun findBestMessageIndex(node: MessageNode, versionTag: String?): Int {
@@ -1070,6 +1059,7 @@ class ChatService(
                                 saveConversation(conversationId, newConversation)
                                 handleMessageComplete(
                                     conversationId = conversationId,
+                                    messageRange = 0..firstAssistantIndex,
                                     suppressCompletionNotification = suppressCompletionNotification,
                                 )
                             } else {
@@ -1113,6 +1103,7 @@ class ChatService(
                                 saveConversation(conversationId, newConversation)
                                 handleMessageComplete(
                                     conversationId = conversationId,
+                                    messageRange = 0..firstAssistantIndex,
                                     suppressCompletionNotification = suppressCompletionNotification,
                                 )
                             }
@@ -1120,7 +1111,7 @@ class ChatService(
                             // No user message found, regenerate from the clicked node
                             handleMessageComplete(
                                 conversationId = conversationId,
-                                messageRange = 0..<clickedIndex,
+                                messageRange = 0..clickedIndex, // Ensure we encompass up to clickedIndex 
                                 suppressCompletionNotification = suppressCompletionNotification,
                             )
                         }

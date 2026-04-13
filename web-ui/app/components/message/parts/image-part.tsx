@@ -1,5 +1,5 @@
 import * as React from "react";
-import { ImageOff } from "lucide-react";
+import { ImageOff } from "~/lib/material-icons";
 import { resolveFileUrl } from "~/lib/files";
 
 interface ImagePartProps {

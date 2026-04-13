@@ -87,9 +87,9 @@
     <string name="assistant_advanced_reach_out_any_time">This character can reach out any time of day.</string>
     <string name="assistant_advanced_reach_out_between">This character can reach out between %1$s and %2$s.</string>
     <string name="assistant_advanced_message_type">Message type</string>
-    <string name="assistant_advanced_message_type_desc">Control whether messages continue existing chats, start fresh conversations, or both.</string>
-    <string name="assistant_advanced_message_type_both">Both</string>
-    <string name="assistant_advanced_message_type_continue">Continue existing chats</string>
+    <string name="assistant_advanced_message_type_desc">Choose available types of spontaneous messages.</string>
+    <string name="assistant_advanced_message_type_both">Automatic</string>
+    <string name="assistant_advanced_message_type_continue">Continue chats</string>
     <string name="assistant_advanced_message_type_new">Start new chats</string>
 
     <!-- Assistant context management -->

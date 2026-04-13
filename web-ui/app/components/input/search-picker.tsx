@@ -2,7 +2,7 @@ import * as React from "react";
 
 import { useMutation } from "@tanstack/react-query";
 import type { TFunction } from "i18next";
-import { ChevronDown, Earth, LoaderCircle, Search } from "lucide-react";
+import { ChevronDown, Earth, LoaderCircle, Search } from "~/lib/material-icons";
 import { useTranslation } from "react-i18next";
 
 import { useCurrentAssistant } from "~/hooks/use-current-assistant";

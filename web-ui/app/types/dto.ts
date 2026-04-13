@@ -10,6 +10,7 @@ export interface ConversationListDto {
   createAt: number;
   updateAt: number;
   isGenerating: boolean;
+  isFork: boolean;
 }
 
 export interface PagedResult<T> {
@@ -70,6 +71,7 @@ export interface ConversationDto {
   createAt: number;
   updateAt: number;
   isGenerating: boolean;
+  isFork: boolean;
 }
 
 export interface ConversationSnapshotEventDto {

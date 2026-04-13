@@ -1,12 +1,10 @@
 "use client";
 
-import {
-  CircleCheckIcon,
+import { CircleCheckIcon,
   InfoIcon,
   Loader2Icon,
   OctagonXIcon,
-  TriangleAlertIcon,
-} from "lucide-react";
+  TriangleAlertIcon, } from "~/lib/material-icons";
 import { Toaster as Sonner, type ToasterProps } from "sonner";
 import { useTheme } from "../theme-provider";
 

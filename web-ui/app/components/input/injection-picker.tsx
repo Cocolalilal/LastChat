@@ -1,7 +1,7 @@
 import * as React from "react";
 
 import { useMutation } from "@tanstack/react-query";
-import { BookOpen, LoaderCircle } from "lucide-react";
+import { BookOpen, LoaderCircle } from "~/lib/material-icons";
 import { useTranslation } from "react-i18next";
 
 import { useCurrentAssistant } from "~/hooks/use-current-assistant";
@@ -335,15 +335,16 @@ export function InjectionPickerButton({
                           key={item.id}
                           className={cn(
                             "flex cursor-pointer items-center gap-3 rounded-[var(--radius-card-inner)] border border-border/70 bg-background px-3 py-3 transition hover:bg-accent",
-                            checked && "border-primary/25 bg-primary/10",
+                            (checked || item.alwaysEnabled) && "border-primary/25 bg-primary/10",
+                            (item.enabled === false || item.alwaysEnabled) && "opacity-80"
                           )}
                         >
                           {switching ? (
                             <LoaderCircle className="size-4 animate-spin" />
                           ) : (
                             <Checkbox
-                              checked={checked}
-                              disabled={disabled || updateModeInjectionsMutation.isPending}
+                              checked={checked || item.alwaysEnabled}
+                              disabled={disabled || updateModeInjectionsMutation.isPending || item.enabled === false || item.alwaysEnabled}
                               onCheckedChange={(nextChecked) => {
                                 handleToggleModeInjection(item.id, Boolean(nextChecked));
                               }}
@@ -359,10 +360,14 @@ export function InjectionPickerButton({
                             </div>
                           ) : null}
                           {item.enabled === false ? (
-                            <div className="text-muted-foreground mt-0.5 text-xs">
+                            <div className="text-muted-foreground mt-0.5 text-xs text-destructive">
                               {t("injection.disabled")}
-                              </div>
-                            ) : null}
+                            </div>
+                          ) : item.alwaysEnabled ? (
+                            <div className="text-muted-foreground mt-0.5 text-xs text-primary">
+                              {t("injection.always_enabled", "Always Enabled")}
+                            </div>
+                          ) : null}
                           </div>
                         </label>
                       );
@@ -387,6 +392,7 @@ export function InjectionPickerButton({
                         className={cn(
                           "flex cursor-pointer items-center gap-3 rounded-[var(--radius-card-inner)] border border-border/70 bg-background px-3 py-3 transition hover:bg-accent",
                           checked && "border-primary/25 bg-primary/10",
+                          item.enabled === false && "opacity-80"
                         )}
                       >
                         {switching ? (
@@ -394,7 +400,7 @@ export function InjectionPickerButton({
                         ) : (
                           <Checkbox
                             checked={checked}
-                            disabled={disabled || updateLorebooksMutation.isPending}
+                            disabled={disabled || updateLorebooksMutation.isPending || item.enabled === false}
                             onCheckedChange={(nextChecked) => {
                               handleToggleLorebook(item.id, Boolean(nextChecked));
                             }}
@@ -411,7 +417,7 @@ export function InjectionPickerButton({
                             </div>
                           ) : null}
                           {item.enabled === false ? (
-                            <div className="text-muted-foreground mt-0.5 text-xs">
+                            <div className="text-muted-foreground mt-0.5 text-xs text-destructive">
                               {t("injection.disabled")}
                             </div>
                           ) : null}

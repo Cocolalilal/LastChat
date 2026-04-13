@@ -167,6 +167,7 @@ data class ConversationListDto(
     val createAt: Long,
     val updateAt: Long,
     val isGenerating: Boolean = false,
+    val isFork: Boolean = false,
 )
 
 @Serializable
@@ -203,6 +204,7 @@ data class ConversationDto(
     val createAt: Long,
     val updateAt: Long,
     val isGenerating: Boolean = false,
+    val isFork: Boolean = false,
 )
 
 @Serializable
@@ -367,6 +369,7 @@ data class WebModeInjectionDto(
     val name: String,
     val description: String = "",
     val enabled: Boolean = true,
+    val alwaysEnabled: Boolean = false,
 )
 
 @Serializable
@@ -391,6 +394,7 @@ data class WebAssistantDto(
     val uiSettings: WebAssistantUiSettingsDto = WebAssistantUiSettingsDto(),
     val tags: List<String> = emptyList(),
     val quickMessages: List<WebQuickMessageDto> = emptyList(),
+    val presetMessages: List<MessageDto> = emptyList(),
 )
 
 @Serializable
@@ -601,6 +605,7 @@ fun Conversation.toListDto(isGenerating: Boolean = false) = ConversationListDto(
     createAt = createAt.toEpochMilli(),
     updateAt = updateAt.toEpochMilli(),
     isGenerating = isGenerating,
+      isFork = isFork,
 )
 
 fun Conversation.toDto(
@@ -619,6 +624,7 @@ fun Conversation.toDto(
     createAt = createAt.toEpochMilli(),
     updateAt = updateAt.toEpochMilli(),
     isGenerating = isGenerating,
+      isFork = isFork,
 )
 
 fun MessageNode.toDto(
@@ -626,12 +632,11 @@ fun MessageNode.toDto(
     context: Context,
 ) = MessageNodeDto(
     id = id.toString(),
-    messages = messages.map { it.toDto(settings, context) },
+    messages = messages.map { it.toDto(context) },
     selectIndex = selectIndex,
 )
 
 fun UIMessage.toDto(
-    settings: Settings,
     context: Context,
 ): MessageDto {
     return MessageDto(
@@ -768,6 +773,7 @@ internal fun Assistant.toWebAssistantDto(context: Context): WebAssistantDto {
         uiSettings = uiSettings.toWebAssistantUiSettingsDto(),
         tags = tags.map(Uuid::toString),
         quickMessages = quickMessages.map(QuickMessage::toWebQuickMessageDto),
+        presetMessages = presetMessages.map { it.toDto(context) },
     )
 }
 
@@ -803,6 +809,7 @@ private fun Skill.toWebModeInjectionDto(): WebModeInjectionDto {
         name = name.ifBlank { description.ifBlank { "Skill" } },
         description = description,
         enabled = enabled,
+        alwaysEnabled = alwaysEnabled,
     )
 }
 

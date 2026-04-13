@@ -3,8 +3,7 @@ import {
   AnimatePresence,
   motion,
 } from "motion/react";
-import {
-  Build,
+import { Build,
   Category,
   ChevronDown,
   ChevronUp,
@@ -12,8 +11,7 @@ import {
   Image,
   Lightbulb,
   Memory,
-  Terminal,
-} from "lucide-react";
+  Terminal, } from "~/lib/material-icons";
 import { useTranslation } from "react-i18next";
 
 import Markdown from "~/components/markdown/markdown";

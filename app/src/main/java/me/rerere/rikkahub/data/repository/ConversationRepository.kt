@@ -220,6 +220,7 @@ class ConversationRepository(
             lastPruneTime = conversation.lastPruneTime,
             lastPruneMessageCount = conversation.lastPruneMessageCount,
             lastRefreshTime = conversation.lastRefreshTime,
+            isFork = conversation.isFork,
         )
     }
 
@@ -251,6 +252,7 @@ class ConversationRepository(
             lastPruneTime = conversationEntity.lastPruneTime,
             lastPruneMessageCount = conversationEntity.lastPruneMessageCount,
             lastRefreshTime = conversationEntity.lastRefreshTime,
+            isFork = conversationEntity.isFork,
         )
     }
 
@@ -458,6 +460,7 @@ class ConversationRepository(
             updateAt = Instant.ofEpochMilli(entity.updateAt),
             messageNodes = emptyList(),
             isConsolidated = entity.isConsolidated,
+            isFork = entity.isFork,
         )
     }
     fun getAverageMessageLength(assistantId: Uuid): Flow<Int> {
@@ -716,4 +719,5 @@ data class LightConversationEntity(
     val createAt: Long,
     val updateAt: Long,
     val isConsolidated: Boolean,
+    val isFork: Boolean,
 )

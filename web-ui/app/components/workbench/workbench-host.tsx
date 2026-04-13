@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 
-import { X } from "lucide-react";
+import { X } from "~/lib/material-icons";
 
 import Markdown from "~/components/markdown/markdown";
 import { Button } from "~/components/ui/button";

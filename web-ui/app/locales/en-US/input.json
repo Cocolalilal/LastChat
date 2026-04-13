@@ -16,6 +16,7 @@
     "unnamed_mode": "Unnamed Skill",
     "unnamed_lorebook": "Unnamed Lorebook",
     "disabled": "Disabled",
+    "always_enabled": "Always Enabled",
     "empty_mode": "No skills available",
     "empty_lorebook": "No lorebooks available"
   },

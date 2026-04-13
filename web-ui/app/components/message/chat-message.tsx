@@ -2,8 +2,7 @@ import * as React from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 
-import {
-  ArrowDown,
+import { ArrowDown,
   ArrowUp,
   ChevronLeft,
   ChevronRight,
@@ -15,8 +14,7 @@ import {
   Pencil,
   RefreshCw,
   Trash2,
-  Zap,
-} from "lucide-react";
+  Zap, } from "~/lib/material-icons";
 
 import type {
   AssistantProfile,
