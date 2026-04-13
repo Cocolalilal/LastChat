@@ -959,7 +959,7 @@ function ConversationsPageInner() {
         isNewChat && "justify-center",
       )}
     >
-      {!isNewChat && (
+      {(!isNewChat || selectedNodeMessages.length > 0) && (
         <div className="relative flex min-h-0 flex-1">
           <ConversationTimeline
             activeId={activeId}
@@ -982,7 +982,7 @@ function ConversationsPageInner() {
       )}
 
       <div className={cn("relative z-10 pb-3 sm:pb-3.5", CHAT_PAGE_PADDING_CLASSNAME)}>
-        {isNewChat && (
+        {isNewChat && selectedNodeMessages.length === 0 && (
           <div className="mx-auto mb-6 max-w-2xl text-center">
             <p className="text-lg text-muted-foreground">
               <ConversationGreeting />
