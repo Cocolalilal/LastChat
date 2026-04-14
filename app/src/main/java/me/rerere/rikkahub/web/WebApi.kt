@@ -954,6 +954,7 @@ private fun Route.webRoutes(
                         ContentDisposition.Inline.withParameter(ContentDisposition.Parameters.FileName, name).toString()
                     )
                 }
+                call.response.header(HttpHeaders.CacheControl, "public, max-age=86400")
                 call.respondOutputStream(contentType = contentType) {
                     withContext(Dispatchers.IO) {
                         content.inputStream.copyTo(this@respondOutputStream)

@@ -27,6 +27,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.datastore.DisplaySetting
+import me.rerere.rikkahub.data.datastore.RpStyleRule
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantUISettings
@@ -331,6 +332,15 @@ data class WebDisplaySettingDto(
     val fontSizeRatio: Float,
     val pasteLongTextAsFile: Boolean,
     val pasteLongTextThreshold: Int,
+    val rpStyleRules: List<WebRpStyleRuleDto> = emptyList(),
+)
+
+@Serializable
+data class WebRpStyleRuleDto(
+    val id: String,
+    val pattern: String,
+    val colorHex: String,
+    val enabled: Boolean,
 )
 
 @Serializable
@@ -370,6 +380,7 @@ data class WebModeInjectionDto(
     val description: String = "",
     val enabled: Boolean = true,
     val alwaysEnabled: Boolean = false,
+    val icon: String? = null,
 )
 
 @Serializable
@@ -412,6 +423,9 @@ data class WebProviderModelDto(
     val outputModalities: List<Modality> = emptyList(),
     val abilities: List<ModelAbility> = emptyList(),
     val tools: List<WebBuiltInToolDto> = emptyList(),
+    val iconUrl: String? = null,
+    val customIconUri: String? = null,
+    val providerSlug: String? = null,
 )
 
 @Serializable
@@ -756,6 +770,16 @@ private fun DisplaySetting.toWebDisplaySetting(context: Context): WebDisplaySett
         fontSizeRatio = fontSizeRatio,
         pasteLongTextAsFile = false,
         pasteLongTextThreshold = 1000,
+        rpStyleRules = rpStyleRules.map { it.toWebRpStyleRuleDto() },
+    )
+}
+
+private fun RpStyleRule.toWebRpStyleRuleDto(): WebRpStyleRuleDto {
+    return WebRpStyleRuleDto(
+        id = id,
+        pattern = pattern,
+        colorHex = colorHex,
+        enabled = enabled,
     )
 }
 
@@ -810,6 +834,7 @@ private fun Skill.toWebModeInjectionDto(): WebModeInjectionDto {
         description = description,
         enabled = enabled,
         alwaysEnabled = alwaysEnabled,
+        icon = icon,
     )
 }
 
@@ -916,6 +941,9 @@ private fun Model.toWebProviderModelDto(
         outputModalities = outputModalities,
         abilities = abilities,
         tools = tools,
+        iconUrl = iconUrl,
+        customIconUri = customIconUri,
+        providerSlug = providerSlug,
     )
 }
 

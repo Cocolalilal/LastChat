@@ -10,29 +10,17 @@ export interface ChatMessageAvatarRowProps {
   displaySetting?: DisplaySetting | null;
 }
 
-function formatMessageTimestamp(createdAt: string, locale?: string): string | null {
-  const timestamp = Date.parse(createdAt);
-  if (Number.isNaN(timestamp)) return null;
-
-  return new Intl.DateTimeFormat(locale || undefined, {
-    dateStyle: "medium",
-    timeStyle: "medium",
-  }).format(timestamp);
-}
-
 export function ChatMessageAvatarRow({
   message,
   hasMessageContent,
   assistant,
   displaySetting,
 }: ChatMessageAvatarRowProps) {
-  const { t, i18n } = useTranslation(["common", "page"]);
+  const { t } = useTranslation(["common", "page"]);
 
   if (!hasMessageContent) {
     return null;
   }
-
-  const createdAtLabel = formatMessageTimestamp(message.createdAt, i18n.language);
 
   if (message.role === "USER") {
     return null;
@@ -66,9 +54,6 @@ export function ChatMessageAvatarRow({
         {showModelName && canRenderName ? (
           <div className="min-w-0">
             <div className="truncate text-[13px] font-medium text-foreground/85">{title}</div>
-            {createdAtLabel ? (
-              <div className="truncate text-[11px] text-muted-foreground">{createdAtLabel}</div>
-            ) : null}
           </div>
         ) : null}
       </div>

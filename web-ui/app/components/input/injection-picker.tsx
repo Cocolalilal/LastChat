@@ -1,7 +1,7 @@
 import * as React from "react";
 
 import { useMutation } from "@tanstack/react-query";
-import { BookOpen, LoaderCircle } from "~/lib/material-icons";
+import { BookOpen, LoaderCircle, Code2, Image as ImageIcon, Palette, Wrench, Terminal, Search, Memory } from "~/lib/material-icons";
 import { useTranslation } from "react-i18next";
 
 import { useCurrentAssistant } from "~/hooks/use-current-assistant";
@@ -32,6 +32,21 @@ export interface InjectionPickerButtonProps {
   assistantId?: string | null;
   conversationId?: string | null;
   conversationSkillIds?: string[] | null;
+}
+
+function getSkillIcon(iconName: string | null | undefined) {
+  if (!iconName) return null;
+  switch (iconName.toLowerCase()) {
+    case "code": return Code2;
+    case "image": return ImageIcon;
+    case "palette": return Palette;
+    case "terminal": return Terminal;
+    case "build":
+    case "wrench": return Wrench;
+    case "search": return Search;
+    case "memory": return Memory;
+    default: return BookOpen;
+  }
 }
 
 function getModeInjections(source: unknown): ModeInjectionProfile[] {
@@ -350,7 +365,13 @@ export function InjectionPickerButton({
                               }}
                             />
                           )}
-                        <div className="min-w-0">
+                        
+                        {(() => {
+                           const SkillIcon = getSkillIcon(item.icon);
+                           return SkillIcon ? <SkillIcon className="size-5 shrink-0 text-muted-foreground" /> : null;
+                        })()}
+
+                        <div className="min-w-0 flex-1">
                           <div className="truncate text-sm font-medium">
                             {getDisplayName(item.name, t("injection.unnamed_mode"))}
                           </div>

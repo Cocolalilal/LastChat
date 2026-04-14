@@ -144,13 +144,14 @@ function useConversationDetail(activeId: string | null, updateSummary: Conversat
     }
 
     let mounted = true;
+    setDetail(null);
     setDetailLoading(true);
     setDetailError(null);
 
     const abortController = new AbortController();
 
     api
-      .get<ConversationDto>(`conversations/${activeId}`)
+      .get<ConversationDto>(`conversations/${activeId}`, { signal: abortController.signal })
       .then((data) => {
         if (!mounted) return;
         setDetail(data);
@@ -621,11 +622,16 @@ function ConversationsPageInner() {
   const { t } = useTranslation("page");
   const navigate = useNavigate();
   const { id: routeId } = useParams();
-  const isHomeRoute = !routeId;
   const isMobile = useIsMobile();
   const { panel, closePanel } = useWorkbench();
 
   const { settings, assistants, currentAssistantId } = useCurrentAssistant();
+  const [switchingAssistantId, setSwitchingAssistantId] = React.useState<string | null>(null);
+  const effectiveCurrentAssistantId = switchingAssistantId ?? currentAssistantId;
+  const isAssistantSwitching =
+    switchingAssistantId !== null && switchingAssistantId !== currentAssistantId;
+  const effectiveRouteId = isAssistantSwitching ? null : routeId ?? null;
+  const isHomeRoute = !effectiveRouteId;
   const {
     conversations,
     activeId,
@@ -636,7 +642,11 @@ function ConversationsPageInner() {
     loadMore,
     refreshList,
     updateConversationSummary,
-  } = useConversationList({ currentAssistantId, routeId, autoSelectFirst: !isHomeRoute });
+  } = useConversationList({
+    currentAssistantId,
+    routeId: effectiveRouteId,
+    autoSelectFirst: !isHomeRoute,
+  });
 
   const [homeDraftId, setHomeDraftId] = React.useState(() => createHomeDraftId());
   const [editingSession, setEditingSession] = React.useState<EditingSession | null>(null);
@@ -644,16 +654,22 @@ function ConversationsPageInner() {
   const { detail, detailLoading, detailError, selectedNodeMessages: actualSelectedNodeMessages, resetDetail } =
     useConversationDetail(activeId, updateConversationSummary);
 
+  React.useEffect(() => {
+    if (switchingAssistantId !== null && switchingAssistantId === currentAssistantId) {
+      setSwitchingAssistantId(null);
+    }
+  }, [currentAssistantId, switchingAssistantId]);
+
   const selectedNodeMessages = React.useMemo(() => {
-    if (activeId || !settings || !currentAssistantId) return actualSelectedNodeMessages;
-    const assistant = settings.assistants.find((a) => a.id === currentAssistantId);
+    if (activeId || !settings || !effectiveCurrentAssistantId) return actualSelectedNodeMessages;
+    const assistant = settings.assistants.find((a) => a.id === effectiveCurrentAssistantId);
     const presets = assistant?.presetMessages;
     if (!presets || presets.length === 0) return actualSelectedNodeMessages;
     return presets.map((msg, index) => ({
       node: { id: `preset-${index}`, messages: [msg], selectIndex: 0 } as MessageNodeDto,
       message: msg,
     }));
-  }, [activeId, settings, currentAssistantId, actualSelectedNodeMessages]);
+  }, [activeId, settings, effectiveCurrentAssistantId, actualSelectedNodeMessages]);
 
   const {
     draftKey,
@@ -678,11 +694,12 @@ function ConversationsPageInner() {
 
   const chatSuggestions = detail?.chatSuggestions ?? EMPTY_SUGGESTIONS;
   const conversationAssistant = React.useMemo(() => {
-    if (!settings || !detail?.assistantId) {
+    const assistantId = detail?.assistantId ?? effectiveCurrentAssistantId;
+    if (!settings || !assistantId) {
       return null;
     }
-    return settings.assistants.find((assistant) => assistant.id === detail.assistantId) ?? null;
-  }, [detail?.assistantId, settings]);
+    return settings.assistants.find((assistant) => assistant.id === assistantId) ?? null;
+  }, [detail?.assistantId, effectiveCurrentAssistantId, settings]);
   const effectiveDisplaySetting = React.useMemo(
     () => resolveEffectiveDisplaySetting(settings?.displaySetting, conversationAssistant),
     [conversationAssistant, settings?.displaySetting],
@@ -741,15 +758,22 @@ function ConversationsPageInner() {
 
   const handleAssistantChange = React.useCallback(
     async (assistantId: string) => {
-      await api.post<{ status: string }>("settings/assistant", { assistantId });
+      setSwitchingAssistantId(assistantId);
       setActiveId(null);
       resetDetail();
+      setHomeDraftId(createHomeDraftId());
       if (routeId) {
         navigate("/", { replace: true });
       }
-      refreshList();
+      try {
+        await api.post<{ status: string }>("settings/assistant", { assistantId });
+        refreshList();
+      } catch (error) {
+        setSwitchingAssistantId(null);
+        throw error;
+      }
     },
-    [navigate, refreshList, resetDetail, routeId, setActiveId],
+    [navigate, refreshList, resetDetail, routeId, setActiveId, setHomeDraftId],
   );
 
   const handleToolApproval = React.useCallback(
@@ -980,7 +1004,7 @@ function ConversationsPageInner() {
             selectedNodeMessages={selectedNodeMessages}
             isGenerating={detail?.isGenerating ?? false}
             settings={settings}
-            conversationAssistantId={detail?.assistantId ?? null}
+            conversationAssistantId={detail?.assistantId ?? effectiveCurrentAssistantId}
             displaySetting={effectiveDisplaySetting}
             onEdit={handleStartEdit}
             onDelete={handleDeleteMessage}
@@ -1006,7 +1030,7 @@ function ConversationsPageInner() {
           ready={draftKey !== null}
           isGenerating={detail?.isGenerating ?? false}
           disabled={detailLoading || Boolean(detailError)}
-          assistantId={detail?.assistantId ?? currentAssistantId}
+          assistantId={detail?.assistantId ?? effectiveCurrentAssistantId}
           conversationId={activeId}
           conversationSkillIds={detail?.enabledSkillIds ?? null}
           pendingQuestionnaire={pendingQuestionnaire}
@@ -1038,10 +1062,10 @@ function ConversationsPageInner() {
   return (
     <SidebarProvider defaultOpen className="h-svh overflow-hidden">
       <ConversationSidebar
-        conversations={conversations}
-        activeId={activeId}
-        loading={loading}
-        error={error}
+        conversations={isAssistantSwitching ? [] : conversations}
+        activeId={isAssistantSwitching ? null : activeId}
+        loading={loading || isAssistantSwitching}
+        error={isAssistantSwitching ? null : error}
         hasMore={hasMore}
         loadMore={loadMore}
         userName={
@@ -1050,7 +1074,7 @@ function ConversationsPageInner() {
         userAvatar={settings?.displaySetting.userAvatar}
         assistants={assistants}
         assistantTags={settings?.assistantTags ?? []}
-        currentAssistantId={currentAssistantId}
+        currentAssistantId={effectiveCurrentAssistantId}
         onSelect={handleSelect}
         onAssistantChange={handleAssistantChange}
         onPin={handleTogglePinConversation}
