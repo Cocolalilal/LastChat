@@ -1,7 +1,6 @@
 import * as React from "react";
 import type { TFunction } from "i18next";
-import {
-  AudioLines,
+import { AudioLines,
   BookHeart,
   BookX,
   Check,
@@ -13,8 +12,7 @@ import {
   MessageCircleQuestion,
   Video,
   Wrench,
-  X,
-} from "lucide-react";
+  X, } from "~/lib/material-icons";
 
 import Markdown from "~/components/markdown/markdown";
 import { DocumentPart } from "~/components/message/parts/document-part";

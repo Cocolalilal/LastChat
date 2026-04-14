@@ -1,6 +1,8 @@
 package me.rerere.rikkahub.ui.pages.setting
 
 import android.os.Build
+import java.text.DateFormat
+import java.util.Date
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,8 +23,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeTopAppBar
+import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalTextStyle
@@ -41,30 +45,43 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.DisplaySetting
+import me.rerere.rikkahub.data.ai.models.ModelCatalogSource
+import me.rerere.rikkahub.data.ai.models.ModelCatalogStatus
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
+import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionManager
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionNotification
 import me.rerere.rikkahub.ui.components.ui.permission.rememberPermissionState
+import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.rememberSharedPreferenceBoolean
 import me.rerere.rikkahub.ui.pages.setting.components.PresetThemeButtonGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
+import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupInputItem
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
 
 @Composable
 fun SettingDisplayPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val modelCatalogStatus by vm.modelCatalogStatus.collectAsStateWithLifecycle()
     var displaySetting by remember(settings) { mutableStateOf(settings.displaySetting) }
     var amoledDarkMode by rememberAmoledDarkMode()
+    val context = LocalContext.current
+    val toaster = LocalToaster.current
+    val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
 
     fun updateDisplaySetting(setting: DisplaySetting) {
         displaySetting = setting
@@ -198,6 +215,53 @@ fun SettingDisplayPage(vm: SettingVM = koinViewModel()) {
                             )
                         }
                     )
+                    SettingGroupInputItem(
+                        title = stringResource(R.string.setting_display_model_catalog_title),
+                        subtitle = buildModelCatalogSubtitle(context, modelCatalogStatus),
+                    ) {
+                        FilledTonalButton(
+                            onClick = {
+                                haptics.perform(HapticPattern.Pop)
+                                vm.refreshModelCatalog(
+                                    onSuccess = {
+                                        toaster.show(
+                                            context.getString(R.string.setting_display_model_catalog_refresh_success),
+                                            type = ToastType.Success,
+                                        )
+                                    },
+                                    onError = { error ->
+                                        toaster.show(
+                                            context.getString(
+                                                R.string.setting_display_model_catalog_refresh_error,
+                                                error.message ?: context.getString(R.string.backup_page_unknown_error),
+                                            ),
+                                            type = ToastType.Error,
+                                        )
+                                    },
+                                )
+                            },
+                            enabled = !modelCatalogStatus.isRefreshing,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = AppShapes.ButtonPill,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.setting_display_model_catalog_refresh_button),
+                            )
+                        }
+
+                        if (modelCatalogStatus.isRefreshing) {
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                LinearWavyProgressIndicator(modifier = Modifier.fillMaxWidth())
+                                Text(
+                                    text = stringResource(R.string.setting_display_model_catalog_refreshing),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -235,5 +299,32 @@ fun SettingDisplayPage(vm: SettingVM = koinViewModel()) {
                 }
             }
         }
+    }
+}
+
+private fun buildModelCatalogSubtitle(
+    context: android.content.Context,
+    status: ModelCatalogStatus,
+): String {
+    val sourceLabel = when (status.source) {
+        ModelCatalogSource.BUNDLED -> context.getString(R.string.setting_display_model_catalog_source_bundled)
+        ModelCatalogSource.DOWNLOADED -> context.getString(R.string.setting_display_model_catalog_source_downloaded)
+    }
+    val lastRefreshLabel = status.lastSuccessfulRefreshAt?.let {
+        DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it))
+    }
+    return if (status.source == ModelCatalogSource.DOWNLOADED && lastRefreshLabel != null) {
+        context.getString(
+            R.string.setting_display_model_catalog_subtitle_downloaded,
+            sourceLabel,
+            status.entryCount,
+            lastRefreshLabel,
+        )
+    } else {
+        context.getString(
+            R.string.setting_display_model_catalog_subtitle_bundled,
+            sourceLabel,
+            status.entryCount,
+        )
     }
 }

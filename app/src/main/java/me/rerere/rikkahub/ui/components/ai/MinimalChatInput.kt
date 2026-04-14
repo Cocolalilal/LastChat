@@ -893,10 +893,11 @@ private fun MinimalPickerContent(
     var showContextRefreshDialog by remember { mutableStateOf(false) }
     var showSearchPicker by remember { mutableStateOf(false) }
     val assistantDefaultSkillIds = assistant.enabledSkillIds
+    val alwaysEnabledSkillIds = settings.skills.filter { it.alwaysEnabled }.map { it.id }.toSet()
     val effectiveActiveSkillIds = if (conversation.enabledModeIds.isNotEmpty()) {
-        conversation.enabledModeIds
+        conversation.enabledModeIds + alwaysEnabledSkillIds
     } else {
-        assistantDefaultSkillIds
+        assistantDefaultSkillIds + alwaysEnabledSkillIds
     }
     
     // Track the last valid search provider index so selection persists when search is disabled

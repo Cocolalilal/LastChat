@@ -18,6 +18,8 @@ data class Skill(
     val instructions: String = "",       // Markdown body of SKILL.md
     val attachments: List<ModeAttachment> = emptyList(), // Optional multimedia context attachments
     val enabled: Boolean = true,
+    @SerialName("always_enabled")
+    val alwaysEnabled: Boolean = false,              // When true, skill is always active in every chat
     val availableAssistantIds: Set<Uuid> = emptySet(), // Legacy field retained for backward compatibility
     @SerialName("autonomous_for_all_assistants")
     val autonomousForAllAssistants: Boolean = false,

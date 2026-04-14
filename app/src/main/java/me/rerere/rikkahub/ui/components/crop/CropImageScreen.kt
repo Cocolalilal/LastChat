@@ -99,19 +99,19 @@ fun CropImageScreen(
     // Rotation state (counts number of 90° rotations)
     var rotationCount by remember { mutableIntStateOf(0) }
     
-    // Load the original bitmap with EXIF orientation correction
+    // Load the original bitmap with safe downsampling and EXIF orientation correction
     LaunchedEffect(sourceUri) {
         withContext(Dispatchers.IO) {
             try {
-                context.contentResolver.openInputStream(sourceUri)?.use { stream ->
-                    val rawBitmap = BitmapFactory.decodeStream(stream)
-                    // Apply EXIF orientation correction to handle camera rotation
-                    val bitmap = me.rerere.rikkahub.utils.ImageUtils.correctImageOrientation(
-                        context, sourceUri, rawBitmap
-                    )
-                    originalBitmap = bitmap
-                    displayBitmap = bitmap
-                    aspectRatio = bitmap.width.toFloat() / bitmap.height
+                val loadedBitmap = me.rerere.rikkahub.utils.ImageUtils.loadOptimizedBitmap(
+                    context, sourceUri, maxSize = 4096
+                )
+                if (loadedBitmap != null) {
+                    originalBitmap = loadedBitmap
+                    displayBitmap = loadedBitmap
+                    aspectRatio = loadedBitmap.width.toFloat() / loadedBitmap.height
+                } else {
+                    onCancel()
                 }
             } catch (e: Exception) {
                 e.printStackTrace()

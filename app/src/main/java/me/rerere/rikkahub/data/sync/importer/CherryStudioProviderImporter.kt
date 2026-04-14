@@ -9,7 +9,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderSetting
-import me.rerere.ai.registry.ModelRegistry
 import me.rerere.common.http.jsonObjectOrNull
 import me.rerere.rikkahub.utils.JsonInstant
 import java.io.File
@@ -108,9 +107,6 @@ object CherryStudioProviderImporter {
             Model(
                 modelId = modelId,
                 displayName = displayName,
-                inputModalities = ModelRegistry.MODEL_INPUT_MODALITIES.getData(modelId),
-                outputModalities = ModelRegistry.MODEL_OUTPUT_MODALITIES.getData(modelId),
-                abilities = ModelRegistry.MODEL_ABILITIES.getData(modelId),
             )
         }
     }

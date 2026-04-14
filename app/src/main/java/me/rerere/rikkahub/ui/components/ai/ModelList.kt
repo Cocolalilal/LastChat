@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.ui.components.ai
 
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -120,6 +123,7 @@ fun ModelSelector(
     modifier: Modifier = Modifier,
     onlyIcon: Boolean = false,
     allowClear: Boolean = false,
+    modelFilter: (Model) -> Boolean = { true },
     onSelect: (Model) -> Unit
 ) {
     var popup by remember { mutableStateOf(false) }
@@ -220,12 +224,15 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 val filteredProviderSettings = providers.fastFilter {
-                    it.enabled && it.models.fastAny { model -> model.type == type }
+                    it.enabled && it.models.fastAny { model ->
+                        model.type == type && modelFilter(model)
+                    }
                 }
                 ModelList(
                     currentModel = modelId,
                     providers = filteredProviderSettings,
                     modelType = type,
+                    modelFilter = modelFilter,
                     onSelect = {
                         onSelect(it)
                         scope.launch {
@@ -251,6 +258,7 @@ internal fun ColumnScope.ModelList(
     currentModel: Uuid? = null,
     providers: List<ProviderSetting>,
     modelType: ModelType,
+    modelFilter: (Model) -> Boolean = { true },
     onSelect: (Model) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -260,10 +268,19 @@ internal fun ColumnScope.ModelList(
         .collectAsStateWithLifecycle()
 
     val favoriteModels = settings.value.favoriteModels.mapNotNull { modelId ->
-        val model = settings.value.providers.findModelById(modelId) ?: return@mapNotNull null
-        if (model.type != modelType) return@mapNotNull null
-        val provider = model.findProvider(providers = settings.value.providers, checkOverwrite = false) ?: return@mapNotNull null
+        val model = providers.findModelById(modelId) ?: return@mapNotNull null
+        if (model.type != modelType || !modelFilter(model)) return@mapNotNull null
+        val provider = model.findProvider(providers = providers, checkOverwrite = false) ?: return@mapNotNull null
         model to provider
+    }
+    val favoriteListItems = remember(favoriteModels) {
+        favoriteModels.mapIndexed { index, (model, provider) ->
+            FavoriteListItem(
+                model = model,
+                provider = provider,
+                position = groupItemPosition(index = index, groupSize = favoriteModels.size)
+            )
+        }
     }
 
     var searchKeywords by remember { mutableStateOf("") }
@@ -271,11 +288,13 @@ internal fun ColumnScope.ModelList(
     // Build a flat list of items for the LazyColumn - this enables precise scrolling to any model
     // Structure: [provider header, model, model, ...] for each provider
     
-    val providerListItems = remember(providers, modelType, searchKeywords, settings.value.favoriteModels) {
+    val providerListItems = remember(providers, modelType, searchKeywords, settings.value.favoriteModels, modelFilter) {
         buildList {
             providers.forEach { providerSetting ->
                 val filteredModels = providerSetting.models.fastFilter {
-                    it.type == modelType && it.displayName.contains(searchKeywords, true)
+                    it.type == modelType &&
+                        modelFilter(it) &&
+                        it.displayName.contains(searchKeywords, true)
                 }
                 
                 // Add provider header
@@ -283,16 +302,10 @@ internal fun ColumnScope.ModelList(
                 
                 // Add each model as individual item
                 filteredModels.forEachIndexed { index, model ->
-                    val itemPosition = when {
-                        filteredModels.size == 1 -> ModelItemPosition.SINGLE
-                        index == 0 -> ModelItemPosition.FIRST
-                        index == filteredModels.size - 1 -> ModelItemPosition.LAST
-                        else -> ModelItemPosition.MIDDLE
-                    }
                     add(ProviderListItem.ModelEntry(
                         model = model,
                         provider = providerSetting,
-                        position = itemPosition,
+                        position = groupItemPosition(index = index, groupSize = filteredModels.size),
                         isFavorite = settings.value.favoriteModels.contains(model.id)
                     ))
                 }
@@ -470,21 +483,28 @@ internal fun ColumnScope.ModelList(
                 }
 
                 items(
-                    items = favoriteModels,
-                    key = { "favorite:" + it.first.id.toString() }
-                ) { (model, provider) ->
+                    items = favoriteListItems,
+                    key = { "favorite:" + it.model.id.toString() }
+                ) { favoriteItem ->
                     ReorderableItem(
                         state = reorderableState,
-                        key = "favorite:" + model.id.toString()
+                        key = "favorite:" + favoriteItem.model.id.toString()
                     ) { isDragging ->
+                        val dragScale by animateFloatAsState(
+                            targetValue = if (isDragging) 0.95f else 1f,
+                            animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+                            label = "favorite_drag_scale"
+                        )
                         ModelItem(
-                            model = model,
+                            model = favoriteItem.model,
                             onSelect = onSelect,
                             modifier = Modifier
-                                .scale(if (isDragging) 0.95f else 1f)
+                                .scale(dragScale)
                                 .animateItem(),
-                            providerSetting = provider,
-                            select = model.id == currentModel,
+                            providerSetting = favoriteItem.provider,
+                            select = favoriteItem.model.id == currentModel,
+                            inGroup = true,
+                            position = favoriteItem.position,
                             onDismiss = {
                                 onDismiss()
                             },
@@ -494,7 +514,7 @@ internal fun ColumnScope.ModelList(
                                         coroutineScope.launch {
                                             settingsStore.update { settings ->
                                                 settings.copy(
-                                                    favoriteModels = settings.favoriteModels.filter { it != model.id }
+                                                    favoriteModels = settings.favoriteModels.filter { it != favoriteItem.model.id }
                                                 )
                                             }
                                         }
@@ -664,6 +684,12 @@ private enum class ModelItemPosition {
     SINGLE   // All corners 24dp (only item in group)
 }
 
+private data class FavoriteListItem(
+    val model: Model,
+    val provider: ProviderSetting,
+    val position: ModelItemPosition
+)
+
 // Sealed class for flattened provider list items (enables precise scrolling)
 private sealed class ProviderListItem {
     data class Header(val provider: ProviderSetting) : ProviderListItem()
@@ -673,6 +699,98 @@ private sealed class ProviderListItem {
         val position: ModelItemPosition,
         val isFavorite: Boolean
     ) : ProviderListItem()
+}
+
+private fun groupItemPosition(index: Int, groupSize: Int): ModelItemPosition = when {
+    groupSize <= 1 -> ModelItemPosition.SINGLE
+    index == 0 -> ModelItemPosition.FIRST
+    index == groupSize - 1 -> ModelItemPosition.LAST
+    else -> ModelItemPosition.MIDDLE
+}
+
+private data class ModelItemCornerRadii(
+    val topStart: Dp,
+    val topEnd: Dp,
+    val bottomStart: Dp,
+    val bottomEnd: Dp
+)
+
+private fun groupedModelItemCornerRadii(
+    select: Boolean,
+    position: ModelItemPosition
+): ModelItemCornerRadii {
+    if (select) {
+        return ModelItemCornerRadii(
+            topStart = 50.dp,
+            topEnd = 50.dp,
+            bottomStart = 50.dp,
+            bottomEnd = 50.dp
+        )
+    }
+
+    return when (position) {
+        ModelItemPosition.FIRST -> ModelItemCornerRadii(
+            topStart = 24.dp,
+            topEnd = 24.dp,
+            bottomStart = 10.dp,
+            bottomEnd = 10.dp
+        )
+        ModelItemPosition.MIDDLE -> ModelItemCornerRadii(
+            topStart = 10.dp,
+            topEnd = 10.dp,
+            bottomStart = 10.dp,
+            bottomEnd = 10.dp
+        )
+        ModelItemPosition.LAST -> ModelItemCornerRadii(
+            topStart = 10.dp,
+            topEnd = 10.dp,
+            bottomStart = 24.dp,
+            bottomEnd = 24.dp
+        )
+        ModelItemPosition.SINGLE -> ModelItemCornerRadii(
+            topStart = 24.dp,
+            topEnd = 24.dp,
+            bottomStart = 24.dp,
+            bottomEnd = 24.dp
+        )
+    }
+}
+
+@Composable
+private fun rememberAnimatedGroupedModelItemShape(
+    select: Boolean,
+    position: ModelItemPosition
+): RoundedCornerShape {
+    val targetCornerRadii = remember(select, position) {
+        groupedModelItemCornerRadii(select = select, position = position)
+    }
+    val topStart by animateDpAsState(
+        targetValue = targetCornerRadii.topStart,
+        animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
+        label = "model_item_top_start"
+    )
+    val topEnd by animateDpAsState(
+        targetValue = targetCornerRadii.topEnd,
+        animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
+        label = "model_item_top_end"
+    )
+    val bottomStart by animateDpAsState(
+        targetValue = targetCornerRadii.bottomStart,
+        animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
+        label = "model_item_bottom_start"
+    )
+    val bottomEnd by animateDpAsState(
+        targetValue = targetCornerRadii.bottomEnd,
+        animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
+        label = "model_item_bottom_end"
+    )
+
+    return RoundedCornerShape(
+        topStart = topStart,
+        topEnd = topEnd,
+        bottomStart = bottomStart,
+        bottomEnd = bottomEnd
+    )
 }
 
 @Composable
@@ -715,32 +833,18 @@ private fun ModelItem(
 ) {
     val navController = LocalNavController.current
     val interactionSource = remember { MutableInteractionSource() }
-    
-    // Calculate shape based on position - edges get 24dp, connections get 10dp
-    val itemShape = if (select) {
-        RoundedCornerShape(50.dp)  // Selected items are fully round
-    } else {
-        when (position) {
-            ModelItemPosition.FIRST -> RoundedCornerShape(
-                topStart = 24.dp, topEnd = 24.dp,
-                bottomStart = 10.dp, bottomEnd = 10.dp
-            )
-            ModelItemPosition.MIDDLE -> RoundedCornerShape(10.dp)
-            ModelItemPosition.LAST -> RoundedCornerShape(
-                topStart = 10.dp, topEnd = 10.dp,
-                bottomStart = 24.dp, bottomEnd = 24.dp
-            )
-            ModelItemPosition.SINGLE -> RoundedCornerShape(24.dp)
-        }
-    }
-    
+    val groupedItemShape = rememberAnimatedGroupedModelItemShape(
+        select = select,
+        position = position
+    )
+
     if(inGroup) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             modifier = modifier
                 .fillMaxWidth()
-                .clip(itemShape)
+                .clip(groupedItemShape)
                 .background(
                     color = if (select) MaterialTheme.colorScheme.primaryContainer else if (LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
                 )
@@ -791,8 +895,6 @@ private fun ModelItem(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
-                        ModelTypeTag(model = model)
-
                         ModelModalityTag(model = model)
 
                         ModelAbilityTag(model = model)
@@ -862,8 +964,6 @@ private fun ModelItem(
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                             verticalArrangement = Arrangement.spacedBy(2.dp),
                         ) {
-                            ModelTypeTag(model = model)
-
                             ModelModalityTag(model = model)
 
                             ModelAbilityTag(model = model)

@@ -71,6 +71,7 @@ private const val SKILL_MANAGEMENT_TOOL_NAME = "manage_skills"
 private const val SKILL_REASON_ASSISTANT = "Enabled for assistant"
 private const val SKILL_REASON_CONVERSATION = "Enabled for chat"
 private const val SKILL_REASON_TURN = "Activated for this turn"
+private const val SKILL_REASON_ALWAYS = "Always enabled"
 
 /**
  * Result of building messages, includes both the messages and info about activated context sources.
@@ -116,13 +117,14 @@ internal fun resolveActiveSkillIds(
     conversationSkillIds: Set<Uuid>,
     turnScopedSkillIds: Set<Uuid>,
     allSkillIds: Set<Uuid>,
+    alwaysEnabledSkillIds: Set<Uuid> = emptySet(),
 ): Set<Uuid> {
     return (
         resolveManualSkillIds(
             assistantDefaultSkillIds = assistantDefaultSkillIds,
             conversationSkillIds = conversationSkillIds,
             allSkillIds = allSkillIds,
-        ) + turnScopedSkillIds
+        ) + turnScopedSkillIds + alwaysEnabledSkillIds
         ).intersect(allSkillIds)
 }
 
@@ -137,20 +139,25 @@ internal fun buildSkillToolState(
         skill.instructions.isNotBlank()
     }
     val allSkillIds = usableSkills.map { it.id }.toSet()
+    val alwaysEnabledSkillIds = usableSkills.filter { it.alwaysEnabled }.map { it.id }.toSet()
     val activeSkillIds = resolveActiveSkillIds(
         assistantDefaultSkillIds = assistantDefaultSkillIds,
         conversationSkillIds = conversationSkillIds,
         turnScopedSkillIds = turnScopedSkillIds,
         allSkillIds = allSkillIds,
+        alwaysEnabledSkillIds = alwaysEnabledSkillIds,
     )
-    val autonomousSkills = usableSkills.filter { skill ->
+    // Always-enabled skills are invisible to the manage_skills tool:
+    // they cannot be toggled by the AI so they don't appear in any tool list.
+    val toggleableSkills = usableSkills.filter { !it.alwaysEnabled }
+    val autonomousSkills = toggleableSkills.filter { skill ->
         skill.canAssistantAutonomouslyToggle(assistantId)
     }
 
     return SkillToolState(
         activeSkills = autonomousSkills.filter { skill -> activeSkillIds.contains(skill.id) },
         availableSkills = autonomousSkills.filterNot { skill -> activeSkillIds.contains(skill.id) },
-        blockedSkills = usableSkills.filterNot { skill -> skill.canAssistantAutonomouslyToggle(assistantId) },
+        blockedSkills = toggleableSkills.filterNot { skill -> skill.canAssistantAutonomouslyToggle(assistantId) },
         activeSkillIds = activeSkillIds,
     )
 }
@@ -216,11 +223,13 @@ internal fun buildUsedModes(
     turnScopedSkillIds: Set<Uuid>,
 ): List<me.rerere.ai.ui.UsedMode> {
     val allSkillIds = availableSkills.map { it.id }.toSet()
+    val alwaysEnabledSkillIds = availableSkills.filter { it.alwaysEnabled }.map { it.id }.toSet()
     val activeSkillIds = resolveActiveSkillIds(
         assistantDefaultSkillIds = assistantDefaultSkillIds,
         conversationSkillIds = conversationSkillIds,
         turnScopedSkillIds = turnScopedSkillIds,
         allSkillIds = allSkillIds,
+        alwaysEnabledSkillIds = alwaysEnabledSkillIds,
     )
     val enabledSkills = availableSkills.filter { skill ->
         activeSkillIds.contains(skill.id)
@@ -228,6 +237,7 @@ internal fun buildUsedModes(
 
     return enabledSkills.mapIndexed { index, skill ->
         val reason = when {
+            skill.alwaysEnabled -> SKILL_REASON_ALWAYS
             turnScopedSkillIds.contains(skill.id) -> SKILL_REASON_TURN
             conversationSkillIds.contains(skill.id) -> SKILL_REASON_CONVERSATION
             else -> SKILL_REASON_ASSISTANT
@@ -695,12 +705,14 @@ class GenerationHandler(
             skill.instructions.isNotBlank()
         }
         val allSkillIds = availableSkills.map { it.id }.toSet()
+        val alwaysEnabledSkillIds = availableSkills.filter { it.alwaysEnabled }.map { it.id }.toSet()
         val assistantDefaultSkillIds = assistant.enabledSkillIds.intersect(allSkillIds)
         val activeSkillIds = resolveActiveSkillIds(
             assistantDefaultSkillIds = assistantDefaultSkillIds,
             conversationSkillIds = conversationEnabledModeIds,
             turnScopedSkillIds = turnScopedEnabledModeIds,
             allSkillIds = allSkillIds,
+            alwaysEnabledSkillIds = alwaysEnabledSkillIds,
         )
         val enabledSkills = availableSkills.filter { activeSkillIds.contains(it.id) }
         val usedModes = buildUsedModes(
@@ -1211,6 +1223,7 @@ class GenerationHandler(
             topP = assistant.topP,
             maxTokens = assistant.maxTokens,
             tools = tools,
+            builtInTools = resolveActiveBuiltInTools(model, assistant),
             thinkingBudget = assistant.thinkingBudget,
             customHeaders = buildList {
                 addAll(assistant.customHeaders)

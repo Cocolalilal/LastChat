@@ -155,4 +155,8 @@
         <item quantity="other">Removed %1$d orphaned uploads</item>
     </plurals>
     <string name="context_sources_recent_chat">Recent chat</string>
+    <string name="chat_regenerate_user_message_title">Regenerate from here?</string>
+    <string name="chat_regenerate_user_message_warning">All messages after this point will be removed and a new response will be generated.</string>
+    <string name="chat_delete_user_message_title">Delete message?</string>
+    <string name="chat_delete_user_message_warning">This will delete this message and all messages after it.</string>
 </resources>

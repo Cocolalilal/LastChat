@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Video, VideoOff } from "lucide-react";
+import { Video, VideoOff } from "~/lib/material-icons";
 import { useTranslation } from "react-i18next";
 
 import { resolveFileUrl } from "~/lib/files";

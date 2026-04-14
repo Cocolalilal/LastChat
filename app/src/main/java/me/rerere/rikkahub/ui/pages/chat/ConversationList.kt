@@ -516,6 +516,17 @@ private fun ConversationItem(
                 .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (conversation.isFork) {
+                Icon(
+                    painter = androidx.compose.ui.res.painterResource(id = me.rerere.rikkahub.R.drawable.ic_fork_left),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .padding(end = 4.dp)
+                        .size(20.dp),
+                    tint = androidx.compose.material3.LocalContentColor.current
+                )
+            }
+            
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(2.dp)

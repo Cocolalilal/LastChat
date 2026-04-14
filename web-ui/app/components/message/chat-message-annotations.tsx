@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { ExternalLink } from "lucide-react";
+import { ExternalLink } from "~/lib/material-icons";
 
 import { cn } from "~/lib/utils";
 import type { UIMessageAnnotation } from "~/types";

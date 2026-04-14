@@ -12,6 +12,7 @@ import { getCodePreviewLanguage } from "~/components/workbench/code-preview-lang
 import { useOptionalWorkbench } from "~/components/workbench/workbench-context";
 import type { DisplaySetting } from "~/types";
 import { CodeBlock } from "./code-block";
+import remarkRp from "./remark-rp";
 import "katex/dist/katex.min.css";
 import "./markdown.css";
 import "streamdown/styles.css";
@@ -147,6 +148,16 @@ export default function Markdown({
     [allowCodePreview, t, workbench],
   );
 
+  const getRuleColor = React.useCallback(
+    (pattern: string) => {
+      const rule = displaySetting?.rpStyleRules?.find(
+        (r) => r.pattern === pattern && r.enabled
+      );
+      return rule ? rule.colorHex : undefined;
+    },
+    [displaySetting?.rpStyleRules]
+  );
+
   function MarkdownCode(componentProps: Record<string, unknown> & { children?: React.ReactNode }) {
     const { className, children, ...props } = componentProps;
     const isIncomplete = useIsCodeFenceIncomplete();
@@ -189,13 +200,53 @@ export default function Markdown({
         <Streamdown
           mode={isAnimating ? "streaming" : "static"}
           parseIncompleteMarkdown={isAnimating}
-          remarkPlugins={[remarkGfm, remarkMath]}
+          remarkPlugins={[remarkGfm, remarkMath, [remarkRp, displaySetting?.rpStyleRules]]}
           rehypePlugins={[rehypeKatex, rehypeRaw]}
           plugins={{ cjk: cjk }}
           isAnimating={isAnimating}
           controls={{ code: false, mermaid: false }}
           components={{
             pre: ({ children }) => <>{children}</>,
+            h1: ({ children, style, ...props }: any) => {
+              const color = getRuleColor("#");
+              return <h1 style={color ? { ...style, color } : style} {...props}>{children}</h1>;
+            },
+            h2: ({ children, style, ...props }: any) => {
+              const color = getRuleColor("##");
+              return <h2 style={color ? { ...style, color } : style} {...props}>{children}</h2>;
+            },
+            h3: ({ children, style, ...props }: any) => {
+              const color = getRuleColor("###");
+              return <h3 style={color ? { ...style, color } : style} {...props}>{children}</h3>;
+            },
+            h4: ({ children, style, ...props }: any) => {
+              const color = getRuleColor("####");
+              return <h4 style={color ? { ...style, color } : style} {...props}>{children}</h4>;
+            },
+            h5: ({ children, style, ...props }: any) => {
+              const color = getRuleColor("#####");
+              return <h5 style={color ? { ...style, color } : style} {...props}>{children}</h5>;
+            },
+            h6: ({ children, style, ...props }: any) => {
+              const color = getRuleColor("######");
+              return <h6 style={color ? { ...style, color } : style} {...props}>{children}</h6>;
+            },
+            blockquote: ({ children, style, ...props }: any) => {
+              const color = getRuleColor(">");
+              return <blockquote style={color ? { ...style, color, fontStyle: "italic" } : { ...style, fontStyle: "italic" }} {...props}>{children}</blockquote>;
+            },
+            em: ({ children, style, ...props }: any) => {
+              const color = getRuleColor("*");
+              return <em style={color ? { ...style, color } : style} {...props}>{children}</em>;
+            },
+            strong: ({ children, style, ...props }: any) => {
+              const color = getRuleColor("**");
+              return <strong style={color ? { ...style, color } : style} {...props}>{children}</strong>;
+            },
+            del: ({ children, style, ...props }: any) => {
+              const color = getRuleColor("~~");
+              return <del style={color ? { ...style, color } : style} {...props}>{children}</del>;
+            },
             code: MarkdownCode as never,
             a: ({ href, children, ...props }) => {
               const childText = getNodeText(children).trim();

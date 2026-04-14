@@ -3,7 +3,7 @@ import {
   AnimatePresence,
   motion,
 } from "motion/react";
-import { ChevronDown, ChevronRight, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronUp } from "~/lib/material-icons";
 
 import { Card } from "~/components/ui/card";
 import { getChatLayoutTransition, useChatReducedMotion } from "~/lib/chat-motion";

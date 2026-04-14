@@ -43,4 +43,6 @@ data class ConversationEntity(
     val lastPruneMessageCount: Int = 0,
     @ColumnInfo(name = "last_refresh_time", defaultValue = "0")
     val lastRefreshTime: Long = 0L,
+    @ColumnInfo(name = "is_fork", defaultValue = "0")
+    val isFork: Boolean = false,
 )

@@ -43,7 +43,7 @@ import kotlinx.serialization.json.put
 
 @Database(
     entities = [ConversationEntity::class, MemoryEntity::class, GenMediaEntity::class, ChatEpisodeEntity::class, EmbeddingCacheEntity::class, DailyActivityEntity::class, UsageStatsEntity::class, ChatAttachmentEntity::class, ConversationAttachmentRefEntity::class],
-    version = 25,
+    version = 26,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -66,6 +66,7 @@ import kotlinx.serialization.json.put
         // 22->23 is manual migration (MIGRATION_22_23)
         // 23->24 is manual migration (MIGRATION_23_24) - adds usage_stats table
         // 24->25 is manual migration (MIGRATION_24_25) - adds chat attachment catalog tables
+        // 25->26 is manual migration (MIGRATION_25_26) - adds is_fork to conversation table
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -387,6 +388,14 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_conversation_attachment_ref_attachment_id` ON `conversation_attachment_ref` (`attachment_id`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_conversation_attachment_ref_conversation_id` ON `conversation_attachment_ref` (`conversation_id`)")
                 Log.i(TAG, "migrate: migrate from 24 to 25 success")
+            }
+        }
+
+        val MIGRATION_25_26 = object : Migration(25, 26) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "migrate: start migrate from 25 to 26")
+                db.execSQL("ALTER TABLE ConversationEntity ADD COLUMN is_fork INTEGER NOT NULL DEFAULT 0")
+                Log.i(TAG, "migrate: migrate from 25 to 26 success")
             }
         }
     }

@@ -16,7 +16,7 @@
   <string name="assistant_detail_export_options">خيارات التصدير</string>
   <string name="export_failed_message">فشل التصدير: %1$s</string>
   <string name="export_failed_create_png">فشل التصدير: تعذر إنشاء PNG</string>
-  <string name="common_default">تقصير</string>
+  <string name="common_default">افتراضي</string>
   <string name="common_enabled_value">ممكّن (%1$s)</string>
   <string name="common_off">عن</string>
   <string name="common_on">على</string>
@@ -256,7 +256,7 @@
   <string name="setting_mcp_import_placeholder">{ \"mcpServers\": { ... } }</string>
   <string name="setting_rp_optimizations_title">تحسينات RP</string>
   <string name="setting_rp_custom_text_styling">تصميم نص مخصص</string>
-  <string name="setting_rp_custom_text_styling_desc">تحديد قواعد الألوان المخصصة لعناصر تخفيض السعر. أضف القواعد بالأنماط أدناه لتغيير لون النص الخاص بها.</string>
+  <string name="setting_rp_custom_text_styling_desc">حدّد قواعد ألوان مخصصة لعناصر Markdown. أضف قواعد باستخدام الأنماط أدناه لتغيير لون نصها.</string>
   <string name="setting_rp_supported_patterns">الأنماط المدعومة</string>
   <string name="setting_rp_no_rules">لا توجد قواعد حتى الآن. اضغط على + لإضافة واحدة.</string>
   <string name="setting_rp_add_rule">أضف القاعدة</string>

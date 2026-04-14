@@ -1,5 +1,5 @@
 import * as React from "react";
-import { AudioLines, VolumeX } from "lucide-react";
+import { AudioLines, VolumeX } from "~/lib/material-icons";
 import { useTranslation } from "react-i18next";
 
 import { resolveFileUrl } from "~/lib/files";

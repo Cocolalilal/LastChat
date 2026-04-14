@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
@@ -33,6 +34,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.model.SpontaneousMessageMode
+import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
@@ -210,6 +213,34 @@ fun AssistantAdvancedSubPage(
                 }
             }
 
+
+            AnimatedVisibility(
+                visible = assistant.enableSpontaneous,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically(),
+            ) {
+                SettingGroupItem(
+                    title = stringResource(R.string.assistant_advanced_message_type),
+                    subtitle = stringResource(R.string.assistant_advanced_message_type_desc),
+                    trailing = {
+                        Select(
+                            modifier = Modifier.width(160.dp),
+                            options = SpontaneousMessageMode.entries.toList(),
+                            selectedOption = assistant.spontaneousMessageMode,
+                            onOptionSelected = { mode ->
+                                onUpdate(assistant.copy(spontaneousMessageMode = mode))
+                            },
+                            optionToString = { mode ->
+                                when (mode) {
+                                    SpontaneousMessageMode.BOTH -> stringResource(R.string.assistant_advanced_message_type_both)
+                                    SpontaneousMessageMode.CONTINUE_ONLY -> stringResource(R.string.assistant_advanced_message_type_continue)
+                                    SpontaneousMessageMode.NEW_ONLY -> stringResource(R.string.assistant_advanced_message_type_new)
+                                }
+                            },
+                        )
+                    }
+                )
+            }
             AnimatedVisibility(
                 visible = assistant.enableSpontaneous,
                 enter = fadeIn() + expandVertically(),

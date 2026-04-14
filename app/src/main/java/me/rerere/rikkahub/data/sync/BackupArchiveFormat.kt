@@ -25,6 +25,7 @@ internal object BackupArchiveFormat {
         "lorebook_covers",
         "lorebook_attachments",
         "python_sandbox",
+        "model_catalog",
     )
 
     val PORTABLE_SHARED_PREF_STORES = listOf(

@@ -8,6 +8,7 @@ import kotlin.uuid.Uuid
 data class Model(
     val modelId: String = "",
     val displayName: String = "",
+    val canonicalModelId: String? = null,
     val id: Uuid = Uuid.random(),
     val type: ModelType = ModelType.CHAT,
     val customHeaders: List<CustomHeader> = emptyList(),

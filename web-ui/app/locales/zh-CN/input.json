@@ -16,6 +16,7 @@
     "unnamed_mode": "未命名模式注入",
     "unnamed_lorebook": "未命名 Lorebook",
     "disabled": "已禁用",
+    "always_enabled": "始终启用",
     "empty_mode": "暂无模式注入",
     "empty_lorebook": "暂无 Lorebook"
   },

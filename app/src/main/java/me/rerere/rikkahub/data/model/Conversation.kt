@@ -22,6 +22,7 @@ data class ConversationSummary(
     val createAt: Instant,
     val updateAt: Instant,
     val isConsolidated: Boolean = false,
+    val isFork: Boolean = false,
 )
 
 @Serializable
@@ -44,6 +45,7 @@ data class Conversation(
     val lastPruneTime: Long = 0L, // Timestamp of last auto-prune
     val lastPruneMessageCount: Int = 0, // Messages pruned in last auto-prune
     val lastRefreshTime: Long = 0L, // Timestamp of last manual refresh
+    val isFork: Boolean = false,
 ) {
     val files: List<Uri>
         get() {
@@ -93,29 +95,30 @@ data class Conversation(
     fun updateCurrentMessages(messages: List<UIMessage>): Conversation {
         val newNodes = this.messageNodes.toMutableList()
         
-        // Get the versionTag from the last assistant node's current message (if it exists)
-        // This is the version tag we'll propagate to new messages during streaming
-        // We use lastOrNull instead of firstOrNull to get the most recent assistant message
-        // (the one currently being generated)
+        // Get the versionTag from the active turn's last assistant node (if it exists)
+        // We only look past the most recent user message to avoid leaking tags from past turns
         val activeVersionTag = this.messageNodes
+            .takeLastWhile { it.role != MessageRole.USER }
             .lastOrNull { it.role == MessageRole.ASSISTANT }
             ?.currentMessage?.versionTag
 
         messages.forEachIndexed { index, message ->
-            // Propagate versionTag to new messages that don't have one
-            // This ensures tool results and subsequent messages inherit the versionTag
-            // from the assistant message they're associated with
-            val messageWithTag = if (activeVersionTag != null && message.versionTag == null) {
+            val node = newNodes.getOrNull(index)
+            val isNewGeneratedMessage = node == null || !node.messages.any { it.id == message.id }
+
+            // Propagate versionTag ONLY to new messages that don't have one
+            // This ensures tool results and newly spawned assistant nodes inherit the tag
+            val messageWithTag = if (isNewGeneratedMessage && activeVersionTag != null && message.versionTag == null) {
                 message.copy(versionTag = activeVersionTag)
             } else {
                 message
             }
             
-            val node = newNodes
+            val nodeToUse = newNodes
                 .getOrElse(index) { messageWithTag.toMessageNode() }
 
-            val newMessages = node.messages.toMutableList()
-            var newMessageIndex = node.selectIndex
+            val newMessages = nodeToUse.messages.toMutableList()
+            var newMessageIndex = nodeToUse.selectIndex
             if (newMessages.any { it.id == messageWithTag.id }) {
                 newMessages[newMessages.indexOfFirst { it.id == messageWithTag.id }] = messageWithTag
             } else {
@@ -123,7 +126,7 @@ data class Conversation(
                 newMessageIndex = newMessages.lastIndex
             }
 
-            val newNode = node.copy(
+            val newNode = nodeToUse.copy(
                 messages = newMessages,
                 selectIndex = newMessageIndex
             )

@@ -1,7 +1,7 @@
 import * as React from "react";
 
 import type { TFunction } from "i18next";
-import { Check, ChevronDown, Heart, LoaderCircle, Search } from "lucide-react";
+import { Check, ChevronDown, Heart, LoaderCircle, Search } from "~/lib/material-icons";
 import { useTranslation } from "react-i18next";
 
 import { useCurrentAssistant } from "~/hooks/use-current-assistant";
@@ -106,7 +106,13 @@ function ModelOptionRow({
         }
       }}
     >
-      <AIIcon name={model.modelId} size={24} />
+      <AIIcon 
+        name={model.modelId} 
+        size={24} 
+        iconUrl={model.iconUrl}
+        customIconUri={model.customIconUri}
+        providerSlug={model.providerSlug}
+      />
 
       <div className="min-w-0 flex-1">
         <div className="truncate text-xs font-medium leading-tight">
@@ -362,6 +368,9 @@ export function ModelList({ disabled = false, className, onChanged }: ModelListP
             size={16}
             className="bg-transparent"
             imageClassName="h-full w-full"
+            iconUrl={currentModel?.iconUrl}
+            customIconUri={currentModel?.customIconUri}
+            providerSlug={currentModel?.providerSlug}
           />
           <span className="hidden min-w-0 flex-1 truncate text-left sm:block">
             {currentModelLabel}
@@ -442,6 +451,7 @@ export function ModelList({ disabled = false, className, onChanged }: ModelListP
                               size={12}
                               className="bg-transparent"
                               imageClassName="h-full w-full"
+                              providerSlug={section.providerName}
                             />
                             <span className="truncate">{section.providerName}</span>
                           </button>

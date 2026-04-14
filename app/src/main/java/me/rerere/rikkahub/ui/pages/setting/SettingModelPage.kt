@@ -50,6 +50,7 @@ import androidx.compose.material.icons.rounded.TipsAndUpdates
 import androidx.compose.material.icons.rounded.Title
 import androidx.compose.material.icons.rounded.Translate
 import me.rerere.ai.core.ReasoningLevel
+import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.ModelType
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_OCR_PROMPT
@@ -560,6 +561,7 @@ private fun DefaultOcrModelSetting(
                 ModelSelector(
                     modelId = settings.ocrModelId,
                     type = ModelType.CHAT,
+                    modelFilter = { model -> model.inputModalities.contains(Modality.IMAGE) },
                     onSelect = {
                         vm.updateSettings(
                             settings.copy(

@@ -52,4 +52,28 @@ class BidiTextTest {
             resolveBidiDirection("1. Hello", fallbackLocale = Locale("ar"))
         )
     }
+
+    @Test
+    fun `unordered list markers do not block rtl detection`() {
+        assertEquals(
+            BidiDirection.Rtl,
+            resolveBidiDirection("- مرحبا بالعالم", fallbackLocale = Locale.ENGLISH)
+        )
+    }
+
+    @Test
+    fun `blockquote markers do not block rtl detection`() {
+        assertEquals(
+            BidiDirection.Rtl,
+            resolveBidiDirection("> مرحبا بالعالم", fallbackLocale = Locale.ENGLISH)
+        )
+    }
+
+    @Test
+    fun `table pipes do not block rtl detection`() {
+        assertEquals(
+            BidiDirection.Rtl,
+            resolveBidiDirection("| الصنف | الكمية |", fallbackLocale = Locale.ENGLISH)
+        )
+    }
 }

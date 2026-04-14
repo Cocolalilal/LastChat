@@ -155,4 +155,5 @@
         <item quantity="other">تمت إزالة %1$d ملفات تحميل يتيمة</item>
     </plurals>
     <string name="context_sources_recent_chat">المحادثة الأخيرة</string>
+    <string name="summarizer_model_tip_banner">اختر نموذج تلخيص مخصصًا من الإعدادات &gt; النماذج الافتراضية للحصول على ملخصات أفضل.</string>
 </resources>

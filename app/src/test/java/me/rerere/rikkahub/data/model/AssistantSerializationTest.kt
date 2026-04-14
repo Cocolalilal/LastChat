@@ -28,6 +28,7 @@ class AssistantSerializationTest {
         assertEquals(0L, assistant.lastNotificationTime)
         assertEquals("", assistant.lastNotificationContent)
         assertEquals("", assistant.spontaneousPrompt)
+        assertEquals(SpontaneousMessageMode.BOTH, assistant.spontaneousMessageMode)
     }
 
     @Test
@@ -68,6 +69,7 @@ class AssistantSerializationTest {
         assertEquals(123456789L, decoded.lastNotificationTime)
         assertEquals("Thinking about you.", decoded.lastNotificationContent)
         assertEquals("Use {{history}} and {{memories}}", decoded.spontaneousPrompt)
+        assertEquals(SpontaneousMessageMode.BOTH, decoded.spontaneousMessageMode)
     }
 
     @Test

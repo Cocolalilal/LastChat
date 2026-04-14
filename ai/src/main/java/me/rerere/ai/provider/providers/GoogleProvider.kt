@@ -34,6 +34,7 @@ import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.provider.providers.vertex.ServiceAccountTokenProvider
+import me.rerere.ai.registry.ModelIdNormalizer
 import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.ImageAspectRatio
 import me.rerere.ai.ui.ImageGenerationItem
@@ -69,6 +70,57 @@ import kotlin.time.Clock
 import kotlin.uuid.Uuid
 
 private const val TAG = "GoogleProvider"
+
+internal fun buildGoogleToolsPayload(params: TextGenerationParams): JsonArray? {
+    if (params.tools.isEmpty() && params.builtInTools.isEmpty()) {
+        return null
+    }
+
+    return buildJsonArray {
+        if (params.tools.isNotEmpty() && params.model.abilities.contains(ModelAbility.TOOL)) {
+            add(buildJsonObject {
+                put("functionDeclarations", buildJsonArray {
+                    params.tools.forEach { tool ->
+                        add(buildJsonObject {
+                            put("name", JsonPrimitive(tool.name))
+                            put("description", JsonPrimitive(tool.description))
+                            put(
+                                key = "parameters",
+                                element = json.encodeToJsonElement(tool.parameters())
+                                    .removeElements(
+                                        listOf(
+                                            "const",
+                                            "exclusiveMaximum",
+                                            "exclusiveMinimum",
+                                            "format",
+                                            "additionalProperties",
+                                            "enum",
+                                        )
+                                    )
+                            )
+                        })
+                    }
+                })
+            })
+        }
+
+        params.builtInTools.forEach { builtInTool ->
+            when (builtInTool) {
+                BuiltInTools.Search -> {
+                    add(buildJsonObject {
+                        put("google_search", buildJsonObject {})
+                    })
+                }
+
+                BuiltInTools.UrlContext -> {
+                    add(buildJsonObject {
+                        put("url_context", buildJsonObject {})
+                    })
+                }
+            }
+        }
+    }.takeIf { it.isNotEmpty() }
+}
 
 class GoogleProvider(private val client: OkHttpClient) : Provider<ProviderSetting.Google> {
     private val keyRoulette = KeyRoulette.default()
@@ -133,9 +185,15 @@ class GoogleProvider(private val client: OkHttpClient) : Provider<ProviderSettin
                         return@mapNotNull null
                     }
 
+                    val modelId = modelObject["name"]!!.jsonPrimitive.content.substringAfter("/")
+                    val displayName = modelObject["displayName"]?.jsonPrimitive?.contentOrNull
+                        ?.ifBlank { null }
+                        ?: modelId
+
                     Model(
-                        modelId = modelObject["name"]!!.jsonPrimitive.content.substringAfter("/"),
-                        displayName = modelObject["displayName"]!!.jsonPrimitive.content,
+                        modelId = modelId,
+                        displayName = displayName,
+                        canonicalModelId = ModelIdNormalizer.canonicalize(modelId),
                         type = if ("generateContent" in supportedGenerationMethods) ModelType.CHAT else ModelType.EMBEDDING,
                     )
                 }
@@ -403,54 +461,8 @@ class GoogleProvider(private val client: OkHttpClient) : Provider<ProviderSettin
         )
 
         // Tools
-        if (params.tools.isNotEmpty() && params.model.abilities.contains(ModelAbility.TOOL)) {
-            put("tools", buildJsonArray {
-                add(buildJsonObject {
-                    put("functionDeclarations", buildJsonArray {
-                        params.tools.forEach { tool ->
-                            add(buildJsonObject {
-                                put("name", JsonPrimitive(tool.name))
-                                put("description", JsonPrimitive(tool.description))
-                                put(
-                                    key = "parameters",
-                                    element = json.encodeToJsonElement(tool.parameters())
-                                        .removeElements(
-                                            listOf(
-                                                "const",
-                                                "exclusiveMaximum",
-                                                "exclusiveMinimum",
-                                                "format",
-                                                "additionalProperties",
-                                                "enum",
-                                            )
-                                        )
-                                )
-                            })
-                        }
-                    })
-                })
-            })
-        }
-        // Model BuiltIn Tools
-        // 目前不能和工具调用兼容
-        if (params.model.tools.isNotEmpty()) {
-            put("tools", buildJsonArray {
-                params.model.tools.forEach { builtInTool ->
-                    when (builtInTool) {
-                        BuiltInTools.Search -> {
-                            add(buildJsonObject {
-                                put("google_search", buildJsonObject {})
-                            })
-                        }
-
-                        BuiltInTools.UrlContext -> {
-                            add(buildJsonObject {
-                                put("url_context", buildJsonObject {})
-                            })
-                        }
-                    }
-                }
-            })
+        buildGoogleToolsPayload(params)?.let { toolsPayload ->
+            put("tools", toolsPayload)
         }
 
         // Safety Settings

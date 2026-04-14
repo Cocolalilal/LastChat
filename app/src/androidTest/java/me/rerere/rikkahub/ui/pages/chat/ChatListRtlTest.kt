@@ -59,4 +59,39 @@ class ChatListRtlTest {
 
         assertTrue(userNode.boundsInRoot.left > assistantNode.boundsInRoot.left)
     }
+
+    @Test
+    fun chat_preview_keeps_arabic_user_bubbles_on_the_right_in_rtl() {
+        val userText = "مرحبا من المستخدم"
+        val assistantText = "مرحبًا من المساعد"
+        val conversation = Conversation.ofId(
+            id = Uuid.random(),
+            messages = listOf(
+                MessageNode.of(UIMessage.user(userText)),
+                MessageNode.of(UIMessage.assistant(assistantText)),
+            ),
+        )
+
+        composeRule.setContent {
+            MaterialTheme {
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                    val state = rememberLazyListState()
+                    ChatList(
+                        innerPadding = PaddingValues(0.dp),
+                        conversation = conversation,
+                        state = state,
+                        loading = false,
+                        previewMode = true,
+                        settings = Settings(),
+                        onJumpToMessage = {},
+                    )
+                }
+            }
+        }
+
+        val userNode = composeRule.onNodeWithText(userText).fetchSemanticsNode()
+        val assistantNode = composeRule.onNodeWithText(assistantText).fetchSemanticsNode()
+
+        assertTrue(userNode.boundsInRoot.left > assistantNode.boundsInRoot.left)
+    }
 }

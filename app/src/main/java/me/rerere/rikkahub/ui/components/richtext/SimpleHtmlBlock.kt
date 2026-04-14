@@ -2,6 +2,7 @@ package me.rerere.rikkahub.ui.components.richtext
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
@@ -49,6 +51,9 @@ import org.jsoup.nodes.Element
 import org.jsoup.nodes.Node
 import org.jsoup.nodes.TextNode
 
+private const val LTR_ISOLATE = '\u2066'
+private const val POP_DIRECTIONAL_ISOLATE = '\u2069'
+
 @Composable
 private fun rememberElementDirection(text: String): BidiDirection {
     val appLocale = LocalContext.current.appLocale()
@@ -77,19 +82,22 @@ fun SimpleHtmlBlock(
     }
 
     val uriHandler = LocalUriHandler.current
+    val blockDirection = rememberElementDirection(document.body().text())
 
-    Column(modifier = modifier) {
-        document.body().childNodes().forEach { node ->
-            RenderNode(
-                node = node,
-                onLinkClick = { url ->
-                    try {
-                        uriHandler.openUri(url)
-                    } catch (e: Exception) {
-                        // Handle link click error silently
+    CompositionLocalProvider(LocalLayoutDirection provides blockDirection.toLayoutDirection()) {
+        Column(modifier = modifier) {
+            document.body().childNodes().forEach { node ->
+                RenderNode(
+                    node = node,
+                    onLinkClick = { url ->
+                        try {
+                            uriHandler.openUri(url)
+                        } catch (e: Exception) {
+                            // Handle link click error silently
+                        }
                     }
-                }
-            )
+                )
+            }
         }
     }
 }
@@ -103,13 +111,15 @@ private fun RenderNode(
         is TextNode -> {
             if (node.text().isNotBlank()) {
                 val direction = rememberElementDirection(node.text())
-                Text(
-                    text = node.text(),
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        color = LocalContentColor.current,
-                        textDirection = direction.toComposeTextDirection()
+                CompositionLocalProvider(LocalLayoutDirection provides direction.toLayoutDirection()) {
+                    Text(
+                        text = node.text(),
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            color = LocalContentColor.current,
+                            textDirection = direction.toComposeTextDirection()
+                        )
                     )
-                )
+                }
             }
         }
 
@@ -234,47 +244,52 @@ private fun RenderList(
     onLinkClick: (String) -> Unit
 ) {
     val listDirection = rememberElementDirection(listElement.text())
+    val listItems = remember(listElement) {
+        listElement.children().filter { it.tagName().lowercase() == "li" }
+    }
+    val maxMarkerLength = if (isOrdered) {
+        listItems.size.toString().length + 1
+    } else {
+        1
+    }
+    val markerSlotWidth = 20.dp + ((maxMarkerLength - 1).coerceAtLeast(0) * 8).dp
     CompositionLocalProvider(LocalLayoutDirection provides listDirection.toLayoutDirection()) {
         Column(modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)) {
-        listElement.children().forEachIndexed { index, item ->
-            if (item.tagName().lowercase() == "li") {
+            listItems.forEachIndexed { index, item ->
                 val itemDirection = rememberElementDirection(item.text())
-                Row(modifier = Modifier.padding(vertical = 2.dp)) {
-                    val markerText = if (isOrdered) "${index + 1}. " else "• "
-                    val marker: @Composable () -> Unit = {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    val markerText = if (isOrdered) "${index + 1}." else "\u2022"
+                    Box(
+                        modifier = Modifier.widthIn(min = markerSlotWidth),
+                        contentAlignment = Alignment.TopEnd,
+                    ) {
                         Text(
                             text = markerText,
                             style = MaterialTheme.typography.bodyMedium.copy(
-                                color = LocalContentColor.current
+                                color = LocalContentColor.current,
+                                textDirection = TextDirection.ContentOrLtr
                             )
                         )
                     }
-                    val content: @Composable () -> Unit = {
-                        val annotatedString = buildAnnotatedStringFromElement(item, onLinkClick)
-                        if (annotatedString.text.isNotBlank()) {
-                            Text(
-                                text = annotatedString,
-                                style = MaterialTheme.typography.bodyMedium.copy(
-                                    color = LocalContentColor.current,
-                                    textDirection = itemDirection.toComposeTextDirection()
-                                ),
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-                    if (itemDirection == BidiDirection.Rtl) {
-                        content()
-                        Spacer(modifier = Modifier.width(4.dp))
-                        marker()
-                    } else {
-                        marker()
-                        Spacer(modifier = Modifier.width(4.dp))
-                        content()
+                    val annotatedString = buildAnnotatedStringFromElement(item, onLinkClick)
+                    if (annotatedString.text.isNotBlank()) {
+                        Text(
+                            text = annotatedString,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                color = LocalContentColor.current,
+                                textDirection = itemDirection.toComposeTextDirection()
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
                     }
                 }
             }
         }
-    }
     }
 }
 
@@ -455,6 +470,7 @@ private fun processElementNodes(
                     }
 
                     "code" -> {
+                        builder.append(LTR_ISOLATE)
                         val start = builder.length
                         processElementNodes(node, builder, onLinkClick)
                         builder.addStyle(
@@ -465,6 +481,7 @@ private fun processElementNodes(
                             start,
                             builder.length
                         )
+                        builder.append(POP_DIRECTIONAL_ISOLATE)
                     }
 
                     "br" -> {
@@ -707,6 +724,7 @@ private fun RenderTable(
 ) {
     val rows = mutableListOf<List<@Composable () -> Unit>>()
     var headers = emptyList<@Composable () -> Unit>()
+    val tableDirection = rememberElementDirection(tableElement.text())
 
     // Extract table headers and rows
     tableElement.select("tr").forEach { tr ->
@@ -716,12 +734,16 @@ private fun RenderTable(
             cells.add {
                 val annotatedString = buildAnnotatedStringFromElement(cell, onLinkClick)
                 if (annotatedString.text.isNotBlank()) {
-                    Text(
-                        text = annotatedString,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            color = LocalContentColor.current
+                    val direction = rememberElementDirection(annotatedString.text)
+                    CompositionLocalProvider(LocalLayoutDirection provides direction.toLayoutDirection()) {
+                        Text(
+                            text = annotatedString,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                color = LocalContentColor.current,
+                                textDirection = direction.toComposeTextDirection()
+                            )
                         )
-                    )
+                    }
                 }
             }
         }
@@ -746,13 +768,15 @@ private fun RenderTable(
 
     if (headers.isNotEmpty() || rows.isNotEmpty()) {
         Box(modifier = Modifier.padding(vertical = 8.dp)) {
-            DataTable(
-                headers = headers,
-                rows = rows,
-                cellBorder = null,
-                headerBackground = Color.Transparent,
-                zebraStriping = false
-            )
+            CompositionLocalProvider(LocalLayoutDirection provides tableDirection.toLayoutDirection()) {
+                DataTable(
+                    headers = headers,
+                    rows = rows,
+                    cellBorder = null,
+                    headerBackground = Color.Transparent,
+                    zebraStriping = false
+                )
+            }
         }
     }
 }

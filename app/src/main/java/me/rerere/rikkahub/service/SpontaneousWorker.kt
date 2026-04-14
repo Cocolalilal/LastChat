@@ -29,6 +29,7 @@ import me.rerere.rikkahub.data.datastore.SpontaneousMessagingStateStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.model.SpontaneousMessageMode
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
@@ -105,9 +106,16 @@ class SpontaneousWorker(
                     return@mapNotNull null
                 }
 
+                val recentConversation = conversationRepository.getRecentConversations(assistant.id, 1).firstOrNull()
+
+                // CONTINUE_ONLY requires an existing conversation
+                if (assistant.spontaneousMessageMode == SpontaneousMessageMode.CONTINUE_ONLY && recentConversation == null) {
+                    return@mapNotNull null
+                }
+
                 EligibleAssistantContext(
                     assistant = assistant,
-                    conversation = conversationRepository.getRecentConversations(assistant.id, 1).firstOrNull(),
+                    conversation = recentConversation,
                 )
             }
 
@@ -191,10 +199,14 @@ class SpontaneousWorker(
         }
 
         val relation = response.relation ?: return
-        val effectiveRelation = if (conversation == null) {
-            SpontaneousMessageRelation.UNRELATED
-        } else {
-            relation
+        val effectiveRelation = when (assistant.spontaneousMessageMode) {
+            SpontaneousMessageMode.CONTINUE_ONLY -> SpontaneousMessageRelation.RECENT_CHAT
+            SpontaneousMessageMode.NEW_ONLY -> SpontaneousMessageRelation.UNRELATED
+            SpontaneousMessageMode.BOTH -> if (conversation == null) {
+                SpontaneousMessageRelation.UNRELATED
+            } else {
+                relation
+            }
         }
 
         val content = response.content?.trim().orEmpty()
@@ -326,7 +338,7 @@ class SpontaneousWorker(
             If the user spoke very recently, if they are still obviously waiting for a normal in-chat reply, or if the timing feels awkward, prefer `send = false`.
             Choose `recent_chat` only if the message clearly continues the most recent chat.
             Choose `unrelated` only if it should stand alone as a fresh new conversation rather than continue the most recent chat.
-            ${if (conversation == null) "Because there is no recent chat available, relation must be `unrelated`." else ""}
+            ${buildRelationConstraint(assistant, conversation)}
 
             Return JSON only:
             {
@@ -337,6 +349,21 @@ class SpontaneousWorker(
               "content": "the exact spontaneous assistant message"
             }
         """.trimIndent()
+    }
+
+    private fun buildRelationConstraint(
+        assistant: Assistant,
+        conversation: Conversation?,
+    ): String {
+        return when (assistant.spontaneousMessageMode) {
+            SpontaneousMessageMode.CONTINUE_ONLY -> "You MUST use relation=`recent_chat`. Your message must continue or reference the existing chat."
+            SpontaneousMessageMode.NEW_ONLY -> "You MUST use relation=`unrelated`. Your message must start a fresh, standalone conversation."
+            SpontaneousMessageMode.BOTH -> if (conversation == null) {
+                "Because there is no recent chat available, relation must be `unrelated`."
+            } else {
+                ""
+            }
+        }
     }
 
     private fun buildTimingContext(

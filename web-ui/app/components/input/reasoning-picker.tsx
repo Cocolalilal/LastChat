@@ -1,7 +1,7 @@
 import * as React from "react";
 
 import { useMutation } from "@tanstack/react-query";
-import { ChevronDown, Lightbulb, LightbulbCircle, LoaderCircle, Sparkles } from "lucide-react";
+import { ChevronDown, Lightbulb, LightbulbCircle, LoaderCircle, Sparkles } from "~/lib/material-icons";
 import { useTranslation } from "react-i18next";
 
 import { useCurrentAssistant } from "~/hooks/use-current-assistant";

@@ -221,7 +221,6 @@
   <string name="activity_pill_ocr_done">冉OCR</string>
   <string name="activity_pill_ocr_done_count">运行 OCR x %1$d</string>
   <string name="activity_timeline_title">活动时间表</string>
-  <string name="activity_timeline_description">%1$d 个活动步骤</string>
   <string name="activity_timeline_empty">没有记录任何活动</string>
   <string name="activity_timeline_reasoning">推理</string>
   <string name="activity_timeline_ocr">OCR</string>
@@ -1492,4 +1491,22 @@
     <string name="a11y_remove_provider_override">移除覆盖</string>
     <string name="a11y_toggle_view_mode">切换视图模式</string>
     <string name="a11y_assistant_widget">助手</string>
+    <string name="summarizer_model_tip_banner">在“设置 &gt; 默认模型”中选择专用的摘要模型，以获得更好的摘要效果。</string>
+    <string name="setting_provider_page_probe_capabilities">Probe API capabilities</string>
+    <string name="setting_provider_page_probe_capabilities_loading">Probing API capabilities...</string>
+    <string name="setting_provider_page_probe_capabilities_progress">Checking this exact model with the provider API</string>
+    <string name="setting_provider_page_probe_capabilities_not_found">This model was not returned by the provider API</string>
+    <string name="setting_provider_page_probe_capabilities_no_data">The provider API did not expose capability metadata for this model</string>
+    <string name="setting_provider_page_probe_capabilities_unchanged">Capabilities already match the provider API</string>
+    <string name="setting_provider_page_probe_capabilities_success">Model capabilities updated from the provider API</string>
+    <string name="setting_provider_page_probe_capabilities_error">Failed to probe model capabilities: %1$s</string>
+    <string name="setting_display_model_catalog_title">Update model catalog</string>
+    <string name="setting_display_model_catalog_source_bundled">Bundled</string>
+    <string name="setting_display_model_catalog_source_downloaded">Downloaded</string>
+    <string name="setting_display_model_catalog_subtitle_bundled">%1$s LiteLLM list • %2$d entries</string>
+    <string name="setting_display_model_catalog_subtitle_downloaded">%1$s LiteLLM list • %2$d entries • Updated %3$s</string>
+    <string name="setting_display_model_catalog_refresh_button">Fetch latest LiteLLM list</string>
+    <string name="setting_display_model_catalog_refreshing">Updating the LiteLLM model list...</string>
+    <string name="setting_display_model_catalog_refresh_success">Model catalog updated</string>
+    <string name="setting_display_model_catalog_refresh_error">Failed to update model catalog: %1$s</string>
 </resources>

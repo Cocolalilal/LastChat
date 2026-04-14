@@ -83,14 +83,18 @@ fun SquareCropImageScreen(
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
     var aspectRatio by remember { mutableFloatStateOf(1f) }
     
-    // Load the bitmap
+    // Load the bitmap with safe downsampling
     LaunchedEffect(sourceUri) {
         withContext(Dispatchers.IO) {
             try {
-                context.contentResolver.openInputStream(sourceUri)?.use { stream ->
-                    val loadedBitmap = BitmapFactory.decodeStream(stream)
+                val loadedBitmap = me.rerere.rikkahub.utils.ImageUtils.loadOptimizedBitmap(
+                    context, sourceUri, maxSize = 4096
+                )
+                if (loadedBitmap != null) {
                     bitmap = loadedBitmap
                     aspectRatio = loadedBitmap.width.toFloat() / loadedBitmap.height
+                } else {
+                    onCancel()
                 }
             } catch (e: Exception) {
                 e.printStackTrace()

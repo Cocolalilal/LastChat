@@ -119,6 +119,8 @@ val THINKING_REGEX = Regex("<think(?:ing)?>([\\s\\S]*?)(?:</think(?:ing)?>|$)", 
 private val ORPHAN_CLOSE_TAG_REGEX = Regex("^([\\s\\S]*?)</think(?:ing)?>", RegexOption.DOT_MATCHES_ALL)
 private val CODE_BLOCK_REGEX = Regex("```[\\s\\S]*?```|`[^`\n]*`", RegexOption.DOT_MATCHES_ALL)
 private val BREAK_LINE_REGEX = Regex("(?i)<br\\s*/?>")
+private const val LTR_ISOLATE = '\u2066'
+private const val POP_DIRECTIONAL_ISOLATE = '\u2069'
 
 /**
  * CompositionLocal for RP style rules - enables color customization throughout the markdown tree
@@ -278,6 +280,14 @@ private fun BidiDirection.toLayoutDirection(): LayoutDirection {
     return if (this == BidiDirection.Rtl) LayoutDirection.Rtl else LayoutDirection.Ltr
 }
 
+private fun isolateLtr(text: String): String {
+    return buildString(text.length + 2) {
+        append(LTR_ISOLATE)
+        append(text)
+        append(POP_DIRECTIONAL_ISOLATE)
+    }
+}
+
 
 @Preview(showBackground = true)
 @Composable
@@ -362,8 +372,12 @@ fun MarkdownBlock(
     }
 
     val (preprocessed, astTree) = data
+    val blockDirection = rememberContentDirection(preprocessed)
     // Provide rpStyleRules to entire tree via CompositionLocal
-    CompositionLocalProvider(LocalRpStyleRules provides rpStyleRules) {
+    CompositionLocalProvider(
+        LocalRpStyleRules provides rpStyleRules,
+        LocalLayoutDirection provides blockDirection.toLayoutDirection(),
+    ) {
         ProvideTextStyle(style) {
             Column(
                 modifier = modifier.padding(start = 4.dp)
@@ -635,9 +649,17 @@ private fun MarkdownNode(
 
         // GFM 特殊元素
         GFMElementTypes.STRIKETHROUGH -> {
-            Text(
-                text = node.getTextInNode(content), textDecoration = TextDecoration.LineThrough, modifier = modifier
-            )
+            val direction = rememberContentDirection(node.getTextInNode(content))
+            CompositionLocalProvider(LocalLayoutDirection provides direction.toLayoutDirection()) {
+                Text(
+                    text = node.getTextInNode(content),
+                    textDecoration = TextDecoration.LineThrough,
+                    modifier = modifier,
+                    style = LocalTextStyle.current.copy(
+                        textDirection = direction.toComposeTextDirection()
+                    )
+                )
+            }
         }
 
         GFMElementTypes.TABLE -> {
@@ -690,13 +712,21 @@ private fun MarkdownNode(
 
         MarkdownElementTypes.CODE_SPAN -> {
             val code = node.getTextInNode(content).trim('`')
-            Text(
-                text = code, fontFamily = FontFamily.Monospace, modifier = modifier
-            )
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Text(
+                    text = isolateLtr(code),
+                    modifier = modifier,
+                    style = LocalTextStyle.current.copy(
+                        fontFamily = FontFamily.Monospace,
+                        textDirection = TextDirection.ContentOrLtr
+                    )
+                )
+            }
         }
 
         MarkdownElementTypes.CODE_BLOCK -> {
             val code = node.getTextInNode(content)
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 HighlightCodeBlock(
                     code = code,
                     language = "plaintext",
@@ -706,6 +736,7 @@ private fun MarkdownNode(
                     onExpandedStreamingContentChanged = onExpandedStreamingCodeBlockChanged,
                     completeCodeBlock = true
                 )
+            }
         }
 
         // 代码块
@@ -728,32 +759,40 @@ private fun MarkdownNode(
             val hasEnd = node.findChildOfTypeRecursive(MarkdownTokenTypes.CODE_FENCE_END) != null
 
             // Mermaid diagrams: render directly without HighlightCodeBlock wrapper
-            if (hasEnd && language == "mermaid") {
-                Mermaid(
-                    code = code,
-                    modifier = Modifier
-                        .padding(bottom = 4.dp)
-                        .fillMaxWidth(),
-                )
-            } else {
-                HighlightCodeBlock(
-                    code = code,
-                    language = language,
-                    modifier = Modifier
-                        .padding(bottom = 4.dp)
-                        .fillMaxWidth(),
-                    onExpandedStreamingContentChanged = onExpandedStreamingCodeBlockChanged,
-                    completeCodeBlock = hasEnd
-                )
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                if (hasEnd && language == "mermaid") {
+                    Mermaid(
+                        code = code,
+                        modifier = Modifier
+                            .padding(bottom = 4.dp)
+                            .fillMaxWidth(),
+                    )
+                } else {
+                    HighlightCodeBlock(
+                        code = code,
+                        language = language,
+                        modifier = Modifier
+                            .padding(bottom = 4.dp)
+                            .fillMaxWidth(),
+                        onExpandedStreamingContentChanged = onExpandedStreamingCodeBlockChanged,
+                        completeCodeBlock = hasEnd
+                    )
+                }
             }
         }
 
         MarkdownTokenTypes.TEXT -> {
             val text = node.getTextInNode(content)
-            Text(
-                text = text,
-                modifier = modifier,
-            )
+            val direction = rememberContentDirection(text)
+            CompositionLocalProvider(LocalLayoutDirection provides direction.toLayoutDirection()) {
+                Text(
+                    text = text,
+                    modifier = modifier,
+                    style = LocalTextStyle.current.copy(
+                        textDirection = direction.toComposeTextDirection()
+                    ),
+                )
+            }
         }
 
         MarkdownElementTypes.HTML_BLOCK -> {
@@ -789,10 +828,12 @@ private fun UnorderedListNode(
     level: Int = 0
 ) {
     val bulletStyle = when (level % 3) {
-        0 -> "• "
-        1 -> "◦ "
-        else -> "▪ "
+        0 -> "\u2022"
+        1 -> "\u25E6"
+        else -> "\u25AA"
     }
+
+    val markerSlotWidth = rememberMarkerSlotWidth(1)
 
     Column(
         modifier = modifier.padding(start = (level * 8).dp)
@@ -803,6 +844,7 @@ private fun UnorderedListNode(
                     node = child,
                     content = content,
                     bulletText = bulletStyle,
+                    markerSlotWidth = markerSlotWidth,
                     onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
                     onClickCitation = onClickCitation,
                     level = level
@@ -821,22 +863,28 @@ private fun OrderedListNode(
     onClickCitation: (String) -> Unit = {},
     level: Int = 0
 ) {
+    val listItems = node.children.filter { it.type == MarkdownElementTypes.LIST_ITEM }
+    val markerTexts = remember(listItems, content) {
+        listItems.mapIndexed { index, child ->
+            child.findChildOfTypeRecursive(MarkdownTokenTypes.LIST_NUMBER)?.getTextInNode(content)
+                ?: "${index + 1}."
+        }
+    }
+    val markerSlotWidth = rememberMarkerSlotWidth(
+        markerTexts.maxOfOrNull { it.trim().length } ?: 1
+    )
+
     Column(modifier.padding(start = (level * 8).dp)) {
-        var index = 1
-        node.children.fastForEach { child ->
-            if (child.type == MarkdownElementTypes.LIST_ITEM) {
-                val numberText =
-                    child.findChildOfTypeRecursive(MarkdownTokenTypes.LIST_NUMBER)?.getTextInNode(content) ?: "$index. "
-                ListItemNode(
-                    node = child,
-                    content = content,
-                    bulletText = numberText,
-                    onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
-                    onClickCitation = onClickCitation,
-                    level = level
-                )
-                index++
-            }
+        listItems.forEachIndexed { index, child ->
+            ListItemNode(
+                node = child,
+                content = content,
+                bulletText = markerTexts[index],
+                markerSlotWidth = markerSlotWidth,
+                onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
+                onClickCitation = onClickCitation,
+                level = level
+            )
         }
     }
 }
@@ -846,6 +894,7 @@ private fun ListItemNode(
     node: ASTNode,
     content: String,
     bulletText: String,
+    markerSlotWidth: androidx.compose.ui.unit.Dp,
     onExpandedStreamingCodeBlockChanged: (() -> Unit)? = null,
     onClickCitation: (String) -> Unit = {},
     level: Int
@@ -861,6 +910,7 @@ private fun ListItemNode(
         if (directContent.isNotEmpty()) {
             CompositionLocalProvider(LocalLayoutDirection provides itemDirection.toLayoutDirection()) {
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.Top,
                 ) {
@@ -880,13 +930,11 @@ private fun ListItemNode(
                             }
                         }
                     }
-                    if (itemDirection == BidiDirection.Rtl) {
-                        contentColumn()
-                        Text(text = bulletText)
-                    } else {
-                        Text(text = bulletText)
-                        contentColumn()
-                    }
+                    ListMarker(
+                        markerText = bulletText.trim(),
+                        markerSlotWidth = markerSlotWidth,
+                    )
+                    contentColumn()
                 }
             }
         }
@@ -905,6 +953,32 @@ private fun ListItemNode(
 }
 
 // 分离列表项的直接内容和嵌套列表
+@Composable
+private fun rememberMarkerSlotWidth(maxMarkerLength: Int): androidx.compose.ui.unit.Dp {
+    val fontSize = LocalTextStyle.current.fontSize.toDp()
+    return remember(fontSize, maxMarkerLength) {
+        (fontSize * (maxMarkerLength.coerceAtLeast(1) * 0.75f + 0.75f)).coerceAtLeast(20.dp)
+    }
+}
+
+@Composable
+private fun ListMarker(
+    markerText: String,
+    markerSlotWidth: androidx.compose.ui.unit.Dp,
+) {
+    Box(
+        modifier = Modifier.widthIn(min = markerSlotWidth),
+        contentAlignment = Alignment.TopEnd,
+    ) {
+        Text(
+            text = markerText,
+            style = LocalTextStyle.current.copy(
+                textDirection = TextDirection.ContentOrLtr
+            )
+        )
+    }
+}
+
 private fun separateContentAndLists(listItemNode: ASTNode): Pair<List<ASTNode>, List<ASTNode>> {
     val directContent = mutableListOf<ASTNode>()
     val nestedLists = mutableListOf<ASTNode>()
@@ -1016,6 +1090,15 @@ private fun TableNode(node: ASTNode, content: String, modifier: Modifier = Modif
     val rows = rowNodes.map { rowNode ->
         rowNode.children.filter { it.type == GFMTokenTypes.CELL }.map { it.getTextInNode(content).trim() }
     }
+    val tableDirection = rememberContentDirection(
+        buildString {
+            append(headerCells.joinToString(separator = " "))
+            if (rows.isNotEmpty()) {
+                append(' ')
+                append(rows.flatten().joinToString(separator = " "))
+            }
+        }
+    )
 
     // 创建表头composable列表
     val headers = List(columnCount) { columnIndex ->
@@ -1038,13 +1121,15 @@ private fun TableNode(node: ASTNode, content: String, modifier: Modifier = Modif
     }
 
     // 渲染表格
-    DataTable(
-        headers = headers,
-        rows = rowComposables,
-        modifier = modifier.padding(vertical = 8.dp),
-        columnMinWidths = List(columnCount) { 80.dp },
-        columnMaxWidths = List(columnCount) { 200.dp },
-    )
+    CompositionLocalProvider(LocalLayoutDirection provides tableDirection.toLayoutDirection()) {
+        DataTable(
+            headers = headers,
+            rows = rowComposables,
+            modifier = modifier.padding(vertical = 8.dp),
+            columnMinWidths = List(columnCount) { 80.dp },
+            columnMaxWidths = List(columnCount) { 200.dp },
+        )
+    }
 }
 
 private fun AnnotatedString.Builder.appendMarkdownNodeContent(
@@ -1253,7 +1338,7 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                     color = codeColor ?: Color.Unspecified,
                 )
             ) {
-                append(code)
+                append(isolateLtr(code))
             }
         }
 

@@ -5,8 +5,7 @@ import {
 } from "motion/react";
 
 import { fileTypeFromBuffer } from "file-type";
-import {
-  AudioFile,
+import { AudioFile,
   ArrowUp,
   ChevronLeft,
   ChevronRight,
@@ -19,8 +18,7 @@ import {
   Plus,
   Square,
   Video,
-  X,
-} from "lucide-react";
+  X, } from "~/lib/material-icons";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 

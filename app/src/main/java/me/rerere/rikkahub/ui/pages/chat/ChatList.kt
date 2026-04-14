@@ -112,14 +112,31 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.util.Locale
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.ui.context.LocalNavController
+import me.rerere.rikkahub.utils.BidiDirection
+import me.rerere.rikkahub.utils.appLocale
 import me.rerere.rikkahub.utils.openUrl
+import me.rerere.rikkahub.utils.resolveBidiDirection
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.text.style.TextDirection
 
 private const val TAG = "ChatList"
 private const val LoadingIndicatorKey = "LoadingIndicator"
 private const val ScrollBottomKey = "ScrollBottomKey"
+
+private fun BidiDirection.toLayoutDirection(): LayoutDirection {
+    return if (this == BidiDirection.Rtl) LayoutDirection.Rtl else LayoutDirection.Ltr
+}
+
+private fun BidiDirection.toComposeTextDirection(): TextDirection {
+    return if (this == BidiDirection.Rtl) TextDirection.ContentOrRtl else TextDirection.ContentOrLtr
+}
+
+private fun resolveSnippetDirection(text: String, locale: Locale): BidiDirection {
+    return resolveBidiDirection(text = text, fallbackLocale = locale)
+}
 
 @Composable
 fun ChatList(
@@ -661,6 +678,7 @@ private fun SharedTransitionScope.ChatListPreview(
 ) {
     var searchQuery by remember { mutableStateOf(initialSearchQuery ?: "") }
     val previewTopPadding = 20.dp
+    val appLocale = LocalContext.current.appLocale()
 
     // Filter messages
     val filteredMessages = remember(conversation.messageNodes, searchQuery) {
@@ -751,24 +769,33 @@ private fun SharedTransitionScope.ChatListPreview(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 val highlightColor = MaterialTheme.colorScheme.tertiaryContainer
-                                val highlightedText = remember(searchQuery, message) {
+                                val snippetText = remember(searchQuery, message) {
                                     val fullText = message.toText().trim().ifBlank { "[...]" }
-                                    val messageText = extractMatchingSnippet(
+                                    extractMatchingSnippet(
                                         text = fullText,
                                         query = searchQuery
                                     )
+                                }
+                                val highlightedText = remember(snippetText, searchQuery, highlightColor) {
                                     buildHighlightedText(
-                                        text = messageText,
+                                        text = snippetText,
                                         query = searchQuery,
                                         highlightColor = highlightColor
                                     )
                                 }
-                                Text(
-                                    text = highlightedText,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
+                                val snippetDirection = remember(snippetText, appLocale) {
+                                    resolveSnippetDirection(snippetText, appLocale)
+                                }
+                                CompositionLocalProvider(LocalLayoutDirection provides snippetDirection.toLayoutDirection()) {
+                                    Text(
+                                        text = highlightedText,
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            textDirection = snippetDirection.toComposeTextDirection()
+                                        ),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
                             }
                         }
                     }

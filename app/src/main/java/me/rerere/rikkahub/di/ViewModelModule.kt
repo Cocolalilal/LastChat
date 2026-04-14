@@ -35,6 +35,7 @@ val viewModelModule = module {
             context = get(),
             okHttpClient = get(),
             appStorageRepository = get(),
+            modelCatalogService = get(),
         )
     }
     viewModelOf(::AssistantVM)
