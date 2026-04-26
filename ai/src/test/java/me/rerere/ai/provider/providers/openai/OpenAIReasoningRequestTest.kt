@@ -2,13 +2,16 @@ package me.rerere.ai.provider.providers.openai
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
+import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.util.KeyRoulette
 import okhttp3.OkHttpClient
 import org.junit.Assert.assertEquals
@@ -89,6 +92,25 @@ class OpenAIReasoningRequestTest {
         }
     }
 
+    @Test
+    fun responseApiKeepsContentForToolCallOnlyAssistantMessages() {
+        val body = responseApiBody(
+            messages = listOf(
+                UIMessage.user("Hello"),
+                UIMessage(
+                    role = MessageRole.ASSISTANT,
+                    parts = listOf(UIMessagePart.ToolCall("call_1", "search_web", "{}"))
+                )
+            )
+        )
+
+        val input = body["input"]?.jsonArray ?: error("input is missing")
+        assertEquals(3, input.size)
+        assertEquals("assistant", input[1].jsonObject["role"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("", input[1].jsonObject["content"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("function_call", input[2].jsonObject["type"]?.jsonPrimitive?.contentOrNull)
+    }
+
     private fun chatCompletionsBody(thinkingBudget: Int?): JsonObject {
         val api = ChatCompletionsAPI(
             client = OkHttpClient(),
@@ -126,6 +148,23 @@ class OpenAIReasoningRequestTest {
             api,
             messages,
             TextGenerationParams(model = reasoningModel, thinkingBudget = thinkingBudget),
+            false,
+        ) as JsonObject
+    }
+
+    private fun responseApiBody(messages: List<UIMessage>): JsonObject {
+        val api = ResponseAPI(OkHttpClient())
+        val method = ResponseAPI::class.java.getDeclaredMethod(
+            "buildRequestBody",
+            List::class.java,
+            TextGenerationParams::class.java,
+            Boolean::class.javaPrimitiveType,
+        )
+        method.isAccessible = true
+        return method.invoke(
+            api,
+            messages,
+            TextGenerationParams(model = reasoningModel),
             false,
         ) as JsonObject
     }
