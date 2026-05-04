@@ -60,8 +60,8 @@ android {
         applicationId = "lastchat.rikkafork.cocolal"
         minSdk = 28
         targetSdk = 36
-        versionCode = 31
-        versionName = "1.4.1"
+        versionCode = 32
+        versionName = "1.4.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -325,6 +325,8 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.okhttp)
     implementation(libs.coil.svg)
+    implementation(libs.litertlm.android)
+    implementation(libs.llamatik)
 
     // serialization
     implementation(libs.kotlinx.serialization.json)

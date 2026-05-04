@@ -185,6 +185,7 @@ class SecretKeyManager(
                         setApiKey(newProvider.id, "")
                     }
                 }
+                oldProvider is ProviderSetting.Local && newProvider is ProviderSetting.Local -> Unit
             }
         }
 
@@ -251,6 +252,7 @@ class SecretKeyManager(
                     provider.copy(apiKey = "") // Clear plaintext
                 } else provider
             }
+            is ProviderSetting.Local -> provider
         }
     }
 
@@ -338,6 +340,7 @@ class SecretKeyManager(
             is ProviderSetting.Claude -> {
                 provider.copy(apiKey = getApiKey(provider.id, provider.apiKey))
             }
+            is ProviderSetting.Local -> provider
         }
     }
 

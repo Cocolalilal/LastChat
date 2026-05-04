@@ -9,12 +9,14 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.data.ai.models.ModelCatalogService
 import me.rerere.rikkahub.data.ai.models.ModelCatalogStatus
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.repository.AppStorageRepository
+import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.utils.IconStorageManager
 import okhttp3.OkHttpClient
 
@@ -25,6 +27,7 @@ class SettingVM(
     private val okHttpClient: OkHttpClient,
     private val appStorageRepository: AppStorageRepository,
     private val modelCatalogService: ModelCatalogService,
+    private val memoryRepository: MemoryRepository,
 ) :
     ViewModel() {
     val settings: StateFlow<Settings> = settingsStore.settingsFlow
@@ -111,6 +114,35 @@ class SettingVM(
                 onSuccess()
             }.onFailure {
                 onError(it)
+            }
+        }
+    }
+
+    fun regenerateMemoryEmbeddings(
+        onComplete: (success: Int, failure: Int) -> Unit = { _, _ -> },
+        onError: (Throwable) -> Unit = {},
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                var success = 0
+                var failure = 0
+                settings.value.assistants.forEach { assistant ->
+                    val (assistantSuccess, assistantFailure) = memoryRepository.regenerateEmbeddings(
+                        assistantId = assistant.id.toString(),
+                        onProgress = { _, _ -> },
+                    )
+                    success += assistantSuccess
+                    failure += assistantFailure
+                }
+                success to failure
+            }.onSuccess { (success, failure) ->
+                withContext(Dispatchers.Main) {
+                    onComplete(success, failure)
+                }
+            }.onFailure { error ->
+                withContext(Dispatchers.Main) {
+                    onError(error)
+                }
             }
         }
     }

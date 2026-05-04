@@ -6,6 +6,12 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import me.rerere.rikkahub.data.db.entity.EmbeddingCacheEntity
 
+data class EmbeddingCacheModelStats(
+    val modelId: String,
+    val count: Int,
+    val estimatedBytes: Long,
+)
+
 @Dao
 interface EmbeddingCacheDAO {
     
@@ -56,4 +62,13 @@ interface EmbeddingCacheDAO {
      */
     @Query("SELECT * FROM embedding_cache")
     suspend fun getAllEmbeddings(): List<EmbeddingCacheEntity>
+
+    @Query("SELECT model_id AS modelId, COUNT(*) AS count, COALESCE(SUM(LENGTH(embedding)), 0) AS estimatedBytes FROM embedding_cache GROUP BY model_id ORDER BY count DESC")
+    suspend fun getModelStats(): List<EmbeddingCacheModelStats>
+
+    @Query("DELETE FROM embedding_cache WHERE model_id NOT IN (:activeModelIds)")
+    suspend fun deleteExceptModelIds(activeModelIds: List<String>): Int
+
+    @Query("DELETE FROM embedding_cache")
+    suspend fun deleteAllEmbeddings(): Int
 }

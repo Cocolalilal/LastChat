@@ -144,6 +144,9 @@ class SettingsStore(
 
         // Android Integration
         val TEXT_SELECTION_CONFIG = stringPreferencesKey("text_selection_config")
+
+        // Local Models
+        val DEVICE_PERFORMANCE_PROFILE = stringPreferencesKey("device_performance_profile")
     }
 
     private val dataStore = context.settingsStore
@@ -249,6 +252,9 @@ class SettingsStore(
                 textSelectionConfig = preferences[TEXT_SELECTION_CONFIG]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: TextSelectionConfig(),
+                devicePerformanceProfile = preferences[DEVICE_PERFORMANCE_PROFILE]?.let {
+                    JsonInstant.decodeFromString(it)
+                },
             ).normalizeThemeId()
         }
         .map {
@@ -296,6 +302,10 @@ class SettingsStore(
                         )
 
                         is ProviderSetting.Claude -> provider.copy(
+                            models = provider.models.distinctBy { model -> model.id }
+                        )
+
+                        is ProviderSetting.Local -> provider.copy(
                             models = provider.models.distinctBy { model -> model.id }
                         )
                     }
@@ -507,6 +517,9 @@ class SettingsStore(
             preferences[CHAT_STORAGE] = JsonInstant.encodeToString(normalizedSettings.chatStorage)
             preferences[DISMISSED_BANNERS] = JsonInstant.encodeToString(normalizedSettings.dismissedBanners)
             preferences[TEXT_SELECTION_CONFIG] = JsonInstant.encodeToString(normalizedSettings.textSelectionConfig)
+            normalizedSettings.devicePerformanceProfile?.let {
+                preferences[DEVICE_PERFORMANCE_PROFILE] = JsonInstant.encodeToString(it)
+            }
         }
     }
 

@@ -49,41 +49,46 @@ fun ProviderConfigure(
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = modifier
     ) {
-        // 1. Enable/Disable Toggle with text
-        Row(
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = if (provider.enabled) {
-                    stringResource(id = R.string.setting_provider_page_enabled)
-                } else {
-                    stringResource(id = R.string.setting_provider_page_disabled)
-                },
-                modifier = Modifier.weight(1f)
-            )
-            if (showSavingIndicator) {
+        val isLocalProvider = provider is ProviderSetting.Local
+
+        if (!isLocalProvider) {
+            // 1. Enable/Disable Toggle with text
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    text = stringResource(R.string.setting_provider_page_saving),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline
+                    text = if (provider.enabled) {
+                        stringResource(id = R.string.setting_provider_page_enabled)
+                    } else {
+                        stringResource(id = R.string.setting_provider_page_disabled)
+                    },
+                    modifier = Modifier.weight(1f)
                 )
-                androidx.compose.foundation.layout.Spacer(modifier = Modifier.size(12.dp))
-            }
-            HapticSwitch(
-                checked = provider.enabled,
-                onCheckedChange = { enabled ->
-                    val updated = when (provider) {
-                        is ProviderSetting.OpenAI -> provider.copy(enabled = enabled)
-                        is ProviderSetting.Google -> provider.copy(enabled = enabled)
-                        is ProviderSetting.Claude -> provider.copy(enabled = enabled)
-                    }
-                    onEdit(updated)
+                if (showSavingIndicator) {
+                    Text(
+                        text = stringResource(R.string.setting_provider_page_saving),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                    androidx.compose.foundation.layout.Spacer(modifier = Modifier.size(12.dp))
                 }
-            )
+                HapticSwitch(
+                    checked = provider.enabled,
+                    onCheckedChange = { enabled ->
+                        val updated = when (provider) {
+                            is ProviderSetting.OpenAI -> provider.copy(enabled = enabled)
+                            is ProviderSetting.Google -> provider.copy(enabled = enabled)
+                            is ProviderSetting.Claude -> provider.copy(enabled = enabled)
+                            is ProviderSetting.Local -> provider.copy(enabled = enabled)
+                        }
+                        onEdit(updated)
+                    }
+                )
+            }
         }
 
-        // 2. Type selector (for non-built-in providers)
-        if (!provider.builtIn) {
+        // 2. Type selector (for non-built-in remote providers)
+        if (!provider.builtIn && !isLocalProvider) {
             SingleChoiceSegmentedButtonRow(
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -106,53 +111,60 @@ fun ProviderConfigure(
         }
 
         // 3. Name field with icon picker
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            ClickableIconPicker(
-                currentIconUri = provider.customIconUri,
-                defaultContent = {
-                    ProviderIcon(
-                        provider = provider,
-                        modifier = Modifier.size(40.dp)
-                    )
-                },
-                onIconSelected = { uri ->
-                    val updated = when (provider) {
-                        is ProviderSetting.OpenAI -> provider.copy(customIconUri = uri.toString())
-                        is ProviderSetting.Google -> provider.copy(customIconUri = uri.toString())
-                        is ProviderSetting.Claude -> provider.copy(customIconUri = uri.toString())
-                    }
-                    onEdit(updated)
-                },
-                onIconCleared = {
-                    val updated = when (provider) {
-                        is ProviderSetting.OpenAI -> provider.copy(customIconUri = null)
-                        is ProviderSetting.Google -> provider.copy(customIconUri = null)
-                        is ProviderSetting.Claude -> provider.copy(customIconUri = null)
-                    }
-                    onEdit(updated)
-                },
-                iconSize = 48.dp
-            )
-            OutlinedTextField(
-                value = provider.name,
-                onValueChange = { newName ->
-                    val updated = when (provider) {
-                        is ProviderSetting.OpenAI -> provider.copy(name = newName)
-                        is ProviderSetting.Google -> provider.copy(name = newName)
-                        is ProviderSetting.Claude -> provider.copy(name = newName)
-                    }
-                    onEdit(updated)
-                },
-                label = {
-                    Text(stringResource(id = R.string.setting_provider_page_name))
-                },
-                modifier = Modifier.weight(1f),
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
-            )
+        if (isLocalProvider) {
+            ProviderConfigureLocal(provider = provider)
+        } else {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                ClickableIconPicker(
+                    currentIconUri = provider.customIconUri,
+                    defaultContent = {
+                        ProviderIcon(
+                            provider = provider,
+                            modifier = Modifier.size(40.dp)
+                        )
+                    },
+                    onIconSelected = { uri ->
+                        val updated = when (provider) {
+                            is ProviderSetting.OpenAI -> provider.copy(customIconUri = uri.toString())
+                            is ProviderSetting.Google -> provider.copy(customIconUri = uri.toString())
+                            is ProviderSetting.Claude -> provider.copy(customIconUri = uri.toString())
+                            is ProviderSetting.Local -> provider
+                        }
+                        onEdit(updated)
+                    },
+                    onIconCleared = {
+                        val updated = when (provider) {
+                            is ProviderSetting.OpenAI -> provider.copy(customIconUri = null)
+                            is ProviderSetting.Google -> provider.copy(customIconUri = null)
+                            is ProviderSetting.Claude -> provider.copy(customIconUri = null)
+                            is ProviderSetting.Local -> provider
+                        }
+                        onEdit(updated)
+                    },
+                    iconSize = 48.dp
+                )
+                OutlinedTextField(
+                    value = provider.name,
+                    onValueChange = { newName ->
+                        val updated = when (provider) {
+                            is ProviderSetting.OpenAI -> provider.copy(name = newName)
+                            is ProviderSetting.Google -> provider.copy(name = newName)
+                            is ProviderSetting.Claude -> provider.copy(name = newName)
+                            is ProviderSetting.Local -> provider.copy(name = newName)
+                        }
+                        onEdit(updated)
+                    },
+                    label = {
+                        Text(stringResource(id = R.string.setting_provider_page_name))
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                )
+            }
         }
 
         // 4. Provider-specific configuration
@@ -168,6 +180,8 @@ fun ProviderConfigure(
             is ProviderSetting.Claude -> {
                 ProviderConfigureClaude(provider, onEdit)
             }
+
+            is ProviderSetting.Local -> Unit
         }
     }
 }
@@ -176,7 +190,7 @@ fun ProviderConfigure(
  * Convert a provider to a different type while preserving all common properties.
  */
 fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSetting {
-    if (this::class == type) {
+    if (this::class == type || this is ProviderSetting.Local) {
         return this
     }
 
@@ -184,12 +198,14 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
         is ProviderSetting.OpenAI -> this.apiKey
         is ProviderSetting.Google -> this.apiKey
         is ProviderSetting.Claude -> this.apiKey
+        is ProviderSetting.Local -> ""
     }
 
     val sourceBaseUrl = when (this) {
         is ProviderSetting.OpenAI -> this.baseUrl
         is ProviderSetting.Google -> this.baseUrl
         is ProviderSetting.Claude -> this.baseUrl
+        is ProviderSetting.Local -> ""
     }
     val targetDefaultBaseUrl = when (type) {
         ProviderSetting.OpenAI::class -> ProviderSetting.OpenAI().baseUrl
@@ -256,6 +272,36 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
         )
 
         else -> error("Unsupported provider type: $type")
+    }
+}
+
+@Composable
+private fun ProviderConfigureLocal(
+    provider: ProviderSetting.Local,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        ProviderIcon(
+            provider = provider,
+            modifier = Modifier.size(40.dp)
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = provider.name,
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = "Built-in provider for downloaded on-device models.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 

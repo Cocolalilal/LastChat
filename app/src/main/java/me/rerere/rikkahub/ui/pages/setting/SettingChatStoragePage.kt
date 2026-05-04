@@ -61,6 +61,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -90,8 +91,13 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import java.text.DateFormat
 import java.util.Date
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.datastore.DISABLED_MODEL_ID
+import me.rerere.rikkahub.data.db.dao.EmbeddingCacheDAO
+import me.rerere.rikkahub.data.db.dao.EmbeddingCacheModelStats
 import me.rerere.rikkahub.data.model.AppStorageSnapshot
 import me.rerere.rikkahub.data.model.ChatAttachmentKind
 import me.rerere.rikkahub.data.model.OtherUploadFile
@@ -162,6 +168,7 @@ fun SettingChatStoragePage(
     vm: SettingVM = koinViewModel(),
     repository: ChatAttachmentRepository = koinInject(),
     appStorageRepository: AppStorageRepository = koinInject(),
+    embeddingCacheDAO: EmbeddingCacheDAO = koinInject(),
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val chatSummary by repository.observeStorageSummary()
@@ -184,6 +191,33 @@ fun SettingChatStoragePage(
     var isLoadingOtherUploads by remember { mutableStateOf(false) }
     var showOtherUploadsInspector by rememberSaveable { mutableStateOf(false) }
     var showAllStorageCategories by rememberSaveable { mutableStateOf(false) }
+    var embeddingCacheStats by remember { mutableStateOf<List<EmbeddingCacheModelStats>>(emptyList()) }
+    var isCleaningEmbeddingCache by remember { mutableStateOf(false) }
+
+    val activeEmbeddingModelIds = remember(settings.embeddingModelId, settings.assistants) {
+        buildSet {
+            settings.embeddingModelId.toString().takeIf { it != DISABLED_MODEL_ID.toString() }?.let(::add)
+            settings.assistants.mapNotNull { assistant -> assistant.embeddingModelId }
+                .map { it.toString() }
+                .filter { it != DISABLED_MODEL_ID.toString() }
+                .forEach(::add)
+        }
+    }
+    val unusedEmbeddingCacheStats = remember(embeddingCacheStats, activeEmbeddingModelIds) {
+        embeddingCacheStats.filter { it.modelId !in activeEmbeddingModelIds }
+    }
+
+    fun loadEmbeddingCacheStats() {
+        scope.launch {
+            embeddingCacheStats = withContext(Dispatchers.IO) {
+                embeddingCacheDAO.getModelStats()
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        loadEmbeddingCacheStats()
+    }
 
     fun loadOtherUploads() {
         scope.launch {
@@ -394,6 +428,76 @@ fun SettingChatStoragePage(
                                 )
                                 Text(
                                     text = stringResource(R.string.setting_chat_storage_run_maintenance),
+                                    modifier = Modifier.padding(start = 8.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            item(span = StaggeredGridItemSpan.FullLine) {
+                SettingsGroup(
+                    title = "Memory embeddings",
+                    horizontalPadding = 4.dp,
+                    titleStartPadding = 4.dp,
+                ) {
+                    val unusedCount = unusedEmbeddingCacheStats.sumOf { it.count }
+                    val unusedBytes = unusedEmbeddingCacheStats.sumOf { it.estimatedBytes }
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        SettingGroupItem(
+                            title = "Cached vectors",
+                            subtitle = if (embeddingCacheStats.isEmpty()) {
+                                "No cached embeddings yet."
+                            } else {
+                                "${embeddingCacheStats.sumOf { it.count }} vectors · ${embeddingCacheStats.size} models"
+                            },
+                            icon = { Icon(Icons.Rounded.Memory, null) },
+                        )
+                        SettingGroupInputItem(
+                            title = "Unused embeddings",
+                            subtitle = if (unusedCount == 0) {
+                                "Nothing to clean."
+                            } else {
+                                "$unusedCount vectors · ${unusedBytes.fileSizeToString()}"
+                            },
+                            icon = { Icon(Icons.Rounded.Delete, null) },
+                        ) {
+                            FilledTonalButton(
+                                onClick = {
+                                    haptics.perform(HapticPattern.Thud)
+                                    scope.launch {
+                                        isCleaningEmbeddingCache = true
+                                        val deleted = withContext(Dispatchers.IO) {
+                                            if (activeEmbeddingModelIds.isEmpty()) {
+                                                embeddingCacheDAO.deleteAllEmbeddings()
+                                            } else {
+                                                embeddingCacheDAO.deleteExceptModelIds(activeEmbeddingModelIds.toList())
+                                            }
+                                        }
+                                        isCleaningEmbeddingCache = false
+                                        loadEmbeddingCacheStats()
+                                        toaster.show(
+                                            "Deleted $deleted unused memory embeddings",
+                                            type = ToastType.Success,
+                                        )
+                                    }
+                                },
+                                enabled = unusedCount > 0 && !isCleaningEmbeddingCache,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = AppShapes.ButtonPill,
+                            ) {
+                                if (isCleaningEmbeddingCache) {
+                                    CircularProgressIndicator(modifier = Modifier.size(18.dp))
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Delete,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
+                                Text(
+                                    text = "Delete unused",
                                     modifier = Modifier.padding(start = 8.dp),
                                 )
                             }

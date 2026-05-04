@@ -156,6 +156,7 @@ import me.rerere.rikkahub.ui.pages.setting.components.ProviderConfigure
 import me.rerere.rikkahub.ui.pages.setting.components.toProviderSetting
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.utils.ImageUtils
+import me.rerere.rikkahub.data.datastore.isLocalProvider
 import org.koin.androidx.compose.koinViewModel
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -285,11 +286,15 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
                     providerToDelete = provider
                     showDeleteDialog = true
                 },
-                onReorder = { from, to ->
-                    val newProviders = settings.providers.toMutableList().apply {
-                        add(to, removeAt(from))
+                onReorder = { fromProvider, toProvider ->
+                    val pinnedProviders = settings.providers.filter { it.isLocalProvider() }
+                    val movableProviders = settings.providers.filterNot { it.isLocalProvider() }.toMutableList()
+                    val from = movableProviders.indexOfFirst { it.id == fromProvider.id }
+                    val to = movableProviders.indexOfFirst { it.id == toProvider.id }
+                    if (from >= 0 && to >= 0 && from != to) {
+                        movableProviders.add(to, movableProviders.removeAt(from))
+                        vm.updateSettings(settings.copy(providers = pinnedProviders + movableProviders))
                     }
-                    vm.updateSettings(settings.copy(providers = newProviders))
                 },
                 onAddProvider = { provider ->
                     vm.updateSettings(
@@ -391,14 +396,20 @@ private fun ProviderListView(
     searchQuery: String,
     onNavigateToDetail: (ProviderSetting) -> Unit,
     onDeleteRequest: (ProviderSetting) -> Unit,
-    onReorder: (Int, Int) -> Unit,
+    onReorder: (ProviderSetting, ProviderSetting) -> Unit,
     onAddProvider: (ProviderSetting) -> Unit
 ) {
     val lazyListState = rememberLazyListState()
     val density = LocalDensity.current
     
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        onReorder(from.index, to.index)
+        val movableProviders = providers.filterNot { it.isLocalProvider() }
+        val pinnedCount = providers.count { it.isLocalProvider() }
+        val fromProvider = movableProviders.getOrNull(from.index - pinnedCount)
+        val toProvider = movableProviders.getOrNull(to.index - pinnedCount)
+        if (fromProvider != null && toProvider != null && !fromProvider.isLocalProvider() && !toProvider.isLocalProvider()) {
+            onReorder(fromProvider, toProvider)
+        }
     }
     
     // State for swipe neighbor tracking
@@ -408,7 +419,9 @@ private fun ProviderListView(
     var neighborsUnlocked by remember { mutableStateOf(false) }
     
     
-    val canDelete = allProviders.size > 1
+    val canDelete = allProviders.count { !it.isLocalProvider() } > 0
+    val pinnedProviders = remember(providers) { providers.filter { it.isLocalProvider() } }
+    val movableProviders = remember(providers) { providers.filterNot { it.isLocalProvider() } }
     
     // Reset neighborsUnlocked when offset returns to 0
     if (dragOffset == 0f && neighborsUnlocked) {
@@ -491,11 +504,35 @@ private fun ProviderListView(
             }
         }
         
-        itemsIndexed(providers, key = { _, it -> it.id }) { index, provider ->
+        itemsIndexed(pinnedProviders, key = { _, it -> it.id }) { index, provider ->
+            val position = when {
+                providers.size == 1 -> ItemPosition.ONLY
+                index == 0 -> ItemPosition.FIRST
+                else -> ItemPosition.MIDDLE
+            }
+
+            PhysicsSwipeToDelete(
+                position = position,
+                deleteEnabled = false,
+                onDelete = {},
+                modifier = Modifier.fillMaxWidth()
+            ) { animatedShape ->
+                ProviderItemContent(
+                    provider = provider,
+                    animatedShape = animatedShape,
+                    providerTags = settings.providerTags,
+                    haptics = haptics,
+                    dragHandle = {},
+                    onClick = { onNavigateToDetail(provider) }
+                )
+            }
+        }
+
+        itemsIndexed(movableProviders, key = { _, it -> it.id }) { index, provider ->
                 val position = when {
                     providers.size == 1 -> ItemPosition.ONLY
-                    index == 0 -> ItemPosition.FIRST
-                    index == providers.lastIndex -> ItemPosition.LAST
+                    pinnedProviders.isEmpty() && index == 0 -> ItemPosition.FIRST
+                    index == movableProviders.lastIndex -> ItemPosition.LAST
                     else -> ItemPosition.MIDDLE
                 }
                 
@@ -526,10 +563,11 @@ private fun ProviderListView(
                     state = reorderableState,
                     key = provider.id
                 ) { isDragging ->
+                    val isLocalProvider = provider.isLocalProvider()
                     androidx.compose.runtime.key(canDelete) {
                         PhysicsSwipeToDelete(
                             position = position,
-                            deleteEnabled = canDelete,
+                            deleteEnabled = canDelete && !isLocalProvider,
                             neighborOffset = neighborOffset,
                             onDragProgress = { offset, unlocked ->
                                 draggingIndex = index
@@ -555,22 +593,24 @@ private fun ProviderListView(
                                 providerTags = settings.providerTags,
                                 haptics = haptics,
                                 dragHandle = {
-                                    IconButton(
-                                        onClick = {},
-                                        modifier = Modifier
-                                            .longPressDraggableHandle(
-                                                onDragStarted = {
-                                                    haptics.perform(HapticPattern.Pop)
-                                                },
-                                                onDragStopped = {
-                                                    haptics.perform(HapticPattern.Thud)
-                                                }
+                                    if (!isLocalProvider) {
+                                        IconButton(
+                                            onClick = {},
+                                            modifier = Modifier
+                                                .longPressDraggableHandle(
+                                                    onDragStarted = {
+                                                        haptics.perform(HapticPattern.Pop)
+                                                    },
+                                                    onDragStopped = {
+                                                        haptics.perform(HapticPattern.Thud)
+                                                    }
+                                                )
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.DragIndicator,
+                                                contentDescription = null
                                             )
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.DragIndicator,
-                                            contentDescription = null
-                                        )
+                                        }
                                     }
                                 },
                                 onClick = {

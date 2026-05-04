@@ -56,6 +56,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.MultiChoiceSegmentedButtonRow
 import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SecondaryTabRow
@@ -196,6 +197,7 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
     val provider = settings.providers.find { it.id == id } ?: return
+    val isLocalProvider = provider is ProviderSetting.Local
     val pager = rememberPagerState { 2 }
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
@@ -245,21 +247,22 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                     }
                 },
                 actions = {
-                    val shareSheetState = rememberShareSheetState()
-                    ShareSheet(shareSheetState)
-                    
-                    // Test connection button
-                    ConnectionTesterButton(
-                        provider = provider,
-                        scope = scope
-                    )
-                    
-                    IconButton(
-                        onClick = {
-                            shareSheetState.show(provider)
+                    if (!isLocalProvider) {
+                        val shareSheetState = rememberShareSheetState()
+                        ShareSheet(shareSheetState)
+
+                        ConnectionTesterButton(
+                            provider = provider,
+                            scope = scope
+                        )
+
+                        IconButton(
+                            onClick = {
+                                shareSheetState.show(provider)
+                            }
+                        ) {
+                            Icon(Icons.Rounded.Share, null)
                         }
-                    ) {
-                        Icon(Icons.Rounded.Share, null)
                     }
                 }
             )
@@ -507,11 +510,18 @@ private fun SettingProviderModelPage(
     onEdit: (ProviderSetting) -> Unit,
     contentPadding: PaddingValues = PaddingValues(0.dp)
 ) {
-    ModelList(
-        providerSetting = provider,
-        onUpdateProvider = onEdit,
-        contentPadding = contentPadding
-    )
+    when (provider) {
+        is ProviderSetting.Local -> LocalProviderModelPage(
+            provider = provider,
+            contentPadding = contentPadding
+        )
+
+        else -> ModelList(
+            providerSetting = provider,
+            onUpdateProvider = onEdit,
+            contentPadding = contentPadding
+        )
+    }
 }
 
 @Composable
@@ -1255,6 +1265,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 is ProviderSetting.OpenAI -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.Google -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.Claude -> parentProvider.apiKey.isNotBlank()
+                                is ProviderSetting.Local -> false
                             }
                             
                             Column(
@@ -1424,19 +1435,21 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                     ) {
-                        TextButton(
+                        OutlinedButton(
                             onClick = {
                                 dialogState.dismiss()
                             },
+                            modifier = Modifier.weight(1f),
                         ) {
                             Text(stringResource(R.string.cancel))
                         }
-                        TextButton(
+                        Button(
                             onClick = {
                                 if (modelState.modelId.isNotBlank() && modelState.displayName.isNotBlank()) {
                                     dialogState.confirm()
                                 }
                             },
+                            modifier = Modifier.weight(1f),
                         ) {
                             Text(stringResource(R.string.setting_provider_page_add))
                         }
@@ -1535,6 +1548,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 is ProviderSetting.OpenAI -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.Google -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.Claude -> parentProvider.apiKey.isNotBlank()
+                                is ProviderSetting.Local -> false
                             }
                             
                             Column(
@@ -1701,6 +1715,8 @@ private suspend fun probeModelCapabilities(
             provider = provider,
             model = model,
         )
+
+        is ProviderSetting.Local -> null
     }
 }
 
@@ -1933,6 +1949,8 @@ private fun buildToolProbeCustomBodies(provider: ProviderSetting): List<CustomBo
                 },
             )
         )
+
+        is ProviderSetting.Local -> emptyList()
     }
 }
 
@@ -2285,19 +2303,21 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                     ) {
-                        TextButton(
+                        OutlinedButton(
                             onClick = {
                                 dialogState.dismiss()
                             },
+                            modifier = Modifier.weight(1f),
                         ) {
                             Text(stringResource(R.string.cancel))
                         }
-                        TextButton(
+                        Button(
                             onClick = {
                                 if (editingModel.displayName.isNotBlank()) {
                                     dialogState.confirm()
                                 }
                             },
+                            modifier = Modifier.weight(1f),
                         ) {
                             Text(stringResource(R.string.confirm))
                         }

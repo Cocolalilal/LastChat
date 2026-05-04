@@ -98,6 +98,15 @@ class ProviderConfigureConvertToTest {
     }
 
     @Test
+    fun `convertTo should keep local provider unchanged`() {
+        val original = ProviderSetting.Local(name = "On-device")
+
+        val converted = original.convertTo(ProviderSetting.OpenAI::class)
+
+        assertSame(original, converted)
+    }
+
+    @Test
     fun `convertTo should keep original base url when source url is invalid`() {
         val original = ProviderSetting.Claude(
             name = "Invalid URL Provider",

@@ -8,6 +8,15 @@ import me.rerere.ai.provider.ProviderManager
 import me.rerere.common.http.AcceptLanguageBuilder
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.data.ai.AIRequestInterceptor
+import me.rerere.rikkahub.data.ai.local.LiteRtRuntimeEngine
+import me.rerere.rikkahub.data.ai.local.LlamaCppRuntimeEngine
+import me.rerere.rikkahub.data.ai.local.LocalCompatibilityEstimator
+import me.rerere.rikkahub.data.ai.local.LocalModelInstallCoordinator
+import me.rerere.rikkahub.data.ai.local.LocalModelRepository
+import me.rerere.rikkahub.data.ai.local.LocalPerformanceEstimator
+import me.rerere.rikkahub.data.ai.local.LocalProvider
+import me.rerere.rikkahub.data.ai.local.LocalRuntimeEngine
+import me.rerere.rikkahub.data.ai.local.RoutingLocalRuntimeEngine
 import me.rerere.rikkahub.data.ai.transformers.AssistantTemplateLoader
 import me.rerere.rikkahub.data.ai.GenerationHandler
 import me.rerere.rikkahub.data.ai.models.ModelCatalogService
@@ -25,6 +34,7 @@ import me.rerere.rikkahub.data.db.Migration_6_7
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.sync.WebdavSync
 import me.rerere.rikkahub.utils.appLocale
+import androidx.work.WorkManager
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -56,8 +66,12 @@ val dataSourceModule = module {
 
     single {
         Room.databaseBuilder(get(), AppDatabase::class.java, "rikka_hub")
-            .addMigrations(Migration_6_7, AppDatabase.MIGRATION_11_12, AppDatabase.MIGRATION_12_13, AppDatabase.MIGRATION_14_16, AppDatabase.MIGRATION_22_23, AppDatabase.MIGRATION_23_24, AppDatabase.MIGRATION_24_25, AppDatabase.MIGRATION_25_26)
+            .addMigrations(Migration_6_7, AppDatabase.MIGRATION_11_12, AppDatabase.MIGRATION_12_13, AppDatabase.MIGRATION_14_16, AppDatabase.MIGRATION_22_23, AppDatabase.MIGRATION_23_24, AppDatabase.MIGRATION_24_25, AppDatabase.MIGRATION_25_26, AppDatabase.MIGRATION_26_27, AppDatabase.MIGRATION_27_28)
             .build()
+    }
+
+    single {
+        WorkManager.getInstance(get())
     }
 
     single {
@@ -110,6 +124,10 @@ val dataSourceModule = module {
         get<AppDatabase>().usageStatsDao()
     }
 
+    single {
+        get<AppDatabase>().localModelInstallDao()
+    }
+
     single { McpManager(settingsStore = get(), appScope = get()) }
 
     single {
@@ -154,7 +172,60 @@ val dataSourceModule = module {
     }
 
     single {
-        ProviderManager(client = get())
+        ProviderManager(client = get()).apply {
+            registerProvider(
+                "local",
+                LocalProvider(
+                    repository = get(),
+                    runtimeEngine = get(),
+                    compatibilityEstimator = get(),
+                    performanceEstimator = get(),
+                )
+            )
+        }
+    }
+
+    single {
+        LocalCompatibilityEstimator(
+            context = get(),
+            performanceEstimator = get(),
+        )
+    }
+
+    single {
+        LocalPerformanceEstimator(settingsStore = get())
+    }
+
+    single { LiteRtRuntimeEngine(context = get(), compatibilityEstimator = get()) }
+
+    single { LlamaCppRuntimeEngine() }
+
+    single<LocalRuntimeEngine> {
+        RoutingLocalRuntimeEngine(
+            liteRt = get(),
+            llamaCpp = get(),
+        )
+    }
+
+    single {
+        LocalModelRepository(
+            context = get(),
+            appScope = get(),
+            installDao = get(),
+            settingsStore = get(),
+            secureStore = get(),
+            client = get(),
+            compatibilityEstimator = get(),
+        )
+    }
+
+    single {
+        LocalModelInstallCoordinator(
+            appScope = get(),
+            workManager = get(),
+            installDao = get(),
+            repository = get(),
+        )
     }
 
     single {

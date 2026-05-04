@@ -3,8 +3,11 @@ package me.rerere.rikkahub.data.datastore
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.ai.local.LOCAL_PROVIDER_ID
+import me.rerere.rikkahub.data.ai.local.LOCAL_PROVIDER_NAME
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_OCR_PROMPT
@@ -29,6 +32,9 @@ import me.rerere.search.SearchCommonOptions
 import me.rerere.search.SearchServiceOptions
 import me.rerere.tts.provider.TTSProviderSetting
 import kotlin.uuid.Uuid
+import me.rerere.rikkahub.data.ai.local.DevicePerformanceProfile
+
+val DISABLED_MODEL_ID: Uuid = Uuid.parse("00000000-0000-0000-0000-000000000000")
 
 @Serializable
 data class Settings(
@@ -84,6 +90,7 @@ data class Settings(
     val chatStorage: ChatStorageSettings = ChatStorageSettings(),
     val dismissedBanners: Set<String> = emptySet(),
     val textSelectionConfig: TextSelectionConfig = TextSelectionConfig(),
+    val devicePerformanceProfile: DevicePerformanceProfile? = null,
 ) {
     companion object {
         fun dummy() = Settings(init = true)
@@ -402,6 +409,121 @@ fun Settings.getSelectedTTSProvider(): TTSProviderSetting? {
     return selectedTTSProviderId.let { id ->
         ttsProviders.find { it.id == id }
     } ?: ttsProviders.firstOrNull()
+}
+
+fun ProviderSetting.isLocalProvider(): Boolean = this is ProviderSetting.Local
+
+internal fun Settings.ensureBuiltInProviders(): Settings {
+    val defaultById = DEFAULT_PROVIDERS.associateBy { it.id }
+    val existingLocal = providers.find { it.id == DEFAULT_LOCAL_PROVIDER.id }
+    val normalizedLocal = (existingLocal ?: DEFAULT_LOCAL_PROVIDER).copyProvider(
+        id = DEFAULT_LOCAL_PROVIDER.id,
+        builtIn = DEFAULT_LOCAL_PROVIDER.builtIn,
+        description = DEFAULT_LOCAL_PROVIDER.description,
+        shortDescription = DEFAULT_LOCAL_PROVIDER.shortDescription,
+    )
+
+    val normalizedRest = providers
+        .filterNot { it.id == DEFAULT_LOCAL_PROVIDER.id }
+        .map { provider ->
+            defaultById[provider.id]?.let { defaultProvider ->
+                provider.copyProvider(
+                    id = defaultProvider.id,
+                    builtIn = defaultProvider.builtIn,
+                    description = defaultProvider.description,
+                    shortDescription = defaultProvider.shortDescription,
+                )
+            } ?: provider
+        }
+
+    val missingDefaults = DEFAULT_PROVIDERS
+        .filterNot { default -> default.id == DEFAULT_LOCAL_PROVIDER.id }
+        .filterNot { default -> normalizedRest.any { it.id == default.id } }
+
+    val normalizedProviders = buildList {
+        add(normalizedLocal)
+        addAll(normalizedRest)
+        addAll(missingDefaults)
+    }
+    return if (normalizedProviders != providers) {
+        copy(providers = normalizedProviders)
+    } else {
+        this
+    }
+}
+
+internal fun Settings.withLocalProviderModels(localModels: List<Model>): Settings {
+    val normalizedProvider = (providers.find { it.id == LOCAL_PROVIDER_ID } as? ProviderSetting.Local)
+        ?.copy(
+            name = LOCAL_PROVIDER_NAME,
+            builtIn = true,
+            models = localModels,
+        )
+        ?: ProviderSetting.Local(
+            id = LOCAL_PROVIDER_ID,
+            enabled = true,
+            name = LOCAL_PROVIDER_NAME,
+            models = localModels,
+            builtIn = true,
+        )
+
+    val updatedProviders = buildList {
+        add(normalizedProvider)
+        providers.filterNot { it.id == LOCAL_PROVIDER_ID }.forEach(::add)
+    }
+
+    return copy(providers = updatedProviders).clearMissingModelReferences()
+}
+
+internal fun Settings.clearMissingModelReferences(): Settings {
+    val allModels = providers.flatMap { it.models }
+    val allModelIds = allModels.map { it.id }.toSet()
+    val chatFallback = allModels.firstOrNull { it.type == ModelType.CHAT }?.id ?: Uuid.random()
+    val imageFallback = allModels.firstOrNull { it.type == ModelType.IMAGE }?.id ?: Uuid.random()
+    val embeddingFallback = allModels.firstOrNull { it.type == ModelType.EMBEDDING }?.id ?: Uuid.random()
+    val multimodalFallback = allModels.firstOrNull {
+        it.type == ModelType.CHAT && it.inputModalities.contains(me.rerere.ai.provider.Modality.IMAGE)
+    }?.id ?: chatFallback
+
+    fun Uuid.ensureValid(fallback: Uuid): Uuid {
+        return if (this in allModelIds) this else fallback
+    }
+
+    fun Uuid.ensureValidOrDisabled(fallback: Uuid): Uuid {
+        return if (this == DISABLED_MODEL_ID) this else ensureValid(fallback)
+    }
+
+    fun Uuid?.ensureValidOrNull(): Uuid? {
+        return this?.takeIf { it in allModelIds }
+    }
+
+    val updatedAssistants = assistants.map { assistant ->
+        assistant.copy(
+            chatModelId = assistant.chatModelId.ensureValidOrNull(),
+            backgroundModelId = assistant.backgroundModelId.ensureValidOrNull(),
+            embeddingModelId = assistant.embeddingModelId.ensureValidOrNull(),
+            summarizerModelId = assistant.summarizerModelId.ensureValidOrNull(),
+        )
+    }
+
+    return copy(
+        chatModelId = chatModelId.ensureValid(chatFallback),
+        titleModelId = titleModelId.ensureValid(chatFallback),
+        summarizerModelId = summarizerModelId.ensureValidOrNull(),
+        imageGenerationModelId = imageGenerationModelId.ensureValid(imageFallback),
+        translateModeId = translateModeId.ensureValid(chatFallback),
+        suggestionModelId = suggestionModelId.ensureValidOrDisabled(chatFallback),
+        ocrModelId = ocrModelId.ensureValid(multimodalFallback),
+        embeddingModelId = embeddingModelId.ensureValidOrDisabled(embeddingFallback),
+        favoriteModels = favoriteModels.filter { it in allModelIds },
+        assistants = updatedAssistants,
+        textSelectionConfig = textSelectionConfig.copy(
+            assistantId = textSelectionConfig.assistantId?.takeIf { id -> updatedAssistants.any { it.id == id } },
+            actions = textSelectionConfig.actions.map { action ->
+                action.copy(modelId = action.modelId.ensureValidOrNull())
+            }
+        ),
+    )
 }
 
 fun Model.findProvider(

@@ -344,6 +344,38 @@ fun AssistantMemorySettings(
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 SettingsGroupHeader(title = stringResource(R.string.assistant_memory_rag_settings))
                 RagSettingsCard(assistant = assistant, onUpdateAssistant = onUpdateAssistant)
+
+                // Regenerate embeddings button (visible when embeddings are missing or outdated)
+                AnimatedVisibility(
+                    visible = needsEmbeddingRegeneration && onRegenerateEmbeddings != null,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    Surface(
+                        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
+                        shape = RoundedCornerShape(24.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = stringResource(R.string.assistant_memory_regenerate_embeddings),
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = "Some memories are missing embeddings or were embedded with a different model.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Button(
+                                onClick = { onRegenerateEmbeddings?.invoke() },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Rounded.Refresh, null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text(stringResource(R.string.assistant_memory_regenerate_embeddings))
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -398,8 +430,6 @@ fun AssistantMemorySettings(
                 onAddMemory = { memoryDialogState.open(AssistantMemory(0, "")) },
                 onEditMemory = { memoryDialogState.open(it) },
                 onDeleteMemory = onDeleteMemory,
-                onRegenerateEmbeddings = onRegenerateEmbeddings,
-                needsEmbeddingRegeneration = needsEmbeddingRegeneration,
                 memorySearchQuery = memorySearchQuery,
                 onSearchQueryChange = { assistantDetailVM.updateMemorySearchQuery(it) },
                 currentEmbeddingModelId = currentEmbeddingModelId,
@@ -846,8 +876,6 @@ private fun ManageMemoriesSection(
     onAddMemory: () -> Unit,
     onEditMemory: (AssistantMemory) -> Unit,
     onDeleteMemory: (AssistantMemory) -> Unit,
-    onRegenerateEmbeddings: (() -> Unit)?,
-    needsEmbeddingRegeneration: Boolean,
     memorySearchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     currentEmbeddingModelId: String,
@@ -941,14 +969,7 @@ private fun ManageMemoriesSection(
                     }
                 }
                 
-                if (onRegenerateEmbeddings != null && assistant.useRagMemoryRetrieval && needsEmbeddingRegeneration) {
-                    IconButton(onClick = onRegenerateEmbeddings) {
-                        Icon(
-                            Icons.Rounded.Refresh,
-                            contentDescription = stringResource(R.string.assistant_memory_regenerate_embeddings)
-                        )
-                    }
-                }
+
                 IconButton(onClick = onAddMemory) {
                     Icon(
                         Icons.Rounded.Add,
@@ -1142,7 +1163,10 @@ private fun MemoryItem(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 // Show type and embedding badges only when needed
-                val showBadges = showType || (useRagMemoryRetrieval && !memory.hasEmbedding)
+                val isModelMismatch = useRagMemoryRetrieval && memory.hasEmbedding &&
+                    memory.embeddingModelId != null && memory.embeddingModelId != currentEmbeddingModelId
+                val isMissingEmbedding = useRagMemoryRetrieval && !memory.hasEmbedding
+                val showBadges = showType || isMissingEmbedding || isModelMismatch
                 AnimatedVisibility(
                     visible = showBadges,
                     enter = fadeIn() + expandVertically(),
@@ -1170,7 +1194,7 @@ private fun MemoryItem(
                             }
                         }
                         
-                        if (useRagMemoryRetrieval && !memory.hasEmbedding) {
+                        if (isMissingEmbedding) {
                             Surface(
                                 color = MaterialTheme.colorScheme.error,
                                 shape = MaterialTheme.shapes.extraSmall
@@ -1180,6 +1204,18 @@ private fun MemoryItem(
                                     style = MaterialTheme.typography.labelSmall,
                                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
                                     color = Color.White
+                                )
+                            }
+                        } else if (isModelMismatch) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.tertiary,
+                                shape = MaterialTheme.shapes.extraSmall
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.assistant_memory_outdated_embedding),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                    color = MaterialTheme.colorScheme.onTertiary
                                 )
                             }
                         }

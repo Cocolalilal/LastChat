@@ -124,6 +124,7 @@ fun ModelSelector(
     onlyIcon: Boolean = false,
     allowClear: Boolean = false,
     modelFilter: (Model) -> Boolean = { true },
+    onClear: (() -> Unit)? = null,
     onSelect: (Model) -> Unit
 ) {
     var popup by remember { mutableStateOf(false) }
@@ -160,7 +161,7 @@ fun ModelSelector(
             if (allowClear && model != null) {
                 IconButton(
                     onClick = {
-                        onSelect(Model())
+                        onClear?.invoke() ?: onSelect(Model())
                     }
                 ) {
                     Icon(

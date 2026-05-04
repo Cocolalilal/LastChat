@@ -155,6 +155,7 @@
     <string name="assistant_memory_type_core">CORE</string>
     <string name="assistant_memory_type_episodic">EPISODIC</string>
     <string name="assistant_memory_no_embedding">NO EMBEDDING</string>
+    <string name="assistant_memory_outdated_embedding">OUTDATED</string>
     <string name="assistant_memory_test_retrieval_desc">Test RAG retrieval to see which memories are returned</string>
     <string name="assistant_memory_test_query_placeholder">Enter test query...</string>
     <string name="assistant_memory_test">Test</string>
