@@ -256,11 +256,9 @@ class ChatCompletionsAPI(
         return buildJsonObject {
             put("model", params.model.modelId)
             val processedMessages = if (params.model.abilities.contains(ModelAbility.REASONING) && 
-                ReasoningLevel.fromBudgetTokens(params.thinkingBudget) == ReasoningLevel.OFF &&
-                messages.any { it.role == MessageRole.USER }) {
+                ReasoningLevel.fromBudgetTokens(params.thinkingBudget) == ReasoningLevel.OFF) {
                 // If reasoning is OFF but it's a reasoning model, inject an empty think tag as an assistant prefill
                 // This tricks models like Qwen 3.5 into believing they have already completed their reasoning phase
-                // ONLY do this if there is a user message, otherwise some Jinja templates will fail (e.g. LM Studio)
                 val mutableMessages = messages.toMutableList()
                 mutableMessages.add(
                     UIMessage(
