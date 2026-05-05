@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -819,6 +820,7 @@ private fun ChatHeatmapCard(
                             ) {
                                 Box(
                                     modifier = Modifier
+                                        .wrapContentWidth(unbounded = true, align = Alignment.Start)
                                         .clip(RoundedCornerShape(999.dp))
                                         .background(
                                             if (isSelected) contentColor.copy(alpha = 0.12f) else Color.Transparent

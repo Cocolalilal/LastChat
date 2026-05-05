@@ -32,7 +32,6 @@ import me.rerere.search.SearchCommonOptions
 import me.rerere.search.SearchServiceOptions
 import me.rerere.tts.provider.TTSProviderSetting
 import kotlin.uuid.Uuid
-import me.rerere.rikkahub.data.ai.local.DevicePerformanceProfile
 
 val DISABLED_MODEL_ID: Uuid = Uuid.parse("00000000-0000-0000-0000-000000000000")
 
@@ -90,7 +89,6 @@ data class Settings(
     val chatStorage: ChatStorageSettings = ChatStorageSettings(),
     val dismissedBanners: Set<String> = emptySet(),
     val textSelectionConfig: TextSelectionConfig = TextSelectionConfig(),
-    val devicePerformanceProfile: DevicePerformanceProfile? = null,
 ) {
     companion object {
         fun dummy() = Settings(init = true)

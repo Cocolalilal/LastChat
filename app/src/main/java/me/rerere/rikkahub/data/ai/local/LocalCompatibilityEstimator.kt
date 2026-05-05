@@ -7,7 +7,6 @@ import android.os.StatFs
 
 class LocalCompatibilityEstimator(
     private val context: Context?,
-    private val performanceEstimator: LocalPerformanceEstimator,
 ) {
     fun currentDeviceProfile(): LocalDeviceProfile {
         val context = requireNotNull(context) {
@@ -80,11 +79,6 @@ class LocalCompatibilityEstimator(
 
             if (profile.freeStorageBytes < storageRequirement + STORAGE_WARNING_HEADROOM_BYTES) {
                 reasons += "Storage headroom is limited."
-                result = CompatibilityResult.Tight
-            }
-            
-            if (performanceEstimator.estimatePerformanceRisk(entry)) {
-                reasons += "Memory Warning: The model you've selected may exceed your device's memory, which can cause the app to crash. For the best experience, we recommend trying a smaller model."
                 result = CompatibilityResult.Tight
             }
         }

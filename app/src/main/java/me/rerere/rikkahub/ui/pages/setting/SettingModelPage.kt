@@ -712,29 +712,35 @@ private fun DefaultEmbeddingModelSetting(
                         },
                         modifier = Modifier.wrapContentWidth()
                     )
-                    IconButton(
-                        enabled = settings.embeddingModelId != DISABLED_MODEL_ID && !isRegenerating,
-                        onClick = {
-                            isRegenerating = true
-                            vm.regenerateMemoryEmbeddings(
-                                onComplete = { success, failure ->
-                                    isRegenerating = false
-                                    toaster.show(
-                                        "Updated $success embeddings${if (failure > 0) ", $failure failed" else ""}",
-                                        type = if (failure > 0) ToastType.Warning else ToastType.Success,
-                                    )
-                                },
-                                onError = { error ->
-                                    isRegenerating = false
-                                    toaster.show(error.message ?: "Embedding refresh failed", type = ToastType.Error)
-                                },
-                            )
-                        },
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = settings.embeddingModelId != DISABLED_MODEL_ID,
+                        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandHorizontally(),
+                        exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkHorizontally()
                     ) {
-                        if (isRegenerating) {
-                            CircularProgressIndicator(modifier = Modifier.size(18.dp))
-                        } else {
-                            Icon(Icons.Rounded.Refresh, contentDescription = "Refresh embeddings")
+                        IconButton(
+                            enabled = !isRegenerating,
+                            onClick = {
+                                isRegenerating = true
+                                vm.regenerateMemoryEmbeddings(
+                                    onComplete = { success, failure ->
+                                        isRegenerating = false
+                                        toaster.show(
+                                            "Updated $success embeddings${if (failure > 0) ", $failure failed" else ""}",
+                                            type = if (failure > 0) ToastType.Warning else ToastType.Success,
+                                        )
+                                    },
+                                    onError = { error ->
+                                        isRegenerating = false
+                                        toaster.show(error.message ?: "Embedding refresh failed", type = ToastType.Error)
+                                    },
+                                )
+                            },
+                        ) {
+                            if (isRegenerating) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp))
+                            } else {
+                                Icon(Icons.Rounded.Refresh, contentDescription = "Refresh embeddings")
+                            }
                         }
                     }
                 }

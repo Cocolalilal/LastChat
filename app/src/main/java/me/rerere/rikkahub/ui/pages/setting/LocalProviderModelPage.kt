@@ -94,7 +94,8 @@ internal fun LocalProviderModelPage(
 ) {
     val repository = koinInject<LocalModelRepository>()
     val coordinator = koinInject<LocalModelInstallCoordinator>()
-    val states by repository.observeCatalogStates().collectAsStateWithLifecycle(initialValue = emptyList())
+    val allStates by repository.observeCatalogStates().collectAsStateWithLifecycle(initialValue = emptyList())
+    val states = remember(allStates) { allStates.filter { it.entry.type == me.rerere.ai.provider.ModelType.CHAT } }
     val installedStates = remember(states) { states.filter { it.status == LocalModelStatus.READY } }
     val activeStates = remember(states) { states.filter { it.status in activeStatuses } }
     val haptics = rememberPremiumHaptics()

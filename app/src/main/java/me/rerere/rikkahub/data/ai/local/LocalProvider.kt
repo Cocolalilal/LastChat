@@ -24,7 +24,6 @@ class LocalProvider(
     private val repository: LocalModelRepository,
     private val runtimeEngine: LocalRuntimeEngine,
     private val compatibilityEstimator: LocalCompatibilityEstimator,
-    private val performanceEstimator: LocalPerformanceEstimator,
 ) : Provider<ProviderSetting.Local> {
     override suspend fun listModels(providerSetting: ProviderSetting.Local): List<Model> {
         return repository.getReadyModels()
@@ -51,7 +50,6 @@ class LocalProvider(
                 messages = messages,
                 params = params,
             )
-            runtimeEngine.getStats()?.let { performanceEstimator.recordStats(it) }
             result
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -102,7 +100,7 @@ class LocalProvider(
                         )
                     )
                 }
-                runtimeEngine.getStats()?.let { performanceEstimator.recordStats(it) }
+
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (throwable: Throwable) {

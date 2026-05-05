@@ -58,6 +58,8 @@ import me.rerere.rikkahub.ui.components.ui.SummarizerModelTipBanner
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
@@ -435,7 +437,10 @@ fun AssistantMemorySettings(
                 currentEmbeddingModelId = currentEmbeddingModelId,
                 showMemoryTypes = assistant.enableMemoryConsolidation,
                 initialMemoryTab = initialMemoryTab,
-                scrollToMemoryId = scrollToMemoryId
+                scrollToMemoryId = scrollToMemoryId,
+                onRegenerateEmbeddings = onRegenerateEmbeddings,
+                embeddingProgress = embeddingProgress,
+                needsEmbeddingRegeneration = needsEmbeddingRegeneration
             )
         }
 
@@ -881,7 +886,10 @@ private fun ManageMemoriesSection(
     currentEmbeddingModelId: String,
     showMemoryTypes: Boolean,
     initialMemoryTab: Int? = null,
-    scrollToMemoryId: Int? = null
+    scrollToMemoryId: Int? = null,
+    onRegenerateEmbeddings: (() -> Unit)? = null,
+    embeddingProgress: EmbeddingProgress? = null,
+    needsEmbeddingRegeneration: Boolean = false
 ) {
     // Use initialMemoryTab if provided, otherwise default to 0
     var selectedTab by remember { mutableIntStateOf(initialMemoryTab ?: 0) }
@@ -940,6 +948,30 @@ private fun ManageMemoriesSection(
             )
 
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                // Regenerate button
+                if (onRegenerateEmbeddings != null && assistant.useRagMemoryRetrieval) {
+                    IconButton(
+                        onClick = { onRegenerateEmbeddings() },
+                        enabled = embeddingProgress?.isRunning != true
+                    ) {
+                        if (embeddingProgress?.isRunning == true) {
+                            val progress = embeddingProgress.current.toFloat() / embeddingProgress.total.coerceAtLeast(1)
+                            CircularProgressIndicator(
+                                progress = { progress },
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else {
+                            Icon(
+                                Icons.Rounded.Refresh,
+                                contentDescription = null,
+                                tint = if (needsEmbeddingRegeneration) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                            )
+                        }
+                    }
+                }
+
                 // Sort button
                 Box {
                     IconButton(onClick = { showSortMenu = true }) {

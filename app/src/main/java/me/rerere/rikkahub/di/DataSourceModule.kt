@@ -13,7 +13,6 @@ import me.rerere.rikkahub.data.ai.local.LlamaCppRuntimeEngine
 import me.rerere.rikkahub.data.ai.local.LocalCompatibilityEstimator
 import me.rerere.rikkahub.data.ai.local.LocalModelInstallCoordinator
 import me.rerere.rikkahub.data.ai.local.LocalModelRepository
-import me.rerere.rikkahub.data.ai.local.LocalPerformanceEstimator
 import me.rerere.rikkahub.data.ai.local.LocalProvider
 import me.rerere.rikkahub.data.ai.local.LocalRuntimeEngine
 import me.rerere.rikkahub.data.ai.local.RoutingLocalRuntimeEngine
@@ -179,7 +178,6 @@ val dataSourceModule = module {
                     repository = get(),
                     runtimeEngine = get(),
                     compatibilityEstimator = get(),
-                    performanceEstimator = get(),
                 )
             )
         }
@@ -188,12 +186,7 @@ val dataSourceModule = module {
     single {
         LocalCompatibilityEstimator(
             context = get(),
-            performanceEstimator = get(),
         )
-    }
-
-    single {
-        LocalPerformanceEstimator(settingsStore = get())
     }
 
     single { LiteRtRuntimeEngine(context = get(), compatibilityEstimator = get()) }

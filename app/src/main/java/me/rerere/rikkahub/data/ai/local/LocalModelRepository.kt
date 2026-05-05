@@ -762,7 +762,8 @@ class LocalModelRepository(
                 ),
                 hfModel = hfModel
             )
-        }.sortedByDescending { it.abilities.contains(me.rerere.ai.provider.ModelAbility.REASONING) }
+        }.filter { it.type == me.rerere.ai.provider.ModelType.CHAT }
+            .sortedBy { it.displayName.lowercase() }
     }
 
     private suspend fun upsertResolvedEntry(entry: LocalModelCatalogEntry) {

@@ -252,9 +252,6 @@ class SettingsStore(
                 textSelectionConfig = preferences[TEXT_SELECTION_CONFIG]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: TextSelectionConfig(),
-                devicePerformanceProfile = preferences[DEVICE_PERFORMANCE_PROFILE]?.let {
-                    JsonInstant.decodeFromString(it)
-                },
             ).normalizeThemeId()
         }
         .map {
@@ -517,9 +514,6 @@ class SettingsStore(
             preferences[CHAT_STORAGE] = JsonInstant.encodeToString(normalizedSettings.chatStorage)
             preferences[DISMISSED_BANNERS] = JsonInstant.encodeToString(normalizedSettings.dismissedBanners)
             preferences[TEXT_SELECTION_CONFIG] = JsonInstant.encodeToString(normalizedSettings.textSelectionConfig)
-            normalizedSettings.devicePerformanceProfile?.let {
-                preferences[DEVICE_PERFORMANCE_PROFILE] = JsonInstant.encodeToString(it)
-            }
         }
     }
 
