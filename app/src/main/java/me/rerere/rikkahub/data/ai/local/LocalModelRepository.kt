@@ -137,15 +137,15 @@ class LocalModelRepository(
     suspend fun prepareImport(uri: Uri): String = withContext(Dispatchers.IO) {
         val fileName = queryDisplayName(uri) ?: "imported-model"
         val format = detectLocalPackageFormat(fileName)
-        check(format == LocalPackageFormat.LITERT_LM || format == LocalPackageFormat.GGUF) {
-            "Only LiteRT .litertlm and llama.cpp .gguf packages are supported right now."
+        check(format == LocalPackageFormat.LITERT_LM || format == LocalPackageFormat.TFLITE) {
+            "Only LiteRT .litertlm or .tflite packages are supported."
         }
 
         val fileSize = queryFileSize(uri).coerceAtLeast(0L)
         val entry = inferImportedCatalogEntry(fileName = fileName, fileSizeBytes = fileSize)
         val existing = installDao.getByCatalogId(entry.id)
         val compatibility = compatibilityEstimator.estimate(entry)
-        val status = if (compatibility.canDownload) LocalModelStatus.QUEUED else LocalModelStatus.INCOMPATIBLE
+        val status = LocalModelStatus.QUEUED
         val entity = (existing?.mergeCatalogEntry(entry) ?: entry.toEntity(status = status)).copy(
             provenance = LocalModelProvenance.IMPORTED.name,
             downloadAccess = LocalModelDownloadAccess.IMPORT_ONLY.name,
@@ -156,7 +156,7 @@ class LocalModelRepository(
             progressPercent = 0,
             bytesPerSecond = 0L,
             etaSeconds = 0L,
-            lastError = if (compatibility.canDownload) "" else compatibility.reasons.joinToString(" "),
+            lastError = "",
             updatedAt = System.currentTimeMillis(),
         )
         installDao.upsert(entity)
@@ -455,6 +455,24 @@ class LocalModelRepository(
                 ) ?: existing,
                 onProgress,
             )
+            
+            // Just immediately register as READY in database so the UI updates
+            installDao.upsert(
+                (installDao.getByCatalogId(catalogId) ?: existing).copy(
+                    status = LocalModelStatus.READY.name,
+                    filePathsJson = JsonInstant.encodeToString(listOf(targetFile.absolutePath)),
+                    checksum = sha256(targetFile),
+                    installedSizeBytes = targetFile.length(),
+                    currentFile = "",
+                    bytesDownloaded = targetFile.length(),
+                    bytesTotal = targetFile.length(),
+                    progressPercent = 100,
+                    bytesPerSecond = 0L,
+                    etaSeconds = 0L,
+                    lastError = "",
+                    updatedAt = System.currentTimeMillis(),
+                )
+            )
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             publish(
                 installDao.getByCatalogId(catalogId)?.copy(
@@ -490,16 +508,23 @@ class LocalModelRepository(
 
     suspend fun markCanceled(catalogId: String) = withContext(Dispatchers.IO) {
         installDao.getByCatalogId(catalogId)?.let { entity ->
-            installDao.upsert(
-                entity.copy(
-                    status = LocalModelStatus.CANCELED.name,
-                    currentFile = "",
-                    bytesPerSecond = 0L,
-                    etaSeconds = 0L,
-                    lastError = if (entity.lastError.isBlank()) "Install canceled." else entity.lastError,
-                    updatedAt = System.currentTimeMillis(),
+            val isBuiltIn = LocalModelCatalog.entries.any { it.id == catalogId }
+            if (isBuiltIn) {
+                installDao.upsert(
+                    entity.copy(
+                        status = LocalModelStatus.NOT_DOWNLOADED.name,
+                        currentFile = "",
+                        bytesDownloaded = 0L,
+                        progressPercent = 0,
+                        bytesPerSecond = 0L,
+                        etaSeconds = 0L,
+                        lastError = "",
+                        updatedAt = System.currentTimeMillis(),
+                    )
                 )
-            )
+            } else {
+                installDao.deleteByCatalogId(catalogId)
+            }
         }
     }
 
@@ -542,28 +567,71 @@ class LocalModelRepository(
     suspend fun removeModel(catalogId: String) = withContext(Dispatchers.IO) {
         val existing = installDao.getByCatalogId(catalogId) ?: return@withContext
         modelDirectory(catalogId).deleteRecursively()
-        installDao.upsert(
-            existing.copy(
-                filePathsJson = "[]",
-                installedSizeBytes = 0L,
-                status = LocalModelStatus.NOT_DOWNLOADED.name,
-                currentFile = "",
-                bytesDownloaded = 0L,
-                bytesTotal = existing.downloadSizeBytes,
-                progressPercent = 0,
-                bytesPerSecond = 0L,
-                etaSeconds = 0L,
-                sourceUri = if (existing.provenance == LocalModelProvenance.IMPORTED.name) "" else existing.sourceUri,
-                lastError = "",
-                updatedAt = System.currentTimeMillis(),
+        val isBuiltIn = LocalModelCatalog.entries.any { it.id == catalogId }
+        if (isBuiltIn) {
+            installDao.upsert(
+                existing.copy(
+                    filePathsJson = "[]",
+                    installedSizeBytes = 0L,
+                    status = LocalModelStatus.NOT_DOWNLOADED.name,
+                    currentFile = "",
+                    bytesDownloaded = 0L,
+                    bytesTotal = existing.downloadSizeBytes,
+                    progressPercent = 0,
+                    bytesPerSecond = 0L,
+                    etaSeconds = 0L,
+                    sourceUri = if (existing.provenance == LocalModelProvenance.IMPORTED.name) "" else existing.sourceUri,
+                    lastError = "",
+                    updatedAt = System.currentTimeMillis(),
+                )
             )
-        )
+        } else {
+            installDao.deleteByCatalogId(catalogId)
+        }
     }
 
-    private suspend fun seedCatalogEntriesIfMissing() {
+    suspend fun refreshLiveCatalog(): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                val url = "https://raw.githubusercontent.com/Cocolalilal/LastChat/main/registry/local_models.json"
+                val request = Request.Builder().url(url).get().build()
+                val response = client.newCall(request).execute()
+                
+                if (response.isSuccessful) {
+                    val rawJson = response.body?.string() ?: return@withContext false
+                    val remoteEntries = JsonInstant.decodeFromString<List<LocalModelCatalogEntry>>(rawJson)
+                    
+                    if (remoteEntries.isNotEmpty()) {
+                        val mergedEntries = LocalModelCatalog.entries.toMutableList()
+                        for (remoteEntry in remoteEntries) {
+                            val index = mergedEntries.indexOfFirst { it.id == remoteEntry.id }
+                            if (index >= 0) {
+                                mergedEntries[index] = remoteEntry
+                            } else {
+                                mergedEntries.add(remoteEntry)
+                            }
+                        }
+                        
+                        seedCatalogEntriesIfMissing(mergedEntries)
+                        return@withContext true
+                    }
+                }
+                false
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to refresh live catalog", e)
+                false
+            }
+        }
+    }
+
+    private suspend fun seedCatalogEntriesIfMissing(entries: List<LocalModelCatalogEntry> = LocalModelCatalog.entries) {
+        // Purge any DB entries not in the current catalog (removes stale GGUF, old imports, etc.)
+        val validCatalogIds = entries.map { it.id }
+        installDao.deleteEntriesNotInCatalog(validCatalogIds)
+        installDao.resetIncompatibleStates()
         val existingById = installDao.getAll().associateBy { it.catalogId }
         installDao.upsertAll(
-            LocalModelCatalog.entries.map { entry ->
+            entries.map { entry ->
                 existingById[entry.id]?.mergeCatalogEntry(entry) ?: entry.toEntity(status = LocalModelStatus.NOT_DOWNLOADED)
             }
         )
@@ -618,10 +686,6 @@ class LocalModelRepository(
         }
         if (entry.repoId.isBlank()) return entry
 
-        val hfModelDetails = runCatching {
-            fetchHuggingFaceModelDetails(entry.repoId)
-        }.getOrNull()
-        
         val targetExtensions = entry.packageFormat.extensions
 
         client.newCall(
@@ -647,123 +711,10 @@ class LocalModelRepository(
                 throw IOException("No compatible ${entry.packageFormat.name.lowercase()} files were found in ${entry.repoId}.")
             }
 
-            var resolved = entry.withResolvedFiles(matchingFiles)
-            if (hfModelDetails != null) {
-                resolved = applyHuggingFaceMetadata(resolved, hfModelDetails)
-            }
+            val resolved = entry.withResolvedFiles(matchingFiles)
             upsertResolvedEntry(resolved)
             return resolved
         }
-    }
-
-    private fun applyHuggingFaceMetadata(entry: LocalModelCatalogEntry, hfModel: HuggingFaceSearchModel): LocalModelCatalogEntry {
-        val tags = hfModel.tags.map { it.lowercase() }
-        val pipeline = hfModel.pipeline_tag?.lowercase()
-
-        val type = if (pipeline == "feature-extraction" || pipeline == "sentence-similarity" || tags.contains("sentence-transformers")) {
-            me.rerere.ai.provider.ModelType.EMBEDDING
-        } else {
-            me.rerere.ai.provider.ModelType.CHAT
-        }
-        
-        val inputModalities = mutableListOf(me.rerere.ai.provider.Modality.TEXT)
-        if (pipeline == "image-text-to-text" || tags.contains("multimodal") || tags.contains("vision")) {
-            inputModalities.add(me.rerere.ai.provider.Modality.IMAGE)
-        }
-        
-        val abilities = mutableListOf<me.rerere.ai.provider.ModelAbility>()
-        if (pipeline != "feature-extraction" && pipeline != "sentence-similarity") {
-            if (tags.contains("reasoning") || tags.any { it.contains("think") } || hfModel.id.lowercase().contains("r1")) {
-                abilities.add(me.rerere.ai.provider.ModelAbility.REASONING)
-            }
-        }
-
-        return entry.copy(
-            type = type,
-            inputModalities = inputModalities,
-            abilities = abilities,
-        )
-    }
-
-    private suspend fun fetchHuggingFaceModelDetails(repoId: String): HuggingFaceSearchModel = withContext(Dispatchers.IO) {
-        client.newCall(
-            Request.Builder()
-                .url("https://huggingface.co/api/models/$repoId")
-                .withHuggingFaceAuth()
-                .build()
-        ).execute().use { response ->
-            if (!response.isSuccessful) throw IOException("Failed to fetch details for $repoId")
-            val body = response.body?.string() ?: throw IOException("Missing body")
-            JsonInstant.decodeFromString<HuggingFaceSearchModel>(body)
-        }
-    }
-
-    suspend fun searchHuggingFaceModels(query: String): List<LocalModelCatalogEntry> = withContext(Dispatchers.IO) {
-        val url = okhttp3.HttpUrl.Builder()
-            .scheme("https")
-            .host("huggingface.co")
-            .addPathSegment("api")
-            .addPathSegment("models")
-            .addQueryParameter("search", query)
-            .addQueryParameter("limit", "30")
-            .addQueryParameter("full", "true")
-            .build()
-        
-        val response = client.newCall(
-            Request.Builder()
-                .url(url)
-                .withHuggingFaceAuth()
-                .build()
-        ).execute()
-
-        val models = response.use { res ->
-            if (!res.isSuccessful) return@withContext emptyList()
-            val bodyStr = res.body?.string() ?: return@withContext emptyList()
-            JsonInstant.decodeFromString<List<HuggingFaceSearchModel>>(bodyStr)
-        }
-
-        models.mapNotNull { hfModel ->
-            val tags = hfModel.tags.map { it.lowercase() }
-            val pipeline = hfModel.pipeline_tag?.lowercase()
-            
-            if (pipeline == "feature-extraction" || pipeline == "sentence-similarity" || tags.contains("sentence-transformers")) {
-                return@mapNotNull null
-            }
-            
-            val backend = when {
-                tags.contains("gguf") -> LocalRuntimeBackend.LLAMA_CPP
-                tags.contains("tflite") || tags.contains("litert") -> LocalRuntimeBackend.LITERT
-                else -> return@mapNotNull null
-            }
-
-            val format = when (backend) {
-                LocalRuntimeBackend.LLAMA_CPP -> LocalPackageFormat.GGUF
-                LocalRuntimeBackend.LITERT -> LocalPackageFormat.LITERT_LM
-            }
-
-            val displayName = hfModel.id.substringAfter("/")
-
-            applyHuggingFaceMetadata(
-                entry = LocalModelCatalogEntry(
-                    id = hfModel.id,
-                    modelUuid = kotlin.uuid.Uuid.random(),
-                    repoId = hfModel.id,
-                    modelId = hfModel.id,
-                    displayName = displayName,
-                    description = "Found via Hugging Face Search.",
-                    runtimeBackend = backend,
-                    packageFormat = format,
-                    downloadAccess = LocalModelDownloadAccess.PUBLIC,
-                    provenance = LocalModelProvenance.CURATED,
-                    minimumRamBytes = 0L,
-                    recommendedRamBytes = 0L,
-                    estimatedDownloadBytes = 0L,
-                    estimatedInstalledBytes = 0L,
-                ),
-                hfModel = hfModel
-            )
-        }.filter { it.type == me.rerere.ai.provider.ModelType.CHAT }
-            .sortedBy { it.displayName.lowercase() }
     }
 
     private suspend fun upsertResolvedEntry(entry: LocalModelCatalogEntry) {

@@ -9,7 +9,7 @@ import me.rerere.rikkahub.data.db.entity.LocalModelInstallEntity
 import me.rerere.rikkahub.utils.JsonInstant
 import kotlin.uuid.Uuid
 
-const val LOCAL_PROVIDER_NAME = "On-device"
+const val LOCAL_PROVIDER_NAME = "Models"
 const val LOCAL_PROVIDER_TYPE = "local"
 val LOCAL_PROVIDER_ID: Uuid = Uuid.parse("84d71641-7af0-4cf0-970f-a2fd36491f79")
 
@@ -19,7 +19,6 @@ private const val MIB = 1024L * 1024L
 @Serializable
 enum class LocalRuntimeBackend {
     LITERT,
-    LLAMA_CPP,
 }
 
 @Serializable
@@ -54,7 +53,6 @@ enum class LocalPackageFormat(
 ) {
     LITERT_LM(listOf(".litertlm")),
     TFLITE(listOf(".tflite")),
-    GGUF(listOf(".gguf")),
     UNKNOWN(emptyList()),
 }
 
@@ -71,10 +69,10 @@ data class DeviceCompatibility(
     val reasons: List<String> = emptyList(),
 ) {
     val canDownload: Boolean
-        get() = result != CompatibilityResult.Unsupported
+        get() = true
 
     val canRunInference: Boolean
-        get() = result != CompatibilityResult.Unsupported
+        get() = true
 }
 
 data class LocalModelCatalogState(
@@ -202,51 +200,15 @@ data class LocalModelCatalogEntry(
 object LocalModelCatalog {
     val entries: List<LocalModelCatalogEntry> = listOf(
         LocalModelCatalogEntry(
-            id = "gemma-3-270m-it-litert",
-            modelUuid = Uuid.parse("874045fd-3b6b-447f-b7a8-72f6620212d4"),
-            repoId = "litert-community/gemma-3-270m-it",
-            modelId = "gemma-3-270m-it",
-            displayName = "Gemma 3 270M",
-            description = "Tiny text chat model. Requires Hugging Face access.",
-            downloadAccess = LocalModelDownloadAccess.AUTH_REQUIRED,
-            inputModalities = listOf(Modality.TEXT),
-            outputModalities = listOf(Modality.TEXT),
-            minimumRamBytes = 2L * GIB,
-            recommendedRamBytes = 4L * GIB,
-            estimatedDownloadBytes = 0L,
-            estimatedInstalledBytes = 0L,
-            safeForBackground = true,
-            aliases = listOf("gemma-3-270m", "gemma3270m"),
-            featureTags = listOf("text", "small"),
-        ),
-        LocalModelCatalogEntry(
-            id = "functiongemma-270m-it-litert",
-            modelUuid = Uuid.parse("d3d3a08d-3cab-4661-b6b0-064af7cd9e61"),
-            repoId = "JackJ1/functiongemma-270m-it-mobile-actions-litertlm",
-            modelId = "functiongemma-270m-it",
-            displayName = "FunctionGemma 270M",
-            description = "Small tool-calling model.",
-            inputModalities = listOf(Modality.TEXT),
-            outputModalities = listOf(Modality.TEXT),
-            abilities = listOf(ModelAbility.TOOL),
-            minimumRamBytes = 2L * GIB,
-            recommendedRamBytes = 4L * GIB,
-            estimatedDownloadBytes = 271L * MIB,
-            estimatedInstalledBytes = 271L * MIB,
-            safeForBackground = true,
-            aliases = listOf("functiongemma", "function-gemma", "mobile-actions"),
-            featureTags = listOf("tools", "small"),
-        ),
-        LocalModelCatalogEntry(
             id = "gemma-4-e2b-it-litert",
             modelUuid = Uuid.parse("f945b6fe-1e08-4307-b901-315a253e2870"),
             repoId = "litert-community/gemma-4-E2B-it-litert-lm",
             modelId = "gemma-4-E2B-it",
             displayName = "Gemma 4 E2B",
-            description = "Compact multimodal chat model.",
+            description = "Compact multimodal chat model with vision, audio and reasoning.",
             inputModalities = listOf(Modality.TEXT, Modality.IMAGE),
             outputModalities = listOf(Modality.TEXT),
-            abilities = listOf(ModelAbility.REASONING),
+            abilities = listOf(ModelAbility.REASONING, ModelAbility.TOOL),
             minimumRamBytes = 4L * GIB,
             recommendedRamBytes = 6L * GIB,
             estimatedDownloadBytes = 2_583L * MIB,
@@ -258,7 +220,7 @@ object LocalModelCatalog {
                 )
             ),
             aliases = listOf("gemma-4-e2b", "e2b"),
-            featureTags = listOf("vision", "audio", "multimodal", "reasoning"),
+            featureTags = listOf("vision", "audio", "multimodal", "reasoning", "tools"),
         ),
         LocalModelCatalogEntry(
             id = "gemma-4-e4b-it-litert",
@@ -266,10 +228,10 @@ object LocalModelCatalog {
             repoId = "litert-community/gemma-4-E4B-it-litert-lm",
             modelId = "gemma-4-E4B-it",
             displayName = "Gemma 4 E4B",
-            description = "Larger multimodal chat model.",
+            description = "Larger multimodal chat model with vision, audio and reasoning.",
             inputModalities = listOf(Modality.TEXT, Modality.IMAGE),
             outputModalities = listOf(Modality.TEXT),
-            abilities = listOf(ModelAbility.REASONING),
+            abilities = listOf(ModelAbility.REASONING, ModelAbility.TOOL),
             minimumRamBytes = 8L * GIB,
             recommendedRamBytes = 12L * GIB,
             estimatedDownloadBytes = 3_654L * MIB,
@@ -281,15 +243,107 @@ object LocalModelCatalog {
                 )
             ),
             aliases = listOf("gemma-4-e4b", "e4b"),
-            featureTags = listOf("vision", "audio", "multimodal", "reasoning"),
+            featureTags = listOf("vision", "audio", "multimodal", "reasoning", "tools"),
+        ),
+        LocalModelCatalogEntry(
+            id = "gemma-3n-e2b-it-litert",
+            modelUuid = Uuid.parse("801b95dc-2f1c-4db7-a6b8-7cd651fb0f59"),
+            repoId = "google/gemma-3n-E2B-it-litert-lm",
+            modelId = "gemma-3n-E2B-it",
+            displayName = "Gemma 3n E2B",
+            description = "Compact multimodal model with vision and audio. Requires Hugging Face access.",
+            downloadAccess = LocalModelDownloadAccess.AUTH_REQUIRED,
+            inputModalities = listOf(Modality.TEXT, Modality.IMAGE),
+            outputModalities = listOf(Modality.TEXT),
+            abilities = listOf(ModelAbility.REASONING, ModelAbility.TOOL),
+            minimumRamBytes = 4L * GIB,
+            recommendedRamBytes = 6L * GIB,
+            estimatedDownloadBytes = 0L,
+            estimatedInstalledBytes = 0L,
+            aliases = listOf("gemma-3n-e2b", "gemma3ne2b"),
+            featureTags = listOf("vision", "audio", "multimodal", "reasoning", "tools"),
+        ),
+        LocalModelCatalogEntry(
+            id = "gemma-3n-e4b-it-litert",
+            modelUuid = Uuid.parse("21a28689-2e66-460d-aeb2-4286aace0bb1"),
+            repoId = "google/gemma-3n-E4B-it-litert-lm",
+            modelId = "gemma-3n-E4B-it",
+            displayName = "Gemma 3n E4B",
+            description = "Stronger multimodal model with vision and audio. Requires Hugging Face access.",
+            downloadAccess = LocalModelDownloadAccess.AUTH_REQUIRED,
+            inputModalities = listOf(Modality.TEXT, Modality.IMAGE),
+            outputModalities = listOf(Modality.TEXT),
+            abilities = listOf(ModelAbility.REASONING, ModelAbility.TOOL),
+            minimumRamBytes = 6L * GIB,
+            recommendedRamBytes = 8L * GIB,
+            estimatedDownloadBytes = 0L,
+            estimatedInstalledBytes = 0L,
+            aliases = listOf("gemma-3n-e4b", "gemma3ne4b"),
+            featureTags = listOf("vision", "audio", "multimodal", "reasoning", "tools"),
+        ),
+        LocalModelCatalogEntry(
+            id = "gemma-3-1b-it-litert",
+            modelUuid = Uuid.parse("a3b1c0de-1f2a-4b3c-8d4e-5f6a7b8c9d0e"),
+            repoId = "litert-community/Gemma3-1B-IT",
+            modelId = "Gemma3-1B-IT",
+            displayName = "Gemma 3 1B",
+            description = "Small text-only local chat model. Requires Hugging Face access.",
+            downloadAccess = LocalModelDownloadAccess.AUTH_REQUIRED,
+            inputModalities = listOf(Modality.TEXT),
+            outputModalities = listOf(Modality.TEXT),
+            abilities = listOf(ModelAbility.REASONING, ModelAbility.TOOL),
+            minimumRamBytes = 2L * GIB,
+            recommendedRamBytes = 4L * GIB,
+            estimatedDownloadBytes = 0L,
+            estimatedInstalledBytes = 0L,
+            safeForBackground = true,
+            aliases = listOf("gemma-3-1b", "gemma31b"),
+            featureTags = listOf("reasoning", "tools"),
+        ),
+        LocalModelCatalogEntry(
+            id = "qwen2.5-1.5b-instruct-litert",
+            modelUuid = Uuid.parse("1a2b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d"),
+            repoId = "litert-community/Qwen2.5-1.5B-Instruct",
+            modelId = "Qwen2.5-1.5B-Instruct",
+            displayName = "Qwen2.5 1.5B Instruct",
+            description = "Fast instruction-tuned text model.",
+            inputModalities = listOf(Modality.TEXT),
+            outputModalities = listOf(Modality.TEXT),
+            abilities = listOf(ModelAbility.REASONING, ModelAbility.TOOL),
+            minimumRamBytes = 2L * GIB,
+            recommendedRamBytes = 4L * GIB,
+            estimatedDownloadBytes = 0L,
+            estimatedInstalledBytes = 0L,
+            safeForBackground = true,
+            aliases = listOf("qwen", "qwen2.5"),
+            featureTags = listOf("reasoning", "tools"),
+        ),
+        LocalModelCatalogEntry(
+            id = "deepseek-r1-distill-qwen-1.5b-litert",
+            modelUuid = Uuid.parse("7d8e9f0a-1b2c-4d3e-af6b-7c8d9e0f1a2b"),
+            repoId = "litert-community/DeepSeek-R1-Distill-Qwen-1.5B",
+            modelId = "DeepSeek-R1-Distill-Qwen-1.5B",
+            displayName = "DeepSeek R1 Distill Qwen 1.5B",
+            description = "Reasoning-focused distilled model.",
+            inputModalities = listOf(Modality.TEXT),
+            outputModalities = listOf(Modality.TEXT),
+            abilities = listOf(ModelAbility.REASONING, ModelAbility.TOOL),
+            minimumRamBytes = 2L * GIB,
+            recommendedRamBytes = 4L * GIB,
+            estimatedDownloadBytes = 0L,
+            estimatedInstalledBytes = 0L,
+            safeForBackground = true,
+            aliases = listOf("deepseek", "deepseek-r1", "r1"),
+            featureTags = listOf("reasoning", "tools"),
         ),
         LocalModelCatalogEntry(
             id = "embeddinggemma-300m-litert",
             modelUuid = Uuid.parse("c159d4ca-4253-4786-a8dd-93fc04c7c0f9"),
-            repoId = "kontextdev/embeddinggemma-300m-litertlm",
+            repoId = "litert-community/embeddinggemma-300m",
             modelId = "embeddinggemma-300m",
             displayName = "EmbeddingGemma 300M",
-            description = "Local embedding model.",
+            description = "Local embedding model for RAG. Requires Hugging Face access.",
+            downloadAccess = LocalModelDownloadAccess.AUTH_REQUIRED,
             type = ModelType.EMBEDDING,
             inputModalities = listOf(Modality.TEXT),
             outputModalities = listOf(Modality.TEXT),
@@ -300,109 +354,6 @@ object LocalModelCatalog {
             safeForBackground = true,
             aliases = listOf("embeddinggemma", "embedgemma"),
             featureTags = listOf("embeddings"),
-        ),
-        LocalModelCatalogEntry(
-            id = "gemma-3n-e2b-it-litert",
-            modelUuid = Uuid.parse("801b95dc-2f1c-4db7-a6b8-7cd651fb0f59"),
-            repoId = "google/gemma-3n-E2B-it-litert-lm",
-            modelId = "gemma-3n-E2B-it",
-            displayName = "Gemma 3n E2B",
-            description = "Compact multimodal chat model. Requires Hugging Face access.",
-            downloadAccess = LocalModelDownloadAccess.AUTH_REQUIRED,
-            inputModalities = listOf(Modality.TEXT, Modality.IMAGE),
-            outputModalities = listOf(Modality.TEXT),
-            abilities = listOf(ModelAbility.REASONING),
-            minimumRamBytes = 4L * GIB,
-            recommendedRamBytes = 6L * GIB,
-            estimatedDownloadBytes = 0L,
-            estimatedInstalledBytes = 0L,
-            aliases = listOf("gemma-3n-e2b", "gemma3ne2b"),
-            featureTags = listOf("vision", "audio", "multimodal", "reasoning"),
-        ),
-        LocalModelCatalogEntry(
-            id = "gemma-3n-e4b-it-litert",
-            modelUuid = Uuid.parse("21a28689-2e66-460d-aeb2-4286aace0bb1"),
-            repoId = "google/gemma-3n-E4B-it-litert-lm",
-            modelId = "gemma-3n-E4B-it",
-            displayName = "Gemma 3n E4B",
-            description = "Stronger multimodal chat model. Requires Hugging Face access.",
-            downloadAccess = LocalModelDownloadAccess.AUTH_REQUIRED,
-            inputModalities = listOf(Modality.TEXT, Modality.IMAGE),
-            outputModalities = listOf(Modality.TEXT),
-            abilities = listOf(ModelAbility.REASONING),
-            minimumRamBytes = 6L * GIB,
-            recommendedRamBytes = 8L * GIB,
-            estimatedDownloadBytes = 0L,
-            estimatedInstalledBytes = 0L,
-            aliases = listOf("gemma-3n-e4b", "gemma3ne4b"),
-            featureTags = listOf("vision", "audio", "multimodal", "reasoning"),
-        ),
-        LocalModelCatalogEntry(
-            id = "translategemma-4b-it-litert",
-            modelUuid = Uuid.parse("529f5898-1a92-4227-8275-66706defd9a0"),
-            repoId = "litert-community/TranslateGemma-4B-IT",
-            modelId = "translategemma-4b-it",
-            displayName = "TranslateGemma 4B",
-            description = "Translation-focused chat model.",
-            downloadAccess = LocalModelDownloadAccess.IMPORT_ONLY,
-            minimumRamBytes = 5L * GIB,
-            recommendedRamBytes = 8L * GIB,
-            estimatedDownloadBytes = 0L,
-            estimatedInstalledBytes = 0L,
-            aliases = listOf("translategemma", "translate-gemma-4b"),
-            featureTags = listOf("translation"),
-        ),
-        LocalModelCatalogEntry(
-            id = "qwen2-5-0-5b-instruct-q4-k-m-gguf",
-            modelUuid = Uuid.parse("6d8db122-e634-4cb5-8d2e-684cb5570350"),
-            repoId = "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
-            modelId = "qwen2.5-0.5b-instruct-q4_k_m",
-            displayName = "Qwen2.5 0.5B GGUF",
-            description = "Small GGUF chat model.",
-            runtimeBackend = LocalRuntimeBackend.LLAMA_CPP,
-            packageFormat = LocalPackageFormat.GGUF,
-            inputModalities = listOf(Modality.TEXT),
-            outputModalities = listOf(Modality.TEXT),
-            minimumRamBytes = 2L * GIB,
-            recommendedRamBytes = 4L * GIB,
-            estimatedDownloadBytes = 398L * MIB,
-            estimatedInstalledBytes = 398L * MIB,
-            safeForBackground = true,
-            files = listOf(
-                LocalModelDownloadFile(
-                    relativePath = "qwen2.5-0.5b-instruct-q4_k_m.gguf",
-                    sizeBytes = 398L * MIB,
-                )
-            ),
-            aliases = listOf("qwen2.5-0.5b", "qwen-0.5b-gguf", "qwen gguf"),
-            featureTags = listOf("gguf", "small"),
-        ),
-        LocalModelCatalogEntry(
-            id = "nomic-embed-text-v1-5-q4-k-m-gguf",
-            modelUuid = Uuid.parse("20be4105-9fb7-4f58-9b2e-d95472b2d035"),
-            repoId = "nomic-ai/nomic-embed-text-v1.5-GGUF",
-            modelId = "nomic-embed-text-v1.5-q4_k_m",
-            displayName = "Nomic Embed v1.5 GGUF",
-            description = "Compact GGUF embedding model.",
-            runtimeBackend = LocalRuntimeBackend.LLAMA_CPP,
-            packageFormat = LocalPackageFormat.GGUF,
-            type = ModelType.EMBEDDING,
-            inputModalities = listOf(Modality.TEXT),
-            outputModalities = listOf(Modality.TEXT),
-            minimumRamBytes = 1L * GIB,
-            recommendedRamBytes = 2L * GIB,
-            estimatedDownloadBytes = 84L * MIB,
-            estimatedInstalledBytes = 84L * MIB,
-            safeForBackground = true,
-            files = listOf(
-                LocalModelDownloadFile(
-                    relativePath = "nomic-embed-text-v1.5.Q4_K_M.gguf",
-                    sizeBytes = 84L * MIB,
-                    sha256 = "d4e388894e09cf3816e8b0896d81d265b55e7a9fff9ab03fe8bf4ef5e11295ac",
-                )
-            ),
-            aliases = listOf("nomic-embed", "nomic embedding", "nomic gguf"),
-            featureTags = listOf("embeddings", "gguf"),
         ),
     )
 
@@ -444,10 +395,7 @@ fun inferImportedCatalogEntry(
     val baseName = fileName.substringBeforeLast('.').ifBlank { "imported-local-model" }
     val normalizedName = baseName.normalizeLocalLookupKey()
     val packageFormat = detectLocalPackageFormat(fileName)
-    val runtimeBackend = when (packageFormat) {
-        LocalPackageFormat.GGUF -> LocalRuntimeBackend.LLAMA_CPP
-        else -> LocalRuntimeBackend.LITERT
-    }
+    val runtimeBackend = LocalRuntimeBackend.LITERT
     val detectedType = if ("embedding" in normalizedName) ModelType.EMBEDDING else ModelType.CHAT
     val inputModalities = buildList {
         add(Modality.TEXT)
@@ -494,7 +442,6 @@ fun inferImportedCatalogEntry(
             if (Modality.IMAGE in inputModalities) add("vision")
             if (ModelAbility.REASONING in abilities) add("reasoning")
             if (ModelAbility.TOOL in abilities) add("tools")
-            if (packageFormat == LocalPackageFormat.GGUF) add("gguf")
         }
     )
 }
@@ -509,7 +456,6 @@ private fun LocalPackageFormat.displayName(): String {
     return when (this) {
         LocalPackageFormat.LITERT_LM -> "LiteRT"
         LocalPackageFormat.TFLITE -> "TensorFlow Lite"
-        LocalPackageFormat.GGUF -> "GGUF"
         LocalPackageFormat.UNKNOWN -> "local model"
     }
 }
@@ -529,6 +475,5 @@ private fun String.normalizeLocalLookupKey(): String {
     return lowercase()
         .substringBeforeLast(".litertlm")
         .substringBeforeLast(".tflite")
-        .substringBeforeLast(".gguf")
         .replace(Regex("[^a-z0-9]+"), "")
 }

@@ -74,10 +74,7 @@ class LocalProvider(
                 check(compatibility.canRunInference) {
                     compatibility.reasons.joinToString("\n")
                 }
-                val runtimeName = when (entry.runtimeBackend) {
-                    LocalRuntimeBackend.LITERT -> "LiteRT"
-                    LocalRuntimeBackend.LLAMA_CPP -> "llama.cpp"
-                }
+                val runtimeName = "LiteRT"
                 emit(localActivityChunk(params.model.modelId, title = "Loading model", detail = "${entry.displayName} · $runtimeName"))
                 runtimeEngine.load(install)
                 emit(localActivityChunk(params.model.modelId, title = "Warming runtime", detail = "Preparing the local session before generation starts."))

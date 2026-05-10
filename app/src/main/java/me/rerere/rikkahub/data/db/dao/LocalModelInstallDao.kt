@@ -26,4 +26,13 @@ interface LocalModelInstallDao {
 
     @Query("DELETE FROM local_model_install WHERE catalog_id = :catalogId")
     suspend fun deleteByCatalogId(catalogId: String)
+
+    @Query("DELETE FROM local_model_install WHERE catalog_id NOT IN (:validCatalogIds)")
+    suspend fun deleteEntriesNotInCatalog(validCatalogIds: List<String>)
+
+    @Query("DELETE FROM local_model_install WHERE runtime_backend = 'LLAMA_CPP'")
+    suspend fun deleteLegacyGgufModels()
+
+    @Query("UPDATE local_model_install SET status = 'NOT_DOWNLOADED' WHERE status = 'INCOMPATIBLE'")
+    suspend fun resetIncompatibleStates()
 }

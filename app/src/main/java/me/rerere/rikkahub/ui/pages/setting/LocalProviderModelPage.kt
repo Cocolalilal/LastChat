@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -109,27 +111,7 @@ internal fun LocalProviderModelPage(
             contentPadding = contentPadding + PaddingValues(horizontal = 16.dp, vertical = 16.dp) + PaddingValues(bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item {
-                Card(
-                    shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-                ) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth().padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.local_model_page_intro),
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        Text(
-                            text = stringResource(R.string.local_model_page_intro_secondary),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
+
 
             if (activeStates.isNotEmpty()) {
                 item {
@@ -264,39 +246,13 @@ private fun LocalModelPickerSheet(
     val context = LocalContext.current
     val haptics = rememberPremiumHaptics()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var filterText by remember { mutableStateOf("") }
-    val filteredStates = remember(states, filterText) {
-        val keywords = filterText.split(" ").filter { it.isNotBlank() }
+    val filteredStates = remember(states) {
         states.fastFilter { state ->
-            keywords.isEmpty() || keywords.all { keyword ->
-                state.entry.displayName.contains(keyword, ignoreCase = true) ||
-                    state.entry.modelId.contains(keyword, ignoreCase = true) ||
-                    state.entry.description.contains(keyword, ignoreCase = true)
-            }
+            state.entry.provenance != me.rerere.rikkahub.data.ai.local.LocalModelProvenance.IMPORTED
         }
     }
     val compatibilityEstimator = koinInject<me.rerere.rikkahub.data.ai.local.LocalCompatibilityEstimator>()
     val repository = koinInject<LocalModelRepository>()
-    var hfSearchStates by remember { mutableStateOf<List<LocalModelCatalogState>>(emptyList()) }
-    var isSearching by remember { mutableStateOf(false) }
-
-    LaunchedEffect(filterText) {
-        if (filterText.length > 2) {
-            kotlinx.coroutines.delay(500)
-            isSearching = true
-            val results = repository.searchHuggingFaceModels(filterText)
-            hfSearchStates = results.map { entry ->
-                LocalModelCatalogState(
-                    entry = entry,
-                    install = null,
-                    compatibility = compatibilityEstimator.estimate(entry)
-                )
-            }
-            isSearching = false
-        } else {
-            hfSearchStates = emptyList()
-        }
-    }
 
     val coordinator = koinInject<LocalModelInstallCoordinator>()
     val scope = rememberCoroutineScope()
@@ -363,15 +319,6 @@ private fun LocalModelPickerSheet(
                 }
             }
 
-            OutlinedTextField(
-                value = filterText,
-                onValueChange = { filterText = it },
-                label = { Text(stringResource(R.string.local_model_page_filter_label)) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.SearchField,
-            )
-
             if (showHfSettings) {
                 Card(
                     shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
@@ -388,7 +335,7 @@ private fun LocalModelPickerSheet(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
@@ -402,6 +349,7 @@ private fun LocalModelPickerSheet(
                                 shape = me.rerere.rikkahub.ui.theme.AppShapes.SearchField,
                             )
                             Button(
+                                modifier = Modifier.fillMaxHeight().padding(top = 8.dp),
                                 onClick = {
                                     haptics.perform(HapticPattern.Pop)
                                     scope.launch {
@@ -422,15 +370,15 @@ private fun LocalModelPickerSheet(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(bottom = 24.dp),
             ) {
-                if (isSearching) {
-                    item {
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+
+                
+                itemsIndexed(filteredStates, key = { _, it -> it.entry.id }) { index, state ->
+                    val position = when {
+                        filteredStates.size == 1 -> ItemPosition.ONLY
+                        index == 0 -> ItemPosition.FIRST
+                        index == filteredStates.lastIndex -> ItemPosition.LAST
+                        else -> ItemPosition.MIDDLE
                     }
-                }
-                
-                val combinedStates = (filteredStates + hfSearchStates).distinctBy { it.entry.id }
-                
-                items(combinedStates, key = { it.entry.id }) { state ->
                     val primaryAction: (() -> Unit)? = when (state.status) {
                         LocalModelStatus.READY -> null
                         LocalModelStatus.QUEUED,
@@ -467,18 +415,25 @@ private fun LocalModelPickerSheet(
                         })
                         LocalModelStatus.INCOMPATIBLE -> null
                     }
-                    val secondaryAction: (() -> Unit)? = when {
-                        state.status == LocalModelStatus.READY && state.entry.downloadAccess == LocalModelDownloadAccess.PUBLIC -> ({ onRetry(state.entry.id) })
-                        else -> null
-                    }
+                    val secondaryAction: (() -> Unit)? = if (state.status == LocalModelStatus.READY && state.entry.revision != state.install?.revision) {
+                        {
+                            scope.launch {
+                                if (state.entry.provenance == me.rerere.rikkahub.data.ai.local.LocalModelProvenance.CURATED) {
+                                    repository.queueHuggingFaceModel(state.entry)
+                                }
+                                coordinator.downloadModel(state.entry.id)
+                            }
+                        }
+                    } else null
                     if (state.status == LocalModelStatus.READY) {
                         SwipeableLocalModelCard(
                             state = state,
                             hasHuggingFaceToken = hasHfToken,
-                            position = ItemPosition.ONLY,
+                            position = position,
                             onRemove = { onRemove(state.entry.id) },
-                            onEdit = { onEdit(state) },
+                            onPrimaryAction = primaryAction,
                             onSecondaryAction = secondaryAction,
+                            onEdit = { onEdit(state) },
                         )
                     } else {
                         LocalModelCard(
@@ -530,8 +485,9 @@ private fun SwipeableLocalModelCard(
     state: LocalModelCatalogState,
     position: ItemPosition,
     onRemove: () -> Unit,
-    onEdit: () -> Unit,
-    onSecondaryAction: (() -> Unit)?,
+    onPrimaryAction: (() -> Unit)? = null,
+    onSecondaryAction: (() -> Unit)? = null,
+    onEdit: (() -> Unit)? = null,
     hasHuggingFaceToken: Boolean = false,
 ) {
     PhysicsSwipeToDelete(
@@ -539,11 +495,12 @@ private fun SwipeableLocalModelCard(
         deleteEnabled = true,
         onDelete = onRemove,
         modifier = Modifier.fillMaxWidth(),
-    ) {
+    ) { shape ->
         LocalModelCard(
             state = state,
+            shape = shape,
             hasHuggingFaceToken = hasHuggingFaceToken,
-            onPrimaryAction = null,
+            onPrimaryAction = onPrimaryAction,
             onSecondaryAction = onSecondaryAction,
             onEdit = onEdit,
         )
@@ -553,6 +510,7 @@ private fun SwipeableLocalModelCard(
 @Composable
 private fun LocalModelCard(
     state: LocalModelCatalogState,
+    shape: Shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
     hasHuggingFaceToken: Boolean = false,
     onPrimaryAction: (() -> Unit)?,
     onSecondaryAction: (() -> Unit)?,
@@ -563,7 +521,7 @@ private fun LocalModelCard(
     val progress = install?.progressPercent?.coerceIn(0, 100) ?: 0
 
     Card(
-        shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
+        shape = shape,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
     ) {
         Column(
@@ -676,7 +634,7 @@ private fun LocalModelCard(
                             modifier = Modifier.weight(1f),
                             shape = me.rerere.rikkahub.ui.theme.AppShapes.ButtonPill
                         ) {
-                            Text(stringResource(R.string.local_model_page_redownload))
+                            Text("Update")
                         }
                     }
                 }

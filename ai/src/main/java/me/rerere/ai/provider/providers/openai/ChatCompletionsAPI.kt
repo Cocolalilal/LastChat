@@ -270,7 +270,26 @@ class ChatCompletionsAPI(
             } else {
                 messages
             }
-            put("messages", buildMessages(processedMessages, host))
+
+            val safeMessages = mutableListOf<UIMessage>()
+            var lastNonSystemRole: MessageRole? = null
+            for (msg in processedMessages) {
+                if (msg.role == MessageRole.ASSISTANT && lastNonSystemRole == null) {
+                    safeMessages.add(
+                        UIMessage(
+                            role = MessageRole.USER,
+                            parts = listOf(UIMessagePart.Text("..."))
+                        )
+                    )
+                    lastNonSystemRole = MessageRole.USER
+                }
+                safeMessages.add(msg)
+                if (msg.role != MessageRole.SYSTEM) {
+                    lastNonSystemRole = msg.role
+                }
+            }
+
+            put("messages", buildMessages(safeMessages, host))
 
             if (isModelAllowTemperature(params.model)) {
                 if (params.temperature != null) put("temperature", params.temperature)

@@ -9,13 +9,11 @@ import me.rerere.common.http.AcceptLanguageBuilder
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.data.ai.AIRequestInterceptor
 import me.rerere.rikkahub.data.ai.local.LiteRtRuntimeEngine
-import me.rerere.rikkahub.data.ai.local.LlamaCppRuntimeEngine
 import me.rerere.rikkahub.data.ai.local.LocalCompatibilityEstimator
 import me.rerere.rikkahub.data.ai.local.LocalModelInstallCoordinator
 import me.rerere.rikkahub.data.ai.local.LocalModelRepository
 import me.rerere.rikkahub.data.ai.local.LocalProvider
 import me.rerere.rikkahub.data.ai.local.LocalRuntimeEngine
-import me.rerere.rikkahub.data.ai.local.RoutingLocalRuntimeEngine
 import me.rerere.rikkahub.data.ai.transformers.AssistantTemplateLoader
 import me.rerere.rikkahub.data.ai.GenerationHandler
 import me.rerere.rikkahub.data.ai.models.ModelCatalogService
@@ -189,16 +187,7 @@ val dataSourceModule = module {
         )
     }
 
-    single { LiteRtRuntimeEngine(context = get(), compatibilityEstimator = get()) }
-
-    single { LlamaCppRuntimeEngine() }
-
-    single<LocalRuntimeEngine> {
-        RoutingLocalRuntimeEngine(
-            liteRt = get(),
-            llamaCpp = get(),
-        )
-    }
+    single<LocalRuntimeEngine> { LiteRtRuntimeEngine(context = get(), compatibilityEstimator = get()) }
 
     single {
         LocalModelRepository(

@@ -53,12 +53,16 @@ class LocalCompatibilityEstimator(
         val storageRequirement = entry.estimatedDownloadBytes + entry.estimatedInstalledBytes + STORAGE_HEADROOM_BYTES
         if (profile.freeStorageBytes < storageRequirement) {
             reasons += "Not enough free storage."
-            result = CompatibilityResult.Unsupported
+            result = if (result == CompatibilityResult.Unsupported) result else CompatibilityResult.Tight
         }
 
-        if (profile.totalRamBytes < entry.minimumRamBytes) {
+        // Android's MemoryInfo.totalMem reports accessible RAM, which is smaller than advertised physical RAM
+        // due to kernel and radio reservations (often by up to 1GB). We add a 1GB tolerance.
+        val advertisedRamBytes = profile.totalRamBytes + (1L * 1024 * 1024 * 1024)
+
+        if (advertisedRamBytes < entry.minimumRamBytes) {
             reasons += "Not enough device RAM."
-            result = CompatibilityResult.Unsupported
+            result = if (result == CompatibilityResult.Unsupported) result else CompatibilityResult.Tight
         }
 
         if (result != CompatibilityResult.Unsupported) {
@@ -67,7 +71,7 @@ class LocalCompatibilityEstimator(
                 result = CompatibilityResult.Tight
             }
 
-            if (profile.totalRamBytes < entry.recommendedRamBytes) {
+            if (advertisedRamBytes < entry.recommendedRamBytes) {
                 reasons += "Device RAM is below the recommended tier."
                 result = CompatibilityResult.Tight
             }

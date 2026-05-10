@@ -99,11 +99,12 @@ class LiteRtRuntimeEngine(
             val contextTokens = resolveContextTokens(entry)
             val cacheDir = File(context.cacheDir, "litertlm").apply { mkdirs() }
             val backend = Backend.CPU()
+            val visionBackend = Backend.GPU()
             val engine = Engine(
                 EngineConfig(
                     modelPath = modelPath,
                     backend = backend,
-                    visionBackend = if (Modality.IMAGE in entry.inputModalities) backend else null,
+                    visionBackend = if (Modality.IMAGE in entry.inputModalities) visionBackend else null,
                     audioBackend = if ("audio" in entry.featureTags) backend else null,
                     maxNumTokens = contextTokens,
                     maxNumImages = if (Modality.IMAGE in entry.inputModalities) 8 else null,
@@ -305,6 +306,13 @@ class LiteRtRuntimeEngine(
                 initialMessages = trimmedHistory,
                 samplerConfig = buildSamplerConfig(params),
                 tools = buildLiteRtTools(params.tools, params),
+                channels = if (params.thinkingBudget != null) listOf(
+                    com.google.ai.edge.litertlm.Channel(
+                        channelName = "thinking",
+                        start = "<think>",
+                        end = "</think>"
+                    )
+                ) else null,
             )
         )
         PreparedConversation(

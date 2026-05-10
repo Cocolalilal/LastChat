@@ -796,7 +796,8 @@ private fun ChatHeatmapCard(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .horizontalScroll(scrollState),
+                        .horizontalScroll(scrollState)
+                        .padding(end = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(cellSpacing)
                 ) {
                     Row(
