@@ -486,7 +486,7 @@ internal fun buildTimelineEntries(
                     id = "reasoning_${entries.size}",
                     content = part.reasoning,
                     durationMs = durationMs,
-                    title = part.localActivityTitle(),
+                    title = null,
                     isInProgress = part.finishedAt == null
                 ))
             }
@@ -576,14 +576,6 @@ private fun getToolDisplayName(toolName: String): String {
     }
 }
 
-private fun UIMessagePart.Reasoning.isLocalActivity(): Boolean {
-    return metadata?.get("local_activity")?.jsonPrimitiveOrNull?.contentOrNull == "true"
-}
-
-private fun UIMessagePart.Reasoning.localActivityTitle(): String? {
-    return metadata?.get("title")?.jsonPrimitiveOrNull?.contentOrNull?.takeIf { it.isNotBlank() }
-}
-
 /**
  * Determine the current activity state from message parts.
  */
@@ -609,9 +601,7 @@ internal fun deriveActivityState(
         
     if (!loading) {
         // Generation complete - determine what to show based on activities
-        val localReasoningParts = reasoningParts.filter { it.isLocalActivity() }
-        val modelReasoningParts = reasoningParts.filterNot { it.isLocalActivity() }
-        val totalReasoningMs = modelReasoningParts.sumOf { r ->
+        val totalReasoningMs = reasoningParts.sumOf { r ->
             if (r.finishedAt != null) {
                 (r.finishedAt!! - r.createdAt).inWholeMilliseconds
             } else 0L
@@ -620,23 +610,15 @@ internal fun deriveActivityState(
         // Group tools by CATEGORY (Python, Search, etc.) not individual tool names
         val toolCategories = toolCalls.map { categorizeToolName(it.toolName) }.distinct()
         
-        val localReasoning = localReasoningParts.lastOrNull()
-        val hasLocalActivity = localReasoning != null
         val hasReasoning = totalReasoningMs > 0
         val hasTools = toolCategories.isNotEmpty()
         val hasOcr = ocrAnnotations.isNotEmpty()
-        val showLocalPill = hasLocalActivity && !hasReasoning && !hasTools && !hasOcr
         
         // Count distinct activity categories (not individual tools)
-        val activityCount = (if (showLocalPill) 1 else 0) + (if (hasReasoning) 1 else 0) + (if (hasOcr) 1 else 0) + toolCategories.size
+        val activityCount = (if (hasReasoning) 1 else 0) + (if (hasOcr) 1 else 0) + toolCategories.size
 
         return when {
             activityCount == 0 -> ActivityState.Hidden  // No activities, hide pill
-            activityCount == 1 && showLocalPill -> ActivityState.CompletedSingle(
-                type = ActivityType.LOCAL_MODEL,
-                durationMs = totalReasoningMs,
-                displayName = localReasoning?.localActivityTitle() ?: "On-device",
-            )
             activityCount == 1 && hasReasoning -> ActivityState.CompletedSingle(
                 type = ActivityType.REASONING,
                 durationMs = totalReasoningMs
@@ -654,9 +636,6 @@ internal fun deriveActivityState(
             else -> ActivityState.CompletedMultiple(
                 reasoningDurationMs = if (hasReasoning) totalReasoningMs else null,
                 activityTypes = buildList {
-                    if (showLocalPill) {
-                        add(ActivityType.LOCAL_MODEL)
-                    }
                     if (hasOcr) {
                         add(ActivityType.OCR)
                     }
@@ -669,12 +648,6 @@ internal fun deriveActivityState(
     // Check for active reasoning
     val activeReasoning = reasoningParts.lastOrNull { it.finishedAt == null }
     if (activeReasoning != null) {
-        if (activeReasoning.isLocalActivity()) {
-            return ActivityState.LocalModel(
-                label = activeReasoning.localActivityTitle() ?: "Running on device",
-                startTimeMs = activeReasoning.createdAt.toEpochMilliseconds(),
-            )
-        }
         return ActivityState.Reasoning(startTimeMs = activeReasoning.createdAt.toEpochMilliseconds())
     }
     

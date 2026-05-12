@@ -62,8 +62,6 @@ glance = "1.1.1"
 chaquopy = "15.0.1"
 security-crypto = "1.1.0-alpha06"
 jmdns = "3.6.3"
-litertlm = "0.10.2"
-llamatik = "0.19.0"
 
 [libraries]
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "security-crypto" }
@@ -164,9 +162,6 @@ ktor-server-status-pages = { module = "io.ktor:ktor-server-status-pages", versio
 jmdns = { module = "org.jmdns:jmdns", version.ref = "jmdns" }
 androidx-glance = { group = "androidx.glance", name = "glance-appwidget", version.ref = "glance" }
 androidx-glance-material3 = { group = "androidx.glance", name = "glance-material3", version.ref = "glance" }
-litertlm-android = { module = "com.google.ai.edge.litertlm:litertlm-android", version.ref = "litertlm" }
-llamatik = { module = "com.llamatik:library", version.ref = "llamatik" }
-
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }

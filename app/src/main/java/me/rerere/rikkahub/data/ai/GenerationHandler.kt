@@ -1221,6 +1221,7 @@ class GenerationHandler(
             model = model,
             temperature = assistant.temperature,
             topP = assistant.topP,
+            topK = null,
             maxTokens = assistant.maxTokens,
             tools = tools,
             builtInTools = resolveActiveBuiltInTools(model, assistant),

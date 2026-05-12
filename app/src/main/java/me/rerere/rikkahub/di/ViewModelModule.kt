@@ -36,7 +36,6 @@ val viewModelModule = module {
             okHttpClient = get(),
             appStorageRepository = get(),
             modelCatalogService = get(),
-            localModelRepository = get(),
             memoryRepository = get(),
         )
     }

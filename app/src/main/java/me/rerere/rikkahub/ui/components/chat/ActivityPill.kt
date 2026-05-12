@@ -73,12 +73,6 @@ sealed interface ActivityState {
     /** Model is reasoning/thinking - shows timer */
     data class Reasoning(val startTimeMs: Long = System.currentTimeMillis()) : ActivityState
 
-    /** Local runtime work such as loading, warming, or on-device generation */
-    data class LocalModel(
-        val label: String,
-        val startTimeMs: Long = System.currentTimeMillis()
-    ) : ActivityState
-    
     /** Model is using a tool */
     data class ToolUse(
         val toolName: String,
@@ -119,7 +113,6 @@ private fun stateToKey(state: ActivityState): Any = when (state) {
     is ActivityState.Waiting -> "waiting"
     is ActivityState.Ocr -> "ocr"
     is ActivityState.Reasoning -> "reasoning"
-    is ActivityState.LocalModel -> "local_model_${state.label}"
     is ActivityState.ToolUse -> "tool_${categorizeToolName(state.toolName)}"
     is ActivityState.Replying -> "replying"
     is ActivityState.Hidden -> "hidden"
@@ -138,7 +131,6 @@ data class ActivityItem(
 )
 
 enum class ActivityType {
-    LOCAL_MODEL,
     REASONING,
     OCR,
     SEARCH,
@@ -149,7 +141,6 @@ enum class ActivityType {
 }
 
 private fun ActivityType.toTestTag(): String = when (this) {
-    ActivityType.LOCAL_MODEL -> "activity_pill_local_model"
     ActivityType.REASONING -> "activity_pill_reasoning"
     ActivityType.OCR -> "activity_pill_ocr"
     ActivityType.SEARCH -> "activity_pill_search"
@@ -163,7 +154,6 @@ private fun ActivityType.toTestTag(): String = when (this) {
  * Get the icon for an activity type.
  */
 private fun ActivityType.getIcon(): ImageVector = when (this) {
-    ActivityType.LOCAL_MODEL -> Icons.Rounded.Memory
     ActivityType.REASONING -> Icons.Rounded.Lightbulb
             ActivityType.OCR -> Icons.Rounded.Image
     ActivityType.SEARCH -> Icons.Rounded.Public
@@ -177,7 +167,6 @@ private fun ActivityType.getIcon(): ImageVector = when (this) {
  * Get display text for an activity type (for expanded single pill).
  */
 private fun ActivityType.getDisplayText(): String = when (this) {
-    ActivityType.LOCAL_MODEL -> "On-device"
     ActivityType.REASONING -> "Reasoned"
     ActivityType.OCR -> "OCR"
     ActivityType.SEARCH -> "Searched"
@@ -349,7 +338,6 @@ fun ActivityPillRow(
                     val clickType = when (state) {
                         is ActivityState.Ocr -> ActivityType.OCR
                         is ActivityState.Reasoning -> ActivityType.REASONING
-                        is ActivityState.LocalModel -> ActivityType.LOCAL_MODEL
                         is ActivityState.ToolUse -> categorizeToolName(state.toolName)
                         is ActivityState.CompletedSingle -> state.type
                         else -> null
@@ -449,14 +437,6 @@ private fun AnimatedSinglePill(
                         ReasoningContent(startTimeMs = targetState.startTimeMs, isLive = true)
                     }
 
-                    is ActivityState.LocalModel -> {
-                        LocalModelContent(
-                            label = targetState.label,
-                            startTimeMs = targetState.startTimeMs,
-                            isLive = true
-                        )
-                    }
-                    
                     is ActivityState.ToolUse -> {
                         ToolUseContent(
                             toolName = targetState.toolName,
@@ -491,43 +471,6 @@ private fun AnimatedSinglePill(
             }
         }
     }
-}
-
-@Composable
-private fun LocalModelContent(
-    label: String,
-    startTimeMs: Long,
-    isLive: Boolean
-) {
-    var elapsedMs by remember { mutableLongStateOf(0L) }
-
-    if (isLive) {
-        LaunchedEffect(startTimeMs) {
-            while (isActive) {
-                elapsedMs = System.currentTimeMillis() - startTimeMs
-                delay(50)
-            }
-        }
-    }
-
-    Icon(
-        imageVector = Icons.Rounded.Memory,
-        contentDescription = null,
-        modifier = Modifier.size(18.dp),
-        tint = MaterialTheme.colorScheme.onSurfaceVariant
-    )
-    Text(
-        text = label,
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = if (isLive) Modifier.shimmer(true) else Modifier
-    )
-    Text(
-        text = formatDuration(elapsedMs),
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = if (isLive) Modifier.shimmer(true) else Modifier
-    )
 }
 
 /**
@@ -621,13 +564,6 @@ private fun ExpandedActivityContent(item: ActivityItem) {
                 "Reasoned for ${formatDuration(item.durationMs)}"
             } else {
                 "Reasoned"
-            }
-        }
-        ActivityType.LOCAL_MODEL -> {
-            if (item.durationMs != null) {
-                "On-device for ${formatDuration(item.durationMs)}"
-            } else {
-                item.displayName ?: "On-device"
             }
         }
         ActivityType.OCR -> {
@@ -840,13 +776,6 @@ private fun ExpandedActivityPill(
                     "Reasoned"
                 }
             }
-            ActivityType.LOCAL_MODEL -> {
-                if (item.durationMs != null) {
-                    "On-device for ${formatDuration(item.durationMs)}"
-                } else {
-                    item.displayName ?: "On-device"
-                }
-            }
             ActivityType.OCR -> {
                 if (item.count > 1) {
                     stringResource(R.string.activity_pill_ocr_done_count, item.count)
@@ -910,7 +839,6 @@ private fun CompactActivityPill(
             ActivityType.REASONING -> {
                 item.durationMs?.let { formatDuration(it) }
             }
-            ActivityType.LOCAL_MODEL -> item.durationMs?.let { formatDuration(it) }
             ActivityType.OCR -> null
             else -> null
         }

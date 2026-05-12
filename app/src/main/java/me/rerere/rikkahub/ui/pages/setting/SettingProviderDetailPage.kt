@@ -197,7 +197,6 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
     val provider = settings.providers.find { it.id == id } ?: return
-    val isLocalProvider = provider is ProviderSetting.Local
     val pager = rememberPagerState { 2 }
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
@@ -247,22 +246,20 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                     }
                 },
                 actions = {
-                    if (!isLocalProvider) {
-                        val shareSheetState = rememberShareSheetState()
-                        ShareSheet(shareSheetState)
+                    val shareSheetState = rememberShareSheetState()
+                    ShareSheet(shareSheetState)
 
-                        ConnectionTesterButton(
-                            provider = provider,
-                            scope = scope
-                        )
+                    ConnectionTesterButton(
+                        provider = provider,
+                        scope = scope
+                    )
 
-                        IconButton(
-                            onClick = {
-                                shareSheetState.show(provider)
-                            }
-                        ) {
-                            Icon(Icons.Rounded.Share, null)
+                    IconButton(
+                        onClick = {
+                            shareSheetState.show(provider)
                         }
+                    ) {
+                        Icon(Icons.Rounded.Share, null)
                     }
                 }
             )
@@ -510,18 +507,11 @@ private fun SettingProviderModelPage(
     onEdit: (ProviderSetting) -> Unit,
     contentPadding: PaddingValues = PaddingValues(0.dp)
 ) {
-    when (provider) {
-        is ProviderSetting.Local -> LocalProviderModelPage(
-            provider = provider,
-            contentPadding = contentPadding
-        )
-
-        else -> ModelList(
-            providerSetting = provider,
-            onUpdateProvider = onEdit,
-            contentPadding = contentPadding
-        )
-    }
+    ModelList(
+        providerSetting = provider,
+        onUpdateProvider = onEdit,
+        contentPadding = contentPadding
+    )
 }
 
 @Composable
@@ -1265,7 +1255,6 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 is ProviderSetting.OpenAI -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.Google -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.Claude -> parentProvider.apiKey.isNotBlank()
-                                is ProviderSetting.Local -> false
                             }
                             
                             Column(
@@ -1548,7 +1537,6 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 is ProviderSetting.OpenAI -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.Google -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.Claude -> parentProvider.apiKey.isNotBlank()
-                                is ProviderSetting.Local -> false
                             }
                             
                             Column(
@@ -1715,8 +1703,6 @@ private suspend fun probeModelCapabilities(
             provider = provider,
             model = model,
         )
-
-        is ProviderSetting.Local -> null
     }
 }
 
@@ -1949,8 +1935,6 @@ private fun buildToolProbeCustomBodies(provider: ProviderSetting): List<CustomBo
                 },
             )
         )
-
-        is ProviderSetting.Local -> emptyList()
     }
 }
 

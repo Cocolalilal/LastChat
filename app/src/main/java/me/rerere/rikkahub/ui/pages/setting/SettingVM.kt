@@ -15,7 +15,6 @@ import me.rerere.rikkahub.data.ai.models.ModelCatalogStatus
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.ai.mcp.McpManager
-import me.rerere.rikkahub.data.ai.local.LocalModelRepository
 import me.rerere.rikkahub.data.repository.AppStorageRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.utils.IconStorageManager
@@ -28,7 +27,6 @@ class SettingVM(
     private val okHttpClient: OkHttpClient,
     private val appStorageRepository: AppStorageRepository,
     private val modelCatalogService: ModelCatalogService,
-    private val localModelRepository: LocalModelRepository,
     private val memoryRepository: MemoryRepository,
 ) :
     ViewModel() {
@@ -111,9 +109,7 @@ class SettingVM(
     ) {
         viewModelScope.launch {
             runCatching {
-                // Refresh both the LiteLLM cloud models catalog and the Local Models live catalog
                 modelCatalogService.refreshCatalog()
-                localModelRepository.refreshLiveCatalog()
             }.onSuccess {
                 onSuccess()
             }.onFailure {

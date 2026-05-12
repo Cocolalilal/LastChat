@@ -325,8 +325,6 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.okhttp)
     implementation(libs.coil.svg)
-    implementation(libs.litertlm.android)
-    implementation(libs.llamatik)
 
     // serialization
     implementation(libs.kotlinx.serialization.json)

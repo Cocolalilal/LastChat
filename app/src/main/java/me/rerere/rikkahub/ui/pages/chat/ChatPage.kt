@@ -456,6 +456,7 @@ private fun ChatPageContent(
     var showDeleteConfirmDialog by rememberSaveable { mutableStateOf(false) }
     var pendingDeleteMessage by rememberSaveable { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
     val toolbarPlacement = chatTopBarPlacement(setting)
+    val isGenerating = loadingJob != null
     
     // Auto-scroll to first matching message when opened from search
     LaunchedEffect(initialSearchQuery, conversation.messageNodes) {
@@ -525,6 +526,8 @@ private fun ChatPageContent(
                             drawerState = drawerState,
                             previewMode = previewMode,
                             isTemporaryChat = isTemporaryChat,
+                            currentChatModel = currentChatModel,
+                            isGenerating = isGenerating,
                             onNewChat = {
                                 navigateToChatPage(navController)
                             },
@@ -1015,6 +1018,8 @@ private fun ChatPageContent(
                                 drawerState = drawerState,
                                 previewMode = previewMode,
                                 isTemporaryChat = isTemporaryChat,
+                                currentChatModel = currentChatModel,
+                                isGenerating = isGenerating,
                                 onNewChat = {
                                     navigateToChatPage(navController)
                                 },
@@ -1059,11 +1064,13 @@ private fun ChatToolbar(
     bigScreen: Boolean,
     previewMode: Boolean,
     isTemporaryChat: Boolean,
+    currentChatModel: Model? = null,
+    isGenerating: Boolean = false,
     onClickMenu: () -> Unit,
     onNewChat: () -> Unit,
     onUpdateSettings: (Settings) -> Unit,
     onSwitchAssistant: (Assistant) -> Unit,
-    onToggleTemporaryChat: () -> Unit
+    onToggleTemporaryChat: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val topContainerColor = MaterialTheme.colorScheme.surfaceContainer

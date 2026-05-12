@@ -19,7 +19,6 @@ import me.rerere.rikkahub.data.db.dao.ConversationAttachmentRefDao
 import me.rerere.rikkahub.data.db.dao.DailyActivityDAO
 import me.rerere.rikkahub.data.db.dao.EmbeddingCacheDAO
 import me.rerere.rikkahub.data.db.dao.GenMediaDAO
-import me.rerere.rikkahub.data.db.dao.LocalModelInstallDao
 import me.rerere.rikkahub.data.db.dao.UsageStatsDAO
 import me.rerere.rikkahub.data.db.dao.MemoryDAO
 import me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity
@@ -29,7 +28,6 @@ import me.rerere.rikkahub.data.db.entity.ConversationAttachmentRefEntity
 import me.rerere.rikkahub.data.db.entity.DailyActivityEntity
 import me.rerere.rikkahub.data.db.entity.EmbeddingCacheEntity
 import me.rerere.rikkahub.data.db.entity.GenMediaEntity
-import me.rerere.rikkahub.data.db.entity.LocalModelInstallEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEntity
 import me.rerere.rikkahub.data.db.entity.UsageStatsEntity
 import me.rerere.rikkahub.data.model.MessageNode
@@ -44,8 +42,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 @Database(
-    entities = [ConversationEntity::class, MemoryEntity::class, GenMediaEntity::class, ChatEpisodeEntity::class, EmbeddingCacheEntity::class, DailyActivityEntity::class, UsageStatsEntity::class, ChatAttachmentEntity::class, ConversationAttachmentRefEntity::class, LocalModelInstallEntity::class],
-    version = 28,
+    entities = [ConversationEntity::class, MemoryEntity::class, GenMediaEntity::class, ChatEpisodeEntity::class, EmbeddingCacheEntity::class, DailyActivityEntity::class, UsageStatsEntity::class, ChatAttachmentEntity::class, ConversationAttachmentRefEntity::class],
+    version = 29,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -71,6 +69,7 @@ import kotlinx.serialization.json.put
         // 25->26 is manual migration (MIGRATION_25_26) - adds is_fork to conversation table
         // 26->27 is manual migration (MIGRATION_26_27) - adds local model install registry
         // 27->28 is manual migration (MIGRATION_27_28) - adds local model progress and metadata fields
+        // 28->29 is manual migration (MIGRATION_28_29) - drops removed local model install registry
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -92,8 +91,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun dailyActivityDao(): DailyActivityDAO
 
     abstract fun usageStatsDao(): UsageStatsDAO
-
-    abstract fun localModelInstallDao(): LocalModelInstallDao
 
     companion object {
         const val TAG = "AppDatabase"
@@ -454,6 +451,14 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE local_model_install ADD COLUMN eta_seconds INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE local_model_install ADD COLUMN source_uri TEXT NOT NULL DEFAULT ''")
                 Log.i(TAG, "migrate: migrate from 27 to 28 success")
+            }
+        }
+
+        val MIGRATION_28_29 = object : Migration(28, 29) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "migrate: start migrate from 28 to 29")
+                db.execSQL("DROP TABLE IF EXISTS `local_model_install`")
+                Log.i(TAG, "migrate: migrate from 28 to 29 success")
             }
         }
     }

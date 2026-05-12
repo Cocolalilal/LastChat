@@ -319,7 +319,7 @@ internal fun formatTimelineDuration(ms: Long): String? {
 
 internal fun entryMatchesType(entry: TimelineEntry, type: ActivityType): Boolean {
     return when (entry) {
-        is TimelineEntry.Reasoning -> type == ActivityType.REASONING || (type == ActivityType.LOCAL_MODEL && entry.title != null)
+        is TimelineEntry.Reasoning -> type == ActivityType.REASONING
         is TimelineEntry.ToolCall -> categorizeToolName(entry.toolName) == type
         is TimelineEntry.MemoryAction -> categorizeToolName(entry.toolName) == type
         is TimelineEntry.Ocr -> type == ActivityType.OCR

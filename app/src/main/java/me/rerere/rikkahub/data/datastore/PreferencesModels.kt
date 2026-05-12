@@ -6,8 +6,6 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.ai.local.LOCAL_PROVIDER_ID
-import me.rerere.rikkahub.data.ai.local.LOCAL_PROVIDER_NAME
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_OCR_PROMPT
@@ -409,68 +407,31 @@ fun Settings.getSelectedTTSProvider(): TTSProviderSetting? {
     } ?: ttsProviders.firstOrNull()
 }
 
-fun ProviderSetting.isLocalProvider(): Boolean = this is ProviderSetting.Local
-
 internal fun Settings.ensureBuiltInProviders(): Settings {
     val defaultById = DEFAULT_PROVIDERS.associateBy { it.id }
-    val existingLocal = providers.find { it.id == DEFAULT_LOCAL_PROVIDER.id }
-    val normalizedLocal = (existingLocal ?: DEFAULT_LOCAL_PROVIDER).copyProvider(
-        id = DEFAULT_LOCAL_PROVIDER.id,
-        builtIn = DEFAULT_LOCAL_PROVIDER.builtIn,
-        description = DEFAULT_LOCAL_PROVIDER.description,
-        shortDescription = DEFAULT_LOCAL_PROVIDER.shortDescription,
-    )
-
-    val normalizedRest = providers
-        .filterNot { it.id == DEFAULT_LOCAL_PROVIDER.id }
-        .map { provider ->
-            defaultById[provider.id]?.let { defaultProvider ->
-                provider.copyProvider(
-                    id = defaultProvider.id,
-                    builtIn = defaultProvider.builtIn,
-                    description = defaultProvider.description,
-                    shortDescription = defaultProvider.shortDescription,
-                )
-            } ?: provider
-        }
+    val normalizedProviders = providers.map { provider ->
+        defaultById[provider.id]?.let { defaultProvider ->
+            provider.copyProvider(
+                id = defaultProvider.id,
+                builtIn = defaultProvider.builtIn,
+                description = defaultProvider.description,
+                shortDescription = defaultProvider.shortDescription,
+            )
+        } ?: provider
+    }
 
     val missingDefaults = DEFAULT_PROVIDERS
-        .filterNot { default -> default.id == DEFAULT_LOCAL_PROVIDER.id }
-        .filterNot { default -> normalizedRest.any { it.id == default.id } }
+        .filterNot { default -> normalizedProviders.any { it.id == default.id } }
 
-    val normalizedProviders = buildList {
-        add(normalizedLocal)
-        addAll(normalizedRest)
+    val updatedProviders = buildList {
+        addAll(normalizedProviders)
         addAll(missingDefaults)
     }
-    return if (normalizedProviders != providers) {
-        copy(providers = normalizedProviders)
+    return if (updatedProviders != providers) {
+        copy(providers = updatedProviders)
     } else {
         this
     }
-}
-
-internal fun Settings.withLocalProviderModels(localModels: List<Model>): Settings {
-    val normalizedProvider = (providers.find { it.id == LOCAL_PROVIDER_ID } as? ProviderSetting.Local)
-        ?.copy(
-            name = LOCAL_PROVIDER_NAME,
-            builtIn = true,
-            models = localModels,
-        )
-        ?: ProviderSetting.Local(
-            id = LOCAL_PROVIDER_ID,
-            enabled = true,
-            name = LOCAL_PROVIDER_NAME,
-            models = localModels,
-            builtIn = true,
-        )
-
-    val updatedProviders = buildList {
-        add(normalizedProvider)
-        providers.filterNot { it.id == LOCAL_PROVIDER_ID }.forEach(::add)
-    }
-
-    return copy(providers = updatedProviders).clearMissingModelReferences()
 }
 
 internal fun Settings.clearMissingModelReferences(): Settings {

@@ -227,7 +227,6 @@ class BackupVM(
             is ProviderSetting.OpenAI -> "openai|${provider.baseUrl}|${provider.apiKey}"
             is ProviderSetting.Google -> "google|${provider.baseUrl}|${provider.apiKey}"
             is ProviderSetting.Claude -> "claude|${provider.baseUrl}|${provider.apiKey}"
-            is ProviderSetting.Local -> "local|${provider.id}"
         }
     }
 }

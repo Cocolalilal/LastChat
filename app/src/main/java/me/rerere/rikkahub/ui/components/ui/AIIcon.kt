@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -50,22 +49,11 @@ fun ProviderIcon(
     contentColor: Color = LocalContentColor.current,
     padding: Dp = 4.dp,
 ) {
-    if (provider is ProviderSetting.Local) {
-        Icon(
-            imageVector = Icons.Rounded.Memory,
-            contentDescription = provider.name,
-            modifier = modifier.padding(padding),
-            tint = if (provider.enabled) contentColor else contentColor.copy(alpha = 0.38f),
-        )
-        return
-    }
-
     // Get base URL for provider type detection
     val baseUrl = when (provider) {
         is ProviderSetting.OpenAI -> provider.baseUrl
         is ProviderSetting.Google -> provider.baseUrl
         is ProviderSetting.Claude -> provider.baseUrl
-        is ProviderSetting.Local -> null
     }
     
     // Derive provider slug from name for LobeHub lookup
@@ -118,7 +106,6 @@ fun ModelIcon(
         is ProviderSetting.OpenAI -> provider.baseUrl
         is ProviderSetting.Google -> provider.baseUrl
         is ProviderSetting.Claude -> provider.baseUrl
-        is ProviderSetting.Local -> null
         null -> null
     }
     

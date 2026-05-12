@@ -905,7 +905,6 @@ private fun ProviderSetting.toWebProviderDto(
             is ProviderSetting.OpenAI -> "openai"
             is ProviderSetting.Google -> "google"
             is ProviderSetting.Claude -> "claude"
-            is ProviderSetting.Local -> "local"
         },
         enabled = enabled,
         name = name,
@@ -915,7 +914,7 @@ private fun ProviderSetting.toWebProviderDto(
                 builtInSearchEnabled = builtInSearchEnabled,
             )
         },
-        systemOwned = this is ProviderSetting.Local,
+        systemOwned = builtIn,
     )
 }
 

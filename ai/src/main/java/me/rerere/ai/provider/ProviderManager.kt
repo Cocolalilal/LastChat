@@ -51,7 +51,6 @@ class ProviderManager(client: OkHttpClient) {
             is ProviderSetting.OpenAI -> getProvider("openai")
             is ProviderSetting.Google -> getProvider("google")
             is ProviderSetting.Claude -> getProvider("claude")
-            is ProviderSetting.Local -> getProvider("local")
         } as Provider<T>
     }
 }
