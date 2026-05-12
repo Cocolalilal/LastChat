@@ -1,10 +1,14 @@
 package me.rerere.rikkahub.data.repository
 
 import android.content.Context
+import android.database.sqlite.SQLiteDatabaseLockedException
+import android.database.sqlite.SQLiteException
+import android.util.Log
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
 import androidx.paging.map
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -41,6 +45,7 @@ class ConversationRepository(
     private val chatAttachmentRepository: ChatAttachmentRepository,
 ) {
     companion object {
+        private const val TAG = "ConversationRepository"
         private const val PAGE_SIZE = 20
         private const val INITIAL_LOAD_SIZE = 40
         private val ISO_DATE_REGEX = Regex("\\d{4}-\\d{2}-\\d{2}")
@@ -360,7 +365,21 @@ class ConversationRepository(
      */
     suspend fun recordDailyActivity() {
         val today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
-        dailyActivityDAO.recordActivity(today)
+        val timestamp = System.currentTimeMillis()
+        val delaysMs = longArrayOf(40L, 120L, 240L)
+
+        repeat(delaysMs.size + 1) { attempt ->
+            try {
+                dailyActivityDAO.recordActivity(today, timestamp)
+                return
+            } catch (e: SQLiteException) {
+                if (!e.isTransientSqliteFailure() || attempt == delaysMs.size) {
+                    Log.w(TAG, "recordDailyActivity: ignored non-critical SQLite failure", e)
+                    return
+                }
+                delay(delaysMs[attempt])
+            }
+        }
     }
     
     /**
@@ -705,6 +724,16 @@ class ConversationRepository(
         val match = raw?.let { ISO_DATE_REGEX.find(it)?.value } ?: return null
         return runCatching { LocalDate.parse(match, DateTimeFormatter.ISO_LOCAL_DATE).format(DateTimeFormatter.ISO_LOCAL_DATE) }
             .getOrNull()
+    }
+
+    private fun SQLiteException.isTransientSqliteFailure(): Boolean {
+        if (this is SQLiteDatabaseLockedException) return true
+        val text = "${message.orEmpty()} ${cause?.message.orEmpty()}".lowercase()
+        return "database is locked" in text ||
+            "database is busy" in text ||
+            "eagain" in text ||
+            "try again" in text ||
+            "os error - 11" in text
     }
 }
 

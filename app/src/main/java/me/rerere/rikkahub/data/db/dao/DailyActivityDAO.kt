@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 import me.rerere.rikkahub.data.db.entity.DailyActivityEntity
 
@@ -42,16 +43,33 @@ interface DailyActivityDAO {
     fun getActivityForDateFlow(date: String): Flow<DailyActivityEntity?>
     
     /**
-     * Increment message count for a date or insert if not exists
+     * Increment message count for a date or insert if not exists.
+     *
+     * Kept as INSERT OR IGNORE + UPDATE for compatibility with older/vendor SQLite builds.
      */
+    @Transaction
+    suspend fun recordActivity(date: String, timestamp: Long = System.currentTimeMillis()) {
+        insertActivityCounterIfMissing(date, timestamp)
+        incrementActivityCounter(date, timestamp)
+    }
+
     @Query("""
-        INSERT INTO daily_activity (date, message_count, last_message_time)
-        VALUES (:date, 1, :timestamp)
-        ON CONFLICT(date) DO UPDATE SET
-            message_count = message_count + 1,
-            last_message_time = :timestamp
+        INSERT OR IGNORE INTO daily_activity (date, message_count, last_message_time)
+        VALUES (:date, 0, :timestamp)
     """)
-    suspend fun recordActivity(date: String, timestamp: Long = System.currentTimeMillis())
+    suspend fun insertActivityCounterIfMissing(date: String, timestamp: Long)
+
+    @Query("""
+        UPDATE daily_activity
+        SET
+            message_count = message_count + 1,
+            last_message_time = CASE
+                WHEN last_message_time < :timestamp THEN :timestamp
+                ELSE last_message_time
+            END
+        WHERE date = :date
+    """)
+    suspend fun incrementActivityCounter(date: String, timestamp: Long)
     
     /**
      * Get activity for the last 7 days (for weekly messages graph)

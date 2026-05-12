@@ -34,4 +34,12 @@ class ModelRegistryTest {
         assert(!ModelRegistry.CLAUDE_4_5.match("claude-sonnet-4-20250929"))
         assert(!ModelRegistry.CLAUDE_4_5.match("claude-4-sonnet"))
     }
+
+    @Test
+    fun testDeepSeekV4Capabilities() {
+        assert(ModelRegistry.TOOL_MODELS.match("deepseek-v4"))
+        assert(ModelRegistry.TOOL_MODELS.match("deepseek-v4-pro"))
+        assert(ModelRegistry.REASONING_MODELS.match("deepseek-v4"))
+        assert(ModelRegistry.REASONING_MODELS.match("deepseek-v4-pro"))
+    }
 }

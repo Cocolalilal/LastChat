@@ -30,6 +30,11 @@ class OpenAIReasoningRequestTest {
         displayName = "Qwen 3",
         abilities = listOf(ModelAbility.REASONING),
     )
+    private val deepSeekReasoningModel = Model(
+        modelId = "deepseek-v4-pro",
+        displayName = "DeepSeek V4 Pro",
+        abilities = listOf(ModelAbility.REASONING, ModelAbility.TOOL),
+    )
     private val messages = listOf(UIMessage.user("Hello"))
 
     @Test
@@ -111,7 +116,93 @@ class OpenAIReasoningRequestTest {
         assertEquals("function_call", input[2].jsonObject["type"]?.jsonPrimitive?.contentOrNull)
     }
 
+    @Test
+    fun chatCompletionsReplaysDeepSeekReasoningContent() {
+        val body = chatCompletionsBody(
+            messages = listOf(
+                UIMessage.user("Hello"),
+                UIMessage(
+                    role = MessageRole.ASSISTANT,
+                    parts = listOf(
+                        UIMessagePart.Reasoning("DeepSeek private reasoning"),
+                        UIMessagePart.Text("Visible answer")
+                    )
+                )
+            ),
+            model = deepSeekReasoningModel,
+            providerSetting = providerSetting.copy(baseUrl = "https://api.deepseek.com")
+        )
+
+        val assistantMessage = body["messages"]?.jsonArray?.get(1)?.jsonObject
+            ?: error("assistant message is missing")
+        assertEquals("Visible answer", assistantMessage["content"]?.jsonPrimitive?.contentOrNull)
+        assertEquals(
+            "DeepSeek private reasoning",
+            assistantMessage["reasoning_content"]?.jsonPrimitive?.contentOrNull
+        )
+    }
+
+    @Test
+    fun chatCompletionsReplaysDeepSeekReasoningContentWithToolCalls() {
+        val body = chatCompletionsBody(
+            messages = listOf(
+                UIMessage.user("Hello"),
+                UIMessage(
+                    role = MessageRole.ASSISTANT,
+                    parts = listOf(
+                        UIMessagePart.Reasoning("Need a tool"),
+                        UIMessagePart.ToolCall("call_1", "get_weather", "{\"city\":\"Paris\"}")
+                    )
+                )
+            ),
+            model = deepSeekReasoningModel,
+            providerSetting = providerSetting.copy(baseUrl = "https://opencode.example.com/v1")
+        )
+
+        val assistantMessage = body["messages"]?.jsonArray?.get(1)?.jsonObject
+            ?: error("assistant message is missing")
+        assertEquals("", assistantMessage["content"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("Need a tool", assistantMessage["reasoning_content"]?.jsonPrimitive?.contentOrNull)
+        assertEquals(1, assistantMessage["tool_calls"]?.jsonArray?.size)
+    }
+
+    @Test
+    fun chatCompletionsOmitsReasoningContentForNonDeepSeekProviders() {
+        val body = chatCompletionsBody(
+            messages = listOf(
+                UIMessage.user("Hello"),
+                UIMessage(
+                    role = MessageRole.ASSISTANT,
+                    parts = listOf(
+                        UIMessagePart.Reasoning("Do not serialize this"),
+                        UIMessagePart.Text("Visible answer")
+                    )
+                )
+            ),
+            model = reasoningModel,
+            providerSetting = providerSetting
+        )
+
+        val assistantMessage = body["messages"]?.jsonArray?.get(1)?.jsonObject
+            ?: error("assistant message is missing")
+        assertFalse(assistantMessage.containsKey("reasoning_content"))
+    }
+
     private fun chatCompletionsBody(thinkingBudget: Int?): JsonObject {
+        return chatCompletionsBody(
+            messages = messages,
+            model = reasoningModel,
+            providerSetting = providerSetting,
+            thinkingBudget = thinkingBudget,
+        )
+    }
+
+    private fun chatCompletionsBody(
+        messages: List<UIMessage>,
+        model: Model,
+        providerSetting: ProviderSetting.OpenAI,
+        thinkingBudget: Int? = null,
+    ): JsonObject {
         val api = ChatCompletionsAPI(
             client = OkHttpClient(),
             keyRoulette = object : KeyRoulette {
@@ -129,7 +220,7 @@ class OpenAIReasoningRequestTest {
         return method.invoke(
             api,
             messages,
-            TextGenerationParams(model = reasoningModel, thinkingBudget = thinkingBudget),
+            TextGenerationParams(model = model, thinkingBudget = thinkingBudget),
             providerSetting,
             false,
         ) as JsonObject
