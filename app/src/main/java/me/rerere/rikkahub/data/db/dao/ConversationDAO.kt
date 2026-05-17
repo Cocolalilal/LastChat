@@ -91,4 +91,8 @@ interface ConversationDAO {
     // Per-assistant chat count
     @Query("SELECT COUNT(*) FROM conversationentity WHERE assistant_id = :assistantId")
     fun getConversationCountByAssistantFlow(assistantId: String): Flow<Int>
+
+    // Batch query for backfill tasks to prevent OOM
+    @Query("SELECT * FROM conversationentity ORDER BY update_at DESC LIMIT :limit OFFSET :offset")
+    suspend fun getBackfillDataBatch(limit: Int, offset: Int): List<ConversationEntity>
 }

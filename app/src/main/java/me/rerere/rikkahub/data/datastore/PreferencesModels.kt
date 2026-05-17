@@ -3,6 +3,7 @@ package me.rerere.rikkahub.data.datastore
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
@@ -29,6 +30,8 @@ import me.rerere.search.SearchCommonOptions
 import me.rerere.search.SearchServiceOptions
 import me.rerere.tts.provider.TTSProviderSetting
 import kotlin.uuid.Uuid
+
+val DISABLED_MODEL_ID: Uuid = Uuid.parse("00000000-0000-0000-0000-000000000000")
 
 @Serializable
 data class Settings(
@@ -402,6 +405,84 @@ fun Settings.getSelectedTTSProvider(): TTSProviderSetting? {
     return selectedTTSProviderId.let { id ->
         ttsProviders.find { it.id == id }
     } ?: ttsProviders.firstOrNull()
+}
+
+internal fun Settings.ensureBuiltInProviders(): Settings {
+    val defaultById = DEFAULT_PROVIDERS.associateBy { it.id }
+    val normalizedProviders = providers.map { provider ->
+        defaultById[provider.id]?.let { defaultProvider ->
+            provider.copyProvider(
+                id = defaultProvider.id,
+                builtIn = defaultProvider.builtIn,
+                description = defaultProvider.description,
+                shortDescription = defaultProvider.shortDescription,
+            )
+        } ?: provider
+    }
+
+    val missingDefaults = DEFAULT_PROVIDERS
+        .filterNot { default -> normalizedProviders.any { it.id == default.id } }
+
+    val updatedProviders = buildList {
+        addAll(normalizedProviders)
+        addAll(missingDefaults)
+    }
+    return if (updatedProviders != providers) {
+        copy(providers = updatedProviders)
+    } else {
+        this
+    }
+}
+
+internal fun Settings.clearMissingModelReferences(): Settings {
+    val allModels = providers.flatMap { it.models }
+    val allModelIds = allModels.map { it.id }.toSet()
+    val chatFallback = allModels.firstOrNull { it.type == ModelType.CHAT }?.id ?: Uuid.random()
+    val imageFallback = allModels.firstOrNull { it.type == ModelType.IMAGE }?.id ?: Uuid.random()
+    val embeddingFallback = allModels.firstOrNull { it.type == ModelType.EMBEDDING }?.id ?: Uuid.random()
+    val multimodalFallback = allModels.firstOrNull {
+        it.type == ModelType.CHAT && it.inputModalities.contains(me.rerere.ai.provider.Modality.IMAGE)
+    }?.id ?: chatFallback
+
+    fun Uuid.ensureValid(fallback: Uuid): Uuid {
+        return if (this in allModelIds) this else fallback
+    }
+
+    fun Uuid.ensureValidOrDisabled(fallback: Uuid): Uuid {
+        return if (this == DISABLED_MODEL_ID) this else ensureValid(fallback)
+    }
+
+    fun Uuid?.ensureValidOrNull(): Uuid? {
+        return this?.takeIf { it in allModelIds }
+    }
+
+    val updatedAssistants = assistants.map { assistant ->
+        assistant.copy(
+            chatModelId = assistant.chatModelId.ensureValidOrNull(),
+            backgroundModelId = assistant.backgroundModelId.ensureValidOrNull(),
+            embeddingModelId = assistant.embeddingModelId.ensureValidOrNull(),
+            summarizerModelId = assistant.summarizerModelId.ensureValidOrNull(),
+        )
+    }
+
+    return copy(
+        chatModelId = chatModelId.ensureValid(chatFallback),
+        titleModelId = titleModelId.ensureValid(chatFallback),
+        summarizerModelId = summarizerModelId.ensureValidOrNull(),
+        imageGenerationModelId = imageGenerationModelId.ensureValid(imageFallback),
+        translateModeId = translateModeId.ensureValid(chatFallback),
+        suggestionModelId = suggestionModelId.ensureValidOrDisabled(chatFallback),
+        ocrModelId = ocrModelId.ensureValid(multimodalFallback),
+        embeddingModelId = embeddingModelId.ensureValidOrDisabled(embeddingFallback),
+        favoriteModels = favoriteModels.filter { it in allModelIds },
+        assistants = updatedAssistants,
+        textSelectionConfig = textSelectionConfig.copy(
+            assistantId = textSelectionConfig.assistantId?.takeIf { id -> updatedAssistants.any { it.id == id } },
+            actions = textSelectionConfig.actions.map { action ->
+                action.copy(modelId = action.modelId.ensureValidOrNull())
+            }
+        ),
+    )
 }
 
 fun Model.findProvider(

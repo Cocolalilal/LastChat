@@ -58,6 +58,8 @@ import me.rerere.rikkahub.ui.components.ui.SummarizerModelTipBanner
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
@@ -344,6 +346,38 @@ fun AssistantMemorySettings(
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 SettingsGroupHeader(title = stringResource(R.string.assistant_memory_rag_settings))
                 RagSettingsCard(assistant = assistant, onUpdateAssistant = onUpdateAssistant)
+
+                // Regenerate embeddings button (visible when embeddings are missing or outdated)
+                AnimatedVisibility(
+                    visible = needsEmbeddingRegeneration && onRegenerateEmbeddings != null,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    Surface(
+                        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
+                        shape = RoundedCornerShape(24.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = stringResource(R.string.assistant_memory_regenerate_embeddings),
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = "Some memories are missing embeddings or were embedded with a different model.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Button(
+                                onClick = { onRegenerateEmbeddings?.invoke() },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Rounded.Refresh, null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text(stringResource(R.string.assistant_memory_regenerate_embeddings))
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -398,14 +432,15 @@ fun AssistantMemorySettings(
                 onAddMemory = { memoryDialogState.open(AssistantMemory(0, "")) },
                 onEditMemory = { memoryDialogState.open(it) },
                 onDeleteMemory = onDeleteMemory,
-                onRegenerateEmbeddings = onRegenerateEmbeddings,
-                needsEmbeddingRegeneration = needsEmbeddingRegeneration,
                 memorySearchQuery = memorySearchQuery,
                 onSearchQueryChange = { assistantDetailVM.updateMemorySearchQuery(it) },
                 currentEmbeddingModelId = currentEmbeddingModelId,
                 showMemoryTypes = assistant.enableMemoryConsolidation,
                 initialMemoryTab = initialMemoryTab,
-                scrollToMemoryId = scrollToMemoryId
+                scrollToMemoryId = scrollToMemoryId,
+                onRegenerateEmbeddings = onRegenerateEmbeddings,
+                embeddingProgress = embeddingProgress,
+                needsEmbeddingRegeneration = needsEmbeddingRegeneration
             )
         }
 
@@ -846,14 +881,15 @@ private fun ManageMemoriesSection(
     onAddMemory: () -> Unit,
     onEditMemory: (AssistantMemory) -> Unit,
     onDeleteMemory: (AssistantMemory) -> Unit,
-    onRegenerateEmbeddings: (() -> Unit)?,
-    needsEmbeddingRegeneration: Boolean,
     memorySearchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     currentEmbeddingModelId: String,
     showMemoryTypes: Boolean,
     initialMemoryTab: Int? = null,
-    scrollToMemoryId: Int? = null
+    scrollToMemoryId: Int? = null,
+    onRegenerateEmbeddings: (() -> Unit)? = null,
+    embeddingProgress: EmbeddingProgress? = null,
+    needsEmbeddingRegeneration: Boolean = false
 ) {
     // Use initialMemoryTab if provided, otherwise default to 0
     var selectedTab by remember { mutableIntStateOf(initialMemoryTab ?: 0) }
@@ -912,6 +948,30 @@ private fun ManageMemoriesSection(
             )
 
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                // Regenerate button
+                if (onRegenerateEmbeddings != null && assistant.useRagMemoryRetrieval) {
+                    IconButton(
+                        onClick = { onRegenerateEmbeddings() },
+                        enabled = embeddingProgress?.isRunning != true
+                    ) {
+                        if (embeddingProgress?.isRunning == true) {
+                            val progress = embeddingProgress.current.toFloat() / embeddingProgress.total.coerceAtLeast(1)
+                            CircularProgressIndicator(
+                                progress = { progress },
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else {
+                            Icon(
+                                Icons.Rounded.Refresh,
+                                contentDescription = null,
+                                tint = if (needsEmbeddingRegeneration) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                            )
+                        }
+                    }
+                }
+
                 // Sort button
                 Box {
                     IconButton(onClick = { showSortMenu = true }) {
@@ -941,14 +1001,7 @@ private fun ManageMemoriesSection(
                     }
                 }
                 
-                if (onRegenerateEmbeddings != null && assistant.useRagMemoryRetrieval && needsEmbeddingRegeneration) {
-                    IconButton(onClick = onRegenerateEmbeddings) {
-                        Icon(
-                            Icons.Rounded.Refresh,
-                            contentDescription = stringResource(R.string.assistant_memory_regenerate_embeddings)
-                        )
-                    }
-                }
+
                 IconButton(onClick = onAddMemory) {
                     Icon(
                         Icons.Rounded.Add,
@@ -1142,7 +1195,10 @@ private fun MemoryItem(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 // Show type and embedding badges only when needed
-                val showBadges = showType || (useRagMemoryRetrieval && !memory.hasEmbedding)
+                val isModelMismatch = useRagMemoryRetrieval && memory.hasEmbedding &&
+                    memory.embeddingModelId != null && memory.embeddingModelId != currentEmbeddingModelId
+                val isMissingEmbedding = useRagMemoryRetrieval && !memory.hasEmbedding
+                val showBadges = showType || isMissingEmbedding || isModelMismatch
                 AnimatedVisibility(
                     visible = showBadges,
                     enter = fadeIn() + expandVertically(),
@@ -1170,7 +1226,7 @@ private fun MemoryItem(
                             }
                         }
                         
-                        if (useRagMemoryRetrieval && !memory.hasEmbedding) {
+                        if (isMissingEmbedding) {
                             Surface(
                                 color = MaterialTheme.colorScheme.error,
                                 shape = MaterialTheme.shapes.extraSmall
@@ -1180,6 +1236,18 @@ private fun MemoryItem(
                                     style = MaterialTheme.typography.labelSmall,
                                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
                                     color = Color.White
+                                )
+                            }
+                        } else if (isModelMismatch) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.tertiary,
+                                shape = MaterialTheme.shapes.extraSmall
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.assistant_memory_outdated_embedding),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                    color = MaterialTheme.colorScheme.onTertiary
                                 )
                             }
                         }

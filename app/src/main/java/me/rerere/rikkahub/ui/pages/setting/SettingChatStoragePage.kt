@@ -22,7 +22,10 @@ import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
 import androidx.compose.foundation.lazy.staggeredgrid.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.AudioFile
@@ -61,6 +64,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -90,8 +94,13 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import java.text.DateFormat
 import java.util.Date
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.datastore.DISABLED_MODEL_ID
+import me.rerere.rikkahub.data.db.dao.EmbeddingCacheDAO
+import me.rerere.rikkahub.data.db.dao.EmbeddingCacheModelStats
 import me.rerere.rikkahub.data.model.AppStorageSnapshot
 import me.rerere.rikkahub.data.model.ChatAttachmentKind
 import me.rerere.rikkahub.data.model.OtherUploadFile
@@ -107,6 +116,7 @@ import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import me.rerere.rikkahub.ui.components.ui.AppToasterState
 import me.rerere.rikkahub.ui.components.ui.ToastType
+import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.PremiumHaptics
@@ -162,6 +172,7 @@ fun SettingChatStoragePage(
     vm: SettingVM = koinViewModel(),
     repository: ChatAttachmentRepository = koinInject(),
     appStorageRepository: AppStorageRepository = koinInject(),
+    embeddingCacheDAO: EmbeddingCacheDAO = koinInject(),
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val chatSummary by repository.observeStorageSummary()
@@ -184,6 +195,35 @@ fun SettingChatStoragePage(
     var isLoadingOtherUploads by remember { mutableStateOf(false) }
     var showOtherUploadsInspector by rememberSaveable { mutableStateOf(false) }
     var showAllStorageCategories by rememberSaveable { mutableStateOf(false) }
+    var embeddingCacheStats by remember { mutableStateOf<List<EmbeddingCacheModelStats>>(emptyList()) }
+    var isCleaningEmbeddingCache by remember { mutableStateOf(false) }
+    var showEmbeddingCacheInspector by rememberSaveable { mutableStateOf(false) }
+    var pendingModelCacheDeletion by remember { mutableStateOf<String?>(null) }
+
+    val activeEmbeddingModelIds = remember(settings.embeddingModelId, settings.assistants) {
+        buildSet {
+            settings.embeddingModelId.toString().takeIf { it != DISABLED_MODEL_ID.toString() }?.let(::add)
+            settings.assistants.mapNotNull { assistant -> assistant.embeddingModelId }
+                .map { it.toString() }
+                .filter { it != DISABLED_MODEL_ID.toString() }
+                .forEach(::add)
+        }
+    }
+    val unusedEmbeddingCacheStats = remember(embeddingCacheStats, activeEmbeddingModelIds) {
+        embeddingCacheStats.filter { it.modelId !in activeEmbeddingModelIds }
+    }
+
+    fun loadEmbeddingCacheStats() {
+        scope.launch {
+            embeddingCacheStats = withContext(Dispatchers.IO) {
+                embeddingCacheDAO.getModelStats()
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        loadEmbeddingCacheStats()
+    }
 
     fun loadOtherUploads() {
         scope.launch {
@@ -394,6 +434,79 @@ fun SettingChatStoragePage(
                                 )
                                 Text(
                                     text = stringResource(R.string.setting_chat_storage_run_maintenance),
+                                    modifier = Modifier.padding(start = 8.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            item(span = StaggeredGridItemSpan.FullLine) {
+                SettingsGroup(
+                    title = "Memory embeddings",
+                    horizontalPadding = 4.dp,
+                    titleStartPadding = 4.dp,
+                ) {
+                    val unusedCount = unusedEmbeddingCacheStats.sumOf { it.count }
+                    val unusedBytes = unusedEmbeddingCacheStats.sumOf { it.estimatedBytes }
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        SettingGroupItem(
+                            title = "Cached vectors",
+                            subtitle = if (embeddingCacheStats.isEmpty()) {
+                                "No cached embeddings yet."
+                            } else {
+                                "${embeddingCacheStats.sumOf { it.count }} vectors · ${embeddingCacheStats.size} models"
+                            },
+                            icon = { Icon(Icons.Rounded.Memory, null) },
+                            onClick = {
+                                showEmbeddingCacheInspector = true
+                            }
+                        )
+                        SettingGroupInputItem(
+                            title = "Unused embeddings",
+                            subtitle = if (unusedCount == 0) {
+                                "Nothing to clean."
+                            } else {
+                                "$unusedCount vectors · ${unusedBytes.fileSizeToString()}"
+                            },
+                            icon = { Icon(Icons.Rounded.Delete, null) },
+                        ) {
+                            FilledTonalButton(
+                                onClick = {
+                                    haptics.perform(HapticPattern.Thud)
+                                    scope.launch {
+                                        isCleaningEmbeddingCache = true
+                                        val deleted = withContext(Dispatchers.IO) {
+                                            if (activeEmbeddingModelIds.isEmpty()) {
+                                                embeddingCacheDAO.deleteAllEmbeddings()
+                                            } else {
+                                                embeddingCacheDAO.deleteExceptModelIds(activeEmbeddingModelIds.toList())
+                                            }
+                                        }
+                                        isCleaningEmbeddingCache = false
+                                        loadEmbeddingCacheStats()
+                                        toaster.show(
+                                            "Deleted $deleted unused memory embeddings",
+                                            type = ToastType.Success,
+                                        )
+                                    }
+                                },
+                                enabled = unusedCount > 0 && !isCleaningEmbeddingCache,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = AppShapes.ButtonPill,
+                            ) {
+                                if (isCleaningEmbeddingCache) {
+                                    CircularProgressIndicator(modifier = Modifier.size(18.dp))
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Delete,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
+                                Text(
+                                    text = "Delete unused",
                                     modifier = Modifier.padding(start = 8.dp),
                                 )
                             }
@@ -621,6 +734,107 @@ fun SettingChatStoragePage(
                 },
             )
         }
+    }
+    if (showEmbeddingCacheInspector) {
+        ModalBottomSheet(
+            onDismissRequest = { showEmbeddingCacheInspector = false },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            dragHandle = {
+                IconButton(onClick = { showEmbeddingCacheInspector = false }) {
+                    Icon(Icons.Rounded.KeyboardArrowDown, null)
+                }
+            }
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = "Embedding model cache",
+                    style = MaterialTheme.typography.titleLarge
+                )
+                
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 400.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(embeddingCacheStats) { stat ->
+                        val isSelected = stat.modelId in activeEmbeddingModelIds
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = stat.modelId.substringAfterLast("/"),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "${stat.count} vectors · ${stat.estimatedBytes.fileSizeToString()}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                
+                                if (isSelected) {
+                                    me.rerere.rikkahub.ui.components.ui.Tag(type = me.rerere.rikkahub.ui.components.ui.TagType.INFO) {
+                                        Text("Selected")
+                                    }
+                                } else {
+                                    IconButton(
+                                        onClick = {
+                                            pendingModelCacheDeletion = stat.modelId
+                                        }
+                                    ) {
+                                        Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.error)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pendingModelCacheDeletion?.let { modelId ->
+        AlertDialog(
+            onDismissRequest = { pendingModelCacheDeletion = null },
+            title = { Text("Delete cached embeddings?") },
+            text = { Text("This will remove all cached vector data for $modelId. This action cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val target = modelId
+                        pendingModelCacheDeletion = null
+                        scope.launch {
+                            embeddingCacheDAO.deleteByModelId(target)
+                            loadEmbeddingCacheStats()
+                            toaster.show("Cache deleted for $target")
+                        }
+                    },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingModelCacheDeletion = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 

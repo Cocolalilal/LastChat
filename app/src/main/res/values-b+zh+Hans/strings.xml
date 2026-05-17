@@ -1509,4 +1509,18 @@
     <string name="setting_display_model_catalog_refreshing">Updating the LiteLLM model list...</string>
     <string name="setting_display_model_catalog_refresh_success">Model catalog updated</string>
     <string name="setting_display_model_catalog_refresh_error">Failed to update model catalog: %1$s</string>
+  <string name="assistant_page_theme_color">主题颜色</string>
+  <string name="assistant_page_theme_color_desc">选择从图片中提取的配色</string>
+  <string name="skills_page_always_enabled">始终启用</string>
+  <string name="skills_page_always_enabled_desc">此技能会在每次聊天中保持活动。只有你可以在单次聊天中停用它。</string>
+  <string name="chat_regenerate_user_message_title">从这里重新生成？</string>
+  <string name="chat_regenerate_user_message_warning">此处之后的所有消息都会被移除，并生成新的回复。</string>
+  <string name="chat_delete_user_message_title">删除消息？</string>
+  <string name="chat_delete_user_message_warning">这会删除此消息以及它之后的所有消息。</string>
+  <string name="assistant_advanced_message_type">消息类型</string>
+  <string name="assistant_advanced_message_type_desc">选择可用的主动消息类型。</string>
+  <string name="assistant_advanced_message_type_both">自动</string>
+  <string name="assistant_advanced_message_type_continue">继续聊天</string>
+  <string name="assistant_advanced_message_type_new">开始新聊天</string>
+  <string name="assistant_memory_outdated_embedding">已过期</string>
 </resources>

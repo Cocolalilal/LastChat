@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.ai.rag
 
 import me.rerere.ai.provider.ProviderManager
+import me.rerere.rikkahub.data.datastore.DISABLED_MODEL_ID
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
@@ -46,6 +47,9 @@ class EmbeddingService(
             assistant?.embeddingModelId ?: settings.embeddingModelId
         } else {
             settings.embeddingModelId
+        }
+        check(modelId != DISABLED_MODEL_ID) {
+            "Embedding model is disabled."
         }
         
         val model = settings.findModelById(modelId) ?: error("Embedding model not found: $modelId")

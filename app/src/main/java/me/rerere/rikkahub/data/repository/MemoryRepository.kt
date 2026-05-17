@@ -398,8 +398,8 @@ class MemoryRepository(
         memoriesNeedingEmbedding.forEach { memory ->
             current++
             try {
-                val embedding = embeddingService.embed(memory.content, assistantId)
-                val embeddingJson = JsonInstant.encodeToString(embedding)
+                val embeddingJson = embeddingCacheDAO.getEmbedding(memory.id, MemoryType.CORE, currentModelId)?.embedding
+                    ?: JsonInstant.encodeToString(embeddingService.embed(memory.content, assistantId))
                 // Store in entity for backward compatibility
                 memoryDAO.updateMemory(memory.copy(embedding = embeddingJson, embeddingModelId = currentModelId))
                 // Store in cache for model-based persistence
@@ -423,8 +423,8 @@ class MemoryRepository(
         episodesNeedingEmbedding.forEach { episode ->
             current++
             try {
-                val embedding = embeddingService.embed(episode.content, assistantId)
-                val embeddingJson = JsonInstant.encodeToString(embedding)
+                val embeddingJson = embeddingCacheDAO.getEmbedding(episode.id, MemoryType.EPISODIC, currentModelId)?.embedding
+                    ?: JsonInstant.encodeToString(embeddingService.embed(episode.content, assistantId))
                 // Store in entity for backward compatibility
                 chatEpisodeDAO.insertEpisode(episode.copy(embedding = embeddingJson, embeddingModelId = currentModelId))
                 // Store in cache for model-based persistence
@@ -473,8 +473,8 @@ class MemoryRepository(
         // Process Core Memories that need embedding
         memoriesNeedingEmbedding.forEach { memory ->
             try {
-                val embedding = embeddingService.embed(memory.content, assistantId)
-                val embeddingJson = JsonInstant.encodeToString(embedding)
+                val embeddingJson = embeddingCacheDAO.getEmbedding(memory.id, MemoryType.CORE, currentModelId)?.embedding
+                    ?: JsonInstant.encodeToString(embeddingService.embed(memory.content, assistantId))
                 memoryDAO.updateMemory(memory.copy(
                     embedding = embeddingJson,
                     embeddingModelId = currentModelId
@@ -498,8 +498,8 @@ class MemoryRepository(
         // Process Episodes that need embedding
         episodesNeedingEmbedding.forEach { episode ->
             try {
-                val embedding = embeddingService.embed(episode.content, assistantId)
-                val embeddingJson = JsonInstant.encodeToString(embedding)
+                val embeddingJson = embeddingCacheDAO.getEmbedding(episode.id, MemoryType.EPISODIC, currentModelId)?.embedding
+                    ?: JsonInstant.encodeToString(embeddingService.embed(episode.content, assistantId))
                 chatEpisodeDAO.insertEpisode(episode.copy(
                     embedding = embeddingJson,
                     embeddingModelId = currentModelId

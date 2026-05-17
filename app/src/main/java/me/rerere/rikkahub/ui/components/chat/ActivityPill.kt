@@ -72,7 +72,7 @@ sealed interface ActivityState {
 
     /** Model is reasoning/thinking - shows timer */
     data class Reasoning(val startTimeMs: Long = System.currentTimeMillis()) : ActivityState
-    
+
     /** Model is using a tool */
     data class ToolUse(
         val toolName: String,
@@ -436,7 +436,7 @@ private fun AnimatedSinglePill(
                     is ActivityState.Reasoning -> {
                         ReasoningContent(startTimeMs = targetState.startTimeMs, isLive = true)
                     }
-                    
+
                     is ActivityState.ToolUse -> {
                         ToolUseContent(
                             toolName = targetState.toolName,

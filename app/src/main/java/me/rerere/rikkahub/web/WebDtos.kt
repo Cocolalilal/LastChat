@@ -431,9 +431,11 @@ data class WebProviderModelDto(
 @Serializable
 data class WebProviderDto(
     val id: String,
+    val type: String,
     val enabled: Boolean,
     val name: String,
     val models: List<WebProviderModelDto>,
+    val systemOwned: Boolean = false,
 )
 
 @Serializable
@@ -899,6 +901,11 @@ private fun ProviderSetting.toWebProviderDto(
 ): WebProviderDto {
     return WebProviderDto(
         id = id.toString(),
+        type = when (this) {
+            is ProviderSetting.OpenAI -> "openai"
+            is ProviderSetting.Google -> "google"
+            is ProviderSetting.Claude -> "claude"
+        },
         enabled = enabled,
         name = name,
         models = models.map { model ->
@@ -907,6 +914,7 @@ private fun ProviderSetting.toWebProviderDto(
                 builtInSearchEnabled = builtInSearchEnabled,
             )
         },
+        systemOwned = builtIn,
     )
 }
 

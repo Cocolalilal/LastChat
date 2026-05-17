@@ -616,7 +616,7 @@ internal fun deriveActivityState(
         
         // Count distinct activity categories (not individual tools)
         val activityCount = (if (hasReasoning) 1 else 0) + (if (hasOcr) 1 else 0) + toolCategories.size
-        
+
         return when {
             activityCount == 0 -> ActivityState.Hidden  // No activities, hide pill
             activityCount == 1 && hasReasoning -> ActivityState.CompletedSingle(

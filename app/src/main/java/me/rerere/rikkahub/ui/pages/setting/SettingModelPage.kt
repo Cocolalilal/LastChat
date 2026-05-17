@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -45,6 +46,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.rounded.DocumentScanner
 import androidx.compose.material.icons.rounded.Psychology
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.TipsAndUpdates
 import androidx.compose.material.icons.rounded.Title
@@ -57,6 +59,7 @@ import me.rerere.rikkahub.data.ai.prompts.DEFAULT_OCR_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_SUGGESTION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TITLE_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TRANSLATION_PROMPT
+import me.rerere.rikkahub.data.datastore.DISABLED_MODEL_ID
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.ui.components.ai.ReasoningPicker
@@ -73,7 +76,9 @@ import me.rerere.rikkahub.ui.components.ai.ReasoningButton
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
+import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.components.ui.FormItem
+import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
@@ -251,6 +256,13 @@ private fun DefaultSuggestionModelSetting(
                     },
                     providers = settings.providers,
                     allowClear = true,
+                    onClear = {
+                        vm.updateSettings(
+                            settings.copy(
+                                suggestionModelId = DISABLED_MODEL_ID
+                            )
+                        )
+                    },
                     modifier = Modifier.wrapContentWidth()
                 )
             }
@@ -460,6 +472,13 @@ private fun DefaultSummarizerModelSetting(
                     },
                     providers = settings.providers,
                     allowClear = true,
+                    onClear = {
+                        vm.updateSettings(
+                            settings.copy(
+                                summarizerModelId = null
+                            )
+                        )
+                    },
                     modifier = Modifier.wrapContentWidth()
                 )
             }
@@ -650,6 +669,8 @@ private fun DefaultEmbeddingModelSetting(
     settings: Settings,
     vm: SettingVM
 ) {
+    val toaster = LocalToaster.current
+    var isRegenerating by remember { mutableStateOf(false) }
     ModelFeatureCard(
         title = {
             Text(
@@ -665,20 +686,64 @@ private fun DefaultEmbeddingModelSetting(
         },
         actions = {
             Box(modifier = Modifier.weight(1f)) {
-                ModelSelector(
-                    modelId = settings.embeddingModelId,
-                    type = ModelType.EMBEDDING,
-                    onSelect = {
-                        vm.updateSettings(
-                            settings.copy(
-                                embeddingModelId = it.id
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.wrapContentWidth(),
+                ) {
+                    ModelSelector(
+                        modelId = settings.embeddingModelId,
+                        type = ModelType.EMBEDDING,
+                        onSelect = {
+                            vm.updateSettings(
+                                settings.copy(
+                                    embeddingModelId = it.id
+                                )
                             )
-                        )
-                    },
-                    providers = settings.providers,
-                    allowClear = true,
-                    modifier = Modifier.wrapContentWidth()
-                )
+                        },
+                        providers = settings.providers,
+                        allowClear = true,
+                        onClear = {
+                            vm.updateSettings(
+                                settings.copy(
+                                    embeddingModelId = DISABLED_MODEL_ID
+                                )
+                            )
+                        },
+                        modifier = Modifier.wrapContentWidth()
+                    )
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = settings.embeddingModelId != DISABLED_MODEL_ID,
+                        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandHorizontally(),
+                        exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkHorizontally()
+                    ) {
+                        IconButton(
+                            enabled = !isRegenerating,
+                            onClick = {
+                                isRegenerating = true
+                                vm.regenerateMemoryEmbeddings(
+                                    onComplete = { success, failure ->
+                                        isRegenerating = false
+                                        toaster.show(
+                                            "Updated $success embeddings${if (failure > 0) ", $failure failed" else ""}",
+                                            type = if (failure > 0) ToastType.Warning else ToastType.Success,
+                                        )
+                                    },
+                                    onError = { error ->
+                                        isRegenerating = false
+                                        toaster.show(error.message ?: "Embedding refresh failed", type = ToastType.Error)
+                                    },
+                                )
+                            },
+                        ) {
+                            if (isRegenerating) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp))
+                            } else {
+                                Icon(Icons.Rounded.Refresh, contentDescription = "Refresh embeddings")
+                            }
+                        }
+                    }
+                }
             }
         }
     )

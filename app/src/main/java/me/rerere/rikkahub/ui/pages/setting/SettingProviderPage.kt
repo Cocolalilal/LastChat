@@ -285,11 +285,14 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
                     providerToDelete = provider
                     showDeleteDialog = true
                 },
-                onReorder = { from, to ->
-                    val newProviders = settings.providers.toMutableList().apply {
-                        add(to, removeAt(from))
+                onReorder = { fromProvider, toProvider ->
+                    val reorderedProviders = settings.providers.toMutableList()
+                    val from = reorderedProviders.indexOfFirst { it.id == fromProvider.id }
+                    val to = reorderedProviders.indexOfFirst { it.id == toProvider.id }
+                    if (from >= 0 && to >= 0 && from != to) {
+                        reorderedProviders.add(to, reorderedProviders.removeAt(from))
+                        vm.updateSettings(settings.copy(providers = reorderedProviders))
                     }
-                    vm.updateSettings(settings.copy(providers = newProviders))
                 },
                 onAddProvider = { provider ->
                     vm.updateSettings(
@@ -391,14 +394,18 @@ private fun ProviderListView(
     searchQuery: String,
     onNavigateToDetail: (ProviderSetting) -> Unit,
     onDeleteRequest: (ProviderSetting) -> Unit,
-    onReorder: (Int, Int) -> Unit,
+    onReorder: (ProviderSetting, ProviderSetting) -> Unit,
     onAddProvider: (ProviderSetting) -> Unit
 ) {
     val lazyListState = rememberLazyListState()
     val density = LocalDensity.current
     
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        onReorder(from.index, to.index)
+        val fromProvider = providers.getOrNull(from.index)
+        val toProvider = providers.getOrNull(to.index)
+        if (fromProvider != null && toProvider != null) {
+            onReorder(fromProvider, toProvider)
+        }
     }
     
     // State for swipe neighbor tracking

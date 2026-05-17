@@ -43,7 +43,7 @@ import kotlinx.serialization.json.put
 
 @Database(
     entities = [ConversationEntity::class, MemoryEntity::class, GenMediaEntity::class, ChatEpisodeEntity::class, EmbeddingCacheEntity::class, DailyActivityEntity::class, UsageStatsEntity::class, ChatAttachmentEntity::class, ConversationAttachmentRefEntity::class],
-    version = 26,
+    version = 29,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -67,6 +67,9 @@ import kotlinx.serialization.json.put
         // 23->24 is manual migration (MIGRATION_23_24) - adds usage_stats table
         // 24->25 is manual migration (MIGRATION_24_25) - adds chat attachment catalog tables
         // 25->26 is manual migration (MIGRATION_25_26) - adds is_fork to conversation table
+        // 26->27 is manual migration (MIGRATION_26_27) - adds local model install registry
+        // 27->28 is manual migration (MIGRATION_27_28) - adds local model progress and metadata fields
+        // 28->29 is manual migration (MIGRATION_28_29) - drops removed local model install registry
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -396,6 +399,66 @@ abstract class AppDatabase : RoomDatabase() {
                 Log.i(TAG, "migrate: start migrate from 25 to 26")
                 db.execSQL("ALTER TABLE ConversationEntity ADD COLUMN is_fork INTEGER NOT NULL DEFAULT 0")
                 Log.i(TAG, "migrate: migrate from 25 to 26 success")
+            }
+        }
+
+        val MIGRATION_26_27 = object : Migration(26, 27) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "migrate: start migrate from 26 to 27")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `local_model_install` (
+                        `catalog_id` TEXT NOT NULL,
+                        `repo_id` TEXT NOT NULL,
+                        `revision` TEXT NOT NULL,
+                        `model_id` TEXT NOT NULL,
+                        `display_name` TEXT NOT NULL,
+                        `file_paths_json` TEXT NOT NULL DEFAULT '[]',
+                        `download_size_bytes` INTEGER NOT NULL DEFAULT 0,
+                        `installed_size_bytes` INTEGER NOT NULL DEFAULT 0,
+                        `checksum` TEXT NOT NULL DEFAULT '',
+                        `status` TEXT NOT NULL,
+                        `runtime_backend` TEXT NOT NULL,
+                        `supported_abis_json` TEXT NOT NULL DEFAULT '[]',
+                        `min_sdk` INTEGER NOT NULL DEFAULT 0,
+                        `minimum_ram_bytes` INTEGER NOT NULL DEFAULT 0,
+                        `recommended_ram_bytes` INTEGER NOT NULL DEFAULT 0,
+                        `delegate_info` TEXT NOT NULL DEFAULT '',
+                        `safe_for_background` INTEGER NOT NULL DEFAULT 0,
+                        `last_error` TEXT NOT NULL DEFAULT '',
+                        `updated_at` INTEGER NOT NULL,
+                        PRIMARY KEY(`catalog_id`)
+                    )
+                    """.trimIndent()
+                )
+                Log.i(TAG, "migrate: migrate from 26 to 27 success")
+            }
+        }
+
+        val MIGRATION_27_28 = object : Migration(27, 28) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "migrate: start migrate from 27 to 28")
+                db.execSQL("ALTER TABLE local_model_install ADD COLUMN description TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE local_model_install ADD COLUMN entry_json TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE local_model_install ADD COLUMN estimated_installed_size_bytes INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE local_model_install ADD COLUMN provenance TEXT NOT NULL DEFAULT 'CURATED'")
+                db.execSQL("ALTER TABLE local_model_install ADD COLUMN download_access TEXT NOT NULL DEFAULT 'PUBLIC'")
+                db.execSQL("ALTER TABLE local_model_install ADD COLUMN current_file TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE local_model_install ADD COLUMN bytes_downloaded INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE local_model_install ADD COLUMN bytes_total INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE local_model_install ADD COLUMN progress_percent INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE local_model_install ADD COLUMN bytes_per_second INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE local_model_install ADD COLUMN eta_seconds INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE local_model_install ADD COLUMN source_uri TEXT NOT NULL DEFAULT ''")
+                Log.i(TAG, "migrate: migrate from 27 to 28 success")
+            }
+        }
+
+        val MIGRATION_28_29 = object : Migration(28, 29) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "migrate: start migrate from 28 to 29")
+                db.execSQL("DROP TABLE IF EXISTS `local_model_install`")
+                Log.i(TAG, "migrate: migrate from 28 to 29 success")
             }
         }
     }

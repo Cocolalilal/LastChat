@@ -31,8 +31,6 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.context.LocalToaster
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.foundation.layout.size
-import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
-import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
 import me.rerere.rikkahub.ui.components.ui.ClickableIconPicker
 import me.rerere.rikkahub.ui.components.ui.ProviderIcon
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -82,7 +80,7 @@ fun ProviderConfigure(
             )
         }
 
-        // 2. Type selector (for non-built-in providers)
+        // 2. Type selector (for non-built-in remote providers)
         if (!provider.builtIn) {
             SingleChoiceSegmentedButtonRow(
                 modifier = Modifier.fillMaxWidth()

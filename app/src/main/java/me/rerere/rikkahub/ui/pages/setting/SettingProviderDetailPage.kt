@@ -56,6 +56,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.MultiChoiceSegmentedButtonRow
 import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SecondaryTabRow
@@ -247,13 +248,12 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                 actions = {
                     val shareSheetState = rememberShareSheetState()
                     ShareSheet(shareSheetState)
-                    
-                    // Test connection button
+
                     ConnectionTesterButton(
                         provider = provider,
                         scope = scope
                     )
-                    
+
                     IconButton(
                         onClick = {
                             shareSheetState.show(provider)
@@ -1424,19 +1424,21 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                     ) {
-                        TextButton(
+                        OutlinedButton(
                             onClick = {
                                 dialogState.dismiss()
                             },
+                            modifier = Modifier.weight(1f),
                         ) {
                             Text(stringResource(R.string.cancel))
                         }
-                        TextButton(
+                        Button(
                             onClick = {
                                 if (modelState.modelId.isNotBlank() && modelState.displayName.isNotBlank()) {
                                     dialogState.confirm()
                                 }
                             },
+                            modifier = Modifier.weight(1f),
                         ) {
                             Text(stringResource(R.string.setting_provider_page_add))
                         }
@@ -2285,19 +2287,21 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                     ) {
-                        TextButton(
+                        OutlinedButton(
                             onClick = {
                                 dialogState.dismiss()
                             },
+                            modifier = Modifier.weight(1f),
                         ) {
                             Text(stringResource(R.string.cancel))
                         }
-                        TextButton(
+                        Button(
                             onClick = {
                                 if (editingModel.displayName.isNotBlank()) {
                                     dialogState.confirm()
                                 }
                             },
+                            modifier = Modifier.weight(1f),
                         ) {
                             Text(stringResource(R.string.confirm))
                         }

@@ -36,6 +36,7 @@ val viewModelModule = module {
             okHttpClient = get(),
             appStorageRepository = get(),
             modelCatalogService = get(),
+            memoryRepository = get(),
         )
     }
     viewModelOf(::AssistantVM)

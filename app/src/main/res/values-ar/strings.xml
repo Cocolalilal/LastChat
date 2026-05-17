@@ -1133,4 +1133,18 @@
     <string name="setting_display_model_catalog_refreshing">Updating the LiteLLM model list...</string>
     <string name="setting_display_model_catalog_refresh_success">Model catalog updated</string>
     <string name="setting_display_model_catalog_refresh_error">Failed to update model catalog: %1$s</string>
+  <string name="assistant_page_theme_color">لون السمة</string>
+  <string name="assistant_page_theme_color_desc">اختر لوحة ألوان مستخرجة من صورك</string>
+  <string name="skills_page_always_enabled">مفعلة دائما</string>
+  <string name="skills_page_always_enabled_desc">هذه المهارة نشطة دائما في كل دردشة. يمكنك وحدك تعطيلها لكل دردشة.</string>
+  <string name="chat_regenerate_user_message_title">إعادة التوليد من هنا؟</string>
+  <string name="chat_regenerate_user_message_warning">ستتم إزالة كل الرسائل بعد هذه النقطة وسيتم توليد رد جديد.</string>
+  <string name="chat_delete_user_message_title">حذف الرسالة؟</string>
+  <string name="chat_delete_user_message_warning">سيؤدي هذا إلى حذف هذه الرسالة وكل الرسائل بعدها.</string>
+  <string name="assistant_advanced_message_type">نوع الرسالة</string>
+  <string name="assistant_advanced_message_type_desc">اختر أنواع الرسائل التلقائية المتاحة.</string>
+  <string name="assistant_advanced_message_type_both">تلقائي</string>
+  <string name="assistant_advanced_message_type_continue">متابعة الدردشات</string>
+  <string name="assistant_advanced_message_type_new">بدء دردشات جديدة</string>
+  <string name="assistant_memory_outdated_embedding">قديم</string>
 </resources>

@@ -9,6 +9,7 @@ import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -224,7 +225,7 @@ internal fun parseAskUserTimelineState(entry: TimelineEntry.ToolCall): AskUserTi
 
 internal fun getTimelineIcon(entry: TimelineEntry): ImageVector {
     return when (entry) {
-        is TimelineEntry.Reasoning -> Icons.Rounded.Lightbulb
+        is TimelineEntry.Reasoning -> if (entry.title != null) Icons.Rounded.Memory else Icons.Rounded.Lightbulb
         is TimelineEntry.ToolCall -> when (entry.toolName) {
             "search_web", "scrape_web" -> Icons.Rounded.Public
             "eval_python", "pip_install", "write_sandbox_file",

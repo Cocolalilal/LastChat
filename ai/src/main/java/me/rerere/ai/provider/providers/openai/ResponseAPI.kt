@@ -5,6 +5,7 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -227,7 +228,7 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
             .filter {
                 it.isValidToUpload() && it.role != MessageRole.SYSTEM
             }
-            .forEachIndexed { index, message ->
+            .forEachIndexed { _, message ->
                 if (message.role == MessageRole.TOOL) {
                     message.getToolResults().forEach { result ->
                         add(buildJsonObject {
@@ -238,79 +239,75 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
                     }
                     return@forEachIndexed
                 }
+
+                val contentParts = buildResponseContent(message)
                 add(buildJsonObject {
-                    // role
                     put("role", JsonPrimitive(message.role.name.lowercase()))
 
-                    // content
                     if (message.parts.isOnlyTextPart()) {
-                        // 如果只是纯文本，直接赋值给content
                         put(
                             "content",
                             message.parts.filterIsInstance<UIMessagePart.Text>().first().text
                         )
+                    } else if (contentParts.isNotEmpty()) {
+                        put("content", contentParts)
                     } else {
-                        // 否则，使用parts构建
-                        putJsonArray("content") {
-                            message.parts.forEach { part ->
-                                when (part) {
-                                    is UIMessagePart.Text -> {
-                                        add(buildJsonObject {
-                                            put(
-                                                "type",
-                                                if (message.role == MessageRole.USER) "input_text" else "output_text"
-                                            )
-                                            put("text", part.text)
-                                        })
-                                    }
-
-                                    is UIMessagePart.Image -> {
-                                        add(buildJsonObject {
-                                            part.encodeBase64().onSuccess {
-                                                put(
-                                                    "type",
-                                                    if (message.role == MessageRole.USER) "input_image" else "output_image"
-                                                )
-                                                put("image_url", it)
-                                            }.onFailure {
-                                                it.printStackTrace()
-                                                println("encode image failed: ${part.url}")
-
-                                                put("type", "input_text")
-                                                put(
-                                                    "text",
-                                                    "Error: Failed to encode image to base64"
-                                                )
-                                            }
-                                        })
-                                    }
-
-                                    else -> {
-                                        Log.w(
-                                            TAG,
-                                            "buildMessages: message part not supported: $part"
-                                        )
-                                        // DO NOTHING
-                                    }
-                                }
-                            }
-                        }
+                        logWarning(
+                            "buildMessages: falling back to empty content for role=${message.role} parts=${message.parts}"
+                        )
+                        put("content", "")
                     }
                 })
-                // tool_calls
+
                 message.getToolCalls()
                     .takeIf { it.isNotEmpty() }
-                    ?.let { toolCalls ->
-                        toolCalls.forEach { toolCall ->
-                            add(buildJsonObject {
-                                put("type", "function_call")
-                                put("call_id", toolCall.toolCallId)
-                                put("name", toolCall.toolName)
-                                put("arguments", toolCall.arguments)
-                            })
-                        }
+                    ?.forEach { toolCall ->
+                        add(buildJsonObject {
+                            put("type", "function_call")
+                            put("call_id", toolCall.toolCallId)
+                            put("name", toolCall.toolName)
+                            put("arguments", toolCall.arguments)
+                        })
                     }
             }
+    }
+
+    private fun buildResponseContent(message: UIMessage): JsonArray = buildJsonArray {
+        message.parts.forEach { part ->
+            when (part) {
+                is UIMessagePart.Text -> {
+                    add(buildJsonObject {
+                        put(
+                            "type",
+                            if (message.role == MessageRole.USER) "input_text" else "output_text"
+                        )
+                        put("text", part.text)
+                    })
+                }
+
+                is UIMessagePart.Image -> {
+                    add(buildJsonObject {
+                        part.encodeBase64().onSuccess {
+                            put(
+                                "type",
+                                if (message.role == MessageRole.USER) "input_image" else "output_image"
+                            )
+                            put("image_url", it)
+                        }.onFailure {
+                            it.printStackTrace()
+                            println("encode image failed: ${part.url}")
+
+                            put("type", "input_text")
+                            put("text", "Error: Failed to encode image to base64")
+                        }
+                    })
+                }
+
+                else -> {
+                    logWarning("buildMessages: message part not supported: $part")
+                }
+            }
+        }
     }
 
     private fun parseResponseDelta(jsonObject: JsonObject): MessageChunk? {
@@ -547,6 +544,14 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
 
 private fun isModelAllowTemperature(model: Model): Boolean {
     return !ModelRegistry.OPENAI_O_MODELS.match(model.modelId) && !ModelRegistry.GPT_5.match(model.modelId)
+}
+
+private fun logWarning(message: String) {
+    runCatching {
+        Log.w(TAG, message)
+    }.onFailure {
+        println(message)
+    }
 }
 
 private fun List<UIMessagePart>.isOnlyTextPart(): Boolean {

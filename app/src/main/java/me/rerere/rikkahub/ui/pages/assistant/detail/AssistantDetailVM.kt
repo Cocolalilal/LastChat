@@ -268,9 +268,14 @@ class AssistantDetailVM(
     private val _embeddingProgress = MutableStateFlow<EmbeddingProgress?>(null)
     val embeddingProgress = _embeddingProgress.asStateFlow()
 
-    // Check if any memories need embedding (just checks if embedding exists, cache handles model switching)
-    val needsEmbeddingRegeneration: StateFlow<Boolean> = memories.map { memories ->
-        memories.any { memory -> !memory.hasEmbedding }
+    // Check if any memories need embedding or have stale embeddings from a different model
+    val needsEmbeddingRegeneration: StateFlow<Boolean> = combine(
+        memories, currentEmbeddingModelId
+    ) { memories, currentModelId ->
+        memories.any { memory ->
+            !memory.hasEmbedding ||
+            (memory.embeddingModelId != null && memory.embeddingModelId != currentModelId)
+        }
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.Lazily,

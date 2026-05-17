@@ -162,7 +162,6 @@ ktor-server-status-pages = { module = "io.ktor:ktor-server-status-pages", versio
 jmdns = { module = "org.jmdns:jmdns", version.ref = "jmdns" }
 androidx-glance = { group = "androidx.glance", name = "glance-appwidget", version.ref = "glance" }
 androidx-glance-material3 = { group = "androidx.glance", name = "glance-material3", version.ref = "glance" }
-
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }

@@ -270,7 +270,26 @@ class ChatCompletionsAPI(
             } else {
                 messages
             }
-            put("messages", buildMessages(processedMessages, host))
+
+            val safeMessages = mutableListOf<UIMessage>()
+            var lastNonSystemRole: MessageRole? = null
+            for (msg in processedMessages) {
+                if (msg.role == MessageRole.ASSISTANT && lastNonSystemRole == null) {
+                    safeMessages.add(
+                        UIMessage(
+                            role = MessageRole.USER,
+                            parts = listOf(UIMessagePart.Text("..."))
+                        )
+                    )
+                    lastNonSystemRole = MessageRole.USER
+                }
+                safeMessages.add(msg)
+                if (msg.role != MessageRole.SYSTEM) {
+                    lastNonSystemRole = msg.role
+                }
+            }
+
+            put("messages", buildMessages(safeMessages, host, params.model.modelId))
 
             if (isModelAllowTemperature(params.model)) {
                 if (params.temperature != null) put("temperature", params.temperature)
@@ -391,7 +410,8 @@ class ChatCompletionsAPI(
         return !ModelRegistry.OPENAI_O_MODELS.match(model.modelId) && !ModelRegistry.GPT_5.match(model.modelId)
     }
 
-    private fun buildMessages(messages: List<UIMessage>, host: String) = buildJsonArray {
+    private fun buildMessages(messages: List<UIMessage>, host: String, modelId: String) = buildJsonArray {
+        val shouldReplayDeepSeekReasoning = isDeepSeekCompatible(host, modelId)
         messages
             .filter {
                 it.isValidToUpload()
@@ -427,7 +447,9 @@ class ChatCompletionsAPI(
                     } else {
                         // 否则，使用parts构建
                         putJsonArray("content") {
-                            message.parts.forEach { part ->
+                            message.parts
+                                .filter { it is UIMessagePart.Text || it is UIMessagePart.Image }
+                                .forEach { part ->
                                 when (part) {
                                     is UIMessagePart.Text -> {
                                         add(buildJsonObject {
@@ -453,6 +475,11 @@ class ChatCompletionsAPI(
                                         })
                                     }
 
+                                    is UIMessagePart.Reasoning,
+                                    is UIMessagePart.ToolCall -> {
+                                        // Reasoning and tool calls are serialized as top-level fields.
+                                    }
+
                                     else -> {
                                         Log.w(
                                             TAG,
@@ -463,6 +490,21 @@ class ChatCompletionsAPI(
                                 }
                             }
                         }
+                        if (shouldReplayDeepSeekReasoning && message.role == MessageRole.ASSISTANT &&
+                            message.parts.none { it is UIMessagePart.Text || it is UIMessagePart.Image }
+                        ) {
+                            put("content", "")
+                        }
+                    }
+
+                    if (shouldReplayDeepSeekReasoning && message.role == MessageRole.ASSISTANT) {
+                        message.parts
+                            .filterIsInstance<UIMessagePart.Reasoning>()
+                            .joinToString(separator = "\n") { it.reasoning }
+                            .takeIf { it.isNotBlank() }
+                            ?.let { reasoning ->
+                                put("reasoning_content", reasoning)
+                            }
                     }
 
                     // tool_calls
@@ -484,6 +526,14 @@ class ChatCompletionsAPI(
                         }
                 })
             }
+    }
+
+    private fun isDeepSeekCompatible(host: String, modelId: String): Boolean {
+        val normalizedHost = host.lowercase()
+        val normalizedModelId = modelId.lowercase()
+        return normalizedHost == "api.deepseek.com" ||
+            normalizedHost.endsWith(".deepseek.com") ||
+            normalizedModelId.contains("deepseek")
     }
 
     private fun parseMessage(jsonObject: JsonObject): UIMessage {
