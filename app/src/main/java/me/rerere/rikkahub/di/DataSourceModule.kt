@@ -63,7 +63,7 @@ val dataSourceModule = module {
             .addCallback(object : RoomDatabase.Callback() {
                 override fun onOpen(db: SupportSQLiteDatabase) {
                     super.onOpen(db)
-                    db.execSQL("PRAGMA busy_timeout = 5000")
+                    db.query("PRAGMA busy_timeout = 5000").close()
                 }
             })
             .build()

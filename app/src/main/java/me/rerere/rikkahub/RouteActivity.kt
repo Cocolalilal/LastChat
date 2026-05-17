@@ -231,105 +231,110 @@ class RouteActivity : ComponentActivity() {
     private var initialChatScreen by mutableStateOf<Screen.Chat?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        enableEdgeToEdge()
-        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
-        disableNavigationBarContrast()
-        super.onCreate(savedInstanceState)
-        
-        // Track app launch and initialize usage stats
-        lifecycleScope.launch(Dispatchers.IO) {
-            runCatching { conversationRepo.initUsageStats() }
-                .onFailure { android.util.Log.e(TAG, "initUsageStats failed", it) }
-            runCatching { conversationRepo.backfillDailyActivityFromConversationHistoryIfNeeded() }
-                .onFailure { android.util.Log.e(TAG, "daily activity backfill failed", it) }
-            runCatching { conversationRepo.backfillUsageStatsFromHistoryIfNeeded() }
-                .onFailure { android.util.Log.e(TAG, "usage stats backfill failed", it) }
-            runCatching { conversationRepo.incrementAppLaunches() }
-                .onFailure { android.util.Log.e(TAG, "increment app launches failed", it) }
-        }
-        
-        val spontaneousNotification = intent.toSpontaneousNotificationData()
-        val intentAssistantId = if (spontaneousNotification == null) intent?.getStringExtra("assistantId") else null
-        val intentConversationId = if (spontaneousNotification == null) intent?.getStringExtra("conversationId") else null
-        val intentWebServerSettings = intent?.getBooleanExtra("webServerSettings", false) == true
-        pendingTextSelection = intent?.readQuickAskContinuationData()
-        pendingShareIntent = intent?.readResolvedSharePayload()
-        lifecycleScope.launch {
-            initialChatScreen = determineInitialChatScreen(
-                defaultScreen = defaultStartScreen(),
-                deepLinkedConversationId = intentConversationId,
-                spontaneousTarget = spontaneousNotification?.let { resolveSpontaneousChatTarget(it) },
-            )
-        }
-
-        setContent {
-            val navStack = rememberNavController()
-            this.navStack = navStack
-            RikkahubTheme {
-                val startScreen = initialChatScreen
-                setSingletonImageLoaderFactory { context ->
-                    ImageLoader.Builder(context)
-                        .crossfade(true)
-                        .memoryCache {
-                            MemoryCache.Builder()
-                                .maxSizePercent(context, 0.25) // Use 25% of app's memory for image cache
-                                .build()
-                        }
-                        .diskCache {
-                            DiskCache.Builder()
-                                .directory(context.filesDir.resolve("icon_cache").toOkioPath())
-                                .maxSizeBytes(50 * 1024 * 1024) // 50 MB persistent disk cache for icons
-                                .build()
-                        }
-                        .components {
-                            add(OkHttpNetworkFetcherFactory(callFactory = { okHttpClient }))
-                            add(SvgDecoder.Factory(scaleToDensity = true))
-                        }
-                        .build()
-                }
-                if (startScreen == null) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(MaterialTheme.colorScheme.background)
-                    )
-                } else {
-                    val context = LocalContext.current
-                    ShareHandler(navStack)
-                    TextSelectionHandler(navStack)
-                    NotificationHandler(navStack)
-                    AppRoutes(navStack, startScreen)
-                    
-                    LaunchedEffect(intentWebServerSettings) {
-                        if (intentWebServerSettings) {
-                            navStack.navigate(Screen.SettingWeb)
-                        }
-                    }
-                }
+        try {
+            enableEdgeToEdge()
+            androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+            disableNavigationBarContrast()
+            super.onCreate(savedInstanceState)
+            
+            // Track app launch and initialize usage stats
+            lifecycleScope.launch(Dispatchers.IO) {
+                kotlinx.coroutines.delay(1500)
+                runCatching { conversationRepo.initUsageStats() }
+                    .onFailure { android.util.Log.e(TAG, "initUsageStats failed", it) }
+                runCatching { conversationRepo.backfillDailyActivityFromConversationHistoryIfNeeded() }
+                    .onFailure { android.util.Log.e(TAG, "daily activity backfill failed", it) }
+                runCatching { conversationRepo.backfillUsageStatsFromHistoryIfNeeded() }
+                    .onFailure { android.util.Log.e(TAG, "usage stats backfill failed", it) }
+                runCatching { conversationRepo.incrementAppLaunches() }
+                    .onFailure { android.util.Log.e(TAG, "increment app launches failed", it) }
             }
-        }
-        
-        // Handle assistant shortcut - navigate directly by waiting for navStack to be ready
-        if (intentAssistantId != null) {
+            
+            val spontaneousNotification = intent.toSpontaneousNotificationData()
+            val intentAssistantId = if (spontaneousNotification == null) intent?.getStringExtra("assistantId") else null
+            val intentConversationId = if (spontaneousNotification == null) intent?.getStringExtra("conversationId") else null
+            val intentWebServerSettings = intent?.getBooleanExtra("webServerSettings", false) == true
+            pendingTextSelection = intent?.readQuickAskContinuationData()
+            pendingShareIntent = intent?.readResolvedSharePayload()
             lifecycleScope.launch {
-                // Wait for navStack to be ready (set in composition)
-                while (navStack == null) {
-                    kotlinx.coroutines.delay(50)
-                }
-                try {
-                    val assistantId = Uuid.parse(intentAssistantId)
-                    // Update the selected assistant
-                    settingsStore.updateAssistant(assistantId)
-                    // Mark as recently used
-                    settingsStore.markAssistantUsed(assistantId)
-                    // Navigate to a new chat
-                    navStack?.navigate(Screen.Chat(Uuid.random().toString())) {
-                        popUpTo(0) { inclusive = true }
+                initialChatScreen = determineInitialChatScreen(
+                    defaultScreen = defaultStartScreen(),
+                    deepLinkedConversationId = intentConversationId,
+                    spontaneousTarget = spontaneousNotification?.let { resolveSpontaneousChatTarget(it) },
+                )
+            }
+
+            setContent {
+                val navStack = rememberNavController()
+                this.navStack = navStack
+                RikkahubTheme {
+                    val startScreen = initialChatScreen
+                    setSingletonImageLoaderFactory { context ->
+                        ImageLoader.Builder(context)
+                            .crossfade(true)
+                            .memoryCache {
+                                MemoryCache.Builder()
+                                    .maxSizePercent(context, 0.25) // Use 25% of app's memory for image cache
+                                    .build()
+                            }
+                            .diskCache {
+                                DiskCache.Builder()
+                                    .directory(context.filesDir.resolve("icon_cache").toOkioPath())
+                                    .maxSizeBytes(50 * 1024 * 1024) // 50 MB persistent disk cache for icons
+                                    .build()
+                            }
+                            .components {
+                                add(OkHttpNetworkFetcherFactory(callFactory = { okHttpClient }))
+                                add(SvgDecoder.Factory(scaleToDensity = true))
+                            }
+                            .build()
                     }
-                } catch (e: Exception) {
-                    e.printStackTrace()
+                    if (startScreen == null) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(MaterialTheme.colorScheme.background)
+                        )
+                    } else {
+                        val context = LocalContext.current
+                        ShareHandler(navStack)
+                        TextSelectionHandler(navStack)
+                        NotificationHandler(navStack)
+                        AppRoutes(navStack, startScreen)
+                        
+                        LaunchedEffect(intentWebServerSettings) {
+                            if (intentWebServerSettings) {
+                                navStack.navigate(Screen.SettingWeb)
+                            }
+                        }
+                    }
                 }
             }
+            
+            // Handle assistant shortcut - navigate directly by waiting for navStack to be ready
+            if (intentAssistantId != null) {
+                lifecycleScope.launch {
+                    // Wait for navStack to be ready (set in composition)
+                    while (navStack == null) {
+                        kotlinx.coroutines.delay(50)
+                    }
+                    try {
+                        val assistantId = Uuid.parse(intentAssistantId)
+                        // Update the selected assistant
+                        settingsStore.updateAssistant(assistantId)
+                        // Mark as recently used
+                        settingsStore.markAssistantUsed(assistantId)
+                        // Navigate to a new chat
+                        navStack?.navigate(Screen.Chat(Uuid.random().toString())) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Fatal error in RouteActivity.onCreate", e)
         }
     }
 

@@ -424,27 +424,35 @@ class ConversationRepository(
      * This is safe to run repeatedly and fills gaps caused by imports/restores.
      */
     suspend fun backfillDailyActivityFromConversationHistoryIfNeeded() {
-        val conversations = conversationDAO.getAll().first()
-        if (conversations.isEmpty()) return
+        val totalConversations = conversationDAO.getConversationCountFlow().first()
+        if (totalConversations == 0) return
 
         val existingDates = dailyActivityDAO.getAllDatesFlow().first().toHashSet()
         val dateCounts = mutableMapOf<String, Int>()
         val formatter = DateTimeFormatter.ISO_LOCAL_DATE
 
-        conversations.forEach { entity ->
-            val fallbackDate = Instant.ofEpochMilli(entity.createAt)
-                .atZone(ZoneId.systemDefault())
-                .toLocalDate()
-                .format(formatter)
+        val batchSize = 5
+        var offset = 0
+        while (offset < totalConversations) {
+            val batch = conversationDAO.getBackfillDataBatch(limit = batchSize, offset = offset)
+            if (batch.isEmpty()) break
 
-            val selectedDates = extractSelectedMessageDates(entity.nodes)
-            if (selectedDates.isEmpty()) {
-                dateCounts[fallbackDate] = (dateCounts[fallbackDate] ?: 0) + 1
-            } else {
-                selectedDates.forEach { date ->
-                    dateCounts[date] = (dateCounts[date] ?: 0) + 1
+            batch.forEach { entity ->
+                val fallbackDate = Instant.ofEpochMilli(entity.createAt)
+                    .atZone(ZoneId.systemDefault())
+                    .toLocalDate()
+                    .format(formatter)
+
+                val selectedDates = extractSelectedMessageDates(entity.nodes)
+                if (selectedDates.isEmpty()) {
+                    dateCounts[fallbackDate] = (dateCounts[fallbackDate] ?: 0) + 1
+                } else {
+                    selectedDates.forEach { date ->
+                        dateCounts[date] = (dateCounts[date] ?: 0) + 1
+                    }
                 }
             }
+            offset += batchSize
         }
 
         if (dateCounts.isEmpty()) return
@@ -598,11 +606,19 @@ class ConversationRepository(
 
         if (!needsConversationBackfill && !hasNoTokenHistory) return
 
-        val allConversations = conversationDAO.getAll().first()
-        if (allConversations.isEmpty()) return
-
-        val historicalTotals = allConversations.fold(HistoricalUsageTotals()) { acc, entity ->
-            acc + extractHistoricalUsage(entity.nodes)
+        val batchSize = 5
+        var offset = 0
+        var historicalTotals = HistoricalUsageTotals()
+        
+        while (offset < conversationCount) {
+            val batch = conversationDAO.getBackfillDataBatch(limit = batchSize, offset = offset)
+            if (batch.isEmpty()) break
+            
+            val batchTotals = batch.fold(HistoricalUsageTotals()) { acc, entity ->
+                acc + extractHistoricalUsage(entity.nodes)
+            }
+            historicalTotals += batchTotals
+            offset += batchSize
         }
 
         val messagesFromActivity = runCatching { dailyActivityDAO.getTotalMessageCountFlow().first() }
