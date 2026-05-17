@@ -66,7 +66,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
         }
     }
 
@@ -77,7 +77,7 @@ android {
             val isBuildingBundle = gradle.startParameter.taskNames.any { it.lowercase().contains("bundle") }
             isEnable = !isBuildingBundle
             reset()
-            include("arm64-v8a", "x86_64")
+            include("arm64-v8a", "armeabi-v7a", "x86_64")
             isUniversalApk = true
         }
     }
@@ -170,8 +170,8 @@ android {
         outputs.all {
             this as com.android.build.gradle.internal.api.ApkVariantOutputImpl
 
-            val variantName = name
-            val apkName = "lastchat_" + defaultConfig.versionName + "_" + variantName + ".apk"
+            val variantName = baseName
+            val apkName = "LastChat_" + defaultConfig.versionName + "_" + variantName + ".apk"
 
             outputFileName = apkName
         }
