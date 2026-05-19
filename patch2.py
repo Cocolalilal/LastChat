@@ -1,115 +1,11 @@
-package me.rerere.rikkahub.ui.pages.backup
+import sys
 
-import android.util.Log
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import me.rerere.ai.provider.Modality
-import me.rerere.ai.provider.Model
-import me.rerere.ai.provider.ModelAbility
-import me.rerere.ai.provider.ProviderSetting
-import me.rerere.rikkahub.data.ai.models.ModelMetadataResolver
-import me.rerere.rikkahub.data.datastore.Settings
-import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.sync.WebDavBackupItem
-import me.rerere.rikkahub.data.sync.importer.CherryStudioProviderImporter
-import me.rerere.rikkahub.data.sync.WebdavSync
-import me.rerere.rikkahub.utils.JsonInstant
-import me.rerere.rikkahub.utils.UiState
-import java.io.File
+with open(r'c:\Users\julia\Documents\Github\LastChat_dev\app\src\main\java\me\rerere\rikkahub\ui\pages\backup\BackupVM.kt', 'r', encoding='utf-8') as f:
+    content = f.read()
 
-private const val TAG = "BackupVM"
+target = """    suspend fun restoreFromChatBox(file: File) {"""
 
-class BackupVM(
-    private val settingsStore: SettingsStore,
-    private val webdavSync: WebdavSync,
-    private val modelMetadataResolver: ModelMetadataResolver,
-    private val conversationRepository: me.rerere.rikkahub.data.repository.ConversationRepository,
-) : ViewModel() {
-    val settings = settingsStore.settingsFlow.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.Eagerly,
-        initialValue = Settings.dummy()
-    )
-
-    val webDavBackupItems = MutableStateFlow<UiState<List<WebDavBackupItem>>>(UiState.Idle)
-
-    init {
-        loadBackupFileItems()
-    }
-
-    fun updateSettings(settings: Settings) {
-        viewModelScope.launch {
-            settingsStore.update(settings)
-        }
-    }
-
-    fun loadBackupFileItems() {
-        viewModelScope.launch {
-            runCatching {
-                webDavBackupItems.emit(UiState.Loading)
-                webDavBackupItems.emit(
-                    value = UiState.Success(
-                        data = webdavSync.listBackupFiles(
-                            webDavConfig = settings.value.webDavConfig
-                        ).sortedByDescending { it.lastModified }
-                    )
-                )
-            }.onFailure {
-                webDavBackupItems.emit(UiState.Error(it))
-            }
-        }
-    }
-
-    suspend fun testWebDav() {
-        webdavSync.testWebdav(settings.value.webDavConfig)
-    }
-
-    suspend fun backup() {
-        webdavSync.backupToWebDav(settings.value.webDavConfig)
-    }
-
-    suspend fun restore(item: WebDavBackupItem): WebdavSync.RestoreResult {
-        return webdavSync.restoreFromWebDav(webDavConfig = settings.value.webDavConfig, item = item)
-    }
-
-    suspend fun deleteWebDavBackupFile(item: WebDavBackupItem) {
-        webdavSync.deleteWebDavBackupFile(settings.value.webDavConfig, item)
-    }
-
-    suspend fun exportToFile(): File {
-        return webdavSync.prepareBackupFile(settings.value.webDavConfig.copy())
-    }
-
-    suspend fun restoreFromLocalFile(file: File): WebdavSync.RestoreResult {
-        return webdavSync.restoreFromLocalFile(file, settings.value.webDavConfig)
-    }
-
-    suspend fun getAssistantsSnapshot(): List<Assistant> {
-        return settingsStore.settingsFlow.first().assistants
-    }
-    
-    fun restartApp(context: android.content.Context) {
-        val packageManager = context.packageManager
-        val intent = packageManager.getLaunchIntentForPackage(context.packageName)
-        val componentName = intent?.component
-        val mainIntent = android.content.Intent.makeRestartActivityTask(componentName)
-        context.startActivity(mainIntent)
-        kotlin.system.exitProcess(0)
-    }
-
-    suspend fun restoreFromChatBox(file: File) {
+replacement = """    suspend fun restoreFromChatBox(file: File) {
         var importedConversations = 0
         val importedProviders = withContext(Dispatchers.IO) {
             val importProviders = arrayListOf<ProviderSetting>()
@@ -198,6 +94,7 @@ class BackupVM(
                     val assistant = me.rerere.rikkahub.data.model.Assistant(
                         id = assistantId,
                         name = name,
+                        description = description,
                         systemPrompt = systemPrompt
                     )
                     newAssistants.add(assistant)
@@ -288,41 +185,25 @@ class BackupVM(
             }
             updated
         }
-    }
+    }"""
 
-    suspend fun restoreFromCherryStudio(file: File) {
-        val importedProviders = withContext(Dispatchers.IO) {
-            CherryStudioProviderImporter.importProviders(file)
-        }
+def normalize_crlf(text):
+    return text.replace('\r\n', '\n')
 
-        val resolvedProviders = importedProviders.map(modelMetadataResolver::applyToProvider)
+content_norm = normalize_crlf(content)
+target_norm = normalize_crlf(target)
 
-        if (resolvedProviders.isEmpty()) {
-            throw IllegalArgumentException("No importable providers found in Cherry Studio backup")
-        }
-
-        Log.i(TAG, "restoreFromCherryStudio: import ${resolvedProviders.size} providers: $resolvedProviders")
-        settingsStore.update { current ->
-            current.copy(
-                providers = mergeImportedProviders(current.providers, resolvedProviders)
-            )
-        }
-    }
-
-    private fun mergeImportedProviders(
-        existingProviders: List<ProviderSetting>,
-        importedProviders: List<ProviderSetting>,
-    ): List<ProviderSetting> {
-        val importedKeys = importedProviders.map(::providerImportKey).toSet()
-        return importedProviders.distinctBy(::providerImportKey) +
-            existingProviders.filterNot { providerImportKey(it) in importedKeys }
-    }
-
-    private fun providerImportKey(provider: ProviderSetting): String {
-        return when (provider) {
-            is ProviderSetting.OpenAI -> "openai|${provider.baseUrl}|${provider.apiKey}"
-            is ProviderSetting.Google -> "google|${provider.baseUrl}|${provider.apiKey}"
-            is ProviderSetting.Claude -> "claude|${provider.baseUrl}|${provider.apiKey}"
-        }
-    }
-}
+start_idx = content_norm.find(target_norm)
+if start_idx != -1:
+    end_target = """    suspend fun restoreFromCherryStudio(file: File) {"""
+    end_idx = content_norm.find(end_target)
+    
+    if end_idx != -1:
+        new_content = content_norm[:start_idx] + replacement + '\n\n' + content_norm[end_idx:]
+        with open(r'c:\Users\julia\Documents\Github\LastChat_dev\app\src\main\java\me\rerere\rikkahub\ui\pages\backup\BackupVM.kt', 'w', encoding='utf-8') as f:
+            f.write(new_content)
+        print("Success")
+    else:
+        print("End target not found")
+else:
+    print("Target not found in file")

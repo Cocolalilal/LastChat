@@ -170,8 +170,8 @@ data class UIMessage(
     fun toText() = parts.joinToString(separator = "\n") { part ->
         when (part) {
             is UIMessagePart.Text -> part.text
-            is UIMessagePart.Thinking -> part.thinking
-            is UIMessagePart.Reasoning -> part.reasoning
+
+
             else -> ""
         }
     }

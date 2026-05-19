@@ -1141,8 +1141,8 @@ private fun UIMessage.toSearchableText(): String {
     return parts.joinToString("\n") { part ->
         when (part) {
             is UIMessagePart.Text -> part.text
-            is UIMessagePart.Reasoning -> part.reasoning
-            is UIMessagePart.Thinking -> part.thinking
+            is UIMessagePart.Reasoning -> ""
+            is UIMessagePart.Thinking -> ""
             is UIMessagePart.Document -> listOf(part.fileName, part.mime).joinToString(" ")
             is UIMessagePart.ToolCall -> listOf(part.toolName, part.arguments).joinToString(" ")
             is UIMessagePart.ToolResult -> listOf(part.toolName, part.content.toString()).joinToString(" ")

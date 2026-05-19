@@ -7,8 +7,11 @@ import android.util.Log
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
+import androidx.paging.filter
 import androidx.paging.map
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -105,9 +108,14 @@ class ConversationRepository(
     fun searchConversations(titleKeyword: String): Flow<List<Conversation>> {
         return conversationDAO
             .searchConversations(titleKeyword)
-            .map { flow ->
-                flow.map { entity ->
+            .map { list ->
+                list.map { entity ->
                     conversationEntityToConversation(entity)
+                }.filter { conversation ->
+                    conversation.title.contains(titleKeyword, ignoreCase = true) ||
+                        conversation.messageNodes.any { node ->
+                            node.currentMessage.toText().contains(titleKeyword, ignoreCase = true)
+                        }
                 }
             }
     }
@@ -122,15 +130,39 @@ class ConversationRepository(
     ).flow.map { pagingData ->
         pagingData.map { entity ->
             conversationSummaryToConversation(entity)
+        }.filter { conversation ->
+            if (conversation.title.contains(titleKeyword, ignoreCase = true)) {
+                true
+            } else {
+                val fullEntity = withContext(Dispatchers.IO) {
+                    conversationDAO.getConversationById(conversation.id.toString())
+                }
+                if (fullEntity != null) {
+                    val messageNodes = runCatching {
+                        JsonInstant.decodeFromString<List<MessageNode>>(fullEntity.nodes)
+                    }.getOrNull() ?: emptyList()
+                    
+                    messageNodes.any { node ->
+                        node.currentMessage.toText().contains(titleKeyword, ignoreCase = true)
+                    }
+                } else {
+                    false
+                }
+            }
         }
     }
 
     fun searchConversationsOfAssistant(assistantId: Uuid, titleKeyword: String): Flow<List<Conversation>> {
         return conversationDAO
             .searchConversationsOfAssistant(assistantId.toString(), titleKeyword)
-            .map { flow ->
-                flow.map { entity ->
+            .map { list ->
+                list.map { entity ->
                     conversationEntityToConversation(entity)
+                }.filter { conversation ->
+                    conversation.title.contains(titleKeyword, ignoreCase = true) ||
+                        conversation.messageNodes.any { node ->
+                            node.currentMessage.toText().contains(titleKeyword, ignoreCase = true)
+                        }
                 }
             }
     }
@@ -145,6 +177,25 @@ class ConversationRepository(
     ).flow.map { pagingData ->
         pagingData.map { entity ->
             conversationSummaryToConversation(entity)
+        }.filter { conversation ->
+            if (conversation.title.contains(titleKeyword, ignoreCase = true)) {
+                true
+            } else {
+                val fullEntity = withContext(Dispatchers.IO) {
+                    conversationDAO.getConversationById(conversation.id.toString())
+                }
+                if (fullEntity != null) {
+                    val messageNodes = runCatching {
+                        JsonInstant.decodeFromString<List<MessageNode>>(fullEntity.nodes)
+                    }.getOrNull() ?: emptyList()
+                    
+                    messageNodes.any { node ->
+                        node.currentMessage.toText().contains(titleKeyword, ignoreCase = true)
+                    }
+                } else {
+                    false
+                }
+            }
         }
     }
 
