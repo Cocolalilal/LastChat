@@ -80,3 +80,34 @@ data class CustomBody(
     val key: String,
     val value: JsonElement
 )
+
+@Serializable
+data class ReasoningRequestBehavior(
+    val off: List<CustomBody> = emptyList(),
+    val auto: List<CustomBody> = emptyList(),
+    val low: List<CustomBody> = emptyList(),
+    val medium: List<CustomBody> = emptyList(),
+    val high: List<CustomBody> = emptyList(),
+) {
+    fun bodiesFor(level: me.rerere.ai.core.ReasoningLevel): List<CustomBody> {
+        return when (level) {
+            me.rerere.ai.core.ReasoningLevel.OFF -> off
+            me.rerere.ai.core.ReasoningLevel.AUTO -> auto
+            me.rerere.ai.core.ReasoningLevel.LOW -> low
+            me.rerere.ai.core.ReasoningLevel.MEDIUM -> medium
+            me.rerere.ai.core.ReasoningLevel.HIGH -> high
+        }
+    }
+}
+
+@Serializable
+enum class OpenAICompatibilityMode {
+    @kotlinx.serialization.SerialName("auto")
+    AUTO,
+
+    @kotlinx.serialization.SerialName("enabled")
+    ENABLED,
+
+    @kotlinx.serialization.SerialName("disabled")
+    DISABLED,
+}

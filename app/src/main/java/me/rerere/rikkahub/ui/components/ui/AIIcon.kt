@@ -16,6 +16,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
@@ -49,18 +50,6 @@ fun ProviderIcon(
     contentColor: Color = LocalContentColor.current,
     padding: Dp = 4.dp,
 ) {
-    // Get base URL for provider type detection
-    val baseUrl = when (provider) {
-        is ProviderSetting.OpenAI -> provider.baseUrl
-        is ProviderSetting.Google -> provider.baseUrl
-        is ProviderSetting.Claude -> provider.baseUrl
-    }
-    
-    // Derive provider slug from name for LobeHub lookup
-    val providerSlug = remember(provider.name) {
-        getProviderSlugFromName(provider.name) ?: provider.name.lowercase().replace(" ", "-").replace("_", "-")
-    }
-
     val effectiveContentColor = if (provider.enabled) {
         contentColor
     } else {
@@ -70,9 +59,6 @@ fun ProviderIcon(
     AutoAIIconWithUrl(
         name = provider.name,
         customIconUri = provider.customIconUri,
-        providerSlug = providerSlug,
-        providerBaseUrl = baseUrl,
-        isGoogleProvider = provider is ProviderSetting.Google,
         modifier = modifier,
         loading = loading,
         color = color,
@@ -102,19 +88,9 @@ fun ModelIcon(
     contentColor: Color = LocalContentColor.current,
     padding: Dp = 4.dp,
 ) {
-    val baseUrl = when (provider) {
-        is ProviderSetting.OpenAI -> provider.baseUrl
-        is ProviderSetting.Google -> provider.baseUrl
-        is ProviderSetting.Claude -> provider.baseUrl
-        null -> null
-    }
-    
     AutoAIIconWithUrl(
         name = model.displayName.ifBlank { model.modelId },
         iconUrl = model.iconUrl,
-        providerSlug = model.providerSlug,
-        providerBaseUrl = baseUrl,
-        isGoogleProvider = provider is ProviderSetting.Google,
         customIconUri = model.customIconUri,
         modifier = modifier,
         loading = loading,
@@ -365,133 +341,45 @@ fun AutoAIIconWithUrl(
     contentColor: Color = LocalContentColor.current,
     padding: Dp = 4.dp,
 ) {
-    val darkMode = LocalDarkMode.current
-    
-    // Priority 0: User-selected custom icon (highest priority)
-    if (!customIconUri.isNullOrBlank()) {
-        // Handle LobeHub icons theme switching if relevant
-        val effectiveUri = if (customIconUri.contains("registry.npmmirror.com/@lobehub/icons-static-png")) {
-            if (darkMode) {
-                customIconUri.replace("/light/", "/dark/")
-            } else {
-                customIconUri.replace("/dark/", "/light/")
-            }
-        } else {
-            customIconUri
-        }
-
+    if (!customIconUri.isNullOrBlank() && customIconUri.isCatalogIconUrl()) {
         Surface(
             modifier = modifier,
             shape = rememberAvatarShape(loading),
             color = Color.Transparent,
         ) {
             AsyncImage(
-                model = android.net.Uri.parse(effectiveUri),
+                model = android.net.Uri.parse(customIconUri),
                 contentDescription = name,
                 modifier = Modifier.padding(padding),
+                colorFilter = ColorFilter.tint(contentColor),
                 contentScale = androidx.compose.ui.layout.ContentScale.Fit
             )
         }
         return
     }
-    
-    // Determine provider type based on base URL
-    val isOpenRouterProvider = providerBaseUrl?.contains("openrouter.ai") == true
-    val isOpenAIProvider = providerBaseUrl?.contains("api.openai.com") == true
-    
-    // Priority 1: Direct icon URL from API
-    if (!iconUrl.isNullOrBlank()) {
+
+    if (!iconUrl.isNullOrBlank() && iconUrl.isCatalogIconUrl()) {
         RemoteIcon(
             url = iconUrl,
-            iconKey = me.rerere.rikkahub.utils.IconStorageManager.generateIconKey(providerSlug, name, darkMode),
-            name = name,
-            modifier = modifier,
-            loading = loading,
-            color = color,
-            padding = padding
-        )
-        return
-    }
-    
-    // Priority 2: LobeHub CDN via provider slug (for any provider with a slug)
-    // Skip CDN for models that already have good local icons
-    if (!providerSlug.isNullOrBlank() && !hasGoodLocalIcon(name)) {
-        val lobeHubUrls = getLobeHubIconUrls(providerSlug, darkMode)
-        RemoteIcon(
-            url = lobeHubUrls.coloredUrl,
-            iconKey = me.rerere.rikkahub.utils.IconStorageManager.generateIconKey(providerSlug, name, darkMode),
-            fallbackUrl = lobeHubUrls.monochromeUrl,
+            iconKey = "catalog_${iconUrl.hashCode()}",
             name = name,
             modifier = modifier,
             loading = loading,
             color = color,
             padding = padding,
-            fallback = {
-                // If LobeHub icons fail, try local pattern matching
-                AutoAIIcon(
-                    name = name,
-                    modifier = modifier,
-                    loading = loading,
-                    color = color,
-                    contentColor = contentColor,
-                    padding = padding
-                )
-            }
+            contentColor = contentColor,
+            tint = iconUrl.isCatalogIconUrl(),
         )
         return
     }
-    
-    // Priority 3: Local pattern matching
-    val localPath = remember(name) { computeAIIconByName(name) }
-    if (localPath != null) {
-        AIIcon(
-            path = localPath,
-            name = name,
-            modifier = modifier,
-            loading = loading,
-            color = color,
-            padding = padding,
-        )
-        return
-    }
-    
-    // Priority 4: Provider-specific fallbacks
-    when {
-        isOpenAIProvider -> {
-            // OpenAI provider: fallback to OpenAI logo
-            AIIcon(
-                path = "openai.svg",
-                name = name,
-                modifier = modifier,
-                loading = loading,
-                color = color,
-                contentColor = contentColor,
-                padding = padding,
-            )
-        }
-        isGoogleProvider -> {
-            // Google provider: fallback to Google logo
-            AIIcon(
-                path = "google-color.svg",
-                name = name,
-                modifier = modifier,
-                loading = loading,
-                color = color,
-                contentColor = contentColor, // This might tint the colored icon if it's not protected, but user said it's fine
-                padding = padding,
-            )
-        }
-        else -> {
-            // For models: fallback directly to text avatar (no favicon fetching)
-            TextAvatar(
-                text = name,
-                modifier = modifier,
-                loading = loading,
-                color = color,
-                contentColor = contentColor
-            )
-        }
-    }
+
+    TextAvatar(
+        text = name,
+        modifier = modifier,
+        loading = loading,
+        color = color,
+        contentColor = contentColor
+    )
 }
 
 /**
@@ -577,6 +465,8 @@ private fun RemoteIcon(
     fallbackUrl: String? = null,
     loading: Boolean = false,
     color: Color = MaterialTheme.colorScheme.secondaryContainer,
+    contentColor: Color = LocalContentColor.current,
+    tint: Boolean = false,
     padding: Dp = 4.dp,
     fallback: @Composable (() -> Unit)? = null
 ) {
@@ -611,7 +501,8 @@ private fun RemoteIcon(
             AsyncImage(
                 model = localUri,
                 contentDescription = name,
-                modifier = Modifier.padding(padding)
+                modifier = Modifier.padding(padding),
+                colorFilter = if (tint) ColorFilter.tint(contentColor) else null,
             )
         }
         return
@@ -639,6 +530,7 @@ private fun RemoteIcon(
                 model = fallbackUrl,
                 contentDescription = name,
                 modifier = Modifier.padding(padding),
+                colorFilter = if (tint) ColorFilter.tint(contentColor) else null,
                 onError = { fallbackFailed = true }
             )
         }
@@ -675,9 +567,15 @@ private fun RemoteIcon(
             model = url,
             contentDescription = name,
             modifier = Modifier.padding(padding),
+            colorFilter = if (tint) ColorFilter.tint(contentColor) else null,
             onError = { downloadFailed = true }
         )
     }
+}
+
+private fun String.isCatalogIconUrl(): Boolean {
+    return contains("/LastChat/main/catalog/icons/", ignoreCase = true) ||
+        contains("/LastChat/refs/heads/main/catalog/icons/", ignoreCase = true)
 }
 
 @Preview

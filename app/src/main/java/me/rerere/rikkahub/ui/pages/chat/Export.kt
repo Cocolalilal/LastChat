@@ -81,11 +81,13 @@ import me.rerere.highlight.Highlighter
 import me.rerere.highlight.LocalHighlighter
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
-import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
 import me.rerere.rikkahub.ui.components.ui.BitmapComposer
+import me.rerere.rikkahub.ui.components.ui.ModelIcon
+import me.rerere.rikkahub.ui.components.ui.TextAvatar
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.context.LocalToaster
@@ -473,6 +475,7 @@ private fun ExportedChatMessage(
     val context = LocalContext.current
     val settings = LocalSettings.current
     val model = message.modelId?.let { settings.findModelById(it) }
+    val provider = model?.findProvider(settings.providers)
     // Always show model icon for assistant messages in exported images
     val showModelIcon = message.role == MessageRole.ASSISTANT && prevMessage?.role == MessageRole.USER
     val iconLabel = when {
@@ -551,12 +554,22 @@ private fun ExportedChatMessage(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(top = 8.dp)
         ) {
-            AutoAIIcon(
-                name = iconLabel,
-                modifier = Modifier
-                    .padding(top = 8.dp)
-                    .size(36.dp)
-            )
+            if (model != null) {
+                ModelIcon(
+                    model = model,
+                    provider = provider,
+                    modifier = Modifier
+                        .padding(top = 8.dp)
+                        .size(36.dp)
+                )
+            } else {
+                TextAvatar(
+                    text = iconLabel,
+                    modifier = Modifier
+                        .padding(top = 8.dp)
+                        .size(36.dp)
+                )
+            }
 
             Text(
                 text = iconLabel,

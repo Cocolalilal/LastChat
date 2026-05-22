@@ -139,7 +139,7 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.ProviderViewMode
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
-import me.rerere.rikkahub.ui.components.ui.AutoProviderIcon
+import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
 import me.rerere.rikkahub.ui.components.ui.ProviderIcon
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
@@ -151,9 +151,10 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.useEditState
-import me.rerere.rikkahub.ui.pages.setting.components.PROVIDER_PRESETS
+import me.rerere.rikkahub.ui.pages.setting.components.FALLBACK_PROVIDER_PRESETS
 import me.rerere.rikkahub.ui.pages.setting.components.ProviderConfigure
 import me.rerere.rikkahub.ui.pages.setting.components.toProviderSetting
+import me.rerere.rikkahub.ui.pages.setting.components.toProviderPresets
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.utils.ImageUtils
 import org.koin.androidx.compose.koinViewModel
@@ -165,8 +166,13 @@ import me.rerere.rikkahub.data.model.Tag as DataTag
 @Composable
 fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val catalogSnapshot by vm.modelCatalogSnapshot.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
     val scope = rememberCoroutineScope()
+    val providerPresets = remember(catalogSnapshot) {
+        catalogSnapshot?.toProviderPresets()?.takeIf { it.isNotEmpty() }
+            ?: FALLBACK_PROVIDER_PRESETS
+    }
     
     // Search query state
     var searchQuery by remember { mutableStateOf("") }
@@ -218,7 +224,8 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
                         )
                     }
                     AddButton(
-                        enableHaptics = settings.displaySetting.enableUIHaptics
+                        enableHaptics = settings.displaySetting.enableUIHaptics,
+                        providerPresets = providerPresets,
                     ) {
                         vm.updateSettings(
                             settings.copy(
@@ -300,7 +307,8 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
                             providers = listOf(provider) + settings.providers
                         )
                     )
-                }
+                },
+                providerPresets = providerPresets
             )
             
             // Delete confirmation dialog
@@ -392,6 +400,7 @@ private fun ProviderListView(
     settings: me.rerere.rikkahub.data.datastore.Settings,
     haptics: me.rerere.rikkahub.ui.hooks.PremiumHaptics,
     searchQuery: String,
+    providerPresets: List<me.rerere.rikkahub.ui.pages.setting.components.ProviderPreset>,
     onNavigateToDetail: (ProviderSetting) -> Unit,
     onDeleteRequest: (ProviderSetting) -> Unit,
     onReorder: (ProviderSetting, ProviderSetting) -> Unit,
@@ -425,7 +434,7 @@ private fun ProviderListView(
     // Check for matching preset when no providers found
     val matchingPreset = remember(searchQuery, providers) {
         if (providers.isEmpty() && searchQuery.isNotBlank()) {
-            PROVIDER_PRESETS.find { preset ->
+            providerPresets.find { preset ->
                 preset.name.contains(searchQuery, ignoreCase = true) ||
                 preset.description.contains(searchQuery, ignoreCase = true)
             }
@@ -474,9 +483,9 @@ private fun ProviderListView(
                             horizontalArrangement = Arrangement.spacedBy(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            AutoProviderIcon(
+                            AutoAIIconWithUrl(
                                 name = matchingPreset.name,
-                                baseUrl = matchingPreset.baseUrl,
+                                customIconUri = matchingPreset.customIconUri,
                                 modifier = Modifier.size(40.dp)
                             )
                             Column(modifier = Modifier.weight(1f)) {
@@ -796,8 +805,9 @@ private fun handleImageQRCode(
 
 
 @Composable
-private fun AddButton(
+    private fun AddButton(
     enableHaptics: Boolean,
+    providerPresets: List<me.rerere.rikkahub.ui.pages.setting.components.ProviderPreset>,
     onAdd: (ProviderSetting) -> Unit
 ) {
     var showBottomSheet by remember { mutableStateOf(false) }
@@ -883,11 +893,11 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 Spacer(modifier = Modifier.height(16.dp))
                 
                 // Filter presets based on search
-                val filteredPresets = remember(searchQuery) {
+                val filteredPresets = remember(searchQuery, providerPresets) {
                     if (searchQuery.isBlank()) {
-                        PROVIDER_PRESETS
+                        providerPresets
                     } else {
-                        PROVIDER_PRESETS.filter { preset ->
+                        providerPresets.filter { preset ->
                             preset.name.contains(searchQuery, ignoreCase = true) ||
                             preset.description.contains(searchQuery, ignoreCase = true)
                         }
@@ -997,9 +1007,9 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                AutoProviderIcon(
+                                AutoAIIconWithUrl(
                                     name = preset.name,
-                                    baseUrl = preset.baseUrl,
+                                    customIconUri = preset.customIconUri,
                                     modifier = Modifier.size(40.dp)
                                 )
                                 Column(modifier = Modifier.weight(1f)) {

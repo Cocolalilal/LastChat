@@ -371,6 +371,10 @@ class ConversationRepository(
     fun getConversationCountByAssistantFlow(assistantId: String): Flow<Int> = 
         conversationDAO.getConversationCountByAssistantFlow(assistantId)
 
+    suspend fun hasSuccessfulAssistantReply(): Boolean = withContext(Dispatchers.IO) {
+        conversationDAO.hasUserAssistantConversation()
+    }
+
     /**
      * Get the most frequently used model ID for an assistant by analyzing message nodes.
      * Returns the model UUID as string, or null if no model found.

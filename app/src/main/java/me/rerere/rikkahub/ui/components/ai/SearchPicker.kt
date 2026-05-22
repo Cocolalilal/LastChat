@@ -53,7 +53,6 @@ import kotlinx.coroutines.launch
 import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.Model
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
-import me.rerere.ai.registry.ModelRegistry
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
@@ -111,10 +110,12 @@ fun SearchPickerButton(
         lastValidProviderIndex.coerceIn(0, (settings.searchServices.size - 1).coerceAtLeast(0))
     }
     val currentService = settings.searchServices.getOrNull(effectiveProviderIndex)
+    val modelSupportsBuiltInSearch = model?.tools?.contains(BuiltInTools.Search) == true
+    val builtInSearchEnabled = isBuiltInMode || (preferBuiltInSearch && modelSupportsBuiltInSearch)
 
     ToggleSurface(
         modifier = modifier,
-        checked = enableSearch || model?.tools?.contains(BuiltInTools.Search) == true,
+        checked = enableSearch || builtInSearchEnabled,
         checkedColor = Color.Transparent,
         uncheckedColor = Color.Transparent,
         contentColor = contentColor,
@@ -132,13 +133,9 @@ fun SearchPickerButton(
                 modifier = Modifier.size(24.dp),
                 contentAlignment = Alignment.Center
             ) {
-                // Determine if built-in search is effectively active
-                val modelSupportsBuiltIn = model != null && me.rerere.ai.registry.ModelRegistry.GEMINI_SERIES.match(model.modelId)
-                val isUsingBuiltIn = preferBuiltInSearch && modelSupportsBuiltIn
-                
                 // Show globe icon when: using built-in search, or no provider selected, or search is off
                 // Show provider icon only when: search is on, NOT using built-in, and has a provider
-                if (enableSearch && !isUsingBuiltIn && currentService != null) {
+                if (enableSearch && !builtInSearchEnabled && currentService != null) {
                     AutoAIIcon(
                         name = SearchServiceOptions.TYPES[currentService::class] ?: "Search",
                         color = Color.Transparent
@@ -219,9 +216,10 @@ internal fun SearchPicker(
     onDismiss: () -> Unit
 ) {
     val navBackStack = LocalNavController.current
+    val modelSupportsBuiltInSearch = model?.tools?.contains(BuiltInTools.Search) == true
 
     // 模型内置搜索 (only show if model supports it)
-    if (model != null && ModelRegistry.GEMINI_SERIES.match(model.modelId)) {
+    if (modelSupportsBuiltInSearch) {
         BuiltInSearchSetting(
             preferBuiltInSearch = preferBuiltInSearch,
             onTogglePreferBuiltInSearch = onTogglePreferBuiltInSearch

@@ -1,13 +1,16 @@
 package me.rerere.ai.provider.providers.openai
 
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import me.rerere.ai.provider.CustomBody
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.provider.ReasoningRequestBehavior
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
@@ -63,6 +66,25 @@ class OpenAIReasoningRequestTest {
             val body = chatCompletionsBody(thinkingBudget = budget)
             assertEquals(effort, body["reasoning_effort"]?.jsonPrimitive?.contentOrNull)
         }
+    }
+
+    @Test
+    fun chatCompletionsUsesProviderCustomReasoningPayloadBeforeHostDefaults() {
+        val body = chatCompletionsBody(
+            messages = messages,
+            model = reasoningModel,
+            providerSetting = providerSetting.copy(
+                baseUrl = "https://openrouter.ai/api/v1",
+                reasoningBehavior = ReasoningRequestBehavior(
+                    low = listOf(CustomBody("enable_thinking", JsonPrimitive(true)))
+                )
+            ),
+            thinkingBudget = 1_024,
+        )
+
+        assertEquals("true", body["enable_thinking"]?.jsonPrimitive?.contentOrNull)
+        assertFalse(body.containsKey("reasoning"))
+        assertNull(body["reasoning_effort"])
     }
 
     @Test

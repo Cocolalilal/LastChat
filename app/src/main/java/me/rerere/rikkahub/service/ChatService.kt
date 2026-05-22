@@ -67,6 +67,7 @@ import me.rerere.rikkahub.data.ai.buildSuggestionGenerationParams
 import me.rerere.rikkahub.data.ai.buildSummarizerGenerationParams
 import me.rerere.rikkahub.data.ai.buildTitleGenerationParams
 import me.rerere.rikkahub.data.ai.mcp.McpManager
+import me.rerere.rikkahub.data.ai.shouldUseBuiltInSearch
 import me.rerere.rikkahub.data.ai.tools.ASK_USER_TOOL_NAME
 import me.rerere.rikkahub.data.ai.tools.AskUserAnswerPayload
 import me.rerere.rikkahub.data.ai.tools.LocalTools
@@ -1340,9 +1341,7 @@ class ChatService(
         model: Model,
     ): List<Tool> {
         return buildList {
-            val modelSupportsBuiltIn = model.tools.isNotEmpty() ||
-                me.rerere.ai.registry.ModelRegistry.GEMINI_SERIES.match(model.modelId)
-            val useBuiltInSearch = assistant.preferBuiltInSearch && modelSupportsBuiltIn
+            val useBuiltInSearch = shouldUseBuiltInSearch(model, assistant)
 
             when (val searchMode = assistant.searchMode) {
                 is AssistantSearchMode.Provider -> {

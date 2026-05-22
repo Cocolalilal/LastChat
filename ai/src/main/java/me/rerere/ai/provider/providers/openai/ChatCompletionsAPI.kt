@@ -27,6 +27,7 @@ import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
+import me.rerere.ai.provider.OpenAICompatibilityMode
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.registry.ModelRegistry
@@ -289,7 +290,7 @@ class ChatCompletionsAPI(
                 }
             }
 
-            put("messages", buildMessages(safeMessages, host, params.model.modelId))
+            put("messages", buildMessages(safeMessages, providerSetting, host, params.model.modelId))
 
             if (isModelAllowTemperature(params.model)) {
                 if (params.temperature != null) put("temperature", params.temperature)
@@ -300,7 +301,7 @@ class ChatCompletionsAPI(
             put("stream", stream)
             if (stream) {
                 // Some providers don't support stream_options
-                if (host != "api.mistral.ai" && host != "open.bigmodel.cn") {
+                if (providerSetting.shouldIncludeStreamOptions(host)) {
                     put("stream_options", buildJsonObject {
                         put("include_usage", true)
                     })
@@ -308,7 +309,7 @@ class ChatCompletionsAPI(
             }
 
             // open router适配
-            if(host == "openrouter.ai") {
+            if(providerSetting.shouldIncludeImageModalities(host)) {
                 if(params.model.outputModalities.contains(Modality.IMAGE)) {
                     put("modalities", buildJsonArray {
                         add("image")
@@ -319,7 +320,17 @@ class ChatCompletionsAPI(
 
             if (params.model.abilities.contains(ModelAbility.REASONING)) {
                 val level = ReasoningLevel.fromBudgetTokens(params.thinkingBudget)
-                when (host) {
+                val catalogBodies = params.model.reasoningBehavior?.bodiesFor(level)
+                    ?.takeIf { it.isNotEmpty() }
+                    ?: providerSetting.reasoningBehavior?.bodiesFor(level)?.takeIf { it.isNotEmpty() }
+
+                if (catalogBodies != null) {
+                    catalogBodies.forEach { body ->
+                        if (body.key.isNotBlank()) {
+                            put(body.key, body.value)
+                        }
+                    }
+                } else when (host) {
                     "openrouter.ai" -> {
                         // https://openrouter.ai/docs/use-cases/reasoning-tokens
                         put("reasoning", buildJsonObject {
@@ -410,8 +421,13 @@ class ChatCompletionsAPI(
         return !ModelRegistry.OPENAI_O_MODELS.match(model.modelId) && !ModelRegistry.GPT_5.match(model.modelId)
     }
 
-    private fun buildMessages(messages: List<UIMessage>, host: String, modelId: String) = buildJsonArray {
-        val shouldReplayDeepSeekReasoning = isDeepSeekCompatible(host, modelId)
+    private fun buildMessages(
+        messages: List<UIMessage>,
+        providerSetting: ProviderSetting.OpenAI,
+        host: String,
+        modelId: String
+    ) = buildJsonArray {
+        val shouldReplayDeepSeekReasoning = providerSetting.shouldReplayReasoningContent(host, modelId)
         messages
             .filter {
                 it.isValidToUpload()
@@ -534,6 +550,30 @@ class ChatCompletionsAPI(
         return normalizedHost == "api.deepseek.com" ||
             normalizedHost.endsWith(".deepseek.com") ||
             normalizedModelId.contains("deepseek")
+    }
+
+    private fun ProviderSetting.OpenAI.shouldIncludeStreamOptions(host: String): Boolean {
+        return when (streamOptionsMode) {
+            OpenAICompatibilityMode.ENABLED -> true
+            OpenAICompatibilityMode.DISABLED -> false
+            OpenAICompatibilityMode.AUTO -> host != "api.mistral.ai" && host != "open.bigmodel.cn"
+        }
+    }
+
+    private fun ProviderSetting.OpenAI.shouldIncludeImageModalities(host: String): Boolean {
+        return when (imageResponseModalitiesMode) {
+            OpenAICompatibilityMode.ENABLED -> true
+            OpenAICompatibilityMode.DISABLED -> false
+            OpenAICompatibilityMode.AUTO -> host == "openrouter.ai"
+        }
+    }
+
+    private fun ProviderSetting.OpenAI.shouldReplayReasoningContent(host: String, modelId: String): Boolean {
+        return when (reasoningContentReplayMode) {
+            OpenAICompatibilityMode.ENABLED -> true
+            OpenAICompatibilityMode.DISABLED -> false
+            OpenAICompatibilityMode.AUTO -> isDeepSeekCompatible(host, modelId)
+        }
     }
 
     private fun parseMessage(jsonObject: JsonObject): UIMessage {

@@ -38,12 +38,14 @@
     android:theme="@style/Theme.Rikkahub"
         android:usesCleartextTraffic="true"
     tools:targetApi="33">
+    <!-- AGP lint can fail to resolve ComponentActivity/Glance inheritance here during lintVitalRelease. -->
     <activity
       android:name=".RouteActivity"
       android:configChanges="keyboardHidden|orientation|screenSize"
       android:exported="true"
       android:theme="@style/Theme.Rikkahub"
-      android:windowSoftInputMode="adjustResize">
+      android:windowSoftInputMode="adjustResize"
+      tools:ignore="Instantiatable">
       <intent-filter>
         <action android:name="android.intent.action.MAIN" />
         <category android:name="android.intent.category.LAUNCHER" />
@@ -57,7 +59,8 @@
         android:name=".ui.activity.ShareWithCharacterActivity"
         android:exported="true"
         android:label="@string/share_handler_page_title"
-        android:theme="@android:style/Theme.Translucent.NoTitleBar">
+        android:theme="@android:style/Theme.Translucent.NoTitleBar"
+        tools:ignore="Instantiatable">
       <intent-filter>
         <action android:name="android.intent.action.SEND" />
         <category android:name="android.intent.category.DEFAULT" />
@@ -76,7 +79,8 @@
         android:label="@string/text_selection_menu_label"
         android:theme="@style/Theme.Rikkahub.Translucent"
         android:configChanges="keyboardHidden|orientation|screenSize"
-        android:windowSoftInputMode="adjustResize">
+        android:windowSoftInputMode="adjustResize"
+        tools:ignore="Instantiatable">
       <intent-filter>
         <action android:name="android.intent.action.SEND" />
         <category android:name="android.intent.category.DEFAULT" />
@@ -92,7 +96,8 @@
     <activity
         android:name=".ui.activity.ShortcutHandlerActivity"
         android:exported="true"
-        android:theme="@android:style/Theme.Translucent.NoTitleBar">
+        android:theme="@android:style/Theme.Translucent.NoTitleBar"
+        tools:ignore="Instantiatable">
         <intent-filter>
             <action android:name="android.intent.action.VIEW" />
             <category android:name="android.intent.category.DEFAULT" />
@@ -107,7 +112,8 @@
         android:label="@string/text_selection_menu_label"
         android:theme="@style/Theme.Rikkahub.Translucent"
         android:configChanges="keyboardHidden|orientation|screenSize"
-        android:windowSoftInputMode="adjustResize">
+        android:windowSoftInputMode="adjustResize"
+        tools:ignore="Instantiatable">
         <intent-filter>
             <action android:name="android.intent.action.PROCESS_TEXT" />
             <category android:name="android.intent.category.DEFAULT" />
@@ -164,7 +170,8 @@
     <receiver
         android:name=".widget.AssistantWidgetReceiver"
         android:exported="true"
-        android:label="@string/widget_assistant_name">
+        android:label="@string/widget_assistant_name"
+        tools:ignore="Instantiatable">
       <intent-filter>
         <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
       </intent-filter>
@@ -176,7 +183,8 @@
     <activity
         android:name=".widget.WidgetConfigActivity"
         android:exported="true"
-        android:theme="@style/Theme.Rikkahub">
+        android:theme="@style/Theme.Rikkahub"
+        tools:ignore="Instantiatable">
       <intent-filter>
         <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
       </intent-filter>

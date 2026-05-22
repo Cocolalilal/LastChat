@@ -71,6 +71,7 @@ class SettingsStore(
 
         // UI设置
         val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
+        val SETUP_COMPLETED = booleanPreferencesKey("setup_completed")
         val THEME_ID = stringPreferencesKey("theme_id")
         val DISPLAY_SETTING = stringPreferencesKey("display_setting")
         val DEVELOPER_MODE = booleanPreferencesKey("developer_mode")
@@ -165,6 +166,7 @@ class SettingsStore(
         }.map { preferences ->
             runCatching {
                 Settings(
+                    setupCompleted = preferences[SETUP_COMPLETED] == true,
                     enableWebSearch = preferences[ENABLE_WEB_SEARCH] == true,
                     favoriteModels = preferences[FAVORITE_MODELS]?.let {
                         JsonInstant.decodeFromString(it)
@@ -455,6 +457,7 @@ class SettingsStore(
             .normalizeFontSettings()
         dataStore.edit { preferences ->
             preferences[DYNAMIC_COLOR] = normalizedSettings.dynamicColor
+            preferences[SETUP_COMPLETED] = normalizedSettings.setupCompleted
             preferences[THEME_ID] = normalizedSettings.themeId
             preferences[DEVELOPER_MODE] = normalizedSettings.developerMode
             preferences[ENABLE_RAG_LOGGING] = normalizedSettings.enableRagLogging

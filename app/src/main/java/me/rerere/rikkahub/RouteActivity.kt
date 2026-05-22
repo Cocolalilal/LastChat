@@ -43,6 +43,7 @@ import me.rerere.rikkahub.ui.components.ui.rememberAppToasterState
 import kotlinx.serialization.Serializable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.filterNotNull
 import me.rerere.highlight.Highlighter
 import me.rerere.highlight.LocalHighlighter
@@ -73,6 +74,7 @@ import me.rerere.rikkahub.ui.pages.chat.ChatPage
 import me.rerere.rikkahub.ui.pages.developer.DeveloperPage
 import me.rerere.rikkahub.ui.pages.imggen.ImageGenPage
 import me.rerere.rikkahub.ui.pages.menu.MenuPage
+import me.rerere.rikkahub.ui.pages.onboarding.OnboardingPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAboutPage
 import me.rerere.rikkahub.ui.pages.setting.SettingChatStoragePage
 import me.rerere.rikkahub.ui.pages.setting.SettingDisplayPage
@@ -229,6 +231,7 @@ class RouteActivity : ComponentActivity() {
     private var pendingResolvedSpontaneousTarget by mutableStateOf<ResolvedSpontaneousChatTarget?>(null)
     private var pendingShareIntent by mutableStateOf<ResolvedSharePayload?>(null)
     private var initialChatScreen by mutableStateOf<Screen.Chat?>(null)
+    private var hasSuccessfulReplyBeforeSetup by mutableStateOf<Boolean?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         try {
@@ -236,6 +239,11 @@ class RouteActivity : ComponentActivity() {
             androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
             disableNavigationBarContrast()
             super.onCreate(savedInstanceState)
+            lifecycleScope.launch {
+                hasSuccessfulReplyBeforeSetup = withContext(Dispatchers.IO) {
+                    conversationRepo.hasSuccessfulAssistantReply()
+                }
+            }
             
             // Track app launch and initialize usage stats
             lifecycleScope.launch(Dispatchers.IO) {
@@ -633,11 +641,26 @@ class RouteActivity : ComponentActivity() {
                 }
                 Box(modifier = Modifier.fillMaxSize()) {
                 TTSController()
+                val shouldShowSetup = !settings.init &&
+                    !settings.setupCompleted &&
+                    hasSuccessfulReplyBeforeSetup == false
+                LaunchedEffect(shouldShowSetup) {
+                    if (shouldShowSetup) {
+                        navBackStack.navigate(Screen.Setup) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    }
+                }
+                val actualStartDestination: Screen = if (shouldShowSetup) {
+                    Screen.Setup
+                } else {
+                    startDestination
+                }
                 NavHost(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(MaterialTheme.colorScheme.background),
-                    startDestination = startDestination,
+                    startDestination = actualStartDestination,
                     navController = navBackStack,
                     enterTransition = { rootEnterTransition(motionPolicy) },
                     exitTransition = { rootExitTransition(motionPolicy) },
@@ -661,6 +684,10 @@ class RouteActivity : ComponentActivity() {
                             text = route.text,
                             files = route.files
                         )
+                    }
+
+                    composable<Screen.Setup> {
+                        OnboardingPage()
                     }
 
 
@@ -889,6 +916,9 @@ sealed interface Screen {
 
     @Serializable
     data class ShareHandler(val text: String, val files: List<String> = emptyList()) : Screen
+
+    @Serializable
+    data object Setup : Screen
 
 
     @Serializable

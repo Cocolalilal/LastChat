@@ -52,4 +52,46 @@ class BuiltInToolResolutionTest {
             resolveActiveBuiltInTools(model, assistant)
         )
     }
+
+    @Test
+    fun `shouldUseBuiltInSearch ignores unrelated built in tools`() {
+        val model = Model(
+            modelId = "gemini-3.1-pro-preview",
+            tools = setOf(BuiltInTools.UrlContext)
+        )
+        val assistant = Assistant(
+            searchMode = AssistantSearchMode.Provider(index = 0),
+            preferBuiltInSearch = true
+        )
+
+        assertEquals(false, shouldUseBuiltInSearch(model, assistant))
+    }
+
+    @Test
+    fun `shouldUseBuiltInSearch requires assistant opt in`() {
+        val model = Model(
+            modelId = "gemini-3.1-pro-preview",
+            tools = setOf(BuiltInTools.Search, BuiltInTools.UrlContext)
+        )
+        val assistant = Assistant(
+            searchMode = AssistantSearchMode.Provider(index = 0),
+            preferBuiltInSearch = false
+        )
+
+        assertEquals(false, shouldUseBuiltInSearch(model, assistant))
+    }
+
+    @Test
+    fun `shouldUseBuiltInSearch enables search when preferred and supported`() {
+        val model = Model(
+            modelId = "gemini-3.1-pro-preview",
+            tools = setOf(BuiltInTools.Search, BuiltInTools.UrlContext)
+        )
+        val assistant = Assistant(
+            searchMode = AssistantSearchMode.Provider(index = 0),
+            preferBuiltInSearch = true
+        )
+
+        assertEquals(true, shouldUseBuiltInSearch(model, assistant))
+    }
 }

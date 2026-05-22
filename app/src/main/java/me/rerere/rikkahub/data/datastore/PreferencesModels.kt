@@ -37,6 +37,7 @@ val DISABLED_MODEL_ID: Uuid = Uuid.parse("00000000-0000-0000-0000-000000000000")
 data class Settings(
     @Transient
     val init: Boolean = false,
+    val setupCompleted: Boolean = false,
     val dynamicColor: Boolean = true,
     val themeId: String = PresetThemes[0].id,
     val developerMode: Boolean = false,

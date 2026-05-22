@@ -1244,18 +1244,6 @@ private fun secureEquals(left: String, right: String): Boolean {
 private fun resolveAiIconAssetPath(name: String): String? {
     val lowerName = name.lowercase(Locale.ROOT)
     return when {
-        "grok" in lowerName || "x-ai" in lowerName || "xai" in lowerName -> "xai.svg"
-        "gemini" in lowerName || "google" in lowerName -> "google-color.svg"
-        "claude" in lowerName || "anthropic" in lowerName -> "claude-color.svg"
-        "openai" in lowerName || Regex("\\bgpt[-\\d]").containsMatchIn(lowerName) -> "openai.svg"
-        "deepseek" in lowerName -> "deepseek-color.svg"
-        "qwen" in lowerName || "alibaba" in lowerName -> "qwen-color.svg"
-        "mistral" in lowerName -> "mistral-color.svg"
-        "llama" in lowerName || "meta" in lowerName -> "meta-color.svg"
-        "cohere" in lowerName -> "cohere-color.svg"
-        "perplexity" in lowerName -> "perplexity-color.svg"
-        "groq" in lowerName -> "groq.svg"
-        "openrouter" in lowerName -> "openrouter.svg"
         "exa" in lowerName -> "exa.png"
         "tavily" in lowerName -> "tavily.png"
         "brave" in lowerName -> "brave.svg"
@@ -1264,14 +1252,6 @@ private fun resolveAiIconAssetPath(name: String): String? {
         "metaso" in lowerName -> "metaso.svg"
         "ollama" in lowerName -> "ollama.svg"
         "firecrawl" in lowerName -> "firecrawl.svg"
-        "zhipu" in lowerName || "glm" in lowerName -> "zhipu-color.svg"
-        "doubao" in lowerName || "bytedance" in lowerName -> "bytedance-color.svg"
-        "minimax" in lowerName -> "minimax-color.svg"
-        "nvidia" in lowerName -> "nvidia-color.svg"
-        "cloudflare" in lowerName -> "cloudflare-color.svg"
-        "cerebras" in lowerName -> "cerebras-color.svg"
-        "siliconflow" in lowerName -> "siliconflow.svg"
-        "hunyuan" in lowerName || "tencent" in lowerName -> "hunyuan-color.svg"
         else -> null
     }
 }

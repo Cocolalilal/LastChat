@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -26,12 +27,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.delay
 import me.rerere.rikkahub.ui.components.ui.ToastType
+import me.rerere.ai.provider.OpenAICompatibilityMode
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.provider.ReasoningRequestBehavior
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.pages.assistant.detail.CustomBodies
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.foundation.layout.size
-import me.rerere.rikkahub.ui.components.ui.ClickableIconPicker
 import me.rerere.rikkahub.ui.components.ui.ProviderIcon
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import kotlin.reflect.KClass
@@ -103,37 +106,15 @@ fun ProviderConfigure(
             }
         }
 
-        // 3. Name field with icon picker
+        // 3. Name field with catalog icon preview
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            ClickableIconPicker(
-                currentIconUri = provider.customIconUri,
-                defaultContent = {
-                    ProviderIcon(
-                        provider = provider,
-                        modifier = Modifier.size(40.dp)
-                    )
-                },
-                onIconSelected = { uri ->
-                    val updated = when (provider) {
-                        is ProviderSetting.OpenAI -> provider.copy(customIconUri = uri.toString())
-                        is ProviderSetting.Google -> provider.copy(customIconUri = uri.toString())
-                        is ProviderSetting.Claude -> provider.copy(customIconUri = uri.toString())
-                    }
-                    onEdit(updated)
-                },
-                onIconCleared = {
-                    val updated = when (provider) {
-                        is ProviderSetting.OpenAI -> provider.copy(customIconUri = null)
-                        is ProviderSetting.Google -> provider.copy(customIconUri = null)
-                        is ProviderSetting.Claude -> provider.copy(customIconUri = null)
-                    }
-                    onEdit(updated)
-                },
-                iconSize = 48.dp
+            ProviderIcon(
+                provider = provider,
+                modifier = Modifier.size(48.dp)
             )
             OutlinedTextField(
                 value = provider.name,
@@ -213,7 +194,11 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
             apiKey = apiKey,
             baseUrl = convertedBaseUrl,
             chatCompletionsPath = if (this is ProviderSetting.OpenAI) this.chatCompletionsPath else ProviderSetting.OpenAI().chatCompletionsPath,
-            useResponseApi = if (this is ProviderSetting.OpenAI) this.useResponseApi else false
+            useResponseApi = if (this is ProviderSetting.OpenAI) this.useResponseApi else false,
+            reasoningBehavior = if (this is ProviderSetting.OpenAI) this.reasoningBehavior else null,
+            streamOptionsMode = if (this is ProviderSetting.OpenAI) this.streamOptionsMode else OpenAICompatibilityMode.AUTO,
+            imageResponseModalitiesMode = if (this is ProviderSetting.OpenAI) this.imageResponseModalitiesMode else OpenAICompatibilityMode.AUTO,
+            reasoningContentReplayMode = if (this is ProviderSetting.OpenAI) this.reasoningContentReplayMode else OpenAICompatibilityMode.AUTO,
         )
 
         ProviderSetting.Google::class -> ProviderSetting.Google(
@@ -415,6 +400,135 @@ private fun ColumnScope.ProviderConfigureOpenAI(
                 }
             }
         )
+    }
+
+    OpenAICompatibilityModeSetting(
+        label = stringResource(R.string.setting_provider_page_stream_options),
+        selected = provider.streamOptionsMode,
+        onSelected = { onEdit(provider.copy(streamOptionsMode = it)) },
+    )
+    OpenAICompatibilityModeSetting(
+        label = stringResource(R.string.setting_provider_page_image_modalities),
+        selected = provider.imageResponseModalitiesMode,
+        onSelected = { onEdit(provider.copy(imageResponseModalitiesMode = it)) },
+    )
+    OpenAICompatibilityModeSetting(
+        label = stringResource(R.string.setting_provider_page_reasoning_replay),
+        selected = provider.reasoningContentReplayMode,
+        onSelected = { onEdit(provider.copy(reasoningContentReplayMode = it)) },
+    )
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            stringResource(R.string.setting_provider_page_custom_reasoning_payload),
+            modifier = Modifier.weight(1f),
+        )
+        HapticSwitch(
+            checked = provider.reasoningBehavior != null,
+            onCheckedChange = { enabled ->
+                onEdit(provider.copy(reasoningBehavior = if (enabled) ReasoningRequestBehavior() else null))
+            },
+        )
+    }
+
+    provider.reasoningBehavior?.let { behavior ->
+        ReasoningBehaviorEditor(
+            behavior = behavior,
+            onChange = { onEdit(provider.copy(reasoningBehavior = it)) },
+        )
+    }
+}
+
+@Composable
+private fun OpenAICompatibilityModeSetting(
+    label: String,
+    selected: OpenAICompatibilityMode,
+    onSelected: (OpenAICompatibilityMode) -> Unit,
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        val modes = OpenAICompatibilityMode.entries
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            modes.forEachIndexed { index, mode ->
+                SegmentedButton(
+                    selected = selected == mode,
+                    onClick = { onSelected(mode) },
+                    shape = SegmentedButtonDefaults.itemShape(index = index, count = modes.size),
+                    label = {
+                        Text(
+                            when (mode) {
+                                OpenAICompatibilityMode.AUTO -> stringResource(R.string.setting_provider_page_compatibility_auto)
+                                OpenAICompatibilityMode.ENABLED -> stringResource(R.string.setting_provider_page_compatibility_on)
+                                OpenAICompatibilityMode.DISABLED -> stringResource(R.string.setting_provider_page_compatibility_off)
+                            }
+                        )
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReasoningBehaviorEditor(
+    behavior: ReasoningRequestBehavior,
+    onChange: (ReasoningRequestBehavior) -> Unit,
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        ReasoningBodiesSection(
+            title = stringResource(R.string.reasoning_off),
+            bodies = behavior.off,
+            onUpdate = { onChange(behavior.copy(off = it)) },
+        )
+        ReasoningBodiesSection(
+            title = stringResource(R.string.reasoning_auto),
+            bodies = behavior.auto,
+            onUpdate = { onChange(behavior.copy(auto = it)) },
+        )
+        ReasoningBodiesSection(
+            title = stringResource(R.string.reasoning_light),
+            bodies = behavior.low,
+            onUpdate = { onChange(behavior.copy(low = it)) },
+        )
+        ReasoningBodiesSection(
+            title = stringResource(R.string.reasoning_medium),
+            bodies = behavior.medium,
+            onUpdate = { onChange(behavior.copy(medium = it)) },
+        )
+        ReasoningBodiesSection(
+            title = stringResource(R.string.reasoning_heavy),
+            bodies = behavior.high,
+            onUpdate = { onChange(behavior.copy(high = it)) },
+        )
+    }
+}
+
+@Composable
+private fun ReasoningBodiesSection(
+    title: String,
+    bodies: List<me.rerere.ai.provider.CustomBody>,
+    onUpdate: (List<me.rerere.ai.provider.CustomBody>) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        CustomBodies(customBodies = bodies, onUpdate = onUpdate)
     }
 }
 

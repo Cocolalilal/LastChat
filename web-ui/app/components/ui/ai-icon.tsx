@@ -11,6 +11,7 @@ export interface AIIconProps {
   loading?: boolean;
   className?: string;
   imageClassName?: string;
+  allowNameIconFallback?: boolean;
 }
 
 function toFallbackText(name: string): string {
@@ -22,50 +23,39 @@ function toFallbackText(name: string): string {
   return trimmed.slice(0, 1).toUpperCase();
 }
 
-function getLobeHubIconUrls(slug: string): string[] {
-  const normalizedSlug = slug.toLowerCase().replace(/_|\s/g, "-");
-  let finalSlug = normalizedSlug;
-  switch (normalizedSlug.replace(/-/g, "")) {
-    case "metallama": finalSlug = "meta"; break;
-    case "mistralai": finalSlug = "mistral"; break;
-    case "01ai": finalSlug = "yi"; break;
-    case "moonshotai": finalSlug = "moonshot"; break;
-  }
-  // Try both themes (we'll let the error handler advance if 404)
-  return [
-    `https://registry.npmmirror.com/@lobehub/icons-static-png/latest/files/dark/${finalSlug}.png`,
-    `https://registry.npmmirror.com/@lobehub/icons-static-png/latest/files/light/${finalSlug}.png`
-  ];
+function isCatalogIconUrl(url: string): boolean {
+  return (
+    url.toLowerCase().includes("/lastchat/main/catalog/icons/") ||
+    url.toLowerCase().includes("/lastchat/refs/heads/main/catalog/icons/")
+  );
 }
 
 export function AIIcon({
   name,
   iconUrl,
-  providerSlug,
   customIconUri,
   size = 24,
   loading = false,
   className,
   imageClassName,
+  allowNameIconFallback = false,
 }: AIIconProps) {
   const normalizedName = name.trim() || "auto";
   const fallbackText = toFallbackText(normalizedName);
   
   const srcStack = React.useMemo(() => {
     const stack: string[] = [];
-    if (customIconUri) {
+    if (customIconUri && isCatalogIconUrl(customIconUri)) {
       stack.push(customIconUri);
     }
-    if (iconUrl) {
+    if (iconUrl && isCatalogIconUrl(iconUrl)) {
       stack.push(iconUrl);
     }
-    if (providerSlug) {
-      stack.push(...getLobeHubIconUrls(providerSlug));
+    if (allowNameIconFallback) {
+      stack.push(`/api/ai-icon?name=${encodeURIComponent(normalizedName)}`);
     }
-    // Local static icon lookup is NOT protected by JWT
-    stack.push(`/api/ai-icon?name=${encodeURIComponent(normalizedName)}`);
     return stack;
-  }, [customIconUri, iconUrl, providerSlug, normalizedName]);
+  }, [customIconUri, iconUrl, allowNameIconFallback, normalizedName]);
 
   const [srcIndex, setSrcIndex] = React.useState(0);
   const [loaded, setLoaded] = React.useState(false);

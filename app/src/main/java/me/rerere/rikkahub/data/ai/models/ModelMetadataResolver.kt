@@ -53,13 +53,10 @@ class ModelMetadataResolver(
             inputModalities = inputModalities,
             outputModalities = outputModalities,
             abilities = abilities,
-            providerSlug = model.providerSlug
-                ?.takeIf { it.isNotBlank() }
-                ?.toIconProviderSlug()
-                ?: catalogEntry?.iconProviderSlug()
-                ?: model.modelId.substringBefore("/")
-                    .takeIf { model.modelId.contains("/") }
-                    ?.toIconProviderSlug(),
+            imageGenerationMethod = model.imageGenerationMethod ?: catalogEntry?.imageGenerationMethod,
+            iconUrl = catalogEntry?.iconUrl,
+            reasoningBehavior = model.reasoningBehavior ?: catalogEntry?.reasoningBehavior,
+            providerSlug = catalogEntry?.providerSlug?.toIconProviderSlug(),
         )
     }
 
@@ -140,8 +137,13 @@ class ModelMetadataResolver(
             canonicalHint = model.canonicalModelId,
         )
         snapshot.exactEntries[canonicalModelId]?.let { return it }
-        val candidates = snapshot.canonicalEntries[canonicalModelId] ?: return null
-        return selectCatalogCandidate(candidates, model, providerHint)
+        val candidates = snapshot.canonicalEntries[canonicalModelId]
+        return candidates
+            ?.let { selectCatalogCandidate(it, model, providerHint) }
+            ?: snapshot.inferFamilyEntry(
+                modelId = model.modelId,
+                canonicalHint = model.canonicalModelId,
+            )
     }
 
     private fun selectCatalogCandidate(
@@ -196,8 +198,8 @@ class ModelMetadataResolver(
         }
 
         return when (resolvedType) {
-            ModelType.CHAT -> inputs.toList()
-            ModelType.IMAGE -> inputs.toList()
+            ModelType.CHAT -> catalogEntry?.inputModalities?.takeIf { it.isNotEmpty() } ?: inputs.toList()
+            ModelType.IMAGE -> catalogEntry?.inputModalities?.takeIf { it.isNotEmpty() } ?: inputs.toList()
             ModelType.EMBEDDING -> listOf(Modality.TEXT)
         }
     }
@@ -209,14 +211,14 @@ class ModelMetadataResolver(
         options: ModelResolutionOptions,
     ): List<Modality> {
         return when (resolvedType) {
-            ModelType.CHAT -> buildList {
+            ModelType.CHAT -> catalogEntry?.outputModalities?.takeIf { it.isNotEmpty() } ?: buildList {
                 add(Modality.TEXT)
                 if (options.preserveExistingCapabilities && model.outputModalities.contains(Modality.IMAGE)) {
                     add(Modality.IMAGE)
                 }
             }.distinct()
 
-            ModelType.IMAGE -> buildList {
+            ModelType.IMAGE -> catalogEntry?.outputModalities?.takeIf { it.isNotEmpty() } ?: buildList {
                 if (options.preserveExistingCapabilities && model.outputModalities.contains(Modality.TEXT)) {
                     add(Modality.TEXT)
                 } else if (catalogEntry?.supportedModalities?.contains(Modality.TEXT) == true) {
@@ -255,6 +257,7 @@ private fun String?.toModelTypeOrNull(): ModelType? {
     return when (this?.lowercase()) {
         "embedding" -> ModelType.EMBEDDING
         "image_generation", "image" -> ModelType.IMAGE
+        "chat" -> ModelType.CHAT
         else -> null
     }
 }
@@ -262,8 +265,8 @@ private fun String?.toModelTypeOrNull(): ModelType? {
 private fun ModelCatalogEntry.matchesProviderSlug(providerSlug: String?): Boolean {
     val normalizedSlug = providerSlug?.normalizeProviderToken() ?: return false
     val keyProvider = key.substringBefore("/").takeIf { key.contains("/") }?.normalizeProviderToken()
-    val litellmProviderToken = litellmProvider?.normalizeProviderToken()
-    return keyProvider == normalizedSlug || litellmProviderToken == normalizedSlug
+    val providerToken = this.providerSlug?.normalizeProviderToken()
+    return keyProvider == normalizedSlug || providerToken == normalizedSlug
 }
 
 private fun ModelCatalogEntry.matchesProviderHint(providerHint: ProviderSetting?): Boolean {
@@ -290,17 +293,10 @@ private fun ModelCatalogEntry.matchesProviderHint(providerHint: ProviderSetting?
     if (allowedProviders.isEmpty()) return false
 
     val keyProvider = key.substringBefore("/").takeIf { key.contains("/") }?.normalizeProviderToken()
-    val litellmProviderToken = litellmProvider?.normalizeProviderToken()
+    val providerToken = providerSlug?.normalizeProviderToken()
     return allowedProviders.any { candidate ->
-        candidate == keyProvider || candidate == litellmProviderToken
+        candidate == keyProvider || candidate == providerToken
     }
-}
-
-private fun ModelCatalogEntry.iconProviderSlug(): String? {
-    return litellmProvider?.toIconProviderSlug()
-        ?: key.substringBefore("/")
-            .takeIf { key.contains("/") }
-            ?.toIconProviderSlug()
 }
 
 private fun String.toIconProviderSlug(): String {
