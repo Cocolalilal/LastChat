@@ -5,6 +5,7 @@ import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
+import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.data.datastore.Settings
 import org.junit.Assert.assertEquals
@@ -409,6 +410,155 @@ class ModelMetadataResolverTest {
     }
 
     @Test
+    fun globalRulesInferCapabilitiesWithoutFamilyOrModelEntry() {
+        val resolver = resolverFor(
+            """
+            {
+              "schema_version": 2,
+              "global_rules": [
+                {
+                  "id": "vision",
+                  "match_patterns": ["vision", "(^|[/._-])vl($|[/._-])"],
+                  "input_modalities": ["TEXT", "IMAGE"]
+                },
+                {
+                  "id": "thinking",
+                  "match_patterns": ["thinking"],
+                  "abilities": ["TOOL", "REASONING"]
+                }
+              ],
+              "models": []
+            }
+            """.trimIndent()
+        )
+
+        val resolved = resolver.applyToModel(Model(modelId = "acme-thinking-vl"))
+
+        assertEquals(listOf(Modality.TEXT, Modality.IMAGE), resolved.inputModalities)
+        assertEquals(listOf(ModelAbility.TOOL, ModelAbility.REASONING), resolved.abilities)
+    }
+
+    @Test
+    fun modelOverridesWinAfterFamilyInference() {
+        val resolver = resolverFor(
+            """
+            {
+              "schema_version": 2,
+              "model_families": [{
+                "id": "qwen",
+                "display_name": "Qwen",
+                "match_patterns": ["qwen"],
+                "abilities": ["TOOL", "REASONING"]
+              }],
+              "model_overrides": [{
+                "id": "qwen3-embed",
+                "type": "EMBEDDING",
+                "input_modalities": ["TEXT"],
+                "output_modalities": ["TEXT"],
+                "abilities": []
+              }],
+              "models": []
+            }
+            """.trimIndent()
+        )
+
+        val resolved = resolver.applyToModel(Model(modelId = "qwen3-embed"))
+
+        assertEquals(ModelType.EMBEDDING, resolved.type)
+        assertEquals(emptyList<ModelAbility>(), resolved.abilities)
+    }
+
+    @Test
+    fun providerSpecificOverridesUseProviderHints() {
+        val resolver = resolverFor(
+            """
+            {
+              "schema_version": 2,
+              "model_families": [{
+                "id": "foo",
+                "display_name": "Foo",
+                "match_patterns": ["foo-model"],
+                "abilities": ["TOOL"]
+              }],
+              "model_overrides": [{
+                "match_patterns": ["foo-model"],
+                "provider_slugs": ["openrouter"],
+                "abilities": ["TOOL", "REASONING"]
+              }],
+              "models": []
+            }
+            """.trimIndent()
+        )
+
+        val generic = resolver.applyToModel(Model(modelId = "foo-model"))
+        val openRouter = resolver.applyToModel(
+            model = Model(modelId = "foo-model"),
+            providerHint = ProviderSetting.OpenAI(baseUrl = "https://openrouter.ai/api/v1"),
+        )
+
+        assertEquals(listOf(ModelAbility.TOOL), generic.abilities)
+        assertEquals(listOf(ModelAbility.TOOL, ModelAbility.REASONING), openRouter.abilities)
+    }
+
+    @Test
+    fun catalogManagedModelIconDoesNotBlockFreshFamilyIcon() {
+        val resolver = resolverFor(
+            """
+            {
+              "schema_version": 2,
+              "model_families": [{
+                "id": "gemini",
+                "display_name": "Gemini",
+                "match_patterns": ["gemini"],
+                "icon": "icons/gemini-new.svg"
+              }],
+              "models": []
+            }
+            """.trimIndent()
+        )
+
+        val resolved = resolver.applyToModel(
+            Model(
+                modelId = "gemini-3-flash",
+                customIconUri = "https://raw.githubusercontent.com/Cocolalilal/LastChat/main/catalog/icons/gemini-old.svg",
+            )
+        )
+
+        assertNull(resolved.customIconUri)
+        assertEquals(
+            "https://raw.githubusercontent.com/Cocolalilal/LastChat/main/catalog/icons/gemini-new.svg",
+            resolved.iconUrl,
+        )
+    }
+
+    @Test
+    fun userSelectedModelIconSurvivesCatalogResolution() {
+        val resolver = resolverFor(
+            """
+            {
+              "schema_version": 2,
+              "model_families": [{
+                "id": "gemini",
+                "display_name": "Gemini",
+                "match_patterns": ["gemini"],
+                "icon": "icons/gemini-new.svg"
+              }],
+              "models": []
+            }
+            """.trimIndent()
+        )
+
+        val resolved = resolver.applyToModel(
+            Model(
+                modelId = "gemini-3-flash",
+                customIconUri = "content://user/icon.png",
+            )
+        )
+
+        assertEquals("content://user/icon.png", resolved.customIconUri)
+    }
+
+    @Test
     fun safeMergePreservesSecretsAndDoesNotAddCatalogModels() {
         val snapshot = snapshotFor(
             """
@@ -453,6 +603,157 @@ class ModelMetadataResolverTest {
         assertEquals(false, provider.enabled)
         assertEquals("My OpenRouter", provider.name)
         assertEquals(emptyList<String>(), provider.models.map { it.modelId })
+    }
+
+    @Test
+    fun mergeCatalogMatchesExistingProvidersByBaseUrlAndRefreshesCatalogIcons() {
+        val snapshot = snapshotFor(
+            """
+            {
+              "schema_version": 1,
+              "providers": [
+                {
+                  "id": "d5734028-d39b-4d41-9841-fd648d65440e",
+                  "name": "OpenRouter",
+                  "type": "openai",
+                  "base_url": "https://openrouter.ai/api/v1",
+                  "icon": "icons/openrouter-new.svg",
+                  "preset": true
+                },
+                {
+                  "id": "c1734028-d39b-4d41-9841-fd648d65440e",
+                  "name": "Custom API",
+                  "type": "openai",
+                  "base_url": "https://example.com/v1",
+                  "icon": "icons/example.svg",
+                  "preset": true
+                }
+              ],
+              "models": []
+            }
+            """.trimIndent()
+        )
+        val resolver = ModelMetadataResolver { snapshot }
+        val catalogManagedIconProvider = ProviderSetting.OpenAI(
+            id = kotlin.uuid.Uuid.parse("11111111-1111-4111-8111-111111111111"),
+            name = "My OpenRouter",
+            apiKey = "secret",
+            baseUrl = "https://openrouter.ai/api/v1/",
+            customIconUri = "https://raw.githubusercontent.com/Cocolalilal/LastChat/main/catalog/icons/openrouter-old.svg",
+        )
+        val userIconProvider = ProviderSetting.OpenAI(
+            id = kotlin.uuid.Uuid.parse("22222222-2222-4222-8222-222222222222"),
+            name = "Custom API",
+            baseUrl = "https://example.com/v1",
+            customIconUri = "file:///data/user/0/me.rerere.rikkahub/files/custom_icons/custom.png",
+        )
+
+        val merged = mergeCatalogIntoSettings(
+            settings = Settings(providers = listOf(catalogManagedIconProvider, userIconProvider)),
+            snapshot = snapshot,
+            resolver = resolver,
+        )
+
+        assertEquals(2, merged.providers.size)
+        val openRouter = merged.providers[0] as ProviderSetting.OpenAI
+        assertEquals("secret", openRouter.apiKey)
+        assertEquals("My OpenRouter", openRouter.name)
+        assertEquals(
+            "https://raw.githubusercontent.com/Cocolalilal/LastChat/main/catalog/icons/openrouter-new.svg",
+            openRouter.customIconUri,
+        )
+        assertEquals(
+            "file:///data/user/0/me.rerere.rikkahub/files/custom_icons/custom.png",
+            merged.providers[1].customIconUri,
+        )
+    }
+
+    @Test
+    fun mergeCatalogAddsProviderIconWhenExistingProviderHasNone() {
+        val snapshot = snapshotFor(
+            """
+            {
+              "schema_version": 2,
+              "providers": [{
+                "id": "d5734028-d39b-4d41-9841-fd648d65440e",
+                "name": "OpenRouter",
+                "type": "openai",
+                "base_url": "https://openrouter.ai/api/v1",
+                "icon": "icons/openrouter-new.svg",
+                "preset": true
+              }],
+              "models": []
+            }
+            """.trimIndent()
+        )
+        val resolver = ModelMetadataResolver { snapshot }
+        val existing = ProviderSetting.OpenAI(
+            id = kotlin.uuid.Uuid.parse("d5734028-d39b-4d41-9841-fd648d65440e"),
+            name = "OpenRouter",
+            baseUrl = "https://openrouter.ai/api/v1",
+            customIconUri = null,
+        )
+
+        val merged = mergeCatalogIntoSettings(
+            settings = Settings(providers = listOf(existing)),
+            snapshot = snapshot,
+            resolver = resolver,
+        )
+
+        assertEquals(
+            "https://raw.githubusercontent.com/Cocolalilal/LastChat/main/catalog/icons/openrouter-new.svg",
+            merged.providers.single().customIconUri,
+        )
+    }
+
+    @Test
+    fun mergeCatalogCanRefreshExistingProviderIconsWithoutAddingMissingPresets() {
+        val snapshot = snapshotFor(
+            """
+            {
+              "schema_version": 2,
+              "providers": [
+                {
+                  "id": "d5734028-d39b-4d41-9841-fd648d65440e",
+                  "name": "OpenRouter",
+                  "type": "openai",
+                  "base_url": "https://openrouter.ai/api/v1",
+                  "icon": "icons/openrouter-new.svg",
+                  "preset": true
+                },
+                {
+                  "id": "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91",
+                  "name": "OpenAI",
+                  "type": "openai",
+                  "base_url": "https://api.openai.com/v1",
+                  "icon": "icons/openai.svg",
+                  "preset": true
+                }
+              ],
+              "models": []
+            }
+            """.trimIndent()
+        )
+        val resolver = ModelMetadataResolver { snapshot }
+        val existing = ProviderSetting.OpenAI(
+            id = kotlin.uuid.Uuid.parse("11111111-1111-4111-8111-111111111111"),
+            name = "My Router",
+            baseUrl = "https://openrouter.ai/api/v1/",
+            customIconUri = null,
+        )
+
+        val merged = mergeCatalogIntoSettings(
+            settings = Settings(providers = listOf(existing)),
+            snapshot = snapshot,
+            resolver = resolver,
+            includeMissingCatalogProviders = false,
+        )
+
+        assertEquals(1, merged.providers.size)
+        assertEquals(
+            "https://raw.githubusercontent.com/Cocolalilal/LastChat/main/catalog/icons/openrouter-new.svg",
+            merged.providers.single().customIconUri,
+        )
     }
 
     private fun resolverFor(rawJson: String): ModelMetadataResolver {

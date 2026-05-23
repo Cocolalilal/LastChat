@@ -186,7 +186,7 @@ object ModelIdNormalizer {
         while (tokens.isNotEmpty()) {
             val last = tokens.last()
             if (last.matches(Regex("20\\d{6}"))) {
-                tokens.removeLast()
+                tokens.removeAt(tokens.lastIndex)
                 continue
             }
             if (
@@ -195,7 +195,7 @@ object ModelIdNormalizer {
                 tokens[tokens.lastIndex - 1].matches(Regex("\\d{2}")) &&
                 last.matches(Regex("\\d{2}"))
             ) {
-                repeat(3) { tokens.removeLast() }
+                repeat(3) { tokens.removeAt(tokens.lastIndex) }
                 continue
             }
             break

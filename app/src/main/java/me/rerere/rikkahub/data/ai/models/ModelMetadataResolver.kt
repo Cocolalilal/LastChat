@@ -38,7 +38,7 @@ class ModelMetadataResolver(
         ) {
             model.displayName
         } else {
-            ModelDisplayNameGenerator.generate(model.modelId, canonicalModelId)
+            catalogEntry?.displayName ?: ModelDisplayNameGenerator.generate(model.modelId, canonicalModelId)
         }
 
         val resolvedType = resolveType(model, catalogEntry, options)
@@ -55,6 +55,7 @@ class ModelMetadataResolver(
             abilities = abilities,
             imageGenerationMethod = model.imageGenerationMethod ?: catalogEntry?.imageGenerationMethod,
             iconUrl = catalogEntry?.iconUrl,
+            customIconUri = model.customIconUri.preserveUserModelIcon(),
             reasoningBehavior = model.reasoningBehavior ?: catalogEntry?.reasoningBehavior,
             providerSlug = catalogEntry?.providerSlug?.toIconProviderSlug(),
         )
@@ -119,6 +120,13 @@ class ModelMetadataResolver(
         providerHint: ProviderSetting? = null,
     ): ModelCatalogEntry? {
         val snapshot = snapshotProvider() ?: return null
+
+        snapshot.resolveModelEntry(
+            modelId = model.modelId,
+            canonicalHint = model.canonicalModelId,
+            providerHint = providerHint,
+            providerSlugHint = model.providerSlug,
+        )?.let { return it }
 
         snapshot.exactEntries[model.modelId.lowercase()]?.let { return it }
 
@@ -317,4 +325,26 @@ private fun String.normalizeProviderToken(): String {
     return lowercase()
         .replace('_', '-')
         .replace('.', '-')
+}
+
+private fun String?.preserveUserModelIcon(): String? {
+    if (isNullOrBlank()) return null
+    return if (isCatalogManagedIconUri()) {
+        null
+    } else {
+        this
+    }
+}
+
+private fun String.isCatalogManagedIconUri(): Boolean {
+    val lower = lowercase()
+    return lower.contains("/catalog/icons/") ||
+        lower.contains("/catalog/refs/heads/") ||
+        lower.contains("raw.githubusercontent.com/cocolalilal/lastchat") ||
+        lower.contains("jsdelivr.net/gh/cocolalilal/lastchat") ||
+        (lower.contains("catalog") && lower.contains("icons")) ||
+        lower.startsWith("icons/") ||
+        lower.startsWith("/icons/") ||
+        lower.contains("file:///android_asset/icons/") ||
+        lower.contains("file:///android_asset/catalog/icons/")
 }

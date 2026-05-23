@@ -132,26 +132,42 @@ class IconStorageManager private constructor(
                 if (!response.isSuccessful) {
                     null
                 } else {
-                    response.body?.byteStream()?.use { inputStream ->
-                        val bitmap = BitmapFactory.decodeStream(inputStream)
-                        if (bitmap != null) {
-                            // Resize if too large (max 256x256 for icons)
-                            val resized = resizeIfNeeded(bitmap, 256)
-                            
+                    val urlPath = request.url.encodedPath
+                    val contentType = response.header("Content-Type") ?: ""
+                    val isSvg = urlPath.endsWith(".svg", ignoreCase = true) ||
+                            contentType.contains("image/svg", ignoreCase = true) ||
+                            contentType.contains("svg+xml", ignoreCase = true)
+                    
+                    if (isSvg) {
+                        response.body?.byteStream()?.use { inputStream ->
                             val file = getIconFile(iconKey)
                             FileOutputStream(file).use { output ->
-                                resized.compress(Bitmap.CompressFormat.PNG, 100, output)
+                                inputStream.copyTo(output)
                             }
-                            
-                            // Recycle bitmaps if we created a new one
-                            if (resized != bitmap) {
-                                bitmap.recycle()
-                            }
-                            resized.recycle()
-                            
                             Uri.fromFile(file).toString()
-                        } else {
-                            null
+                        }
+                    } else {
+                        response.body?.byteStream()?.use { inputStream ->
+                            val bitmap = BitmapFactory.decodeStream(inputStream)
+                            if (bitmap != null) {
+                                // Resize if too large (max 256x256 for icons)
+                                val resized = resizeIfNeeded(bitmap, 256)
+                                
+                                val file = getIconFile(iconKey)
+                                FileOutputStream(file).use { output ->
+                                    resized.compress(Bitmap.CompressFormat.PNG, 100, output)
+                                }
+                                
+                                // Recycle bitmaps if we created a new one
+                                if (resized != bitmap) {
+                                    bitmap.recycle()
+                                }
+                                resized.recycle()
+                                
+                                Uri.fromFile(file).toString()
+                            } else {
+                                null
+                            }
                         }
                     }
                 }

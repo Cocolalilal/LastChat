@@ -1,31 +1,44 @@
 package me.rerere.rikkahub.ui.pages.setting.components
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.TextButton
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.ai.provider.OpenAICompatibilityMode
 import me.rerere.ai.provider.ProviderSetting
@@ -36,6 +49,7 @@ import me.rerere.rikkahub.ui.pages.assistant.detail.CustomBodies
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.foundation.layout.size
 import me.rerere.rikkahub.ui.components.ui.ProviderIcon
+import me.rerere.rikkahub.utils.ImageUtils
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import kotlin.reflect.KClass
 
@@ -46,6 +60,26 @@ fun ProviderConfigure(
     showSavingIndicator: Boolean = false,
     onEdit: (provider: ProviderSetting) -> Unit
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val iconPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            val copiedUri = withContext(Dispatchers.IO) {
+                ImageUtils.copyImageToInternalStorage(
+                    context = context,
+                    sourceUri = uri,
+                    fileName = "provider_icon_${provider.id}.png",
+                )
+            }
+            copiedUri?.let { iconUri ->
+                onEdit(provider.copyProvider(customIconUri = iconUri.toString()))
+            }
+        }
+    }
+
     Column(
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = modifier
@@ -132,6 +166,40 @@ fun ProviderConfigure(
                 modifier = Modifier.weight(1f),
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
             )
+        }
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            OutlinedButton(
+                onClick = {
+                    iconPickerLauncher.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
+                },
+                modifier = Modifier.weight(1f),
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.ButtonPill,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Image,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                androidx.compose.foundation.layout.Spacer(modifier = Modifier.size(8.dp))
+                Text(stringResource(R.string.a11y_custom_icon))
+            }
+
+            if (provider.customIconUri.isUserSelectedIconUri()) {
+                TextButton(
+                    onClick = {
+                        onEdit(provider.copyProvider(customIconUri = null))
+                    },
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.ButtonPill,
+                ) {
+                    Text(stringResource(R.string.reset))
+                }
+            }
         }
 
         // 4. Provider-specific configuration
@@ -401,44 +469,20 @@ private fun ColumnScope.ProviderConfigureOpenAI(
             }
         )
     }
+}
 
-    OpenAICompatibilityModeSetting(
-        label = stringResource(R.string.setting_provider_page_stream_options),
-        selected = provider.streamOptionsMode,
-        onSelected = { onEdit(provider.copy(streamOptionsMode = it)) },
-    )
-    OpenAICompatibilityModeSetting(
-        label = stringResource(R.string.setting_provider_page_image_modalities),
-        selected = provider.imageResponseModalitiesMode,
-        onSelected = { onEdit(provider.copy(imageResponseModalitiesMode = it)) },
-    )
-    OpenAICompatibilityModeSetting(
-        label = stringResource(R.string.setting_provider_page_reasoning_replay),
-        selected = provider.reasoningContentReplayMode,
-        onSelected = { onEdit(provider.copy(reasoningContentReplayMode = it)) },
-    )
-
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            stringResource(R.string.setting_provider_page_custom_reasoning_payload),
-            modifier = Modifier.weight(1f),
-        )
-        HapticSwitch(
-            checked = provider.reasoningBehavior != null,
-            onCheckedChange = { enabled ->
-                onEdit(provider.copy(reasoningBehavior = if (enabled) ReasoningRequestBehavior() else null))
-            },
-        )
-    }
-
-    provider.reasoningBehavior?.let { behavior ->
-        ReasoningBehaviorEditor(
-            behavior = behavior,
-            onChange = { onEdit(provider.copy(reasoningBehavior = it)) },
-        )
-    }
+private fun String?.isUserSelectedIconUri(): Boolean {
+    if (isNullOrBlank()) return false
+    val lower = lowercase()
+    val isCatalogIcon = lower.contains("/catalog/icons/") ||
+        lower.contains("/catalog/refs/heads/") ||
+        lower.contains("raw.githubusercontent.com/cocolalilal/lastchat") ||
+        lower.contains("jsdelivr.net/gh/cocolalilal/lastchat") ||
+        (lower.contains("catalog") && lower.contains("icons")) ||
+        lower.startsWith("icons/") ||
+        lower.startsWith("/icons/") ||
+        lower.contains("file:///android_asset/icons/")
+    return !isCatalogIcon
 }
 
 @Composable

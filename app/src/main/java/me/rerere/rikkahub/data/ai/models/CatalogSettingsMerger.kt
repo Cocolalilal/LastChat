@@ -3,20 +3,32 @@ package me.rerere.rikkahub.data.ai.models
 import me.rerere.ai.provider.OpenAICompatibilityMode
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.data.datastore.Settings
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import kotlin.uuid.Uuid
 
 fun mergeCatalogIntoSettings(
     settings: Settings,
     snapshot: ModelCatalogSnapshot,
     resolver: ModelMetadataResolver,
+    includeMissingCatalogProviders: Boolean = true,
 ): Settings {
     val catalogProvidersById = snapshot.providers
         .mapNotNull { provider -> provider.uuidOrNull()?.let { it to provider } }
         .toMap()
+    val catalogProvidersByBaseUrl = snapshot.providers
+        .groupBy { provider -> provider.matchType to provider.baseUrl.normalizedCatalogUrlKey() }
+    val catalogProvidersByName = snapshot.providers
+        .groupBy { provider -> provider.matchType to provider.name.normalizedCatalogNameKey() }
+    val matchedCatalogProviderIds = mutableSetOf<String>()
 
     val normalizedExisting = settings.providers.map { provider ->
         val catalogProvider = catalogProvidersById[provider.id]
+            ?: catalogProvidersByBaseUrl[provider.matchType to provider.baseUrlForCatalogMatch().normalizedCatalogUrlKey()]
+                ?.singleOrNull()
+            ?: catalogProvidersByName[provider.matchType to provider.name.normalizedCatalogNameKey()]
+                ?.singleOrNull()
         val withCatalogDefaults = if (catalogProvider != null) {
+            matchedCatalogProviderIds += catalogProvider.id
             provider
                 .withCatalogProviderDefaults(catalogProvider)
         } else {
@@ -26,13 +38,18 @@ fun mergeCatalogIntoSettings(
     }
 
     val existingProviderIds = normalizedExisting.map { it.id }.toSet()
-    val missingCatalogProviders = snapshot.providers
-        .filter { it.builtIn || it.preset }
-        .mapNotNull { catalogProvider ->
-            val id = catalogProvider.uuidOrNull() ?: return@mapNotNull null
-            if (id in existingProviderIds) return@mapNotNull null
-            catalogProvider.toProviderSetting()
-        }
+    val missingCatalogProviders = if (includeMissingCatalogProviders) {
+        snapshot.providers
+            .filter { it.builtIn || it.preset }
+            .mapNotNull { catalogProvider ->
+                val id = catalogProvider.uuidOrNull() ?: return@mapNotNull null
+                if (id in existingProviderIds) return@mapNotNull null
+                if (catalogProvider.id in matchedCatalogProviderIds) return@mapNotNull null
+                catalogProvider.toProviderSetting()
+            }
+    } else {
+        emptyList()
+    }
 
     return settings.copy(
         providers = normalizedExisting + missingCatalogProviders.map(resolver::applyToProvider),
@@ -43,9 +60,10 @@ private fun ProviderSetting.withCatalogProviderDefaults(
     catalogProvider: CatalogProvider,
 ): ProviderSetting {
     val catalogIcon = catalogProvider.icon?.toCatalogIconUrl()
+    val resolvedIcon = customIconUri.catalogIconDefault(catalogIcon)
     return when (this) {
         is ProviderSetting.OpenAI -> copy(
-            customIconUri = customIconUri ?: catalogIcon,
+            customIconUri = resolvedIcon,
             reasoningBehavior = reasoningBehavior
                 ?: catalogProvider.reasoningBehavior?.toReasoningRequestBehavior(),
             streamOptionsMode = streamOptionsMode.catalogDefault(catalogProvider.streamOptionsMode),
@@ -53,9 +71,9 @@ private fun ProviderSetting.withCatalogProviderDefaults(
             reasoningContentReplayMode = reasoningContentReplayMode.catalogDefault(catalogProvider.reasoningContentReplayMode),
         )
 
-        is ProviderSetting.Google -> copy(customIconUri = customIconUri ?: catalogIcon)
+        is ProviderSetting.Google -> copy(customIconUri = resolvedIcon)
 
-        is ProviderSetting.Claude -> copy(customIconUri = customIconUri ?: catalogIcon)
+        is ProviderSetting.Claude -> copy(customIconUri = resolvedIcon)
     }
 }
 
@@ -100,6 +118,60 @@ private fun CatalogProvider.toProviderSetting(): ProviderSetting? {
 
 private fun OpenAICompatibilityMode.catalogDefault(catalogValue: OpenAICompatibilityMode): OpenAICompatibilityMode {
     return if (this == OpenAICompatibilityMode.AUTO) catalogValue else this
+}
+
+private val CatalogProvider.matchType: CatalogProviderType
+    get() = type
+
+private val ProviderSetting.matchType: CatalogProviderType
+    get() = when (this) {
+        is ProviderSetting.OpenAI -> CatalogProviderType.OPENAI
+        is ProviderSetting.Google -> CatalogProviderType.GOOGLE
+        is ProviderSetting.Claude -> CatalogProviderType.CLAUDE
+    }
+
+private fun ProviderSetting.baseUrlForCatalogMatch(): String {
+    return when (this) {
+        is ProviderSetting.OpenAI -> baseUrl
+        is ProviderSetting.Google -> baseUrl
+        is ProviderSetting.Claude -> baseUrl
+    }
+}
+
+private fun String.normalizedCatalogUrlKey(): String {
+    val url = trim().trimEnd('/').toHttpUrlOrNull()
+    return if (url != null) {
+        val path = url.encodedPath.trimEnd('/').takeUnless { it == "/" }.orEmpty()
+        "${url.scheme.lowercase()}://${url.host.lowercase()}$path"
+    } else {
+        trim().lowercase().trimEnd('/')
+    }
+}
+
+private fun String.normalizedCatalogNameKey(): String {
+    return trim().lowercase().replace(Regex("\\s+"), " ")
+}
+
+private fun String?.catalogIconDefault(catalogIcon: String?): String? {
+    if (catalogIcon == null) return this
+    return when {
+        isNullOrBlank() -> catalogIcon
+        isCatalogManagedIconUri() -> catalogIcon
+        else -> this
+    }
+}
+
+private fun String.isCatalogManagedIconUri(): Boolean {
+    val lower = lowercase()
+    return lower.contains("/catalog/icons/") ||
+        lower.contains("/catalog/refs/heads/") ||
+        lower.contains("raw.githubusercontent.com/cocolalilal/lastchat") ||
+        lower.contains("jsdelivr.net/gh/cocolalilal/lastchat") ||
+        (lower.contains("catalog") && lower.contains("icons")) ||
+        lower.startsWith("icons/") ||
+        lower.startsWith("/icons/") ||
+        lower.contains("file:///android_asset/icons/") ||
+        lower.contains("file:///android_asset/catalog/icons/")
 }
 
 private fun CatalogProvider.uuidOrNull(): Uuid? {

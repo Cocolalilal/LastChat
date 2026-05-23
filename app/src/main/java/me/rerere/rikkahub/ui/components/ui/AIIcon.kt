@@ -30,16 +30,17 @@ import me.rerere.rikkahub.utils.toCssHex
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderSetting
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * UNIFIED Provider Icon - Use this everywhere a provider icon is needed.
  * Takes the whole ProviderSetting object to ensure consistent display.
  * 
  * Priority:
- * 1. Custom icon (user-selected)
- * 2. Local pattern matching
- * 3. LobeHub CDN
- * 4. Text avatar fallback
+ * 1. Custom icon (user-selected or catalog-assigned)
+ * 2. Text avatar fallback
  */
 @Composable
 fun ProviderIcon(
@@ -72,11 +73,9 @@ fun ProviderIcon(
  * Takes the whole Model object and its parent provider to ensure consistent display.
  * 
  * Priority:
- * 1. Custom icon (user-selected)
- * 2. Direct icon URL from API
- * 3. LobeHub CDN via provider slug
- * 4. Local pattern matching
- * 5. Provider-specific fallback or text avatar
+ * 1. Custom icon (user-selected or catalog-assigned)
+ * 2. Catalog icon URL
+ * 3. Text avatar fallback
  */
 @Composable
 fun ModelIcon(
@@ -92,11 +91,12 @@ fun ModelIcon(
         name = model.displayName.ifBlank { model.modelId },
         iconUrl = model.iconUrl,
         customIconUri = model.customIconUri,
+        providerSlug = model.providerSlug,
         modifier = modifier,
         loading = loading,
         color = color,
         contentColor = contentColor,
-        padding = padding
+        padding = padding,
     )
 }
 
@@ -339,72 +339,146 @@ fun AutoAIIconWithUrl(
     loading: Boolean = false,
     color: Color = MaterialTheme.colorScheme.secondaryContainer,
     contentColor: Color = LocalContentColor.current,
-    padding: Dp = 4.dp,
+    padding: Dp = 4.dp
 ) {
-    if (!customIconUri.isNullOrBlank() && customIconUri.isCatalogIconUrl()) {
-        Surface(
-            modifier = modifier,
-            shape = rememberAvatarShape(loading),
-            color = Color.Transparent,
-        ) {
-            AsyncImage(
-                model = android.net.Uri.parse(customIconUri),
-                contentDescription = name,
-                modifier = Modifier.padding(padding),
-                colorFilter = ColorFilter.tint(contentColor),
-                contentScale = androidx.compose.ui.layout.ContentScale.Fit
+    // Priority 1: Custom icon URI (user-selected or catalog-assigned)
+    if (!customIconUri.isNullOrBlank()) {
+        if (customIconUri.isCatalogIconUrl()) {
+            CatalogIcon(
+                iconUri = customIconUri,
+                name = name,
+                modifier = modifier,
+                loading = loading,
+                color = color,
+                contentColor = contentColor,
+                padding = padding,
             )
+        } else {
+            // Non-catalog custom icon (user picked from gallery, etc.)
+            Surface(
+                modifier = modifier.size(24.dp),
+                shape = rememberAvatarShape(loading),
+                color = Color.Transparent,
+            ) {
+                AsyncImage(
+                    model = android.net.Uri.parse(customIconUri),
+                    contentDescription = name,
+                    modifier = Modifier.padding(padding),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                )
+            }
         }
         return
     }
 
+    // Priority 2: Catalog icon URL (from model family iconUrl)
     if (!iconUrl.isNullOrBlank() && iconUrl.isCatalogIconUrl()) {
+        CatalogIcon(
+            iconUri = iconUrl,
+            name = name,
+            modifier = modifier,
+            loading = loading,
+            color = color,
+            contentColor = contentColor,
+            padding = padding,
+        )
+        return
+    }
+
+    // Fallback: Text avatar (no CDN or local pattern matching for models/providers)
+    TextAvatar(
+        text = name,
+        modifier = modifier,
+        loading = loading,
+        color = color,
+        contentColor = contentColor,
+    )
+}
+
+@Composable
+private fun CatalogIcon(
+    iconUri: String,
+    name: String,
+    modifier: Modifier = Modifier,
+    loading: Boolean = false,
+    color: Color = MaterialTheme.colorScheme.secondaryContainer,
+    contentColor: Color = LocalContentColor.current,
+    padding: Dp = 4.dp,
+) {
+    val context = LocalContext.current
+    val fileName = remember(iconUri) { extractCatalogIconFileName(iconUri) }
+    var isBundled by remember(fileName) { mutableStateOf<Boolean?>(null) }
+
+    LaunchedEffect(fileName) {
+        if (fileName.isNullOrBlank()) {
+            isBundled = false
+        } else {
+            isBundled = withContext(Dispatchers.IO) {
+                try {
+                    context.assets.open("icons/$fileName").use { }
+                    true
+                } catch (e: Exception) {
+                    false
+                }
+            }
+        }
+    }
+
+    if (isBundled == true && fileName != null) {
+        AIIcon(
+            path = fileName,
+            name = name,
+            modifier = modifier,
+            loading = loading,
+            color = color,
+            contentColor = contentColor,
+            padding = padding,
+        )
+    } else if (isBundled == false) {
+        val downloadUrl = remember(iconUri) {
+            if (iconUri.startsWith("http://") || iconUri.startsWith("https://")) {
+                iconUri
+            } else {
+                val cleanPath = iconUri.trimStart('/')
+                "https://raw.githubusercontent.com/Cocolalilal/LastChat/main/catalog/$cleanPath"
+            }
+        }
         RemoteIcon(
-            url = iconUrl,
-            iconKey = "catalog_${iconUrl.hashCode()}",
+            url = downloadUrl,
+            iconKey = "catalog_${downloadUrl.hashCode()}",
             name = name,
             modifier = modifier,
             loading = loading,
             color = color,
             padding = padding,
             contentColor = contentColor,
-            tint = iconUrl.isCatalogIconUrl(),
+            tint = true,
         )
-        return
+    } else {
+        // Loading/checking assets state placeholder
+        Surface(
+            modifier = modifier.size(24.dp),
+            shape = rememberAvatarShape(loading),
+            color = Color.Transparent
+        ) {}
     }
-
-    TextAvatar(
-        text = name,
-        modifier = modifier,
-        loading = loading,
-        color = color,
-        contentColor = contentColor
-    )
 }
 
-/**
- * Check if a model name has a good local icon available
- * Skip CDN lookup for these models to use local icons which are already excellent
- */
-private fun hasGoodLocalIcon(name: String): Boolean {
-    val lowerName = name.lowercase()
-    // Models/providers with excellent local icons - skip CDN for these
-    return lowerName.contains("gemini") ||
-           lowerName.contains("claude") ||
-           lowerName.contains("gpt") ||
-           lowerName.contains("deepseek") ||
-           lowerName.contains("qwen") ||
-           lowerName.contains("mistral") ||
-           lowerName.contains("llama") ||
-           lowerName.contains("gemma") ||
-           lowerName.contains("grok") ||
-           lowerName.contains("openai") ||
-           lowerName.contains("google")
+private fun extractCatalogIconFileName(uri: String): String? {
+    val lower = uri.lowercase()
+    val markers = listOf("/catalog/icons/", "catalog/icons/", "/icons/", "icons/")
+    for (marker in markers) {
+        val index = lower.indexOf(marker)
+        if (index != -1) {
+            val start = index + marker.length
+            return uri.substring(start).substringAfterLast('/')
+        }
+    }
+    if (!uri.contains("/") && !uri.contains("\\")) {
+        return uri
+    }
+    return uri.substringAfterLast('/')
 }
-
-/**
- * Icon URL pair containing both colored and monochrome versions
- */
 private data class IconUrlPair(
     val coloredUrl: String,
     val monochromeUrl: String
@@ -574,276 +648,50 @@ private fun RemoteIcon(
 }
 
 private fun String.isCatalogIconUrl(): Boolean {
-    return contains("/LastChat/main/catalog/icons/", ignoreCase = true) ||
-        contains("/LastChat/refs/heads/main/catalog/icons/", ignoreCase = true)
+    val lower = this.lowercase()
+    return lower.contains("/catalog/icons/") ||
+        lower.contains("/catalog/refs/heads/") ||
+        lower.contains("raw.githubusercontent.com/cocolalilal/lastchat") ||
+        lower.contains("jsdelivr.net/gh/cocolalilal/lastchat") ||
+        (lower.contains("catalog") && lower.contains("icons")) ||
+        lower.startsWith("icons/") ||
+        lower.startsWith("/icons/") ||
+        lower.contains("file:///android_asset/icons/")
 }
 
-@Preview
-@Composable
-private fun PreviewAutoAIIcon() {
-    Column {
-        AutoAIIcon("test")
-    }
-}
+private val ICON_CACHE = mutableMapOf<String, String>()
 
-// https://lobehub.com/zh/icons
 private fun computeAIIconByName(name: String): String? {
-    // 检查缓存
-    ICON_CACHE[name]?.let { return it }
+    val cached = ICON_CACHE[name]
+    if (cached != null) return cached.ifEmpty { null }
 
     val lowerName = name.lowercase()
-    
-    // OpenRouter model ID parsing: extract provider and model from "provider/model" format
-    val hasSlash = lowerName.contains("/")
-    val providerPart = if (hasSlash) lowerName.substringBefore("/") else null
-    val modelPart = if (hasSlash) lowerName.substringAfter("/") else null
-    
-    // First, try to match against model name (this is more specific and should take priority)
-    // For OpenRouter: "anthropic/claude-3" should show Claude icon, not Anthropic
-    val modelIcon = modelPart?.let { matchModelPattern(it) }
-    if (modelIcon != null) {
-        ICON_CACHE[name] = modelIcon
-        return modelIcon
-    }
-    
-    // Then, try to match against provider
-    val providerIcon = providerPart?.let { matchProviderPattern(it) }
-    if (providerIcon != null) {
-        ICON_CACHE[name] = providerIcon
-        return providerIcon
-    }
-    
-    // Finally, try to match the full name
-    val fullNameIcon = matchModelPattern(lowerName) ?: matchProviderPattern(lowerName)
-    fullNameIcon?.let { ICON_CACHE[name] = it }
-    
-    return fullNameIcon
-}
-
-// Match against provider/company patterns - used for OpenRouter provider prefixes
-private fun matchProviderPattern(providerName: String): String? {
-    return when {
-        // Companies with their own icons
-        providerName == "openai" -> "openai.svg"
-        providerName == "google" -> "google-color.svg"
-        providerName == "anthropic" -> "claude-color.svg" // Anthropic = Claude
-        providerName == "meta-llama" || providerName == "meta" -> "meta-color.svg"
-        providerName == "mistralai" || providerName == "mistral" -> "mistral-color.svg"
-        providerName == "deepseek" -> "deepseek-color.svg"
-        providerName == "x-ai" || providerName == "xai" -> "xai.svg"
-        providerName == "cohere" -> "cohere-color.svg"
-        providerName == "perplexity" -> "perplexity-color.svg"
-        providerName == "nvidia" -> "nvidia-color.svg"
-        providerName == "qwen" || providerName == "alibaba" -> "qwen-color.svg"
-        providerName == "microsoft" -> "openai.svg" // Azure OpenAI
-        providerName == "groq" -> "groq.svg"
-        providerName == "together" -> "openrouter.svg"
-        providerName == "fireworks" -> "openrouter.svg"
-        providerName == "openrouter" -> "openrouter.svg"
+    val path = when {
+        // Search Providers
+        lowerName.contains("tavily") -> "tavily.png"
+        lowerName.contains("exa") -> "exa.png"
+        lowerName.contains("bing") -> "bing.png"
+        lowerName.contains("brave") -> "brave.svg"
+        lowerName.contains("linkup") -> "linkup.png"
+        lowerName.contains("metaso") || lowerName.contains("秘塔") -> "metaso.svg"
+        lowerName.contains("firecrawl") -> "firecrawl.svg"
+        lowerName.contains("jina") -> "jina.svg"
         
-        // Additional OpenRouter providers - use generic or related icons
-        providerName == "nousresearch" -> "openrouter.svg"
-        providerName == "cognitivecomputations" -> "openrouter.svg"
-        providerName == "databricks" -> "openrouter.svg"
-        providerName == "liquid" -> "openrouter.svg"
-        providerName == "inflection" -> "openrouter.svg"
-        providerName == "neversleep" -> "openrouter.svg"
-        providerName == "sao10k" -> "openrouter.svg"
-        providerName == "ai21" -> "openrouter.svg"
-        providerName == "amazon" -> "openrouter.svg"
-        providerName == "aetherwiing" -> "openrouter.svg"
-        providerName == "thedrummer" -> "openrouter.svg"
-        providerName == "undi95" -> "openrouter.svg"
-        providerName == "01-ai" -> "openrouter.svg" // Yi models
-        providerName == "upstage" -> "openrouter.svg" // Solar
-        providerName == "mancer" -> "openrouter.svg"
-        providerName == "lynn" -> "openrouter.svg"
-        providerName == "pygmalionai" -> "openrouter.svg"
+        // TTS Providers
+        lowerName.contains("openai") -> "openai.svg"
+        lowerName.contains("google") -> "google-color.svg"
+        lowerName.contains("minimax") -> "minimax-color.svg"
+        lowerName.contains("qwen") -> "qwen-color.svg"
         
-        // Fallback patterns using contains for partial matches
-        providerName.contains("llama") -> "meta-color.svg"
-        providerName.contains("qwen") -> "qwen-color.svg"
+        // Importer
+        lowerName.contains("tavern") -> "tavern.png"
         
         else -> null
     }
+
+    ICON_CACHE[name] = path ?: ""
+    return path
 }
-
-// Match against model name patterns (for model-specific icons)
-private fun matchModelPattern(modelName: String): String? {
-    return when {
-        // Specific model patterns - order matters (more specific first)
-        PATTERN_CLAUDE_MODEL.containsMatchIn(modelName) -> "claude-color.svg"
-        PATTERN_GPT_MODEL.containsMatchIn(modelName) -> "openai.svg"
-        PATTERN_GEMINI_MODEL.containsMatchIn(modelName) -> "gemini-color.svg"
-        PATTERN_GEMMA.containsMatchIn(modelName) -> "gemma-color.svg"
-        PATTERN_DEEPSEEK_MODEL.containsMatchIn(modelName) -> "deepseek-color.svg"
-        PATTERN_GROK_MODEL.containsMatchIn(modelName) -> "grok.svg"
-        PATTERN_OLLAMA.containsMatchIn(modelName) -> "ollama.svg" // Must be before PATTERN_LLAMA
-        PATTERN_LLAMA.containsMatchIn(modelName) -> "meta-color.svg"
-        PATTERN_QWEN_MODEL.containsMatchIn(modelName) -> "qwen-color.svg"
-        PATTERN_MISTRAL_MODEL.containsMatchIn(modelName) -> "mistral-color.svg"
-        PATTERN_MIXTRAL.containsMatchIn(modelName) -> "mistral-color.svg"
-        PATTERN_CODESTRAL.containsMatchIn(modelName) -> "mistral-color.svg"
-        PATTERN_PIXTRAL.containsMatchIn(modelName) -> "mistral-color.svg"
-        PATTERN_PHI.containsMatchIn(modelName) -> "openai.svg" // Microsoft Phi
-        PATTERN_COMMAND.containsMatchIn(modelName) -> "cohere-color.svg"
-        PATTERN_INTERNLM_MODEL.containsMatchIn(modelName) -> "internlm-color.svg"
-        PATTERN_DOLPHIN.containsMatchIn(modelName) -> "openrouter.svg"
-        PATTERN_HERMES.containsMatchIn(modelName) -> "openrouter.svg"
-        PATTERN_SOLAR.containsMatchIn(modelName) -> "openrouter.svg"
-        PATTERN_YI.containsMatchIn(modelName) -> "openrouter.svg"
-        PATTERN_WIZARDLM.containsMatchIn(modelName) -> "openrouter.svg"
-        PATTERN_NOVA.containsMatchIn(modelName) -> "openrouter.svg" // Amazon Nova
-        PATTERN_TOPPY.containsMatchIn(modelName) -> "openrouter.svg"
-        PATTERN_MYTHOMAX.containsMatchIn(modelName) -> "openrouter.svg"
-        PATTERN_SONAR.containsMatchIn(modelName) -> "perplexity-color.svg"
-        PATTERN_JAMBA.containsMatchIn(modelName) -> "openrouter.svg"
-        // Search service patterns
-        PATTERN_SEARCH_BING.containsMatchIn(modelName) -> "bing.png"
-        PATTERN_SEARCH_TAVILY.containsMatchIn(modelName) -> "tavily.png"
-        PATTERN_SEARCH_EXA.containsMatchIn(modelName) -> "exa.png"
-        PATTERN_SEARCH_BRAVE.containsMatchIn(modelName) -> "brave.svg"
-        PATTERN_SEARCH_LINKUP.containsMatchIn(modelName) -> "linkup.png"
-        PATTERN_SEARCH_METASO.containsMatchIn(modelName) -> "metaso.svg"
-        PATTERN_SEARCH_FIRECRAWL.containsMatchIn(modelName) -> "firecrawl.svg"
-        PATTERN_SEARCH_JINA.containsMatchIn(modelName) -> "jina.svg"
-        PATTERN_PERPLEXITY.containsMatchIn(modelName) -> "perplexity-color.svg"
-        PATTERN_ZHIPU.containsMatchIn(modelName) -> "zhipu-color.svg"
-        else -> null
-    }
-}
-
-// Also provide legacy matching for non-OpenRouter usage (backwards compat)
-private fun matchIconPattern(searchName: String): String? {
-    return when {
-        PATTERN_OPENAI.containsMatchIn(searchName) -> "openai.svg"
-        PATTERN_GEMINI.containsMatchIn(searchName) -> "gemini-color.svg"
-        PATTERN_GOOGLE.containsMatchIn(searchName) -> "google-color.svg"
-        PATTERN_CLAUDE.containsMatchIn(searchName) -> "claude-color.svg"
-        PATTERN_DEEPSEEK.containsMatchIn(searchName) -> "deepseek-color.svg"
-        PATTERN_GROK.containsMatchIn(searchName) -> "grok.svg"
-        PATTERN_QWEN.containsMatchIn(searchName) -> "qwen-color.svg"
-        PATTERN_DOUBAO.containsMatchIn(searchName) -> "doubao-color.svg"
-        PATTERN_OPENROUTER.containsMatchIn(searchName) -> "openrouter.svg"
-        PATTERN_ZHIPU.containsMatchIn(searchName) -> "zhipu-color.svg"
-        PATTERN_MISTRAL.containsMatchIn(searchName) -> "mistral-color.svg"
-        PATTERN_META.containsMatchIn(searchName) -> "meta-color.svg"
-        PATTERN_HUNYUAN.containsMatchIn(searchName) -> "hunyuan-color.svg"
-        PATTERN_GEMMA.containsMatchIn(searchName) -> "gemma-color.svg"
-        PATTERN_PERPLEXITY.containsMatchIn(searchName) -> "perplexity-color.svg"
-        PATTERN_BYTEDANCE.containsMatchIn(searchName) -> "bytedance-color.svg"
-        PATTERN_ALIYUN.containsMatchIn(searchName) -> "alibabacloud-color.svg"
-        PATTERN_SILLICON_CLOUD.containsMatchIn(searchName) -> "siliconflow.svg"
-        PATTERN_AIHUBMIX.containsMatchIn(searchName) -> "aihubmix-color.svg"
-        PATTERN_OLLAMA.containsMatchIn(searchName) -> "ollama.svg"
-        PATTERN_GITHUB.containsMatchIn(searchName) -> "github.svg"
-        PATTERN_CLOUDFLARE.containsMatchIn(searchName) -> "cloudflare-color.svg"
-        PATTERN_MINIMAX.containsMatchIn(searchName) -> "minimax-color.svg"
-        PATTERN_XAI.containsMatchIn(searchName) -> "xai.svg"
-        PATTERN_JUHENEXT.containsMatchIn(searchName) -> "juhenext.png"
-        PATTERN_KIMI.containsMatchIn(searchName) -> "kimi-color.svg"
-        PATTERN_MOONSHOT.containsMatchIn(searchName) -> "moonshot.svg"
-        PATTERN_302.containsMatchIn(searchName) -> "302ai.svg"
-        PATTERN_STEP.containsMatchIn(searchName) -> "stepfun-color.svg"
-        PATTERN_INTERN.containsMatchIn(searchName) -> "internlm-color.svg"
-        PATTERN_COHERE.containsMatchIn(searchName) -> "cohere-color.svg"
-        PATTERN_TAVERN.containsMatchIn(searchName) -> "tavern.png"
-        PATTERN_CEREBRAS.containsMatchIn(searchName) -> "cerebras-color.svg"
-        PATTERN_NVIDIA.containsMatchIn(searchName) -> "nvidia-color.svg"
-        PATTERN_PPIO.containsMatchIn(searchName) -> "ppio-color.svg"
-        PATTERN_VERCEL.containsMatchIn(searchName) -> "vercel.svg"
-        PATTERN_GROQ.containsMatchIn(searchName) -> "groq.svg"
-        PATTERN_TOKENPONY.containsMatchIn(searchName) -> "tokenpony.svg"
-        PATTERN_LING.containsMatchIn(searchName) -> "ling.png"
-        // Search providers
-        PATTERN_SEARCH_LINKUP.containsMatchIn(searchName) -> "linkup.png"
-        PATTERN_SEARCH_BING.containsMatchIn(searchName) -> "bing.png"
-        PATTERN_SEARCH_TAVILY.containsMatchIn(searchName) -> "tavily.png"
-        PATTERN_SEARCH_EXA.containsMatchIn(searchName) -> "exa.png"
-        PATTERN_SEARCH_BRAVE.containsMatchIn(searchName) -> "brave.svg"
-        PATTERN_SEARCH_METASO.containsMatchIn(searchName) -> "metaso.svg"
-        PATTERN_SEARCH_FIRECRAWL.containsMatchIn(searchName) -> "firecrawl.svg"
-        PATTERN_SEARCH_JINA.containsMatchIn(searchName) -> "jina.svg"
-        else -> null
-    }
-}
-
-// 静态缓存和正则模式
-private val ICON_CACHE = mutableMapOf<String, String>()
-private val PATTERN_OPENAI = Regex("(gpt|openai|o\\d)")
-private val PATTERN_GEMINI = Regex("(gemini)")
-private val PATTERN_GOOGLE = Regex("google")
-private val PATTERN_CLAUDE = Regex("claude")
-private val PATTERN_DEEPSEEK = Regex("deepseek")
-private val PATTERN_GROK = Regex("grok")
-private val PATTERN_QWEN = Regex("qwen|qwq|qvq")
-private val PATTERN_DOUBAO = Regex("doubao")
-private val PATTERN_OPENROUTER = Regex("openrouter")
-private val PATTERN_ZHIPU = Regex("zhipu|智谱|glm")
-private val PATTERN_MISTRAL = Regex("mistral")
-private val PATTERN_META = Regex("meta\\b|(?<!o)llama")
-private val PATTERN_HUNYUAN = Regex("hunyuan|tencent")
-private val PATTERN_GEMMA = Regex("gemma")
-private val PATTERN_PERPLEXITY = Regex("perplexity")
-private val PATTERN_BYTEDANCE = Regex("bytedance|火山")
-private val PATTERN_ALIYUN = Regex("aliyun|阿里云|百炼")
-private val PATTERN_SILLICON_CLOUD = Regex("silicon|硅基")
-private val PATTERN_AIHUBMIX = Regex("aihubmix")
-private val PATTERN_OLLAMA = Regex("ollama")
-private val PATTERN_GITHUB = Regex("github")
-private val PATTERN_CLOUDFLARE = Regex("cloudflare")
-private val PATTERN_MINIMAX = Regex("minimax")
-private val PATTERN_XAI = Regex("xai")
-private val PATTERN_JUHENEXT = Regex("juhenext")
-private val PATTERN_KIMI = Regex("kimi")
-private val PATTERN_MOONSHOT = Regex("moonshot|月之暗面")
-private val PATTERN_302 = Regex("302")
-private val PATTERN_STEP = Regex("step|阶跃")
-private val PATTERN_INTERN = Regex("intern|书生")
-private val PATTERN_COHERE = Regex("cohere")
-private val PATTERN_TAVERN = Regex("tavern")
-private val PATTERN_CEREBRAS = Regex("cerebras")
-private val PATTERN_NVIDIA = Regex("nvidia")
-private val PATTERN_PPIO = Regex("ppio|派欧")
-private val PATTERN_VERCEL = Regex("vercel")
-private val PATTERN_GROQ = Regex("groq")
-private val PATTERN_TOKENPONY = Regex("tokenpony|小马算力")
-private val PATTERN_LING = Regex("ling|ring|百灵")
-
-private val PATTERN_SEARCH_LINKUP = Regex("linkup")
-private val PATTERN_SEARCH_BING = Regex("bing")
-private val PATTERN_SEARCH_TAVILY = Regex("tavily")
-private val PATTERN_SEARCH_EXA = Regex("exa")
-private val PATTERN_SEARCH_BRAVE = Regex("brave")
-private val PATTERN_SEARCH_METASO = Regex("metaso|秘塔")
-private val PATTERN_SEARCH_FIRECRAWL = Regex("firecrawl")
-private val PATTERN_SEARCH_JINA = Regex("jina")
-
-// Model family patterns (for matching model names in OpenRouter format)
-private val PATTERN_LLAMA = Regex("llama")
-private val PATTERN_QWEN_MODEL = Regex("qwen|qwq|qvq")
-private val PATTERN_MISTRAL_MODEL = Regex("mistral")
-private val PATTERN_PHI = Regex("\\bphi\\b|phi-")
-private val PATTERN_COMMAND = Regex("command-")
-private val PATTERN_CLAUDE_MODEL = Regex("claude")
-private val PATTERN_GPT_MODEL = Regex("gpt-|\\bo\\d")
-private val PATTERN_DEEPSEEK_MODEL = Regex("deepseek")
-private val PATTERN_GEMINI_MODEL = Regex("gemini")
-private val PATTERN_GROK_MODEL = Regex("grok")
-private val PATTERN_MIXTRAL = Regex("mixtral")
-private val PATTERN_CODESTRAL = Regex("codestral")
-private val PATTERN_PIXTRAL = Regex("pixtral")
-private val PATTERN_WIZARDLM = Regex("wizardlm|wizard")
-private val PATTERN_DOLPHIN = Regex("dolphin")
-private val PATTERN_HERMES = Regex("hermes")
-private val PATTERN_SOLAR = Regex("solar")
-private val PATTERN_YI = Regex("\\byi\\b|yi-")
-private val PATTERN_INTERNLM_MODEL = Regex("internlm")
-private val PATTERN_NOVA = Regex("\\bnova\\b")
-private val PATTERN_TOPPY = Regex("toppy")
-private val PATTERN_MYTHOMAX = Regex("mythomax")
-private val PATTERN_SONAR = Regex("sonar")
-private val PATTERN_JAMBA = Regex("jamba")
 
 @Composable
 fun SiliconFlowPowerByIcon(modifier: Modifier = Modifier) {
@@ -854,4 +702,3 @@ fun SiliconFlowPowerByIcon(modifier: Modifier = Modifier) {
         AsyncImage(model = R.drawable.siliconflow_dark, contentDescription = null, modifier = modifier)
     }
 }
-

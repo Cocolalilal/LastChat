@@ -24,6 +24,7 @@ import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.OpenAICompatibilityMode
+import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.ReasoningRequestBehavior
 import me.rerere.ai.registry.ModelIdNormalizer
 import me.rerere.rikkahub.utils.JsonInstant
@@ -53,6 +54,10 @@ data class LastChatCatalog(
     val updatedAt: String? = null,
     val providers: List<CatalogProvider> = emptyList(),
     val models: List<CatalogModel> = emptyList(),
+    @SerialName("global_rules")
+    val globalRules: List<CatalogModelRule> = emptyList(),
+    @SerialName("model_overrides")
+    val modelOverrides: List<CatalogModelOverride> = emptyList(),
     @SerialName("model_families")
     val modelFamilies: List<CatalogModelFamily> = emptyList(),
     @SerialName("model_groups")
@@ -215,6 +220,68 @@ data class CatalogModelVersion(
 )
 
 @Serializable
+data class CatalogModelRule(
+    val id: String = "",
+    @SerialName("match_patterns")
+    val matchPatterns: List<String> = emptyList(),
+    @SerialName("exclude_patterns")
+    val excludePatterns: List<String> = emptyList(),
+    val type: ModelType? = null,
+    @SerialName("image_generation_method")
+    val imageGenerationMethod: ImageGenerationMethod? = null,
+    @SerialName("input_modalities")
+    val inputModalities: List<Modality>? = null,
+    @SerialName("output_modalities")
+    val outputModalities: List<Modality>? = null,
+    val abilities: List<ModelAbility>? = null,
+    @SerialName("provider_slug")
+    val providerSlug: String? = null,
+    @SerialName("canonical_model_id")
+    val canonicalModelId: String? = null,
+    @SerialName("display_name")
+    val displayName: String? = null,
+    @SerialName("reasoning_behavior")
+    val reasoningBehavior: CatalogRequestBehavior? = null,
+)
+
+@Serializable
+data class CatalogModelOverride(
+    val id: String = "",
+    @SerialName("display_name")
+    val displayName: String? = null,
+    @SerialName("canonical_model_id")
+    val canonicalModelId: String? = null,
+    @SerialName("api_aliases")
+    val apiAliases: List<String> = emptyList(),
+    @SerialName("provider_ids")
+    val providerIds: List<String> = emptyList(),
+    @SerialName("provider_slugs")
+    val providerSlugs: List<String> = emptyList(),
+    @SerialName("base_url_patterns")
+    val baseUrlPatterns: List<String> = emptyList(),
+    @SerialName("match_patterns")
+    val matchPatterns: List<String> = emptyList(),
+    @SerialName("exclude_patterns")
+    val excludePatterns: List<String> = emptyList(),
+    val type: ModelType? = null,
+    @SerialName("image_generation_method")
+    val imageGenerationMethod: ImageGenerationMethod? = null,
+    @SerialName("input_modalities")
+    val inputModalities: List<Modality>? = null,
+    @SerialName("output_modalities")
+    val outputModalities: List<Modality>? = null,
+    val abilities: List<ModelAbility>? = null,
+    @SerialName("provider_slug")
+    val providerSlug: String? = null,
+    @SerialName("input_cost_per_token")
+    val inputCostPerToken: Double? = null,
+    @SerialName("output_cost_per_token")
+    val outputCostPerToken: Double? = null,
+    @SerialName("reasoning_behavior")
+    val reasoningBehavior: CatalogRequestBehavior? = null,
+)
+
+@Serializable
 data class CatalogRequestBehavior(
     val off: List<CatalogCustomBody> = emptyList(),
     val auto: List<CatalogCustomBody> = emptyList(),
@@ -266,11 +333,15 @@ data class ModelCatalogSnapshot(
     val canonicalEntries: Map<String, List<ModelCatalogEntry>>,
     val providers: List<CatalogProvider> = emptyList(),
     val modelFamilies: List<CatalogModelFamily> = emptyList(),
+    val globalRules: List<CatalogModelRule> = emptyList(),
+    val modelOverrides: List<CatalogModelOverride> = emptyList(),
 ) {
     val catalog: LastChatCatalog
         get() = LastChatCatalog(
             providers = providers,
             modelFamilies = modelFamilies,
+            globalRules = globalRules,
+            modelOverrides = modelOverrides,
         )
 }
 
@@ -295,6 +366,7 @@ object ModelCatalogParser {
         val canonicalEntries = linkedMapOf<String, MutableList<ModelCatalogEntry>>()
         val modelFamilies = catalog.effectiveModelFamilies
         val familiesById = modelFamilies.associateBy { it.id }
+        val effectiveOverrides = catalog.modelOverrides + catalog.models.map { it.toModelOverride() }
 
         catalog.models.forEach { model ->
             val familyId = model.effectiveFamilyId
@@ -342,6 +414,21 @@ object ModelCatalogParser {
             canonicalEntries.getOrPut(entry.canonicalModelId) { mutableListOf() }.add(entry)
         }
 
+        catalog.modelOverrides.forEach { override ->
+            val entry = override.toCatalogEntry(modelFamilies) ?: return@forEach
+            buildList {
+                override.id.takeIf { it.isNotBlank() }?.let(::add)
+                override.canonicalModelId?.takeIf { it.isNotBlank() }?.let(::add)
+                addAll(override.apiAliases)
+            }.map { candidate -> candidate.lowercase() }
+                .filter { it.isNotBlank() }
+                .distinct()
+                .forEach { key ->
+                    exactEntries.putIfAbsent(key, entry)
+                }
+            canonicalEntries.getOrPut(entry.canonicalModelId) { mutableListOf() }.add(entry)
+        }
+
         canonicalEntries
             .filterValues { entries -> entries.size > 1 }
             .keys
@@ -354,79 +441,320 @@ object ModelCatalogParser {
             canonicalEntries = canonicalEntries.mapValues { (_, entries) -> entries.toList() },
             providers = catalog.providers,
             modelFamilies = modelFamilies,
+            globalRules = catalog.globalRules,
+            modelOverrides = effectiveOverrides,
         )
     }
+}
+
+private fun CatalogModel.toModelOverride(): CatalogModelOverride {
+    return CatalogModelOverride(
+        id = id,
+        displayName = displayName.ifBlank { null },
+        canonicalModelId = canonicalModelId,
+        apiAliases = apiAliases,
+        providerIds = providerIds,
+        type = type,
+        imageGenerationMethod = imageGenerationMethod,
+        inputModalities = inputModalities,
+        outputModalities = outputModalities,
+        abilities = abilities,
+        providerSlug = providerSlug,
+        inputCostPerToken = inputCostPerToken,
+        outputCostPerToken = outputCostPerToken,
+        reasoningBehavior = reasoningBehavior,
+    )
+}
+
+private fun CatalogModelOverride.toCatalogEntry(modelFamilies: List<CatalogModelFamily>): ModelCatalogEntry? {
+    val key = id.takeIf { it.isNotBlank() } ?: apiAliases.firstOrNull { it.isNotBlank() } ?: return null
+    val resolvedType = type ?: ModelType.CHAT
+    val inputs = inputModalities ?: listOf(Modality.TEXT)
+    val outputs = outputModalities ?: defaultOutputModalities(resolvedType)
+    val resolvedAbilities = abilities ?: emptyList()
+    val fingerprint = ModelCatalogFingerprint(
+        modelId = key,
+        canonicalHint = canonicalModelId,
+        providerHint = null,
+        providerSlugHint = providerSlug
+    )
+    val family = modelFamilies.firstOrNull { it.matches(fingerprint) }
+    return ModelCatalogEntry(
+        key = key,
+        canonicalModelId = ModelIdNormalizer.canonicalize(key, canonicalModelId),
+        apiAliases = apiAliases,
+        providerIds = providerIds,
+        displayName = displayName,
+        modelFamilyId = family?.id,
+        mode = resolvedType.name.lowercase(),
+        supportedModalities = (inputs + outputs).distinct(),
+        inputModalities = inputs,
+        outputModalities = outputs,
+        supportsVision = inputs.contains(Modality.IMAGE),
+        supportsFunctionCalling = resolvedAbilities.contains(ModelAbility.TOOL),
+        supportsReasoning = resolvedAbilities.contains(ModelAbility.REASONING),
+        imageGenerationMethod = imageGenerationMethod,
+        inputCostPerToken = inputCostPerToken,
+        outputCostPerToken = outputCostPerToken,
+        iconUrl = family?.icon?.toCatalogIconUrl(),
+        providerSlug = providerSlug,
+        reasoningBehavior = reasoningBehavior?.toReasoningRequestBehavior(),
+    )
 }
 
 fun ModelCatalogSnapshot.inferFamilyEntry(
     modelId: String,
     canonicalHint: String? = null,
 ): ModelCatalogEntry? {
-    if (modelId.isBlank()) return null
-
-    val canonicalModelId = ModelIdNormalizer.canonicalize(
+    return resolveModelEntry(
         modelId = modelId,
         canonicalHint = canonicalHint,
+        includeOverrides = false,
     )
-    val candidates = buildList {
+}
+
+fun ModelCatalogSnapshot.resolveModelEntry(
+    modelId: String,
+    canonicalHint: String? = null,
+    providerHint: ProviderSetting? = null,
+    providerSlugHint: String? = null,
+    includeOverrides: Boolean = true,
+): ModelCatalogEntry? {
+    if (modelId.isBlank()) return null
+    val fingerprint = ModelCatalogFingerprint(
+        modelId = modelId,
+        canonicalHint = canonicalHint,
+        providerHint = providerHint,
+        providerSlugHint = providerSlugHint,
+    )
+    val builder = ModelCatalogEntryBuilder(modelId, fingerprint.canonicalModelId)
+    globalRules
+        .filter { it.matches(fingerprint) }
+        .forEach { builder.applyRule(it, fingerprint) }
+
+    val family = modelFamilies.firstOrNull { it.matches(fingerprint) }
+    family?.let { matchedFamily ->
+        builder.modelFamilyId = matchedFamily.id
+        builder.iconUrl = matchedFamily.icon?.toCatalogIconUrl()
+        builder.applyFamily(matchedFamily)
+        matchedFamily.versions
+            .filter { it.matches(fingerprint) }
+            .forEach { builder.applyVersion(it, fingerprint) }
+    }
+
+    if (includeOverrides) {
+        modelOverrides
+            .filter { it.matches(fingerprint) }
+            .forEach { builder.applyOverride(it, fingerprint) }
+    }
+
+    return if (builder.hasMatchedRule) builder.build() else null
+}
+
+data class ModelCatalogResolutionTrace(
+    val globalRules: List<String>,
+    val familyId: String?,
+    val familyVersions: List<String>,
+    val overrides: List<String>,
+    val entry: ModelCatalogEntry?,
+)
+
+fun ModelCatalogSnapshot.explainModelResolution(
+    modelId: String,
+    canonicalHint: String? = null,
+    providerHint: ProviderSetting? = null,
+    providerSlugHint: String? = null,
+): ModelCatalogResolutionTrace {
+    if (modelId.isBlank()) {
+        return ModelCatalogResolutionTrace(emptyList(), null, emptyList(), emptyList(), null)
+    }
+    val fingerprint = ModelCatalogFingerprint(
+        modelId = modelId,
+        canonicalHint = canonicalHint,
+        providerHint = providerHint,
+        providerSlugHint = providerSlugHint,
+    )
+    val matchedGlobalRules = globalRules.filter { it.matches(fingerprint) }
+    val family = modelFamilies.firstOrNull { it.matches(fingerprint) }
+    val matchedVersions = family?.versions?.filter { it.matches(fingerprint) }.orEmpty()
+    val matchedOverrides = modelOverrides.filter { it.matches(fingerprint) }
+    val entry = resolveModelEntry(
+        modelId = modelId,
+        canonicalHint = canonicalHint,
+        providerHint = providerHint,
+        providerSlugHint = providerSlugHint,
+    )
+    return ModelCatalogResolutionTrace(
+        globalRules = matchedGlobalRules.map { it.id.ifBlank { it.matchPatterns.joinToString() } },
+        familyId = family?.id,
+        familyVersions = matchedVersions.map { it.id.ifBlank { it.matchPatterns.joinToString() } },
+        overrides = matchedOverrides.map { it.id.ifBlank { it.matchPatterns.joinToString() } },
+        entry = entry,
+    )
+}
+
+private data class ModelCatalogFingerprint(
+    val modelId: String,
+    val canonicalHint: String?,
+    val providerHint: ProviderSetting?,
+    val providerSlugHint: String?,
+) {
+    val canonicalModelId: String = ModelIdNormalizer.canonicalize(modelId, canonicalHint)
+    private val preprocessedModelId: String = ModelIdNormalizer.preprocess(modelId, canonicalHint)
+    val candidates: List<String> = buildList {
         add(modelId)
         canonicalHint?.takeIf { it.isNotBlank() }?.let(::add)
         add(canonicalModelId)
-    }.distinct()
+        add(preprocessedModelId)
+    }.filter { it.isNotBlank() }.distinct()
+    val providerId: String? = providerHint?.id?.toString()
+    val providerBaseUrl: String? = providerHint?.catalogBaseUrl()
+    val providerSlugs: Set<String> = buildSet {
+        providerSlugHint?.takeIf { it.isNotBlank() }?.let { add(it.normalizeCatalogToken()) }
+        providerHint?.catalogProviderTokens()?.forEach(::add)
+    }
+}
 
-    val family = modelFamilies.firstOrNull { it.matchesAny(candidates) } ?: return null
-    val matchedVersions = family.versions.filter { it.matchesAny(candidates) }
-    var type = family.type
-    var imageGenerationMethod = family.imageGenerationMethod
-    var inputModalities = family.inputModalities.ifEmpty { listOf(Modality.TEXT) }
-    var outputModalities = family.outputModalities.ifEmpty { defaultOutputModalities(type) }
-    var abilities = family.abilities
-    var providerSlug = family.providerSlug
-    var reasoningBehavior = family.reasoningBehavior
+private class ModelCatalogEntryBuilder(
+    private val key: String,
+    initialCanonicalModelId: String,
+) {
+    var canonicalModelId: String = initialCanonicalModelId
     var displayName: String? = null
-    var inferredCanonicalId = canonicalModelId
+    var modelFamilyId: String? = null
+    var type: ModelType = ModelType.CHAT
+    var imageGenerationMethod: ImageGenerationMethod? = null
+    var inputModalities: List<Modality> = listOf(Modality.TEXT)
+    var outputModalities: List<Modality> = listOf(Modality.TEXT)
+    var abilities: List<ModelAbility> = emptyList()
+    var inputCostPerToken: Double? = null
+    var outputCostPerToken: Double? = null
+    var iconUrl: String? = null
+    var providerSlug: String? = null
+    var reasoningBehavior: CatalogRequestBehavior? = null
+    var apiAliases: List<String> = emptyList()
+    var providerIds: List<String> = emptyList()
+    var hasMatchedRule: Boolean = false
 
-    matchedVersions.forEach { version ->
-        version.type?.let { nextType ->
-            type = nextType
-            outputModalities = defaultOutputModalities(nextType)
-            if (nextType == ModelType.EMBEDDING) {
-                inputModalities = listOf(Modality.TEXT)
-            }
-        }
-        imageGenerationMethod = version.imageGenerationMethod ?: imageGenerationMethod
-        inputModalities = version.inputModalities ?: inputModalities
-        outputModalities = version.outputModalities ?: outputModalities
-        abilities = version.abilities ?: abilities
-        providerSlug = version.providerSlug ?: providerSlug
-        reasoningBehavior = version.reasoningBehavior ?: reasoningBehavior
-        displayName = version.displayName ?: displayName
-        inferredCanonicalId = version.canonicalModelId
-            ?.takeIf { it.isNotBlank() }
-            ?.let { ModelIdNormalizer.canonicalize(modelId, it) }
-            ?: inferredCanonicalId
+    fun applyFamily(family: CatalogModelFamily) {
+        hasMatchedRule = true
+        type = family.type
+        imageGenerationMethod = family.imageGenerationMethod
+        inputModalities = family.inputModalities.ifEmpty { listOf(Modality.TEXT) }
+        outputModalities = family.outputModalities.ifEmpty { defaultOutputModalities(type) }
+        abilities = family.abilities
+        providerSlug = family.providerSlug
+        reasoningBehavior = family.reasoningBehavior
     }
 
-    inputModalities = inputModalities.ifEmpty { listOf(Modality.TEXT) }
-    outputModalities = outputModalities.ifEmpty { defaultOutputModalities(type) }
+    fun applyRule(rule: CatalogModelRule, fingerprint: ModelCatalogFingerprint) {
+        hasMatchedRule = true
+        applySharedFields(
+            type = rule.type,
+            imageGenerationMethod = rule.imageGenerationMethod,
+            inputModalities = rule.inputModalities,
+            outputModalities = rule.outputModalities,
+            abilities = rule.abilities,
+            providerSlug = rule.providerSlug,
+            canonicalModelId = rule.canonicalModelId,
+            displayName = rule.displayName,
+            reasoningBehavior = rule.reasoningBehavior,
+            fingerprint = fingerprint,
+        )
+    }
 
-    return ModelCatalogEntry(
-        key = modelId,
-        canonicalModelId = inferredCanonicalId,
-        displayName = displayName,
-        modelFamilyId = family.id,
-        mode = type.name.lowercase(),
-        supportedModalities = (inputModalities + outputModalities).distinct(),
-        inputModalities = inputModalities,
-        outputModalities = outputModalities,
-        supportsVision = inputModalities.contains(Modality.IMAGE),
-        supportsFunctionCalling = abilities.contains(ModelAbility.TOOL),
-        supportsReasoning = abilities.contains(ModelAbility.REASONING),
-        imageGenerationMethod = imageGenerationMethod,
-        iconUrl = family.icon?.toCatalogIconUrl(),
-        providerSlug = providerSlug,
-        reasoningBehavior = reasoningBehavior?.toReasoningRequestBehavior(),
-    )
+    fun applyVersion(version: CatalogModelVersion, fingerprint: ModelCatalogFingerprint) {
+        hasMatchedRule = true
+        applySharedFields(
+            type = version.type,
+            imageGenerationMethod = version.imageGenerationMethod,
+            inputModalities = version.inputModalities,
+            outputModalities = version.outputModalities,
+            abilities = version.abilities,
+            providerSlug = version.providerSlug,
+            canonicalModelId = version.canonicalModelId,
+            displayName = version.displayName,
+            reasoningBehavior = version.reasoningBehavior,
+            fingerprint = fingerprint,
+        )
+    }
+
+    fun applyOverride(override: CatalogModelOverride, fingerprint: ModelCatalogFingerprint) {
+        hasMatchedRule = true
+        apiAliases = override.apiAliases.ifEmpty { apiAliases }
+        providerIds = override.providerIds.ifEmpty { providerIds }
+        inputCostPerToken = override.inputCostPerToken ?: inputCostPerToken
+        outputCostPerToken = override.outputCostPerToken ?: outputCostPerToken
+        applySharedFields(
+            type = override.type,
+            imageGenerationMethod = override.imageGenerationMethod,
+            inputModalities = override.inputModalities,
+            outputModalities = override.outputModalities,
+            abilities = override.abilities,
+            providerSlug = override.providerSlug,
+            canonicalModelId = override.canonicalModelId,
+            displayName = override.displayName,
+            reasoningBehavior = override.reasoningBehavior,
+            fingerprint = fingerprint,
+        )
+    }
+
+    private fun applySharedFields(
+        type: ModelType?,
+        imageGenerationMethod: ImageGenerationMethod?,
+        inputModalities: List<Modality>?,
+        outputModalities: List<Modality>?,
+        abilities: List<ModelAbility>?,
+        providerSlug: String?,
+        canonicalModelId: String?,
+        displayName: String?,
+        reasoningBehavior: CatalogRequestBehavior?,
+        fingerprint: ModelCatalogFingerprint,
+    ) {
+        type?.let { nextType ->
+            this.type = nextType
+            this.outputModalities = defaultOutputModalities(nextType)
+            if (nextType == ModelType.EMBEDDING) {
+                this.inputModalities = listOf(Modality.TEXT)
+            }
+        }
+        imageGenerationMethod?.let { this.imageGenerationMethod = it }
+        inputModalities?.let { this.inputModalities = it.ifEmpty { listOf(Modality.TEXT) } }
+        outputModalities?.let { this.outputModalities = it.ifEmpty { defaultOutputModalities(this.type) } }
+        abilities?.let { this.abilities = it }
+        providerSlug?.let { this.providerSlug = it }
+        displayName?.let { this.displayName = it }
+        reasoningBehavior?.let { this.reasoningBehavior = it }
+        canonicalModelId
+            ?.takeIf { it.isNotBlank() }
+            ?.let { this.canonicalModelId = ModelIdNormalizer.canonicalize(fingerprint.modelId, it) }
+    }
+
+    fun build(): ModelCatalogEntry {
+        val inputs = inputModalities.ifEmpty { listOf(Modality.TEXT) }
+        val outputs = outputModalities.ifEmpty { defaultOutputModalities(type) }
+        return ModelCatalogEntry(
+            key = key,
+            canonicalModelId = canonicalModelId,
+            apiAliases = apiAliases,
+            providerIds = providerIds,
+            displayName = displayName,
+            modelFamilyId = modelFamilyId,
+            mode = type.name.lowercase(),
+            supportedModalities = (inputs + outputs).distinct(),
+            inputModalities = inputs,
+            outputModalities = outputs,
+            supportsVision = inputs.contains(Modality.IMAGE),
+            supportsFunctionCalling = abilities.contains(ModelAbility.TOOL),
+            supportsReasoning = abilities.contains(ModelAbility.REASONING),
+            imageGenerationMethod = imageGenerationMethod,
+            inputCostPerToken = inputCostPerToken,
+            outputCostPerToken = outputCostPerToken,
+            iconUrl = iconUrl,
+            providerSlug = providerSlug,
+            reasoningBehavior = reasoningBehavior?.toReasoningRequestBehavior(),
+        )
+    }
 }
 
 class ModelCatalogService(
@@ -605,6 +933,55 @@ private fun CatalogModelFamily.matchesAny(candidates: List<String>): Boolean {
     }
 }
 
+private fun CatalogModelFamily.matches(fingerprint: ModelCatalogFingerprint): Boolean {
+    return matchPatterns.anyPatternMatches(fingerprint.candidates)
+}
+
+private fun CatalogModelRule.matches(fingerprint: ModelCatalogFingerprint): Boolean {
+    if (excludePatterns.anyPatternMatches(fingerprint.candidates)) return false
+    if (matchPatterns.isEmpty()) return false
+    return matchPatterns.anyPatternMatches(fingerprint.candidates)
+}
+
+private fun CatalogModelVersion.matches(fingerprint: ModelCatalogFingerprint): Boolean {
+    if (excludePatterns.anyPatternMatches(fingerprint.candidates)) return false
+    if (matchPatterns.isEmpty()) return false
+    return matchPatterns.anyPatternMatches(fingerprint.candidates)
+}
+
+private fun CatalogModelOverride.matches(fingerprint: ModelCatalogFingerprint): Boolean {
+    if (!matchesProviderConstraints(fingerprint)) return false
+    if (excludePatterns.anyPatternMatches(fingerprint.candidates)) return false
+
+    val exactCandidates = buildList {
+        id.takeIf { it.isNotBlank() }?.let(::add)
+        addAll(apiAliases)
+    }.map { it.lowercase() }
+    val fingerprintCandidates = fingerprint.candidates.map { it.lowercase() }
+    if (exactCandidates.any { it in fingerprintCandidates }) return true
+    if (matchPatterns.isEmpty()) return false
+    return matchPatterns.anyPatternMatches(fingerprint.candidates)
+}
+
+private fun CatalogModelOverride.matchesProviderConstraints(fingerprint: ModelCatalogFingerprint): Boolean {
+    if (providerIds.isNotEmpty() && fingerprint.providerId !in providerIds) return false
+    if (
+        providerSlugs.isNotEmpty() &&
+        providerSlugs.map { it.normalizeCatalogToken() }.none { it in fingerprint.providerSlugs }
+    ) {
+        return false
+    }
+    if (
+        baseUrlPatterns.isNotEmpty() &&
+        fingerprint.providerBaseUrl?.let { baseUrl ->
+            baseUrlPatterns.any { pattern -> baseUrl.matchesCatalogPattern(pattern) }
+        } != true
+    ) {
+        return false
+    }
+    return true
+}
+
 private fun CatalogModelVersion.matchesAny(candidates: List<String>): Boolean {
     if (excludePatterns.any { pattern ->
             candidates.any { candidate -> candidate.matchesCatalogPattern(pattern) }
@@ -618,9 +995,51 @@ private fun CatalogModelVersion.matchesAny(candidates: List<String>): Boolean {
     }
 }
 
+private fun List<String>.anyPatternMatches(candidates: List<String>): Boolean {
+    return candidates.any { candidate ->
+        any { pattern -> candidate.matchesCatalogPattern(pattern) }
+    }
+}
+
 private fun String.matchesCatalogPattern(pattern: String): Boolean {
     if (pattern.isBlank()) return false
     return runCatching {
         Regex(pattern, RegexOption.IGNORE_CASE).containsMatchIn(this)
     }.getOrDefault(false)
+}
+
+private fun ProviderSetting.catalogBaseUrl(): String {
+    return when (this) {
+        is ProviderSetting.Claude -> baseUrl
+        is ProviderSetting.Google -> baseUrl
+        is ProviderSetting.OpenAI -> baseUrl
+    }
+}
+
+private fun ProviderSetting.catalogProviderTokens(): Set<String> {
+    return when (this) {
+        is ProviderSetting.Claude -> setOf("anthropic", "claude")
+        is ProviderSetting.Google -> {
+            if (vertexAI) {
+                setOf("google", "vertex-ai", "vertex-ai-language-models")
+            } else {
+                setOf("google", "gemini", "google-ai-studio")
+            }
+        }
+        is ProviderSetting.OpenAI -> {
+            val base = baseUrl.lowercase()
+            buildSet {
+                if ("api.openai.com" in base) add("openai")
+                if ("openrouter" in base) add("openrouter")
+                if ("github" in base) add("github")
+                if ("ollama" in base) add("ollama")
+            }
+        }
+    }.map { it.normalizeCatalogToken() }.toSet()
+}
+
+private fun String.normalizeCatalogToken(): String {
+    return lowercase()
+        .replace('_', '-')
+        .replace('.', '-')
 }

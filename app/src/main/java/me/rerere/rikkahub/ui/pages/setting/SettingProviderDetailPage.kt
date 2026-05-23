@@ -2,6 +2,9 @@ package me.rerere.rikkahub.ui.pages.setting
 
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -106,6 +109,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DragIndicator
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.NetworkCheck
 import androidx.compose.material.icons.rounded.Refresh
@@ -169,11 +173,13 @@ import me.rerere.rikkahub.ui.pages.setting.components.ProviderConfigure
 import me.rerere.rikkahub.ui.pages.setting.components.SettingProviderBalanceOption
 import me.rerere.rikkahub.ui.theme.extendColors
 import me.rerere.rikkahub.utils.UiState
+import me.rerere.rikkahub.utils.ImageUtils
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.uuid.Uuid
 import me.rerere.rikkahub.data.model.Tag as DataTag
 import me.rerere.rikkahub.ui.components.ui.FormItem
@@ -257,6 +263,30 @@ private fun ProviderSetting.apiModelCacheKey(): String {
             apiKey.hashCode().toString(),
         )
     }.joinToString("|")
+}
+
+private fun ProviderSetting.canFetchApiModels(): Boolean {
+    return when (this) {
+        is ProviderSetting.OpenAI -> apiKey.isNotBlank()
+        is ProviderSetting.Google -> if (vertexAI) {
+            serviceAccountEmail.isNotBlank() && privateKey.isNotBlank() && projectId.isNotBlank()
+        } else {
+            apiKey.isNotBlank()
+        }
+        is ProviderSetting.Claude -> apiKey.isNotBlank()
+    }
+}
+
+private object ApiModelListCache {
+    private val modelsByProvider = ConcurrentHashMap<String, List<Model>>()
+
+    fun get(key: String): List<Model> = modelsByProvider[key].orEmpty()
+
+    fun put(key: String, models: List<Model>) {
+        if (models.isNotEmpty()) {
+            modelsByProvider[key] = models
+        }
+    }
 }
 
 @Composable
@@ -697,37 +727,74 @@ private fun ModelList(
     val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
     val modelMetadataResolver = koinInject<ModelMetadataResolver>()
     val apiModelCacheKey = remember(providerSetting) { providerSetting.apiModelCacheKey() }
-    var modelList by remember(apiModelCacheKey) { mutableStateOf(emptyList<Model>()) }
+    var modelList by remember(apiModelCacheKey) { mutableStateOf(ApiModelListCache.get(apiModelCacheKey)) }
     var isReloadingModels by remember(apiModelCacheKey) { mutableStateOf(false) }
     var reloadModelsError by remember(apiModelCacheKey) { mutableStateOf<String?>(null) }
 
     fun syncFreshModelMetadata(freshModels: List<Model>, currentProvider: ProviderSetting): ProviderSetting {
-        return currentProvider
+        val updatedModels = currentProvider.models.map { savedModel ->
+            val freshModel = freshModels.firstOrNull { apiModel ->
+                modelsReferToSameApiModel(savedModel, apiModel)
+            }
+            if (freshModel != null) {
+                val preserveDisplayName = savedModel.displayName.isNotBlank() &&
+                    savedModel.displayName != savedModel.modelId
+                savedModel.copy(
+                    displayName = if (preserveDisplayName) savedModel.displayName else freshModel.displayName,
+                    canonicalModelId = freshModel.canonicalModelId ?: savedModel.canonicalModelId,
+                    type = freshModel.type,
+                    inputModalities = freshModel.inputModalities,
+                    outputModalities = freshModel.outputModalities,
+                    abilities = freshModel.abilities,
+                    iconUrl = freshModel.iconUrl,
+                    providerSlug = freshModel.providerSlug,
+                    imageGenerationMethod = freshModel.imageGenerationMethod,
+                    reasoningBehavior = savedModel.reasoningBehavior ?: freshModel.reasoningBehavior,
+                )
+            } else {
+                resolveProviderModel(modelMetadataResolver, currentProvider, savedModel)
+            }
+        }
+        return currentProvider.copyProvider(models = updatedModels)
     }
 
     fun reloadApiModels() {
         if (isReloadingModels) return
+        if (!providerSetting.canFetchApiModels()) return
         scope.launch {
             isReloadingModels = true
             reloadModelsError = null
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    providerManager.getProviderByType(providerSetting)
-                        .listModels(providerSetting)
-                        .sortedBy { it.modelId }
-                        .toList()
-                }.map { model ->
-                    resolveProviderModel(modelMetadataResolver, providerSetting, model)
+            var retryAttempt = 0
+            do {
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        providerManager.getProviderByType(providerSetting)
+                            .listModels(providerSetting)
+                            .sortedBy { it.modelId }
+                            .toList()
+                    }.map { model ->
+                        resolveProviderModel(modelMetadataResolver, providerSetting, model)
+                    }
+                }.onSuccess { freshModels ->
+                    if (freshModels.isNotEmpty()) {
+                        ApiModelListCache.put(apiModelCacheKey, freshModels)
+                        modelList = freshModels
+                        val updatedProvider = syncFreshModelMetadata(freshModels, providerSetting)
+                        if (updatedProvider != providerSetting) {
+                            onUpdateProvider(updatedProvider)
+                        }
+                    }
+                }.onFailure { error ->
+                    reloadModelsError = error.message ?: error::class.simpleName
+                    isReloadingModels = false
+                    return@launch
                 }
-            }.onSuccess { freshModels ->
-                modelList = freshModels
-                val updatedProvider = syncFreshModelMetadata(freshModels, providerSetting)
-                if (updatedProvider != providerSetting) {
-                    onUpdateProvider(updatedProvider)
+
+                if (modelList.isEmpty()) {
+                    retryAttempt++
+                    delay((retryAttempt * 1_500L).coerceAtMost(10_000L))
                 }
-            }.onFailure { error ->
-                reloadModelsError = error.message ?: error::class.simpleName
-            }
+            } while (modelList.isEmpty())
             isReloadingModels = false
         }
     }
@@ -960,6 +1027,23 @@ private fun ModelSettingsForm(
     val toaster = LocalToaster.current
     val context = LocalContext.current
     var isProbingCapabilities by remember(model.id, parentProvider?.id) { mutableStateOf(false) }
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            val copiedUri = withContext(Dispatchers.IO) {
+                ImageUtils.copyImageToInternalStorage(
+                    context = context,
+                    sourceUri = uri,
+                    fileName = "model_icon_${model.id}.png",
+                )
+            }
+            copiedUri?.let { iconUri ->
+                onModelChange(model.copy(customIconUri = iconUri.toString()))
+            }
+        }
+    }
 
     fun setModelId(id: String) {
         onModelChange(
@@ -1055,6 +1139,40 @@ private fun ModelSettingsForm(
                                 },
                                 shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                             )
+                        }
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    imagePickerLauncher.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    )
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = me.rerere.rikkahub.ui.theme.AppShapes.ButtonPill,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Image,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(modifier = Modifier.size(8.dp))
+                                Text(stringResource(R.string.a11y_custom_icon))
+                            }
+
+                            if (!model.customIconUri.isNullOrBlank()) {
+                                TextButton(
+                                    onClick = {
+                                        onModelChange(model.copy(customIconUri = null))
+                                    },
+                                    shape = me.rerere.rikkahub.ui.theme.AppShapes.ButtonPill,
+                                ) {
+                                    Text(stringResource(R.string.reset))
+                                }
+                            }
                         }
 
                         ModelTypeSelector(
@@ -1221,6 +1339,9 @@ private fun ModelPickerFab(
         onClick = { 
             showPicker = true
             haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Tick)
+            if (models.isEmpty() && !isLoading) {
+                onReload()
+            }
         },
         shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -1251,9 +1372,12 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 } else {
                     filterKeywords.all { keyword ->
                         it.modelId.contains(keyword, ignoreCase = true) ||
-                            it.displayName.contains(keyword, ignoreCase = true)
+                        it.displayName.contains(keyword, ignoreCase = true)
                     }
                 }
+            }
+            val allFilteredSelected = filteredModels.isNotEmpty() && filteredModels.all { model ->
+                selectedModels.any { selected -> modelsReferToSameApiModel(selected, model) }
             }
             Column(
                 modifier = Modifier
@@ -1268,18 +1392,45 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Button(
-                        onClick = onReload,
-                        enabled = !isLoading,
+                    TextButton(
+                        onClick = {
+                            haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
+                            if (allFilteredSelected) {
+                                val modelsToRemove = filteredModels.mapNotNull { model ->
+                                    selectedModels.firstOrNull { selected -> modelsReferToSameApiModel(selected, model) }
+                                }
+                                if (modelsToRemove.isNotEmpty()) {
+                                    onRemoveModels(modelsToRemove)
+                                }
+                            } else {
+                                val modelsToAdd = filteredModels.filter { model ->
+                                    !selectedModels.any { selected -> modelsReferToSameApiModel(selected, model) }
+                                }
+                                if (modelsToAdd.isNotEmpty()) {
+                                    onAddModels(modelsToAdd)
+                                }
+                            }
+                        },
+                        modifier = Modifier.height(40.dp),
                     ) {
-                        Icon(Icons.Rounded.Refresh, contentDescription = null)
-                        Spacer(Modifier.size(4.dp))
-                        Text(stringResource(R.string.setting_provider_page_reload_models))
+                        Text(stringResource(if (allFilteredSelected) R.string.deselect_all else R.string.select_all))
                     }
                     if (isLoading) {
                         LinearWavyProgressIndicator(modifier = Modifier.weight(1f))
                     } else {
                         Spacer(modifier = Modifier.weight(1f))
+                    }
+                    Button(
+                        onClick = {
+                            haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
+                            onReload()
+                        },
+                        enabled = !isLoading,
+                        modifier = Modifier.height(40.dp),
+                    ) {
+                        Icon(Icons.Rounded.Refresh, contentDescription = null)
+                        Spacer(Modifier.size(4.dp))
+                        Text(stringResource(R.string.setting_provider_page_reload_models))
                     }
                 }
                 reloadError?.let { error ->
@@ -1289,37 +1440,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
-                // Select All / Deselect All - show only one based on selection state
-                val allFilteredSelected = filteredModels.isNotEmpty() && filteredModels.all { model ->
-                    selectedModels.any { selected -> modelsReferToSameApiModel(selected, model) }
-                }
-                
-                if (allFilteredSelected) {
-                    // All filtered models are selected, show Deselect All
-                    TextButton(onClick = {
-                        val modelsToRemove = filteredModels.mapNotNull { model ->
-                            selectedModels.firstOrNull { selected -> modelsReferToSameApiModel(selected, model) }
-                        }
-                        if (modelsToRemove.isNotEmpty()) {
-                            onRemoveModels(modelsToRemove)
-                        }
-                    }) {
-                        Text(stringResource(R.string.deselect_all))
-                    }
-                } else {
-                    // Not all selected, show Select All
-                    TextButton(onClick = {
-                        val modelsToAdd = filteredModels.filter { model ->
-                            !selectedModels.any { selected -> modelsReferToSameApiModel(selected, model) }
-                        }
-                        if (modelsToAdd.isNotEmpty()) {
-                            onAddModels(modelsToAdd)
-                        }
-                    }) {
-                        Text(stringResource(R.string.select_all))
-                    }
-                }
-                
+
                 LazyColumn(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -1355,7 +1476,31 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     items(filteredModels) { model ->
                         val selectedModel = selectedModels.firstOrNull { selected -> modelsReferToSameApiModel(selected, model) }
                         val isSelected = selectedModel != null
+                        val interactionSource = remember { MutableInteractionSource() }
+                        val isPressed by interactionSource.collectIsPressedAsState()
+                        val scale by animateFloatAsState(
+                            targetValue = if (isPressed) 0.98f else 1f,
+                            animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
+                            label = "api_model_card_scale",
+                        )
                         Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .graphicsLayer {
+                                    scaleX = scale
+                                    scaleY = scale
+                                }
+                                .clickable(
+                                    interactionSource = interactionSource,
+                                    indication = null,
+                                ) {
+                                    haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
+                                    if (isSelected) {
+                                        onRemoveModel(selectedModel ?: model)
+                                    } else {
+                                        onAddModel(model)
+                                    }
+                                },
                             shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                             colors = androidx.compose.material3.CardDefaults.cardColors(
                                 containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
@@ -1395,17 +1540,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                         ModelAbilityTag(model = model)
                                     }
                                 }
-                                IconButton(
-                                    onClick = {
-                                        if (isSelected) {
-                                            onRemoveModel(selectedModel ?: model)
-                                        } else {
-                                            onAddModel(model)
-                                        }
-                                    }
-                                ) {
-                                    ModelSelectionCircle(selected = isSelected)
-                                }
+                                ModelSelectionCircle(selected = isSelected)
                             }
                         }
                     }
@@ -1523,9 +1658,18 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
 
 @Composable
 private fun ModelSelectionCircle(selected: Boolean) {
+    val scale by animateFloatAsState(
+        targetValue = if (selected) 1f else 0.78f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        label = "model_selection_circle_scale",
+    )
     Box(
         modifier = Modifier
             .size(28.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .clip(CircleShape)
             .then(
                 if (selected) {

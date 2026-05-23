@@ -161,6 +161,7 @@ import org.koin.androidx.compose.koinViewModel
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import me.rerere.rikkahub.data.model.Tag as DataTag
+import kotlin.uuid.Uuid
 
 
 @Composable
@@ -206,6 +207,14 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
     
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
+    fun addProvider(provider: ProviderSetting) {
+        val providerToAdd = provider.withUniqueId(settings.providers)
+        vm.updateSettings(
+            settings.copy(
+                providers = listOf(providerToAdd) + settings.providers
+            )
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -217,21 +226,13 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
                 },
                 actions = {
                     ImportProviderButton {
-                        vm.updateSettings(
-                            settings.copy(
-                                providers = listOf(it) + settings.providers
-                            )
-                        )
+                        addProvider(it)
                     }
                     AddButton(
                         enableHaptics = settings.displaySetting.enableUIHaptics,
                         providerPresets = providerPresets,
                     ) {
-                        vm.updateSettings(
-                            settings.copy(
-                                providers = listOf(it) + settings.providers
-                            )
-                        )
+                        addProvider(it)
                     }
                 }
             )
@@ -302,11 +303,7 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
                     }
                 },
                 onAddProvider = { provider ->
-                    vm.updateSettings(
-                        settings.copy(
-                            providers = listOf(provider) + settings.providers
-                        )
-                    )
+                    addProvider(provider)
                 },
                 providerPresets = providerPresets
             )
@@ -727,6 +724,13 @@ private fun ImportProviderButton(
             }
         )
     }
+}
+
+private fun ProviderSetting.withUniqueId(existingProviders: List<ProviderSetting>): ProviderSetting {
+    if (existingProviders.none { it.id == id }) {
+        return this
+    }
+    return copyProvider(id = Uuid.random())
 }
 
 private fun handleQRResult(
