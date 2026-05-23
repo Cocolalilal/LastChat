@@ -173,6 +173,10 @@ class ModelCatalogTest {
         assertTrue("GLM Z1 Rumination should support reasoning", glmZ1.supportsReasoning)
         assertTrue("GLM Z1 Rumination should NOT support vision", !glmZ1.supportsVision)
 
+        val glmZero = getEntry("glm-zero-preview")
+        assertTrue("GLM Zero should support function calling", glmZero.supportsFunctionCalling)
+        assertTrue("GLM Zero should support reasoning", glmZero.supportsReasoning)
+
         // Qwen
         val qwenVl = getEntry("Qwen/Qwen2.5-VL-7B-Instruct")
         assertTrue("Qwen 2.5 VL should support function calling", qwenVl.supportsFunctionCalling)
@@ -194,10 +198,20 @@ class ModelCatalogTest {
         assertTrue("Qwen 2.5 Coder should NOT support reasoning", !qwenCoder.supportsReasoning)
         assertTrue("Qwen 2.5 Coder should NOT support vision", !qwenCoder.supportsVision)
 
+        val qwen3Vl = getEntry("Qwen/Qwen3-VL-235B-A22B-Thinking")
+        assertTrue("Qwen 3 VL Thinking should support function calling", qwen3Vl.supportsFunctionCalling)
+        assertTrue("Qwen 3 VL Thinking should support reasoning", qwen3Vl.supportsReasoning)
+        assertTrue("Qwen 3 VL Thinking should support vision", qwen3Vl.supportsVision)
+
         // Baidu ERNIE
         val ernie4 = getEntry("ernie-4.0")
         assertTrue("ERNIE 4.0 should support function calling", ernie4.supportsFunctionCalling)
         assertTrue("ERNIE 4.0 should support reasoning", ernie4.supportsReasoning)
+
+        val ernie45vl = getEntry("ernie-4.5-vl-28b-a3b")
+        assertTrue("ERNIE 4.5 VL should support function calling", ernie45vl.supportsFunctionCalling)
+        assertTrue("ERNIE 4.5 VL should support reasoning", ernie45vl.supportsReasoning)
+        assertTrue("ERNIE 4.5 VL should support vision", ernie45vl.supportsVision)
 
         // iFlyTek Spark
         val sparkUltra = getEntry("4.0Ultra")

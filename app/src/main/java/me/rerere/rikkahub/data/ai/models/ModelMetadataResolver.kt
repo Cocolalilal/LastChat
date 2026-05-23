@@ -38,7 +38,7 @@ class ModelMetadataResolver(
         ) {
             model.displayName
         } else {
-            catalogEntry?.displayName ?: ModelDisplayNameGenerator.generate(model.modelId, canonicalModelId)
+            ModelDisplayNameGenerator.generate(model.modelId, canonicalModelId)
         }
 
         val resolvedType = resolveType(model, catalogEntry, options)

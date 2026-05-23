@@ -77,6 +77,43 @@ class ActivityTimelineParsingTest {
     }
 
     @Test
+    fun deriveActivityState_categorizesMemorySearchToolSeparately() {
+        val liveState = deriveActivityState(
+            parts = listOf(
+                UIMessagePart.ToolCall(
+                    toolCallId = "memory-search-1",
+                    toolName = "search_memory",
+                    arguments = """{"query":"Lisbon"}"""
+                )
+            ),
+            loading = true
+        )
+
+        assertEquals(ActivityType.MEMORY_RECALL, (liveState as ActivityState.ToolUse).let {
+            categorizeToolName(it.toolName)
+        })
+
+        val completedState = deriveActivityState(
+            parts = listOf(
+                UIMessagePart.ToolCall(
+                    toolCallId = "memory-search-1",
+                    toolName = "search_memory",
+                    arguments = """{"query":"Lisbon"}"""
+                ),
+                UIMessagePart.ToolResult(
+                    toolCallId = "memory-search-1",
+                    toolName = "search_memory",
+                    arguments = buildJsonObject { put("query", "Lisbon") },
+                    content = buildJsonObject { put("summary", "I found one possible memory.") }
+                )
+            ),
+            loading = false
+        )
+
+        assertEquals(ActivityType.MEMORY_RECALL, (completedState as ActivityState.CompletedSingle).type)
+    }
+
+    @Test
     fun buildTimelineEntries_keepsMemoryActionsWithInvalidJson() {
         val entries = buildTimelineEntries(
             parts = listOf(

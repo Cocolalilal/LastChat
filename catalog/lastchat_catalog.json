@@ -858,7 +858,6 @@
   "model_families": [
     {
       "id": "gpt-oss",
-      "display_name": "GPT OSS",
       "aliases": [
         "gpt-oss"
       ],
@@ -882,7 +881,6 @@
     },
     {
       "id": "gpt",
-      "display_name": "GPT / OpenAI o-series",
       "aliases": [
         "gpt",
         "openai",
@@ -911,7 +909,6 @@
       "versions": [
         {
           "id": "gpt-reasoning",
-          "display_name": "GPT reasoning",
           "match_patterns": [
             "(^|[/._-])gpt-5",
             "(^|[/._-])o\\d"
@@ -927,7 +924,6 @@
         },
         {
           "id": "gpt-vision",
-          "display_name": "GPT vision",
           "match_patterns": [
             "gpt-4o",
             "gpt-4\\.1",
@@ -943,7 +939,6 @@
         },
         {
           "id": "gpt-image",
-          "display_name": "GPT image generation",
           "match_patterns": [
             "gpt-image",
             "chatgpt-image",
@@ -962,7 +957,6 @@
         },
         {
           "id": "openai-embedding",
-          "display_name": "OpenAI embeddings",
           "match_patterns": [
             "text-embedding",
             "embedding-.*openai"
@@ -980,7 +974,6 @@
     },
     {
       "id": "claude",
-      "display_name": "Claude",
       "aliases": [
         "claude",
         "anthropic"
@@ -1005,7 +998,6 @@
       "versions": [
         {
           "id": "claude-thinking",
-          "display_name": "Claude thinking",
           "match_patterns": [
             "claude.*(?:4|3[-_.]?7)"
           ],
@@ -1018,7 +1010,6 @@
     },
     {
       "id": "google-deep-research",
-      "display_name": "Google Deep Research",
       "aliases": [
         "google-deep-research",
         "gemini-deep-research"
@@ -1044,7 +1035,6 @@
     },
     {
       "id": "gemini",
-      "display_name": "Gemini",
       "aliases": [
         "gemini",
         "google"
@@ -1069,7 +1059,6 @@
       "versions": [
         {
           "id": "gemini-image",
-          "display_name": "Gemini image generation",
           "match_patterns": [
             "gemini.*image"
           ],
@@ -1086,7 +1075,6 @@
         },
         {
           "id": "gemini-embedding",
-          "display_name": "Gemini embeddings",
           "match_patterns": [
             "gemini.*embedding"
           ],
@@ -1101,7 +1089,6 @@
         },
         {
           "id": "gemini-2-flash-lite",
-          "display_name": "Gemini 2.0 Flash-Lite",
           "match_patterns": [
             "gemini-2\\.0-flash-lite"
           ],
@@ -1113,7 +1100,6 @@
     },
     {
       "id": "deepseek",
-      "display_name": "DeepSeek",
       "aliases": [
         "deepseek"
       ],
@@ -1135,7 +1121,6 @@
       "versions": [
         {
           "id": "deepseek-reasoning",
-          "display_name": "DeepSeek reasoning",
           "match_patterns": [
             "reasoner",
             "deepseek-r1",
@@ -1149,7 +1134,6 @@
         },
         {
           "id": "deepseek-vision",
-          "display_name": "DeepSeek vision",
           "match_patterns": [
             "deepseek.*(?:vl|vision)"
           ],
@@ -1162,7 +1146,6 @@
     },
     {
       "id": "qwen",
-      "display_name": "Qwen",
       "aliases": [
         "qwen",
         "qwq",
@@ -1189,7 +1172,6 @@
       "versions": [
         {
           "id": "qwen-embedding",
-          "display_name": "Qwen embeddings",
           "match_patterns": [
             "embedding",
             "text-embedding"
@@ -1205,7 +1187,6 @@
         },
         {
           "id": "qwq",
-          "display_name": "Qwen QwQ",
           "match_patterns": [
             "(^|[/._-])qwq"
           ],
@@ -1216,7 +1197,6 @@
         },
         {
           "id": "qvq",
-          "display_name": "Qwen QvQ",
           "match_patterns": [
             "(^|[/._-])qvq"
           ],
@@ -1231,7 +1211,6 @@
         },
         {
           "id": "qwen3",
-          "display_name": "Qwen3",
           "match_patterns": [
             "qwen3"
           ],
@@ -1242,7 +1221,6 @@
         },
         {
           "id": "qwen2.5-coder",
-          "display_name": "Qwen 2.5 Coder",
           "match_patterns": [
             "qwen2\\.5-coder"
           ],
@@ -1252,7 +1230,6 @@
         },
         {
           "id": "qwen2.5-math",
-          "display_name": "Qwen 2.5 Math",
           "match_patterns": [
             "qwen2\\.5-math"
           ],
@@ -1262,7 +1239,6 @@
         },
         {
           "id": "qwen-vl",
-          "display_name": "Qwen vision-language",
           "match_patterns": [
             "qwen.*(?:vl|omni|vision)"
           ],
@@ -1273,7 +1249,6 @@
         },
         {
           "id": "qwen2.5",
-          "display_name": "Qwen 2.5",
           "match_patterns": [
             "qwen2\\.5"
           ],
@@ -1290,7 +1265,6 @@
     },
     {
       "id": "mistral",
-      "display_name": "Mistral",
       "aliases": [
         "mistral",
         "mixtral",
@@ -1324,7 +1298,6 @@
       "versions": [
         {
           "id": "pixtral",
-          "display_name": "Pixtral",
           "match_patterns": [
             "pixtral"
           ],
@@ -1335,7 +1308,6 @@
         },
         {
           "id": "magistral",
-          "display_name": "Magistral",
           "match_patterns": [
             "magistral"
           ],
@@ -1346,7 +1318,6 @@
         },
         {
           "id": "mistral-embedding",
-          "display_name": "Mistral embeddings",
           "match_patterns": [
             "mistral.*embed",
             "embed"
@@ -1364,7 +1335,6 @@
     },
     {
       "id": "llama",
-      "display_name": "Llama",
       "aliases": [
         "llama",
         "meta-llama",
@@ -1389,7 +1359,6 @@
       "versions": [
         {
           "id": "llama4",
-          "display_name": "Llama 4",
           "match_patterns": [
             "llama[-_. ]?4"
           ],
@@ -1404,7 +1373,6 @@
         },
         {
           "id": "llama-vision",
-          "display_name": "Llama Vision",
           "match_patterns": [
             "llama-3\\.2-(?:11b|90b)-vision",
             "llama.*vision"
@@ -1418,7 +1386,6 @@
     },
     {
       "id": "gemma",
-      "display_name": "Gemma",
       "aliases": [
         "gemma"
       ],
@@ -1440,7 +1407,6 @@
       "versions": [
         {
           "id": "gemma4",
-          "display_name": "Gemma 4",
           "match_patterns": [
             "gemma[-_ ]?4",
             "gemma4"
@@ -1456,7 +1422,6 @@
         },
         {
           "id": "gemma3-vision",
-          "display_name": "Gemma 3 vision",
           "match_patterns": [
             "gemma[-_ ]?3.*(?:vision|vl|27b|12b|4b)"
           ],
@@ -1469,7 +1434,6 @@
     },
     {
       "id": "grok",
-      "display_name": "Grok",
       "aliases": [
         "grok",
         "x-ai",
@@ -1495,7 +1459,6 @@
       "versions": [
         {
           "id": "grok4",
-          "display_name": "Grok 4",
           "match_patterns": [
             "grok[-_ ]?4"
           ],
@@ -1506,7 +1469,6 @@
         },
         {
           "id": "grok-vision",
-          "display_name": "Grok vision",
           "match_patterns": [
             "grok.*(?:vision|image)"
           ],
@@ -1519,7 +1481,6 @@
     },
     {
       "id": "glm",
-      "display_name": "GLM",
       "aliases": [
         "glm",
         "z-ai",
@@ -1545,7 +1506,6 @@
       "versions": [
         {
           "id": "glm-5-vision",
-          "display_name": "GLM 5 Vision",
           "match_patterns": [
             "glm[-_]?5.*(?:v|vision)"
           ],
@@ -1560,7 +1520,6 @@
         },
         {
           "id": "glm-5",
-          "display_name": "GLM 5",
           "match_patterns": [
             "glm[-_]?5"
           ],
@@ -1574,7 +1533,6 @@
         },
         {
           "id": "glm-4.5-vision",
-          "display_name": "GLM 4.5 Vision",
           "match_patterns": [
             "glm[-_]?4\\.5.*(?:v|vision)"
           ],
@@ -1589,7 +1547,6 @@
         },
         {
           "id": "glm-4.5",
-          "display_name": "GLM 4.5",
           "match_patterns": [
             "glm[-_]?4\\.5"
           ],
@@ -1603,9 +1560,8 @@
         },
         {
           "id": "glm-reasoning",
-          "display_name": "GLM reasoning",
           "match_patterns": [
-            "glm-(?:4\\.6|4\\.7|z1)"
+            "glm[-_]?(?:4\\.6|4\\.7|z1|zero|rumination)"
           ],
           "abilities": [
             "TOOL",
@@ -1614,7 +1570,6 @@
         },
         {
           "id": "glm-4-vision",
-          "display_name": "GLM 4 Vision",
           "match_patterns": [
             "glm[-_]?4.*(?:v|vision)"
           ],
@@ -1632,7 +1587,6 @@
         },
         {
           "id": "glm-4",
-          "display_name": "GLM 4",
           "match_patterns": [
             "glm[-_]?4"
           ],
@@ -1647,7 +1601,6 @@
         },
         {
           "id": "glm-z1",
-          "display_name": "GLM Z1",
           "match_patterns": [
             "glm[-_]?z1"
           ],
@@ -1658,7 +1611,6 @@
         },
         {
           "id": "glm-embedding",
-          "display_name": "GLM embeddings",
           "match_patterns": [
             "embedding"
           ],
@@ -1675,7 +1627,6 @@
     },
     {
       "id": "kimi",
-      "display_name": "Kimi",
       "aliases": [
         "kimi",
         "moonshot"
@@ -1699,7 +1650,6 @@
       "versions": [
         {
           "id": "kimi-k2-multimodal",
-          "display_name": "Kimi K2 Multimodal",
           "match_patterns": [
             "kimi[-_ ]?k2\\.[56]"
           ],
@@ -1714,7 +1664,6 @@
         },
         {
           "id": "kimi-k2",
-          "display_name": "Kimi K2",
           "match_patterns": [
             "kimi[-_ ]?k2"
           ],
@@ -1728,7 +1677,6 @@
         },
         {
           "id": "moonshot-v1",
-          "display_name": "Moonshot V1",
           "match_patterns": [
             "moonshot-v1"
           ],
@@ -1740,7 +1688,6 @@
     },
     {
       "id": "internlm",
-      "display_name": "InternLM",
       "aliases": [
         "internlm",
         "internvl"
@@ -1765,7 +1712,6 @@
       "versions": [
         {
           "id": "internvl",
-          "display_name": "InternVL",
           "match_patterns": [
             "internvl"
           ],
@@ -1778,7 +1724,6 @@
     },
     {
       "id": "bge",
-      "display_name": "BGE",
       "aliases": [
         "bge",
         "baai"
@@ -1801,7 +1746,6 @@
     },
     {
       "id": "doubao",
-      "display_name": "Doubao / ByteDance Seed",
       "aliases": [
         "doubao",
         "seedream"
@@ -1827,7 +1771,6 @@
       "versions": [
         {
           "id": "doubao-reasoning",
-          "display_name": "Doubao reasoning",
           "match_patterns": [
             "doubao.*(?:thinking|seed-1-6)",
             "seed-1\\.6",
@@ -1842,7 +1785,6 @@
         },
         {
           "id": "doubao-vision",
-          "display_name": "Doubao vision",
           "match_patterns": [
             "doubao.*vision"
           ],
@@ -1853,7 +1795,6 @@
         },
         {
           "id": "seedream",
-          "display_name": "Seedream image generation",
           "match_patterns": [
             "seedream"
           ],
@@ -1870,14 +1811,12 @@
         },
         {
           "id": "doubao-pro",
-          "display_name": "Doubao Pro",
           "match_patterns": [
             "doubao.*pro"
           ]
         },
         {
           "id": "doubao-lite",
-          "display_name": "Doubao Lite",
           "match_patterns": [
             "doubao.*lite"
           ]
@@ -1886,7 +1825,6 @@
     },
     {
       "id": "minimax",
-      "display_name": "MiniMax",
       "aliases": [
         "minimax",
         "abab"
@@ -1910,7 +1848,6 @@
       "versions": [
         {
           "id": "minimax-reasoning",
-          "display_name": "MiniMax Reasoning",
           "match_patterns": [
             "minimax-text-01",
             "abab7",
@@ -1925,7 +1862,6 @@
         },
         {
           "id": "minimax-vision",
-          "display_name": "MiniMax Vision",
           "match_patterns": [
             "minimax-vl"
           ],
@@ -1938,7 +1874,6 @@
     },
     {
       "id": "spark",
-      "display_name": "iFlyTek Spark",
       "aliases": [
         "spark",
         "xf-yun"
@@ -1963,7 +1898,6 @@
       "versions": [
         {
           "id": "spark-4-ultra",
-          "display_name": "Spark 4.0 Ultra",
           "match_patterns": [
             "4\\.0Ultra"
           ],
@@ -1974,7 +1908,6 @@
         },
         {
           "id": "spark-3.5",
-          "display_name": "Spark V3.5",
           "match_patterns": [
             "generalv3\\.5"
           ],
@@ -1984,7 +1917,6 @@
         },
         {
           "id": "spark-pro",
-          "display_name": "Spark Pro",
           "match_patterns": [
             "(?:^|[/._-])pro"
           ],
@@ -1994,7 +1926,6 @@
         },
         {
           "id": "spark-lite",
-          "display_name": "Spark Lite",
           "match_patterns": [
             "(?:^|[/._-])lite"
           ],
@@ -2006,7 +1937,6 @@
     },
     {
       "id": "ernie",
-      "display_name": "ERNIE",
       "aliases": [
         "ernie",
         "qianfan",
@@ -2030,7 +1960,6 @@
       "versions": [
         {
           "id": "ernie-4",
-          "display_name": "ERNIE 4.0",
           "match_patterns": [
             "ernie-4"
           ],
@@ -2041,7 +1970,6 @@
         },
         {
           "id": "ernie-3.5",
-          "display_name": "ERNIE 3.5",
           "match_patterns": [
             "ernie-3\\.5"
           ],
@@ -2051,21 +1979,22 @@
         },
         {
           "id": "ernie-5.1",
-          "display_name": "ERNIE 5.1",
           "match_patterns": [
             "ernie-5\\.1"
           ]
         },
         {
           "id": "ernie-4.5",
-          "display_name": "ERNIE 4.5",
           "match_patterns": [
             "ernie-4\\.5"
+          ],
+          "abilities": [
+            "TOOL",
+            "REASONING"
           ]
         },
         {
           "id": "ernie-x1",
-          "display_name": "ERNIE X1",
           "match_patterns": [
             "ernie-x1"
           ],
@@ -2076,28 +2005,24 @@
         },
         {
           "id": "ernie-speed",
-          "display_name": "ERNIE Speed",
           "match_patterns": [
             "ernie-speed"
           ]
         },
         {
           "id": "ernie-lite",
-          "display_name": "ERNIE Lite",
           "match_patterns": [
             "ernie-lite"
           ]
         },
         {
           "id": "ernie-tiny",
-          "display_name": "ERNIE Tiny",
           "match_patterns": [
             "ernie-tiny"
           ]
         },
         {
           "id": "qianfan-vl",
-          "display_name": "Qianfan VL",
           "match_patterns": [
             "qianfan-vl"
           ],
@@ -2107,8 +2032,17 @@
           ]
         },
         {
+          "id": "ernie-vl",
+          "match_patterns": [
+            "ernie.*(?:vl|vision)"
+          ],
+          "input_modalities": [
+            "TEXT",
+            "IMAGE"
+          ]
+        },
+        {
           "id": "qianfan-ocr",
-          "display_name": "Qianfan OCR",
           "match_patterns": [
             "qianfan-ocr"
           ],
@@ -2119,7 +2053,6 @@
         },
         {
           "id": "cobuddy",
-          "display_name": "CoBuddy",
           "match_patterns": [
             "cobuddy"
           ]
@@ -2128,7 +2061,6 @@
     },
     {
       "id": "hunyuan",
-      "display_name": "Tencent Hunyuan",
       "aliases": [
         "hunyuan"
       ],
@@ -2150,7 +2082,6 @@
       "versions": [
         {
           "id": "hunyuan-reasoning",
-          "display_name": "Hunyuan Reasoning",
           "match_patterns": [
             "hunyuan[-_]?t1"
           ],
@@ -2161,7 +2092,6 @@
         },
         {
           "id": "hunyuan-vision",
-          "display_name": "Hunyuan Vision",
           "match_patterns": [
             "hunyuan-vision"
           ],
@@ -2172,7 +2102,6 @@
         },
         {
           "id": "hunyuan-pro",
-          "display_name": "Hunyuan Pro",
           "match_patterns": [
             "hunyuan-pro"
           ],
@@ -2182,7 +2111,6 @@
         },
         {
           "id": "hunyuan-standard",
-          "display_name": "Hunyuan Standard",
           "match_patterns": [
             "hunyuan-standard"
           ],
@@ -2192,7 +2120,6 @@
         },
         {
           "id": "hunyuan-lite",
-          "display_name": "Hunyuan Lite",
           "match_patterns": [
             "hunyuan-lite"
           ],
@@ -2202,7 +2129,6 @@
         },
         {
           "id": "hunyuan-hy3",
-          "display_name": "Hunyuan Hy3",
           "match_patterns": [
             "hunyuan.*hy3",
             "hy3"
@@ -2218,7 +2144,6 @@
         },
         {
           "id": "hunyuan-large",
-          "display_name": "Hunyuan Large",
           "match_patterns": [
             "hunyuan-large"
           ],
@@ -2228,7 +2153,6 @@
         },
         {
           "id": "hunyuan-turbo",
-          "display_name": "Hunyuan Turbo",
           "match_patterns": [
             "hunyuan-turbo",
             "hunyuan-turbos"
@@ -2239,7 +2163,6 @@
         },
         {
           "id": "hunyuan-a13b",
-          "display_name": "Hunyuan A13B",
           "match_patterns": [
             "hunyuan-a13b"
           ],
@@ -2249,7 +2172,6 @@
         },
         {
           "id": "hunyuan-translation",
-          "display_name": "Hunyuan Translation",
           "match_patterns": [
             "hunyuan-translation"
           ],
@@ -2259,7 +2181,6 @@
         },
         {
           "id": "hunyuan-2.0",
-          "display_name": "Hunyuan 2.0",
           "match_patterns": [
             "hunyuan-2\\.0"
           ]
@@ -2268,7 +2189,6 @@
     },
     {
       "id": "flux",
-      "display_name": "FLUX",
       "aliases": [
         "flux",
         "black-forest-labs"
@@ -2292,7 +2212,6 @@
     },
     {
       "id": "cohere",
-      "display_name": "Cohere Command",
       "aliases": [
         "cohere",
         "command"
@@ -2317,7 +2236,6 @@
       "versions": [
         {
           "id": "cohere-embed",
-          "display_name": "Cohere Embed",
           "match_patterns": [
             "embed-english",
             "embed-multilingual"
@@ -2333,7 +2251,6 @@
         },
         {
           "id": "cohere-vision",
-          "display_name": "Cohere Vision",
           "match_patterns": [
             "command-a-vision",
             "aya-vision"
@@ -2347,7 +2264,6 @@
     },
     {
       "id": "perplexity",
-      "display_name": "Perplexity Sonar",
       "aliases": [
         "perplexity",
         "sonar"
@@ -2369,7 +2285,6 @@
       "versions": [
         {
           "id": "perplexity-reasoning",
-          "display_name": "Perplexity Sonar Reasoning",
           "match_patterns": [
             "reasoning",
             "deep-research"
@@ -2382,7 +2297,6 @@
     },
     {
       "id": "phi",
-      "display_name": "Microsoft Phi",
       "aliases": [
         "phi",
         "microsoft"
@@ -2406,7 +2320,6 @@
       "versions": [
         {
           "id": "phi4-reasoning",
-          "display_name": "Phi 4 Reasoning",
           "match_patterns": [
             "phi-4"
           ],
@@ -2421,7 +2334,6 @@
         },
         {
           "id": "phi4-vision",
-          "display_name": "Phi 4 Vision",
           "match_patterns": [
             "phi-4.*(?:vision|multimodal)"
           ],
@@ -2438,7 +2350,6 @@
     },
     {
       "id": "voyage",
-      "display_name": "Voyage AI",
       "aliases": [
         "voyage"
       ],
@@ -2459,7 +2370,6 @@
     },
     {
       "id": "jina",
-      "display_name": "Jina AI",
       "aliases": [
         "jina"
       ],
@@ -2480,7 +2390,6 @@
     },
     {
       "id": "baichuan",
-      "display_name": "Baichuan",
       "aliases": [
         "baichuan"
       ],
@@ -2504,7 +2413,6 @@
     },
     {
       "id": "solar",
-      "display_name": "Solar",
       "aliases": [
         "solar"
       ],
@@ -2527,7 +2435,6 @@
     },
     {
       "id": "yi",
-      "display_name": "Yi",
       "aliases": [
         "yi",
         "01.ai"
@@ -2550,7 +2457,6 @@
       "versions": [
         {
           "id": "yi-vision",
-          "display_name": "Yi Vision",
           "match_patterns": [
             "yi.*vision"
           ],
@@ -2561,7 +2467,6 @@
         },
         {
           "id": "yi-lightning",
-          "display_name": "Yi Lightning",
           "match_patterns": [
             "yi-lightning"
           ],
@@ -2574,7 +2479,6 @@
     },
     {
       "id": "sensenova",
-      "display_name": "SenseNova",
       "aliases": [
         "sensenova",
         "sensetime",
@@ -2599,7 +2503,6 @@
       "versions": [
         {
           "id": "sensechat-v6",
-          "display_name": "SenseChat V6",
           "match_patterns": [
             "sensechat-v6"
           ],
@@ -2614,7 +2517,6 @@
         },
         {
           "id": "sensechat-v6.5",
-          "display_name": "SenseChat V6.5",
           "match_patterns": [
             "sensechat-v6\\.5"
           ],
@@ -2631,7 +2533,6 @@
     },
     {
       "id": "stepfun",
-      "display_name": "StepFun",
       "aliases": [
         "stepfun",
         "step"
@@ -2655,7 +2556,6 @@
       "versions": [
         {
           "id": "step-3.5-flash",
-          "display_name": "Step 3.5 Flash",
           "match_patterns": [
             "step-3\\.5-flash"
           ],
@@ -2666,7 +2566,6 @@
         },
         {
           "id": "step-1.5v-mini",
-          "display_name": "Step 1.5V Mini",
           "match_patterns": [
             "step-1\\.5v-mini"
           ],
@@ -2679,10 +2578,9 @@
     },
     {
       "id": "ai360",
-      "display_name": "360 Zhinao",
       "aliases": [
         "ai360",
-        "360智脑",
+        "360æ™ºè„‘",
         "360"
       ],
       "match_patterns": [
@@ -2704,7 +2602,6 @@
       "versions": [
         {
           "id": "360gpt2-o1",
-          "display_name": "360 Zhinao o1",
           "match_patterns": [
             "360gpt2-o1"
           ],
@@ -2715,7 +2612,6 @@
         },
         {
           "id": "360gpt2-pro",
-          "display_name": "360 Zhinao 2 Pro",
           "match_patterns": [
             "360gpt2-pro"
           ]
@@ -2724,7 +2620,6 @@
     },
     {
       "id": "jamba",
-      "display_name": "Jamba",
       "aliases": [
         "jamba",
         "ai21"
@@ -2748,7 +2643,6 @@
     },
     {
       "id": "nemotron",
-      "display_name": "NVIDIA NeMo / Nemotron",
       "aliases": [
         "nemotron"
       ],
@@ -2775,7 +2669,6 @@
       "versions": [
         {
           "id": "nemotron-nano-omni",
-          "display_name": "Nemotron 3 Nano Omni",
           "match_patterns": [
             "nemotron.*nano-omni"
           ],
@@ -2786,35 +2679,30 @@
         },
         {
           "id": "nemotron-3-nano",
-          "display_name": "Nemotron 3 Nano",
           "match_patterns": [
             "nemotron-3-nano"
           ]
         },
         {
           "id": "nemotron-3-super",
-          "display_name": "Nemotron 3 Super",
           "match_patterns": [
             "nemotron-3-super"
           ]
         },
         {
           "id": "nemotron-4-340b",
-          "display_name": "Nemotron 4 340B",
           "match_patterns": [
             "nemotron-4-340b"
           ]
         },
         {
           "id": "llama-3.1-nemotron",
-          "display_name": "Llama 3.1 Nemotron",
           "match_patterns": [
             "llama-3\\.1-nemotron"
           ]
         },
         {
           "id": "nvidia-embed-qa",
-          "display_name": "NVIDIA Embed QA",
           "match_patterns": [
             "(^|[/._-])embed-qa(?=$|[:/._-])",
             "(^|[/._-])nv-embedqa(?=$|[:/._-])"
@@ -2830,7 +2718,6 @@
         },
         {
           "id": "nvidia-translate",
-          "display_name": "NVIDIA Riva Translate",
           "match_patterns": [
             "(^|[/._-])riva-translate(?=$|[:/._-])",
             "(^|[/._-])translate-(?!en-)(?=$|[:/._-])"
@@ -2843,7 +2730,6 @@
     },
     {
       "id": "amazon-nova",
-      "display_name": "Amazon Nova",
       "aliases": [
         "nova",
         "amazon"
@@ -2867,21 +2753,18 @@
       "versions": [
         {
           "id": "nova-pro",
-          "display_name": "Amazon Nova Pro",
           "match_patterns": [
             "nova.*pro"
           ]
         },
         {
           "id": "nova-lite",
-          "display_name": "Amazon Nova Lite",
           "match_patterns": [
             "nova.*lite"
           ]
         },
         {
           "id": "nova-micro",
-          "display_name": "Amazon Nova Micro",
           "match_patterns": [
             "nova.*micro"
           ],
@@ -2891,7 +2774,6 @@
         },
         {
           "id": "nova-canvas",
-          "display_name": "Amazon Nova Canvas",
           "match_patterns": [
             "nova.*canvas"
           ],
@@ -2909,7 +2791,6 @@
     },
     {
       "id": "amazon-titan",
-      "display_name": "Amazon Titan",
       "aliases": [
         "titan",
         "amazon"
@@ -2932,28 +2813,24 @@
       "versions": [
         {
           "id": "titan-text-premier",
-          "display_name": "Titan Text Premier",
           "match_patterns": [
             "titan-text-premier"
           ]
         },
         {
           "id": "titan-text-express",
-          "display_name": "Titan Text Express",
           "match_patterns": [
             "titan-text-express"
           ]
         },
         {
           "id": "titan-text-lite",
-          "display_name": "Titan Text Lite",
           "match_patterns": [
             "titan-text-lite"
           ]
         },
         {
           "id": "titan-image",
-          "display_name": "Titan Image Generator",
           "match_patterns": [
             "titan.*image"
           ],
@@ -2969,7 +2846,6 @@
         },
         {
           "id": "titan-embed",
-          "display_name": "Titan Embeddings",
           "match_patterns": [
             "titan.*embed"
           ],
@@ -2986,7 +2862,6 @@
     },
     {
       "id": "arcee",
-      "display_name": "Arcee",
       "aliases": [
         "arcee",
         "arcee-ai"
@@ -3009,7 +2884,6 @@
       "versions": [
         {
           "id": "trinity-thinking",
-          "display_name": "Trinity Large Thinking",
           "match_patterns": [
             "trinity-large-thinking"
           ],
@@ -3020,7 +2894,6 @@
         },
         {
           "id": "arcee-agent",
-          "display_name": "Arcee Agent",
           "match_patterns": [
             "arcee-agent"
           ],
@@ -3030,7 +2903,6 @@
         },
         {
           "id": "arcee-spark",
-          "display_name": "Arcee Spark",
           "match_patterns": [
             "arcee-spark"
           ]
@@ -3039,7 +2911,6 @@
     },
     {
       "id": "cogito",
-      "display_name": "Cogito",
       "aliases": [
         "cogito",
         "deepcogito"
@@ -3064,7 +2935,6 @@
     },
     {
       "id": "essential-ai",
-      "display_name": "Essential AI",
       "aliases": [
         "rnj",
         "essentialai"
@@ -3089,7 +2959,6 @@
     },
     {
       "id": "granite",
-      "display_name": "Granite",
       "aliases": [
         "granite",
         "ibm"
@@ -3112,14 +2981,12 @@
       "versions": [
         {
           "id": "granite-guardian",
-          "display_name": "Granite Guardian",
           "match_patterns": [
             "granite-guardian"
           ]
         },
         {
           "id": "granite-code",
-          "display_name": "Granite Code",
           "match_patterns": [
             "granite-code"
           ]
@@ -3128,7 +2995,6 @@
     },
     {
       "id": "inclusion-ai",
-      "display_name": "inclusionAI",
       "aliases": [
         "inclusionai",
         "inclusion-ai",
@@ -3154,14 +3020,12 @@
       "versions": [
         {
           "id": "ling",
-          "display_name": "Ling",
           "match_patterns": [
             "ling"
           ]
         },
         {
           "id": "ring",
-          "display_name": "Ring",
           "match_patterns": [
             "ring"
           ],
@@ -3172,7 +3036,6 @@
         },
         {
           "id": "ming",
-          "display_name": "Ming",
           "match_patterns": [
             "ming"
           ],
@@ -3185,7 +3048,6 @@
     },
     {
       "id": "inflection",
-      "display_name": "Inflection",
       "aliases": [
         "inflection"
       ],
@@ -3207,14 +3069,12 @@
       "versions": [
         {
           "id": "inflection-3-pi",
-          "display_name": "Inflection 3 Pi",
           "match_patterns": [
             "inflection-3-pi"
           ]
         },
         {
           "id": "inflection-3-productivity",
-          "display_name": "Inflection 3 Productivity",
           "match_patterns": [
             "inflection-3-productivity"
           ],
@@ -3226,7 +3086,6 @@
     },
     {
       "id": "intfloat",
-      "display_name": "intfloat",
       "aliases": [
         "intfloat",
         "e5"
@@ -3249,7 +3108,6 @@
     },
     {
       "id": "liquid",
-      "display_name": "Liquid LFM",
       "aliases": [
         "liquid",
         "liquidai",
@@ -3275,7 +3133,6 @@
     },
     {
       "id": "poolside",
-      "display_name": "Poolside Laguna",
       "aliases": [
         "poolside",
         "laguna"
@@ -3299,14 +3156,12 @@
       "versions": [
         {
           "id": "laguna-m",
-          "display_name": "Laguna M.1",
           "match_patterns": [
             "laguna[-_]?m"
           ]
         },
         {
           "id": "laguna-xs",
-          "display_name": "Laguna XS.2",
           "match_patterns": [
             "laguna[-_]?xs"
           ]
@@ -3315,7 +3170,6 @@
     },
     {
       "id": "sao10k",
-      "display_name": "Sao10K",
       "aliases": [
         "sao10k"
       ],
@@ -3338,7 +3192,6 @@
     },
     {
       "id": "sentence-transformers",
-      "display_name": "Sentence Transformers",
       "aliases": [
         "sentence-transformers",
         "all-minilm",
@@ -3363,7 +3216,6 @@
     },
     {
       "id": "thedrummer",
-      "display_name": "TheDrummer",
       "aliases": [
         "thedrummer",
         "unholy"
@@ -3388,7 +3240,6 @@
     },
     {
       "id": "xiaomi",
-      "display_name": "Xiaomi",
       "aliases": [
         "xiaomi",
         "milm",
@@ -3414,14 +3265,12 @@
       "versions": [
         {
           "id": "milm",
-          "display_name": "MiLM",
           "match_patterns": [
             "milm"
           ]
         },
         {
           "id": "mimo",
-          "display_name": "MiMo",
           "match_patterns": [
             "mimo"
           ]
@@ -3430,7 +3279,6 @@
     },
     {
       "id": "aionlabs",
-      "display_name": "AionLabs",
       "aliases": [
         "aionlabs",
         "aion-labs"
@@ -3454,7 +3302,6 @@
       "versions": [
         {
           "id": "aion-reasoning",
-          "display_name": "Aion Reasoning",
           "match_patterns": [
             "aion-1"
           ],
@@ -3465,7 +3312,6 @@
         },
         {
           "id": "aion-rp",
-          "display_name": "Aion Roleplay",
           "match_patterns": [
             "aion-rp"
           ],
@@ -3477,7 +3323,6 @@
     },
     {
       "id": "openrouter-routers",
-      "display_name": "OpenRouter Routers",
       "aliases": [
         "openrouter-routers",
         "openrouter-router"
@@ -3569,7 +3414,6 @@
   "model_overrides": [
     {
       "id": "dall-e-3",
-      "display_name": "DALL-E 3",
       "canonical_model_id": "dall-e-3",
       "provider_ids": [
         "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91"
@@ -3589,7 +3433,6 @@
     },
     {
       "id": "gpt-image-1-mini",
-      "display_name": "GPT Image 1 Mini",
       "canonical_model_id": "gpt-image-1-mini",
       "provider_ids": [
         "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91"
@@ -3600,7 +3443,6 @@
     },
     {
       "id": "gemini-2.5-flash-image",
-      "display_name": "Gemini 2.5 Flash Image",
       "canonical_model_id": "gemini-2.5-flash-image",
       "api_aliases": [
         "models/gemini-2.5-flash-image",
@@ -3618,7 +3460,6 @@
     },
     {
       "id": "gemini-3.1-flash-image-preview",
-      "display_name": "Gemini 3.1 Flash Image Preview",
       "canonical_model_id": "gemini-3.1-flash-image-preview",
       "api_aliases": [
         "models/gemini-3.1-flash-image-preview",
@@ -3636,7 +3477,6 @@
     },
     {
       "id": "gemini-3-pro-image-preview",
-      "display_name": "Gemini 3 Pro Image Preview",
       "canonical_model_id": "gemini-3-pro-image-preview",
       "api_aliases": [
         "models/gemini-3-pro-image-preview",
@@ -3654,7 +3494,6 @@
     },
     {
       "id": "gemini-embedding-001",
-      "display_name": "Gemini Embedding 001",
       "canonical_model_id": "gemini-embedding-001",
       "api_aliases": [
         "models/gemini-embedding-001",
@@ -3677,7 +3516,6 @@
     },
     {
       "id": "multimodal-embedding-v1",
-      "display_name": "Multimodal Embedding V1",
       "canonical_model_id": "multimodal-embedding-v1",
       "provider_ids": [
         "5e729975-9794-4013-af7e-63a548cf3356"
@@ -3697,7 +3535,6 @@
     },
     {
       "id": "openrouter/free",
-      "display_name": "OpenRouter Free",
       "canonical_model_id": "openrouter/free",
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e"
@@ -3722,7 +3559,6 @@
     },
     {
       "id": "arcee-ai/trinity-large-thinking:free",
-      "display_name": "Trinity Large Thinking Free",
       "canonical_model_id": "arcee-ai/trinity-large-thinking:free",
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e"
@@ -3742,7 +3578,6 @@
     },
     {
       "id": "poolside/laguna-m.1:free",
-      "display_name": "Laguna M.1 Free",
       "canonical_model_id": "poolside/laguna-m.1:free",
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e"
@@ -3761,7 +3596,6 @@
     },
     {
       "id": "poolside/laguna-xs.2:free",
-      "display_name": "Laguna Xs.2 Free",
       "canonical_model_id": "poolside/laguna-xs.2:free",
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e"
@@ -3780,7 +3614,6 @@
     },
     {
       "id": "rekaai/reka-edge",
-      "display_name": "Reka Edge",
       "canonical_model_id": "rekaai/reka-edge",
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e"
@@ -3799,7 +3632,6 @@
     },
     {
       "id": "baidu/cobuddy:free",
-      "display_name": "Cobuddy Free",
       "canonical_model_id": "baidu/cobuddy:free",
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e"
@@ -3818,7 +3650,6 @@
     },
     {
       "id": "baidu/qianfan-ocr-fast",
-      "display_name": "Qianfan Ocr Fast",
       "canonical_model_id": "baidu/qianfan-ocr-fast",
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e"
@@ -3830,7 +3661,6 @@
     },
     {
       "id": "gpt-oss:120b",
-      "display_name": "GPT Oss 120B",
       "canonical_model_id": "gpt-oss:120b",
       "provider_ids": [
         "1a6829ca-f376-4e9d-9bed-07eb85cf8bdd"
@@ -3839,7 +3669,6 @@
     },
     {
       "id": "gpt-oss:20b",
-      "display_name": "GPT Oss 20B",
       "canonical_model_id": "gpt-oss:20b",
       "provider_ids": [
         "1a6829ca-f376-4e9d-9bed-07eb85cf8bdd"
@@ -3848,7 +3677,6 @@
     },
     {
       "id": "gpt-oss:120b-cloud",
-      "display_name": "GPT Oss 120B Cloud",
       "canonical_model_id": "gpt-oss:120b-cloud",
       "provider_ids": [
         "1a6829ca-f376-4e9d-9bed-07eb85cf8bdd"
@@ -3857,7 +3685,6 @@
     },
     {
       "id": "gpt-oss:20b-cloud",
-      "display_name": "GPT Oss 20B Cloud",
       "canonical_model_id": "gpt-oss:20b-cloud",
       "provider_ids": [
         "1a6829ca-f376-4e9d-9bed-07eb85cf8bdd"
@@ -3866,7 +3693,6 @@
     },
     {
       "id": "qwen3-vl:235b",
-      "display_name": "Qwen3 Vl 235B",
       "canonical_model_id": "qwen3-vl:235b",
       "provider_ids": [
         "1a6829ca-f376-4e9d-9bed-07eb85cf8bdd"
@@ -3875,7 +3701,6 @@
     },
     {
       "id": "qwen3-coder:480b",
-      "display_name": "Qwen3 Coder 480B",
       "canonical_model_id": "qwen3-coder:480b",
       "provider_ids": [
         "1a6829ca-f376-4e9d-9bed-07eb85cf8bdd"
@@ -3884,7 +3709,6 @@
     },
     {
       "id": "gemma4:31b",
-      "display_name": "Gemma4 31B",
       "canonical_model_id": "gemma4:31b",
       "provider_ids": [
         "1a6829ca-f376-4e9d-9bed-07eb85cf8bdd"
@@ -3893,7 +3717,6 @@
     },
     {
       "id": "gemma3:27b",
-      "display_name": "Gemma3 27B",
       "canonical_model_id": "gemma3:27b",
       "provider_ids": [
         "1a6829ca-f376-4e9d-9bed-07eb85cf8bdd"
@@ -3905,7 +3728,6 @@
     },
     {
       "id": "BAAI/bge-m3",
-      "display_name": "Bge M3",
       "canonical_model_id": "BAAI/bge-m3",
       "provider_ids": [
         "b38e1192-5b47-4d2a-a163-f622a2eaf717"
@@ -3925,7 +3747,6 @@
     },
     {
       "id": "black-forest-labs/FLUX.1-schnell",
-      "display_name": "FLUX.1 Schnell",
       "canonical_model_id": "black-forest-labs/FLUX.1-schnell",
       "provider_ids": [
         "b38e1192-5b47-4d2a-a163-f622a2eaf717"
@@ -3934,7 +3755,6 @@
     },
     {
       "id": "doubao-seedream-3-0-t2i-250415",
-      "display_name": "Doubao Seedream 3 0 T2I 250415",
       "canonical_model_id": "doubao-seedream-3-0-t2i-250415",
       "provider_ids": [
         "d2eb13cb-8c0a-4885-9e74-f4b56c8d5b24"
@@ -3947,7 +3767,6 @@
     },
     {
       "id": "doubao-seedream-4-0-250828",
-      "display_name": "Doubao Seedream 4 0 250828",
       "canonical_model_id": "doubao-seedream-4-0-250828",
       "provider_ids": [
         "d2eb13cb-8c0a-4885-9e74-f4b56c8d5b24"
@@ -3960,7 +3779,6 @@
     },
     {
       "id": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
-      "display_name": "Llama 3.3 70B Instruct Turbo",
       "canonical_model_id": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
       "provider_ids": [
         "bf741ca1-57d6-4444-93ff-18305c43d9b4"
@@ -3969,7 +3787,6 @@
     },
     {
       "id": "meta-llama/Llama-3.1-8B-Instruct-Turbo",
-      "display_name": "Llama 3.1 8B Instruct Turbo",
       "canonical_model_id": "meta-llama/Llama-3.1-8B-Instruct-Turbo",
       "provider_ids": [
         "bf741ca1-57d6-4444-93ff-18305c43d9b4"
@@ -3978,7 +3795,6 @@
     },
     {
       "id": "deepseek-ai/DeepSeek-V3",
-      "display_name": "DeepSeek V3",
       "canonical_model_id": "deepseek-ai/DeepSeek-V3",
       "api_aliases": [
         "deepseek/deepseek-v3"
@@ -3996,7 +3812,6 @@
     },
     {
       "id": "deepseek-ai/DeepSeek-R1",
-      "display_name": "DeepSeek R1",
       "canonical_model_id": "deepseek-ai/DeepSeek-R1",
       "api_aliases": [
         "deepseek/deepseek-r1"
@@ -4012,7 +3827,6 @@
     },
     {
       "id": "meta-llama/Llama-3.3-70B-Instruct",
-      "display_name": "Llama 3.3 70B Instruct",
       "canonical_model_id": "meta-llama/Llama-3.3-70B-Instruct",
       "api_aliases": [
         "meta-llama/llama-3.3-70b-instruct"
@@ -4027,7 +3841,6 @@
     },
     {
       "id": "accounts/fireworks/models/llama-v3p3-70b-instruct",
-      "display_name": "Llama 3.3 70B Instruct (Fireworks)",
       "canonical_model_id": "accounts/fireworks/models/llama-v3p3-70b-instruct",
       "provider_ids": [
         "8e9f2910-c114-411a-b302-18cb92193b2a"
@@ -4036,7 +3849,6 @@
     },
     {
       "id": "accounts/fireworks/models/llama-v3p1-8b-instruct",
-      "display_name": "Llama 3.1 8B Instruct (Fireworks)",
       "canonical_model_id": "accounts/fireworks/models/llama-v3p1-8b-instruct",
       "provider_ids": [
         "8e9f2910-c114-411a-b302-18cb92193b2a"
@@ -4045,7 +3857,6 @@
     },
     {
       "id": "accounts/fireworks/models/deepseek-v3",
-      "display_name": "DeepSeek V3 (Fireworks)",
       "canonical_model_id": "accounts/fireworks/models/deepseek-v3",
       "provider_ids": [
         "8e9f2910-c114-411a-b302-18cb92193b2a"
@@ -4056,7 +3867,6 @@
     },
     {
       "id": "nvidia/llama-3.1-nemotron-51b-instruct",
-      "display_name": "Llama 3.1 Nemotron 51B Instruct",
       "canonical_model_id": "nvidia/llama-3.1-nemotron-51b-instruct",
       "provider_ids": [
         "d7f8a9e0-cb41-45bd-89d2-e6fdbe4c2d3a"
@@ -4065,7 +3875,6 @@
     },
     {
       "id": "openrouter/auto",
-      "display_name": "OpenRouter Auto",
       "canonical_model_id": "openrouter/auto",
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e"
@@ -4086,7 +3895,6 @@
     },
     {
       "id": "text-embedding-3-small",
-      "display_name": "Text Embedding 3 Small",
       "canonical_model_id": "text-embedding-3-small",
       "provider_ids": [
         "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91"
@@ -4101,7 +3909,6 @@
     },
     {
       "id": "text-embedding-3-large",
-      "display_name": "Text Embedding 3 Large",
       "canonical_model_id": "text-embedding-3-large",
       "provider_ids": [
         "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91"
@@ -4116,7 +3923,6 @@
     },
     {
       "id": "text-embedding-ada-002",
-      "display_name": "Text Embedding Ada 002",
       "canonical_model_id": "text-embedding-ada-002",
       "provider_ids": [
         "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91"
@@ -4131,7 +3937,6 @@
     },
     {
       "id": "nvidia/embed-qa-4",
-      "display_name": "NVIDIA Embed QA 4",
       "canonical_model_id": "nvidia/embed-qa-4",
       "provider_ids": [
         "d7f8a9e0-cb41-45bd-89d2-e6fdbe4c2d3a"

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -98,6 +99,9 @@ fun ChatDrawerContent(
     inputState: ChatInputState,
     activePersistenceMode: ChatPersistenceMode,
     drawerState: androidx.compose.material3.DrawerState? = null,  // Optional for animated close
+    presentation: ChatDrawerPresentation = ChatDrawerPresentation.Modal,
+    collapsedWidth: Dp = 320.dp,
+    expandedWidth: Dp = 600.dp,
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -108,7 +112,7 @@ fun ChatDrawerContent(
     // Search expansion state - hoisted here so drawer width can animate
     var isSearchExpanded by remember { mutableStateOf(false) }
     val drawerWidth by animateDpAsState(
-        targetValue = if (isSearchExpanded) 600.dp else 320.dp,
+        targetValue = if (isSearchExpanded) expandedWidth else collapsedWidth,
         animationSpec = if (isSearchExpanded) {
             spring(dampingRatio = 0.8f, stiffness = 400f)
         } else {
@@ -137,11 +141,7 @@ fun ChatDrawerContent(
         )
     }
 
-    ModalDrawerSheet(
-        modifier = Modifier.widthIn(max = drawerWidth),
-        drawerShape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
-        drawerContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-    ) {
+    val drawerContent: @Composable () -> Unit = {
         Column(
             modifier = Modifier.padding(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -450,6 +450,32 @@ fun ChatDrawerContent(
     }
 
     // 昵称编辑对话框
+    when (presentation) {
+        ChatDrawerPresentation.Modal -> {
+            ModalDrawerSheet(
+                modifier = Modifier.widthIn(max = drawerWidth),
+                drawerShape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
+                drawerContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            ) {
+                drawerContent()
+            }
+        }
+
+        ChatDrawerPresentation.PermanentPane -> {
+            Surface(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(drawerWidth)
+                    .padding(start = 8.dp, top = 8.dp, bottom = 8.dp),
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                tonalElevation = 1.dp,
+            ) {
+                drawerContent()
+            }
+        }
+    }
+
     nicknameEditState.EditStateContent { nickname, onUpdate ->
         AlertDialog(
             onDismissRequest = {
@@ -488,6 +514,11 @@ fun ChatDrawerContent(
             }
         )
     }
+}
+
+enum class ChatDrawerPresentation {
+    Modal,
+    PermanentPane
 }
 
 @Composable

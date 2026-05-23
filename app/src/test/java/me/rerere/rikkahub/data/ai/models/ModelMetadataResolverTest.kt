@@ -193,6 +193,29 @@ class ModelMetadataResolverTest {
     }
 
     @Test
+    fun ignoresCatalogDisplayNameWhenApiNameIsNotPreserved() {
+        val resolver = resolverFor(
+            """
+            {
+              "schema_version": 1,
+              "models": [{
+                "id": "gpt-5-mini",
+                "canonical_model_id": "gpt-5-mini",
+                "display_name": "GPT-5 mini catalog",
+                "type": "CHAT",
+                "abilities": ["TOOL"]
+              }]
+            }
+            """.trimIndent()
+        )
+
+        val resolved = resolver.applyToModel(Model(modelId = "gpt-5-mini"))
+
+        assertEquals("GPT-5 Mini", resolved.displayName)
+        assertEquals(listOf(ModelAbility.TOOL), resolved.abilities)
+    }
+
+    @Test
     fun doesNotFuzzyMatchDifferentModelIds() {
         val resolver = resolverFor(
             """

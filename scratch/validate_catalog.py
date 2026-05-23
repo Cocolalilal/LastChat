@@ -129,6 +129,22 @@ def main():
         model_id for model_id in override_ids
         if sum(1 for override in catalog["model_overrides"] if override.get("id", "").lower() == model_id) > 1
     })
+    forbidden_display_names = []
+    for index, model in enumerate(catalog.get("models", [])):
+        if "display_name" in model:
+            forbidden_display_names.append(f"models[{index}]")
+    for index, override in enumerate(catalog.get("model_overrides", [])):
+        if "display_name" in override:
+            forbidden_display_names.append(f"model_overrides[{index}]")
+    for index, rule in enumerate(catalog.get("global_rules", [])):
+        if "display_name" in rule:
+            forbidden_display_names.append(f"global_rules[{index}]")
+    for family_index, family in enumerate(catalog.get("model_families", [])):
+        if "display_name" in family:
+            forbidden_display_names.append(f"model_families[{family_index}]")
+        for version_index, version in enumerate(family.get("versions", [])):
+            if isinstance(version, dict) and "display_name" in version:
+                forbidden_display_names.append(f"model_families[{family_index}].versions[{version_index}]")
 
     problems = []
     if missing_icons:
@@ -143,6 +159,8 @@ def main():
         problems.append("Setup model refs not resolved by rules: " + ", ".join(missing_setup_refs))
     if duplicate_model_ids:
         problems.append("Duplicate model ids: " + ", ".join(duplicate_model_ids))
+    if forbidden_display_names:
+        problems.append("Model catalog display names are not allowed: " + ", ".join(forbidden_display_names))
 
     if problems:
         print("VALIDATION FAILED:")

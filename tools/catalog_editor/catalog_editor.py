@@ -50,6 +50,7 @@ def load_catalog(path):
         if "family_id" not in model and model.get("group_id"):
             model["family_id"] = model.get("group_id")
         model.pop("group_id", None)
+    strip_model_display_names(catalog)
     return catalog
 
 
@@ -61,8 +62,23 @@ def legacy_model_to_override(model):
     return override
 
 
+def strip_model_display_names(catalog):
+    for model in catalog.get("models", []):
+        model.pop("display_name", None)
+    for override in catalog.get("model_overrides", []):
+        override.pop("display_name", None)
+    for rule in catalog.get("global_rules", []):
+        rule.pop("display_name", None)
+    for family in catalog.get("model_families", []):
+        family.pop("display_name", None)
+        for version in family.get("versions", []):
+            if isinstance(version, dict):
+                version.pop("display_name", None)
+
+
 def save_catalog(path, catalog):
     path.parent.mkdir(parents=True, exist_ok=True)
+    strip_model_display_names(catalog)
     with path.open("w", encoding="utf-8", newline="\n") as fh:
         json.dump(catalog, fh, indent=2, ensure_ascii=False, sort_keys=False)
         fh.write("\n")
@@ -197,7 +213,7 @@ class CatalogEditor(tk.Tk):
         return self.item_matches_query(
             item,
             query,
-            ["id", "display_name", "canonical_model_id", "type", "provider_slug"],
+            ["id", "canonical_model_id", "type", "provider_slug"],
             ["api_aliases", "provider_ids", "provider_slugs", "input_modalities", "output_modalities", "abilities"],
             ["match_patterns", "exclude_patterns", "base_url_patterns"],
         )
@@ -207,7 +223,7 @@ class CatalogEditor(tk.Tk):
         return self.item_matches_query(
             item,
             query,
-            ["id", "display_name", "icon", "type", "provider_slug"],
+            ["id", "icon", "type", "provider_slug"],
             ["aliases", "match_patterns", "input_modalities", "output_modalities", "abilities"],
             ["versions"],
         )
@@ -321,31 +337,30 @@ class CatalogEditor(tk.Tk):
         form = ttk.Frame(right)
         form.pack(fill=tk.BOTH, expand=True)
         self.m_id = self.add_field(form, "Exact model id", 0)
-        self.m_display = self.add_field(form, "Display name", 1)
-        self.m_canonical = self.add_field(form, "Canonical id", 2)
-        self.m_aliases = self.add_field(form, "API aliases", 3)
-        self.m_patterns = self.add_field(form, "Match patterns", 4, multiline=True, height=3)
-        self.m_excludes = self.add_field(form, "Exclude patterns", 5, multiline=True, height=2)
-        self.m_providers = self.add_field(form, "Provider UUID constraints", 6)
-        self.m_provider_slugs = self.add_field(form, "Provider slug constraints", 7)
-        self.m_base_patterns = self.add_field(form, "Base URL patterns", 8, multiline=True, height=2)
-        self.m_type = self.add_combo(form, "Type override", 9, ["", *MODEL_TYPES])
-        self.m_image_method = self.add_combo(form, "Image method override", 10, IMAGE_METHODS)
-        self.m_inputs = self.add_checklist(form, "Input modalities override", 11, MODALITIES)
-        self.m_outputs = self.add_checklist(form, "Output modalities override", 12, MODALITIES)
-        self.m_abilities = self.add_checklist(form, "Abilities override", 13, ABILITIES)
-        self.m_slug = self.add_field(form, "Result provider slug", 14)
-        self.m_input_cost = self.add_field(form, "Input cost per token", 15)
-        self.m_output_cost = self.add_field(form, "Output cost per token", 16)
+        self.m_canonical = self.add_field(form, "Canonical id", 1)
+        self.m_aliases = self.add_field(form, "API aliases", 2)
+        self.m_patterns = self.add_field(form, "Match patterns", 3, multiline=True, height=3)
+        self.m_excludes = self.add_field(form, "Exclude patterns", 4, multiline=True, height=2)
+        self.m_providers = self.add_field(form, "Provider UUID constraints", 5)
+        self.m_provider_slugs = self.add_field(form, "Provider slug constraints", 6)
+        self.m_base_patterns = self.add_field(form, "Base URL patterns", 7, multiline=True, height=2)
+        self.m_type = self.add_combo(form, "Type override", 8, ["", *MODEL_TYPES])
+        self.m_image_method = self.add_combo(form, "Image method override", 9, IMAGE_METHODS)
+        self.m_inputs = self.add_checklist(form, "Input modalities override", 10, MODALITIES)
+        self.m_outputs = self.add_checklist(form, "Output modalities override", 11, MODALITIES)
+        self.m_abilities = self.add_checklist(form, "Abilities override", 12, ABILITIES)
+        self.m_slug = self.add_field(form, "Result provider slug", 13)
+        self.m_input_cost = self.add_field(form, "Input cost per token", 14)
+        self.m_output_cost = self.add_field(form, "Output cost per token", 15)
         self.m_reasoning_enabled = tk.BooleanVar(value=False)
         ttk.Checkbutton(
             form,
             text="Custom reasoning payload",
             variable=self.m_reasoning_enabled,
             command=lambda: self.sync_reasoning_state(self.m_reasoning, self.m_reasoning_enabled),
-        ).grid(row=17, column=1, sticky=tk.W, pady=3)
-        self.m_reasoning = self.add_field(form, "Reasoning behavior JSON", 18, multiline=True)
-        ttk.Button(form, text="Apply Override Changes", command=self.apply_model).grid(row=19, column=1, sticky=tk.E, pady=8)
+        ).grid(row=16, column=1, sticky=tk.W, pady=3)
+        self.m_reasoning = self.add_field(form, "Reasoning behavior JSON", 17, multiline=True)
+        ttk.Button(form, text="Apply Override Changes", command=self.apply_model).grid(row=18, column=1, sticky=tk.E, pady=8)
         form.columnconfigure(1, weight=1)
 
     def _build_groups_tab(self):
@@ -361,19 +376,18 @@ class CatalogEditor(tk.Tk):
         form = ttk.Frame(right)
         form.pack(fill=tk.BOTH, expand=True)
         self.g_id = self.add_field(form, "Family id", 0)
-        self.g_name = self.add_field(form, "Display name", 1)
-        self.g_aliases = self.add_field(form, "Aliases", 2)
-        self.g_patterns = self.add_field(form, "Match patterns", 3, multiline=True, height=3)
-        self.g_icon = self.add_field(form, "Icon path", 4)
-        self.g_type = self.add_combo(form, "Default type", 5, MODEL_TYPES)
-        self.g_image_method = self.add_combo(form, "Default image method", 6, IMAGE_METHODS)
-        self.g_inputs = self.add_checklist(form, "Default input modalities", 7, MODALITIES)
-        self.g_outputs = self.add_checklist(form, "Default output modalities", 8, MODALITIES)
-        self.g_abilities = self.add_checklist(form, "Default abilities", 9, ABILITIES)
-        self.g_slug = self.add_field(form, "Default provider slug", 10)
-        self.build_versions_editor(form, 11)
-        self.build_family_tester(form, 12)
-        ttk.Button(form, text="Apply Family Changes", command=self.apply_group).grid(row=13, column=1, sticky=tk.E, pady=8)
+        self.g_aliases = self.add_field(form, "Aliases", 1)
+        self.g_patterns = self.add_field(form, "Match patterns", 2, multiline=True, height=3)
+        self.g_icon = self.add_field(form, "Icon path", 3)
+        self.g_type = self.add_combo(form, "Default type", 4, MODEL_TYPES)
+        self.g_image_method = self.add_combo(form, "Default image method", 5, IMAGE_METHODS)
+        self.g_inputs = self.add_checklist(form, "Default input modalities", 6, MODALITIES)
+        self.g_outputs = self.add_checklist(form, "Default output modalities", 7, MODALITIES)
+        self.g_abilities = self.add_checklist(form, "Default abilities", 8, ABILITIES)
+        self.g_slug = self.add_field(form, "Default provider slug", 9)
+        self.build_versions_editor(form, 10)
+        self.build_family_tester(form, 11)
+        ttk.Button(form, text="Apply Family Changes", command=self.apply_group).grid(row=12, column=1, sticky=tk.E, pady=8)
         form.columnconfigure(1, weight=1)
 
     def build_versions_editor(self, parent, row):
@@ -396,22 +410,21 @@ class CatalogEditor(tk.Tk):
         version_form = ttk.Frame(frame)
         version_form.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(10, 0))
         self.v_id = self.add_field(version_form, "Version id", 0)
-        self.v_display = self.add_field(version_form, "Display name override", 1)
-        self.v_patterns = self.add_field(version_form, "Match patterns", 2, multiline=True, height=3)
-        self.v_excludes = self.add_field(version_form, "Exclude patterns", 3, multiline=True, height=2)
-        self.v_type = self.add_combo(version_form, "Type override", 4, ["", *MODEL_TYPES])
-        self.v_image_method = self.add_combo(version_form, "Image method override", 5, IMAGE_METHODS)
-        self.v_canonical = self.add_field(version_form, "Canonical id override", 6)
-        self.v_slug = self.add_field(version_form, "Provider slug override", 7)
+        self.v_patterns = self.add_field(version_form, "Match patterns", 1, multiline=True, height=3)
+        self.v_excludes = self.add_field(version_form, "Exclude patterns", 2, multiline=True, height=2)
+        self.v_type = self.add_combo(version_form, "Type override", 3, ["", *MODEL_TYPES])
+        self.v_image_method = self.add_combo(version_form, "Image method override", 4, IMAGE_METHODS)
+        self.v_canonical = self.add_field(version_form, "Canonical id override", 5)
+        self.v_slug = self.add_field(version_form, "Provider slug override", 6)
         self.v_inputs_enabled = tk.BooleanVar(value=False)
-        ttk.Checkbutton(version_form, text="Override input modalities", variable=self.v_inputs_enabled).grid(row=8, column=1, sticky=tk.W)
-        self.v_inputs = self.add_checklist(version_form, "Input modalities", 9, MODALITIES)
+        ttk.Checkbutton(version_form, text="Override input modalities", variable=self.v_inputs_enabled).grid(row=7, column=1, sticky=tk.W)
+        self.v_inputs = self.add_checklist(version_form, "Input modalities", 8, MODALITIES)
         self.v_outputs_enabled = tk.BooleanVar(value=False)
-        ttk.Checkbutton(version_form, text="Override output modalities", variable=self.v_outputs_enabled).grid(row=10, column=1, sticky=tk.W)
-        self.v_outputs = self.add_checklist(version_form, "Output modalities", 11, MODALITIES)
+        ttk.Checkbutton(version_form, text="Override output modalities", variable=self.v_outputs_enabled).grid(row=9, column=1, sticky=tk.W)
+        self.v_outputs = self.add_checklist(version_form, "Output modalities", 10, MODALITIES)
         self.v_abilities_enabled = tk.BooleanVar(value=False)
-        ttk.Checkbutton(version_form, text="Override abilities", variable=self.v_abilities_enabled).grid(row=12, column=1, sticky=tk.W)
-        self.v_abilities = self.add_checklist(version_form, "Abilities", 13, ABILITIES)
+        ttk.Checkbutton(version_form, text="Override abilities", variable=self.v_abilities_enabled).grid(row=11, column=1, sticky=tk.W)
+        self.v_abilities = self.add_checklist(version_form, "Abilities", 12, ABILITIES)
         version_form.columnconfigure(1, weight=1)
 
         self.current_versions = []
@@ -639,7 +652,6 @@ class CatalogEditor(tk.Tk):
             return
         item = self.catalog["model_overrides"][idx]
         self.set_entry(self.m_id, item.get("id", ""))
-        self.set_entry(self.m_display, item.get("display_name", ""))
         self.set_entry(self.m_canonical, item.get("canonical_model_id", ""))
         self.set_entry(self.m_aliases, list_to_csv(item.get("api_aliases", [])))
         self.set_entry(self.m_patterns, list_to_lines(item.get("match_patterns", [])))
@@ -664,9 +676,9 @@ class CatalogEditor(tk.Tk):
             return
         try:
             item = self.catalog["model_overrides"][idx].copy()
+            item.pop("display_name", None)
             item.update({
                 "id": self.get_entry(self.m_id),
-                "display_name": self.get_entry(self.m_display),
                 "canonical_model_id": self.get_entry(self.m_canonical) or None,
                 "provider_ids": csv_to_list(self.get_entry(self.m_providers)),
                 "provider_slugs": csv_to_list(self.get_entry(self.m_provider_slugs)),
@@ -701,7 +713,6 @@ class CatalogEditor(tk.Tk):
             return
         item = self.catalog["model_families"][idx]
         self.set_entry(self.g_id, item.get("id", ""))
-        self.set_entry(self.g_name, item.get("display_name", ""))
         self.set_entry(self.g_aliases, list_to_csv(item.get("aliases", [])))
         self.set_entry(self.g_patterns, list_to_lines(item.get("match_patterns", [])))
         self.set_entry(self.g_icon, item.get("icon", ""))
@@ -759,7 +770,6 @@ class CatalogEditor(tk.Tk):
         self.current_version_index = index
         version = self.current_versions[index]
         self.set_entry(self.v_id, version.get("id", ""))
-        self.set_entry(self.v_display, version.get("display_name", ""))
         self.set_entry(self.v_patterns, list_to_lines(version.get("match_patterns", [])))
         self.set_entry(self.v_excludes, list_to_lines(version.get("exclude_patterns", [])))
         self.set_entry(self.v_type, version.get("type", ""))
@@ -779,7 +789,6 @@ class CatalogEditor(tk.Tk):
         self.current_version_index = None
         for widget in (
             self.v_id,
-            self.v_display,
             self.v_patterns,
             self.v_excludes,
             self.v_type,
@@ -801,9 +810,9 @@ class CatalogEditor(tk.Tk):
         if index is None or index < 0 or index >= len(self.current_versions):
             return
         version = self.current_versions[index].copy()
+        version.pop("display_name", None)
         version.update({
             "id": self.get_entry(self.v_id),
-            "display_name": self.get_entry(self.v_display) or None,
             "match_patterns": lines_to_list(self.get_entry(self.v_patterns)),
             "exclude_patterns": lines_to_list(self.get_entry(self.v_excludes)),
             "type": self.get_entry(self.v_type) or None,
@@ -945,9 +954,9 @@ class CatalogEditor(tk.Tk):
             return
         self.save_current_version_form()
         item = self.catalog["model_families"][idx].copy()
+        item.pop("display_name", None)
         item.update({
             "id": self.get_entry(self.g_id),
-            "display_name": self.get_entry(self.g_name),
             "aliases": csv_to_list(self.get_entry(self.g_aliases)),
             "match_patterns": lines_to_list(self.get_entry(self.g_patterns)),
             "icon": self.get_entry(self.g_icon) or None,
@@ -983,7 +992,6 @@ class CatalogEditor(tk.Tk):
     def add_model(self):
         self.catalog["model_overrides"].append({
             "id": "new-model",
-            "display_name": "New Model",
         })
         self.model_search.set("")
         self.refresh_all()
@@ -994,7 +1002,6 @@ class CatalogEditor(tk.Tk):
     def add_group(self):
         self.catalog["model_families"].append({
             "id": "new-family",
-            "display_name": "New Family",
             "aliases": [],
             "match_patterns": [],
             "type": "CHAT",
@@ -1186,6 +1193,7 @@ class CatalogEditor(tk.Tk):
             model_id for model_id in override_ids
             if sum(1 for override in self.catalog["model_overrides"] if override.get("id", "").lower() == model_id) > 1
         })
+        forbidden_display_names = self.find_model_display_names()
         problems = []
         if missing_icons:
             problems.append("Missing icon files: " + ", ".join(missing_icons))
@@ -1199,11 +1207,32 @@ class CatalogEditor(tk.Tk):
             problems.append("Setup model refs not resolved by rules: " + ", ".join(missing_setup_refs))
         if duplicate_model_ids:
             problems.append("Duplicate model ids: " + ", ".join(duplicate_model_ids))
+        if forbidden_display_names:
+            problems.append("Model catalog display names are not allowed: " + ", ".join(forbidden_display_names))
         if problems:
             raise ValueError("\n".join(problems))
         if show_success:
             messagebox.showinfo("Catalog valid", "Catalog looks good.")
         return True
+
+    def find_model_display_names(self):
+        refs = []
+        for index, model in enumerate(self.catalog.get("models", [])):
+            if "display_name" in model:
+                refs.append(f"models[{index}]")
+        for index, override in enumerate(self.catalog.get("model_overrides", [])):
+            if "display_name" in override:
+                refs.append(f"model_overrides[{index}]")
+        for index, rule in enumerate(self.catalog.get("global_rules", [])):
+            if "display_name" in rule:
+                refs.append(f"global_rules[{index}]")
+        for family_index, family in enumerate(self.catalog.get("model_families", [])):
+            if "display_name" in family:
+                refs.append(f"model_families[{family_index}]")
+            for version_index, version in enumerate(family.get("versions", [])):
+                if isinstance(version, dict) and "display_name" in version:
+                    refs.append(f"model_families[{family_index}].versions[{version_index}]")
+        return refs
 
     @staticmethod
     def clean_none(value):

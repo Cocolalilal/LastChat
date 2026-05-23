@@ -91,6 +91,8 @@
     <string name="assistant_page_quick_messages_desc">Configure quick message shortcuts</string>
     <string name="assistant_page_recent_chats">Reference Recent Chats</string>
     <string name="assistant_page_recent_chats_desc">When enabled, character will reference recent chat history for better context</string>
+    <string name="assistant_memory_search_tool">Memory search tool</string>
+    <string name="assistant_memory_search_tool_desc">Lets the character deliberately recall core memories, episodes, and older chats</string>
     <string name="assistant_page_regex_affecting_scopes">Affected Scopes:</string>
     <string name="assistant_page_regex_desc">Define regex patterns to transform messages before sending/receiving</string>
     <string name="assistant_page_regex_find_regex">Find Regex</string>
@@ -237,12 +239,15 @@
     <string name="activity_timeline_ocr_pages_value">%1$s</string>
     <string name="activity_timeline_reply">Reply</string>
     <string name="activity_timeline_tool_search_web">Searching web</string>
+    <string name="activity_timeline_tool_search_memory">Memory recall</string>
     <string name="activity_timeline_tool_scrape_web">Reading page</string>
     <string name="activity_timeline_tool_write_file">Writing file</string>
     <string name="activity_timeline_tool_read_file">Reading file</string>
     <string name="activity_timeline_tool_delete_file">Deleting file</string>
     <string name="activity_timeline_tool_manage_skills">Managing skills</string>
     <string name="activity_timeline_tool_ask_user">Asking a question</string>
+    <string name="activity_pill_memory_recalled">Recalled memories</string>
+    <string name="activity_pill_memory_recalled_count">Recalled memories x%1$d</string>
     <string name="activity_timeline_questionnaire_count">%1$d question(s)</string>
     <string name="activity_timeline_questionnaire_answered_count">%1$d answered</string>
     <string name="activity_timeline_questionnaire_answered_summary">%1$d of %2$d answered</string>

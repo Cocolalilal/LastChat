@@ -827,6 +827,16 @@ private fun TimelinePreview(entry: TimelineEntry) {
                     ?.jsonPrimitiveOrNull
                     ?.contentOrNull
                 (answer ?: query).orEmpty().take(160)
+            } else if (entry.toolName == "search_memory") {
+                val summary = (entry.resultJson as? JsonObject)
+                    ?.get("summary")
+                    ?.jsonPrimitiveOrNull
+                    ?.contentOrNull
+                val query = (entry.argumentsJson as? JsonObject)
+                    ?.get("query")
+                    ?.jsonPrimitiveOrNull
+                    ?.contentOrNull
+                (summary ?: query).orEmpty().take(160)
             } else if (parseAskUserTimelineState(entry) != null) {
                 buildAskUserPreviewText(entry).take(160)
             } else if (entry.toolName == "manage_skills") {

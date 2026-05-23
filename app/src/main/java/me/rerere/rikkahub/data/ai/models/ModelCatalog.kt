@@ -135,8 +135,6 @@ enum class CatalogProviderType {
 @Serializable
 data class CatalogModel(
     val id: String,
-    @SerialName("display_name")
-    val displayName: String = "",
     @SerialName("canonical_model_id")
     val canonicalModelId: String? = null,
     @SerialName("api_aliases")
@@ -173,8 +171,6 @@ data class CatalogModel(
 @Serializable
 data class CatalogModelFamily(
     val id: String,
-    @SerialName("display_name")
-    val displayName: String,
     val aliases: List<String> = emptyList(),
     @SerialName("match_patterns")
     val matchPatterns: List<String> = emptyList(),
@@ -197,8 +193,6 @@ data class CatalogModelFamily(
 @Serializable
 data class CatalogModelVersion(
     val id: String = "",
-    @SerialName("display_name")
-    val displayName: String? = null,
     @SerialName("match_patterns")
     val matchPatterns: List<String> = emptyList(),
     @SerialName("exclude_patterns")
@@ -238,8 +232,6 @@ data class CatalogModelRule(
     val providerSlug: String? = null,
     @SerialName("canonical_model_id")
     val canonicalModelId: String? = null,
-    @SerialName("display_name")
-    val displayName: String? = null,
     @SerialName("reasoning_behavior")
     val reasoningBehavior: CatalogRequestBehavior? = null,
 )
@@ -247,8 +239,6 @@ data class CatalogModelRule(
 @Serializable
 data class CatalogModelOverride(
     val id: String = "",
-    @SerialName("display_name")
-    val displayName: String? = null,
     @SerialName("canonical_model_id")
     val canonicalModelId: String? = null,
     @SerialName("api_aliases")
@@ -311,7 +301,6 @@ data class ModelCatalogEntry(
     val canonicalModelId: String,
     val apiAliases: List<String> = emptyList(),
     val providerIds: List<String> = emptyList(),
-    val displayName: String? = null,
     val modelFamilyId: String? = null,
     val mode: String? = null,
     val supportedModalities: List<Modality> = emptyList(),
@@ -384,7 +373,6 @@ object ModelCatalogParser {
                 canonicalModelId = canonicalModelId,
                 apiAliases = model.apiAliases,
                 providerIds = model.providerIds,
-                displayName = model.displayName.ifBlank { null },
                 modelFamilyId = familyId,
                 mode = model.type.name.lowercase(),
                 supportedModalities = (inputModalities + outputModalities).distinct(),
@@ -450,7 +438,6 @@ object ModelCatalogParser {
 private fun CatalogModel.toModelOverride(): CatalogModelOverride {
     return CatalogModelOverride(
         id = id,
-        displayName = displayName.ifBlank { null },
         canonicalModelId = canonicalModelId,
         apiAliases = apiAliases,
         providerIds = providerIds,
@@ -484,7 +471,6 @@ private fun CatalogModelOverride.toCatalogEntry(modelFamilies: List<CatalogModel
         canonicalModelId = ModelIdNormalizer.canonicalize(key, canonicalModelId),
         apiAliases = apiAliases,
         providerIds = providerIds,
-        displayName = displayName,
         modelFamilyId = family?.id,
         mode = resolvedType.name.lowercase(),
         supportedModalities = (inputs + outputs).distinct(),
@@ -620,7 +606,6 @@ private class ModelCatalogEntryBuilder(
     initialCanonicalModelId: String,
 ) {
     var canonicalModelId: String = initialCanonicalModelId
-    var displayName: String? = null
     var modelFamilyId: String? = null
     var type: ModelType = ModelType.CHAT
     var imageGenerationMethod: ImageGenerationMethod? = null
@@ -657,7 +642,6 @@ private class ModelCatalogEntryBuilder(
             abilities = rule.abilities,
             providerSlug = rule.providerSlug,
             canonicalModelId = rule.canonicalModelId,
-            displayName = rule.displayName,
             reasoningBehavior = rule.reasoningBehavior,
             fingerprint = fingerprint,
         )
@@ -673,7 +657,6 @@ private class ModelCatalogEntryBuilder(
             abilities = version.abilities,
             providerSlug = version.providerSlug,
             canonicalModelId = version.canonicalModelId,
-            displayName = version.displayName,
             reasoningBehavior = version.reasoningBehavior,
             fingerprint = fingerprint,
         )
@@ -693,7 +676,6 @@ private class ModelCatalogEntryBuilder(
             abilities = override.abilities,
             providerSlug = override.providerSlug,
             canonicalModelId = override.canonicalModelId,
-            displayName = override.displayName,
             reasoningBehavior = override.reasoningBehavior,
             fingerprint = fingerprint,
         )
@@ -707,7 +689,6 @@ private class ModelCatalogEntryBuilder(
         abilities: List<ModelAbility>?,
         providerSlug: String?,
         canonicalModelId: String?,
-        displayName: String?,
         reasoningBehavior: CatalogRequestBehavior?,
         fingerprint: ModelCatalogFingerprint,
     ) {
@@ -723,7 +704,6 @@ private class ModelCatalogEntryBuilder(
         outputModalities?.let { this.outputModalities = it.ifEmpty { defaultOutputModalities(this.type) } }
         abilities?.let { this.abilities = it }
         providerSlug?.let { this.providerSlug = it }
-        displayName?.let { this.displayName = it }
         reasoningBehavior?.let { this.reasoningBehavior = it }
         canonicalModelId
             ?.takeIf { it.isNotBlank() }
@@ -738,7 +718,6 @@ private class ModelCatalogEntryBuilder(
             canonicalModelId = canonicalModelId,
             apiAliases = apiAliases,
             providerIds = providerIds,
-            displayName = displayName,
             modelFamilyId = modelFamilyId,
             mode = type.name.lowercase(),
             supportedModalities = (inputs + outputs).distinct(),

@@ -1500,6 +1500,15 @@
     <string name="setting_provider_page_probe_capabilities_unchanged">Capabilities already match the provider API</string>
     <string name="setting_provider_page_probe_capabilities_success">Model capabilities updated from the provider API</string>
     <string name="setting_provider_page_probe_capabilities_error">Failed to probe model capabilities: %1$s</string>
+    <string name="setting_provider_page_stream_options">Stream options</string>
+    <string name="setting_provider_page_image_modalities">Image response modalities</string>
+    <string name="setting_provider_page_reasoning_replay">Reasoning replay</string>
+    <string name="setting_provider_page_custom_reasoning_payload">Custom reasoning payload</string>
+    <string name="setting_provider_page_compatibility_auto">Auto</string>
+    <string name="setting_provider_page_compatibility_on">On</string>
+    <string name="setting_provider_page_compatibility_off">Off</string>
+    <string name="setting_provider_page_reload_models">Reload API models</string>
+    <string name="setting_provider_page_reload_models_error">Failed to reload models: %1$s</string>
     <string name="setting_display_model_catalog_title">Update LastChat Catalog</string>
     <string name="setting_display_model_catalog_source_bundled">Bundled</string>
     <string name="setting_display_model_catalog_source_downloaded">Downloaded</string>
@@ -1523,4 +1532,9 @@
   <string name="assistant_advanced_message_type_continue">继续聊天</string>
   <string name="assistant_advanced_message_type_new">开始新聊天</string>
   <string name="assistant_memory_outdated_embedding">已过期</string>
+  <string name="assistant_memory_search_tool">Memory search tool</string>
+  <string name="assistant_memory_search_tool_desc">Lets the character deliberately recall core memories, episodes, and older chats</string>
+  <string name="activity_timeline_tool_search_memory">Memory recall</string>
+  <string name="activity_pill_memory_recalled">Recalled memories</string>
+  <string name="activity_pill_memory_recalled_count">Recalled memories x%1$d</string>
 </resources>

@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -32,6 +33,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListItemInfo
 import androidx.compose.foundation.lazy.LazyListState
@@ -76,6 +78,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.util.fastCoerceAtLeast
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
@@ -146,6 +149,7 @@ fun ChatList(
     loading: Boolean,
     previewMode: Boolean,
     settings: Settings,
+    contentMaxWidth: Dp = Dp.Unspecified,
     recentlyRestoredNodeIds: Set<Uuid> = emptySet(),
     initialSearchQuery: String? = null,
     onRegenerate: (UIMessage) -> Unit = {},
@@ -168,6 +172,7 @@ fun ChatList(
                     innerPadding = innerPadding,
                     conversation = conversation,
                     settings = settings,
+                    contentMaxWidth = contentMaxWidth,
                     onJumpToMessage = onJumpToMessage,
                     animatedVisibilityScope = this@AnimatedContent,
                     initialSearchQuery = initialSearchQuery,
@@ -179,6 +184,7 @@ fun ChatList(
                     state = state,
                     loading = loading,
                     settings = settings,
+                    contentMaxWidth = contentMaxWidth,
                     recentlyRestoredNodeIds = recentlyRestoredNodeIds,
                     onRegenerate = onRegenerate,
                     onEdit = onEdit,
@@ -199,6 +205,7 @@ private fun SharedTransitionScope.ChatListNormal(
     state: LazyListState,
     loading: Boolean,
     settings: Settings,
+    contentMaxWidth: Dp,
     recentlyRestoredNodeIds: Set<Uuid> = emptySet(),
     onRegenerate: (UIMessage) -> Unit,
     onEdit: (UIMessage) -> Unit,
@@ -362,7 +369,17 @@ private fun SharedTransitionScope.ChatListNormal(
                         sharedContentState = rememberSharedContentState(key = "conversation_list"),
                         animatedVisibilityScope = animatedVisibilityScope
                     )
-                    .fillMaxSize(),
+                    .align(Alignment.TopCenter)
+                    .then(
+                        if (contentMaxWidth != Dp.Unspecified) {
+                            Modifier
+                                .widthIn(max = contentMaxWidth)
+                                .fillMaxWidth()
+                                .fillMaxHeight()
+                        } else {
+                            Modifier.fillMaxSize()
+                        }
+                    ),
             ) {
                 itemsIndexed(
                     items = displayGroups,
@@ -672,6 +689,7 @@ private fun SharedTransitionScope.ChatListPreview(
     innerPadding: PaddingValues,
     conversation: Conversation,
     settings: Settings,
+    contentMaxWidth: Dp,
     animatedVisibilityScope: AnimatedVisibilityScope,
     onJumpToMessage: (Int) -> Unit,
     initialSearchQuery: String? = null,
@@ -695,7 +713,16 @@ private fun SharedTransitionScope.ChatListPreview(
         modifier = Modifier
             .padding(innerPadding)
             .padding(top = previewTopPadding)
-            .fillMaxSize(),
+            .then(
+                if (contentMaxWidth != Dp.Unspecified) {
+                    Modifier
+                        .widthIn(max = contentMaxWidth)
+                        .fillMaxWidth()
+                        .fillMaxHeight()
+                } else {
+                    Modifier.fillMaxSize()
+                }
+            ),
     ) {
         // 搜索框
         OutlinedTextField(

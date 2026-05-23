@@ -378,4 +378,44 @@ class ActivityTimelinePanelTest {
         composeRule.onNodeWithText(afterLabel).assertExists()
         composeRule.onNodeWithText(revertLabel).assertExists()
     }
+
+    @Test
+    fun activityTimelinePanel_rendersMemoryRecallPreviewInline() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val memoryRecallLabel = context.getString(R.string.activity_timeline_tool_search_memory)
+        val recallSummary = "I found one possible memory about the Lisbon train plan."
+
+        composeRule.setContent {
+            CompositionLocalProvider(LocalSettings provides Settings()) {
+                MaterialTheme {
+                    ActivityTimelinePanel(
+                        entries = listOf(
+                            TimelineEntry.ToolCall(
+                                id = "memory-search-1",
+                                toolName = "search_memory",
+                                displayName = "Recalling memories",
+                                argumentsText = """{"query":"Lisbon train"}""",
+                                resultText = recallSummary,
+                                argumentsJson = buildJsonObject {
+                                    put("query", "Lisbon train")
+                                },
+                                resultJson = buildJsonObject {
+                                    put("summary", recallSummary)
+                                    put("source", "past_chat")
+                                }
+                            )
+                        ),
+                        initialOpenRequest = TimelineOpenRequest(
+                            focusType = ActivityType.MEMORY_RECALL,
+                            openMode = TimelineOpenMode.Collapsed
+                        )
+                    )
+                }
+            }
+        }
+
+        composeRule.onNodeWithTag("activity_timeline_panel").assertExists()
+        composeRule.onNodeWithText(memoryRecallLabel).assertExists()
+        composeRule.onNodeWithText(recallSummary).assertExists()
+    }
 }

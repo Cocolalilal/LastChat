@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -34,7 +35,6 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.PermanentNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -213,6 +213,13 @@ internal fun chatListBottomPadding(placement: ChatToolbarPlacement): androidx.co
     return if (placement == ChatToolbarPlacement.Bottom) 204.dp else 140.dp
 }
 
+internal fun shouldUseWideChatLayout(
+    windowWidth: Dp,
+    windowHeight: Dp,
+): Boolean {
+    return windowWidth >= 840.dp && windowHeight >= 600.dp
+}
+
 internal enum class ChatToolbarPlacement {
     Top,
     Bottom
@@ -284,9 +291,26 @@ fun ChatPage(
         }
     }
 
-    val windowAdaptiveInfo = currentWindowDpSize()
-    val isBigScreen =
-        windowAdaptiveInfo.width > windowAdaptiveInfo.height && windowAdaptiveInfo.width >= 1100.dp
+    val windowSize = currentWindowDpSize()
+    val useWideLayout = shouldUseWideChatLayout(windowSize.width, windowSize.height)
+    val wideDrawerCollapsedWidth = when {
+        windowSize.width >= 1280.dp -> 376.dp
+        else -> 336.dp
+    }
+    val wideDrawerExpandedWidth = when {
+        windowSize.width >= 1280.dp -> 480.dp
+        else -> 400.dp
+    }
+    val chatContentMaxWidth = when {
+        useWideLayout && windowSize.width >= 1440.dp -> 980.dp
+        useWideLayout -> 900.dp
+        else -> Dp.Unspecified
+    }
+    val inputMaxWidth = when {
+        useWideLayout && windowSize.width >= 1440.dp -> 920.dp
+        useWideLayout -> 840.dp
+        else -> Dp.Unspecified
+    }
 
     val inputState = rememberChatInputState(
         textContent = remember(text) {
@@ -336,39 +360,49 @@ fun ChatPage(
     }
 
     when {
-        isBigScreen -> {
-            PermanentNavigationDrawer(
-                drawerContent = {
-                    ChatDrawerContent(
-                        navController = navController,
-                        current = conversation,
-                        vm = vm,
-                        settings = setting,
+        useWideLayout -> {
+            Row(
+                modifier = Modifier.fillMaxSize()
+            ) {
+                ChatDrawerContent(
+                    navController = navController,
+                    current = conversation,
+                    vm = vm,
+                    settings = setting,
+                    inputState = inputState,
+                    activePersistenceMode = activePersistenceMode,
+                    drawerState = null,
+                    presentation = ChatDrawerPresentation.PermanentPane,
+                    collapsedWidth = wideDrawerCollapsedWidth,
+                    expandedWidth = wideDrawerExpandedWidth,
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                ) {
+                    ChatPageContent(
                         inputState = inputState,
-                        activePersistenceMode = activePersistenceMode,
-                        drawerState = drawerState
+                        loadingJob = loadingJob,
+                        setting = setting,
+                        currentAssistant = conversationAssistant,
+                        conversation = conversation,
+                        drawerState = drawerState,
+                        navController = navController,
+                        vm = vm,
+                        chatListState = chatListState,
+                        enableWebSearch = enableWebSearch,
+                        currentSearchMode = currentSearchMode,
+                        currentChatModel = currentChatModel,
+                        conversationPersistenceMode = conversationPersistenceMode,
+                        manualTemporaryChat = manualTemporaryChat,
+                        onManualTemporaryChatChange = { manualTemporaryChat = it },
+                        bigScreen = true,
+                        contentMaxWidth = chatContentMaxWidth,
+                        inputMaxWidth = inputMaxWidth,
+                        initialSearchQuery = searchQuery
                     )
                 }
-            ) {
-                ChatPageContent(
-                    inputState = inputState,
-                    loadingJob = loadingJob,
-                    setting = setting,
-                    currentAssistant = conversationAssistant,
-                    conversation = conversation,
-                    drawerState = drawerState,
-                    navController = navController,
-                    vm = vm,
-                    chatListState = chatListState,
-                    enableWebSearch = enableWebSearch,
-                    currentSearchMode = currentSearchMode,
-                    currentChatModel = currentChatModel,
-                    conversationPersistenceMode = conversationPersistenceMode,
-                    manualTemporaryChat = manualTemporaryChat,
-                    onManualTemporaryChatChange = { manualTemporaryChat = it },
-                    bigScreen = true,
-                    initialSearchQuery = searchQuery
-                )
             }
         }
 
@@ -383,7 +417,8 @@ fun ChatPage(
                         settings = setting,
                         inputState = inputState,
                         activePersistenceMode = activePersistenceMode,
-                        drawerState = drawerState
+                        drawerState = drawerState,
+                        presentation = ChatDrawerPresentation.Modal,
                     )
                 }
             ) {
@@ -404,6 +439,8 @@ fun ChatPage(
                     manualTemporaryChat = manualTemporaryChat,
                     onManualTemporaryChatChange = { manualTemporaryChat = it },
                     bigScreen = false,
+                    contentMaxWidth = Dp.Unspecified,
+                    inputMaxWidth = Dp.Unspecified,
                     initialSearchQuery = searchQuery
                 )
             }
@@ -432,6 +469,8 @@ private fun ChatPageContent(
     conversationPersistenceMode: ChatPersistenceMode,
     manualTemporaryChat: Boolean,
     onManualTemporaryChatChange: (Boolean) -> Unit,
+    contentMaxWidth: Dp = Dp.Unspecified,
+    inputMaxWidth: Dp = Dp.Unspecified,
     initialSearchQuery: String? = null,
 ) {
     val scope = rememberCoroutineScope()
@@ -572,6 +611,7 @@ private fun ChatPageContent(
                         settings = setting,
                         recentlyRestoredNodeIds = vm.recentlyRestoredNodeIds.collectAsStateWithLifecycle().value,
                         initialSearchQuery = initialSearchQuery,
+                        contentMaxWidth = contentMaxWidth,
                         onJumpToMessage = { index ->
                             previewMode = false
                             scope.launch {
@@ -903,7 +943,14 @@ private fun ChatPageContent(
 
                 MinimalChatInput(
                     modifier = Modifier
-                        .align(Alignment.BottomCenter),
+                        .align(Alignment.BottomCenter)
+                        .then(
+                            if (inputMaxWidth != Dp.Unspecified) {
+                                Modifier.widthIn(max = inputMaxWidth)
+                            } else {
+                                Modifier
+                            }
+                        ),
                     state = inputState,
                     settings = setting,
                     conversation = conversation,

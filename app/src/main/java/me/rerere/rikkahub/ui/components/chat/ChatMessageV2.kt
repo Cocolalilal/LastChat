@@ -560,6 +560,7 @@ private fun parseJsonObjectOrNull(raw: String): JsonObject? {
 private fun getToolDisplayName(toolName: String): String {
     return when (toolName) {
         "search_web" -> "Searching web"
+        "search_memory" -> "Recalling memories"
         "scrape_web" -> "Reading page"
         "eval_python" -> "Running Python"
         "pip_install" -> "Installing packages"

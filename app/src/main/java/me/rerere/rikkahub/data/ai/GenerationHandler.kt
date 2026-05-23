@@ -68,6 +68,11 @@ import kotlin.uuid.Uuid
 
 private const val TAG = "GenerationHandler"
 private const val SKILL_MANAGEMENT_TOOL_NAME = "manage_skills"
+internal const val MEMORY_SEARCH_TOOL_NAME = "search_memory"
+
+internal fun shouldRegisterMemorySearchTool(assistant: Assistant): Boolean {
+    return assistant.enableMemory && assistant.enableMemorySearchTool
+}
 private const val SKILL_REASON_ASSISTANT = "Enabled for assistant"
 private const val SKILL_REASON_CONVERSATION = "Enabled for chat"
 private const val SKILL_REASON_TURN = "Activated for this turn"
@@ -416,6 +421,7 @@ class GenerationHandler(
     private val conversationRepo: ConversationRepository,
     private val aiLoggingManager: AILoggingManager,
     private val embeddingService: me.rerere.rikkahub.data.ai.rag.EmbeddingService,
+    private val memorySearchService: MemorySearchService,
 ) {
     fun generateText(
         settings: Settings,
@@ -429,6 +435,7 @@ class GenerationHandler(
         truncateIndex: Int = -1,
         maxSteps: Int = 256,
         enabledModeIds: Set<Uuid> = emptySet(),
+        activeConversationId: Uuid? = null,
     ): Flow<GenerationChunk> = channelFlow {
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = providerManager.getProviderByType(provider)
@@ -455,6 +462,18 @@ class GenerationHandler(
                         },
                         onDelete = { id ->
                             memoryRepo.deleteMemory(id)
+                        },
+                        onSearch = if (shouldRegisterMemorySearchTool(assistant)) {
+                            { query, limit ->
+                                memorySearchService.searchMemory(
+                                    assistant = assistant,
+                                    activeConversationId = activeConversationId,
+                                    query = query,
+                                    limit = limit,
+                                )
+                            }
+                        } else {
+                            null
                         }
                     ).let(this::addAll)
                 }
@@ -1334,9 +1353,10 @@ class GenerationHandler(
     private fun buildMemoryTools(
         onCreation: suspend (String) -> AssistantMemory,
         onUpdate: suspend (Int, String) -> AssistantMemory,
-        onDelete: suspend (Int) -> Unit
-    ) = listOf(
-        Tool(
+        onDelete: suspend (Int) -> Unit,
+        onSearch: (suspend (String, Int) -> JsonElement)? = null,
+    ) = buildList {
+        add(Tool(
             name = "create_memory",
             description = "Create a new memory record.",
             parameters = {
@@ -1356,8 +1376,8 @@ class GenerationHandler(
                     params["content"]?.jsonPrimitive?.contentOrNull ?: error("content is required")
                 json.encodeToJsonElement(AssistantMemory.serializer(), onCreation(content))
             }
-        ),
-        Tool(
+        ))
+        add(Tool(
             name = "edit_memory",
             description = "Update an existing memory record.",
             parameters = {
@@ -1396,8 +1416,8 @@ class GenerationHandler(
                     }
                 }
             }
-        ),
-        Tool(
+        ))
+        add(Tool(
             name = "delete_memory",
             description = "Delete a memory record.",
             parameters = {
@@ -1429,8 +1449,45 @@ class GenerationHandler(
                     }
                 }
             }
-        )
-    )
+        ))
+        if (onSearch != null) {
+            add(Tool(
+                name = MEMORY_SEARCH_TOOL_NAME,
+                description = "Search the assistant's core memories, episodic memories, and past chats for a remembered topic.",
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject {
+                            put("query", buildJsonObject {
+                                put("type", "string")
+                                put("description", "The remembered topic, keyword, person, preference, event, or question to search for.")
+                            })
+                            put("limit", buildJsonObject {
+                                put("type", "integer")
+                                put("description", "Maximum number of memory results to return. Defaults to 5.")
+                            })
+                        },
+                        required = listOf("query")
+                    )
+                },
+                systemPrompt = { _, _ ->
+                    """
+                    ## Memory search tool
+                    You may call `$MEMORY_SEARCH_TOOL_NAME` when you are deliberately trying to remember something from core memories, episodic memories, or older chats.
+                    - Use it for genuine recall, not on every turn.
+                    - Treat returned memories as approximate, human-like recollections.
+                    - Time labels are fuzzy on purpose; do not expose exact timestamps unless the user asks.
+                    - If confidence is low or results disagree, answer with natural uncertainty.
+                    """.trimIndent()
+                },
+                execute = {
+                    val params = it.jsonObject
+                    val query = params["query"]?.jsonPrimitive?.contentOrNull ?: error("query is required")
+                    val limit = params["limit"]?.jsonPrimitive?.intOrNull ?: 5
+                    onSearch(query, limit)
+                }
+            ))
+        }
+    }
 
     private suspend fun buildMemoryPrompt(model: Model, memories: List<AssistantMemory>): String {
         Log.d(TAG, "buildMemoryPrompt: Injecting ${memories.size} memories into prompt")

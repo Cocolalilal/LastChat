@@ -83,6 +83,12 @@ class ChatPageTest {
     }
 
     @Test
+    fun wideChatLayoutRequiresTabletHeight() {
+        assertFalse(shouldUseWideChatLayout(windowWidth = 920.dp, windowHeight = 430.dp))
+        assertTrue(shouldUseWideChatLayout(windowWidth = 900.dp, windowHeight = 600.dp))
+    }
+
+    @Test
     fun canPreserveAssistantSwitchDraftOnlyForAssistantSeededDrafts() {
         val presetOnlyConversation = Conversation.ofId(
             id = Uuid.random(),

@@ -1235,6 +1235,7 @@ class ChatService(
                 tools = tools,
                 truncateIndex = conversation.truncateIndex,
                 enabledModeIds = conversation.enabledModeIds,
+                activeConversationId = conversation.id,
             ).onCompletion { cause ->
                 // Calculate generation duration from first token (excludes TTFT)
                 val generationDurationMs = firstTokenTime?.let { System.currentTimeMillis() - it }

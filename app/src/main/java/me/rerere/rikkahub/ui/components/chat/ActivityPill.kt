@@ -134,6 +134,7 @@ enum class ActivityType {
     REASONING,
     OCR,
     SEARCH,
+    MEMORY_RECALL,
     PYTHON,
     SKILL,
     MCP,
@@ -144,6 +145,7 @@ private fun ActivityType.toTestTag(): String = when (this) {
     ActivityType.REASONING -> "activity_pill_reasoning"
     ActivityType.OCR -> "activity_pill_ocr"
     ActivityType.SEARCH -> "activity_pill_search"
+    ActivityType.MEMORY_RECALL -> "activity_pill_memory_recall"
     ActivityType.PYTHON -> "activity_pill_python"
     ActivityType.SKILL -> "activity_pill_skill"
     ActivityType.MCP -> "activity_pill_mcp"
@@ -155,8 +157,9 @@ private fun ActivityType.toTestTag(): String = when (this) {
  */
 private fun ActivityType.getIcon(): ImageVector = when (this) {
     ActivityType.REASONING -> Icons.Rounded.Lightbulb
-            ActivityType.OCR -> Icons.Rounded.Image
+    ActivityType.OCR -> Icons.Rounded.Image
     ActivityType.SEARCH -> Icons.Rounded.Public
+    ActivityType.MEMORY_RECALL -> Icons.Rounded.Memory
     ActivityType.PYTHON -> Icons.Rounded.Terminal
     ActivityType.SKILL -> Icons.Rounded.Category
     ActivityType.MCP -> Icons.Rounded.Memory
@@ -170,6 +173,7 @@ private fun ActivityType.getDisplayText(): String = when (this) {
     ActivityType.REASONING -> "Reasoned"
     ActivityType.OCR -> "OCR"
     ActivityType.SEARCH -> "Searched"
+    ActivityType.MEMORY_RECALL -> "Recalled"
     ActivityType.PYTHON -> "Ran Python"
     ActivityType.SKILL -> "Skills"
     ActivityType.MCP -> "MCP"
@@ -181,6 +185,7 @@ private fun ActivityType.getDisplayText(): String = when (this) {
  */
 internal fun categorizeToolName(toolName: String): ActivityType = when (toolName) {
     "search_web", "scrape_web" -> ActivityType.SEARCH
+    "search_memory" -> ActivityType.MEMORY_RECALL
     "eval_python", "pip_install", "write_sandbox_file", 
     "read_sandbox_file", "list_sandbox_files", "delete_sandbox_file" -> ActivityType.PYTHON
     "manage_skills" -> ActivityType.SKILL
@@ -574,6 +579,7 @@ private fun ExpandedActivityContent(item: ActivityItem) {
             }
         }
         ActivityType.SEARCH -> "Searched the Web"
+        ActivityType.MEMORY_RECALL -> stringResource(R.string.activity_pill_memory_recalled)
         ActivityType.PYTHON -> "Ran Python"
         ActivityType.SKILL -> "Managed skills"
         ActivityType.MCP -> "MCP"
@@ -786,6 +792,10 @@ private fun ExpandedActivityPill(
             ActivityType.SEARCH -> {
                 if (item.count > 1) "Searched Ã—${item.count}" else "Searched the Web"
             }
+            ActivityType.MEMORY_RECALL -> {
+                if (item.count > 1) stringResource(R.string.activity_pill_memory_recalled_count, item.count)
+                else stringResource(R.string.activity_pill_memory_recalled)
+            }
             ActivityType.PYTHON -> {
                 if (item.count > 1) "Ran Python Ã—${item.count}" else "Ran Python"
             }
@@ -840,6 +850,7 @@ private fun CompactActivityPill(
                 item.durationMs?.let { formatDuration(it) }
             }
             ActivityType.OCR -> null
+            ActivityType.MEMORY_RECALL -> null
             else -> null
         }
         
