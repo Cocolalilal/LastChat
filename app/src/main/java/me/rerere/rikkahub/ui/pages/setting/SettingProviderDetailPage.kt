@@ -3,7 +3,6 @@ package me.rerere.rikkahub.ui.pages.setting
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -167,8 +166,10 @@ import me.rerere.rikkahub.ui.components.ui.rememberShareSheetState
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.useEditState
+import me.rerere.rikkahub.ui.components.ui.lobeHubIconUri
 import me.rerere.rikkahub.ui.pages.assistant.detail.CustomBodies
 import me.rerere.rikkahub.ui.pages.assistant.detail.CustomHeaders
+import me.rerere.rikkahub.ui.pages.setting.components.CustomIconSelector
 import me.rerere.rikkahub.ui.pages.setting.components.ProviderConfigure
 import me.rerere.rikkahub.ui.pages.setting.components.SettingProviderBalanceOption
 import me.rerere.rikkahub.ui.theme.extendColors
@@ -274,6 +275,24 @@ private fun ProviderSetting.canFetchApiModels(): Boolean {
             apiKey.isNotBlank()
         }
         is ProviderSetting.Claude -> apiKey.isNotBlank()
+    }
+}
+
+private fun iconFileExtension(context: android.content.Context, uri: android.net.Uri): String {
+    val mimeType = context.contentResolver.getType(uri)?.lowercase()
+    return when {
+        mimeType == "image/svg+xml" -> "svg"
+        mimeType == "image/png" -> "png"
+        mimeType == "image/jpeg" -> "jpg"
+        mimeType == "image/webp" -> "webp"
+        !mimeType.isNullOrBlank() -> android.webkit.MimeTypeMap.getSingleton()
+            .getExtensionFromMimeType(mimeType)
+            ?.takeIf { it.isNotBlank() }
+            ?: "png"
+        else -> uri.lastPathSegment
+            ?.substringAfterLast('.', missingDelimiterValue = "")
+            ?.takeIf { it.length in 2..5 }
+            ?: "png"
     }
 }
 
@@ -1028,15 +1047,16 @@ private fun ModelSettingsForm(
     val context = LocalContext.current
     var isProbingCapabilities by remember(model.id, parentProvider?.id) { mutableStateOf(false) }
     val imagePickerLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
+        ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri ?: return@rememberLauncherForActivityResult
         scope.launch {
+            val extension = iconFileExtension(context, uri)
             val copiedUri = withContext(Dispatchers.IO) {
                 ImageUtils.copyImageToInternalStorage(
                     context = context,
                     sourceUri = uri,
-                    fileName = "model_icon_${model.id}.png",
+                    fileName = "model_icon_${model.id}.$extension",
                 )
             }
             copiedUri?.let { iconUri ->
@@ -1120,11 +1140,24 @@ private fun ModelSettingsForm(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            ModelIcon(
-                                model = model,
-                                provider = parentProvider,
-                                modifier = Modifier.size(48.dp)
-                            )
+                            CustomIconSelector(
+                                customIconUri = model.customIconUri,
+                                onPickFile = {
+                                    imagePickerLauncher.launch(arrayOf("image/*", "image/svg+xml"))
+                                },
+                                onPickLobeHubIcon = { slug ->
+                                    onModelChange(model.copy(customIconUri = lobeHubIconUri(slug)))
+                                },
+                                onReset = {
+                                    onModelChange(model.copy(customIconUri = null))
+                                },
+                            ) { iconModifier ->
+                                ModelIcon(
+                                    model = model,
+                                    provider = parentProvider,
+                                    modifier = iconModifier,
+                                )
+                            }
                             OutlinedTextField(
                                 value = model.displayName,
                                 onValueChange = {
@@ -1139,40 +1172,6 @@ private fun ModelSettingsForm(
                                 },
                                 shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                             )
-                        }
-
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            OutlinedButton(
-                                onClick = {
-                                    imagePickerLauncher.launch(
-                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                    )
-                                },
-                                modifier = Modifier.weight(1f),
-                                shape = me.rerere.rikkahub.ui.theme.AppShapes.ButtonPill,
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Image,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                                Spacer(modifier = Modifier.size(8.dp))
-                                Text(stringResource(R.string.a11y_custom_icon))
-                            }
-
-                            if (!model.customIconUri.isNullOrBlank()) {
-                                TextButton(
-                                    onClick = {
-                                        onModelChange(model.copy(customIconUri = null))
-                                    },
-                                    shape = me.rerere.rikkahub.ui.theme.AppShapes.ButtonPill,
-                                ) {
-                                    Text(stringResource(R.string.reset))
-                                }
-                            }
                         }
 
                         ModelTypeSelector(

@@ -1,6 +1,170 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-05-23",
+  "updated_at": "2026-05-24",
+  "search_providers": [
+    {
+      "id": "bing",
+      "name": "Bing",
+      "aliases": ["bing-local", "bing search"],
+      "description": "Local Bing web search.",
+      "icon": "icons/bing.svg",
+      "preset": true
+    },
+    {
+      "id": "perplexity",
+      "name": "Perplexity",
+      "aliases": ["perplexity search"],
+      "description": "Perplexity search API.",
+      "icon": "icons/perplexity.svg",
+      "preset": true
+    },
+    {
+      "id": "ollama",
+      "name": "Ollama",
+      "aliases": ["ollama search"],
+      "description": "Ollama web search.",
+      "icon": "icons/ollama.svg",
+      "preset": true
+    },
+    {
+      "id": "brave",
+      "name": "Brave",
+      "aliases": ["brave search"],
+      "description": "Brave Search API.",
+      "icon": "icons/brave.svg",
+      "preset": true
+    },
+    {
+      "id": "grok",
+      "name": "Grok",
+      "aliases": ["xai", "grok search"],
+      "description": "xAI Grok search.",
+      "icon": "icons/grok.svg",
+      "preset": true
+    },
+    {
+      "id": "nanogpt",
+      "name": "NanoGPT",
+      "aliases": ["nano-gpt", "nano gpt"],
+      "description": "NanoGPT web search and scrape API.",
+      "icon": "icons/nanogpt.svg",
+      "preset": true
+    },
+    {
+      "id": "tavily",
+      "name": "Tavily",
+      "aliases": ["tavily search"],
+      "description": "Tavily search API.",
+      "icon": "icons/tavily.svg",
+      "preset": true
+    },
+    {
+      "id": "exa",
+      "name": "Exa",
+      "aliases": ["exa search"],
+      "description": "Exa neural search API.",
+      "icon": "icons/exa.svg",
+      "preset": true
+    },
+    {
+      "id": "jina",
+      "name": "Jina",
+      "aliases": ["jina search"],
+      "description": "Jina search and reader APIs.",
+      "icon": "icons/jina.svg",
+      "preset": true
+    },
+    {
+      "id": "firecrawl",
+      "name": "Firecrawl",
+      "aliases": ["firecrawl search"],
+      "description": "Firecrawl search and scrape API.",
+      "icon": "icons/firecrawl.svg",
+      "preset": true
+    },
+    {
+      "id": "searxng",
+      "name": "SearXNG",
+      "aliases": ["searx", "searx ng"],
+      "description": "Self-hosted metasearch service.",
+      "icon": "icons/searxng.svg",
+      "preset": true
+    },
+    {
+      "id": "linkup",
+      "name": "LinkUp",
+      "aliases": ["linkup search"],
+      "description": "Linkup search and scrape API.",
+      "icon": "icons/linkup.svg",
+      "preset": true
+    },
+    {
+      "id": "zhipu",
+      "name": "Zhipu",
+      "aliases": ["智谱", "zhipu ai", "glm"],
+      "description": "Zhipu search API.",
+      "icon": "icons/zhipu.svg",
+      "preset": true
+    },
+    {
+      "id": "metaso",
+      "name": "Metaso",
+      "aliases": ["秘塔", "metaso ai"],
+      "description": "Metaso AI search API.",
+      "icon": "icons/metaso.svg",
+      "preset": true
+    },
+    {
+      "id": "bocha",
+      "name": "Bocha",
+      "aliases": ["博查", "bocha ai"],
+      "description": "Bocha AI search API.",
+      "icon": "icons/bocha.svg",
+      "preset": true
+    }
+  ],
+  "tts_providers": [
+    {
+      "id": "openai",
+      "name": "OpenAI",
+      "aliases": ["openai tts"],
+      "description": "OpenAI text-to-speech.",
+      "icon": "icons/openai.svg",
+      "preset": true
+    },
+    {
+      "id": "gemini",
+      "name": "Gemini",
+      "aliases": ["google", "google tts", "gemini tts"],
+      "description": "Gemini text-to-speech.",
+      "icon": "icons/gemini.svg",
+      "preset": true
+    },
+    {
+      "id": "elevenlabs",
+      "name": "ElevenLabs",
+      "aliases": ["eleven labs", "elevenlabs tts"],
+      "description": "ElevenLabs text-to-speech.",
+      "icon": "icons/elevenlabs.svg",
+      "preset": true
+    },
+    {
+      "id": "minimax",
+      "name": "MiniMax",
+      "aliases": ["minimax tts"],
+      "description": "MiniMax text-to-speech.",
+      "icon": "icons/minimax.svg",
+      "preset": true
+    },
+    {
+      "id": "qwen",
+      "name": "Qwen",
+      "aliases": ["qwen tts", "dashscope"],
+      "description": "Qwen text-to-speech.",
+      "icon": "icons/qwen.svg",
+      "preset": true
+    }
+  ],
   "providers": [
     {
       "id": "d5734028-d39b-4d41-9841-fd648d65440e",
@@ -460,7 +624,8 @@
           {
             "key": "chat_template_kwargs",
             "value": {
-              "enable_thinking": false
+              "enable_thinking": false,
+              "thinking": false
             }
           }
         ],
@@ -468,7 +633,8 @@
           {
             "key": "chat_template_kwargs",
             "value": {
-              "enable_thinking": true
+              "enable_thinking": true,
+              "thinking": true
             }
           }
         ],
@@ -476,7 +642,8 @@
           {
             "key": "chat_template_kwargs",
             "value": {
-              "enable_thinking": true
+              "enable_thinking": true,
+              "thinking": true
             }
           },
           {
@@ -488,7 +655,8 @@
           {
             "key": "chat_template_kwargs",
             "value": {
-              "enable_thinking": true
+              "enable_thinking": true,
+              "thinking": true
             }
           },
           {
@@ -500,7 +668,8 @@
           {
             "key": "chat_template_kwargs",
             "value": {
-              "enable_thinking": true
+              "enable_thinking": true,
+              "thinking": true
             }
           },
           {

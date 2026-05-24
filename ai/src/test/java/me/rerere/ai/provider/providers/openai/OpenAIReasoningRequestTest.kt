@@ -210,6 +210,49 @@ class OpenAIReasoningRequestTest {
         assertFalse(assistantMessage.containsKey("reasoning_content"))
     }
 
+    @Test
+    fun chatCompletionsUsesExplicitMarkerBeforeLeadingAssistantMessage() {
+        val body = chatCompletionsBody(
+            messages = listOf(
+                UIMessage.assistant("Hey, I was thinking about you."),
+                UIMessage.user("oh?")
+            ),
+            model = reasoningModel,
+            providerSetting = providerSetting
+        )
+
+        val messages = body["messages"]?.jsonArray ?: error("messages are missing")
+        val marker = messages[0].jsonObject
+        val opening = messages[1].jsonObject
+        val realUser = messages[2].jsonObject
+
+        assertEquals("user", marker["role"]?.jsonPrimitive?.contentOrNull)
+        assertTrue(marker["content"]?.jsonPrimitive?.contentOrNull?.contains("not a real user message") == true)
+        assertFalse(marker["content"]?.jsonPrimitive?.contentOrNull == "...")
+        assertEquals("assistant", opening["role"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("Hey, I was thinking about you.", opening["content"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("user", realUser["role"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("oh?", realUser["content"]?.jsonPrimitive?.contentOrNull)
+    }
+
+    @Test
+    fun parseMessageTreatsThinkingFieldAsReasoning() {
+        val message = parseOpenAIMessage(
+            JsonObject(
+                mapOf(
+                    "role" to JsonPrimitive("assistant"),
+                    "thinking" to JsonPrimitive("NVIDIA streamed reasoning"),
+                    "content" to JsonPrimitive("Final answer")
+                )
+            )
+        )
+
+        val reasoning = message.parts.filterIsInstance<UIMessagePart.Reasoning>().single()
+        val text = message.parts.filterIsInstance<UIMessagePart.Text>().single()
+        assertEquals("NVIDIA streamed reasoning", reasoning.reasoning)
+        assertEquals("Final answer", text.text)
+    }
+
     private fun chatCompletionsBody(thinkingBudget: Int?): JsonObject {
         return chatCompletionsBody(
             messages = messages,
@@ -246,6 +289,21 @@ class OpenAIReasoningRequestTest {
             providerSetting,
             false,
         ) as JsonObject
+    }
+
+    private fun parseOpenAIMessage(message: JsonObject): UIMessage {
+        val api = ChatCompletionsAPI(
+            client = OkHttpClient(),
+            keyRoulette = object : KeyRoulette {
+                override fun next(keys: String): String = keys
+            }
+        )
+        val method = ChatCompletionsAPI::class.java.getDeclaredMethod(
+            "parseMessage",
+            JsonObject::class.java,
+        )
+        method.isAccessible = true
+        return method.invoke(api, message) as UIMessage
     }
 
     private fun responseApiBody(thinkingBudget: Int?): JsonObject {

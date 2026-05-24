@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.ai
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
@@ -161,17 +162,30 @@ class MemorySearchService(
         }
 
         val boundedLimit = limit.coerceIn(1, MEMORY_SEARCH_MAX_LIMIT)
-        val memoryResults = searchStoredMemories(
-            assistant = assistant,
-            query = trimmedQuery,
-            limit = boundedLimit,
-        )
-        val chatSpans = searchPastChatSpans(
-            assistant = assistant,
-            activeConversationId = activeConversationId,
-            query = trimmedQuery,
-            limit = boundedLimit,
-        )
+        val warnings = mutableListOf<String>()
+        val memoryResults = runCatching {
+            searchStoredMemories(
+                assistant = assistant,
+                query = trimmedQuery,
+                limit = boundedLimit,
+            )
+        }.getOrElse { throwable ->
+            if (throwable is CancellationException) throw throwable
+            warnings += "Stored memory search fell back with no results."
+            emptyList()
+        }
+        val chatSpans = runCatching {
+            searchPastChatSpans(
+                assistant = assistant,
+                activeConversationId = activeConversationId,
+                query = trimmedQuery,
+                limit = boundedLimit,
+            )
+        }.getOrElse { throwable ->
+            if (throwable is CancellationException) throw throwable
+            warnings += "Past chat search fell back with no results."
+            emptyList()
+        }
 
         val settings = settingsStore.settingsFlow.first()
         val chatResults = chatSpans.take(MEMORY_SEARCH_CHAT_SUMMARY_LIMIT).map { span ->
@@ -203,9 +217,14 @@ class MemorySearchService(
 
         buildJsonObject {
             put("query", trimmedQuery)
+            put("source", "memory_search")
             put("summary", buildOverallSummary(results))
+            put("confidence", JsonPrimitive(results.maxOfOrNull { it.confidence } ?: 0f))
             put("results", JsonArray(results.map { it.toJson() }))
             put("note", "These are approximate memory search results. Time labels are intentionally fuzzy.")
+            if (warnings.isNotEmpty()) {
+                put("warnings", JsonArray(warnings.map(::JsonPrimitive)))
+            }
         }
     }
 
@@ -274,11 +293,16 @@ class MemorySearchService(
             .asSequence()
             .filter { it.id != activeConversationId }
             .flatMap { conversation ->
-                findConversationRecallSpans(
-                    conversation = conversation,
-                    query = query,
-                    maxSpans = 2,
-                ).asSequence()
+                runCatching {
+                    findConversationRecallSpans(
+                        conversation = conversation,
+                        query = query,
+                        maxSpans = 2,
+                    )
+                }.getOrElse { throwable ->
+                    if (throwable is CancellationException) throw throwable
+                    emptyList()
+                }.asSequence()
             }
             .sortedByDescending { it.score }
             .take(limit)
@@ -320,15 +344,19 @@ class MemorySearchService(
                 ),
             )
             response.choices.firstOrNull()?.message?.toContentText()?.trim()?.takeIf { it.isNotBlank() }?.take(700)
-        }.getOrNull()
+        }.getOrElse { throwable ->
+            if (throwable is CancellationException) throw throwable
+            null
+        }
     }
 
     private fun AssistantMemory.toRecallResult(confidence: Float): RecallResult {
+        val compactContent = content.toRecallSnippet(limit = 900)
         return RecallResult(
             source = if (type == MemoryType.CORE) "core_memory" else "episodic_memory",
             id = id.toString(),
-            summary = content,
-            content = content,
+            summary = compactContent,
+            content = compactContent,
             timestampMillis = timestamp,
             confidence = confidence,
         )
@@ -339,6 +367,15 @@ class MemorySearchService(
             results.isEmpty() -> "I couldn't find a clear memory for that."
             results.size == 1 -> "I found one possible memory."
             else -> "I found ${results.size} possible memories."
+        }
+    }
+
+    private fun String.toRecallSnippet(limit: Int): String {
+        val normalized = replace(Regex("\\s+"), " ").trim()
+        return if (normalized.length <= limit) {
+            normalized
+        } else {
+            normalized.take(limit).trimEnd() + "..."
         }
     }
 

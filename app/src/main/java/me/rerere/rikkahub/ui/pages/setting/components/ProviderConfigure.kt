@@ -1,7 +1,6 @@
 package me.rerere.rikkahub.ui.pages.setting.components
 
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -9,17 +8,12 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.TextButton
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -49,6 +43,7 @@ import me.rerere.rikkahub.ui.pages.assistant.detail.CustomBodies
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.foundation.layout.size
 import me.rerere.rikkahub.ui.components.ui.ProviderIcon
+import me.rerere.rikkahub.ui.components.ui.lobeHubIconUri
 import me.rerere.rikkahub.utils.ImageUtils
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import kotlin.reflect.KClass
@@ -63,15 +58,16 @@ fun ProviderConfigure(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val iconPickerLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
+        ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri ?: return@rememberLauncherForActivityResult
         scope.launch {
+            val extension = iconFileExtension(context, uri)
             val copiedUri = withContext(Dispatchers.IO) {
                 ImageUtils.copyImageToInternalStorage(
                     context = context,
                     sourceUri = uri,
-                    fileName = "provider_icon_${provider.id}.png",
+                    fileName = "provider_icon_${provider.id}.$extension",
                 )
             }
             copiedUri?.let { iconUri ->
@@ -146,10 +142,23 @@ fun ProviderConfigure(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            ProviderIcon(
-                provider = provider,
-                modifier = Modifier.size(48.dp)
-            )
+            CustomIconSelector(
+                customIconUri = provider.customIconUri,
+                onPickFile = {
+                    iconPickerLauncher.launch(arrayOf("image/*", "image/svg+xml"))
+                },
+                onPickLobeHubIcon = { slug ->
+                    onEdit(provider.copyProvider(customIconUri = lobeHubIconUri(slug)))
+                },
+                onReset = {
+                    onEdit(provider.copyProvider(customIconUri = null))
+                },
+            ) { iconModifier ->
+                ProviderIcon(
+                    provider = provider,
+                    modifier = iconModifier,
+                )
+            }
             OutlinedTextField(
                 value = provider.name,
                 onValueChange = { newName ->
@@ -166,40 +175,6 @@ fun ProviderConfigure(
                 modifier = Modifier.weight(1f),
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
             )
-        }
-
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            OutlinedButton(
-                onClick = {
-                    iconPickerLauncher.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                    )
-                },
-                modifier = Modifier.weight(1f),
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.ButtonPill,
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Image,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                androidx.compose.foundation.layout.Spacer(modifier = Modifier.size(8.dp))
-                Text(stringResource(R.string.a11y_custom_icon))
-            }
-
-            if (provider.customIconUri.isUserSelectedIconUri()) {
-                TextButton(
-                    onClick = {
-                        onEdit(provider.copyProvider(customIconUri = null))
-                    },
-                    shape = me.rerere.rikkahub.ui.theme.AppShapes.ButtonPill,
-                ) {
-                    Text(stringResource(R.string.reset))
-                }
-            }
         }
 
         // 4. Provider-specific configuration
@@ -471,18 +446,22 @@ private fun ColumnScope.ProviderConfigureOpenAI(
     }
 }
 
-private fun String?.isUserSelectedIconUri(): Boolean {
-    if (isNullOrBlank()) return false
-    val lower = lowercase()
-    val isCatalogIcon = lower.contains("/catalog/icons/") ||
-        lower.contains("/catalog/refs/heads/") ||
-        lower.contains("raw.githubusercontent.com/cocolalilal/lastchat") ||
-        lower.contains("jsdelivr.net/gh/cocolalilal/lastchat") ||
-        (lower.contains("catalog") && lower.contains("icons")) ||
-        lower.startsWith("icons/") ||
-        lower.startsWith("/icons/") ||
-        lower.contains("file:///android_asset/icons/")
-    return !isCatalogIcon
+private fun iconFileExtension(context: android.content.Context, uri: android.net.Uri): String {
+    val mimeType = context.contentResolver.getType(uri)?.lowercase()
+    return when {
+        mimeType == "image/svg+xml" -> "svg"
+        mimeType == "image/png" -> "png"
+        mimeType == "image/jpeg" -> "jpg"
+        mimeType == "image/webp" -> "webp"
+        !mimeType.isNullOrBlank() -> android.webkit.MimeTypeMap.getSingleton()
+            .getExtensionFromMimeType(mimeType)
+            ?.takeIf { it.isNotBlank() }
+            ?: "png"
+        else -> uri.lastPathSegment
+            ?.substringAfterLast('.', missingDelimiterValue = "")
+            ?.takeIf { it.length in 2..5 }
+            ?: "png"
+    }
 }
 
 @Composable

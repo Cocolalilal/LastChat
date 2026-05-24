@@ -86,10 +86,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.ai.models.ModelCatalogSnapshot
+import me.rerere.rikkahub.data.ai.models.searchProviderIconUri
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
-import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
+import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.OutlinedNumberInput
@@ -219,6 +221,7 @@ val SEARCH_SERVICE_PRESETS = listOf(
 @Composable
 fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val catalogSnapshot by vm.modelCatalogSnapshot.collectAsStateWithLifecycle()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     
     // State for editing a service
@@ -265,7 +268,8 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
                     }
 
                     AddSearchServiceButton(
-                        enableHaptics = settings.displaySetting.enableUIHaptics
+                        enableHaptics = settings.displaySetting.enableUIHaptics,
+                        catalogSnapshot = catalogSnapshot,
                     ) { newService ->
                         vm.updateSettings(
                             settings.copy(
@@ -386,6 +390,7 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
                         ) { _ ->
                             SearchServiceItemContent(
                                 service = service,
+                                catalogSnapshot = catalogSnapshot,
                                 haptics = haptics,
                                 onClick = {
                                     editingService = service
@@ -629,6 +634,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
 @Composable
 private fun AddSearchServiceButton(
     enableHaptics: Boolean,
+    catalogSnapshot: ModelCatalogSnapshot?,
     onAdd: (SearchServiceOptions) -> Unit
 ) {
     val context = LocalContext.current
@@ -776,8 +782,9 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    AutoAIIcon(
+                                    AutoAIIconWithUrl(
                                         name = preset.name,
+                                        customIconUri = catalogSnapshot?.searchProviderIconUri(preset.name),
                                         modifier = Modifier.size(40.dp)
                                     )
                                     Column(modifier = Modifier.weight(1f)) {
@@ -821,6 +828,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
 @Composable
 private fun SearchServiceItemContent(
     service: SearchServiceOptions,
+    catalogSnapshot: ModelCatalogSnapshot?,
     haptics: me.rerere.rikkahub.ui.hooks.PremiumHaptics,
     onClick: () -> Unit,
     dragHandle: @Composable () -> Unit
@@ -841,8 +849,9 @@ private fun SearchServiceItemContent(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AutoAIIcon(
+        AutoAIIconWithUrl(
             name = serviceName,
+            customIconUri = catalogSnapshot?.searchProviderIconUri(serviceName),
             modifier = Modifier.size(40.dp)
         )
         

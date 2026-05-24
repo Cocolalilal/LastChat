@@ -67,6 +67,8 @@ import me.rerere.rikkahub.data.ai.buildSuggestionGenerationParams
 import me.rerere.rikkahub.data.ai.buildSummarizerGenerationParams
 import me.rerere.rikkahub.data.ai.buildTitleGenerationParams
 import me.rerere.rikkahub.data.ai.mcp.McpManager
+import me.rerere.rikkahub.data.ai.prompts.buildSuggestionPromptContent
+import me.rerere.rikkahub.data.ai.prompts.parseSuggestionLines
 import me.rerere.rikkahub.data.ai.shouldUseBuiltInSearch
 import me.rerere.rikkahub.data.ai.tools.ASK_USER_TOOL_NAME
 import me.rerere.rikkahub.data.ai.tools.AskUserAnswerPayload
@@ -1728,21 +1730,25 @@ class ChatService(
             )
 
             val providerHandler = providerManager.getProviderByType(provider)
+            val promptContent = buildSuggestionPromptContent(
+                messages = conversation.currentMessages,
+                truncateIndex = conversation.truncateIndex,
+            )
             val result = providerHandler.generateText(
                 providerSetting = provider,
                 messages = listOf(
                     UIMessage.user(
                         settings.suggestionPrompt.applyPlaceholders(
                             "locale" to context.appLocale().displayName,
-                            "content" to conversation.currentMessages.truncate(conversation.truncateIndex)
-                                .takeLast(8).joinToString("\n\n") { it.summaryAsText() }),
+                            "content" to promptContent,
+                        ),
                     )
                 ),
                 params = settings.buildSuggestionGenerationParams(model),
             )
-            val suggestions =
-                result.choices[0].message?.toContentText()?.split("\n")?.map { it.trim() }
-                    ?.filter { it.isNotBlank() } ?: emptyList()
+            val suggestions = parseSuggestionLines(
+                result.choices.firstOrNull()?.message?.toContentText().orEmpty()
+            )
 
             // Fetch fresh conversation from DB to avoid overwriting concurrent updates (e.g., title generation)
             withContext(Dispatchers.IO) {

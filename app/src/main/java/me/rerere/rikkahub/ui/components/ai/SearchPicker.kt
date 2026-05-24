@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Public
@@ -55,9 +56,12 @@ import me.rerere.ai.provider.Model
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.data.ai.models.ModelCatalogService
+import me.rerere.rikkahub.data.ai.models.ModelCatalogSnapshot
+import me.rerere.rikkahub.data.ai.models.searchProviderIconUri
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
+import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.components.ui.ToggleSurface
@@ -87,6 +91,8 @@ fun SearchPickerButton(
     onlyIcon: Boolean = false
 ) {
     val toaster = LocalToaster.current
+    val modelCatalogService: ModelCatalogService = koinInject()
+    val catalogSnapshot by modelCatalogService.snapshotFlow.collectAsStateWithLifecycle()
     var showSearchPicker by remember { mutableStateOf(false) }
     
     // Track the last valid provider index locally to persist across on/off toggles
@@ -136,8 +142,10 @@ fun SearchPickerButton(
                 // Show globe icon when: using built-in search, or no provider selected, or search is off
                 // Show provider icon only when: search is on, NOT using built-in, and has a provider
                 if (enableSearch && !builtInSearchEnabled && currentService != null) {
-                    AutoAIIcon(
-                        name = SearchServiceOptions.TYPES[currentService::class] ?: "Search",
+                    val searchProviderName = SearchServiceOptions.TYPES[currentService::class] ?: "Search"
+                    AutoAIIconWithUrl(
+                        name = searchProviderName,
+                        customIconUri = catalogSnapshot?.searchProviderIconUri(searchProviderName),
                         color = Color.Transparent
                     )
                 } else {
@@ -252,6 +260,8 @@ private fun AppSearchSettings(
 ) {
     val amoledMode by rememberAmoledDarkMode()
     val isDarkMode = LocalDarkMode.current
+    val modelCatalogService: ModelCatalogService = koinInject()
+    val catalogSnapshot by modelCatalogService.snapshotFlow.collectAsStateWithLifecycle()
     val isAmoled = amoledMode && isDarkMode
     
     val numProviders = settings.searchServices.size
@@ -322,7 +332,8 @@ private fun AppSearchSettings(
                     isAmoled = isAmoled,
                     isDarkMode = isDarkMode,
                     index = index + 1,
-                    totalCount = totalItems
+                    totalCount = totalItems,
+                    catalogSnapshot = catalogSnapshot
                 )
             }
         }
@@ -349,7 +360,8 @@ private fun AppSearchSettings(
                     isAmoled = isAmoled,
                     isDarkMode = isDarkMode,
                     index = index + 1,
-                    totalCount = totalItems
+                    totalCount = totalItems,
+                    catalogSnapshot = catalogSnapshot
                 )
             }
         }
@@ -409,6 +421,7 @@ private fun SearchProviderItem(
     shape: RoundedCornerShape,
     isAmoled: Boolean,
     isDarkMode: Boolean,
+    catalogSnapshot: ModelCatalogSnapshot?,
     index: Int = 0,
     totalCount: Int = 1
 ) {
@@ -477,8 +490,10 @@ private fun SearchProviderItem(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AutoAIIcon(
-            name = SearchServiceOptions.TYPES[service::class] ?: "Search",
+        val searchProviderName = SearchServiceOptions.TYPES[service::class] ?: "Search"
+        AutoAIIconWithUrl(
+            name = searchProviderName,
+            customIconUri = catalogSnapshot?.searchProviderIconUri(searchProviderName),
             modifier = Modifier.size(24.dp)
         )
         Text(

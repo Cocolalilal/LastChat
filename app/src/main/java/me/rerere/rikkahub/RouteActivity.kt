@@ -97,6 +97,8 @@ import me.rerere.rikkahub.ui.pages.webview.WebViewPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAndroidIntegrationPage
 import me.rerere.rikkahub.ui.pages.setting.SettingUICustomizationPage
 import me.rerere.rikkahub.ui.pages.setting.SettingFontsPage
+import me.rerere.rikkahub.ui.pages.setting.AdaptiveSettingsScaffold
+import me.rerere.rikkahub.ui.pages.setting.SettingsDestination
 import me.rerere.rikkahub.share.ResolvedSharePayload
 import me.rerere.rikkahub.share.readResolvedSharePayload
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
@@ -695,20 +697,24 @@ class RouteActivity : ComponentActivity() {
                     // All assistant-related routes share the same AnimatedVisibilityScope
                     // for seamless hero animations across all screens
                     composable<Screen.Assistant> {
-                        CompositionLocalProvider(LocalAnimatedVisibilityScope provides this@composable) {
-                            AssistantPage()
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.Assistants) {
+                            CompositionLocalProvider(LocalAnimatedVisibilityScope provides this@composable) {
+                                AssistantPage()
+                            }
                         }
                     }
 
                     composable<Screen.AssistantDetail> { backStackEntry ->
                         val route = backStackEntry.toRoute<Screen.AssistantDetail>()
-                        CompositionLocalProvider(LocalAnimatedVisibilityScope provides this@composable) {
-                            AssistantDetailPage(
-                                id = route.id,
-                                startRoute = route.startRoute,
-                                initialMemoryTab = route.initialMemoryTab,
-                                scrollToMemoryId = route.scrollToMemoryId
-                            )
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.Assistants) {
+                            CompositionLocalProvider(LocalAnimatedVisibilityScope provides this@composable) {
+                                AssistantDetailPage(
+                                    id = route.id,
+                                    startRoute = route.startRoute,
+                                    initialMemoryTab = route.initialMemoryTab,
+                                    scrollToMemoryId = route.scrollToMemoryId
+                                )
+                            }
                         }
                     }
 
@@ -717,11 +723,18 @@ class RouteActivity : ComponentActivity() {
                     }
 
                     composable<Screen.Setting> {
-                        SettingPage()
+                        AdaptiveSettingsScaffold(
+                            selected = SettingsDestination.Display,
+                            compactContent = { SettingPage() },
+                        ) {
+                            SettingDisplayPage()
+                        }
                     }
 
                     composable<Screen.Backup> {
-                        BackupPage()
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.Backup) {
+                            BackupPage()
+                        }
                     }
 
                     composable<Screen.ImageGen> {
@@ -734,53 +747,77 @@ class RouteActivity : ComponentActivity() {
                     }
 
                     composable<Screen.SettingDisplay> {
-                        SettingDisplayPage()
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.Display) {
+                            SettingDisplayPage()
+                        }
                     }
 
                     composable<Screen.SettingProvider> {
-                        SettingProviderPage()
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.Providers) {
+                            SettingProviderPage()
+                        }
                     }
 
                     composable<Screen.SettingProviderDetail> {
                         val route = it.toRoute<Screen.SettingProviderDetail>()
                         val id = Uuid.parse(route.providerId)
-                        SettingProviderDetailPage(id = id)
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.Providers) {
+                            SettingProviderDetailPage(id = id)
+                        }
                     }
 
                     composable<Screen.SettingModels> {
-                        SettingModelPage()
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.Models) {
+                            SettingModelPage()
+                        }
                     }
 
                     composable<Screen.SettingAbout> {
-                        SettingAboutPage()
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.About) {
+                            SettingAboutPage()
+                        }
                     }
 
                     composable<Screen.SettingChatStorage> {
-                        SettingChatStoragePage()
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.ChatStorage) {
+                            SettingChatStoragePage()
+                        }
                     }
 
                     composable<Screen.SettingSearch> {
-                        SettingSearchPage()
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.Search) {
+                            SettingSearchPage()
+                        }
                     }
 
                     composable<Screen.SettingTTS> {
-                        SettingTTSPage()
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.Tts) {
+                            SettingTTSPage()
+                        }
                     }
 
                     composable<Screen.SettingWeb> {
-                        SettingWebPage()
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.Web) {
+                            SettingWebPage()
+                        }
                     }
 
                     composable<Screen.SettingMcp> {
-                        SettingMcpPage()
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.Mcp) {
+                            SettingMcpPage()
+                        }
                     }
 
                     composable<Screen.SettingRpOptimizations> {
-                        SettingRpOptimizationsPage()
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.RpOptimizations) {
+                            SettingRpOptimizationsPage()
+                        }
                     }
 
                     composable<Screen.SettingPromptInjections> {
-                        SettingPromptInjectionsPage()
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.PromptInjections) {
+                            SettingPromptInjectionsPage()
+                        }
                     }
 
                     composable<Screen.SettingLorebooks>(
@@ -825,12 +862,16 @@ class RouteActivity : ComponentActivity() {
                             }
                         }
                     ) {
-                        SettingLorebooksPage()
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.Lorebooks) {
+                            SettingLorebooksPage()
+                        }
                     }
 
                     composable<Screen.SettingLorebookDetail> { backStackEntry ->
                         val route = backStackEntry.toRoute<Screen.SettingLorebookDetail>()
-                        SettingLorebookDetailPage(id = route.id, scrollToEntryId = route.scrollToEntryId)
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.Lorebooks) {
+                            SettingLorebookDetailPage(id = route.id, scrollToEntryId = route.scrollToEntryId)
+                        }
                     }
 
                     composable<Screen.SettingSkills>(
@@ -876,7 +917,9 @@ class RouteActivity : ComponentActivity() {
                         }
                     ) { backStackEntry ->
                         val route = backStackEntry.toRoute<Screen.SettingSkills>()
-                        SettingSkillsPage(scrollToSkillId = route.scrollToSkillId)
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.Skills) {
+                            SettingSkillsPage(scrollToSkillId = route.scrollToSkillId)
+                        }
                     }
 
                     composable<Screen.Developer> {
@@ -884,15 +927,21 @@ class RouteActivity : ComponentActivity() {
                     }
 
                     composable<Screen.SettingAndroidIntegration> {
-                        SettingAndroidIntegrationPage()
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.AndroidIntegration) {
+                            SettingAndroidIntegrationPage()
+                        }
                     }
 
                     composable<Screen.SettingUICustomization> {
-                        SettingUICustomizationPage()
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.UiCustomization) {
+                            SettingUICustomizationPage()
+                        }
                     }
 
                     composable<Screen.SettingFonts> {
-                        SettingFontsPage()
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.Fonts) {
+                            SettingFontsPage()
+                        }
                     }
 
                 }

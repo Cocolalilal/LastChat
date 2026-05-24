@@ -73,6 +73,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.ChatAttachmentState
@@ -85,15 +86,18 @@ import me.rerere.rikkahub.data.model.versionSelectionIndices
 import me.rerere.rikkahub.ui.components.message.ChatMessageActionButtons
 import me.rerere.rikkahub.ui.components.message.ChatMessageActionsSheet
 import me.rerere.rikkahub.ui.components.message.ChatMessageCopySheet
+import me.rerere.rikkahub.ui.components.richtext.buildMarkdownPreviewHtml
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import me.rerere.rikkahub.ui.components.ui.DocumentChip
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
+import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.utils.JsonInstant
+import me.rerere.rikkahub.utils.base64Encode
 import me.rerere.rikkahub.utils.copyMessageToClipboard
 import me.rerere.rikkahub.utils.formatNumber
 import me.rerere.rikkahub.utils.getFileMimeType
@@ -130,7 +134,7 @@ data class MessageTurnGroup(
      */
     val filteredNodes: List<MessageNode> get() {
         val tag = activeVersionTag
-        return nodes.mapNotNull { node ->
+        val selectedNodes = nodes.mapNotNull { node ->
             val currentIndexMatchesTag = node.messages
                 .getOrNull(node.selectIndex)
                 ?.versionTag == tag
@@ -147,6 +151,32 @@ data class MessageTurnGroup(
             } else {
                 null
             }
+        }
+        val activeToolCallIds = selectedNodes
+            .flatMap { node -> node.currentMessage.getToolCalls() }
+            .map { it.toolCallId }
+            .toSet()
+        if (activeToolCallIds.isEmpty()) {
+            return selectedNodes
+        }
+
+        val selectedNodeIds = selectedNodes.map { it.id }.toSet()
+        val matchingToolResultNodes = nodes.mapNotNull { node ->
+            if (node.id in selectedNodeIds || node.role != MessageRole.TOOL) {
+                return@mapNotNull null
+            }
+            val matchingIndex = node.messages.indexOfLast { message ->
+                message.getToolResults().any { result -> result.toolCallId in activeToolCallIds }
+            }
+            if (matchingIndex >= 0) {
+                node.copy(selectIndex = matchingIndex)
+            } else {
+                null
+            }
+        }
+
+        return (selectedNodes + matchingToolResultNodes).sortedBy { node ->
+            nodes.indexOfFirst { it.id == node.id }.takeIf { it >= 0 } ?: Int.MAX_VALUE
         }
     }
     
@@ -708,6 +738,9 @@ fun ChatMessageTurn(
     onExpandedStreamingCodeBlockChanged: (() -> Unit)? = null,
 ) {
     val settings = LocalSettings.current
+    val context = LocalContext.current
+    val navController = LocalNavController.current
+    val colorScheme = MaterialTheme.colorScheme
     val effectiveDisplay = settings.getEffectiveDisplaySetting(assistant)
     val textStyle = LocalTextStyle.current.copy(
         fontSize = LocalTextStyle.current.fontSize * effectiveDisplay.fontSizeRatio,
@@ -837,7 +870,16 @@ fun ChatMessageTurn(
             onFork = { onFork(actionTargetNode) },
             model = model,
             onSelectAndCopy = { showSelectCopySheet = true },
-            onWebViewPreview = { },
+            onWebViewPreview = {
+                val markdown = actionTargetNode.currentMessage.parts
+                    .filterIsInstance<UIMessagePart.Text>()
+                    .joinToString(separator = "\n\n") { it.text }
+                    .trim()
+                if (markdown.isNotEmpty()) {
+                    val html = buildMarkdownPreviewHtml(context, markdown, colorScheme)
+                    navController.navigate(Screen.WebView(content = html.base64Encode()))
+                }
+            },
             onDismissRequest = { showActionsSheet = false }
         )
     }

@@ -5,8 +5,11 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import me.rerere.ai.core.MessageRole
+import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.rikkahub.data.model.MessageNode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -111,6 +114,48 @@ class ActivityTimelineParsingTest {
         )
 
         assertEquals(ActivityType.MEMORY_RECALL, (completedState as ActivityState.CompletedSingle).type)
+    }
+
+    @Test
+    fun messageTurnGroup_keepsMatchingToolResultWhenVersionTagIsMissing() {
+        val group = MessageTurnGroup(
+            nodes = listOf(
+                MessageNode.of(
+                    UIMessage(
+                        role = MessageRole.ASSISTANT,
+                        versionTag = "active-version",
+                        parts = listOf(
+                            UIMessagePart.ToolCall(
+                                toolCallId = "memory-search-1",
+                                toolName = "search_memory",
+                                arguments = """{"query":"Lisbon"}"""
+                            )
+                        )
+                    )
+                ),
+                MessageNode.of(
+                    UIMessage(
+                        role = MessageRole.TOOL,
+                        versionTag = null,
+                        parts = listOf(
+                            UIMessagePart.ToolResult(
+                                toolCallId = "memory-search-1",
+                                toolName = "search_memory",
+                                arguments = buildJsonObject { put("query", "Lisbon") },
+                                content = buildJsonObject { put("summary", "Remembered Lisbon.") }
+                            )
+                        )
+                    )
+                )
+            ),
+            role = MessageRole.ASSISTANT
+        )
+
+        val entries = buildTimelineEntries(parts = group.allParts)
+        val entry = entries.single() as TimelineEntry.ToolCall
+
+        assertFalse(entry.isLoading)
+        assertEquals(JsonPrimitive("Remembered Lisbon."), (entry.resultJson as JsonObject)["summary"])
     }
 
     @Test

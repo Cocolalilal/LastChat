@@ -1,6 +1,10 @@
 package me.rerere.rikkahub.data.ai.models
 
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -224,6 +228,12 @@ class ModelCatalogTest {
         val rb = nvidiaProvider?.reasoningBehavior
         assertNotNull("NVIDIA NIM should have reasoning behavior defined", rb)
         assertTrue("NVIDIA NIM reasoning behavior off should have chat_template_kwargs", rb!!.off.any { it.key == "chat_template_kwargs" })
+        val offTemplate = rb.off.single { it.key == "chat_template_kwargs" }.value.jsonObject
+        assertEquals("false", offTemplate["enable_thinking"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("false", offTemplate["thinking"]?.jsonPrimitive?.contentOrNull)
+        val autoTemplate = rb.auto.single { it.key == "chat_template_kwargs" }.value.jsonObject
+        assertEquals("true", autoTemplate["enable_thinking"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("true", autoTemplate["thinking"]?.jsonPrimitive?.contentOrNull)
         assertTrue("NVIDIA NIM reasoning behavior low should have reasoning_budget", rb.low.any { it.key == "reasoning_budget" })
 
         // Voyage

@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.components.ui
+﻿package me.rerere.rikkahub.ui.components.ui
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
@@ -33,6 +33,12 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+private const val LOBEHUB_ICON_URI_PREFIX = "lobehub://"
+
+fun lobeHubIconUri(slug: String): String {
+    return LOBEHUB_ICON_URI_PREFIX + slug.normalizeLobeHubIconSlug()
+}
 
 /**
  * UNIFIED Provider Icon - Use this everywhere a provider icon is needed.
@@ -117,6 +123,7 @@ private fun AIIcon(
             .css(
                 """
                 svg {
+                  color: ${contentColor.toCssHex()};
                   fill: ${contentColor.toCssHex()};
                 }
             """.trimIndent()
@@ -308,7 +315,7 @@ private fun getProviderSlugFromName(name: String): String? {
  * 
  * For OpenRouter providers (openrouter.ai):
  * 1. Direct icon URL (if provided by API)
- * 2. LobeHub CDN via provider slug (colored → monochrome fallback)
+ * 2. LobeHub CDN via provider slug (colored â†’ monochrome fallback)
  * 3. Local pattern matching (for known patterns)
  * 4. Text avatar (final fallback)
  * 
@@ -343,7 +350,35 @@ fun AutoAIIconWithUrl(
 ) {
     // Priority 1: Custom icon URI (user-selected or catalog-assigned)
     if (!customIconUri.isNullOrBlank()) {
-        if (customIconUri.isCatalogIconUrl()) {
+        val lobeHubSlug = customIconUri.extractLobeHubIconSlug()
+        if (lobeHubSlug != null) {
+            val darkMode = LocalDarkMode.current
+            val lobeHubUrls = getLobeHubIconUrls(lobeHubSlug, darkMode)
+            RemoteIcon(
+                url = lobeHubUrls.coloredUrl,
+                iconKey = me.rerere.rikkahub.utils.IconStorageManager.generateIconKey(
+                    lobeHubSlug,
+                    null,
+                    darkMode,
+                ),
+                fallbackUrl = lobeHubUrls.monochromeUrl,
+                name = name,
+                modifier = modifier,
+                loading = loading,
+                color = color,
+                contentColor = contentColor,
+                padding = padding,
+                fallback = {
+                    TextAvatar(
+                        text = name,
+                        modifier = modifier,
+                        loading = loading,
+                        color = color,
+                        contentColor = contentColor,
+                    )
+                },
+            )
+        } else if (customIconUri.isCatalogIconUrl()) {
             CatalogIcon(
                 iconUri = customIconUri,
                 name = name,
@@ -396,7 +431,7 @@ fun AutoAIIconWithUrl(
 }
 
 @Composable
-private fun CatalogIcon(
+fun CatalogIcon(
     iconUri: String,
     name: String,
     modifier: Modifier = Modifier,
@@ -494,9 +529,7 @@ private data class IconUrlPair(
  */
 private fun getLobeHubIconUrls(providerSlug: String, darkMode: Boolean): IconUrlPair {
     // Normalize the slug: lowercase and replace spaces/underscores with hyphens
-    val normalizedSlug = providerSlug.lowercase()
-        .replace(" ", "-")
-        .replace("_", "-")
+    val normalizedSlug = providerSlug.normalizeLobeHubIconSlug()
     
     // Map some common provider slugs to their LobeHub equivalents
     val slug = when (normalizedSlug.replace("-", "")) {
@@ -647,6 +680,23 @@ private fun RemoteIcon(
     }
 }
 
+private fun String.normalizeLobeHubIconSlug(): String {
+    return lowercase()
+        .trim()
+        .removePrefix(LOBEHUB_ICON_URI_PREFIX)
+        .replace(" ", "-")
+        .replace("_", "-")
+}
+
+private fun String.extractLobeHubIconSlug(): String? {
+    if (!startsWith(LOBEHUB_ICON_URI_PREFIX)) {
+        return null
+    }
+    return removePrefix(LOBEHUB_ICON_URI_PREFIX)
+        .normalizeLobeHubIconSlug()
+        .takeIf { it.isNotBlank() }
+}
+
 private fun String.isCatalogIconUrl(): Boolean {
     val lower = this.lowercase()
     return lower.contains("/catalog/icons/") ||
@@ -667,23 +717,6 @@ private fun computeAIIconByName(name: String): String? {
 
     val lowerName = name.lowercase()
     val path = when {
-        // Search Providers
-        lowerName.contains("tavily") -> "tavily.png"
-        lowerName.contains("exa") -> "exa.png"
-        lowerName.contains("bing") -> "bing.png"
-        lowerName.contains("brave") -> "brave.svg"
-        lowerName.contains("linkup") -> "linkup.png"
-        lowerName.contains("metaso") || lowerName.contains("秘塔") -> "metaso.svg"
-        lowerName.contains("firecrawl") -> "firecrawl.svg"
-        lowerName.contains("jina") -> "jina.svg"
-        
-        // TTS Providers
-        lowerName.contains("openai") -> "openai.svg"
-        lowerName.contains("google") -> "google-color.svg"
-        lowerName.contains("minimax") -> "minimax-color.svg"
-        lowerName.contains("qwen") -> "qwen-color.svg"
-        
-        // Importer
         lowerName.contains("tavern") -> "tavern.png"
         
         else -> null

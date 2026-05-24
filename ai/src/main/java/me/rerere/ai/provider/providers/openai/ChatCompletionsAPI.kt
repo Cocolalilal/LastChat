@@ -60,6 +60,10 @@ import okhttp3.sse.EventSources
 import kotlin.time.Clock
 
 private const val TAG = "ChatCompletionsAPI"
+private const val LEADING_ASSISTANT_COMPATIBILITY_USER_PROMPT =
+    "Provider compatibility marker: the conversation begins with the assistant's next message. " +
+        "This is not a real user message. Do not answer, quote, or infer user intent from this marker; " +
+        "use the later USER messages as the user's words."
 
 class ChatCompletionsAPI(
     private val client: OkHttpClient,
@@ -279,7 +283,7 @@ class ChatCompletionsAPI(
                     safeMessages.add(
                         UIMessage(
                             role = MessageRole.USER,
-                            parts = listOf(UIMessagePart.Text("..."))
+                            parts = listOf(UIMessagePart.Text(LEADING_ASSISTANT_COMPATIBILITY_USER_PROMPT))
                         )
                     )
                     lastNonSystemRole = MessageRole.USER
@@ -585,6 +589,7 @@ class ChatCompletionsAPI(
         val content = jsonObject["content"]?.jsonPrimitive?.contentOrNull ?: ""
         val reasoning = jsonObject["reasoning_content"]?.jsonPrimitive?.contentOrNull
             ?: jsonObject["reasoning"]?.jsonPrimitive?.contentOrNull
+            ?: jsonObject["thinking"]?.jsonPrimitive?.contentOrNull
         val toolCalls = jsonObject["tool_calls"] as? JsonArray ?: JsonArray(emptyList())
         val images = jsonObject["images"] as? JsonArray ?: JsonArray(emptyList())
 

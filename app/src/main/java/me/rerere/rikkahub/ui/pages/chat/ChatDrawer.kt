@@ -64,6 +64,9 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.BarChart
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.ChevronLeft
+import androidx.compose.material.icons.rounded.Add
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
@@ -102,6 +105,7 @@ fun ChatDrawerContent(
     presentation: ChatDrawerPresentation = ChatDrawerPresentation.Modal,
     collapsedWidth: Dp = 320.dp,
     expandedWidth: Dp = 600.dp,
+    onCollapseRequest: (() -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -319,9 +323,21 @@ fun ChatDrawerContent(
                                     style = MaterialTheme.typography.titleMedium,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
-                            }
-                        }
                     }
+                }
+
+                if (onCollapseRequest != null) {
+                    DrawerAction(
+                        icon = {
+                            Icon(Icons.Rounded.ChevronLeft, null)
+                        },
+                        label = { Text(stringResource(R.string.activity_timeline_collapse)) },
+                        onClick = onCollapseRequest,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        size = 42.dp
+                    )
+                }
+            }
                 }
             )
 
@@ -519,6 +535,81 @@ fun ChatDrawerContent(
 enum class ChatDrawerPresentation {
     Modal,
     PermanentPane
+}
+
+@Composable
+fun CollapsedChatSideRail(
+    current: Conversation,
+    settings: Settings,
+    onExpand: () -> Unit,
+    onNewChat: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenAssistant: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val currentAssistant = settings.getAssistantById(current.assistantId) ?: settings.getCurrentAssistant()
+    val defaultAssistantName = stringResource(R.string.assistant_page_default_assistant)
+    val assistantName = currentAssistant.name.ifEmpty { defaultAssistantName }
+
+    Surface(
+        modifier = modifier
+            .fillMaxHeight()
+            .width(80.dp)
+            .padding(start = 8.dp, top = 8.dp, bottom = 8.dp),
+        shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 1.dp,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            DrawerAction(
+                icon = { Icon(Icons.Rounded.ChevronRight, null) },
+                label = { Text(stringResource(R.string.activity_timeline_expand)) },
+                onClick = onExpand,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                size = 48.dp
+            )
+            DrawerAction(
+                icon = { Icon(Icons.Rounded.Add, null) },
+                label = { Text(stringResource(R.string.chat_page_new_message)) },
+                onClick = onNewChat,
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                size = 48.dp
+            )
+            DrawerAction(
+                icon = { Icon(Icons.Rounded.Settings, null) },
+                label = { Text(stringResource(R.string.settings)) },
+                onClick = onOpenSettings,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                size = 48.dp
+            )
+
+            Spacer(Modifier.weight(1f))
+
+            Surface(
+                onClick = onOpenAssistant,
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                modifier = Modifier.size(48.dp)
+            ) {
+                Box(
+                    modifier = Modifier.padding(8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    DrawerAvatarVisual(
+                        name = assistantName,
+                        avatar = currentAssistant.avatar,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable

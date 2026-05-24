@@ -1244,14 +1244,26 @@ private fun secureEquals(left: String, right: String): Boolean {
 private fun resolveAiIconAssetPath(name: String): String? {
     val lowerName = name.lowercase(Locale.ROOT)
     return when {
-        "exa" in lowerName -> "exa.png"
-        "tavily" in lowerName -> "tavily.png"
+        "bing" in lowerName -> "bing.svg"
+        "bocha" in lowerName -> "bocha.svg"
         "brave" in lowerName -> "brave.svg"
-        "jina" in lowerName -> "jina.svg"
-        "linkup" in lowerName -> "linkup.png"
-        "metaso" in lowerName -> "metaso.svg"
-        "ollama" in lowerName -> "ollama.svg"
+        "elevenlabs" in lowerName || "eleven labs" in lowerName -> "elevenlabs.svg"
+        "exa" in lowerName -> "exa.svg"
         "firecrawl" in lowerName -> "firecrawl.svg"
+        "gemini" in lowerName || "google" in lowerName -> "gemini.svg"
+        "grok" in lowerName || "xai" in lowerName -> "grok.svg"
+        "jina" in lowerName -> "jina.svg"
+        "linkup" in lowerName -> "linkup.svg"
+        "metaso" in lowerName -> "metaso.svg"
+        "minimax" in lowerName -> "minimax.svg"
+        "nano-gpt" in lowerName || "nanogpt" in lowerName -> "nanogpt.svg"
+        "ollama" in lowerName -> "ollama.svg"
+        "openai" in lowerName -> "openai.svg"
+        "perplexity" in lowerName -> "perplexity.svg"
+        "qwen" in lowerName || "dashscope" in lowerName -> "qwen.svg"
+        "searxng" in lowerName || "searx" in lowerName -> "searxng.svg"
+        "tavily" in lowerName -> "tavily.svg"
+        "zhipu" in lowerName || "glm" in lowerName -> "zhipu.svg"
         else -> null
     }
 }

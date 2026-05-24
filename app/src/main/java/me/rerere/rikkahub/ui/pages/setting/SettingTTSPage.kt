@@ -67,10 +67,12 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.ai.models.ModelCatalogSnapshot
+import me.rerere.rikkahub.data.ai.models.ttsProviderIconUri
 import me.rerere.rikkahub.data.datastore.DEFAULT_SYSTEM_TTS_ID
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
-import me.rerere.rikkahub.ui.components.ui.AutoProviderIcon
+import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.context.LocalNavController
@@ -114,6 +116,7 @@ import me.rerere.rikkahub.ui.components.ui.ToastType
 @Composable
 fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val catalogSnapshot by vm.modelCatalogSnapshot.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
     val context = LocalContext.current
     var editingProvider by remember { mutableStateOf<TTSProviderSetting?>(null) }
@@ -143,7 +146,7 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                     IconButton(onClick = { showFilterSettingsDialog = true }) {
                         Icon(Icons.Rounded.Settings, contentDescription = stringResource(R.string.setting_tts_settings_title))
                     }
-                    AddTTSProviderButton {
+                    AddTTSProviderButton(catalogSnapshot = catalogSnapshot) {
                         vm.updateSettings(
                             settings.copy(
                                 ttsProviders = listOf(it) + settings.ttsProviders
@@ -270,6 +273,7 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                         TTSProviderItemContent(
                             provider = provider,
                             isSelected = isSelected,
+                            catalogSnapshot = catalogSnapshot,
                             haptics = haptics,
                             onSelect = {
                                 if (!isSelected) {
@@ -769,7 +773,10 @@ private fun TtsFilterRuleEditDialog(
     )
 }
 @Composable
-private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
+private fun AddTTSProviderButton(
+    catalogSnapshot: ModelCatalogSnapshot?,
+    onAdd: (TTSProviderSetting) -> Unit
+) {
     var showBottomSheet by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
 
@@ -792,16 +799,17 @@ private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
             val type: kotlin.reflect.KClass<out TTSProviderSetting>,
             val name: String,
             val description: String,
+            val catalogId: String? = null,
             val isLocal: Boolean = false
         )
         
         val allTtsPresets = listOf(
             TTSPreset(TTSProviderSetting.SystemTTS::class, stringResource(R.string.setting_tts_page_default_system_name), stringResource(R.string.setting_tts_preset_system_desc), isLocal = true),
-            TTSPreset(TTSProviderSetting.OpenAI::class, "OpenAI", stringResource(R.string.setting_tts_preset_openai_desc)),
-            TTSPreset(TTSProviderSetting.Gemini::class, "Gemini", stringResource(R.string.setting_tts_preset_gemini_desc)),
-            TTSPreset(TTSProviderSetting.ElevenLabs::class, "ElevenLabs", stringResource(R.string.setting_tts_preset_elevenlabs_desc)),
-            TTSPreset(TTSProviderSetting.MiniMax::class, "MiniMax", stringResource(R.string.setting_tts_preset_minimax_desc)),
-            TTSPreset(TTSProviderSetting.Qwen::class, "Qwen", stringResource(R.string.setting_tts_preset_qwen_desc)),
+            TTSPreset(TTSProviderSetting.OpenAI::class, "OpenAI", stringResource(R.string.setting_tts_preset_openai_desc), catalogId = "openai"),
+            TTSPreset(TTSProviderSetting.Gemini::class, "Gemini", stringResource(R.string.setting_tts_preset_gemini_desc), catalogId = "gemini"),
+            TTSPreset(TTSProviderSetting.ElevenLabs::class, "ElevenLabs", stringResource(R.string.setting_tts_preset_elevenlabs_desc), catalogId = "elevenlabs"),
+            TTSPreset(TTSProviderSetting.MiniMax::class, "MiniMax", stringResource(R.string.setting_tts_preset_minimax_desc), catalogId = "minimax"),
+            TTSPreset(TTSProviderSetting.Qwen::class, "Qwen", stringResource(R.string.setting_tts_preset_qwen_desc), catalogId = "qwen"),
         )
         
         // Filter presets based on search
@@ -941,16 +949,9 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                         }
                                     }
                                     else -> {
-                                        val providerName = when (preset.type) {
-                                            TTSProviderSetting.OpenAI::class -> "OpenAI"
-                                            TTSProviderSetting.Gemini::class -> "Google"
-                                            TTSProviderSetting.ElevenLabs::class -> "ElevenLabs"
-                                            TTSProviderSetting.MiniMax::class -> "MiniMax"
-                                            TTSProviderSetting.Qwen::class -> "Qwen"
-                                            else -> "Unknown"
-                                        }
-                                        AutoProviderIcon(
-                                            name = providerName,
+                                        AutoAIIconWithUrl(
+                                            name = preset.name,
+                                            customIconUri = preset.catalogId?.let { catalogSnapshot?.ttsProviderIconUri(it) },
                                             modifier = Modifier.size(40.dp)
                                         )
                                     }
@@ -998,6 +999,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
 private fun TTSProviderItemContent(
     provider: TTSProviderSetting,
     isSelected: Boolean,
+    catalogSnapshot: ModelCatalogSnapshot?,
     haptics: me.rerere.rikkahub.ui.hooks.PremiumHaptics,
     onSelect: () -> Unit,
     onEdit: () -> Unit,
@@ -1060,17 +1062,17 @@ private fun TTSProviderItemContent(
                 }
             }
             else -> {
-                // Use provider type name for icon lookup (OpenAI, Gemini, MiniMax, ElevenLabs)
-                val providerTypeName = when (provider) {
-                    is TTSProviderSetting.OpenAI -> "OpenAI"
-                    is TTSProviderSetting.Gemini -> "Google"
-                    is TTSProviderSetting.MiniMax -> "MiniMax"
-                    is TTSProviderSetting.ElevenLabs -> "ElevenLabs"
-                    is TTSProviderSetting.Qwen -> "Qwen"
+                val providerCatalogId = when (provider) {
+                    is TTSProviderSetting.OpenAI -> "openai"
+                    is TTSProviderSetting.Gemini -> "gemini"
+                    is TTSProviderSetting.MiniMax -> "minimax"
+                    is TTSProviderSetting.ElevenLabs -> "elevenlabs"
+                    is TTSProviderSetting.Qwen -> "qwen"
                     is TTSProviderSetting.SystemTTS -> "System"
                 }
-                AutoProviderIcon(
-                    name = providerTypeName,
+                AutoAIIconWithUrl(
+                    name = provider.name.ifEmpty { providerCatalogId },
+                    customIconUri = catalogSnapshot?.ttsProviderIconUri(providerCatalogId),
                     modifier = Modifier.size(40.dp)
                 )
             }

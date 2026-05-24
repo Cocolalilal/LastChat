@@ -311,6 +311,7 @@ fun ChatPage(
         useWideLayout -> 840.dp
         else -> Dp.Unspecified
     }
+    var isWidePanelCollapsed by rememberSaveable { mutableStateOf(false) }
 
     val inputState = rememberChatInputState(
         textContent = remember(text) {
@@ -364,18 +365,32 @@ fun ChatPage(
             Row(
                 modifier = Modifier.fillMaxSize()
             ) {
-                ChatDrawerContent(
-                    navController = navController,
-                    current = conversation,
-                    vm = vm,
-                    settings = setting,
-                    inputState = inputState,
-                    activePersistenceMode = activePersistenceMode,
-                    drawerState = null,
-                    presentation = ChatDrawerPresentation.PermanentPane,
-                    collapsedWidth = wideDrawerCollapsedWidth,
-                    expandedWidth = wideDrawerExpandedWidth,
-                )
+                if (isWidePanelCollapsed) {
+                    CollapsedChatSideRail(
+                        current = conversation,
+                        settings = setting,
+                        onExpand = { isWidePanelCollapsed = false },
+                        onNewChat = { navigateToChatPage(navController) },
+                        onOpenSettings = { navController.navigate(Screen.Setting) },
+                        onOpenAssistant = {
+                            navController.navigate(Screen.AssistantDetail(id = conversationAssistant.id.toString()))
+                        }
+                    )
+                } else {
+                    ChatDrawerContent(
+                        navController = navController,
+                        current = conversation,
+                        vm = vm,
+                        settings = setting,
+                        inputState = inputState,
+                        activePersistenceMode = activePersistenceMode,
+                        drawerState = null,
+                        presentation = ChatDrawerPresentation.PermanentPane,
+                        collapsedWidth = wideDrawerCollapsedWidth,
+                        expandedWidth = wideDrawerExpandedWidth,
+                        onCollapseRequest = { isWidePanelCollapsed = true },
+                    )
+                }
                 Box(
                     modifier = Modifier
                         .weight(1f)

@@ -17,7 +17,8 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Spacer
-import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
 import me.rerere.search.SearchServiceOptions
 import coil3.compose.AsyncImage
 import me.rerere.ai.ui.UIMessagePart
@@ -120,6 +121,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import me.rerere.ai.provider.Model
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.ai.models.ModelCatalogService
+import me.rerere.rikkahub.data.ai.models.searchProviderIconUri
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
@@ -151,6 +154,7 @@ import me.rerere.rikkahub.data.repository.ChatAttachmentManager
 import me.rerere.rikkahub.utils.JsonInstantPretty
 import java.io.File
 import kotlin.uuid.Uuid
+import org.koin.compose.koinInject
 
 /**
  * Minimal ChatGPT-style input bar with bottom sheet picker.
@@ -892,6 +896,8 @@ private fun MinimalPickerContent(
     var showLorebooksPicker by remember { mutableStateOf(false) }
     var showContextRefreshDialog by remember { mutableStateOf(false) }
     var showSearchPicker by remember { mutableStateOf(false) }
+    val modelCatalogService: ModelCatalogService = koinInject()
+    val catalogSnapshot by modelCatalogService.snapshotFlow.collectAsStateWithLifecycle()
     val assistantDefaultSkillIds = assistant.enabledSkillIds
     val alwaysEnabledSkillIds = settings.skills.filter { it.alwaysEnabled }.map { it.id }.toSet()
     val effectiveActiveSkillIds = if (conversation.enabledModeIds.isNotEmpty()) {
@@ -1190,8 +1196,9 @@ private fun MinimalPickerContent(
             icon = {
                 // Only show provider icon when search is actually enabled
                 if (enableSearch && searchProviderName != null) {
-                    AutoAIIcon(
+                    AutoAIIconWithUrl(
                         name = searchProviderName,
+                        customIconUri = catalogSnapshot?.searchProviderIconUri(searchProviderName),
                         modifier = Modifier.size(24.dp)
                     )
                 } else {
