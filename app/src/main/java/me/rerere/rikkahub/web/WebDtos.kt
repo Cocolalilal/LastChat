@@ -36,6 +36,7 @@ import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.rikkahub.data.model.withoutSkillSelectionOverride
 import me.rerere.rikkahub.data.model.QuickMessage
 import me.rerere.rikkahub.data.model.Skill
 import me.rerere.rikkahub.utils.JsonInstant
@@ -633,7 +634,7 @@ fun Conversation.toDto(
     assistantId = assistantId.toString(),
     title = title.ifBlank { "New chat" },
     messages = messageNodes.map { it.toDto(settings, context) },
-    enabledSkillIds = enabledModeIds.map(Uuid::toString),
+    enabledSkillIds = enabledModeIds.withoutSkillSelectionOverride().map(Uuid::toString),
     truncateIndex = truncateIndex,
     chatSuggestions = chatSuggestions,
     isPinned = isPinned,
@@ -905,6 +906,7 @@ private fun ProviderSetting.toWebProviderDto(
             is ProviderSetting.OpenAI -> "openai"
             is ProviderSetting.Google -> "google"
             is ProviderSetting.Claude -> "claude"
+            is ProviderSetting.ComfyUI -> "comfyui"
         },
         enabled = enabled,
         name = name,

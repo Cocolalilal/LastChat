@@ -283,7 +283,101 @@ sealed class ProviderSetting {
                 OpenAI::class,
                 Google::class,
                 Claude::class,
+                ComfyUI::class,
             )
         }
     }
+
+    @Serializable
+    @SerialName("comfyui")
+    data class ComfyUI(
+        override var id: Uuid = Uuid.random(),
+        override var enabled: Boolean = true,
+        override var name: String = "ComfyUI",
+        override var models: List<Model> = emptyList(),
+        override var proxy: ProviderProxy = ProviderProxy.None,
+        override val balanceOption: BalanceOption = BalanceOption(),
+        override var tags: List<Uuid> = emptyList(),
+        override val customIconUri: String? = null,
+        @Transient override val builtIn: Boolean = false,
+        @Transient override val description: @Composable (() -> Unit) = {},
+        @Transient override val shortDescription: @Composable (() -> Unit) = {},
+        var baseUrl: String = "http://127.0.0.1:8188",
+        var workflowJson: String = "",
+        var promptNodeId: String = "",
+        var promptInputName: String = "text",
+        var modelNodeId: String = "",
+        var modelInputName: String = "ckpt_name",
+    ) : ProviderSetting() {
+        override fun addModel(model: Model): ProviderSetting {
+            return copy(models = models + model.withComfyDefaults())
+        }
+
+        override fun editModel(model: Model): ProviderSetting {
+            return copy(models = models.map { if (it.id == model.id) model.withComfyDefaults() else it })
+        }
+
+        override fun delModel(model: Model): ProviderSetting {
+            return copy(models = models.filter { it.id != model.id })
+        }
+
+        override fun moveMove(
+            from: Int,
+            to: Int
+        ): ProviderSetting {
+            return copy(models = models.toMutableList().apply {
+                val model = removeAt(from)
+                add(to, model)
+            })
+        }
+
+        override fun copyProvider(
+            id: Uuid,
+            enabled: Boolean,
+            name: String,
+            models: List<Model>,
+            proxy: ProviderProxy,
+            balanceOption: BalanceOption,
+            tags: List<Uuid>,
+            customIconUri: String?,
+            builtIn: Boolean,
+            description: @Composable (() -> Unit),
+            shortDescription: @Composable (() -> Unit),
+        ): ProviderSetting {
+            return this.copy(
+                id = id,
+                enabled = enabled,
+                name = name,
+                models = models.map { it.withComfyDefaults() },
+                proxy = proxy,
+                balanceOption = balanceOption,
+                tags = tags,
+                customIconUri = customIconUri,
+                builtIn = builtIn,
+                description = description,
+                shortDescription = shortDescription
+            )
+        }
+
+        private fun Model.withComfyDefaults(): Model {
+            val normalizedId = modelId.withDefaultSafetensorsExtension()
+            return copy(
+                modelId = normalizedId,
+                displayName = displayName.ifBlank { normalizedId },
+                type = ModelType.IMAGE,
+                inputModalities = listOf(Modality.TEXT),
+                outputModalities = listOf(Modality.IMAGE),
+                imageGenerationMethod = ImageGenerationMethod.DIFFUSION,
+            )
+        }
+    }
+}
+
+private val MODEL_FILENAME_EXTENSIONS = setOf("safetensors", "ckpt", "pt", "pth", "bin")
+
+fun String.withDefaultSafetensorsExtension(): String {
+    val trimmed = trim()
+    if (trimmed.isBlank()) return trimmed
+    val extension = trimmed.substringAfterLast('.', missingDelimiterValue = "")
+    return if (extension.lowercase() in MODEL_FILENAME_EXTENSIONS) trimmed else "$trimmed.safetensors"
 }

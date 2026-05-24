@@ -47,6 +47,9 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.model.SKILL_SELECTION_OVERRIDE_ID
+import me.rerere.rikkahub.data.model.hasManualSkillSelectionOverride
+import me.rerere.rikkahub.data.model.withoutSkillSelectionOverride
 import me.rerere.rikkahub.ui.components.ui.icons.ModeIcons
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
@@ -66,16 +69,19 @@ internal fun SkillsPickerSheet(
     val cornerRadius = 28.dp
     val smallCorner = 8.dp
 
-    val availableSkills = remember(settings.skills) { settings.skills }
+    val availableSkills = remember(settings.skills, assistant.id) {
+        settings.skills.filter { it.isAvailableForAssistant(assistant.id) }
+    }
     val availableSkillIds = remember(availableSkills) { availableSkills.map { it.id }.toSet() }
     val alwaysEnabledSkillIds = remember(availableSkills) { availableSkills.filter { it.alwaysEnabled }.map { it.id }.toSet() }
     val effectiveEnabledIds = remember(conversation.enabledModeIds, assistant.enabledSkillIds, availableSkillIds, alwaysEnabledSkillIds) {
-        val base = if (conversation.enabledModeIds.isNotEmpty()) {
-            conversation.enabledModeIds
+        val hasOverride = conversation.enabledModeIds.hasManualSkillSelectionOverride()
+        val base = if (hasOverride || conversation.enabledModeIds.isNotEmpty()) {
+            conversation.enabledModeIds.withoutSkillSelectionOverride()
         } else {
             assistant.enabledSkillIds
         }
-        (base + alwaysEnabledSkillIds).intersect(availableSkillIds)
+        (base + if (hasOverride) emptySet() else alwaysEnabledSkillIds).intersect(availableSkillIds)
     }
 
     var localEnabledIds by remember(conversation.id, conversation.enabledModeIds, assistant.enabledSkillIds) {
@@ -200,7 +206,9 @@ internal fun SkillsPickerSheet(
                                             localEnabledIds - skill.id
                                         }
                                         localEnabledIds = newEnabledIds
-                                        onUpdateConversation(conversation.copy(enabledModeIds = newEnabledIds))
+                                        onUpdateConversation(
+                                            conversation.copy(enabledModeIds = newEnabledIds + SKILL_SELECTION_OVERRIDE_ID)
+                                        )
                                     }
                                 )
                             }

@@ -473,8 +473,6 @@
   <string name="setting_display_page_show_user_avatar_title">显示用户头像</string>
   <string name="setting_display_page_show_assistant_bubbles_title">角色的消息气泡</string>
   <string name="setting_display_page_show_assistant_bubbles_desc">在角色消息周围显示聊天气泡</string>
-  <string name="setting_display_page_skip_crop_image_desc">导入图片或拍照后跳过裁剪界面</string>
-  <string name="setting_display_page_skip_crop_image_title">跳过图片编辑</string>
   <string name="setting_display_page_title">显示设置</string>
   <string name="setting_mcp_page_add_header">添加请求头</string>
   <string name="setting_mcp_page_add_one_to_get_started">添加一个即可开始使用</string>
@@ -1005,6 +1003,10 @@
   <string name="context_summarizer_model_optional_tip">可选：在“设置”&gt;“默认模型”中选择专用的摘要生成器模型，以获得更好的摘要。</string>
   <string name="context_refresh_confirm_title">总结消息？</string>
   <string name="context_refresh_confirm_message">这会将您的对话历史记录总结为紧凑的形式。人工智能会记住要点，但详细信息将被摘要取代。</string>
+  <string name="context_refresh_edit_summary">编辑摘要</string>
+  <string name="context_refresh_revert_summary">还原摘要</string>
+  <string name="context_refresh_save_summary">保存摘要</string>
+  <string name="context_refresh_edit_summary_placeholder">摘要</string>
   <string name="lorebook_import_success">导入：%s</string>
   <string name="lorebook_export_success">Lorebook 导出成功</string>
   <string name="lorebook_export_error">导出传说书失败</string>

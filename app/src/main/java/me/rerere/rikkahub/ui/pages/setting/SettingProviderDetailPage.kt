@@ -263,6 +263,13 @@ private fun ProviderSetting.apiModelCacheKey(): String {
             baseUrl,
             apiKey.hashCode().toString(),
         )
+
+        is ProviderSetting.ComfyUI -> listOf(
+            "comfyui",
+            id.toString(),
+            baseUrl,
+            workflowJson.hashCode().toString(),
+        )
     }.joinToString("|")
 }
 
@@ -275,6 +282,7 @@ private fun ProviderSetting.canFetchApiModels(): Boolean {
             apiKey.isNotBlank()
         }
         is ProviderSetting.Claude -> apiKey.isNotBlank()
+        is ProviderSetting.ComfyUI -> workflowJson.isNotBlank()
     }
 }
 
@@ -1450,6 +1458,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 is ProviderSetting.OpenAI -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.Google -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.Claude -> parentProvider.apiKey.isNotBlank()
+                                is ProviderSetting.ComfyUI -> parentProvider.workflowJson.isNotBlank()
                             }
                             
                             Column(
@@ -1782,6 +1791,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 is ProviderSetting.OpenAI -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.Google -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.Claude -> parentProvider.apiKey.isNotBlank()
+                                is ProviderSetting.ComfyUI -> parentProvider.workflowJson.isNotBlank()
                             }
                             
                             Column(
@@ -1946,6 +1956,8 @@ private suspend fun probeModelCapabilities(
             provider = provider,
             model = model,
         )
+
+        is ProviderSetting.ComfyUI -> null
     }
 }
 
@@ -2178,6 +2190,8 @@ private fun buildToolProbeCustomBodies(provider: ProviderSetting): List<CustomBo
                 },
             )
         )
+
+        is ProviderSetting.ComfyUI -> emptyList()
     }
 }
 

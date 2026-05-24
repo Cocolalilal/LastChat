@@ -131,6 +131,20 @@ fun AssistantLocalToolSubPage(
                 onUpdate(assistant.copy(localTools = newLocalTools))
             }
         )
+
+        LocalToolCard(
+            title = stringResource(R.string.assistant_page_local_tools_image_generation_title),
+            description = stringResource(R.string.assistant_page_local_tools_image_generation_desc),
+            isEnabled = assistant.localTools.contains(LocalToolOption.ImageGeneration),
+            onToggle = { enabled ->
+                val newLocalTools = if (enabled) {
+                    assistant.localTools + LocalToolOption.ImageGeneration
+                } else {
+                    assistant.localTools - LocalToolOption.ImageGeneration
+                }
+                onUpdate(assistant.copy(localTools = newLocalTools))
+            }
+        )
     }
 
     if (showNotificationAccessDialog && pendingNotificationAccess.specialAccesses.isNotEmpty()) {

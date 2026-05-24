@@ -59,6 +59,8 @@ import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.LorebookActivationType
 import me.rerere.rikkahub.data.model.LorebookEntry
 import me.rerere.rikkahub.data.model.ModeAttachmentType
+import me.rerere.rikkahub.data.model.hasManualSkillSelectionOverride
+import me.rerere.rikkahub.data.model.withoutSkillSelectionOverride
 import me.rerere.rikkahub.data.repository.ChatAttachmentRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
@@ -109,8 +111,8 @@ internal fun resolveManualSkillIds(
     conversationSkillIds: Set<Uuid>,
     allSkillIds: Set<Uuid>,
 ): Set<Uuid> {
-    val baseSkillIds = if (conversationSkillIds.isNotEmpty()) {
-        conversationSkillIds
+    val baseSkillIds = if (conversationSkillIds.hasManualSkillSelectionOverride() || conversationSkillIds.isNotEmpty()) {
+        conversationSkillIds.withoutSkillSelectionOverride()
     } else {
         assistantDefaultSkillIds
     }
@@ -124,12 +126,17 @@ internal fun resolveActiveSkillIds(
     allSkillIds: Set<Uuid>,
     alwaysEnabledSkillIds: Set<Uuid> = emptySet(),
 ): Set<Uuid> {
+    val defaultEnabledSkillIds = if (conversationSkillIds.hasManualSkillSelectionOverride()) {
+        emptySet()
+    } else {
+        alwaysEnabledSkillIds
+    }
     return (
         resolveManualSkillIds(
             assistantDefaultSkillIds = assistantDefaultSkillIds,
             conversationSkillIds = conversationSkillIds,
             allSkillIds = allSkillIds,
-        ) + turnScopedSkillIds + alwaysEnabledSkillIds
+        ) + turnScopedSkillIds + defaultEnabledSkillIds
         ).intersect(allSkillIds)
 }
 
@@ -141,7 +148,7 @@ internal fun buildSkillToolState(
     turnScopedSkillIds: Set<Uuid>,
 ): SkillToolState {
     val usableSkills = skills.filter { skill ->
-        skill.instructions.isNotBlank()
+        skill.instructions.isNotBlank() && skill.isAvailableForAssistant(assistantId)
     }
     val allSkillIds = usableSkills.map { it.id }.toSet()
     val alwaysEnabledSkillIds = usableSkills.filter { it.alwaysEnabled }.map { it.id }.toSet()
@@ -154,7 +161,7 @@ internal fun buildSkillToolState(
     )
     // Always-enabled skills are invisible to the manage_skills tool:
     // they cannot be toggled by the AI so they don't appear in any tool list.
-    val toggleableSkills = usableSkills.filter { !it.alwaysEnabled }
+    val toggleableSkills = usableSkills
     val autonomousSkills = toggleableSkills.filter { skill ->
         skill.canAssistantAutonomouslyToggle(assistantId)
     }
@@ -441,9 +448,12 @@ class GenerationHandler(
         val providerImpl = providerManager.getProviderByType(provider)
 
         var messages: List<UIMessage> = messages
-        val allSkillIds = settings.skills.filter { it.instructions.isNotBlank() }.map { it.id }.toSet()
+        val allSkillIds = settings.skills
+            .filter { it.instructions.isNotBlank() && it.isAvailableForAssistant(assistant.id) }
+            .map { it.id }
+            .toSet()
         val assistantDefaultSkillIds = assistant.enabledSkillIds.intersect(allSkillIds)
-        val conversationSkillIds = enabledModeIds.intersect(allSkillIds)
+        val conversationSkillIds = enabledModeIds
         var currentTurnScopedSkillIds = emptySet<Uuid>()
 
         for (stepIndex in 0 until maxSteps) {
@@ -721,7 +731,7 @@ class GenerationHandler(
         val recentMessagesForScan = messages.takeLast(10).map { it.toText() }
 
         val availableSkills = settings.skills.filter { skill ->
-            skill.instructions.isNotBlank()
+            skill.instructions.isNotBlank() && skill.isAvailableForAssistant(assistant.id)
         }
         val allSkillIds = availableSkills.map { it.id }.toSet()
         val alwaysEnabledSkillIds = availableSkills.filter { it.alwaysEnabled }.map { it.id }.toSet()

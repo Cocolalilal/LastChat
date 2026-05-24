@@ -118,6 +118,7 @@ fun SettingModelPage(vm: SettingVM = koinViewModel()) {
 
             item {
                 SettingsGroup(title = stringResource(R.string.setting_model_page_group_processing)) {
+                    DefaultImageGenerationModelSetting(settings = settings, vm = vm)
                     DefaultOcrModelSetting(settings = settings, vm = vm)
                     DefaultEmbeddingModelSetting(settings = settings, vm = vm)
                 }
@@ -662,6 +663,44 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
             }
         }
     }
+}
+
+@Composable
+private fun DefaultImageGenerationModelSetting(
+    settings: Settings,
+    vm: SettingVM
+) {
+    ModelFeatureCard(
+        title = {
+            Text(
+                stringResource(R.string.setting_model_page_image_generation_model),
+                maxLines = 1
+            )
+        },
+        description = {
+            Text(stringResource(R.string.setting_model_page_image_generation_model_desc))
+        },
+        icon = {
+            Icon(Icons.Rounded.AutoAwesome, null)
+        },
+        actions = {
+            Box(modifier = Modifier.weight(1f)) {
+                ModelSelector(
+                    modelId = settings.imageGenerationModelId,
+                    type = ModelType.IMAGE,
+                    onSelect = {
+                        vm.updateSettings(
+                            settings.copy(
+                                imageGenerationModelId = it.id
+                            )
+                        )
+                    },
+                    providers = settings.providers,
+                    modifier = Modifier.wrapContentWidth()
+                )
+            }
+        }
+    )
 }
 
 @Composable

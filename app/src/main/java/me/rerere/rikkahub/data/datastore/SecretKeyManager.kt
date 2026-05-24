@@ -251,6 +251,8 @@ class SecretKeyManager(
                     provider.copy(apiKey = "") // Clear plaintext
                 } else provider
             }
+
+            is ProviderSetting.ComfyUI -> provider
         }
     }
 
@@ -338,6 +340,8 @@ class SecretKeyManager(
             is ProviderSetting.Claude -> {
                 provider.copy(apiKey = getApiKey(provider.id, provider.apiKey))
             }
+
+            is ProviderSetting.ComfyUI -> provider
         }
     }
 

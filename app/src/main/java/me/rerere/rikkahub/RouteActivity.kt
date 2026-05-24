@@ -8,10 +8,14 @@ import androidx.lifecycle.lifecycleScope
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.adaptive.currentWindowDpSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -211,6 +215,14 @@ internal fun determineInitialChatScreen(
         !deepLinkedConversationId.isNullOrBlank() -> Screen.Chat(id = deepLinkedConversationId)
         else -> defaultScreen
     }
+}
+
+private fun isSettingsPaneRoute(route: String?): Boolean {
+    return route != null && (
+        route.contains("Setting") ||
+            route.contains("Assistant") ||
+            route.contains("Backup")
+        )
 }
 
 private fun ResolvedSpontaneousChatTarget.toScreen(): Screen.Chat {
@@ -658,16 +670,58 @@ class RouteActivity : ComponentActivity() {
                 } else {
                     startDestination
                 }
+                val windowSize = currentWindowDpSize()
+                val useWideSettingsLayout = windowSize.width >= 840.dp && windowSize.height >= 600.dp
                 NavHost(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(MaterialTheme.colorScheme.background),
                     startDestination = actualStartDestination,
                     navController = navBackStack,
-                    enterTransition = { rootEnterTransition(motionPolicy) },
-                    exitTransition = { rootExitTransition(motionPolicy) },
-                    popEnterTransition = { rootPopEnterTransition(motionPolicy) },
-                    popExitTransition = { rootPopExitTransition(motionPolicy) }
+                    enterTransition = {
+                        if (
+                            useWideSettingsLayout &&
+                            isSettingsPaneRoute(initialState.destination.route) &&
+                            isSettingsPaneRoute(targetState.destination.route)
+                        ) {
+                            fadeIn(animationSpec = tween(120))
+                        } else {
+                            rootEnterTransition(motionPolicy)
+                        }
+                    },
+                    exitTransition = {
+                        if (
+                            useWideSettingsLayout &&
+                            isSettingsPaneRoute(initialState.destination.route) &&
+                            isSettingsPaneRoute(targetState.destination.route)
+                        ) {
+                            fadeOut(animationSpec = tween(90))
+                        } else {
+                            rootExitTransition(motionPolicy)
+                        }
+                    },
+                    popEnterTransition = {
+                        if (
+                            useWideSettingsLayout &&
+                            isSettingsPaneRoute(initialState.destination.route) &&
+                            isSettingsPaneRoute(targetState.destination.route)
+                        ) {
+                            fadeIn(animationSpec = tween(120))
+                        } else {
+                            rootPopEnterTransition(motionPolicy)
+                        }
+                    },
+                    popExitTransition = {
+                        if (
+                            useWideSettingsLayout &&
+                            isSettingsPaneRoute(initialState.destination.route) &&
+                            isSettingsPaneRoute(targetState.destination.route)
+                        ) {
+                            fadeOut(animationSpec = tween(90))
+                        } else {
+                            rootPopExitTransition(motionPolicy)
+                        }
+                    }
                 ) {
                     composable<Screen.Chat> { backStackEntry ->
                         val route = backStackEntry.toRoute<Screen.Chat>()
@@ -822,7 +876,9 @@ class RouteActivity : ComponentActivity() {
 
                     composable<Screen.SettingLorebooks>(
                         enterTransition = {
-                            if (initialState.destination.route?.contains("SettingSkills") == true) {
+                            if (useWideSettingsLayout) {
+                                fadeIn(animationSpec = tween(120))
+                            } else if (initialState.destination.route?.contains("SettingSkills") == true) {
                                 lateralEnterTransition(
                                     offset = { it },
                                     motionPolicy = motionPolicy
@@ -832,7 +888,9 @@ class RouteActivity : ComponentActivity() {
                             }
                         },
                         exitTransition = {
-                            if (targetState.destination.route?.contains("SettingSkills") == true) {
+                            if (useWideSettingsLayout) {
+                                fadeOut(animationSpec = tween(90))
+                            } else if (targetState.destination.route?.contains("SettingSkills") == true) {
                                 lateralExitTransition(
                                     offset = { it },
                                     motionPolicy = motionPolicy
@@ -842,7 +900,9 @@ class RouteActivity : ComponentActivity() {
                             }
                         },
                         popEnterTransition = {
-                            if (initialState.destination.route?.contains("SettingSkills") == true) {
+                            if (useWideSettingsLayout) {
+                                fadeIn(animationSpec = tween(120))
+                            } else if (initialState.destination.route?.contains("SettingSkills") == true) {
                                 lateralEnterTransition(
                                     offset = { it },
                                     motionPolicy = motionPolicy
@@ -852,7 +912,9 @@ class RouteActivity : ComponentActivity() {
                             }
                         },
                         popExitTransition = {
-                            if (targetState.destination.route?.contains("SettingSkills") == true) {
+                            if (useWideSettingsLayout) {
+                                fadeOut(animationSpec = tween(90))
+                            } else if (targetState.destination.route?.contains("SettingSkills") == true) {
                                 lateralExitTransition(
                                     offset = { it },
                                     motionPolicy = motionPolicy
@@ -876,7 +938,9 @@ class RouteActivity : ComponentActivity() {
 
                     composable<Screen.SettingSkills>(
                         enterTransition = {
-                            if (initialState.destination.route?.contains("SettingLorebooks") == true) {
+                            if (useWideSettingsLayout) {
+                                fadeIn(animationSpec = tween(120))
+                            } else if (initialState.destination.route?.contains("SettingLorebooks") == true) {
                                 lateralEnterTransition(
                                     offset = { -it },
                                     motionPolicy = motionPolicy
@@ -886,7 +950,9 @@ class RouteActivity : ComponentActivity() {
                             }
                         },
                         exitTransition = {
-                            if (targetState.destination.route?.contains("SettingLorebooks") == true) {
+                            if (useWideSettingsLayout) {
+                                fadeOut(animationSpec = tween(90))
+                            } else if (targetState.destination.route?.contains("SettingLorebooks") == true) {
                                 lateralExitTransition(
                                     offset = { -it },
                                     motionPolicy = motionPolicy
@@ -896,7 +962,9 @@ class RouteActivity : ComponentActivity() {
                             }
                         },
                         popEnterTransition = {
-                            if (initialState.destination.route?.contains("SettingLorebooks") == true) {
+                            if (useWideSettingsLayout) {
+                                fadeIn(animationSpec = tween(120))
+                            } else if (initialState.destination.route?.contains("SettingLorebooks") == true) {
                                 lateralEnterTransition(
                                     offset = { -it },
                                     motionPolicy = motionPolicy
@@ -906,7 +974,9 @@ class RouteActivity : ComponentActivity() {
                             }
                         },
                         popExitTransition = {
-                            if (targetState.destination.route?.contains("SettingLorebooks") == true) {
+                            if (useWideSettingsLayout) {
+                                fadeOut(animationSpec = tween(90))
+                            } else if (targetState.destination.route?.contains("SettingLorebooks") == true) {
                                 lateralExitTransition(
                                     offset = { -it },
                                     motionPolicy = motionPolicy

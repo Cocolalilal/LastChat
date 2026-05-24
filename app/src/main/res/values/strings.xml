@@ -67,6 +67,8 @@
     <string name="assistant_page_local_tools_tts_desc">Let the assistant read text aloud using your selected TTS provider</string>
     <string name="assistant_page_local_tools_character_questions_title">Character Questions</string>
     <string name="assistant_page_local_tools_character_questions_desc">Let the character ask clarifying questions.</string>
+    <string name="assistant_page_local_tools_image_generation_title" translatable="false">Image Generation</string>
+    <string name="assistant_page_local_tools_image_generation_desc" translatable="false">Allow this character to generate images with the selected image model and save them to the gallery.</string>
     <string name="assistant_page_local_tools_python_internet_title">Allow Internet Access</string>
     <string name="assistant_page_local_tools_python_internet_desc">Allow Python code to make network requests</string>
     <string name="assistant_page_manage_memory">Manage Memory (%d)</string>
@@ -484,8 +486,6 @@
     <string name="setting_display_page_show_user_avatar_title">Show User Avatar</string>
     <string name="setting_display_page_show_assistant_bubbles_title">Message Bubbles for Characters</string>
     <string name="setting_display_page_show_assistant_bubbles_desc">Show chat bubbles around character messages</string>
-    <string name="setting_display_page_skip_crop_image_desc">Skip crop screen after picking image</string>
-    <string name="setting_display_page_skip_crop_image_title">Skip Image Crop</string>
     <string name="setting_display_page_title">Advanced Settings</string>
     <string name="setting_mcp_page_add_header">Add Header</string>
     <string name="setting_mcp_page_add_one_to_get_started">Add one to get started</string>
@@ -531,6 +531,8 @@
     <string name="setting_model_page_reset_to_default">Reset to Default</string>
     <string name="setting_model_page_group_conversation">Conversation</string>
     <string name="setting_model_page_group_processing">Processing</string>
+    <string name="setting_model_page_image_generation_model" translatable="false">Image Generation Model</string>
+    <string name="setting_model_page_image_generation_model_desc" translatable="false">Model used by Imagine and the opt-in image generation tool.</string>
     <string name="setting_model_page_suggestion_model">Suggestion Model</string>
     <string name="setting_model_page_suggestion_model_desc">Model for generating chat suggestions. Recommend fast/cheap model.</string>
     <string name="setting_model_page_suggestion_prompt_vars">Vars: Content: {content}, Locale: {locale}</string>
@@ -677,6 +679,13 @@
     <string name="setting_provider_page_compatibility_auto">Auto</string>
     <string name="setting_provider_page_compatibility_on">On</string>
     <string name="setting_provider_page_compatibility_off">Off</string>
+    <string name="setting_provider_page_comfyui_import_workflow" translatable="false">Import Workflow JSON</string>
+    <string name="setting_provider_page_comfyui_workflow_missing" translatable="false">No workflow imported. Export an API workflow from ComfyUI and import it here.</string>
+    <string name="setting_provider_page_comfyui_workflow_ready" translatable="false">Workflow imported. Leave node ids blank to auto-detect common ComfyUI nodes.</string>
+    <string name="setting_provider_page_comfyui_prompt_node" translatable="false">Prompt Node ID</string>
+    <string name="setting_provider_page_comfyui_prompt_input" translatable="false">Prompt Input Name</string>
+    <string name="setting_provider_page_comfyui_model_node" translatable="false">Model Node ID</string>
+    <string name="setting_provider_page_comfyui_model_input" translatable="false">Model Input Name</string>
     <string name="setting_provider_page_reload_models">Reload API models</string>
     <string name="setting_provider_page_reload_models_error">Failed to reload models: %1$s</string>
     <string name="setting_provider_page_save">Save</string>
@@ -704,6 +713,7 @@
     <string name="setting_provider_page_pick_icon_file">Select photo/file</string>
     <string name="setting_provider_page_pick_from_gallery">Pick from Gallery</string>
     <string name="setting_provider_page_search_lobehub">Search LobeHub Icons</string>
+    <string name="retry">Retry</string>
     <string name="setting_tts_page_add">Add</string>
     <string name="setting_tts_page_add_provider">Add TTS Provider</string>
     <string name="setting_tts_page_add_provider_content_description">Add TTS Provider</string>
@@ -848,10 +858,10 @@
     <string name="done">Done</string>
     <string name="loading">Loading...</string>
 
-    <!-- Prompt Injections -->
-    <string name="setting_page_prompt_injections">Prompt Injections</string>
+    <!-- Add-ons -->
+    <string name="setting_page_prompt_injections">Add-ons</string>
     <string name="setting_page_prompt_injections_desc">Skills and lorebooks</string>
-    <string name="prompt_injections_page_injection_types">Injection Types</string>
+    <string name="prompt_injections_page_injection_types">Add-on Types</string>
     <string name="prompt_injections_page_modes">Skills</string>
     <string name="prompt_injections_page_modes_desc">Structured instructions that can be toggled per chat</string>
     <string name="prompt_injections_page_lorebooks">Lorebooks</string>
@@ -972,10 +982,13 @@
     <string name="skills_page_add_image">Image</string>
     <string name="skills_page_add_file">File</string>
     <string name="skills_page_enable_by_default">Enable by default</string>
-    <string name="skills_page_available_for_all_characters">All characters can auto-toggle this skill</string>
+    <string name="skills_page_available_for_all_characters">Available for all characters</string>
+    <string name="skills_page_available_for_all_characters_desc">Turn this off to choose exactly which characters can use this skill</string>
+    <string name="skills_page_auto_toggle_available_characters">AI can auto-toggle for available characters</string>
+    <string name="skills_page_auto_toggle_available_characters_desc">When enabled, any character that can use this skill may activate it for the current turn</string>
     <string name="skills_page_available_for_characters_desc">Choose which characters can autonomously enable or disable this skill</string>
     <string name="skills_page_always_enabled">Always enabled</string>
-    <string name="skills_page_always_enabled_desc">This skill is always active in every chat. Only you can disable it per-chat.</string>
+    <string name="skills_page_always_enabled_desc">Enabled by default for every character this skill is available for. You can still turn it off in a chat.</string>
     <string name="skills_page_available_in_all">All characters</string>
     <string name="skills_page_available_in_count">%d characters</string>
     <string name="skills_page_injection_position">Injection Position</string>
@@ -1005,12 +1018,12 @@
     <string name="assistant_lorebooks_title">Lorebooks</string>
     <string name="assistant_lorebooks_desc">Select which lorebooks to use with this character</string>
     <string name="assistant_lorebooks_empty">No lorebooks configured</string>
-    <string name="assistant_lorebooks_empty_hint">Create lorebooks in Settings → Prompt Injections → Lorebooks</string>
+    <string name="assistant_lorebooks_empty_hint">Create lorebooks in Settings → Add-ons → Lorebooks</string>
     <string name="assistant_lorebooks_enabled">%d enabled</string>
     <string name="assistant_skills_title">Skills</string>
     <string name="assistant_skills_desc">Select which skills to use with this character</string>
     <string name="assistant_skills_empty">No skills available</string>
-    <string name="assistant_skills_empty_hint">Create skills in Settings > Prompt Injections > Skills</string>
+    <string name="assistant_skills_empty_hint">Create skills in Settings > Add-ons > Skills</string>
     
     <!-- Context Management -->
     <string name="context_management_title">Context Management</string>
@@ -1053,6 +1066,10 @@
     <string name="summarizer_model_tip_banner">Choose a dedicated summarizer model in Settings &gt; Default Models for better summaries.</string>
     <string name="context_refresh_confirm_title">Summarize Messages?</string>
     <string name="context_refresh_confirm_message">This will summarize your conversation history into a compact form. The AI will remember the key points but detailed messages will be replaced with a summary.</string>
+    <string name="context_refresh_edit_summary">Edit summary</string>
+    <string name="context_refresh_revert_summary">Revert summarization</string>
+    <string name="context_refresh_save_summary">Save summary</string>
+    <string name="context_refresh_edit_summary_placeholder">Summary</string>
     
     <!-- Import/Export -->
     <string name="lorebook_import_success">Imported: %s</string>

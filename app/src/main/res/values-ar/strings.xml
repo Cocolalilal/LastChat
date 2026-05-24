@@ -473,8 +473,6 @@
   <string name="setting_display_page_show_user_avatar_title">إظهار الصورة الرمزية للمستخدم</string>
   <string name="setting_display_page_show_assistant_bubbles_title">فقاعات الرسائل للشخصيات</string>
   <string name="setting_display_page_show_assistant_bubbles_desc">إظهار فقاعات الدردشة حول رسائل الشخصيات</string>
-  <string name="setting_display_page_skip_crop_image_desc">تخطي شاشة الاقتصاص بعد اختيار الصورة</string>
-  <string name="setting_display_page_skip_crop_image_title">تخطي اقتصاص الصورة</string>
   <string name="setting_display_page_title">الإعدادات المتقدمة</string>
   <string name="setting_mcp_page_add_header">إضافة رأس</string>
   <string name="setting_mcp_page_add_one_to_get_started">أضف واحدًا للبدء</string>
@@ -1005,6 +1003,10 @@
   <string name="context_summarizer_model_optional_tip">اختياري: اختر نموذج ملخص مخصصًا في الإعدادات &gt; النماذج الافتراضية للحصول على ملخصات أفضل.</string>
   <string name="context_refresh_confirm_title">تلخيص الرسائل؟</string>
   <string name="context_refresh_confirm_message">سيؤدي هذا إلى تلخيص سجل المحادثة الخاص بك في نموذج مضغوط. سوف يتذكر الذكاء الاصطناعي النقاط الرئيسية ولكن سيتم استبدال الرسائل التفصيلية بملخص.</string>
+  <string name="context_refresh_edit_summary">تعديل الملخص</string>
+  <string name="context_refresh_revert_summary">التراجع عن التلخيص</string>
+  <string name="context_refresh_save_summary">حفظ الملخص</string>
+  <string name="context_refresh_edit_summary_placeholder">الملخص</string>
   <string name="lorebook_import_success">تم الاستيراد: %s</string>
   <string name="lorebook_export_success">تم تصدير Lorebook بنجاح</string>
   <string name="lorebook_export_error">فشل تصدير دفتر المعلومات</string>

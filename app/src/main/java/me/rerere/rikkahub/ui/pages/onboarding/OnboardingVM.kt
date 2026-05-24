@@ -119,6 +119,7 @@ class OnboardingVM(
             is ProviderSetting.OpenAI -> provider.copy(apiKey = apiKey)
             is ProviderSetting.Google -> provider.copy(apiKey = apiKey)
             is ProviderSetting.Claude -> provider.copy(apiKey = apiKey)
+            is ProviderSetting.ComfyUI -> provider
         }
     }
 

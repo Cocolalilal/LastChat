@@ -278,26 +278,6 @@ fun SettingUICustomizationPage(vm: SettingVM = koinViewModel()) {
                 }
             }
 
-            // Media Settings
-            item {
-                SettingsGroup(
-                    title = stringResource(R.string.setting_ui_media_group)
-                ) {
-                    SettingGroupItem(
-                        title = stringResource(R.string.setting_display_page_skip_crop_image_title),
-                        subtitle = stringResource(R.string.setting_display_page_skip_crop_image_desc),
-                        trailing = {
-                            HapticSwitch(
-                                checked = displaySetting.skipCropImage,
-                                onCheckedChange = {
-                                    updateDisplaySetting(displaySetting.copy(skipCropImage = it))
-                                }
-                            )
-                        }
-                    )
-                }
-            }
-
             // Code Blocks Settings
             item {
                 SettingsGroup(

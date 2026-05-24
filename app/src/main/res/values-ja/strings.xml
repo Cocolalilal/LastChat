@@ -369,8 +369,6 @@
   <string name="setting_display_page_show_updates_title">アップデートを表示</string>
   <string name="setting_display_page_show_user_avatar_desc">チャットメッセージにユーザーアバターを表示するかどうか</string>
   <string name="setting_display_page_show_user_avatar_title">ユーザーアバターを表示</string>
-  <string name="setting_display_page_skip_crop_image_desc">画像をインポートするか写真を撮影した後、クロップ画面をスキップ</string>
-  <string name="setting_display_page_skip_crop_image_title">画像編集をスキップ</string>
   <string name="setting_display_page_title">表示設定</string>
   <string name="setting_mcp_page_add_header">ヘッダーを追加</string>
   <string name="setting_mcp_page_add_one_to_get_started">1つ追加して始める</string>

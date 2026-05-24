@@ -1,6 +1,12 @@
 package me.rerere.rikkahub.ui.pages.chat
 
 import android.net.Uri
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.activity.compose.BackHandler
 import androidx.core.net.toUri
 import androidx.compose.foundation.layout.Box
@@ -43,6 +49,7 @@ import androidx.compose.material3.adaptive.currentWindowDpSize
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -365,31 +372,69 @@ fun ChatPage(
             Row(
                 modifier = Modifier.fillMaxSize()
             ) {
-                if (isWidePanelCollapsed) {
-                    CollapsedChatSideRail(
-                        current = conversation,
-                        settings = setting,
-                        onExpand = { isWidePanelCollapsed = false },
-                        onNewChat = { navigateToChatPage(navController) },
-                        onOpenSettings = { navController.navigate(Screen.Setting) },
-                        onOpenAssistant = {
-                            navController.navigate(Screen.AssistantDetail(id = conversationAssistant.id.toString()))
-                        }
-                    )
-                } else {
-                    ChatDrawerContent(
-                        navController = navController,
-                        current = conversation,
-                        vm = vm,
-                        settings = setting,
-                        inputState = inputState,
-                        activePersistenceMode = activePersistenceMode,
-                        drawerState = null,
-                        presentation = ChatDrawerPresentation.PermanentPane,
-                        collapsedWidth = wideDrawerCollapsedWidth,
-                        expandedWidth = wideDrawerExpandedWidth,
-                        onCollapseRequest = { isWidePanelCollapsed = true },
-                    )
+                AnimatedContent(
+                    targetState = isWidePanelCollapsed,
+                    transitionSpec = {
+                        (fadeIn(
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = 0.7f,
+                                stiffness = 360f
+                            )
+                        ) + scaleIn(
+                            initialScale = 0.96f,
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = 0.7f,
+                                stiffness = 360f
+                            )
+                        )) togetherWith (fadeOut(
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = 0.85f,
+                                stiffness = 420f
+                            )
+                        ) + scaleOut(
+                            targetScale = 0.96f,
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = 0.85f,
+                                stiffness = 420f
+                            )
+                        )) using SizeTransform(
+                            clip = false,
+                            sizeAnimationSpec = { _, _ ->
+                                androidx.compose.animation.core.spring(
+                                    dampingRatio = 0.72f,
+                                    stiffness = 360f
+                                )
+                            }
+                        )
+                    },
+                    label = "chat_side_panel"
+                ) { collapsed ->
+                    if (collapsed) {
+                        CollapsedChatSideRail(
+                            current = conversation,
+                            settings = setting,
+                            onExpand = { isWidePanelCollapsed = false },
+                            onNewChat = { navigateToChatPage(navController) },
+                            onOpenSettings = { navController.navigate(Screen.Setting) },
+                            onOpenAssistant = {
+                                navController.navigate(Screen.AssistantDetail(id = conversationAssistant.id.toString()))
+                            }
+                        )
+                    } else {
+                        ChatDrawerContent(
+                            navController = navController,
+                            current = conversation,
+                            vm = vm,
+                            settings = setting,
+                            inputState = inputState,
+                            activePersistenceMode = activePersistenceMode,
+                            drawerState = null,
+                            presentation = ChatDrawerPresentation.PermanentPane,
+                            collapsedWidth = wideDrawerCollapsedWidth,
+                            expandedWidth = wideDrawerExpandedWidth,
+                            onCollapseRequest = { isWidePanelCollapsed = true },
+                        )
+                    }
                 }
                 Box(
                     modifier = Modifier
@@ -708,6 +753,30 @@ private fun ChatPageContent(
                 val hasConversationContent = hasConversationMessages(conversation)
                 val hasAnyPresetMessages = currentAssistant.presetMessages.isNotEmpty()
                 val effectiveDisplaySetting = setting.getEffectiveDisplaySetting(currentAssistant)
+                val showScrollToBottomButton by remember(
+                    chatListState,
+                    previewMode,
+                    hasConversationContent,
+                ) {
+                    derivedStateOf {
+                        if (previewMode || !hasConversationContent) {
+                            false
+                        } else {
+                            val layoutInfo = chatListState.layoutInfo
+                            val totalItems = layoutInfo.totalItemsCount
+                            if (totalItems <= 0) {
+                                false
+                            } else {
+                                val lastContentIndex = (totalItems - 2).coerceAtLeast(0)
+                                val recentStartIndex = (lastContentIndex - 1).coerceAtLeast(0)
+                                val isViewingLatestPair = layoutInfo.visibleItemsInfo.any { item ->
+                                    item.index >= recentStartIndex
+                                }
+                                !isViewingLatestPair && chatListState.canScrollForward
+                            }
+                        }
+                    }
+                }
                 
                 // Temporary chat overlay
                 androidx.compose.animation.AnimatedVisibility(
@@ -1100,6 +1169,14 @@ private fun ChatPageContent(
                             )
                         }
                     } else null,
+                    showScrollToBottomButton = showScrollToBottomButton,
+                    onScrollToBottomClick = {
+                        scope.launch {
+                            val targetIndex = (chatListState.layoutInfo.totalItemsCount - 1)
+                                .coerceAtLeast(0)
+                            chatListState.animateScrollToItem(targetIndex)
+                        }
+                    },
                     bottomPadding = if (toolbarPlacement == ChatToolbarPlacement.Bottom) 12.dp else 24.dp,
                 )
                 }

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
@@ -46,6 +47,7 @@ import me.rerere.rikkahub.ui.components.ui.ProviderIcon
 import me.rerere.rikkahub.ui.components.ui.lobeHubIconUri
 import me.rerere.rikkahub.utils.ImageUtils
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import java.nio.charset.Charset
 import kotlin.reflect.KClass
 
 @Composable
@@ -107,6 +109,7 @@ fun ProviderConfigure(
                         is ProviderSetting.OpenAI -> provider.copy(enabled = enabled)
                         is ProviderSetting.Google -> provider.copy(enabled = enabled)
                         is ProviderSetting.Claude -> provider.copy(enabled = enabled)
+                        is ProviderSetting.ComfyUI -> provider.copy(enabled = enabled)
                     }
                     onEdit(updated)
                 }
@@ -166,6 +169,7 @@ fun ProviderConfigure(
                         is ProviderSetting.OpenAI -> provider.copy(name = newName)
                         is ProviderSetting.Google -> provider.copy(name = newName)
                         is ProviderSetting.Claude -> provider.copy(name = newName)
+                        is ProviderSetting.ComfyUI -> provider.copy(name = newName)
                     }
                     onEdit(updated)
                 },
@@ -190,6 +194,10 @@ fun ProviderConfigure(
             is ProviderSetting.Claude -> {
                 ProviderConfigureClaude(provider, onEdit)
             }
+
+            is ProviderSetting.ComfyUI -> {
+                ProviderConfigureComfyUI(provider, onEdit)
+            }
         }
     }
 }
@@ -206,17 +214,20 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
         is ProviderSetting.OpenAI -> this.apiKey
         is ProviderSetting.Google -> this.apiKey
         is ProviderSetting.Claude -> this.apiKey
+        is ProviderSetting.ComfyUI -> ""
     }
 
     val sourceBaseUrl = when (this) {
         is ProviderSetting.OpenAI -> this.baseUrl
         is ProviderSetting.Google -> this.baseUrl
         is ProviderSetting.Claude -> this.baseUrl
+        is ProviderSetting.ComfyUI -> this.baseUrl
     }
     val targetDefaultBaseUrl = when (type) {
         ProviderSetting.OpenAI::class -> ProviderSetting.OpenAI().baseUrl
         ProviderSetting.Google::class -> ProviderSetting.Google().baseUrl
         ProviderSetting.Claude::class -> ProviderSetting.Claude().baseUrl
+        ProviderSetting.ComfyUI::class -> ProviderSetting.ComfyUI().baseUrl
         else -> error("Unsupported provider type: $type")
     }
     val convertedBaseUrl = sourceBaseUrl.convertToTargetBaseUrl(targetDefaultBaseUrl)
@@ -281,6 +292,26 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
             baseUrl = convertedBaseUrl
         )
 
+        ProviderSetting.ComfyUI::class -> ProviderSetting.ComfyUI(
+            id = this.id,
+            enabled = this.enabled,
+            name = this.name,
+            models = this.models,
+            proxy = this.proxy,
+            balanceOption = this.balanceOption,
+            tags = this.tags,
+            customIconUri = this.customIconUri,
+            builtIn = this.builtIn,
+            description = this.description,
+            shortDescription = this.shortDescription,
+            baseUrl = if (this is ProviderSetting.ComfyUI) this.baseUrl else convertedBaseUrl,
+            workflowJson = if (this is ProviderSetting.ComfyUI) this.workflowJson else "",
+            promptNodeId = if (this is ProviderSetting.ComfyUI) this.promptNodeId else "",
+            promptInputName = if (this is ProviderSetting.ComfyUI) this.promptInputName else "text",
+            modelNodeId = if (this is ProviderSetting.ComfyUI) this.modelNodeId else "",
+            modelInputName = if (this is ProviderSetting.ComfyUI) this.modelInputName else "ckpt_name",
+        )
+
         else -> error("Unsupported provider type: $type")
     }
 }
@@ -334,6 +365,106 @@ private val OFFICIAL_PROVIDER_HOSTS = setOf(
     GOOGLE_OFFICIAL_HOST,
     CLAUDE_OFFICIAL_HOST
 )
+
+@Composable
+private fun ColumnScope.ProviderConfigureComfyUI(
+    provider: ProviderSetting.ComfyUI,
+    onEdit: (provider: ProviderSetting.ComfyUI) -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val latestProvider by rememberUpdatedState(provider)
+    val workflowLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            val workflow = withContext(Dispatchers.IO) {
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    input.readBytes().toString(Charset.forName("UTF-8"))
+                }.orEmpty()
+            }
+            if (workflow.isNotBlank()) {
+                onEdit(latestProvider.copy(workflowJson = workflow))
+            }
+        }
+    }
+
+    provider.description()
+
+    var localBaseUrl by remember(provider.id) { mutableStateOf(provider.baseUrl) }
+    LaunchedEffect(provider.baseUrl) {
+        if (provider.baseUrl != localBaseUrl) {
+            localBaseUrl = provider.baseUrl
+        }
+    }
+    LaunchedEffect(localBaseUrl) {
+        delay(300)
+        val latest = latestProvider
+        if (localBaseUrl != latest.baseUrl) {
+            onEdit(latest.copy(baseUrl = localBaseUrl.trim()))
+        }
+    }
+
+    OutlinedTextField(
+        value = localBaseUrl,
+        onValueChange = { localBaseUrl = it },
+        label = { Text(stringResource(R.string.setting_provider_page_api_base_url)) },
+        modifier = Modifier.fillMaxWidth(),
+        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+    )
+
+    Button(
+        onClick = { workflowLauncher.launch(arrayOf("application/json", "text/*", "*/*")) },
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(stringResource(R.string.setting_provider_page_comfyui_import_workflow))
+    }
+
+    Text(
+        text = stringResource(
+            if (provider.workflowJson.isBlank()) {
+                R.string.setting_provider_page_comfyui_workflow_missing
+            } else {
+                R.string.setting_provider_page_comfyui_workflow_ready
+            }
+        ),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+
+    OutlinedTextField(
+        value = provider.promptNodeId,
+        onValueChange = { onEdit(provider.copy(promptNodeId = it.trim())) },
+        label = { Text(stringResource(R.string.setting_provider_page_comfyui_prompt_node)) },
+        modifier = Modifier.fillMaxWidth(),
+        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+    )
+
+    OutlinedTextField(
+        value = provider.promptInputName,
+        onValueChange = { onEdit(provider.copy(promptInputName = it.trim())) },
+        label = { Text(stringResource(R.string.setting_provider_page_comfyui_prompt_input)) },
+        modifier = Modifier.fillMaxWidth(),
+        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+    )
+
+    OutlinedTextField(
+        value = provider.modelNodeId,
+        onValueChange = { onEdit(provider.copy(modelNodeId = it.trim())) },
+        label = { Text(stringResource(R.string.setting_provider_page_comfyui_model_node)) },
+        modifier = Modifier.fillMaxWidth(),
+        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+    )
+
+    OutlinedTextField(
+        value = provider.modelInputName,
+        onValueChange = { onEdit(provider.copy(modelInputName = it.trim())) },
+        label = { Text(stringResource(R.string.setting_provider_page_comfyui_model_input)) },
+        modifier = Modifier.fillMaxWidth(),
+        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+    )
+}
 
 @Composable
 private fun ColumnScope.ProviderConfigureOpenAI(

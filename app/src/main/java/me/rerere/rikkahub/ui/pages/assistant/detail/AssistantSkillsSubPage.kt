@@ -47,7 +47,7 @@ fun AssistantSkillsSubPage(
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
-    val availableSkills = settings.skills
+    val availableSkills = settings.skills.filter { it.isAvailableForAssistant(assistant.id) }
 
     if (availableSkills.isEmpty()) {
         Box(

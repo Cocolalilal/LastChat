@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AccountTree
@@ -47,6 +48,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.currentWindowDpSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -60,9 +62,11 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.ui.components.nav.LocalBackButtonVisible
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 
 enum class SettingsDestination {
     Display,
@@ -111,7 +115,9 @@ fun AdaptiveSettingsScaffold(
                 .weight(1f)
                 .fillMaxHeight()
         ) {
-            detailContent()
+            CompositionLocalProvider(LocalBackButtonVisible provides false) {
+                detailContent()
+            }
         }
     }
 }
@@ -121,7 +127,7 @@ private fun SettingsNavigationPane(
     selected: SettingsDestination,
     navController: NavHostController = LocalNavController.current,
 ) {
-    val entries = settingsPaneEntries()
+    val groups = settingsPaneGroups()
 
     Surface(
         modifier = Modifier
@@ -147,18 +153,24 @@ private fun SettingsNavigationPane(
                 )
             }
 
-            entries.forEach { entry ->
-                item(key = entry.destination.name) {
-                    SettingsPaneItem(
-                        title = stringResource(entry.titleRes),
-                        icon = entry.icon,
-                        selected = selected == entry.destination,
-                        onClick = {
-                            navController.navigate(entry.screen) {
-                                launchSingleTop = true
-                            }
+            groups.forEach { group ->
+                item(key = group.titleRes) {
+                    SettingsGroup(
+                        title = stringResource(group.titleRes),
+                        horizontalPadding = 0.dp,
+                        titleStartPadding = 12.dp,
+                    ) {
+                        group.entries.forEach { entry ->
+                            SettingsPaneItem(
+                                title = stringResource(entry.titleRes),
+                                icon = entry.icon,
+                                selected = selected == entry.destination,
+                                onClick = {
+                                    navigateSettingsPane(navController, entry.screen)
+                                }
+                            )
                         }
-                    )
+                    }
                 }
             }
         }
@@ -171,6 +183,30 @@ private data class SettingsPaneEntry(
     val icon: ImageVector,
     val screen: Screen,
 )
+
+private data class SettingsPaneGroup(
+    val titleRes: Int,
+    val entries: List<SettingsPaneEntry>,
+)
+
+private fun navigateSettingsPane(
+    navController: NavHostController,
+    screen: Screen,
+) {
+    runCatching {
+        navController.navigate(screen) {
+            launchSingleTop = true
+            popUpTo(Screen.Setting) {
+                inclusive = false
+                saveState = false
+            }
+        }
+    }.onFailure {
+        navController.navigate(screen) {
+            launchSingleTop = true
+        }
+    }
+}
 
 @Composable
 private fun SettingsPaneItem(
@@ -200,11 +236,13 @@ private fun SettingsPaneItem(
 
     Surface(
         onClick = {
-            haptics.perform(HapticPattern.Pop)
-            onClick()
+            if (!selected) {
+                haptics.perform(HapticPattern.Pop)
+                onClick()
+            }
         },
         interactionSource = interactionSource,
-        shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
+        shape = RoundedCornerShape(10.dp),
         color = containerColor,
         contentColor = contentColor,
         modifier = Modifier.graphicsLayer {
@@ -246,26 +284,45 @@ private fun SettingsPaneItem(
     }
 }
 
-@Composable
-private fun settingsPaneEntries(): List<SettingsPaneEntry> {
+private fun settingsPaneGroups(): List<SettingsPaneGroup> {
     return listOf(
-        SettingsPaneEntry(SettingsDestination.Display, R.string.setting_page_display_setting, Icons.Rounded.DesktopWindows, Screen.SettingDisplay),
-        SettingsPaneEntry(SettingsDestination.UiCustomization, R.string.setting_ui_customization_title, Icons.Rounded.Brush, Screen.SettingUICustomization),
-        SettingsPaneEntry(SettingsDestination.Fonts, R.string.setting_fonts_title, Icons.Rounded.Tune, Screen.SettingFonts),
-        SettingsPaneEntry(SettingsDestination.RpOptimizations, R.string.setting_rp_optimizations_title, Icons.Rounded.AutoAwesome, Screen.SettingRpOptimizations),
-        SettingsPaneEntry(SettingsDestination.Assistants, R.string.setting_page_assistant, Icons.Rounded.Group, Screen.Assistant),
-        SettingsPaneEntry(SettingsDestination.PromptInjections, R.string.setting_page_prompt_injections, Icons.Rounded.Extension, Screen.SettingPromptInjections),
-        SettingsPaneEntry(SettingsDestination.Skills, R.string.prompt_injections_page_skills, Icons.Rounded.Code, Screen.SettingSkills()),
-        SettingsPaneEntry(SettingsDestination.Lorebooks, R.string.prompt_injections_page_lorebooks, Icons.Rounded.Folder, Screen.SettingLorebooks),
-        SettingsPaneEntry(SettingsDestination.Models, R.string.setting_page_default_model, Icons.Rounded.AccountTree, Screen.SettingModels),
-        SettingsPaneEntry(SettingsDestination.Providers, R.string.setting_page_providers, Icons.Rounded.Cloud, Screen.SettingProvider),
-        SettingsPaneEntry(SettingsDestination.Search, R.string.setting_page_search_service, Icons.Rounded.Public, Screen.SettingSearch),
-        SettingsPaneEntry(SettingsDestination.Tts, R.string.setting_page_tts_service, Icons.Rounded.RecordVoiceOver, Screen.SettingTTS),
-        SettingsPaneEntry(SettingsDestination.Mcp, R.string.setting_page_mcp, Icons.Rounded.Settings, Screen.SettingMcp),
-        SettingsPaneEntry(SettingsDestination.Web, R.string.setting_page_web_server, Icons.Rounded.Language, Screen.SettingWeb),
-        SettingsPaneEntry(SettingsDestination.AndroidIntegration, R.string.setting_android_integration, Icons.Rounded.PhoneAndroid, Screen.SettingAndroidIntegration),
-        SettingsPaneEntry(SettingsDestination.Backup, R.string.setting_page_data_backup, Icons.Rounded.CloudUpload, Screen.Backup),
-        SettingsPaneEntry(SettingsDestination.ChatStorage, R.string.setting_page_chat_storage, Icons.Rounded.Storage, Screen.SettingChatStorage),
-        SettingsPaneEntry(SettingsDestination.About, R.string.setting_page_about, Icons.Rounded.Info, Screen.SettingAbout),
+        SettingsPaneGroup(
+            titleRes = R.string.setting_page_general_settings,
+            entries = listOf(
+                SettingsPaneEntry(SettingsDestination.Display, R.string.setting_page_display_setting, Icons.Rounded.DesktopWindows, Screen.SettingDisplay),
+                SettingsPaneEntry(SettingsDestination.UiCustomization, R.string.setting_ui_customization_title, Icons.Rounded.Brush, Screen.SettingUICustomization),
+                SettingsPaneEntry(SettingsDestination.Fonts, R.string.setting_fonts_title, Icons.Rounded.Tune, Screen.SettingFonts),
+                SettingsPaneEntry(SettingsDestination.RpOptimizations, R.string.setting_rp_optimizations_title, Icons.Rounded.AutoAwesome, Screen.SettingRpOptimizations),
+                SettingsPaneEntry(SettingsDestination.Assistants, R.string.setting_page_assistant, Icons.Rounded.Group, Screen.Assistant),
+                SettingsPaneEntry(SettingsDestination.PromptInjections, R.string.setting_page_prompt_injections, Icons.Rounded.Extension, Screen.SettingPromptInjections),
+                SettingsPaneEntry(SettingsDestination.Skills, R.string.prompt_injections_page_skills, Icons.Rounded.Code, Screen.SettingSkills()),
+                SettingsPaneEntry(SettingsDestination.Lorebooks, R.string.prompt_injections_page_lorebooks, Icons.Rounded.Folder, Screen.SettingLorebooks),
+            )
+        ),
+        SettingsPaneGroup(
+            titleRes = R.string.setting_page_model_and_services,
+            entries = listOf(
+                SettingsPaneEntry(SettingsDestination.Models, R.string.setting_page_default_model, Icons.Rounded.AccountTree, Screen.SettingModels),
+                SettingsPaneEntry(SettingsDestination.Providers, R.string.setting_page_providers, Icons.Rounded.Cloud, Screen.SettingProvider),
+                SettingsPaneEntry(SettingsDestination.Search, R.string.setting_page_search_service, Icons.Rounded.Public, Screen.SettingSearch),
+                SettingsPaneEntry(SettingsDestination.Tts, R.string.setting_page_tts_service, Icons.Rounded.RecordVoiceOver, Screen.SettingTTS),
+                SettingsPaneEntry(SettingsDestination.Mcp, R.string.setting_page_mcp, Icons.Rounded.Settings, Screen.SettingMcp),
+                SettingsPaneEntry(SettingsDestination.Web, R.string.setting_page_web_server, Icons.Rounded.Language, Screen.SettingWeb),
+                SettingsPaneEntry(SettingsDestination.AndroidIntegration, R.string.setting_android_integration, Icons.Rounded.PhoneAndroid, Screen.SettingAndroidIntegration),
+            )
+        ),
+        SettingsPaneGroup(
+            titleRes = R.string.setting_page_data_settings,
+            entries = listOf(
+                SettingsPaneEntry(SettingsDestination.Backup, R.string.setting_page_data_backup, Icons.Rounded.CloudUpload, Screen.Backup),
+                SettingsPaneEntry(SettingsDestination.ChatStorage, R.string.setting_page_chat_storage, Icons.Rounded.Storage, Screen.SettingChatStorage),
+            )
+        ),
+        SettingsPaneGroup(
+            titleRes = R.string.setting_page_about,
+            entries = listOf(
+                SettingsPaneEntry(SettingsDestination.About, R.string.setting_page_about, Icons.Rounded.Info, Screen.SettingAbout),
+            )
+        ),
     )
 }

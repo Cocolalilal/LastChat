@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -27,19 +26,20 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Widgets
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -50,16 +50,28 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
-import me.rerere.rikkahub.ui.components.ui.lobeHubIconUri
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.utils.JsonInstant
+import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
+
+private const val LOBEHUB_PNG_META_URL = "https://unpkg.com/@lobehub/icons-static-png@latest/?meta"
 
 @Composable
 fun CustomIconSelector(
@@ -70,7 +82,8 @@ fun CustomIconSelector(
     modifier: Modifier = Modifier,
     icon: @Composable (Modifier) -> Unit,
 ) {
-    var showPicker by remember { mutableStateOf(false) }
+    var showPickOption by remember { mutableStateOf(false) }
+    var showLobeHubPicker by remember { mutableStateOf(false) }
     val haptics = rememberPremiumHaptics()
     val hasUserCustomIcon = customIconUri.isUserCustomIconUri()
     val interactionSource = remember { MutableInteractionSource() }
@@ -99,7 +112,7 @@ fun CustomIconSelector(
                     if (hasUserCustomIcon) {
                         onReset()
                     } else {
-                        showPicker = true
+                        showPickOption = true
                     }
                 },
         ) {
@@ -125,41 +138,104 @@ fun CustomIconSelector(
         }
     }
 
-    if (showPicker) {
-        CustomIconPickerSheet(
-            onPickFile = {
-                showPicker = false
-                onPickFile()
+    if (showPickOption) {
+        AlertDialog(
+            onDismissRequest = { showPickOption = false },
+            title = {
+                Text(text = stringResource(R.string.setting_provider_page_select_icon))
             },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Button(
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            showPickOption = false
+                            onPickFile()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Rounded.Image, contentDescription = null)
+                        Spacer(modifier = Modifier.size(8.dp))
+                        Text(text = stringResource(R.string.setting_provider_page_pick_icon_file))
+                    }
+                    Button(
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            showPickOption = false
+                            showLobeHubPicker = true
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Rounded.Widgets, contentDescription = null)
+                        Spacer(modifier = Modifier.size(8.dp))
+                        Text(text = stringResource(R.string.setting_provider_page_search_lobehub))
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        showPickOption = false
+                    },
+                ) {
+                    Text(stringResource(id = R.string.cancel))
+                }
+            },
+        )
+    }
+
+    if (showLobeHubPicker) {
+        LobeHubIconPickerSheet(
             onPickLobeHubIcon = { slug ->
-                showPicker = false
+                showLobeHubPicker = false
                 onPickLobeHubIcon(slug)
             },
-            onDismiss = { showPicker = false },
+            onDismiss = { showLobeHubPicker = false },
         )
     }
 }
 
 @Composable
-private fun CustomIconPickerSheet(
-    onPickFile: () -> Unit,
+private fun LobeHubIconPickerSheet(
     onPickLobeHubIcon: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     val haptics = rememberPremiumHaptics()
-    var selectedMode by remember { mutableIntStateOf(0) }
+    val okHttpClient = remember {
+        org.koin.java.KoinJavaComponent.get<OkHttpClient>(OkHttpClient::class.java)
+    }
     var searchQuery by remember { mutableStateOf("") }
-    val filteredIcons = remember(searchQuery) {
+    var fetchAttempt by remember { mutableIntStateOf(0) }
+    var isLoading by remember { mutableStateOf(true) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    var allIcons by remember { mutableStateOf<List<LobeHubIconChoice>>(emptyList()) }
+
+    LaunchedEffect(fetchAttempt) {
+        isLoading = true
+        loadError = null
+        runCatching {
+            fetchLobeHubIcons(okHttpClient)
+        }.onSuccess { icons ->
+            allIcons = icons
+        }.onFailure { error ->
+            loadError = error.message ?: "Failed to load icons"
+        }
+        isLoading = false
+    }
+
+    val filteredIcons = remember(searchQuery, allIcons) {
         val query = searchQuery.trim()
         if (query.isBlank()) {
-            LobeHubIconOptions
+            allIcons
         } else {
-            LobeHubIconOptions.filter { option ->
+            allIcons.filter { option ->
                 option.label.contains(query, ignoreCase = true) ||
-                    option.slug.contains(query, ignoreCase = true) ||
-                    option.aliases.any { it.contains(query, ignoreCase = true) }
+                    option.slug.contains(query, ignoreCase = true)
             }
         }
     }
@@ -191,89 +267,87 @@ private fun CustomIconPickerSheet(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(
-                text = stringResource(R.string.setting_provider_page_select_icon),
+                text = stringResource(R.string.setting_provider_page_search_lobehub),
                 style = MaterialTheme.typography.headlineSmall,
             )
 
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                SegmentedButton(
-                    selected = selectedMode == 0,
-                    onClick = {
-                        haptics.perform(HapticPattern.Pop)
-                        selectedMode = 0
-                    },
-                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                    label = { Text(stringResource(R.string.setting_provider_page_pick_icon_file)) },
-                    icon = { Icon(Icons.Rounded.Image, contentDescription = null) },
-                )
-                SegmentedButton(
-                    selected = selectedMode == 1,
-                    onClick = {
-                        haptics.perform(HapticPattern.Pop)
-                        selectedMode = 1
-                    },
-                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                    label = { Text(stringResource(R.string.setting_provider_page_search_lobehub)) },
-                    icon = { Icon(Icons.Rounded.Widgets, contentDescription = null) },
-                )
-            }
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text(stringResource(R.string.icon_picker_search_placeholder)) },
+                modifier = Modifier.fillMaxWidth(),
+                shape = AppShapes.SearchField,
+                singleLine = true,
+                leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                trailingIcon = if (searchQuery.isNotEmpty()) {
+                    {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = stringResource(R.string.clear_search),
+                            )
+                        }
+                    }
+                } else {
+                    null
+                },
+            )
 
-            if (selectedMode == 0) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Button(
-                        onClick = {
-                            haptics.perform(HapticPattern.Pop)
-                            onPickFile()
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = AppShapes.ButtonPill,
+            when {
+                isLoading -> {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        Icon(Icons.Rounded.Image, contentDescription = null)
-                        Spacer(modifier = Modifier.size(8.dp))
-                        Text(stringResource(R.string.setting_provider_page_pick_icon_file))
+                        CircularProgressIndicator()
                     }
                 }
-            } else {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = { Text(stringResource(R.string.icon_picker_search_placeholder)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = AppShapes.SearchField,
-                    singleLine = true,
-                    leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
-                    trailingIcon = if (searchQuery.isNotEmpty()) {
-                        {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Close,
-                                    contentDescription = stringResource(R.string.clear_search),
-                                )
-                            }
-                        }
-                    } else {
-                        null
-                    },
-                )
 
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(minSize = 112.dp),
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(bottom = 24.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    items(filteredIcons, key = { it.slug }) { option ->
-                        LobeHubIconOption(
-                            option = option,
+                loadError != null -> {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Text(
+                            text = loadError.orEmpty(),
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Spacer(modifier = Modifier.size(12.dp))
+                        Button(
                             onClick = {
                                 haptics.perform(HapticPattern.Pop)
-                                onPickLobeHubIcon(option.slug)
+                                fetchAttempt++
                             },
-                        )
+                            shape = AppShapes.ButtonPill,
+                        ) {
+                            Text(stringResource(R.string.retry))
+                        }
+                    }
+                }
+
+                else -> {
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(minSize = 112.dp),
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(bottom = 24.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(filteredIcons, key = { it.slug }) { option ->
+                            LobeHubIconOption(
+                                option = option,
+                                onClick = {
+                                    haptics.perform(HapticPattern.Pop)
+                                    onPickLobeHubIcon(option.slug)
+                                },
+                            )
+                        }
                     }
                 }
             }
@@ -286,6 +360,8 @@ private fun LobeHubIconOption(
     option: LobeHubIconChoice,
     onClick: () -> Unit,
 ) {
+    val darkMode = LocalDarkMode.current
+
     Surface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
@@ -306,11 +382,13 @@ private fun LobeHubIconOption(
                     .background(MaterialTheme.colorScheme.surfaceContainerLow),
                 contentAlignment = Alignment.Center,
             ) {
-                AutoAIIconWithUrl(
-                    name = option.label,
-                    customIconUri = lobeHubIconUri(option.slug),
-                    modifier = Modifier.size(30.dp),
-                    padding = 3.dp,
+                AsyncImage(
+                    model = lobeHubPngUrl(option.slug, darkMode),
+                    contentDescription = option.label,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(5.dp),
+                    contentScale = ContentScale.Fit,
                 )
             }
             Text(
@@ -321,6 +399,68 @@ private fun LobeHubIconOption(
             )
         }
     }
+}
+
+private suspend fun fetchLobeHubIcons(okHttpClient: OkHttpClient): List<LobeHubIconChoice> {
+    return withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url(LOBEHUB_PNG_META_URL)
+            .build()
+        okHttpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                error("LobeHub icons failed: HTTP ${response.code}")
+            }
+
+            val body = response.body.string()
+            val root = JsonInstant.parseToJsonElement(body) as? JsonObject
+                ?: error("LobeHub icons response was not an object")
+            val files = root["files"] as? JsonArray
+                ?: error("LobeHub icons response did not include files")
+
+            files
+                .mapNotNull { element ->
+                    val file = element as? JsonObject ?: return@mapNotNull null
+                    file["path"]
+                        ?.jsonPrimitiveOrNull
+                        ?.contentOrNull
+                }
+                .mapNotNull { path -> path.toLightPngSlugOrNull() }
+                .filterNot { slug -> slug.endsWith("-text") }
+                .distinct()
+                .sorted()
+                .map { slug ->
+                    LobeHubIconChoice(
+                        slug = slug,
+                        label = slug.toIconLabel(),
+                    )
+                }
+        }
+    }
+}
+
+private fun String.toLightPngSlugOrNull(): String? {
+    if (!startsWith("/light/") || !endsWith(".png")) {
+        return null
+    }
+    return substringAfterLast('/')
+        .removeSuffix(".png")
+        .takeIf { it.isNotBlank() }
+}
+
+private fun String.toIconLabel(): String {
+    return split('-', '_')
+        .filter { it.isNotBlank() }
+        .joinToString(" ") { part ->
+            when {
+                part.length <= 3 -> part.uppercase()
+                else -> part.replaceFirstChar { it.uppercase() }
+            }
+        }
+}
+
+private fun lobeHubPngUrl(slug: String, darkMode: Boolean): String {
+    val theme = if (darkMode) "dark" else "light"
+    return "https://registry.npmmirror.com/@lobehub/icons-static-png/latest/files/$theme/$slug.png"
 }
 
 private fun String?.isUserCustomIconUri(): Boolean {
@@ -336,77 +476,4 @@ private fun String?.isUserCustomIconUri(): Boolean {
 private data class LobeHubIconChoice(
     val slug: String,
     val label: String,
-    val aliases: List<String> = emptyList(),
-)
-
-private val LobeHubIconOptions = listOf(
-    LobeHubIconChoice("openai", "OpenAI", listOf("gpt", "chatgpt")),
-    LobeHubIconChoice("anthropic", "Anthropic", listOf("claude")),
-    LobeHubIconChoice("google", "Google", listOf("gemini", "palm")),
-    LobeHubIconChoice("gemini", "Gemini", listOf("google")),
-    LobeHubIconChoice("deepseek", "DeepSeek"),
-    LobeHubIconChoice("mistral", "Mistral AI"),
-    LobeHubIconChoice("meta", "Meta", listOf("llama")),
-    LobeHubIconChoice("xai", "xAI", listOf("grok")),
-    LobeHubIconChoice("grok", "Grok", listOf("xai")),
-    LobeHubIconChoice("qwen", "Qwen", listOf("alibaba")),
-    LobeHubIconChoice("moonshot", "Moonshot", listOf("kimi")),
-    LobeHubIconChoice("cohere", "Cohere", listOf("command")),
-    LobeHubIconChoice("perplexity", "Perplexity", listOf("sonar")),
-    LobeHubIconChoice("openrouter", "OpenRouter"),
-    LobeHubIconChoice("ollama", "Ollama"),
-    LobeHubIconChoice("groq", "Groq"),
-    LobeHubIconChoice("together", "Together AI"),
-    LobeHubIconChoice("fireworks", "Fireworks AI"),
-    LobeHubIconChoice("siliconflow", "SiliconFlow"),
-    LobeHubIconChoice("zhipu", "Zhipu AI", listOf("glm")),
-    LobeHubIconChoice("minimax", "MiniMax"),
-    LobeHubIconChoice("bytedance", "ByteDance", listOf("doubao")),
-    LobeHubIconChoice("doubao", "Doubao", listOf("bytedance")),
-    LobeHubIconChoice("hunyuan", "Hunyuan", listOf("tencent")),
-    LobeHubIconChoice("tencent", "Tencent", listOf("hunyuan")),
-    LobeHubIconChoice("yi", "Yi", listOf("01-ai")),
-    LobeHubIconChoice("baichuan", "Baichuan"),
-    LobeHubIconChoice("baidu", "Baidu", listOf("ernie", "wenxin")),
-    LobeHubIconChoice("ai21", "AI21"),
-    LobeHubIconChoice("amazon", "Amazon", listOf("bedrock", "aws")),
-    LobeHubIconChoice("microsoft", "Microsoft", listOf("azure")),
-    LobeHubIconChoice("github", "GitHub", listOf("copilot")),
-    LobeHubIconChoice("nvidia", "NVIDIA"),
-    LobeHubIconChoice("cerebras", "Cerebras"),
-    LobeHubIconChoice("cloudflare", "Cloudflare"),
-    LobeHubIconChoice("huggingface", "Hugging Face"),
-    LobeHubIconChoice("replicate", "Replicate"),
-    LobeHubIconChoice("stability", "Stability AI", listOf("stable diffusion")),
-    LobeHubIconChoice("black-forest-labs", "Black Forest Labs", listOf("flux")),
-    LobeHubIconChoice("runway", "Runway"),
-    LobeHubIconChoice("elevenlabs", "ElevenLabs"),
-    LobeHubIconChoice("voyage", "Voyage AI"),
-    LobeHubIconChoice("jina", "Jina AI"),
-    LobeHubIconChoice("upstage", "Upstage"),
-    LobeHubIconChoice("sambanova", "SambaNova"),
-    LobeHubIconChoice("novita", "Novita"),
-    LobeHubIconChoice("nebius", "Nebius"),
-    LobeHubIconChoice("deepinfra", "DeepInfra"),
-    LobeHubIconChoice("aiml", "AI/ML API"),
-    LobeHubIconChoice("aionlabs", "AionLabs"),
-    LobeHubIconChoice("aistudio", "AI Studio"),
-    LobeHubIconChoice("inclusionai", "InclusionAI"),
-    LobeHubIconChoice("inflection", "Inflection"),
-    LobeHubIconChoice("liquid", "Liquid AI"),
-    LobeHubIconChoice("poolside", "Poolside"),
-    LobeHubIconChoice("arcee", "Arcee"),
-    LobeHubIconChoice("essential", "Essential AI"),
-    LobeHubIconChoice("friendli", "Friendli"),
-    LobeHubIconChoice("scaleway", "Scaleway"),
-    LobeHubIconChoice("spark", "Spark"),
-    LobeHubIconChoice("stepfun", "StepFun"),
-    LobeHubIconChoice("volcengine", "Volcengine"),
-    LobeHubIconChoice("xiaomi", "Xiaomi"),
-    LobeHubIconChoice("vercel", "Vercel"),
-    LobeHubIconChoice("exa", "Exa"),
-    LobeHubIconChoice("tavily", "Tavily"),
-    LobeHubIconChoice("firecrawl", "Firecrawl"),
-    LobeHubIconChoice("brave", "Brave"),
-    LobeHubIconChoice("bing", "Bing"),
 )

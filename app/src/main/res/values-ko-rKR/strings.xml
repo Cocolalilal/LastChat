@@ -369,8 +369,6 @@
   <string name="setting_display_page_show_updates_title">업데이트 표시</string>
   <string name="setting_display_page_show_user_avatar_desc">채팅 메시지에 사용자 아바타를 표시할지 여부</string>
   <string name="setting_display_page_show_user_avatar_title">사용자 아바타 표시</string>
-  <string name="setting_display_page_skip_crop_image_desc">이미지를 가져오거나 사진을 찍은 후 자르기 화면 건너뛰기</string>
-  <string name="setting_display_page_skip_crop_image_title">이미지 편집 건너뛰기</string>
   <string name="setting_display_page_title">디스플레이 설정</string>
   <string name="setting_mcp_page_add_header">헤더 추가</string>
   <string name="setting_mcp_page_add_one_to_get_started">시작하려면 하나를 추가하세요</string>

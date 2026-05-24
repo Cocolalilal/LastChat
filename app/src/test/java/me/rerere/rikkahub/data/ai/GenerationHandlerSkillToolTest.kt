@@ -2,6 +2,7 @@ package me.rerere.rikkahub.data.ai
 
 import kotlinx.coroutines.runBlocking
 import me.rerere.ai.provider.Model
+import me.rerere.rikkahub.data.model.SKILL_SELECTION_OVERRIDE_ID
 import me.rerere.rikkahub.data.model.Skill
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -36,6 +37,74 @@ class GenerationHandlerSkillToolTest {
                 setOf(otherAssistantId)
             },
         )
+    }
+
+    @Test
+    fun resolveActiveSkillIds_manualOverrideCanDisableAlwaysEnabledSkills() {
+        val alwaysSkill = skill(
+            id = "00000000-0000-0000-0000-000000000251",
+            name = "always",
+            description = "Default on.",
+        )
+        val optionalSkill = skill(
+            id = "00000000-0000-0000-0000-000000000252",
+            name = "optional",
+            description = "Optional.",
+        )
+        val allSkillIds = setOf(alwaysSkill.id, optionalSkill.id)
+
+        assertEquals(
+            setOf(alwaysSkill.id),
+            resolveActiveSkillIds(
+                assistantDefaultSkillIds = emptySet(),
+                conversationSkillIds = emptySet(),
+                turnScopedSkillIds = emptySet(),
+                allSkillIds = allSkillIds,
+                alwaysEnabledSkillIds = setOf(alwaysSkill.id),
+            )
+        )
+
+        assertEquals(
+            emptySet<Uuid>(),
+            resolveActiveSkillIds(
+                assistantDefaultSkillIds = emptySet(),
+                conversationSkillIds = setOf(SKILL_SELECTION_OVERRIDE_ID),
+                turnScopedSkillIds = emptySet(),
+                allSkillIds = allSkillIds,
+                alwaysEnabledSkillIds = setOf(alwaysSkill.id),
+            )
+        )
+    }
+
+    @Test
+    fun buildSkillToolState_filtersUnavailableSkillsForAssistant() {
+        val availableSkill = skill(
+            id = "00000000-0000-0000-0000-000000000261",
+            name = "available",
+            description = "Available.",
+            autonomousForAllAssistants = true,
+        )
+        val unavailableSkill = skill(
+            id = "00000000-0000-0000-0000-000000000262",
+            name = "unavailable",
+            description = "Unavailable.",
+            autonomousForAllAssistants = true,
+        ).copy(
+            availableForAllAssistants = false,
+            availableAssistantIds = setOf(otherAssistantId),
+        )
+
+        val state = buildSkillToolState(
+            skills = listOf(availableSkill, unavailableSkill),
+            assistantId = assistantId,
+            assistantDefaultSkillIds = setOf(unavailableSkill.id),
+            conversationSkillIds = emptySet(),
+            turnScopedSkillIds = emptySet(),
+        )
+
+        assertEquals(listOf(availableSkill.id), state.availableSkills.map { it.id })
+        assertFalse(state.activeSkillIds.contains(unavailableSkill.id))
+        assertFalse(state.blockedSkills.any { it.id == unavailableSkill.id })
     }
 
     @Test
