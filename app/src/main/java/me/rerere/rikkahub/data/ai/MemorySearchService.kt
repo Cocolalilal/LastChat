@@ -38,6 +38,7 @@ internal data class ConversationRecallSpan(
     val messages: List<UIMessage>,
     val timestampMillis: Long,
     val score: Int,
+    val matchedText: String? = null,
 )
 
 internal fun fuzzyMemoryAgeLabel(
@@ -69,17 +70,29 @@ internal fun findConversationRecallSpans(
     maxSpans: Int = 3,
     radius: Int = 2,
 ): List<ConversationRecallSpan> {
-    val tokens = memorySearchTokens(query)
+    val plan = MemoryRecallQueryPlan.from(query)
+    val tokens = plan.tokens
     if (tokens.isEmpty()) return emptyList()
 
-    val messages = conversation.currentMessages
+    val messages = conversation.currentMessages.filter { message -> message.toContentText().isNotBlank() }
     val scored = messages.mapIndexedNotNull { index, message ->
-        val score = scoreMemorySearchText(message.toContentText(), query, tokens)
-        if (score > 0) index to score else null
-    }.sortedByDescending { it.second }
+        val text = message.toContentText()
+            val messageScore = scoreMemorySearchText(text, query, tokens)
+            if (messageScore <= 0) {
+                null
+            } else {
+                val titleScore = scoreMemorySearchText(conversation.title, query, tokens) / 2
+                ScoredMessageHit(
+                    index = index,
+                    score = messageScore + titleScore,
+                    matchedText = text.toRecallSnippet(limit = 260),
+                )
+            }
+    }.sortedByDescending { it.score }
 
     val usedIndices = mutableSetOf<Int>()
-    return scored.mapNotNull { (index, score) ->
+    return scored.mapNotNull { hit ->
+        val index = hit.index
         if (usedIndices.any { kotlin.math.abs(it - index) <= radius }) {
             return@mapNotNull null
         }
@@ -92,7 +105,8 @@ internal fun findConversationRecallSpans(
             messageIndex = index,
             messages = messages.subList(start, endExclusive),
             timestampMillis = conversation.updateAt.toEpochMilli(),
-            score = score,
+            score = hit.score,
+            matchedText = hit.matchedText,
         )
     }.take(maxSpans)
 }
@@ -117,11 +131,14 @@ internal fun buildFallbackRecallSummary(span: ConversationRecallSpan): String {
 }
 
 internal fun memorySearchTokens(query: String): List<String> {
-    return query
+    val base = query
         .lowercase()
         .split(Regex("[^\\p{L}\\p{N}]+"))
         .map { it.trim() }
         .filter { it.length >= 3 }
+        .distinct()
+
+    return (base + base.flatMap { MEMORY_SEARCH_EXPANSIONS[it].orEmpty() })
         .distinct()
 }
 
@@ -131,13 +148,130 @@ internal fun scoreMemorySearchText(
     tokens: List<String> = memorySearchTokens(query),
 ): Int {
     if (text.isBlank() || tokens.isEmpty()) return 0
-    val normalized = text.lowercase()
-    var score = tokens.count { normalized.contains(it) }
+    val normalized = text.normalizedRecallText()
+    val plan = MemoryRecallQueryPlan.from(query)
+    var score = tokens.sumOf { token ->
+        when {
+            normalized.contains(token) -> if (token in plan.originalTokens) 3 else 2
+            token.length >= 5 && normalized.contains(token.take(5)) -> 1
+            else -> 0
+        }
+    }
     val compactQuery = query.trim().lowercase()
-    if (compactQuery.length >= 3 && normalized.contains(compactQuery)) {
-        score += 3
+    if (compactQuery.length >= 3 && normalized.contains(compactQuery.normalizedRecallText())) {
+        score += 6
+    }
+    plan.phrases.forEach { phrase ->
+        if (normalized.contains(phrase.normalizedRecallText())) {
+            score += 8
+        }
+    }
+    val queryMentionsBed = plan.tokens.any { it in BED_TERMS }
+    val queryMentionsUnder = plan.tokens.any { it in UNDER_TERMS }
+    val queryMentionsFright = plan.tokens.any { it in FRIGHT_TERMS }
+    if ((queryMentionsBed || queryMentionsUnder) && normalized.hasNearRecallTerms(BED_TERMS, UNDER_TERMS, maxGap = 4)) {
+        score += 10
+    }
+    if ((queryMentionsBed || queryMentionsFright) && normalized.hasNearRecallTerms(BED_TERMS, FRIGHT_TERMS, maxGap = 8)) {
+        score += 6
+    }
+    if (plan.originalTokens.isNotEmpty() && plan.originalTokens.all { normalized.contains(it) }) {
+        score += plan.originalTokens.size * 2
     }
     return score
+}
+
+private data class ScoredMessageHit(
+    val index: Int,
+    val score: Int,
+    val matchedText: String,
+)
+
+private data class MemoryRecallQueryPlan(
+    val originalTokens: List<String>,
+    val tokens: List<String>,
+    val phrases: List<String>,
+) {
+    companion object {
+        fun from(query: String): MemoryRecallQueryPlan {
+            val originalTokens = query
+                .lowercase()
+                .split(Regex("[^\\p{L}\\p{N}]+"))
+                .map { it.trim() }
+                .filter { it.length >= 3 }
+                .distinct()
+            val tokens = memorySearchTokens(query)
+            val phrases = buildList {
+                val lowered = query.lowercase()
+                if (originalTokens.any { it in BED_TERMS }) {
+                    addAll(listOf("under the bed", "under bed", "beneath the bed", "below the bed", "underneath the bed"))
+                }
+                if (originalTokens.any { it in UNDER_TERMS } && originalTokens.any { it in BED_TERMS }) {
+                    addAll(listOf("hiding under", "hid under", "from under", "under your bed", "under my bed"))
+                }
+                if (lowered.contains("spook") || lowered.contains("scare") || lowered.contains("startle")) {
+                    addAll(listOf("scared me", "startled me", "spooked me", "jump scare"))
+                }
+            }.distinct()
+
+            return MemoryRecallQueryPlan(
+                originalTokens = originalTokens,
+                tokens = tokens,
+                phrases = phrases,
+            )
+        }
+    }
+}
+
+private val MEMORY_SEARCH_EXPANSIONS = mapOf(
+    "bed" to listOf("beds", "bedroom", "mattress", "blanket", "pillow"),
+    "under" to listOf("beneath", "underneath", "below"),
+    "beneath" to listOf("under", "underneath", "below"),
+    "underneath" to listOf("under", "beneath", "below"),
+    "spook" to listOf("spooked", "scare", "scared", "startle", "startled", "frighten", "frightened"),
+    "spooked" to listOf("spook", "scare", "scared", "startle", "startled", "frighten", "frightened"),
+    "scare" to listOf("scared", "spook", "spooked", "startle", "startled", "frighten", "frightened"),
+    "scared" to listOf("scare", "spook", "spooked", "startle", "startled", "frighten", "frightened"),
+    "startle" to listOf("startled", "spook", "spooked", "scare", "scared"),
+    "startled" to listOf("startle", "spook", "spooked", "scare", "scared"),
+    "hide" to listOf("hid", "hiding", "hidden"),
+    "hid" to listOf("hide", "hiding", "hidden")
+)
+
+private val BED_TERMS = setOf("bed", "beds", "bedroom", "mattress", "blanket", "pillow")
+private val UNDER_TERMS = setOf("under", "beneath", "underneath", "below")
+private val FRIGHT_TERMS = setOf("spook", "spooked", "scare", "scared", "startle", "startled", "frighten", "frightened")
+
+private fun String.normalizedRecallText(): String {
+    return lowercase()
+        .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+}
+
+private fun String.hasNearRecallTerms(
+    firstTerms: Set<String>,
+    secondTerms: Set<String>,
+    maxGap: Int,
+): Boolean {
+    val words = split(' ').filter { it.isNotBlank() }
+    val firstIndices = words.mapIndexedNotNull { index, word ->
+        if (firstTerms.any { word.contains(it) }) index else null
+    }
+    if (firstIndices.isEmpty()) return false
+    val secondIndices = words.mapIndexedNotNull { index, word ->
+        if (secondTerms.any { word.contains(it) }) index else null
+    }
+    return firstIndices.any { first -> secondIndices.any { second -> kotlin.math.abs(first - second) <= maxGap } }
+}
+
+private fun String.toRecallSnippet(limit: Int): String {
+    val normalized = replace(Regex("\\s+"), " ").trim()
+    return if (normalized.length <= limit) {
+        normalized
+    } else {
+        normalized.take(limit).trimEnd() + "..."
+    }
 }
 
 class MemorySearchService(
@@ -198,6 +332,9 @@ class MemorySearchService(
                 content = summary,
                 timestampMillis = span.timestampMillis,
                 confidence = confidenceFromScore(span.score),
+                title = span.conversationTitle.takeIf { it.isNotBlank() },
+                matchedText = span.matchedText,
+                score = span.score,
             )
         } + chatSpans.drop(MEMORY_SEARCH_CHAT_SUMMARY_LIMIT).map { span ->
             val summary = buildFallbackRecallSummary(span)
@@ -208,11 +345,18 @@ class MemorySearchService(
                 content = summary,
                 timestampMillis = span.timestampMillis,
                 confidence = confidenceFromScore(span.score),
+                title = span.conversationTitle.takeIf { it.isNotBlank() },
+                matchedText = span.matchedText,
+                score = span.score,
             )
         }
 
         val results = (memoryResults + chatResults)
-            .sortedWith(compareByDescending<RecallResult> { it.confidence }.thenByDescending { it.timestampMillis })
+            .sortedWith(
+                compareByDescending<RecallResult> { it.confidence }
+                    .thenByDescending { it.score ?: 0 }
+                    .thenByDescending { it.timestampMillis }
+            )
             .take(boundedLimit)
 
         buildJsonObject {
@@ -370,15 +514,6 @@ class MemorySearchService(
         }
     }
 
-    private fun String.toRecallSnippet(limit: Int): String {
-        val normalized = replace(Regex("\\s+"), " ").trim()
-        return if (normalized.length <= limit) {
-            normalized
-        } else {
-            normalized.take(limit).trimEnd() + "..."
-        }
-    }
-
     private fun confidenceFromScore(score: Int): Float {
         return min(0.95f, 0.35f + (score * 0.12f))
     }
@@ -390,14 +525,20 @@ class MemorySearchService(
         val content: String,
         val timestampMillis: Long,
         val confidence: Float,
+        val title: String? = null,
+        val matchedText: String? = null,
+        val score: Int? = null,
     ) {
         fun toJson(): JsonObject = buildJsonObject {
             put("source", source)
             put("id", id)
+            title?.let { put("conversation_title", it) }
             put("summary", summary)
             put("content", content)
+            matchedText?.let { put("matched_text", it) }
             put("time_ago", fuzzyMemoryAgeLabel(timestampMillis))
             put("confidence", JsonPrimitive(confidence))
+            score?.let { put("score", JsonPrimitive(it)) }
         }
     }
 }

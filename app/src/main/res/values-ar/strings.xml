@@ -1163,4 +1163,7 @@
   <string name="activity_timeline_tool_search_memory">Memory recall</string>
   <string name="activity_pill_memory_recalled">Recalled memories</string>
   <string name="activity_pill_memory_recalled_count">Recalled memories x%1$d</string>
+  <string name="setting_provider_page_pick_icon_file">Select photo/file</string>
+  <string name="retry">Retry</string>
+  <string name="skills_page_available_for_all_characters_desc">Turn this off to choose exactly which characters can use this skill</string>
 </resources>

@@ -120,15 +120,17 @@ class GenerationHandlerSkillToolTest {
             name = "code-review",
             description = "Review code.",
         )
-        val blockedSkill = skill(
+        val unavailableSkill = skill(
             id = "00000000-0000-0000-0000-000000000203",
             name = "admin",
             description = "Admin only.",
-            autonomousForAssistant = false,
+        ).copy(
+            availableForAllAssistants = false,
+            availableAssistantIds = setOf(otherAssistantId),
         )
 
         val state = buildSkillToolState(
-            skills = listOf(activeSkill, availableSkill, blockedSkill),
+            skills = listOf(activeSkill, availableSkill, unavailableSkill),
             assistantId = assistantId,
             assistantDefaultSkillIds = setOf(activeSkill.id),
             conversationSkillIds = emptySet(),
@@ -137,7 +139,7 @@ class GenerationHandlerSkillToolTest {
 
         assertEquals(listOf(activeSkill.id), state.activeSkills.map { it.id })
         assertEquals(listOf(availableSkill.id), state.availableSkills.map { it.id })
-        assertEquals(listOf(blockedSkill.id), state.blockedSkills.map { it.id })
+        assertTrue(state.blockedSkills.isEmpty())
         assertEquals(setOf(activeSkill.id), state.activeSkillIds)
     }
 

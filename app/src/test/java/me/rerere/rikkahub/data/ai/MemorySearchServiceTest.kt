@@ -3,6 +3,7 @@ package me.rerere.rikkahub.data.ai
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.toMessageNode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -46,6 +47,51 @@ class MemorySearchServiceTest {
         assertEquals(2, spans.single().messageIndex)
         assertTrue(buildFallbackRecallSummary(spans.single()).contains("Lisbon"))
         assertFalse(buildFallbackRecallSummary(spans.single()).contains("hello"))
+    }
+
+    @Test
+    fun memorySearchTokensPreserveUserTermsAndExpandRecallClues() {
+        val tokens = memorySearchTokens("under the bed test memory")
+
+        assertTrue(tokens.contains("under"))
+        assertTrue(tokens.contains("beneath"))
+        assertTrue(tokens.contains("bed"))
+        assertTrue(tokens.contains("test"))
+        assertTrue(tokens.contains("memory"))
+    }
+
+    @Test
+    fun scoreMemorySearchTextMatchesUnderBedSceneWithDifferentWording() {
+        val score = scoreMemorySearchText(
+            text = "You startled me when you crawled out from beneath your bed.",
+            query = "under the bed test memory"
+        )
+
+        assertTrue(score > 0)
+    }
+
+    @Test
+    fun findConversationRecallSpansUsesOnlySelectedMessageVersions() {
+        val conversation = Conversation(
+            id = Uuid.parse("00000000-0000-0000-0000-000000000401"),
+            assistantId = Uuid.parse("00000000-0000-0000-0000-000000000402"),
+            title = "Old scene",
+            createAt = Instant.parse("2026-05-18T08:00:00Z"),
+            updateAt = Instant.parse("2026-05-18T09:00:00Z"),
+            messageNodes = listOf(
+                MessageNode(
+                    messages = listOf(
+                        UIMessage.user("I hid under your bed and spooked you."),
+                        UIMessage.user("Nothing relevant here."),
+                    ),
+                    selectIndex = 1
+                )
+            )
+        )
+
+        val spans = findConversationRecallSpans(conversation, "under the bed test memory", maxSpans = 1)
+
+        assertTrue(spans.isEmpty())
     }
 
     @Test

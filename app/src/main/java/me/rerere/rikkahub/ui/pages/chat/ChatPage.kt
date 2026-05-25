@@ -61,6 +61,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.layout.isImeVisible
@@ -556,6 +557,7 @@ private fun ChatPageContent(
     var pendingDeleteMessage by rememberSaveable { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
     val toolbarPlacement = chatTopBarPlacement(setting)
     val isGenerating = loadingJob != null
+    val density = LocalDensity.current
     
     // Auto-scroll to first matching message when opened from search
     LaunchedEffect(initialSearchQuery, conversation.messageNodes) {
@@ -753,10 +755,12 @@ private fun ChatPageContent(
                 val hasConversationContent = hasConversationMessages(conversation)
                 val hasAnyPresetMessages = currentAssistant.presetMessages.isNotEmpty()
                 val effectiveDisplaySetting = setting.getEffectiveDisplaySetting(currentAssistant)
+                val scrollToBottomRevealThresholdPx = with(density) { 72.dp.roundToPx() }
                 val showScrollToBottomButton by remember(
                     chatListState,
                     previewMode,
                     hasConversationContent,
+                    scrollToBottomRevealThresholdPx,
                 ) {
                     derivedStateOf {
                         if (previewMode || !hasConversationContent) {
@@ -768,11 +772,12 @@ private fun ChatPageContent(
                                 false
                             } else {
                                 val lastContentIndex = (totalItems - 2).coerceAtLeast(0)
-                                val recentStartIndex = (lastContentIndex - 1).coerceAtLeast(0)
-                                val isViewingLatestPair = layoutInfo.visibleItemsInfo.any { item ->
-                                    item.index >= recentStartIndex
-                                }
-                                !isViewingLatestPair && chatListState.canScrollForward
+                                val lastContentItem = layoutInfo.visibleItemsInfo
+                                    .firstOrNull { it.index == lastContentIndex }
+                                val lastContentBottom = lastContentItem?.let { it.offset + it.size }
+                                val isNearBottom = lastContentBottom != null &&
+                                    lastContentBottom <= layoutInfo.viewportEndOffset + scrollToBottomRevealThresholdPx
+                                chatListState.canScrollForward && !isNearBottom
                             }
                         }
                     }

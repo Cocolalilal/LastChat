@@ -109,6 +109,7 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlin.uuid.Uuid
 
 private const val TAG = "ChatService"
+private const val STREAMING_CHECKPOINT_INTERVAL_MS = 1_000L
 
 internal fun shouldPreserveInMemoryConversation(
     conversation: Conversation?,
@@ -309,6 +310,36 @@ internal fun Conversation.hasPendingToolApprovals(): Boolean {
     return currentMessages.any { message ->
         message.getToolCalls().any { it.approvalState is ToolApprovalState.Pending }
     }
+}
+
+internal fun UIMessage.hasDurableAssistantProgress(): Boolean {
+    if (role != MessageRole.ASSISTANT) return false
+
+    return parts.any { part ->
+        when (part) {
+            is UIMessagePart.Text -> part.text.isNotBlank()
+            is UIMessagePart.Reasoning -> part.reasoning.isNotBlank()
+            is UIMessagePart.Thinking -> part.thinking.isNotBlank()
+            is UIMessagePart.Image -> part.url.isNotBlank()
+            is UIMessagePart.Document -> part.url.isNotBlank()
+            is UIMessagePart.Video -> part.url.isNotBlank()
+            is UIMessagePart.Audio -> part.url.isNotBlank()
+            is UIMessagePart.ToolCall -> part.toolName.isNotBlank() || part.arguments.isNotBlank()
+            is UIMessagePart.ToolResult -> true
+            else -> false
+        }
+    }
+}
+
+internal fun shouldPersistStreamingCheckpoint(
+    conversation: Conversation,
+    nowMs: Long,
+    lastPersistMs: Long,
+): Boolean {
+    if (lastPersistMs > 0L && nowMs - lastPersistMs < STREAMING_CHECKPOINT_INTERVAL_MS) {
+        return false
+    }
+    return conversation.currentMessages.lastOrNull()?.hasDurableAssistantProgress() == true
 }
 
 internal fun dropDanglingAutoToolCallNodes(messageNodes: List<MessageNode>): List<MessageNode> {
@@ -656,21 +687,30 @@ class ChatService(
         return conversation
     }
 
-    private suspend fun persistConversationToRepository(conversation: Conversation) {
+    private suspend fun persistConversationToRepository(conversation: Conversation): Boolean {
         val normalizedConversation = normalizeConversation(conversation)
-        if (normalizedConversation.title.isBlank() && normalizedConversation.messageNodes.isEmpty()) return
+        if (normalizedConversation.title.isBlank() && normalizedConversation.messageNodes.isEmpty()) return false
 
-        try {
-            withContext(Dispatchers.IO) {
-                if (conversationRepo.getConversationById(normalizedConversation.id) == null) {
-                    conversationRepo.insertConversation(normalizedConversation)
-                } else {
-                    conversationRepo.updateConversation(normalizedConversation)
+        val retryDelaysMs = longArrayOf(40L, 120L, 240L)
+        repeat(retryDelaysMs.size + 1) { attempt ->
+            try {
+                withContext(Dispatchers.IO) {
+                    if (conversationRepo.getConversationById(normalizedConversation.id) == null) {
+                        conversationRepo.insertConversation(normalizedConversation)
+                    } else {
+                        conversationRepo.updateConversation(normalizedConversation)
+                    }
                 }
+                return true
+            } catch (e: Exception) {
+                if (attempt == retryDelaysMs.size) {
+                    e.printStackTrace()
+                    return false
+                }
+                delay(retryDelaysMs[attempt])
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
+        return false
     }
 
     suspend fun getConversationSnapshot(conversationId: Uuid): Conversation? {
@@ -1151,6 +1191,7 @@ class ChatService(
         // Track generation start time for tokens/sec calculation
         // Set on first token arrival to exclude TTFT (time to first token) from the calculation
         var firstTokenTime: Long? = null
+        var lastStreamingPersistMs = 0L
 
         runCatching {
             var conversation = normalizeConversation(getConversationFlow(conversationId).value)
@@ -1265,12 +1306,18 @@ class ChatService(
                 )
                 val cleanedConversation = updatedConversation.removeTrailingEmptyOcrPlaceholder()
                 updateConversation(conversationId, cleanedConversation)
+                val completionPersisted = if (getConversationPersistenceMode(conversationId) == ChatPersistenceMode.NORMAL) {
+                    persistConversationToRepository(cleanedConversation)
+                } else {
+                    true
+                }
 
                 // Show notification if app is not in foreground
                 if (
                     cause == null &&
+                    completionPersisted &&
                     !cleanedConversation.hasPendingToolApprovals() &&
-                    cleanedConversation.currentMessages.lastOrNull()?.role == MessageRole.ASSISTANT &&
+                    cleanedConversation.currentMessages.lastOrNull()?.hasDurableAssistantProgress() == true &&
                     !suppressCompletionNotification &&
                     !isForeground.value &&
                     settings.displaySetting.enableNotificationOnMessageGeneration
@@ -1287,7 +1334,22 @@ class ChatService(
                     is GenerationChunk.Messages -> {
                         val updatedConversation = getConversationFlow(conversationId).value
                             .updateCurrentMessages(chunk.messages)
+                            .copy(updateAt = Instant.now())
                         updateConversation(conversationId, updatedConversation)
+
+                        val nowMs = System.currentTimeMillis()
+                        if (
+                            getConversationPersistenceMode(conversationId) == ChatPersistenceMode.NORMAL &&
+                            shouldPersistStreamingCheckpoint(
+                                conversation = updatedConversation,
+                                nowMs = nowMs,
+                                lastPersistMs = lastStreamingPersistMs,
+                            )
+                        ) {
+                            if (persistConversationToRepository(updatedConversation)) {
+                                lastStreamingPersistMs = nowMs
+                            }
+                        }
                     }
                 }
             }

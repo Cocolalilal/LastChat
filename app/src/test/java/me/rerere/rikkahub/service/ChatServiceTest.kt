@@ -94,6 +94,81 @@ class ChatServiceTest {
     }
 
     @Test
+    fun hasDurableAssistantProgressRequiresVisibleAssistantWork() {
+        assertFalse(
+            UIMessage(
+                role = MessageRole.ASSISTANT,
+                parts = listOf(UIMessagePart.Text("   ")),
+            ).hasDurableAssistantProgress()
+        )
+        assertFalse(UIMessage.user("hello").hasDurableAssistantProgress())
+        assertTrue(UIMessage.assistant("reply").hasDurableAssistantProgress())
+        assertTrue(
+            UIMessage(
+                role = MessageRole.ASSISTANT,
+                parts = listOf(UIMessagePart.Reasoning("thinking")),
+            ).hasDurableAssistantProgress()
+        )
+        assertTrue(
+            UIMessage(
+                role = MessageRole.ASSISTANT,
+                parts = listOf(
+                    UIMessagePart.ToolCall(
+                        toolCallId = "call",
+                        toolName = "search_web",
+                        arguments = "{}",
+                    )
+                ),
+            ).hasDurableAssistantProgress()
+        )
+        assertFalse(
+            UIMessage(
+                role = MessageRole.ASSISTANT,
+                parts = emptyList(),
+                annotations = listOf(
+                    me.rerere.ai.ui.UIMessageAnnotation.OcrActivity(
+                        source = me.rerere.ai.ui.UIMessageAnnotation.OcrActivity.Source.IMAGE,
+                        fileName = "photo.png",
+                    )
+                ),
+            ).hasDurableAssistantProgress()
+        )
+    }
+
+    @Test
+    fun shouldPersistStreamingCheckpointThrottlesDurableAssistantProgress() {
+        val conversation = Conversation.ofId(
+            id = Uuid.random(),
+            messages = listOf(
+                MessageNode.of(UIMessage.user("hi")),
+                MessageNode.of(UIMessage.assistant("partial")),
+            ),
+        )
+
+        assertTrue(
+            shouldPersistStreamingCheckpoint(
+                conversation = conversation,
+                nowMs = 10_000L,
+                lastPersistMs = 0L,
+            )
+        )
+        assertFalse(
+            shouldPersistStreamingCheckpoint(
+                conversation = conversation,
+                nowMs = 10_500L,
+                lastPersistMs = 10_000L,
+            )
+        )
+        assertTrue(
+            shouldPersistStreamingCheckpoint(
+                conversation = conversation,
+                nowMs = 11_000L,
+                lastPersistMs = 10_000L,
+            )
+        )
+    }
+
+    @Test
     fun normalizeConversationDropsEmptyNodesAndRepairsAssistantTurnSelection() {
         val conversation = Conversation.ofId(
             id = Uuid.random(),

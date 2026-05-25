@@ -209,7 +209,13 @@ class ChatAttachmentRepository(
     }
 
     suspend fun importChatFiles(uris: List<Uri>): List<Uri> = withContext(Dispatchers.IO) {
-        uris.mapNotNull { uri -> importChatFile(uri)?.uri }
+        uris.mapNotNull { uri ->
+            runCatching {
+                importChatFile(uri)?.uri
+            }.onFailure { error ->
+                android.util.Log.w("ChatAttachmentRepository", "Failed to import chat attachment: $uri", error)
+            }.getOrNull()
+        }
     }
 
     suspend fun importChatFile(
@@ -378,8 +384,8 @@ class ChatAttachmentRepository(
         }
         val references = conversationAttachmentRefDao.getConversationIdsForAttachment(attachment.id)
         if (references.isEmpty()) {
-            markAttachmentDeleted(attachment.id)
-            cleanupOrphans()
+            file.takeIf { it.exists() && isInsideChatUploadDirectory(it) }?.delete()
+            chatAttachmentDao.deleteById(attachment.id)
         }
     }
 

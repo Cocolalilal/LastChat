@@ -1463,7 +1463,7 @@ class GenerationHandler(
         if (onSearch != null) {
             add(Tool(
                 name = MEMORY_SEARCH_TOOL_NAME,
-                description = "Search the assistant's core memories, episodic memories, and past chats for a remembered topic.",
+                description = "Search this character's core memories, episodic memories, and actually used past chat messages for a remembered topic, scene, person, feeling, or detail.",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
@@ -1484,6 +1484,8 @@ class GenerationHandler(
                     ## Memory search tool
                     You may call `$MEMORY_SEARCH_TOOL_NAME` when you are deliberately trying to remember something from core memories, episodic memories, or older chats.
                     - Use it for genuine recall, not on every turn.
+                    - It searches only this character's memories and actually used chat timeline, not other characters or discarded reply versions.
+                    - Preserve the user's recall terms. If a query is broad or the first result looks weak, you may try one more query with different wording or synonyms.
                     - Treat returned memories as approximate, human-like recollections.
                     - Time labels are fuzzy on purpose; do not expose exact timestamps unless the user asks.
                     - If confidence is low or results disagree, answer with natural uncertainty.

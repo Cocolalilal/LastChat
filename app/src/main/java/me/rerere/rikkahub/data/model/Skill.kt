@@ -44,8 +44,7 @@ data class Skill(
     }
 
     fun canAssistantAutonomouslyToggle(assistantId: Uuid): Boolean {
-        if (!isAvailableForAssistant(assistantId)) return false
-        return autonomousForAllAssistants || autonomousAssistantIds.contains(assistantId)
+        return isAvailableForAssistant(assistantId)
     }
 }
 

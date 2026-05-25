@@ -708,8 +708,6 @@ fun SkillEditorSheet(
     var alwaysEnabled by remember { mutableStateOf(skill?.alwaysEnabled ?: false) }
     var availableForAllAssistants by remember { mutableStateOf(skill?.availableForAllAssistants ?: true) }
     var availableAssistantIds by remember { mutableStateOf(skill?.availableAssistantIds ?: emptySet()) }
-    var autonomousAssistantIds by remember { mutableStateOf(skill?.autonomousAssistantIds ?: emptySet()) }
-    var autonomousForAllAssistants by remember { mutableStateOf(skill?.autonomousForAllAssistants ?: false) }
     var showIconPicker by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
 
@@ -858,9 +856,6 @@ fun SkillEditorSheet(
                                         availableForAllAssistants = checked
                                         if (checked) {
                                             availableAssistantIds = emptySet()
-                                        } else {
-                                            autonomousForAllAssistants = false
-                                            autonomousAssistantIds = autonomousAssistantIds.intersect(availableAssistantIds)
                                         }
                                     }
                                 )
@@ -881,7 +876,6 @@ fun SkillEditorSheet(
                                             } else {
                                                 availableAssistantIds - assistant.id
                                             }
-                                            if (!checked) autonomousAssistantIds = autonomousAssistantIds - assistant.id
                                         }
                                     )
                                 }
@@ -898,151 +892,8 @@ fun SkillEditorSheet(
                                 )
                             }
                         )
-                        ListItem(
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                            headlineContent = { Text(stringResource(R.string.skills_page_auto_toggle_available_characters)) },
-                            supportingContent = { Text(stringResource(R.string.skills_page_auto_toggle_available_characters_desc)) },
-                            trailingContent = {
-                                HapticSwitch(
-                                    checked = autonomousForAllAssistants,
-                                    onCheckedChange = { checked ->
-                                        autonomousForAllAssistants = checked
-                                        if (checked) autonomousAssistantIds = emptySet()
-                                    }
-                                )
-                            }
-                        )
-                        AnimatedVisibility(visible = !autonomousForAllAssistants) {
-                            Column(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                assistants
-                                    .filter { availableForAllAssistants || availableAssistantIds.contains(it.id) }
-                                    .forEach { assistant ->
-                                        SkillAssistantToggleRow(
-                                            assistant = assistant,
-                                            checked = autonomousAssistantIds.contains(assistant.id),
-                                            onCheckedChange = { checked ->
-                                                autonomousAssistantIds = if (checked) {
-                                                    autonomousAssistantIds + assistant.id
-                                                } else {
-                                                    autonomousAssistantIds - assistant.id
-                                                }
-                                            }
-                                        )
-                                    }
-                            }
-                        }
                     }
                 }
-
-                AnimatedVisibility(visible = false) {
-                // Always-enabled toggle card
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (LocalDarkMode.current) {
-                            MaterialTheme.colorScheme.surfaceContainerLow
-                        } else {
-                            MaterialTheme.colorScheme.surfaceContainerHighest
-                        }
-                    ),
-                    shape = AppShapes.CardLarge
-                ) {
-                    ListItem(
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                        headlineContent = { Text(stringResource(R.string.skills_page_always_enabled)) },
-                        supportingContent = { Text(stringResource(R.string.skills_page_always_enabled_desc)) },
-                        trailingContent = {
-                            HapticSwitch(
-                                checked = alwaysEnabled,
-                                onCheckedChange = { checked ->
-                                    alwaysEnabled = checked
-                                    if (checked) {
-                                        // Clear autonomous settings when always-enabled
-                                        autonomousForAllAssistants = false
-                                        autonomousAssistantIds = emptySet()
-                                    }
-                                }
-                            )
-                        }
-                    )
-                }
-
-                // Autonomous toggle card — hidden when always-enabled
-                AnimatedVisibility(visible = !alwaysEnabled) {
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (LocalDarkMode.current) {
-                                MaterialTheme.colorScheme.surfaceContainerLow
-                            } else {
-                                MaterialTheme.colorScheme.surfaceContainerHighest
-                            }
-                        ),
-                        shape = AppShapes.CardLarge
-                    ) {
-                        Column {
-                            ListItem(
-                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                                headlineContent = { Text(stringResource(R.string.skills_page_available_for_all_characters)) },
-                                supportingContent = { Text(stringResource(R.string.skills_page_available_for_characters_desc)) },
-                                trailingContent = {
-                                    HapticSwitch(
-                                        checked = autonomousForAllAssistants,
-                                        onCheckedChange = { checked ->
-                                            autonomousForAllAssistants = checked
-                                            if (checked) autonomousAssistantIds = emptySet()
-                                        }
-                                    )
-                                }
-                            )
-                            AnimatedVisibility(visible = !autonomousForAllAssistants) {
-                                Column(
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
-                                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    assistants.forEach { assistant ->
-                                        val enabledForAssistant = autonomousAssistantIds.contains(assistant.id)
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clip(RoundedCornerShape(12.dp))
-                                                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            UIAvatar(
-                                                value = assistant.avatar,
-                                                name = assistant.name.ifBlank { stringResource(R.string.text_selection_assistant) },
-                                                modifier = Modifier.size(32.dp),
-                                            )
-                                            Text(
-                                                text = assistant.name.ifBlank { stringResource(R.string.text_selection_assistant) },
-                                                style = MaterialTheme.typography.bodyLarge,
-                                                modifier = Modifier.weight(1f),
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                            HapticSwitch(
-                                                checked = enabledForAssistant,
-                                                onCheckedChange = { checked ->
-                                                    autonomousAssistantIds = if (checked) {
-                                                        autonomousAssistantIds + assistant.id
-                                                    } else {
-                                                        autonomousAssistantIds - assistant.id
-                                                    }
-                                                }
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                }
-
             }
 
             Row(
@@ -1059,13 +910,6 @@ fun SkillEditorSheet(
                         onClick = {
                             val base = skill ?: Skill()
                             val availableIds = if (availableForAllAssistants) emptySet() else availableAssistantIds
-                            val autonomousIds = if (autonomousForAllAssistants) {
-                                emptySet()
-                            } else if (availableForAllAssistants) {
-                                autonomousAssistantIds
-                            } else {
-                                autonomousAssistantIds.intersect(availableIds)
-                            }
                             val savedSkill = base.copy(
                                 name = name.trim(),
                                 description = description.trim(),
@@ -1076,8 +920,8 @@ fun SkillEditorSheet(
                                 alwaysEnabled = alwaysEnabled,
                                 availableForAllAssistants = availableForAllAssistants,
                                 availableAssistantIds = availableIds,
-                                autonomousForAllAssistants = autonomousForAllAssistants,
-                                autonomousAssistantIds = autonomousIds,
+                                autonomousForAllAssistants = true,
+                                autonomousAssistantIds = emptySet(),
                                 injectionPosition = InjectionPosition.AFTER_SYSTEM,
                                 depth = 0,
                                 disableModelInvocation = false,
@@ -1109,14 +953,8 @@ fun SkillEditorSheet(
                 alwaysEnabled = alwaysEnabled,
                 availableForAllAssistants = availableForAllAssistants,
                 availableAssistantIds = if (availableForAllAssistants) emptySet() else availableAssistantIds,
-                autonomousForAllAssistants = autonomousForAllAssistants,
-                autonomousAssistantIds = if (autonomousForAllAssistants) {
-                    emptySet()
-                } else if (availableForAllAssistants) {
-                    autonomousAssistantIds
-                } else {
-                    autonomousAssistantIds.intersect(availableAssistantIds)
-                },
+                autonomousForAllAssistants = true,
+                autonomousAssistantIds = emptySet(),
                 injectionPosition = InjectionPosition.AFTER_SYSTEM,
                 depth = 0,
                 disableModelInvocation = false,

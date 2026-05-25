@@ -52,9 +52,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
@@ -65,7 +65,6 @@ import androidx.compose.foundation.content.consume
 import androidx.compose.foundation.content.hasMediaType
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
-import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Book
@@ -107,6 +106,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -372,29 +372,18 @@ fun MinimalChatInput(
                         runCatching { File(croppedUri.path.orEmpty()).delete() }
                     }
                 }
-                imageToCrop = null
                 return@launch
             }
 
-            val updatedParts = state.messageContent.toMutableList()
-            val replaceIndex = if (updatedParts.getOrNull(original.messageIndex) == original.image) {
-                original.messageIndex
-            } else {
-                updatedParts.indexOf(original.image)
-            }
-            if (replaceIndex >= 0) {
-                updatedParts[replaceIndex] = UIMessagePart.Image(importedUri.toString())
-                state.messageContent = updatedParts
-                if (updatedParts.none { it.attachmentUrl() == original.image.url }) {
-                    onDeleteFile(original.image.url.toUri())
-                }
-            }
+            state.replaceAttachment(
+                instanceId = original.instanceId,
+                part = UIMessagePart.Image(importedUri.toString()),
+            )
             withContext(Dispatchers.IO) {
                 if (croppedUri.scheme == "file") {
                     runCatching { File(croppedUri.path.orEmpty()).delete() }
                 }
             }
-            imageToCrop = null
             haptics.perform(HapticPattern.Success)
         }
     }
@@ -403,6 +392,7 @@ fun MinimalChatInput(
         CropImageScreen(
             sourceUri = image.image.url.toUri(),
             onCropComplete = { croppedUri ->
+                imageToCrop = null
                 replaceCroppedImage(image, croppedUri)
             },
             onCancel = {
@@ -433,7 +423,9 @@ fun MinimalChatInput(
                 exit = fadeOut() + shrinkVertically()
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(36.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -592,9 +584,9 @@ fun MinimalChatInput(
                                     haptics.perform(HapticPattern.Pop)
                                     onDeleteFile(uri)
                                 },
-                                onCropImage = { messageIndex, image ->
+                                onCropImage = { instanceId, image ->
                                     haptics.perform(HapticPattern.Pop)
-                                    imageToCrop = PendingImageCrop(messageIndex, image)
+                                    imageToCrop = PendingImageCrop(instanceId, image)
                                 }
                             )
                         }
@@ -803,6 +795,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 onUpdateSearchService = onUpdateSearchService,
                 onNavigateToLorebook = onNavigateToLorebook,
                 onRefreshContext = onRefreshContext,
+                importScope = scope,
                 onDismiss = { showPicker = false }
             )
         }
@@ -978,6 +971,7 @@ private fun MinimalPickerContent(
     onUpdateSearchService: (Int) -> Unit,
     onNavigateToLorebook: (String) -> Unit,
     onRefreshContext: suspend () -> ChatService.ContextRefreshResult,
+    importScope: CoroutineScope,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -1053,7 +1047,6 @@ private fun MinimalPickerContent(
 
     fun importImages(
         uris: List<Uri>,
-        dismissOnSuccess: Boolean = false,
         onFinally: () -> Unit = {}
     ) {
         if (uris.isEmpty()) {
@@ -1061,7 +1054,7 @@ private fun MinimalPickerContent(
             return
         }
 
-        scope.launch {
+        importScope.launch {
             val importedUris = withContext(Dispatchers.IO) {
                 ChatAttachmentManager.importChatFiles(uris)
             }
@@ -1070,9 +1063,6 @@ private fun MinimalPickerContent(
                 toaster.show(context.getString(R.string.chat_input_selected_image_failed))
             } else {
                 state.addImages(importedUris)
-                if (dismissOnSuccess) {
-                    onDismiss()
-                }
             }
             onFinally()
         }
@@ -1085,6 +1075,7 @@ private fun MinimalPickerContent(
         val capturedUri = cameraOutputUri
         val capturedFile = cameraOutputFile
         if (captureSuccessful && capturedUri != null) {
+            onDismiss()
             importImages(
                 uris = listOf(capturedUri),
                 onFinally = {
@@ -1105,10 +1096,8 @@ private fun MinimalPickerContent(
         ActivityResultContracts.PickMultipleVisualMedia()
     ) { selectedUris ->
         if (selectedUris.isNotEmpty()) {
-            importImages(
-                uris = selectedUris,
-                dismissOnSuccess = true
-            )
+            onDismiss()
+            importImages(uris = selectedUris)
         }
     }
     
@@ -1117,8 +1106,9 @@ private fun MinimalPickerContent(
         ActivityResultContracts.GetMultipleContents()
     ) { selectedUris ->
         if (selectedUris.isNotEmpty()) {
+            onDismiss()
             val isPythonEnabled = assistant.localTools.any { it is LocalToolOption.PythonEngine }
-            scope.launch {
+            importScope.launch {
                 val importedFiles = withContext(Dispatchers.IO) {
                     context.prepareImportedPickerFiles(
                         selectedUris = selectedUris,
@@ -1144,7 +1134,6 @@ private fun MinimalPickerContent(
                 if (importedFiles.documents.isNotEmpty()) {
                     state.addFiles(importedFiles.documents)
                 }
-                onDismiss()
             }
         }
     }
@@ -1348,7 +1337,6 @@ private fun MinimalPickerContent(
         
         // Summarize button - show whenever there is enough history to summarize
         if (assistant.canManuallySummarizeConversation(conversation.currentMessages.size)) {
-            val hasContextSummary = !conversation.contextSummary.isNullOrBlank()
             MinimalPickerItem(
                 icon = {
                     Icon(
@@ -1360,48 +1348,6 @@ private fun MinimalPickerContent(
                 },
                 title = stringResource(R.string.minimal_input_summarize),
                 subtitle = stringResource(R.string.minimal_input_summarize_desc),
-                trailingContent = if (hasContextSummary) {
-                    {
-                        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                            IconButton(
-                                onClick = {
-                                    haptics.perform(HapticPattern.Pop)
-                                    editableContextSummary = conversation.contextSummary.orEmpty()
-                                    showContextSummaryEditDialog = true
-                                },
-                                modifier = Modifier.size(40.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Edit,
-                                    contentDescription = stringResource(R.string.context_refresh_edit_summary),
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                            IconButton(
-                                onClick = {
-                                    haptics.perform(HapticPattern.Thud)
-                                    onUpdateConversation(
-                                        conversation.copy(
-                                            contextSummary = null,
-                                            contextSummaryUpToIndex = -1,
-                                            lastRefreshTime = 0L,
-                                            updateAt = Instant.now()
-                                        )
-                                    )
-                                },
-                                modifier = Modifier.size(40.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Rounded.Undo,
-                                    contentDescription = stringResource(R.string.context_refresh_revert_summary),
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-                    }
-                } else {
-                    null
-                },
                 onClick = {
                     showContextRefreshDialog = true
                 }
@@ -1504,6 +1450,20 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
         ContextRefreshDialog(
             conversation = conversation,
             onRefresh = onRefreshContext,
+            onEditSummary = {
+                editableContextSummary = conversation.contextSummary.orEmpty()
+                showContextSummaryEditDialog = true
+            },
+            onRevertSummary = {
+                onUpdateConversation(
+                    conversation.copy(
+                        contextSummary = null,
+                        contextSummaryUpToIndex = -1,
+                        lastRefreshTime = 0L,
+                        updateAt = Instant.now()
+                    )
+                )
+            },
             onDismiss = { showContextRefreshDialog = false }
         )
     }
@@ -1777,7 +1737,6 @@ private fun MinimalPickerItem(
     icon: @Composable () -> Unit,
     title: String,
     subtitle: String,
-    trailingContent: (@Composable () -> Unit)? = null,
     onClick: () -> Unit
 ) {
     Surface(
@@ -1815,19 +1774,18 @@ private fun MinimalPickerItem(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            trailingContent?.invoke()
         }
 
     }
 }
 
 private data class PendingImageCrop(
-    val messageIndex: Int,
+    val instanceId: String,
     val image: UIMessagePart.Image,
 )
 
 private data class IndexedAttachment<T : UIMessagePart>(
-    val messageIndex: Int,
+    val id: String,
     val part: T,
 )
 
@@ -1843,54 +1801,109 @@ private fun UIMessagePart.attachmentUrl(): String? = when (this) {
 private fun MediaFileInputRow(
     state: ChatInputState,
     onDelete: (Uri) -> Unit,
-    onCropImage: (Int, UIMessagePart.Image) -> Unit,
+    onCropImage: (String, UIMessagePart.Image) -> Unit,
 ) {
-    val images = remember(state.messageContent) {
-        state.messageContent.mapIndexedNotNull { index, part ->
-            (part as? UIMessagePart.Image)?.let { IndexedAttachment(index, it) }
+    val images = remember(state.pendingAttachments) {
+        state.pendingAttachments.mapNotNull { attachment ->
+            (attachment.part as? UIMessagePart.Image)?.let { image ->
+                IndexedAttachment(attachment.id, image)
+            }
         }
     }
-    val videos = remember(state.messageContent) {
-        state.messageContent.mapIndexedNotNull { index, part ->
-            (part as? UIMessagePart.Video)?.let { IndexedAttachment(index, it) }
+    val videos = remember(state.pendingAttachments) {
+        state.pendingAttachments.mapNotNull { attachment ->
+            (attachment.part as? UIMessagePart.Video)?.let { video ->
+                IndexedAttachment(attachment.id, video)
+            }
         }
     }
-    val audios = remember(state.messageContent) {
-        state.messageContent.mapIndexedNotNull { index, part ->
-            (part as? UIMessagePart.Audio)?.let { IndexedAttachment(index, it) }
+    val audios = remember(state.pendingAttachments) {
+        state.pendingAttachments.mapNotNull { attachment ->
+            (attachment.part as? UIMessagePart.Audio)?.let { audio ->
+                IndexedAttachment(attachment.id, audio)
+            }
         }
     }
-    val documents = remember(state.messageContent) {
-        state.messageContent.mapIndexedNotNull { index, part ->
-            (part as? UIMessagePart.Document)?.let { IndexedAttachment(index, it) }
+    val documents = remember(state.pendingAttachments) {
+        state.pendingAttachments.mapNotNull { attachment ->
+            (attachment.part as? UIMessagePart.Document)?.let { document ->
+                IndexedAttachment(attachment.id, document)
+            }
         }
     }
 
-    fun removePart(messageIndex: Int, part: UIMessagePart): Boolean {
-        val updatedParts = state.messageContent.toMutableList()
-        val removeIndex = if (updatedParts.getOrNull(messageIndex) == part) {
-            messageIndex
+    fun removePart(instanceId: String): Uri? {
+        val removedPart = state.removeAttachment(instanceId) ?: return null
+        val removedUrl = removedPart.attachmentUrl() ?: return null
+        return if (state.messageContent.none { it.attachmentUrl() == removedUrl }) {
+            removedUrl.toUri()
         } else {
-            updatedParts.indexOf(part)
+            null
         }
-        if (removeIndex < 0) return false
-        val removedUrl = part.attachmentUrl()
-        updatedParts.removeAt(removeIndex)
-        state.messageContent = updatedParts
-        return removedUrl != null && updatedParts.none { it.attachmentUrl() == removedUrl }
     }
+
+    val listState = rememberLazyListState()
+    val canScrollLeft by remember {
+        androidx.compose.runtime.derivedStateOf {
+            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
+        }
+    }
+    val canScrollRight by remember {
+        androidx.compose.runtime.derivedStateOf {
+            val layoutInfo = listState.layoutInfo
+            val lastVisibleItem = layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
+            lastVisibleItem.index < layoutInfo.totalItemsCount - 1 ||
+                lastVisibleItem.offset + lastVisibleItem.size > layoutInfo.viewportEndOffset
+        }
+    }
+    val leftFadeAlpha by animateFloatAsState(
+        targetValue = if (canScrollLeft) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(180),
+        label = "attachment_left_fade"
+    )
+    val rightFadeAlpha by animateFloatAsState(
+        targetValue = if (canScrollRight) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(180),
+        label = "attachment_right_fade"
+    )
 
     LazyRow(
+        state = listState,
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            horizontal = 12.dp,
+            vertical = 12.dp,
+        ),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 12.dp, top = 12.dp, end = 12.dp, bottom = 4.dp)
-            .height(72.dp)
+            .height(84.dp)
+            .graphicsLayer {
+                compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen
+            }
+            .drawWithContent {
+                drawContent()
+                if ((leftFadeAlpha > 0f || rightFadeAlpha > 0f) && size.width > 0f) {
+                    val fadeWidthPx = 22.dp.toPx()
+                    val leftEnd = (fadeWidthPx / size.width).coerceAtMost(0.35f)
+                    val rightStart = (1f - fadeWidthPx / size.width).coerceAtLeast(0.65f)
+                    drawRect(
+                        brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
+                            colorStops = arrayOf(
+                                0f to Color.Black.copy(alpha = 1f - leftFadeAlpha),
+                                leftEnd to Color.Black,
+                                rightStart to Color.Black,
+                                1f to Color.Black.copy(alpha = 1f - rightFadeAlpha),
+                            )
+                        ),
+                        blendMode = androidx.compose.ui.graphics.BlendMode.DstIn
+                    )
+                }
+            }
     ) {
         items(
             items = images,
-            key = { attachment -> "image:${attachment.messageIndex}:${attachment.part.url}" }
+            key = { attachment -> "image:${attachment.id}" }
         ) { attachment ->
             val image = attachment.part
             val interactionSource = remember { MutableInteractionSource() }
@@ -1903,28 +1916,23 @@ private fun MediaFileInputRow(
 
             Box(
                 modifier = Modifier
-                    .animateItem(
-                        fadeInSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
-                        fadeOutSpec = spring(dampingRatio = 0.75f, stiffness = 360f),
-                        placementSpec = spring(dampingRatio = 0.6f, stiffness = 300f)
-                    )
                     .size(60.dp)
                     .graphicsLayer {
                         scaleX = scale
                         scaleY = scale
                     }
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        onClick = { onCropImage(attachment.id, image) }
+                    )
             ) {
                 Surface(
                     modifier = Modifier
                         .align(Alignment.Center)
-                        .size(60.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .clickable(
-                            interactionSource = interactionSource,
-                            indication = null,
-                            onClick = { onCropImage(attachment.messageIndex, image) }
-                        ),
-                    shape = RoundedCornerShape(16.dp),
+                        .size(60.dp),
+                    shape = RoundedCornerShape(12.dp),
                     tonalElevation = 4.dp
                 ) {
                     AsyncImage(
@@ -1934,46 +1942,50 @@ private fun MediaFileInputRow(
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
-                Surface(
-                    onClick = {
-                        if (removePart(attachment.messageIndex, image)) {
-                            onDelete(image.url.toUri())
-                        }
-                    },
-                    shape = RoundedCornerShape(7.dp),
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-                    tonalElevation = 6.dp,
+                Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(4.dp)
-                        .size(22.dp)
+                        .size(38.dp)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {
+                                removePart(attachment.id)?.let(onDelete)
+                            }
+                        ),
+                    contentAlignment = Alignment.TopEnd
                 ) {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                        Icon(
-                            imageVector = Icons.Rounded.Close,
-                            contentDescription = stringResource(R.string.delete),
-                            modifier = Modifier.size(15.dp),
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.94f),
+                        tonalElevation = 3.dp,
+                        modifier = Modifier
+                            .padding(4.dp)
+                            .size(22.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = stringResource(R.string.delete),
+                                modifier = Modifier.size(15.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
         }
         items(
             items = videos,
-            key = { attachment -> "video:${attachment.messageIndex}:${attachment.part.url}" }
+            key = { attachment -> "video:${attachment.id}" }
         ) { attachment ->
             val video = attachment.part
             Box(
-                modifier = Modifier.animateItem(
-                    fadeInSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
-                    fadeOutSpec = spring(dampingRatio = 0.75f, stiffness = 360f),
-                    placementSpec = spring(dampingRatio = 0.6f, stiffness = 300f)
-                )
+                modifier = Modifier
             ) {
                 Surface(
                     modifier = Modifier.size(60.dp),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(12.dp),
                     tonalElevation = 4.dp
                 ) {
                     Box(
@@ -1990,9 +2002,7 @@ private fun MediaFileInputRow(
                         .clip(CircleShape)
                         .size(24.dp)
                         .clickable {
-                            if (removePart(attachment.messageIndex, video)) {
-                                onDelete(video.url.toUri())
-                            }
+                            removePart(attachment.id)?.let(onDelete)
                         }
                         .align(Alignment.TopEnd)
                         .background(MaterialTheme.colorScheme.secondary),
@@ -2002,19 +2012,15 @@ private fun MediaFileInputRow(
         }
         items(
             items = audios,
-            key = { attachment -> "audio:${attachment.messageIndex}:${attachment.part.url}" }
+            key = { attachment -> "audio:${attachment.id}" }
         ) { attachment ->
             val audio = attachment.part
             Box(
-                modifier = Modifier.animateItem(
-                    fadeInSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
-                    fadeOutSpec = spring(dampingRatio = 0.75f, stiffness = 360f),
-                    placementSpec = spring(dampingRatio = 0.6f, stiffness = 300f)
-                )
+                modifier = Modifier
             ) {
                 Surface(
                     modifier = Modifier.size(60.dp),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(12.dp),
                     tonalElevation = 4.dp
                 ) {
                     Box(
@@ -2031,9 +2037,7 @@ private fun MediaFileInputRow(
                         .clip(CircleShape)
                         .size(24.dp)
                         .clickable {
-                            if (removePart(attachment.messageIndex, audio)) {
-                                onDelete(audio.url.toUri())
-                            }
+                            removePart(attachment.id)?.let(onDelete)
                         }
                         .align(Alignment.TopEnd)
                         .background(MaterialTheme.colorScheme.secondary),
@@ -2043,21 +2047,15 @@ private fun MediaFileInputRow(
         }
         items(
             items = documents,
-            key = { attachment -> "document:${attachment.messageIndex}:${attachment.part.url}" }
+            key = { attachment -> "document:${attachment.id}" }
         ) { attachment ->
             val document = attachment.part
             me.rerere.rikkahub.ui.components.ui.DocumentChip(
                 fileName = document.fileName,
                 mimeType = document.mime,
-                modifier = Modifier.animateItem(
-                    fadeInSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
-                    fadeOutSpec = spring(dampingRatio = 0.75f, stiffness = 360f),
-                    placementSpec = spring(dampingRatio = 0.6f, stiffness = 300f)
-                ),
+                modifier = Modifier,
                 onRemove = {
-                    if (removePart(attachment.messageIndex, document)) {
-                        onDelete(document.url.toUri())
-                    }
+                    removePart(attachment.id)?.let(onDelete)
                 }
             )
         }
@@ -2082,7 +2080,7 @@ private fun ChatScrollToBottomButton(
         color = MaterialTheme.colorScheme.surfaceContainer,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
         modifier = modifier
-            .size(width = 40.dp, height = 36.dp)
+            .size(36.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale

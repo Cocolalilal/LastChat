@@ -10,20 +10,25 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
@@ -47,7 +52,8 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.service.ChatService
-import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 
 enum class RefreshDialogState {
     CONFIRM,
@@ -60,10 +66,13 @@ enum class RefreshDialogState {
 fun ContextRefreshDialog(
     conversation: Conversation,
     onRefresh: suspend () -> ChatService.ContextRefreshResult,
+    onEditSummary: () -> Unit = {},
+    onRevertSummary: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val haptics = rememberPremiumHaptics()
     var state by remember { mutableStateOf(RefreshDialogState.CONFIRM) }
     var errorResId by remember { mutableStateOf<Int?>(null) }
     var errorArgs by remember { mutableStateOf<List<Any>>(emptyList()) }
@@ -362,8 +371,43 @@ fun ContextRefreshDialog(
                 }
             ) { showDismiss ->
                 if (showDismiss) {
-                    OutlinedButton(onClick = onDismiss) {
-                        Text(stringResource(android.R.string.cancel))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (hasPreviousSummary) {
+                            FilledTonalIconButton(
+                                onClick = {
+                                    haptics.perform(HapticPattern.Pop)
+                                    onEditSummary()
+                                },
+                                modifier = Modifier.size(40.dp),
+                                shape = CircleShape
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Edit,
+                                    contentDescription = stringResource(R.string.context_refresh_edit_summary),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            FilledTonalIconButton(
+                                onClick = {
+                                    haptics.perform(HapticPattern.Thud)
+                                    onRevertSummary()
+                                },
+                                modifier = Modifier.size(40.dp),
+                                shape = CircleShape
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.Undo,
+                                    contentDescription = stringResource(R.string.context_refresh_revert_summary),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        OutlinedButton(onClick = onDismiss) {
+                            Text(stringResource(android.R.string.cancel))
+                        }
                     }
                 } else {
                     Spacer(Modifier.width(1.dp))

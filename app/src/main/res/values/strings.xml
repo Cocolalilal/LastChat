@@ -984,8 +984,6 @@
     <string name="skills_page_enable_by_default">Enable by default</string>
     <string name="skills_page_available_for_all_characters">Available for all characters</string>
     <string name="skills_page_available_for_all_characters_desc">Turn this off to choose exactly which characters can use this skill</string>
-    <string name="skills_page_auto_toggle_available_characters">AI can auto-toggle for available characters</string>
-    <string name="skills_page_auto_toggle_available_characters_desc">When enabled, any character that can use this skill may activate it for the current turn</string>
     <string name="skills_page_available_for_characters_desc">Choose which characters can autonomously enable or disable this skill</string>
     <string name="skills_page_always_enabled">Always enabled</string>
     <string name="skills_page_always_enabled_desc">Enabled by default for every character this skill is available for. You can still turn it off in a chat.</string>
