@@ -390,15 +390,19 @@ private fun AnimatedSinglePill(
         label = "corner_bottom_end"
     )
     
-    Surface(
-        modifier = Modifier.height(PILL_HEIGHT),
-        shape = RoundedCornerShape(
+    val pillColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    val pillShape = RoundedCornerShape(
             topStart = topStartRadius,
             topEnd = topEndRadius,
             bottomStart = bottomStartRadius,
             bottomEnd = bottomEndRadius
-        ),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        )
+
+    Surface(
+        modifier = Modifier
+            .height(PILL_HEIGHT),
+        shape = pillShape,
+        color = pillColor,
         contentColor = MaterialTheme.colorScheme.onSurface,
         onClick = onClick
     ) {
@@ -644,13 +648,16 @@ private fun SinglePill(
     isLoading: Boolean = false,
     content: @Composable () -> Unit
 ) {
+    val pillColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    val pillShape = getCornerRadii(position, connectsToBubbleBelow)
+
     Surface(
         modifier = modifier
             .height(PILL_HEIGHT)
             .then(if (testTag != null) Modifier.testTag(testTag) else Modifier)
             .animateContentSize(spring(dampingRatio = 0.7f, stiffness = 300f)),
-        shape = getCornerRadii(position, connectsToBubbleBelow),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = pillShape,
+        color = pillColor,
         contentColor = MaterialTheme.colorScheme.onSurface,
         onClick = onClick
     ) {

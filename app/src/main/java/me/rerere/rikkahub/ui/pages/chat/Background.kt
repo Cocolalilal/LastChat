@@ -15,6 +15,7 @@ import me.rerere.rikkahub.ui.theme.LocalDarkMode
 @Composable
 fun AssistantBackground(
     assistant: Assistant,
+    modifier: Modifier = Modifier,
 ) {
     if (assistant.background != null) {
         val scrimAlpha = assistant.backgroundDim.coerceIn(0f, 0.85f)
@@ -23,7 +24,7 @@ fun AssistantBackground(
         } else {
             Color.White.copy(alpha = scrimAlpha)
         }
-        Box {
+        Box(modifier = modifier) {
             AsyncImage(
                 model = assistant.background,
                 contentDescription = null,

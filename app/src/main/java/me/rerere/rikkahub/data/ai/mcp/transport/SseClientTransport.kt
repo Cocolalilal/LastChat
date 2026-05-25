@@ -12,7 +12,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import me.rerere.common.http.await
@@ -203,6 +202,6 @@ internal class SseClientTransport(
 
         session?.cancel()
         _onClose()
-        job?.cancelAndJoin()
+        job?.cancel()
     }
 }

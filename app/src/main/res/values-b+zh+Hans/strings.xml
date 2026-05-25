@@ -455,6 +455,8 @@
   <string name="setting_display_page_developer_mode_desc">显示更多调试功能,不建议普通用户使用。</string>
   <string name="setting_display_page_enable_message_generation_haptic_effect_desc">消息生成时启用触觉反馈效果</string>
   <string name="setting_display_page_enable_message_generation_haptic_effect_title">消息生成触觉反馈</string>
+  <string name="setting_display_page_enable_blur_effect_desc">让悬浮胶囊和聊天控件呈现柔和玻璃模糊效果</string>
+  <string name="setting_display_page_enable_blur_effect_title">模糊 UI 元素</string>
   <string name="setting_display_page_font_size_preview">这是一个**示例**的聊天文本</string>
   <string name="setting_display_page_font_size_title">聊天字体大小</string>
   <string name="setting_display_page_notification_message_generated">生成消息后启用通知</string>

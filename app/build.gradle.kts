@@ -315,6 +315,11 @@ dependencies {
     // https://github.com/drewnoakes/metadata-extractor
     implementation(libs.metadata.extractor)
 
+    // Haze (background blur for glassy floating controls)
+    implementation(libs.haze)
+    implementation(libs.haze.blur)
+    implementation(libs.haze.blur.materials)
+
     // koin
     implementation(platform(libs.koin.bom))
     implementation(libs.koin.android)

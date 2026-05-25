@@ -191,8 +191,16 @@ data class UIMessage(
 
     fun getToolResults() = parts.filterIsInstance<UIMessagePart.ToolResult>()
 
-    fun isValidToUpload() = parts.any {
-        it !is UIMessagePart.Reasoning
+    fun isValidToUpload() = parts.any { part ->
+        when (part) {
+            is UIMessagePart.Text -> part.text.isNotBlank()
+            is UIMessagePart.Image -> part.url.isNotBlank()
+            is UIMessagePart.Video -> part.url.isNotBlank()
+            is UIMessagePart.Audio -> part.url.isNotBlank()
+            is UIMessagePart.Document -> part.url.isNotBlank()
+            is UIMessagePart.Reasoning -> part.reasoning.isNotBlank()
+            else -> true
+        }
     }
 
     inline fun <reified P : UIMessagePart> hasPart(): Boolean {
@@ -279,7 +287,7 @@ fun List<UIMessage>.handleMessageChunk(chunk: MessageChunk, model: Model? = null
         "messages must not be empty"
     }
     val choice = chunk.choices.getOrNull(0) ?: return this
-    val message = choice.delta ?: choice.message ?: throw Exception("delta/message is null")
+    val message = choice.delta ?: choice.message ?: return this
     if (this.last().role != message.role) {
         return this + message.copy(modelId = model?.id)
     } else {

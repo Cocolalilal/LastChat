@@ -96,7 +96,6 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
-import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.data.model.Conversation
@@ -124,6 +123,9 @@ import me.rerere.rikkahub.utils.openUrl
 import me.rerere.rikkahub.utils.resolveBidiDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.text.style.TextDirection
+import me.rerere.rikkahub.ui.modifier.blurredContainerColor
+import me.rerere.rikkahub.ui.modifier.lastChatBlurEffect
+import me.rerere.rikkahub.ui.modifier.lastChatBlurSource
 
 private const val TAG = "ChatList"
 private const val LoadingIndicatorKey = "LoadingIndicator"
@@ -357,6 +359,14 @@ private fun SharedTransitionScope.ChatListNormal(
         } else {
             turnGroups
         }
+        val assistant = remember(settings.assistants, conversation.assistantId) {
+            settings.getAssistantById(conversation.assistantId)
+        }
+        val modelById = remember(settings.providers) {
+            settings.providers
+                .flatMap { it.models }
+                .associateBy { it.id }
+        }
         
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             LazyColumn(
@@ -364,7 +374,8 @@ private fun SharedTransitionScope.ChatListNormal(
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 16.dp) + PaddingValues(bottom = 32.dp) + innerPadding + androidx.compose.foundation.layout.WindowInsets.ime.asPaddingValues(),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier
+                    modifier = Modifier
+                    .lastChatBlurSource()
                     .sharedBounds(
                         sharedContentState = rememberSharedContentState(key = "conversation_list"),
                         animatedVisibilityScope = animatedVisibilityScope
@@ -420,8 +431,8 @@ private fun SharedTransitionScope.ChatListNormal(
                                 group = group,
                                 isLastTurn = isLastTurn,
                                 onCitationClick = onCitationClick,
-                                model = group.lastNode.currentMessage.modelId?.let { settings.findModelById(it) },
-                                assistant = settings.getAssistantById(conversation.assistantId),
+                                model = group.lastNode.currentMessage.modelId?.let(modelById::get),
+                                assistant = assistant,
                                 loading = loading && isLastTurn,
                                 onRegenerate = { node ->
                                     onRegenerate(node.currentMessage)
@@ -713,6 +724,7 @@ private fun SharedTransitionScope.ChatListPreview(
         modifier = Modifier
             .padding(innerPadding)
             .padding(top = previewTopPadding)
+            .lastChatBlurSource()
             .then(
                 if (contentMaxWidth != Dp.Unspecified) {
                     Modifier
@@ -862,9 +874,13 @@ private fun BoxScope.MessageJumper(
                 },
                 shape = CircleShape,
                 tonalElevation = 4.dp,
-                color = MaterialTheme.colorScheme.surfaceColorAtElevation(
-                    4.dp
-                ).copy(alpha = 0.65f)
+                color = blurredContainerColor(
+                    MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp).copy(alpha = 0.65f)
+                ),
+                modifier = Modifier.lastChatBlurEffect(
+                    MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp),
+                    CircleShape
+                )
             ) {
                 Icon(
                     imageVector = Icons.Rounded.KeyboardDoubleArrowUp,
@@ -885,9 +901,13 @@ private fun BoxScope.MessageJumper(
                 },
                 shape = CircleShape,
                 tonalElevation = 4.dp,
-                color = MaterialTheme.colorScheme.surfaceColorAtElevation(
-                    4.dp
-                ).copy(alpha = 0.65f)
+                color = blurredContainerColor(
+                    MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp).copy(alpha = 0.65f)
+                ),
+                modifier = Modifier.lastChatBlurEffect(
+                    MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp),
+                    CircleShape
+                )
             ) {
                 Icon(
                     imageVector = Icons.Rounded.KeyboardArrowUp,
@@ -903,9 +923,13 @@ private fun BoxScope.MessageJumper(
                     }
                 },
                 shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceColorAtElevation(
-                    4.dp
-                ).copy(alpha = 0.65f)
+                color = blurredContainerColor(
+                    MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp).copy(alpha = 0.65f)
+                ),
+                modifier = Modifier.lastChatBlurEffect(
+                    MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp),
+                    CircleShape
+                )
             ) {
                 Icon(
                     imageVector = Icons.Rounded.KeyboardArrowDown,
@@ -921,9 +945,13 @@ private fun BoxScope.MessageJumper(
                     }
                 },
                 shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceColorAtElevation(
-                    4.dp
-                ).copy(alpha = 0.65f),
+                color = blurredContainerColor(
+                    MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp).copy(alpha = 0.65f)
+                ),
+                modifier = Modifier.lastChatBlurEffect(
+                    MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp),
+                    CircleShape
+                ),
             ) {
                 Icon(
                     imageVector = Icons.Rounded.KeyboardDoubleArrowDown,

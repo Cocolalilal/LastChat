@@ -150,6 +150,8 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.modifier.blurredContainerColor
+import me.rerere.rikkahub.ui.modifier.lastChatBlurEffect
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
 import me.rerere.rikkahub.data.ai.tools.AskUserAnswer
 import me.rerere.rikkahub.data.ai.tools.AskUserAnswerPayload
@@ -536,9 +538,11 @@ fun MinimalChatInput(
                             keyboardController?.hide()
                         },
                         shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        color = blurredContainerColor(MaterialTheme.colorScheme.surfaceContainer),
                         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
-                        modifier = Modifier.size(48.dp)
+                        modifier = Modifier
+                            .size(48.dp)
+                            .lastChatBlurEffect(MaterialTheme.colorScheme.surfaceContainer, CircleShape)
                     ) {
                         Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                             Icon(
@@ -552,13 +556,15 @@ fun MinimalChatInput(
                 }
                 // Text field capsule with embedded action button
                 // Corner radius = 24dp (user confirmed this was correct)
+                val inputShape = RoundedCornerShape(24.dp)
                 Surface(
-                    shape = RoundedCornerShape(24.dp),  // Fixed radius - correct per user
-                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    shape = inputShape,  // Fixed radius - correct per user
+                    color = blurredContainerColor(MaterialTheme.colorScheme.surfaceContainer),
                     border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp)  // Matches plus button, allows 4dp padding all around
+                        .lastChatBlurEffect(MaterialTheme.colorScheme.surfaceContainer, inputShape)
                 ) {
                     Column(
                         modifier = Modifier.fillMaxWidth()
@@ -2077,10 +2083,11 @@ private fun ChatScrollToBottomButton(
 
     Surface(
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        color = blurredContainerColor(MaterialTheme.colorScheme.surfaceContainer),
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
         modifier = modifier
             .size(36.dp)
+            .lastChatBlurEffect(MaterialTheme.colorScheme.surfaceContainer, CircleShape)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
@@ -2213,9 +2220,10 @@ private fun ChatSuggestionsRow(
             }
 
             if (visible || targetAlpha > 0f) {
+                val suggestionShape = RoundedCornerShape(16.dp)
                 Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    shape = suggestionShape,
+                    color = blurredContainerColor(MaterialTheme.colorScheme.surfaceContainer),
                     border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
                     modifier = Modifier
                         .graphicsLayer {
@@ -2223,6 +2231,7 @@ private fun ChatSuggestionsRow(
                             scaleY = scale
                             this.alpha = alpha
                         }
+                        .lastChatBlurEffect(MaterialTheme.colorScheme.surfaceContainer, suggestionShape)
                         .clickable(
                             interactionSource = interactionSource,
                             indication = null

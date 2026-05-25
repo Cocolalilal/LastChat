@@ -138,6 +138,18 @@ fun SettingUICustomizationPage(vm: SettingVM = koinViewModel()) {
                     title = stringResource(R.string.setting_page_chat_settings)
                 ) {
                     SettingGroupItem(
+                        title = stringResource(R.string.setting_display_page_enable_blur_effect_title),
+                        subtitle = stringResource(R.string.setting_display_page_enable_blur_effect_desc),
+                        trailing = {
+                            HapticSwitch(
+                                checked = displaySetting.enableBlurEffect,
+                                onCheckedChange = {
+                                    updateDisplaySetting(displaySetting.copy(enableBlurEffect = it))
+                                }
+                            )
+                        }
+                    )
+                    SettingGroupItem(
                         title = stringResource(R.string.setting_ui_move_toolbar_bottom_title),
                         subtitle = stringResource(R.string.setting_ui_move_toolbar_bottom_desc),
                         trailing = {

@@ -468,6 +468,8 @@
     <string name="setting_display_page_developer_mode_desc">Show more debug features. Not recommended for normal users.</string>
     <string name="setting_display_page_enable_message_generation_haptic_effect_desc">Enable haptic feedback during message generation</string>
     <string name="setting_display_page_enable_message_generation_haptic_effect_title">Haptic Feedback</string>
+    <string name="setting_display_page_enable_blur_effect_desc">Give floating pills and chat controls a soft glass blur</string>
+    <string name="setting_display_page_enable_blur_effect_title">Blurred UI Elements</string>
     <string name="setting_display_page_font_size_preview">This is a **sample** chat text</string>
     <string name="setting_display_page_font_size_title">Font Size</string>
     <string name="setting_display_page_notification_message_generated">Notification on Completion</string>

@@ -48,6 +48,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.adaptive.currentWindowDpSize
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -115,6 +116,12 @@ import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 import kotlinx.coroutines.withContext
 import kotlin.uuid.Uuid
+import dev.chrisbanes.haze.rememberHazeState
+import me.rerere.rikkahub.ui.modifier.LastChatBlur
+import me.rerere.rikkahub.ui.modifier.LocalLastChatBlur
+import me.rerere.rikkahub.ui.modifier.lastChatBlurEffect
+import me.rerere.rikkahub.ui.modifier.lastChatBlurSource
+import me.rerere.rikkahub.ui.modifier.blurredContainerColor
 
 internal fun hasConversationMessages(conversation: Conversation): Boolean {
     return conversation.messageNodes.isNotEmpty()
@@ -558,6 +565,13 @@ private fun ChatPageContent(
     val toolbarPlacement = chatTopBarPlacement(setting)
     val isGenerating = loadingJob != null
     val density = LocalDensity.current
+    val hazeState = rememberHazeState()
+    val blur = remember(setting.displaySetting.enableBlurEffect, hazeState) {
+        LastChatBlur(
+            enabled = setting.displaySetting.enableBlurEffect,
+            hazeState = hazeState,
+        )
+    }
     
     // Auto-scroll to first matching message when opened from search
     LaunchedEffect(initialSearchQuery, conversation.messageNodes) {
@@ -610,12 +624,16 @@ private fun ChatPageContent(
     }
 
     AssistantChatTheme(assistant = currentAssistant) {
-        Surface(
-            color = MaterialTheme.colorScheme.background,
-            modifier = Modifier.fillMaxSize()
-        ) {
-            AssistantBackground(assistant = currentAssistant)
-            Scaffold(
+        CompositionLocalProvider(LocalLastChatBlur provides blur) {
+            Surface(
+                color = MaterialTheme.colorScheme.background,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                AssistantBackground(
+                    assistant = currentAssistant,
+                    modifier = Modifier.lastChatBlurSource()
+                )
+                Scaffold(
                 topBar = if (toolbarPlacement == ChatToolbarPlacement.Top) {
                     {
                         ChatToolbar(
@@ -1187,6 +1205,7 @@ private fun ChatPageContent(
                 }
             }
         }
+        }
     }
 }
 
@@ -1265,8 +1284,11 @@ private fun ChatToolbar(
                         scope.launch { drawerState.open() }
                     },
                     shape = buttonShape,
-                    color = topContainerColor,
-                    border = topContainerBorder
+                    color = blurredContainerColor(topContainerColor),
+                    border = topContainerBorder,
+                    modifier = Modifier
+                        .size(topPillSize)
+                        .lastChatBlurEffect(topContainerColor, buttonShape)
                 ) {
                     Box(
                         modifier = Modifier.size(topPillSize),
@@ -1290,13 +1312,15 @@ private fun ChatToolbar(
 
             Surface(
                 shape = buttonShape,
-                color = topContainerColor,
+                color = blurredContainerColor(topContainerColor),
                 border = topContainerBorder,
                 modifier = Modifier
+                    .height(topPillSize)
                     .graphicsLayer {
                         scaleX = topPillScale
                         scaleY = topPillScale
                     }
+                    .lastChatBlurEffect(topContainerColor, buttonShape)
             ) {
                 androidx.compose.animation.AnimatedContent(
                     targetState = TopBarActionState(

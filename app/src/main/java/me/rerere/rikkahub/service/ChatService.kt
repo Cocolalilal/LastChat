@@ -1432,14 +1432,14 @@ class ChatService(
                 )
             )
 
-            mcpManager.getAllAvailableTools().forEach { tool ->
+            mcpManager.getAllAvailableTools().forEach { (serverId, tool) ->
                 add(
                     Tool(
                         name = tool.name,
                         description = tool.description ?: "",
                         parameters = { tool.inputSchema },
                         execute = {
-                            mcpManager.callTool(tool.name, it.jsonObject).truncateLargeJsonText()
+                            mcpManager.callTool(serverId, tool.name, it.jsonObject).truncateLargeJsonText()
                         },
                     )
                 )
