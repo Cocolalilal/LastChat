@@ -112,6 +112,7 @@ fun SettingModelPage(vm: SettingVM = koinViewModel()) {
                     DefaultChatModelSetting(settings = settings, vm = vm)
                     DefaultTitleModelSetting(settings = settings, vm = vm)
                     DefaultSummarizerModelSetting(settings = settings, vm = vm)
+                    DefaultSubagentModelSetting(settings = settings, vm = vm)
                     DefaultSuggestionModelSetting(settings = settings, vm = vm)
                 }
             }
@@ -513,6 +514,85 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         vm.updateSettings(
                             settings.copy(
                                 summarizerThinkingBudget = tokens
+                            )
+                        )
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DefaultSubagentModelSetting(
+    settings: Settings,
+    vm: SettingVM
+) {
+    var showModal by remember { mutableStateOf(false) }
+    ModelFeatureCard(
+        title = {
+            Text(stringResource(R.string.setting_model_page_subagent_model), maxLines = 1)
+        },
+        description = {
+            Text(stringResource(R.string.setting_model_page_subagent_model_desc))
+        },
+        icon = {
+            Icon(Icons.Rounded.Psychology, null)
+        },
+        actions = {
+            Box(modifier = Modifier.weight(1f)) {
+                ModelSelector(
+                    modelId = settings.subagentModelId,
+                    type = ModelType.CHAT,
+                    onSelect = { selectedModel ->
+                        vm.updateSettings(
+                            settings.copy(
+                                subagentModelId = settings.findModelById(selectedModel.id)?.id
+                            )
+                        )
+                    },
+                    providers = settings.providers,
+                    allowClear = true,
+                    onClear = {
+                        vm.updateSettings(
+                            settings.copy(
+                                subagentModelId = null
+                            )
+                        )
+                    },
+                    modifier = Modifier.wrapContentWidth()
+                )
+            }
+            IconButton(
+                onClick = {
+                    showModal = true
+                }
+            ) {
+                Icon(Icons.Rounded.Settings, null)
+            }
+        }
+    )
+
+    if (showModal) {
+        ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+            onDismissRequest = {
+                showModal = false
+            },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                HelperReasoningSettings(
+                    reasoningTokens = settings.subagentThinkingBudget,
+                    onUpdateReasoningTokens = { tokens ->
+                        vm.updateSettings(
+                            settings.copy(
+                                subagentThinkingBudget = tokens
                             )
                         )
                     }

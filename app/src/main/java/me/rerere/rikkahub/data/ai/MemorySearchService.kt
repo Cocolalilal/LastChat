@@ -23,13 +23,17 @@ import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import java.time.Instant
+import java.time.DayOfWeek
 import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.time.temporal.ChronoUnit
+import kotlinx.datetime.toInstant
 import kotlin.math.min
 import kotlin.uuid.Uuid
 
 private const val MEMORY_SEARCH_MAX_LIMIT = 8
 private const val MEMORY_SEARCH_CHAT_SUMMARY_LIMIT = 2
+private const val MEMORY_SEARCH_MAX_QUERIES = 8
 
 internal data class ConversationRecallSpan(
     val conversationId: Uuid,
@@ -39,6 +43,21 @@ internal data class ConversationRecallSpan(
     val timestampMillis: Long,
     val score: Int,
     val matchedText: String? = null,
+)
+
+internal data class MemorySearchTimeRange(
+    val startMillis: Long,
+    val endMillis: Long,
+    val label: String,
+) {
+    fun contains(timestampMillis: Long): Boolean {
+        return timestampMillis in startMillis until endMillis
+    }
+}
+
+internal data class MemoryRecallSearchQuery(
+    val text: String,
+    val source: String,
 )
 
 internal fun fuzzyMemoryAgeLabel(
@@ -69,6 +88,7 @@ internal fun findConversationRecallSpans(
     query: String,
     maxSpans: Int = 3,
     radius: Int = 2,
+    timeRange: MemorySearchTimeRange? = null,
 ): List<ConversationRecallSpan> {
     val plan = MemoryRecallQueryPlan.from(query)
     val tokens = plan.tokens
@@ -76,6 +96,12 @@ internal fun findConversationRecallSpans(
 
     val messages = conversation.currentMessages.filter { message -> message.toContentText().isNotBlank() }
     val scored = messages.mapIndexedNotNull { index, message ->
+        val timestampMillis = message.createdAt
+            .toInstant(kotlinx.datetime.TimeZone.currentSystemDefault())
+            .toEpochMilliseconds()
+        if (timeRange != null && !timeRange.contains(timestampMillis)) {
+            return@mapIndexedNotNull null
+        }
         val text = message.toContentText()
             val messageScore = scoreMemorySearchText(text, query, tokens)
             if (messageScore <= 0) {
@@ -86,6 +112,7 @@ internal fun findConversationRecallSpans(
                     index = index,
                     score = messageScore + titleScore,
                     matchedText = text.toRecallSnippet(limit = 260),
+                    timestampMillis = timestampMillis,
                 )
             }
     }.sortedByDescending { it.score }
@@ -104,7 +131,7 @@ internal fun findConversationRecallSpans(
             conversationTitle = conversation.title,
             messageIndex = index,
             messages = messages.subList(start, endExclusive),
-            timestampMillis = conversation.updateAt.toEpochMilli(),
+            timestampMillis = hit.timestampMillis,
             score = hit.score,
             matchedText = hit.matchedText,
         )
@@ -140,6 +167,46 @@ internal fun memorySearchTokens(query: String): List<String> {
 
     return (base + base.flatMap { MEMORY_SEARCH_EXPANSIONS[it].orEmpty() })
         .distinct()
+}
+
+internal fun buildDeterministicMemoryRecallQueries(
+    query: String,
+    maxQueries: Int = MEMORY_SEARCH_MAX_QUERIES,
+): List<MemoryRecallSearchQuery> {
+    val trimmed = query.trim()
+    if (trimmed.isBlank()) return emptyList()
+
+    val plan = MemoryRecallQueryPlan.from(trimmed)
+    val queries = mutableListOf(
+        MemoryRecallSearchQuery(trimmed, "original")
+    )
+
+    fun add(text: String, source: String) {
+        val compact = text.replace(Regex("\\s+"), " ").trim()
+        if (compact.length >= 3) {
+            queries += MemoryRecallSearchQuery(compact, source)
+        }
+    }
+
+    if (plan.originalTokens.size > 1) {
+        add(plan.originalTokens.joinToString(" "), "tokens")
+    }
+
+    val expandedTokens = plan.tokens
+    if (expandedTokens.size > plan.originalTokens.size) {
+        add(expandedTokens.take(20).joinToString(" "), "expanded")
+    }
+
+    plan.originalTokens
+        .windowed(size = 3, step = 2, partialWindows = true)
+        .filter { it.size >= 2 }
+        .forEach { tokens -> add(tokens.joinToString(" "), "chunk") }
+
+    plan.phrases.forEach { phrase -> add(phrase, "phrase") }
+
+    return queries
+        .distinctBy { it.text.normalizedRecallText() }
+        .take(maxQueries)
 }
 
 internal fun scoreMemorySearchText(
@@ -185,7 +252,107 @@ private data class ScoredMessageHit(
     val index: Int,
     val score: Int,
     val matchedText: String,
+    val timestampMillis: Long,
 )
+
+private data class ScoredMemoryCandidate(
+    val memory: AssistantMemory,
+    val score: Int,
+    val confidence: Float,
+    val matchedQuery: String,
+)
+
+private fun MutableMap<Int, ScoredMemoryCandidate>.addOrUpgrade(
+    memory: AssistantMemory,
+    score: Int,
+    confidence: Float,
+    matchedQuery: String,
+) {
+    val existing = this[memory.id]
+    val upgraded = if (existing == null) {
+        ScoredMemoryCandidate(
+            memory = memory,
+            score = score,
+            confidence = confidence,
+            matchedQuery = matchedQuery,
+        )
+    } else {
+        existing.copy(
+            score = maxOf(existing.score, score) + 1,
+            confidence = maxOf(existing.confidence, confidence),
+            matchedQuery = if (score > existing.score) matchedQuery else existing.matchedQuery,
+        )
+    }
+    this[memory.id] = upgraded
+}
+
+internal fun parseMemorySearchTimeRange(
+    raw: String?,
+    nowMillis: Long = System.currentTimeMillis(),
+): MemorySearchTimeRange? {
+    val text = raw?.lowercase()?.trim().orEmpty()
+    if (text.isBlank()) return null
+    val zone = ZoneId.systemDefault()
+    val now = Instant.ofEpochMilli(nowMillis).atZone(zone)
+
+    fun range(start: ZonedDateTime, end: ZonedDateTime, label: String): MemorySearchTimeRange {
+        return MemorySearchTimeRange(
+            startMillis = start.toInstant().toEpochMilli(),
+            endMillis = end.toInstant().toEpochMilli(),
+            label = label,
+        )
+    }
+
+    fun startOfDay(value: ZonedDateTime) = value.toLocalDate().atStartOfDay(zone)
+    fun startOfMonth(value: ZonedDateTime) = value.withDayOfMonth(1).toLocalDate().atStartOfDay(zone)
+    fun startOfWeek(value: ZonedDateTime): ZonedDateTime {
+        val delta = (value.dayOfWeek.value - DayOfWeek.MONDAY.value).floorMod(7)
+        return startOfDay(value.minusDays(delta.toLong()))
+    }
+
+    Regex("""(\d+)\s+months?\s+ago""").find(text)?.groupValues?.getOrNull(1)?.toLongOrNull()?.let { months ->
+        val start = startOfMonth(now.minusMonths(months))
+        return range(start, start.plusMonths(1), "$months months ago")
+    }
+    Regex("""(\d+)\s+weeks?\s+ago""").find(text)?.groupValues?.getOrNull(1)?.toLongOrNull()?.let { weeks ->
+        val start = startOfWeek(now).minusWeeks(weeks)
+        return range(start, start.plusWeeks(1), "$weeks weeks ago")
+    }
+    Regex("""(\d+)\s+days?\s+ago""").find(text)?.groupValues?.getOrNull(1)?.toLongOrNull()?.let { days ->
+        val start = startOfDay(now.minusDays(days))
+        return range(start, start.plusDays(1), "$days days ago")
+    }
+
+    return when {
+        "last week" in text -> {
+            val start = startOfWeek(now).minusWeeks(1)
+            range(start, start.plusWeeks(1), "last week")
+        }
+        "this week" in text -> {
+            val start = startOfWeek(now)
+            range(start, start.plusWeeks(1), "this week")
+        }
+        "last month" in text -> {
+            val start = startOfMonth(now).minusMonths(1)
+            range(start, start.plusMonths(1), "last month")
+        }
+        "this month" in text -> {
+            val start = startOfMonth(now)
+            range(start, start.plusMonths(1), "this month")
+        }
+        "yesterday" in text -> {
+            val start = startOfDay(now.minusDays(1))
+            range(start, start.plusDays(1), "yesterday")
+        }
+        "today" in text || "earlier today" in text -> {
+            val start = startOfDay(now)
+            range(start, start.plusDays(1), "today")
+        }
+        else -> null
+    }
+}
+
+private fun Int.floorMod(other: Int): Int = Math.floorMod(this, other)
 
 private data class MemoryRecallQueryPlan(
     val originalTokens: List<String>,
@@ -224,6 +391,14 @@ private data class MemoryRecallQueryPlan(
 }
 
 private val MEMORY_SEARCH_EXPANSIONS = mapOf(
+    "body" to listOf("figure", "size", "shape"),
+    "measurement" to listOf("measurements", "measure", "sizes"),
+    "measurements" to listOf("measurement", "measure", "sizes"),
+    "weight" to listOf("weigh", "weighed", "pounds", "lbs", "kg", "kilograms"),
+    "bust" to listOf("chest", "breast", "breasts"),
+    "waist" to listOf("midsection", "middle"),
+    "hips" to listOf("hip"),
+    "hip" to listOf("hips"),
     "bed" to listOf("beds", "bedroom", "mattress", "blanket", "pillow"),
     "under" to listOf("beneath", "underneath", "below"),
     "beneath" to listOf("under", "underneath", "below"),
@@ -285,6 +460,7 @@ class MemorySearchService(
         activeConversationId: Uuid?,
         query: String,
         limit: Int = 5,
+        timeRange: String? = null,
     ): JsonObject = withContext(Dispatchers.IO) {
         val trimmedQuery = query.trim()
         if (trimmedQuery.isBlank()) {
@@ -296,12 +472,32 @@ class MemorySearchService(
         }
 
         val boundedLimit = limit.coerceIn(1, MEMORY_SEARCH_MAX_LIMIT)
+        val parsedTimeRange = parseMemorySearchTimeRange(timeRange ?: trimmedQuery)
+        val settings = settingsStore.settingsFlow.first()
         val warnings = mutableListOf<String>()
+        val deterministicQueries = buildDeterministicMemoryRecallQueries(trimmedQuery)
+        val agentQueries = runCatching {
+            generateSubagentRecallQueries(
+                settings = settings,
+                assistant = assistant,
+                query = trimmedQuery,
+                timeRange = parsedTimeRange,
+            )
+        }.getOrElse { throwable ->
+            if (throwable is CancellationException) throw throwable
+            warnings += "Subagent query expansion was unavailable, so deterministic recall queries were used."
+            emptyList()
+        }
+        val recallQueries = (deterministicQueries + agentQueries)
+            .distinctBy { it.text.normalizedRecallText() }
+            .take(MEMORY_SEARCH_MAX_QUERIES)
+
         val memoryResults = runCatching {
             searchStoredMemories(
                 assistant = assistant,
-                query = trimmedQuery,
+                queries = recallQueries,
                 limit = boundedLimit,
+                timeRange = parsedTimeRange,
             )
         }.getOrElse { throwable ->
             if (throwable is CancellationException) throw throwable
@@ -312,8 +508,9 @@ class MemorySearchService(
             searchPastChatSpans(
                 assistant = assistant,
                 activeConversationId = activeConversationId,
-                query = trimmedQuery,
+                queries = recallQueries,
                 limit = boundedLimit,
+                timeRange = parsedTimeRange,
             )
         }.getOrElse { throwable ->
             if (throwable is CancellationException) throw throwable
@@ -321,7 +518,6 @@ class MemorySearchService(
             emptyList()
         }
 
-        val settings = settingsStore.settingsFlow.first()
         val chatResults = chatSpans.take(MEMORY_SEARCH_CHAT_SUMMARY_LIMIT).map { span ->
             val summary = summarizeChatSpan(settings, assistant, span, trimmedQuery)
                 ?: buildFallbackRecallSummary(span)
@@ -358,11 +554,21 @@ class MemorySearchService(
                     .thenByDescending { it.timestampMillis }
             )
             .take(boundedLimit)
+        val agentSummary = synthesizeMemoryFindings(
+            settings = settings,
+            assistant = assistant,
+            query = trimmedQuery,
+            timeRange = parsedTimeRange,
+            results = results,
+        )
 
         buildJsonObject {
             put("query", trimmedQuery)
             put("source", "memory_search")
-            put("summary", buildOverallSummary(results))
+            put("queries", JsonArray(recallQueries.map { JsonPrimitive(it.text) }))
+            put("scope", "core_memories_and_current_character_past_chats")
+            parsedTimeRange?.let { put("time_filter", it.label) }
+            put("summary", agentSummary ?: buildOverallSummary(results))
             put("confidence", JsonPrimitive(results.maxOfOrNull { it.confidence } ?: 0f))
             put("results", JsonArray(results.map { it.toJson() }))
             put("note", "These are approximate memory search results. Time labels are intentionally fuzzy.")
@@ -374,83 +580,177 @@ class MemorySearchService(
 
     private suspend fun searchStoredMemories(
         assistant: Assistant,
-        query: String,
+        queries: List<MemoryRecallSearchQuery>,
         limit: Int,
+        timeRange: MemorySearchTimeRange?,
     ): List<RecallResult> {
-        val ragResults = if (assistant.useRagMemoryRetrieval) {
-            runCatching {
-                memoryRepository.retrieveRelevantMemoriesWithScores(
-                    assistantId = assistant.id.toString(),
-                    query = query,
-                    limit = limit,
-                    similarityThreshold = 0.2f,
-                    includeCore = true,
-                    includeEpisodes = true,
-                )
-            }.getOrElse { emptyList() }
-        } else {
-            emptyList()
-        }
-
-        if (ragResults.isNotEmpty()) {
-            return ragResults.map { (memory, score) ->
-                memory.toRecallResult(confidence = score.coerceIn(0f, 1f))
-            }
-        }
-
-        val tokens = memorySearchTokens(query)
+        if (queries.isEmpty()) return emptyList()
+        val assistantId = assistant.id.toString()
+        val merged = linkedMapOf<Int, ScoredMemoryCandidate>()
         val core = memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
-        val episodes = memoryRepository.getEpisodeEntitiesOfAssistant(assistant.id.toString())
-            .map {
-                AssistantMemory(
-                    id = -it.id,
-                    content = it.content,
-                    type = MemoryType.EPISODIC,
-                    hasEmbedding = it.embedding != null,
-                    embeddingModelId = it.embeddingModelId,
-                    timestamp = it.startTime,
-                    significance = it.significance,
-                )
-            }
+            .filter { memory -> memory.type == MemoryType.CORE }
+            .filter { memory -> timeRange?.contains(memory.timestamp) ?: true }
 
-        return (core + episodes)
-            .mapNotNull { memory ->
-                val score = scoreMemorySearchText(memory.content, query, tokens)
-                if (score <= 0) null else memory to score
-            }
-            .sortedByDescending { it.second }
-            .take(limit)
-            .map { (memory, score) ->
-                memory.toRecallResult(confidence = confidenceFromScore(score))
-            }
-    }
-
-    private suspend fun searchPastChatSpans(
-        assistant: Assistant,
-        activeConversationId: Uuid?,
-        query: String,
-        limit: Int,
-    ): List<ConversationRecallSpan> {
-        return conversationRepository
-            .getConversationsOfAssistant(assistant.id)
-            .first()
-            .asSequence()
-            .filter { it.id != activeConversationId }
-            .flatMap { conversation ->
+        queries.forEachIndexed { queryIndex, recallQuery ->
+            if (assistant.useRagMemoryRetrieval) {
                 runCatching {
-                    findConversationRecallSpans(
-                        conversation = conversation,
-                        query = query,
-                        maxSpans = 2,
+                    memoryRepository.retrieveRelevantMemoriesWithScores(
+                        assistantId = assistantId,
+                        query = recallQuery.text,
+                        limit = (limit * 3).coerceAtLeast(limit),
+                        similarityThreshold = 0.12f,
+                        includeCore = true,
+                        includeEpisodes = false,
                     )
                 }.getOrElse { throwable ->
                     if (throwable is CancellationException) throw throwable
                     emptyList()
                 }.asSequence()
+                    .filter { (memory, _) -> memory.type == MemoryType.CORE }
+                    .filter { (memory, _) -> timeRange?.contains(memory.timestamp) ?: true }
+                    .forEach { (memory, similarity) ->
+                        val score = ((similarity.coerceIn(0f, 1f) * 24f).toInt() + 4 - queryIndex.coerceAtMost(3))
+                            .coerceAtLeast(1)
+                        merged.addOrUpgrade(
+                            memory = memory,
+                            score = score,
+                            confidence = (0.45f + similarity.coerceIn(0f, 1f) * 0.45f).coerceIn(0f, 0.95f),
+                            matchedQuery = recallQuery.text,
+                        )
+                    }
             }
+
+            val tokens = memorySearchTokens(recallQuery.text)
+            core.forEach { memory ->
+                val textScore = scoreMemorySearchText(memory.content, recallQuery.text, tokens)
+                if (textScore > 0) {
+                    val score = (textScore + 3 - queryIndex.coerceAtMost(3)).coerceAtLeast(1)
+                    merged.addOrUpgrade(
+                        memory = memory,
+                        score = score,
+                        confidence = confidenceFromScore(score),
+                        matchedQuery = recallQuery.text,
+                    )
+                }
+            }
+        }
+
+        return merged.values
+            .asSequence()
+            .sortedWith(
+                compareByDescending<ScoredMemoryCandidate> { it.score }
+                    .thenByDescending { it.confidence }
+                    .thenByDescending { it.memory.timestamp }
+            )
+            .take(limit)
+            .map { candidate ->
+                candidate.memory.toRecallResult(
+                    confidence = candidate.confidence,
+                    score = candidate.score,
+                    matchedQuery = candidate.matchedQuery,
+                )
+            }
+            .toList()
+    }
+
+    private suspend fun searchPastChatSpans(
+        assistant: Assistant,
+        activeConversationId: Uuid?,
+        queries: List<MemoryRecallSearchQuery>,
+        limit: Int,
+        timeRange: MemorySearchTimeRange?,
+    ): List<ConversationRecallSpan> {
+        if (queries.isEmpty()) return emptyList()
+        val merged = linkedMapOf<String, ConversationRecallSpan>()
+        return conversationRepository
+            .getConversationsOfAssistant(assistant.id)
+            .first()
+            .asSequence()
+            .filter { it.id != activeConversationId }
+            .onEach { conversation ->
+                queries.forEachIndexed { queryIndex, recallQuery ->
+                    runCatching {
+                        findConversationRecallSpans(
+                            conversation = conversation,
+                            query = recallQuery.text,
+                            maxSpans = 2,
+                            timeRange = timeRange,
+                        )
+                    }.getOrElse { throwable ->
+                        if (throwable is CancellationException) throw throwable
+                        emptyList()
+                    }.forEach { span ->
+                        val key = "${span.conversationId}:${span.messageIndex}"
+                        val adjusted = span.copy(score = (span.score + 2 - queryIndex.coerceAtMost(2)).coerceAtLeast(1))
+                        val existing = merged[key]
+                        if (existing == null || adjusted.score > existing.score) {
+                            merged[key] = adjusted
+                        }
+                    }
+                }
+            }
+            .toList()
+            .let { merged.values.asSequence() }
             .sortedByDescending { it.score }
             .take(limit)
             .toList()
+    }
+
+    private suspend fun generateSubagentRecallQueries(
+        settings: Settings,
+        assistant: Assistant,
+        query: String,
+        timeRange: MemorySearchTimeRange?,
+    ): List<MemoryRecallSearchQuery> {
+        val (model, provider) = resolveSubagentModel(settings, assistant) ?: return emptyList()
+        val providerHandler = providerManager.getProviderByType(provider)
+        val prompt = """
+            You are a recall-query planner for one character's private memory search.
+
+            Original query:
+            $query
+
+            Time filter:
+            ${timeRange?.label ?: "none"}
+
+            Produce up to 5 alternate search queries that could find the same memory in core memories or past chats.
+            Rules:
+            - Preserve important exact words from the original query.
+            - Add useful synonyms, paraphrases, related facts, and likely wording.
+            - Do not search other characters or unrelated databases.
+            - Do not add commentary.
+            - Output one query per line.
+        """.trimIndent()
+
+        return runCatching {
+            val response = providerHandler.generateText(
+                providerSetting = provider,
+                messages = listOf(UIMessage.user(prompt)),
+                params = settings.buildSubagentGenerationParams(
+                    model = model,
+                    temperature = 0.2f,
+                ),
+            )
+            response.choices.firstOrNull()?.message?.toContentText()
+                ?.lineSequence()
+                ?.map { line ->
+                    line.trim()
+                        .removePrefix("-")
+                        .removePrefix("*")
+                        .replace(Regex("""^\d+[\).\s-]+"""), "")
+                        .trim()
+                        .trim('"')
+                }
+                ?.filter { it.length in 3..180 }
+                ?.distinctBy { it.normalizedRecallText() }
+                ?.take(5)
+                ?.map { MemoryRecallSearchQuery(it, "subagent") }
+                ?.toList()
+                .orEmpty()
+        }.getOrElse { throwable ->
+            if (throwable is CancellationException) throw throwable
+            emptyList()
+        }
     }
 
     private suspend fun summarizeChatSpan(
@@ -459,9 +759,7 @@ class MemorySearchService(
         span: ConversationRecallSpan,
         query: String,
     ): String? {
-        val modelId = settings.summarizerModelId ?: assistant.backgroundModelId ?: settings.chatModelId
-        val model = settings.findModelById(modelId) ?: return null
-        val provider = model.findProvider(settings.providers) ?: return null
+        val (model, provider) = resolveSubagentModel(settings, assistant) ?: return null
         val providerHandler = providerManager.getProviderByType(provider)
         val messagesText = span.messages.joinToString("\n") { message ->
             "${message.role}: ${message.toContentText().take(700)}"
@@ -482,7 +780,7 @@ class MemorySearchService(
             val response = providerHandler.generateText(
                 providerSetting = provider,
                 messages = listOf(UIMessage.user(prompt)),
-                params = settings.buildSummarizerGenerationParams(
+                params = settings.buildSubagentGenerationParams(
                     model = model,
                     temperature = 0.2f,
                 ),
@@ -494,7 +792,82 @@ class MemorySearchService(
         }
     }
 
-    private fun AssistantMemory.toRecallResult(confidence: Float): RecallResult {
+    private suspend fun synthesizeMemoryFindings(
+        settings: Settings,
+        assistant: Assistant,
+        query: String,
+        timeRange: MemorySearchTimeRange?,
+        results: List<RecallResult>,
+    ): String? {
+        val (model, provider) = resolveSubagentModel(settings, assistant) ?: return null
+        val providerHandler = providerManager.getProviderByType(provider)
+        val findingsText = if (results.isEmpty()) {
+            "No direct core memory or past-chat hits were found."
+        } else {
+            results.take(MEMORY_SEARCH_MAX_LIMIT).mapIndexed { index, result ->
+                buildString {
+                    append("${index + 1}. source=${result.source}")
+                    result.title?.let { append(", title=$it") }
+                    append(", time=${fuzzyMemoryAgeLabel(result.timestampMillis)}")
+                    append(", confidence=${"%.2f".format(result.confidence)}")
+                    append("\nsummary: ${result.summary.take(700)}")
+                    result.matchedText?.takeIf { it.isNotBlank() }?.let {
+                        append("\nmatched: ${it.take(400)}")
+                    }
+                }
+            }.joinToString("\n\n")
+        }
+        val prompt = """
+            You are the memory subagent for one character. Your job is to read retrieval candidates and prepare a compact memory note for the character.
+
+            Query: $query
+            Time filter: ${timeRange?.label ?: "none"}
+
+            Rules:
+            - Use only the provided findings. Do not invent a memory.
+            - If nothing clearly matches, say that no clear memory was found, then mention any nearby/useful clue only if the findings actually support it.
+            - Prefer stable facts, exact measurements, names, preferences, plans, and emotionally important events.
+            - Keep it concise: 1-4 short sentences.
+            - Use fuzzy time language, not exact timestamps.
+
+            Findings:
+            $findingsText
+        """.trimIndent()
+
+        return runCatching {
+            val response = providerHandler.generateText(
+                providerSetting = provider,
+                messages = listOf(UIMessage.user(prompt)),
+                params = settings.buildSubagentGenerationParams(
+                    model = model,
+                    temperature = 0.1f,
+                ),
+            )
+            response.choices.firstOrNull()?.message?.toContentText()?.trim()?.takeIf { it.isNotBlank() }?.take(900)
+        }.getOrElse { throwable ->
+            if (throwable is CancellationException) throw throwable
+            null
+        }
+    }
+
+    private fun resolveSubagentModel(
+        settings: Settings,
+        assistant: Assistant,
+    ): Pair<me.rerere.ai.provider.Model, me.rerere.ai.provider.ProviderSetting>? {
+        val modelId = settings.subagentModelId
+            ?: settings.summarizerModelId
+            ?: assistant.backgroundModelId
+            ?: settings.chatModelId
+        val model = settings.findModelById(modelId) ?: return null
+        val provider = model.findProvider(settings.providers) ?: return null
+        return model to provider
+    }
+
+    private fun AssistantMemory.toRecallResult(
+        confidence: Float,
+        score: Int? = null,
+        matchedQuery: String? = null,
+    ): RecallResult {
         val compactContent = content.toRecallSnippet(limit = 900)
         return RecallResult(
             source = if (type == MemoryType.CORE) "core_memory" else "episodic_memory",
@@ -503,6 +876,8 @@ class MemorySearchService(
             content = compactContent,
             timestampMillis = timestamp,
             confidence = confidence,
+            matchedQuery = matchedQuery,
+            score = score,
         )
     }
 
@@ -527,6 +902,7 @@ class MemorySearchService(
         val confidence: Float,
         val title: String? = null,
         val matchedText: String? = null,
+        val matchedQuery: String? = null,
         val score: Int? = null,
     ) {
         fun toJson(): JsonObject = buildJsonObject {
@@ -536,6 +912,7 @@ class MemorySearchService(
             put("summary", summary)
             put("content", content)
             matchedText?.let { put("matched_text", it) }
+            matchedQuery?.let { put("matched_query", it) }
             put("time_ago", fuzzyMemoryAgeLabel(timestampMillis))
             put("confidence", JsonPrimitive(confidence))
             score?.let { put("score", JsonPrimitive(it)) }

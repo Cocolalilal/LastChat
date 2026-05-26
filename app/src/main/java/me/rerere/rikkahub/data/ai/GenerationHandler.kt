@@ -474,12 +474,13 @@ class GenerationHandler(
                             memoryRepo.deleteMemory(id)
                         },
                         onSearch = if (shouldRegisterMemorySearchTool(assistant)) {
-                            { query, limit ->
+                            { query, limit, timeRange ->
                                 memorySearchService.searchMemory(
                                     assistant = assistant,
                                     activeConversationId = activeConversationId,
                                     query = query,
                                     limit = limit,
+                                    timeRange = timeRange,
                                 )
                             }
                         } else {
@@ -1364,7 +1365,7 @@ class GenerationHandler(
         onCreation: suspend (String) -> AssistantMemory,
         onUpdate: suspend (Int, String) -> AssistantMemory,
         onDelete: suspend (Int) -> Unit,
-        onSearch: (suspend (String, Int) -> JsonElement)? = null,
+        onSearch: (suspend (String, Int, String?) -> JsonElement)? = null,
     ) = buildList {
         add(Tool(
             name = "create_memory",
@@ -1463,7 +1464,7 @@ class GenerationHandler(
         if (onSearch != null) {
             add(Tool(
                 name = MEMORY_SEARCH_TOOL_NAME,
-                description = "Search this character's core memories, episodic memories, and actually used past chat messages for a remembered topic, scene, person, feeling, or detail.",
+                description = "Search this character's core memories and actually used past chat messages for a remembered topic, scene, person, feeling, or detail. The memory subagent expands the query internally and searches multiple variants.",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
@@ -1475,6 +1476,10 @@ class GenerationHandler(
                                 put("type", "integer")
                                 put("description", "Maximum number of memory results to return. Defaults to 5.")
                             })
+                            put("time_range", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Optional rough time span to filter recall, such as last week, this month, last month, 4 months ago, or yesterday.")
+                            })
                         },
                         required = listOf("query")
                     )
@@ -1482,10 +1487,12 @@ class GenerationHandler(
                 systemPrompt = { _, _ ->
                     """
                     ## Memory search tool
-                    You may call `$MEMORY_SEARCH_TOOL_NAME` when you are deliberately trying to remember something from core memories, episodic memories, or older chats.
+                    You may call `$MEMORY_SEARCH_TOOL_NAME` when you are deliberately trying to remember something from core memories or older chats.
                     - Use it for genuine recall, not on every turn.
                     - It searches only this character's memories and actually used chat timeline, not other characters or discarded reply versions.
-                    - Preserve the user's recall terms. If a query is broad or the first result looks weak, you may try one more query with different wording or synonyms.
+                    - You can pass `time_range` when the user asks about a rough time span, like "last week", "this month", "last month", or "4 months ago".
+                    - Preserve the user's recall terms, including odd meta words; the memory subagent will expand the query internally across several variants.
+                    - If the returned summary says no clear memory was found and the user keeps pressing, you may try one more narrower query.
                     - Treat returned memories as approximate, human-like recollections.
                     - Time labels are fuzzy on purpose; do not expose exact timestamps unless the user asks.
                     - If confidence is low or results disagree, answer with natural uncertainty.
@@ -1495,7 +1502,8 @@ class GenerationHandler(
                     val params = it.jsonObject
                     val query = params["query"]?.jsonPrimitive?.contentOrNull ?: error("query is required")
                     val limit = params["limit"]?.jsonPrimitive?.intOrNull ?: 5
-                    onSearch(query, limit)
+                    val timeRange = params["time_range"]?.jsonPrimitive?.contentOrNull
+                    onSearch(query, limit, timeRange)
                 }
             ))
         }

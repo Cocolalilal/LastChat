@@ -71,6 +71,29 @@ class MemorySearchServiceTest {
     }
 
     @Test
+    fun deterministicRecallQueriesKeepOriginalAndAddUsefulVariants() {
+        val queries = buildDeterministicMemoryRecallQueries("body measurements weight bust waist hips")
+            .map { it.text }
+
+        assertEquals("body measurements weight bust waist hips", queries.first())
+        assertTrue(queries.any { it.contains("chest") || it.contains("breast") })
+        assertTrue(queries.any { it.contains("weight") && it.contains("waist") })
+    }
+
+    @Test
+    fun parseMemorySearchTimeRangeUnderstandsRoughSpans() {
+        val now = Instant.parse("2026-05-26T12:00:00Z").toEpochMilli()
+
+        val lastMonth = parseMemorySearchTimeRange("last month", now)
+        val fourMonthsAgo = parseMemorySearchTimeRange("4 months ago", now)
+
+        assertEquals("last month", lastMonth?.label)
+        assertTrue(lastMonth?.contains(Instant.parse("2026-04-15T12:00:00Z").toEpochMilli()) == true)
+        assertTrue(lastMonth?.contains(Instant.parse("2026-05-15T12:00:00Z").toEpochMilli()) == false)
+        assertEquals("4 months ago", fourMonthsAgo?.label)
+    }
+
+    @Test
     fun findConversationRecallSpansUsesOnlySelectedMessageVersions() {
         val conversation = Conversation(
             id = Uuid.parse("00000000-0000-0000-0000-000000000401"),

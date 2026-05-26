@@ -887,12 +887,138 @@ private fun TimelinePreview(entry: TimelineEntry) {
 private fun ToolCallDetails(entry: TimelineEntry.ToolCall) {
     when (entry.toolName) {
         "search_web" -> SearchTimelineDetails(entry)
+        "search_memory" -> MemoryRecallTimelineDetails(entry)
         "scrape_web" -> ScrapeTimelineDetails(entry)
         "eval_python" -> PythonTimelineDetails(entry)
         in SANDBOX_FILE_TOOLS -> SandboxFileTimelineDetails(entry)
         "ask_user" -> AskUserTimelineDetails(entry)
         "manage_skills" -> SkillManagementTimelineDetails(entry)
         else -> GenericToolDetails(entry)
+    }
+}
+
+@Composable
+private fun MemoryRecallTimelineDetails(entry: TimelineEntry.ToolCall) {
+    val argsObj = entry.argumentsJson as? JsonObject
+    val resultObj = entry.resultJson as? JsonObject
+    val query = argsObj?.get("query")?.jsonPrimitiveOrNull?.contentOrNull
+    val requestedTime = argsObj?.get("time_range")?.jsonPrimitiveOrNull?.contentOrNull
+    val resolvedTime = resultObj?.get("time_filter")?.jsonPrimitiveOrNull?.contentOrNull
+    val summary = resultObj?.get("summary")?.jsonPrimitiveOrNull?.contentOrNull
+    val results = (resultObj?.get("results") as? JsonArray) ?: JsonArray(emptyList())
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (!query.isNullOrBlank()) {
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_query),
+                value = query
+            )
+        }
+        (resolvedTime ?: requestedTime)?.takeIf { it.isNotBlank() }?.let { range ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_memory_time_filter),
+                value = range
+            )
+        }
+
+        if (!summary.isNullOrBlank()) {
+            Surface(
+                shape = AppShapes.CardSmall,
+                color = MaterialTheme.colorScheme.secondaryContainer,
+            ) {
+                Text(
+                    text = summary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.padding(10.dp)
+                )
+            }
+        }
+
+        if (results.isNotEmpty()) {
+            Text(
+                text = stringResource(R.string.activity_timeline_memory_findings, results.size),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.secondary
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                results.forEach { item ->
+                    val obj = item as? JsonObject ?: return@forEach
+                    val source = obj["source"]?.jsonPrimitiveOrNull?.contentOrNull
+                    val title = obj["conversation_title"]?.jsonPrimitiveOrNull?.contentOrNull
+                    val timeAgo = obj["time_ago"]?.jsonPrimitiveOrNull?.contentOrNull
+                    val confidence = obj["confidence"]?.jsonPrimitiveOrNull?.contentOrNull
+                    val itemSummary = obj["summary"]?.jsonPrimitiveOrNull?.contentOrNull
+                    val matchedText = obj["matched_text"]?.jsonPrimitiveOrNull?.contentOrNull
+
+                    Surface(
+                        shape = AppShapes.CardSmall,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = when (source) {
+                                        "core_memory" -> stringResource(R.string.activity_timeline_memory_source_core)
+                                        "past_chat" -> stringResource(R.string.activity_timeline_memory_source_chat)
+                                        else -> source.orEmpty().ifBlank { stringResource(R.string.activity_timeline_tool_search_memory) }
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                timeAgo?.takeIf { it.isNotBlank() }?.let {
+                                    Text(
+                                        text = it,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            title?.takeIf { it.isNotBlank() }?.let {
+                                Text(
+                                    text = it,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            if (!itemSummary.isNullOrBlank()) {
+                                Text(
+                                    text = itemSummary,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            if (!matchedText.isNullOrBlank() && matchedText != itemSummary) {
+                                Text(
+                                    text = matchedText,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 3,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            confidence?.takeIf { it.isNotBlank() }?.let {
+                                Text(
+                                    text = stringResource(R.string.activity_timeline_memory_confidence, it),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        } else if (summary.isNullOrBlank()) {
+            GenericToolDetails(entry)
+        }
     }
 }
 

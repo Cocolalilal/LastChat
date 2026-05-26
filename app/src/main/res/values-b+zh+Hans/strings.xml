@@ -1544,4 +1544,11 @@
   <string name="setting_provider_page_pick_icon_file">Select photo/file</string>
   <string name="retry">Retry</string>
   <string name="skills_page_available_for_all_characters_desc">Turn this off to choose exactly which characters can use this skill</string>
+  <string name="setting_model_page_subagent_model">Subagent Model</string>
+  <string name="setting_model_page_subagent_model_desc">Model for helper agents such as deliberate memory recall.</string>
+  <string name="activity_timeline_memory_time_filter">Time</string>
+  <string name="activity_timeline_memory_findings">Findings (%1$d)</string>
+  <string name="activity_timeline_memory_source_core">Core memory</string>
+  <string name="activity_timeline_memory_source_chat">Past chat</string>
+  <string name="activity_timeline_memory_confidence">Confidence %1$s</string>
 </resources>

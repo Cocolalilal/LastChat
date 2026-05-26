@@ -242,6 +242,11 @@
     <string name="activity_timeline_reply">Reply</string>
     <string name="activity_timeline_tool_search_web">Searching web</string>
     <string name="activity_timeline_tool_search_memory">Memory recall</string>
+    <string name="activity_timeline_memory_time_filter">Time</string>
+    <string name="activity_timeline_memory_findings">Findings (%1$d)</string>
+    <string name="activity_timeline_memory_source_core">Core memory</string>
+    <string name="activity_timeline_memory_source_chat">Past chat</string>
+    <string name="activity_timeline_memory_confidence">Confidence %1$s</string>
     <string name="activity_timeline_tool_scrape_web">Reading page</string>
     <string name="activity_timeline_tool_write_file">Writing file</string>
     <string name="activity_timeline_tool_read_file">Reading file</string>
@@ -540,6 +545,8 @@
     <string name="setting_model_page_suggestion_prompt_vars">Vars: Content: {content}, Locale: {locale}</string>
     <string name="setting_model_page_summarizer_model">Summarizer Model</string>
     <string name="setting_model_page_summarizer_model_desc">Model for memory summarization and context refresh across all characters.</string>
+    <string name="setting_model_page_subagent_model">Subagent Model</string>
+    <string name="setting_model_page_subagent_model_desc">Model for helper agents such as deliberate memory recall.</string>
     <string name="setting_model_page_summarizer_missing_banner">Select a summarizer model in Settings > Default Models</string>
     <string name="setting_model_page_title">Default Models</string>
     <string name="setting_model_page_title_model">Title Model</string>
