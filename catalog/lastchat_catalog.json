@@ -181,6 +181,22 @@
       },
       "icon": "icons/openrouter.svg",
       "preset": true,
+      "signup_url": "https://openrouter.ai/sign-up",
+      "api_key_url": "https://openrouter.ai/settings/keys",
+      "setup_recommended": true,
+      "setup_order": 0,
+      "setup_description": "One key for many hosted models\n(pay-as-you-go, with free options)",
+      "setup_models": [
+        "google/gemini-2.5-flash",
+        "openai/gpt-oss-120b",
+        "openrouter/auto"
+      ],
+      "setup_defaults": {
+        "chat": "google/gemini-2.5-flash",
+        "title": "openai/gpt-oss-120b",
+        "summarizer": "openai/gpt-oss-120b",
+        "ocr": "google/gemini-2.5-flash"
+      },
       "stream_options_mode": "auto",
       "image_response_modalities_mode": "enabled",
       "reasoning_content_replay_mode": "auto"

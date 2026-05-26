@@ -124,10 +124,19 @@ internal fun shouldPreserveInMemoryConversation(
 
 internal fun normalizeConversation(conversation: Conversation): Conversation {
     val sanitizedNodes = conversation.messageNodes.mapNotNull { node ->
-        if (node.messages.isEmpty()) {
+        val messages = node.messages.filterNot { message -> message.isEmptyOcrPlaceholder() }
+        if (messages.isEmpty()) {
             null
         } else {
-            node.copy(selectIndex = node.selectIndex.coerceIn(0, node.messages.lastIndex))
+            val selectedId = node.messages.getOrNull(node.selectIndex)?.id
+            val selectedIndex = selectedId
+                ?.let { id -> messages.indexOfFirst { message -> message.id == id } }
+                ?.takeIf { it >= 0 }
+                ?: node.selectIndex.coerceIn(0, messages.lastIndex)
+            node.copy(
+                messages = messages,
+                selectIndex = selectedIndex,
+            )
         }
     }
 
@@ -151,6 +160,13 @@ internal fun normalizeConversation(conversation: Conversation): Conversation {
     }
 
     return conversation.copy(messageNodes = normalizedNodes)
+}
+
+private fun UIMessage.isEmptyOcrPlaceholder(): Boolean {
+    return role == MessageRole.ASSISTANT &&
+        parts.isEmpty() &&
+        annotations.isNotEmpty() &&
+        annotations.all { annotation -> annotation is UIMessageAnnotation.OcrActivity }
 }
 
 internal fun selectConversationTurnVersion(

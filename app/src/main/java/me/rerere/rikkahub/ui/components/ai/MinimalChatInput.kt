@@ -50,12 +50,12 @@ import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.foundation.content.contentReceiver
@@ -637,8 +637,15 @@ fun MinimalChatInput(
                         Box(
                             modifier = Modifier.fillMaxWidth()
                         ) {
+                            val activeTextState =
+                                if (isQuestionnaireActive) questionnaireTextState else state.textContent
                             TextField(
-                                state = if (isQuestionnaireActive) questionnaireTextState else state.textContent,
+                                value = activeTextState.text.toString(),
+                                onValueChange = { newText ->
+                                    if (activeTextState.text.toString() != newText) {
+                                        activeTextState.setTextAndPlaceCursorAtEnd(newText)
+                                    }
+                                },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .defaultMinSize(minHeight = 1.dp)  // Override internal min height (56dp)
@@ -662,18 +669,15 @@ fun MinimalChatInput(
                                         overflow = TextOverflow.Ellipsis
                                     )
                                 },
-                                lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),  // MultiLine for proper Enter key
+                                trailingIcon = {
+                                    Spacer(modifier = Modifier.width(32.dp))
+                                },
+                                maxLines = 5,  // MultiLine for proper Enter key
                                 colors = TextFieldDefaults.colors().copy(
                                     unfocusedIndicatorColor = Color.Transparent,
                                     focusedIndicatorColor = Color.Transparent,
                                     focusedContainerColor = Color.Transparent,
                                     unfocusedContainerColor = Color.Transparent,
-                                ),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                                    start = 16.dp,
-                                    end = 48.dp,  // Space for 40dp button + 4dp padding
-                                    top = 12.dp,
-                                    bottom = 12.dp
                                 )
                             )
                             

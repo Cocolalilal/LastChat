@@ -8,9 +8,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
-import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.data.ai.models.ModelCatalogSnapshot
@@ -51,13 +49,10 @@ class OnboardingVM(
     fun completeGuided(preset: ProviderPreset, apiKey: String, onDone: () -> Unit) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
-                val setupModels = preset.setupModelIds.map { modelId ->
-                    guidedModel(
-                        id = modelId,
-                        supportsImage = modelId == preset.setupDefaults?.ocr,
-                    )
-                }
-                val configuredProvider = providerWithKey(preset.toProviderSetting(), apiKey)
+                val keyedProvider = providerWithKey(preset.toProviderSetting(), apiKey)
+                val providerModels = fetchProviderModels(keyedProvider)
+                val setupModels = providerModels.orderedSetupModels(preset.setupModelIds)
+                val configuredProvider = keyedProvider
                     .copyProvider(models = setupModels)
                 val nextSettings = applyDefaults(
                     settings = settings.value,
@@ -99,16 +94,7 @@ class OnboardingVM(
     fun fetchModels(provider: ProviderSetting, onResult: (List<Model>) -> Unit) {
         viewModelScope.launch {
             val models = withContext(Dispatchers.IO) {
-                runCatching {
-                    providerManager.getProviderByType(provider)
-                        .listModels(provider)
-                        .map { model ->
-                            modelMetadataResolver.applyToModel(model, providerHint = provider)
-                        }
-                        .sortedBy { model -> model.displayName.ifBlank { model.modelId } }
-                }.getOrElse {
-                    emptyList()
-                }
+                fetchProviderModels(provider)
             }
             onResult(models)
         }
@@ -154,19 +140,23 @@ class OnboardingVM(
         )
     }
 
-    private fun guidedModel(id: String, supportsImage: Boolean): Model {
-        return modelMetadataResolver.applyToModel(
-            Model(
-                modelId = id,
-                displayName = id,
-                type = ModelType.CHAT,
-                inputModalities = if (supportsImage) {
-                    listOf(Modality.TEXT, Modality.IMAGE)
-                } else {
-                    listOf(Modality.TEXT)
-                },
-            ),
-        )
+    private suspend fun fetchProviderModels(provider: ProviderSetting): List<Model> {
+        return runCatching {
+            providerManager.getProviderByType(provider)
+                .listModels(provider)
+                .map { model ->
+                    modelMetadataResolver.applyToModel(model, providerHint = provider)
+                }
+                .sortedBy { model -> model.displayName.ifBlank { model.modelId } }
+        }.getOrElse {
+            emptyList()
+        }
+    }
+
+    private fun List<Model>.orderedSetupModels(setupModelIds: List<String>): List<Model> {
+        if (setupModelIds.isEmpty()) return this
+        val modelsById = associateBy { it.modelId }
+        return setupModelIds.mapNotNull(modelsById::get)
     }
 }
 

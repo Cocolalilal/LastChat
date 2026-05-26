@@ -55,6 +55,28 @@ class GenerationHandlerOcrPlaceholderTest {
     }
 
     @Test
+    fun `upsertOcrPlaceholder reuses blank assistant draft`() {
+        val blankAssistant = UIMessage(
+            role = MessageRole.ASSISTANT,
+            parts = emptyList(),
+            versionTag = "regen-v2",
+        )
+        val annotations = listOf(
+            UIMessageAnnotation.OcrActivity(
+                source = UIMessageAnnotation.OcrActivity.Source.IMAGE,
+                fileName = "photo.png",
+            )
+        )
+
+        val updated = listOf(UIMessage.user("hello"), blankAssistant).upsertOcrPlaceholder(annotations)
+
+        assertEquals(2, updated.size)
+        assertEquals(blankAssistant.id, updated.last().id)
+        assertEquals("regen-v2", updated.last().versionTag)
+        assertEquals(annotations, updated.last().annotations)
+    }
+
+    @Test
     fun `dropTrailingOcrPlaceholder removes OCR-only assistant placeholder`() {
         val placeholder = UIMessage(
             role = MessageRole.ASSISTANT,

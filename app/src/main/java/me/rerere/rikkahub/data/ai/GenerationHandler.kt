@@ -1680,6 +1680,12 @@ internal fun List<UIMessage>.upsertOcrPlaceholder(
 
     return if (lastMessage.isTrailingOcrPlaceholder()) {
         dropLast(1) + placeholder
+    } else if (
+        lastMessage?.role == MessageRole.ASSISTANT &&
+        lastMessage.parts.isEmpty() &&
+        lastMessage.annotations.isEmpty()
+    ) {
+        dropLast(1) + lastMessage.copy(annotations = annotations)
     } else {
         this + placeholder
     }

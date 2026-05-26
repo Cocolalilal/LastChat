@@ -215,7 +215,7 @@ data class DisplaySetting(
     val fontSettings: FontSettings = FontSettings(),
     val enableMessageGenerationHapticEffect: Boolean = false,
     val enableUIHaptics: Boolean = true,
-    val enableBlurEffect: Boolean = false,
+    val enableBlurEffect: Boolean = true,
     val enableNotificationOnMessageGeneration: Boolean = false,
     val codeBlockAutoWrap: Boolean = false,
     val codeBlockAutoCollapse: Boolean = true,

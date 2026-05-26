@@ -201,6 +201,34 @@ class ChatServiceTest {
     }
 
     @Test
+    fun normalizeConversationDropsEmptyOcrPlaceholders() {
+        val conversation = Conversation.ofId(
+            id = Uuid.random(),
+            messages = listOf(
+                MessageNode.of(UIMessage.user("look at this")),
+                MessageNode.of(
+                    UIMessage(
+                        role = MessageRole.ASSISTANT,
+                        parts = emptyList(),
+                        annotations = listOf(
+                            me.rerere.ai.ui.UIMessageAnnotation.OcrActivity(
+                                source = me.rerere.ai.ui.UIMessageAnnotation.OcrActivity.Source.IMAGE,
+                                fileName = "photo.png",
+                            )
+                        ),
+                    )
+                ),
+                MessageNode.of(UIMessage.assistant("actual reply")),
+            ),
+        )
+
+        val normalized = normalizeConversation(conversation)
+
+        assertEquals(2, normalized.messageNodes.size)
+        assertEquals("actual reply", normalized.currentMessages.last().toContentText())
+    }
+
+    @Test
     fun selectConversationTurnVersionFallsBackWithoutEmptyingAssistantTurn() {
         val targetNodeId = Uuid.random()
         val conversation = Conversation.ofId(

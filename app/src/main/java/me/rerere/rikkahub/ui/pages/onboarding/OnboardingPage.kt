@@ -133,6 +133,7 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
     var manualProvider by remember { mutableStateOf<ProviderSetting?>(null) }
     var manualProviderPreset by remember { mutableStateOf<ProviderPreset?>(null) }
     var apiKey by remember { mutableStateOf("") }
+    var guidedModelsLoading by remember { mutableStateOf(false) }
     var manualModelsLoading by remember { mutableStateOf(false) }
     var manualModels by remember { mutableStateOf<List<Model>>(emptyList()) }
     val selectedModels = remember { mutableStateListOf<Model>() }
@@ -262,10 +263,13 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
                 SetupPage.GuidedPasteKey -> PasteKeyPage(
                     apiKey = apiKey,
                     onApiKeyChange = { apiKey = it },
+                    loading = guidedModelsLoading,
                     onContinue = {
                         val provider = selectedGuidedProvider ?: return@PasteKeyPage
                         haptics.perform(HapticPattern.Pop)
+                        guidedModelsLoading = true
                         vm.completeGuided(provider, apiKey) {
+                            guidedModelsLoading = false
                             haptics.perform(HapticPattern.Success)
                             goTo(SetupPage.Success)
                         }
@@ -304,7 +308,7 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
                         manualModelsLoading = true
                         vm.fetchModels(keyedProvider) { models ->
                             manualModelsLoading = false
-                            manualModels = models.ifEmpty { keyedProvider.models }
+                            manualModels = models
                             selectedModels.clear()
                             roleModels = SetupRoleModels()
                             goTo(SetupPage.ManualModels)
@@ -421,7 +425,7 @@ private fun IntroPage(
         ) {
             IntroRipple(progress = ripple.value)
             Image(
-                painter = painterResource(R.mipmap.ic_launcher_lastchat_foreground),
+                painter = painterResource(R.drawable.lastchat_setup_icon),
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier

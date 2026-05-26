@@ -21,6 +21,7 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
+import me.rerere.rikkahub.data.repository.ChatAttachmentRepository
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
 import java.io.File
@@ -102,19 +103,27 @@ object OcrTransformer : InputMessageTransformer, KoinComponent {
                         when {
                             part is UIMessagePart.Image && part.url.startsWith("file:") -> {
                                 val fileName = resolveFileName(part)
-                                val ocrResult = performOcrWithMetadata(part) {
-                                    ctx.upsertProgressAnnotation(
-                                        annotation = UIMessageAnnotation.OcrActivity(
-                                            source = UIMessageAnnotation.OcrActivity.Source.IMAGE,
-                                            fileName = fileName,
-                                        ),
-                                        matches = { annotation ->
-                                            annotation is UIMessageAnnotation.OcrActivity &&
-                                                annotation.source == UIMessageAnnotation.OcrActivity.Source.IMAGE &&
-                                                annotation.fileName == fileName
-                                        }
-                                    )
-                                }
+                                val ocrText = get<ChatAttachmentRepository>().resolveAttachmentOcrText(
+                                    part = part,
+                                    ensureAvailable = true,
+                                    onBeforeProviderCall = {
+                                        ctx.upsertProgressAnnotation(
+                                            annotation = UIMessageAnnotation.OcrActivity(
+                                                source = UIMessageAnnotation.OcrActivity.Source.IMAGE,
+                                                fileName = fileName,
+                                            ),
+                                            matches = { annotation ->
+                                                annotation is UIMessageAnnotation.OcrActivity &&
+                                                    annotation.source == UIMessageAnnotation.OcrActivity.Source.IMAGE &&
+                                                    annotation.fileName == fileName
+                                            }
+                                        )
+                                    },
+                                )
+                                val ocrResult = OcrExecutionResult(
+                                    promptText = ocrText,
+                                    status = if (ocrText.isNullOrBlank()) OcrStatus.FAILED else OcrStatus.CACHE_HIT,
+                                )
                                 if (ocrResult.consumesImageInput()) {
                                     ctx.recordGenerationAnnotation(
                                         UIMessageAnnotation.OcrActivity(
