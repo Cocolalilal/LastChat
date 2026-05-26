@@ -169,6 +169,78 @@ class ChatServiceTest {
     }
 
     @Test
+    fun mergeLiveMessagesIfIncomingIsStaleKeepsGeneratedAssistantReply() {
+        val conversationId = Uuid.parse("00000000-0000-0000-0000-000000000501")
+        val userMessage = UIMessage.user("hi").copy(
+            id = Uuid.parse("00000000-0000-0000-0000-000000000502"),
+        )
+        val assistantMessage = UIMessage.assistant("finished reply").copy(
+            id = Uuid.parse("00000000-0000-0000-0000-000000000503"),
+        )
+        val liveConversation = Conversation.ofId(
+            id = conversationId,
+            messages = listOf(
+                MessageNode.of(userMessage),
+                MessageNode.of(assistantMessage),
+            ),
+        ).copy(
+            updateAt = Instant.parse("2026-05-26T10:00:05Z"),
+        )
+        val staleMetadataUpdate = Conversation.ofId(
+            id = conversationId,
+            messages = listOf(MessageNode.of(userMessage)),
+        ).copy(
+            title = "Fresh title",
+            chatSuggestions = listOf("Next"),
+            updateAt = Instant.parse("2026-05-26T10:00:00Z"),
+        )
+
+        val merged = mergeLiveMessagesIfIncomingIsStale(
+            liveConversation = liveConversation,
+            incomingConversation = staleMetadataUpdate,
+        )
+
+        assertEquals("Fresh title", merged.title)
+        assertEquals(listOf("Next"), merged.chatSuggestions)
+        assertEquals(2, merged.messageNodes.size)
+        assertEquals("finished reply", merged.currentMessages.last().toContentText())
+    }
+
+    @Test
+    fun mergeLiveMessagesIfIncomingIsStaleAllowsNewerMessageRemoval() {
+        val conversationId = Uuid.parse("00000000-0000-0000-0000-000000000511")
+        val userMessage = UIMessage.user("hi").copy(
+            id = Uuid.parse("00000000-0000-0000-0000-000000000512"),
+        )
+        val assistantMessage = UIMessage.assistant("finished reply").copy(
+            id = Uuid.parse("00000000-0000-0000-0000-000000000513"),
+        )
+        val liveConversation = Conversation.ofId(
+            id = conversationId,
+            messages = listOf(
+                MessageNode.of(userMessage),
+                MessageNode.of(assistantMessage),
+            ),
+        ).copy(
+            updateAt = Instant.parse("2026-05-26T10:00:00Z"),
+        )
+        val newerDeletion = Conversation.ofId(
+            id = conversationId,
+            messages = listOf(MessageNode.of(userMessage)),
+        ).copy(
+            updateAt = Instant.parse("2026-05-26T10:00:05Z"),
+        )
+
+        val merged = mergeLiveMessagesIfIncomingIsStale(
+            liveConversation = liveConversation,
+            incomingConversation = newerDeletion,
+        )
+
+        assertEquals(1, merged.messageNodes.size)
+        assertEquals("hi", merged.currentMessages.single().toContentText())
+    }
+
+    @Test
     fun normalizeConversationDropsEmptyNodesAndRepairsAssistantTurnSelection() {
         val conversation = Conversation.ofId(
             id = Uuid.random(),

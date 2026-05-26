@@ -8,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
@@ -56,6 +57,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.foundation.content.contentReceiver
@@ -640,12 +642,7 @@ fun MinimalChatInput(
                             val activeTextState =
                                 if (isQuestionnaireActive) questionnaireTextState else state.textContent
                             TextField(
-                                value = activeTextState.text.toString(),
-                                onValueChange = { newText ->
-                                    if (activeTextState.text.toString() != newText) {
-                                        activeTextState.setTextAndPlaceCursorAtEnd(newText)
-                                    }
-                                },
+                                state = activeTextState,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .defaultMinSize(minHeight = 1.dp)  // Override internal min height (56dp)
@@ -669,10 +666,13 @@ fun MinimalChatInput(
                                         overflow = TextOverflow.Ellipsis
                                     )
                                 },
-                                trailingIcon = {
-                                    Spacer(modifier = Modifier.width(32.dp))
-                                },
-                                maxLines = 5,  // MultiLine for proper Enter key
+                                lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),
+                                contentPadding = PaddingValues(
+                                    start = 16.dp,
+                                    top = 12.dp,
+                                    end = 52.dp,
+                                    bottom = 12.dp,
+                                ),
                                 colors = TextFieldDefaults.colors().copy(
                                     unfocusedIndicatorColor = Color.Transparent,
                                     focusedIndicatorColor = Color.Transparent,
@@ -681,11 +681,11 @@ fun MinimalChatInput(
                                 )
                             )
                             
-                            // Action button - bottom-right, extra bottom padding for visual alignment
+                            // Action button - bottom-right for multiline, optically centered when collapsed
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
-                                    .padding(start = 4.dp, end = 6.dp, top = 4.dp, bottom = 6.dp)
+                                    .padding(start = 6.dp, end = 6.dp, top = 6.dp, bottom = 6.dp)
                             ) {
                                 val currentAction = when {
                                     isQuestionnaireActive && isFinalQuestion -> "questionnaire_submit"

@@ -393,6 +393,65 @@ internal fun shouldPersistStreamingCheckpoint(
     return conversation.currentMessages.lastOrNull()?.hasDurableAssistantProgress() == true
 }
 
+internal fun mergeLiveMessagesIfIncomingIsStale(
+    liveConversation: Conversation?,
+    incomingConversation: Conversation,
+): Conversation {
+    if (liveConversation == null) return incomingConversation
+    if (liveConversation.id != incomingConversation.id) return incomingConversation
+    if (!incomingConversation.updateAt.isBefore(liveConversation.updateAt)) return incomingConversation
+    if (!incomingConversation.losesDurableAssistantProgressFrom(liveConversation)) return incomingConversation
+
+    return liveConversation.copy(
+        assistantId = incomingConversation.assistantId,
+        title = incomingConversation.title,
+        truncateIndex = incomingConversation.truncateIndex,
+        chatSuggestions = incomingConversation.chatSuggestions,
+        isPinned = incomingConversation.isPinned,
+        enabledModeIds = incomingConversation.enabledModeIds,
+        updateAt = liveConversation.updateAt,
+        isConsolidated = incomingConversation.isConsolidated,
+        contextSummary = incomingConversation.contextSummary,
+        contextSummaryUpToIndex = incomingConversation.contextSummaryUpToIndex,
+        lastPruneTime = incomingConversation.lastPruneTime,
+        lastPruneMessageCount = incomingConversation.lastPruneMessageCount,
+        lastRefreshTime = incomingConversation.lastRefreshTime,
+        isFork = incomingConversation.isFork,
+    )
+}
+
+private fun Conversation.losesDurableAssistantProgressFrom(liveConversation: Conversation): Boolean {
+    val incomingMessagesById = currentMessages.associateBy { it.id }
+    return liveConversation.currentMessages.any { liveMessage ->
+        liveMessage.role == MessageRole.ASSISTANT &&
+            liveMessage.hasDurableAssistantProgress() &&
+            incomingMessagesById[liveMessage.id]?.hasAtLeastAssistantProgressOf(liveMessage) != true
+    }
+}
+
+private fun UIMessage.hasAtLeastAssistantProgressOf(liveMessage: UIMessage): Boolean {
+    if (role != liveMessage.role) return false
+    if (!hasDurableAssistantProgress()) return false
+    return assistantProgressScore() >= liveMessage.assistantProgressScore()
+}
+
+private fun UIMessage.assistantProgressScore(): Int {
+    return parts.sumOf { part ->
+        when (part) {
+            is UIMessagePart.Text -> part.text.length
+            is UIMessagePart.Reasoning -> part.reasoning.length
+            is UIMessagePart.Thinking -> part.thinking.length
+            is UIMessagePart.Image -> part.url.length
+            is UIMessagePart.Document -> part.url.length + part.fileName.length
+            is UIMessagePart.Video -> part.url.length
+            is UIMessagePart.Audio -> part.url.length
+            is UIMessagePart.ToolCall -> part.toolCallId.length + part.toolName.length + part.arguments.length
+            is UIMessagePart.ToolResult -> part.toolCallId.length + part.toolName.length + part.content.toString().length
+            else -> 0
+        }
+    }
+}
+
 internal fun dropDanglingAutoToolCallNodes(messageNodes: List<MessageNode>): List<MessageNode> {
     return messageNodes.mapIndexed { index, node ->
         val toolCalls = node.currentMessage.getToolCalls()
@@ -1850,9 +1909,7 @@ class ChatService(
             )
 
             // 生成完，conversation可能不是最新了，因此需要重新获取
-            withContext(Dispatchers.IO) {
-                conversationRepo.getConversationById(conversation.id)
-            }?.let {
+            getConversationSnapshot(conversationId)?.let {
                 saveConversation(
                     conversationId,
                     it.copy(title = result.choices[0].message?.toContentText()?.trim() ?: "")
@@ -1896,10 +1953,8 @@ class ChatService(
                 result.choices.firstOrNull()?.message?.toContentText().orEmpty()
             )
 
-            // Fetch fresh conversation from DB to avoid overwriting concurrent updates (e.g., title generation)
-            withContext(Dispatchers.IO) {
-                conversationRepo.getConversationById(conversationId)
-            }?.let { freshConversation ->
+            // Apply suggestions to the current live snapshot so a stale DB checkpoint cannot overwrite messages.
+            getConversationSnapshot(conversationId)?.let { freshConversation ->
                 saveConversation(
                     conversationId,
                     freshConversation.copy(chatSuggestions = suggestions)
@@ -2320,7 +2375,10 @@ class ChatService(
 
     // 保存对话
     suspend fun saveConversation(conversationId: Uuid, conversation: Conversation) {
-        val normalizedConversation = normalizeConversation(conversation)
+        val normalizedConversation = mergeLiveMessagesIfIncomingIsStale(
+            liveConversation = conversations[conversationId]?.value,
+            incomingConversation = normalizeConversation(conversation),
+        )
         val synchronizedConversation = withContext(Dispatchers.IO) {
             chatAttachmentRepository.syncConversationAttachments(normalizedConversation)
         }
