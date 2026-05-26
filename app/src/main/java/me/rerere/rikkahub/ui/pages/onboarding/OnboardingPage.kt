@@ -83,6 +83,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -392,20 +393,24 @@ private fun IntroPage(
     onNext: () -> Unit,
 ) {
     val haptics = rememberPremiumHaptics()
-    val logoScale = remember { Animatable(4.2f) }
+    val density = LocalDensity.current
+    val targetYOffsetPx = remember(density) {
+        with(density) { -64.dp.toPx() }
+    }
+    val logoScale = remember { Animatable(3.4f) }
     val logoYOffset = remember { Animatable(0f) }
     val contentAlpha = remember { Animatable(0f) }
     val ripple = remember { Animatable(0f) }
 
     LaunchedEffect(Unit) {
         delay(220)
-        logoScale.animateTo(1.9f, tween(980, easing = FastOutLinearInEasing))
+        logoScale.animateTo(1.5f, tween(980, easing = FastOutLinearInEasing))
         haptics.perform(HapticPattern.Thud)
         ripple.snapTo(0f)
         launch { ripple.animateTo(1f, tween(860, easing = FastOutSlowInEasing)) }
-        logoScale.animateTo(2.15f, spring(dampingRatio = 0.34f, stiffness = 340f))
+        logoScale.animateTo(1.75f, spring(dampingRatio = 0.34f, stiffness = 340f))
         delay(120)
-        launch { logoYOffset.animateTo(-92f, tween(560, easing = FastOutSlowInEasing)) }
+        launch { logoYOffset.animateTo(targetYOffsetPx, tween(560, easing = FastOutSlowInEasing)) }
         contentAlpha.animateTo(1f, tween(460))
     }
 
