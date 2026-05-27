@@ -484,7 +484,7 @@ internal fun ActivityTimelinePanel(
                 ) {
                     itemsIndexed(
                         items = entries,
-                        key = { _, entry -> entry.id }
+                        key = { index, entry -> "${entry.id}:$index" }
                     ) { index, entry ->
                         TimelineEntryItem(
                             entry = entry,

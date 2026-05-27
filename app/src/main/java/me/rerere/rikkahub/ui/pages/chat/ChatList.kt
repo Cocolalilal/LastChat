@@ -398,7 +398,7 @@ private fun SharedTransitionScope.ChatListNormal(
                         if (group.role == me.rerere.ai.core.MessageRole.ASSISTANT && index == displayGroups.lastIndex) {
                             "pending_assistant"
                         } else {
-                            group.firstNode.id
+                            "turn:${group.firstNode.id}:$index"
                         }
                     },
                 ) { index, group ->
@@ -782,7 +782,7 @@ private fun SharedTransitionScope.ChatListPreview(
             ) {
                 itemsIndexed(
                     items = filteredMessages,
-                    key = { index, item -> item.id },
+                    key = { index, item -> "preview:${item.id}:$index" },
                 ) { _, node ->
                     val message = node.currentMessage
                     val isUser = message.role == me.rerere.ai.core.MessageRole.USER

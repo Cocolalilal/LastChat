@@ -192,6 +192,36 @@ internal fun categorizeToolName(toolName: String): ActivityType = when (toolName
     else -> if (toolName.startsWith("mcp_")) ActivityType.MCP else ActivityType.TOOL_OTHER
 }
 
+private val pythonToolNames = setOf(
+    "eval_python",
+    "pip_install",
+    "write_sandbox_file",
+    "read_sandbox_file",
+    "list_sandbox_files",
+    "delete_sandbox_file"
+)
+
+internal fun resolveActivityToolName(toolName: String, arguments: String): String {
+    val normalized = toolName.trim()
+    if (normalized in pythonToolNames) {
+        return normalized
+    }
+    if (normalized.length >= 3 && pythonToolNames.any { it.startsWith(normalized) }) {
+        return "eval_python"
+    }
+    if (normalized.isBlank() && arguments.looksLikePythonToolArguments()) {
+        return "eval_python"
+    }
+    return normalized
+}
+
+private fun String.looksLikePythonToolArguments(): Boolean {
+    if (isBlank()) return false
+    return contains("\"code\"") ||
+        contains("'code'") ||
+        contains("\\\"code\\\"")
+}
+
 
 /**
  * Build activity items from a CompletedMultiple state.
@@ -397,10 +427,18 @@ private fun AnimatedSinglePill(
             bottomStart = bottomStartRadius,
             bottomEnd = bottomEndRadius
         )
+    val testTag = when (state) {
+        is ActivityState.Ocr -> ActivityType.OCR
+        is ActivityState.Reasoning -> ActivityType.REASONING
+        is ActivityState.ToolUse -> categorizeToolName(state.toolName)
+        is ActivityState.CompletedSingle -> state.type
+        else -> null
+    }?.toTestTag()
 
     Surface(
         modifier = Modifier
-            .height(PILL_HEIGHT),
+            .height(PILL_HEIGHT)
+            .then(if (testTag != null) Modifier.testTag(testTag) else Modifier),
         shape = pillShape,
         color = pillColor,
         contentColor = MaterialTheme.colorScheme.onSurface,

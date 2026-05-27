@@ -16,6 +16,8 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.ui.context.LocalSettings
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import kotlin.time.Clock
@@ -24,6 +26,55 @@ import kotlin.time.Duration.Companion.seconds
 class ActivityTimelinePanelTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    fun deriveActivityState_blankToolNameWithStreamingPythonArgumentsShowsPython() {
+        val state = deriveActivityState(
+            parts = listOf(
+                UIMessagePart.ToolCall(
+                    toolCallId = "",
+                    toolName = "",
+                    arguments = """{"code":"print('hello')"""
+                )
+            ),
+            loading = true
+        )
+
+        assertTrue(state is ActivityState.ToolUse)
+        val toolState = state as ActivityState.ToolUse
+        assertEquals(ActivityType.PYTHON, categorizeToolName(toolState.toolName))
+    }
+
+    @Test
+    fun buildTimelineEntries_usesUniqueIdsForBlankOrRepeatedToolCallIds() {
+        val entries = buildTimelineEntries(
+            parts = listOf(
+                UIMessagePart.ToolCall(
+                    toolCallId = "",
+                    toolName = "search_web",
+                    arguments = """{"query":"first"}"""
+                ),
+                UIMessagePart.ToolCall(
+                    toolCallId = "",
+                    toolName = "search_web",
+                    arguments = """{"query":"second"}"""
+                ),
+                UIMessagePart.ToolCall(
+                    toolCallId = "repeat",
+                    toolName = "eval_python",
+                    arguments = """{"code":"print(1)"}"""
+                ),
+                UIMessagePart.ToolCall(
+                    toolCallId = "repeat",
+                    toolName = "eval_python",
+                    arguments = """{"code":"print(2)"}"""
+                )
+            ),
+            loading = true
+        )
+
+        assertEquals(entries.size, entries.map { it.id }.toSet().size)
+    }
 
     @Test
     fun chatMessageTurn_completedTimelineOpensCollapsedAndRefocuses() {

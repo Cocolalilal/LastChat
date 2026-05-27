@@ -488,11 +488,21 @@ internal fun buildTimelineEntries(
     val entries = mutableListOf<TimelineEntry>()
     val memoryTools = setOf("create_memory", "edit_memory", "delete_memory")
     val ocrAnnotations = annotations.filterIsInstance<UIMessageAnnotation.OcrActivity>()
+    val usedEntryIds = mutableSetOf<String>()
+
+    fun reserveEntryId(base: String): String {
+        if (usedEntryIds.add(base)) return base
+        var suffix = 2
+        while (!usedEntryIds.add("${base}_$suffix")) {
+            suffix++
+        }
+        return "${base}_$suffix"
+    }
 
     ocrAnnotations.forEachIndexed { index, annotation ->
         entries.add(
             TimelineEntry.Ocr(
-                id = "ocr_$index",
+                id = reserveEntryId("ocr_$index"),
                 source = annotation.source,
                 fileName = annotation.fileName,
                 pageNumbers = annotation.pageNumbers,
@@ -500,12 +510,10 @@ internal fun buildTimelineEntries(
             )
         )
     }
-    
-    // Find tool results to match with tool calls
-    val toolResults = parts.filterIsInstance<UIMessagePart.ToolResult>()
-        .associateBy { it.toolCallId }
-    
-    parts.forEach { part ->
+
+    val toolCallMatches = matchToolCallsToResults(parts).iterator()
+
+    parts.forEachIndexed { partIndex, part ->
         when (part) {
             is UIMessagePart.Reasoning -> {
                 val durationMs = if (part.finishedAt != null) {
@@ -513,7 +521,7 @@ internal fun buildTimelineEntries(
                 } else 0L
                 
                 entries.add(TimelineEntry.Reasoning(
-                    id = "reasoning_${entries.size}",
+                    id = reserveEntryId("reasoning_${entries.size}"),
                     content = part.reasoning,
                     durationMs = durationMs,
                     title = null,
@@ -521,16 +529,19 @@ internal fun buildTimelineEntries(
                 ))
             }
             is UIMessagePart.ToolCall -> {
-                val result = toolResults[part.toolCallId]
-                if (part.toolName in memoryTools) {
-                    entries.add(buildMemoryTimelineEntry(part, result))
+                val result = toolCallMatches.next().result
+                val resolvedToolName = resolveActivityToolName(part.toolName, part.arguments)
+                if (resolvedToolName in memoryTools) {
+                    val entry = buildMemoryTimelineEntry(part, result)
+                    entries.add(entry.copy(id = reserveEntryId(entry.id)))
                 } else {
                     val argumentsJson = result?.arguments ?: parseJsonObjectOrNull(part.arguments)
                     val resultJson = result?.content
+                    val rawId = part.toolCallId.takeIf { it.isNotBlank() } ?: partIndex.toString()
                     entries.add(TimelineEntry.ToolCall(
-                        id = "tool_${part.toolCallId}",
-                        toolName = part.toolName,
-                        displayName = getToolDisplayName(part.toolName),
+                        id = reserveEntryId("tool_$rawId"),
+                        toolName = resolvedToolName,
+                        displayName = getToolDisplayName(resolvedToolName),
                         argumentsText = part.arguments.take(200),
                         resultText = result?.content?.toString()?.take(500),
                         argumentsJson = argumentsJson,
@@ -550,7 +561,8 @@ private fun buildMemoryTimelineEntry(
     call: UIMessagePart.ToolCall,
     result: UIMessagePart.ToolResult?
 ): TimelineEntry.MemoryAction {
-    val operation = when (call.toolName) {
+    val toolName = resolveActivityToolName(call.toolName, call.arguments)
+    val operation = when (toolName) {
         "create_memory" -> MemoryOperation.CREATE
         "edit_memory" -> MemoryOperation.EDIT
         "delete_memory" -> MemoryOperation.DELETE
@@ -568,8 +580,8 @@ private fun buildMemoryTimelineEntry(
     val timestamp = resultObj?.get("timestamp")?.jsonPrimitiveOrNull?.longOrNull
 
     return TimelineEntry.MemoryAction(
-        id = "memory_${call.toolCallId}",
-        toolName = call.toolName,
+        id = "memory_${call.toolCallId.takeIf { it.isNotBlank() } ?: toolName}",
+        toolName = toolName,
         operation = operation,
         memoryId = memoryId,
         content = content,
@@ -582,6 +594,33 @@ private fun buildMemoryTimelineEntry(
 
 private fun parseJsonObjectOrNull(raw: String): JsonObject? {
     return runCatching { JsonInstant.parseToJsonElement(raw).jsonObject }.getOrNull()
+}
+
+private data class ToolCallMatch(
+    val call: UIMessagePart.ToolCall,
+    val result: UIMessagePart.ToolResult?
+)
+
+private fun matchToolCallsToResults(parts: List<UIMessagePart>): List<ToolCallMatch> {
+    val resultQueues = parts
+        .filterIsInstance<UIMessagePart.ToolResult>()
+        .groupBy { toolResultMatchKey(it.toolCallId, it.toolName) }
+        .mapValues { (_, results) -> ArrayDeque(results) }
+
+    return parts.filterIsInstance<UIMessagePart.ToolCall>().map { call ->
+        val key = toolResultMatchKey(
+            toolCallId = call.toolCallId,
+            toolName = resolveActivityToolName(call.toolName, call.arguments)
+        )
+        ToolCallMatch(
+            call = call,
+            result = resultQueues[key]?.removeFirstOrNull()
+        )
+    }
+}
+
+private fun toolResultMatchKey(toolCallId: String, toolName: String): String {
+    return toolCallId.takeIf { it.isNotBlank() } ?: "blank:${toolName.ifBlank { "unknown" }}"
 }
 
 /**
@@ -615,11 +654,9 @@ internal fun deriveActivityState(
     annotations: List<UIMessageAnnotation> = emptyList(),
     loading: Boolean
 ): ActivityState {
-    val toolResults = parts.filterIsInstance<UIMessagePart.ToolResult>()
-        .associateBy { it.toolCallId }
-    
     val reasoningParts = parts.filterIsInstance<UIMessagePart.Reasoning>()
     val toolCalls = parts.filterIsInstance<UIMessagePart.ToolCall>()
+    val toolCallMatches = matchToolCallsToResults(parts)
     val ocrAnnotations = annotations.filterIsInstance<UIMessageAnnotation.OcrActivity>()
     
     // Only count text AFTER the last tool-related part as "currently replying"
@@ -639,7 +676,9 @@ internal fun deriveActivityState(
         }
         
         // Group tools by CATEGORY (Python, Search, etc.) not individual tool names
-        val toolCategories = toolCalls.map { categorizeToolName(it.toolName) }.distinct()
+        val toolCategories = toolCalls
+            .map { categorizeToolName(resolveActivityToolName(it.toolName, it.arguments)) }
+            .distinct()
         
         val hasReasoning = totalReasoningMs > 0
         val hasTools = toolCategories.isNotEmpty()
@@ -660,8 +699,10 @@ internal fun deriveActivityState(
             )
             activityCount == 1 && hasTools -> ActivityState.CompletedSingle(
                 type = toolCategories.first(),
-                toolName = toolCalls.first().toolName,
-                displayName = getToolDisplayName(toolCalls.first().toolName),
+                toolName = resolveActivityToolName(toolCalls.first().toolName, toolCalls.first().arguments),
+                displayName = getToolDisplayName(
+                    resolveActivityToolName(toolCalls.first().toolName, toolCalls.first().arguments)
+                ),
                 count = toolCalls.size  // Pass total count of tool calls
             )
             else -> ActivityState.CompletedMultiple(
@@ -683,11 +724,12 @@ internal fun deriveActivityState(
     }
     
     // Check for active tool calls (tool call without matching result)
-    val activeTool = toolCalls.lastOrNull { toolResults[it.toolCallId] == null }
+    val activeTool = toolCallMatches.lastOrNull { it.result == null }?.call
     if (activeTool != null) {
+        val resolvedToolName = resolveActivityToolName(activeTool.toolName, activeTool.arguments)
         return ActivityState.ToolUse(
-            toolName = activeTool.toolName,
-            displayName = getToolDisplayName(activeTool.toolName),
+            toolName = resolvedToolName,
+            displayName = getToolDisplayName(resolvedToolName),
             startTimeMs = System.currentTimeMillis()
         )
     }
