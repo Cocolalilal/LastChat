@@ -397,18 +397,18 @@ private fun IntroPage(
     val targetYOffsetPx = remember(density) {
         with(density) { -64.dp.toPx() }
     }
-    val logoScale = remember { Animatable(3.4f) }
+    val logoScale = remember { Animatable(2.4f) }
     val logoYOffset = remember { Animatable(0f) }
     val contentAlpha = remember { Animatable(0f) }
     val ripple = remember { Animatable(0f) }
 
     LaunchedEffect(Unit) {
         delay(220)
-        logoScale.animateTo(1.5f, tween(980, easing = FastOutLinearInEasing))
+        logoScale.animateTo(1.0f, tween(980, easing = FastOutLinearInEasing))
         haptics.perform(HapticPattern.Thud)
         ripple.snapTo(0f)
         launch { ripple.animateTo(1f, tween(860, easing = FastOutSlowInEasing)) }
-        logoScale.animateTo(1.75f, spring(dampingRatio = 0.34f, stiffness = 340f))
+        logoScale.animateTo(1.2f, spring(dampingRatio = 0.34f, stiffness = 340f))
         delay(120)
         launch { logoYOffset.animateTo(targetYOffsetPx, tween(560, easing = FastOutSlowInEasing)) }
         contentAlpha.animateTo(1f, tween(460))
