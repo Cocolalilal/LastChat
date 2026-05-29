@@ -41,4 +41,24 @@ class SuggestionPromptTest {
         assertEquals(listOf("yeah go on", "wait why", "lol okay"), suggestions)
         assertFalse(suggestions.any { it.contains("Assistant", ignoreCase = true) })
     }
+
+    @Test
+    fun parseSuggestionLinesPreservesLeadingRoleplayAsterisk() {
+        val suggestions = parseSuggestionLines(
+            """
+            *walking closer* Are you okay?
+            * pauses and thinks
+            - *smiles* Yeah, I'm fine.
+            """.trimIndent()
+        )
+
+        assertEquals(
+            listOf(
+                "*walking closer* Are you okay?",
+                "pauses and thinks",
+                "*smiles* Yeah, I'm fine.",
+            ),
+            suggestions,
+        )
+    }
 }

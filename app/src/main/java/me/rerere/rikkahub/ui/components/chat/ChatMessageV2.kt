@@ -524,7 +524,7 @@ internal fun buildTimelineEntries(
                     id = reserveEntryId("reasoning_${entries.size}"),
                     content = part.reasoning,
                     durationMs = durationMs,
-                    title = null,
+                    title = part.title,
                     isInProgress = part.finishedAt == null
                 ))
             }
@@ -720,7 +720,10 @@ internal fun deriveActivityState(
     // Check for active reasoning
     val activeReasoning = reasoningParts.lastOrNull { it.finishedAt == null }
     if (activeReasoning != null) {
-        return ActivityState.Reasoning(startTimeMs = activeReasoning.createdAt.toEpochMilliseconds())
+        return ActivityState.Reasoning(
+            startTimeMs = activeReasoning.createdAt.toEpochMilliseconds(),
+            title = activeReasoning.title
+        )
     }
     
     // Check for active tool calls (tool call without matching result)

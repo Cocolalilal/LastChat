@@ -7,6 +7,8 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import me.rerere.common.http.jsonPrimitiveOrNull
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.Model
@@ -75,12 +77,22 @@ data class UIMessage(
                         val existingReasoningPart =
                             acc.find { it is UIMessagePart.Reasoning } as? UIMessagePart.Reasoning
                         if (existingReasoningPart != null) {
+                            val reasoning = existingReasoningPart.reasoning + deltaPart.reasoning
+                            val title = deltaPart.title
+                                ?: existingReasoningPart.title
+                                ?: if (deltaPart.metadata.isReasoningSummary()) {
+                                    reasoning.extractReasoningSummaryTitle()
+                                } else {
+                                    null
+                                }
                             acc.map { part ->
                                 if (part is UIMessagePart.Reasoning) {
                                     UIMessagePart.Reasoning(
-                                        reasoning = existingReasoningPart.reasoning + deltaPart.reasoning,
+                                        reasoning = reasoning,
                                         createdAt = existingReasoningPart.createdAt,
                                         finishedAt = null,
+                                        title = title,
+                                        metadata = deltaPart.metadata ?: existingReasoningPart.metadata,
                                     ).also {
                                         if (deltaPart.metadata != null) {
                                             it.metadata = deltaPart.metadata // 更新metadata
@@ -435,6 +447,7 @@ sealed class UIMessagePart {
         val reasoning: String,
         val createdAt: Instant = Clock.System.now(),
         val finishedAt: Instant? = Clock.System.now(),
+        val title: String? = null,
         override var metadata: JsonObject? = null
     ) : UIMessagePart() {
         override val priority: Int = -1
@@ -583,3 +596,29 @@ data class UIMessageChoice(
     val message: UIMessage?,
     val finishReason: String?
 )
+
+fun String.extractReasoningSummaryTitle(): String? {
+    val firstLine = lineSequence()
+        .map { it.trim() }
+        .firstOrNull { it.isNotBlank() }
+        ?: return null
+
+    val stripped = when {
+        firstLine.startsWith("**") -> {
+            Regex("^\\*\\*(.+?)\\*\\*\\s*$").matchEntire(firstLine)?.groupValues?.getOrNull(1)
+        }
+        firstLine.startsWith("__") -> {
+            Regex("^__(.+?)__\\s*$").matchEntire(firstLine)?.groupValues?.getOrNull(1)
+        }
+        firstLine.startsWith("#") -> firstLine.replace(Regex("^#+\\s*"), "")
+        else -> firstLine
+    }?.trim()
+        ?.trimEnd(':')
+        ?.trim()
+
+    return stripped?.takeIf { it.isNotBlank() }?.take(80)
+}
+
+private fun JsonObject?.isReasoningSummary(): Boolean {
+    return this?.get("reasoning_kind")?.jsonPrimitiveOrNull?.contentOrNull == "summary"
+}

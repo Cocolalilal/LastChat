@@ -30,6 +30,7 @@ import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageChoice
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.ui.extractReasoningSummaryTitle
 import me.rerere.ai.util.configureClientWithProxy
 import me.rerere.ai.util.configureReferHeaders
 import me.rerere.ai.util.encodeBase64
@@ -332,6 +333,7 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
             }
 
             "response.reasoning_summary_text.delta" -> {
+                val delta = jsonObject["delta"]?.jsonPrimitive?.contentOrNull ?: ""
                 return MessageChunk(
                     id = jsonObject["item_id"]?.jsonPrimitive?.contentOrNull ?: "",
                     model = "",
@@ -342,10 +344,13 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
                                 role = MessageRole.ASSISTANT,
                                 parts = listOf(
                                     UIMessagePart.Reasoning(
-                                        reasoning = jsonObject["delta"]?.jsonPrimitive?.contentOrNull
-                                            ?: "",
+                                        reasoning = delta,
                                         createdAt = Clock.System.now(),
-                                        finishedAt = null
+                                        finishedAt = null,
+                                        title = delta.extractReasoningSummaryTitle(),
+                                        metadata = buildJsonObject {
+                                            put("reasoning_kind", "summary")
+                                        }
                                     )
                                 )
                             ),
@@ -398,6 +403,9 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
                                             reasoning = "",
                                             createdAt = Clock.System.now(),
                                             finishedAt = null,
+                                            metadata = buildJsonObject {
+                                                put("reasoning_kind", "summary")
+                                            }
                                         )
                                     )
                                 ),
@@ -469,7 +477,11 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
                                     UIMessagePart.Reasoning(
                                         reasoning = text,
                                         createdAt = Clock.System.now(),
-                                        finishedAt = Clock.System.now()
+                                        finishedAt = Clock.System.now(),
+                                        title = text.extractReasoningSummaryTitle(),
+                                        metadata = buildJsonObject {
+                                            put("reasoning_kind", "summary")
+                                        }
                                     )
                                 )
                             }

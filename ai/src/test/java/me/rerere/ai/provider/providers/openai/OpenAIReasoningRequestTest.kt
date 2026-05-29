@@ -2,10 +2,12 @@ package me.rerere.ai.provider.providers.openai
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import me.rerere.ai.provider.CustomBody
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
@@ -253,6 +255,26 @@ class OpenAIReasoningRequestTest {
         assertEquals("Final answer", text.text)
     }
 
+    @Test
+    fun responseApiReasoningSummaryDeltaExtractsTitle() {
+        val chunk = parseResponseDelta(
+            buildJsonObject {
+                put("type", "response.reasoning_summary_text.delta")
+                put("item_id", "rs_123")
+                put("delta", "**Responding to a greeting**\n\nThe user said hello.")
+            }
+        ) ?: error("chunk is missing")
+
+        val reasoning = chunk.choices.single().delta
+            ?.parts
+            ?.filterIsInstance<UIMessagePart.Reasoning>()
+            ?.single()
+            ?: error("reasoning is missing")
+
+        assertEquals("Responding to a greeting", reasoning.title)
+        assertEquals("**Responding to a greeting**\n\nThe user said hello.", reasoning.reasoning)
+    }
+
     private fun chatCompletionsBody(thinkingBudget: Int?): JsonObject {
         return chatCompletionsBody(
             messages = messages,
@@ -338,5 +360,15 @@ class OpenAIReasoningRequestTest {
             TextGenerationParams(model = reasoningModel),
             false,
         ) as JsonObject
+    }
+
+    private fun parseResponseDelta(delta: JsonObject): me.rerere.ai.ui.MessageChunk? {
+        val api = ResponseAPI(OkHttpClient())
+        val method = ResponseAPI::class.java.getDeclaredMethod(
+            "parseResponseDelta",
+            JsonObject::class.java,
+        )
+        method.isAccessible = true
+        return method.invoke(api, delta) as me.rerere.ai.ui.MessageChunk?
     }
 }

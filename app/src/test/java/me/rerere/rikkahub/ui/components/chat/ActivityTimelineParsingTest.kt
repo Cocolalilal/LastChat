@@ -55,6 +55,38 @@ class ActivityTimelineParsingTest {
     }
 
     @Test
+    fun deriveActivityState_usesLiveReasoningTitle() {
+        val state = deriveActivityState(
+            parts = listOf(
+                UIMessagePart.Reasoning(
+                    reasoning = "**Checking constraints**\n\nReading the request.",
+                    finishedAt = null,
+                    title = "Checking constraints"
+                )
+            ),
+            loading = true
+        )
+
+        val reasoning = state as ActivityState.Reasoning
+        assertEquals("Checking constraints", reasoning.title)
+    }
+
+    @Test
+    fun buildTimelineEntries_usesReasoningTitle() {
+        val entries = buildTimelineEntries(
+            parts = listOf(
+                UIMessagePart.Reasoning(
+                    reasoning = "**Checking constraints**\n\nReading the request.",
+                    title = "Checking constraints"
+                )
+            )
+        )
+
+        val reasoning = entries.single() as TimelineEntry.Reasoning
+        assertEquals("Checking constraints", reasoning.title)
+    }
+
+    @Test
     fun deriveActivityState_completedTurnIncludesOcrAsActivityCategory() {
         val state = deriveActivityState(
             parts = listOf(

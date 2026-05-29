@@ -42,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
@@ -71,7 +72,10 @@ sealed interface ActivityState {
     data object Ocr : ActivityState
 
     /** Model is reasoning/thinking - shows timer */
-    data class Reasoning(val startTimeMs: Long = System.currentTimeMillis()) : ActivityState
+    data class Reasoning(
+        val startTimeMs: Long = System.currentTimeMillis(),
+        val title: String? = null
+    ) : ActivityState
 
     /** Model is using a tool */
     data class ToolUse(
@@ -481,7 +485,11 @@ private fun AnimatedSinglePill(
                     }
                     
                     is ActivityState.Reasoning -> {
-                        ReasoningContent(startTimeMs = targetState.startTimeMs, isLive = true)
+                        ReasoningContent(
+                            startTimeMs = targetState.startTimeMs,
+                            title = targetState.title,
+                            isLive = true
+                        )
                     }
 
                     is ActivityState.ToolUse -> {
@@ -524,7 +532,7 @@ private fun AnimatedSinglePill(
  * Content for reasoning pill (live timer).
  */
 @Composable
-private fun ReasoningContent(startTimeMs: Long, isLive: Boolean) {
+private fun ReasoningContent(startTimeMs: Long, title: String? = null, isLive: Boolean) {
     var elapsedMs by remember { mutableLongStateOf(0L) }
 
     if (isLive) {
@@ -543,9 +551,11 @@ private fun ReasoningContent(startTimeMs: Long, isLive: Boolean) {
         tint = MaterialTheme.colorScheme.onSurfaceVariant
     )
     Text(
-        text = stringResource(R.string.activity_timeline_reasoning),
+        text = title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.activity_timeline_reasoning),
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
         modifier = if (isLive) Modifier.shimmer(true) else Modifier
     )
     Text(

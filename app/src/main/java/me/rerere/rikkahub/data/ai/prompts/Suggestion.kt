@@ -120,7 +120,7 @@ internal fun parseSuggestionLines(rawText: String): List<String> {
 
 private fun sanitizeSuggestionLine(line: String): String? {
     var text = line.trim()
-        .replace(Regex("^[-*\\u2022]+\\s*"), "")
+        .replace(Regex("^[-*\\u2022]+\\s+"), "")
         .replace(Regex("^\\d+[.)]\\s*"), "")
         .trim()
 

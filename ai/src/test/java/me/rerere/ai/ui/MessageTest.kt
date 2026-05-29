@@ -2,6 +2,8 @@ package me.rerere.ai.ui
 
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import me.rerere.ai.core.MessageRole
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -237,6 +239,32 @@ class MessageTest {
         assertEquals("Final response", message.toContentText())
     }
 
+    @Test
+    fun `reasoning summary title is derived across streamed chunks`() {
+        val metadata = buildJsonObject {
+            put("reasoning_kind", "summary")
+        }
+        val message = UIMessage(
+            role = MessageRole.ASSISTANT,
+            parts = listOf(
+                UIMessagePart.Reasoning(
+                    reasoning = "",
+                    finishedAt = null,
+                    metadata = metadata
+                )
+            )
+        )
+
+        val withPartialTitle = message + reasoningChunk("**Checking", metadata)
+        val partialReasoning = withPartialTitle.parts.filterIsInstance<UIMessagePart.Reasoning>().single()
+        assertEquals(null, partialReasoning.title)
+
+        val withCompleteTitle = withPartialTitle + reasoningChunk(" details**\n\nLooking at the request.", metadata)
+        val reasoning = withCompleteTitle.parts.filterIsInstance<UIMessagePart.Reasoning>().single()
+        assertEquals("Checking details", reasoning.title)
+        assertEquals("**Checking details**\n\nLooking at the request.", reasoning.reasoning)
+    }
+
     private fun createTestMessages(count: Int): List<UIMessage> {
         return (0 until count).map { i ->
             UIMessage(
@@ -244,5 +272,29 @@ class MessageTest {
                 parts = listOf(UIMessagePart.Text("Message $i"))
             )
         }
+    }
+
+    private fun reasoningChunk(text: String, metadata: kotlinx.serialization.json.JsonObject): MessageChunk {
+        return MessageChunk(
+            id = "chunk",
+            model = "test",
+            choices = listOf(
+                UIMessageChoice(
+                    index = 0,
+                    delta = UIMessage(
+                        role = MessageRole.ASSISTANT,
+                        parts = listOf(
+                            UIMessagePart.Reasoning(
+                                reasoning = text,
+                                finishedAt = null,
+                                metadata = metadata
+                            )
+                        )
+                    ),
+                    message = null,
+                    finishReason = null
+                )
+            )
+        )
     }
 }
