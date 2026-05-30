@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.draw.clip
@@ -49,6 +50,7 @@ import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -114,6 +116,17 @@ import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import kotlin.uuid.Uuid
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.height
+import me.rerere.rikkahub.ui.modifier.LocalLastChatBlur
+import me.rerere.rikkahub.ui.modifier.LastChatBlur
+import me.rerere.rikkahub.ui.modifier.lastChatBlurSource
+import me.rerere.rikkahub.ui.modifier.lastChatBlurEffect
+import me.rerere.rikkahub.ui.modifier.blurredContainerColor
+
 
 @Composable
 fun ModelSelector(
@@ -267,6 +280,18 @@ internal fun ColumnScope.ModelList(
     val settingsStore = koinInject<SettingsStore>()
     val settings = settingsStore.settingsFlow
         .collectAsStateWithLifecycle()
+    val hazeState = remember { dev.chrisbanes.haze.HazeState() }
+    val displaySetting = settings.value.displaySetting
+    val blur = remember(displaySetting.enableBlurEffect, hazeState) {
+        LastChatBlur(
+            enabled = displaySetting.enableBlurEffect,
+            hazeState = hazeState
+        )
+    }
+    
+    var activeProviderId by remember { mutableStateOf<Uuid?>(null) }
+    
+    // activeProviderId is null initially and is set upon explicit user click
 
     val favoriteModels = settings.value.favoriteModels.mapNotNull { modelId ->
         val model = providers.findModelById(modelId) ?: return@mapNotNull null
@@ -423,222 +448,23 @@ internal fun ColumnScope.ModelList(
 
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     
-    OutlinedTextField(
-        value = searchKeywords,
-        onValueChange = { searchKeywords = it },
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 16.dp),
-        leadingIcon = {
-            Icon(Icons.Rounded.Search, null)
-        },
-        placeholder = {
-            Text(stringResource(R.string.model_list_search_placeholder))
-        },
-        maxLines = 1,
-        singleLine = true,
-        shape = me.rerere.rikkahub.ui.theme.AppShapes.SearchField,
-        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-            imeAction = androidx.compose.ui.text.input.ImeAction.Done
-        ),
-        keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-            onDone = {
-                focusManager.clearFocus()
-            }
-        )
-    )
-
-
-    Box(
-        modifier = Modifier
-            .weight(1f)
-            .fillMaxWidth()
-            .clipToBounds()
-            .onGloballyPositioned { coordinates ->
-                viewportHeight = coordinates.size.height
-            }
-    ) {
-        LazyColumn(
-            state = lazyListState,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-            contentPadding = PaddingValues(16.dp),
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            if (providers.isEmpty()) {
-                item {
-                    Text(
-                        text = stringResource(R.string.model_list_no_providers),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.extendColors.gray6,
-                        modifier = Modifier.padding(8.dp)
-                    )
-                }
-            }
-
-            if (favoriteModels.isNotEmpty()) {
-                item(key = "favorite-header") {
-                    ModelSectionHeader(
-                        title = stringResource(R.string.model_list_favorite),
-                        topPadding = 8.dp
-                    )
-                }
-
-                items(
-                    items = favoriteListItems,
-                    key = { "favorite:" + it.model.id.toString() }
-                ) { favoriteItem ->
-                    ReorderableItem(
-                        state = reorderableState,
-                        key = "favorite:" + favoriteItem.model.id.toString()
-                    ) { isDragging ->
-                        val dragScale by animateFloatAsState(
-                            targetValue = if (isDragging) 0.95f else 1f,
-                            animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
-                            label = "favorite_drag_scale"
-                        )
-                        ModelItem(
-                            model = favoriteItem.model,
-                            onSelect = onSelect,
-                            modifier = Modifier
-                                .scale(dragScale)
-                                .animateItem(),
-                            providerSetting = favoriteItem.provider,
-                            select = favoriteItem.model.id == currentModel,
-                            inGroup = true,
-                            position = favoriteItem.position,
-                            onDismiss = {
-                                onDismiss()
-                            },
-                            tail = {
-                                IconButton(
-                                    onClick = {
-                                        coroutineScope.launch {
-                                            settingsStore.update { settings ->
-                                                settings.copy(
-                                                    favoriteModels = settings.favoriteModels.filter { it != favoriteItem.model.id }
-                                                )
-                                            }
-                                        }
-                                    }
-                                ) {
-                                    Icon(
-                                        HeartIcon,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(20.dp),
-                                        tint = MaterialTheme.colorScheme.primary,
-                                    )
-                                }
-                            },
-                            dragHandle = {
-                                Icon(
-                                    imageVector = Icons.Rounded.DragIndicator,
-                                    contentDescription = null,
-                                    modifier = Modifier.longPressDraggableHandle(
-                                        onDragStarted = {
-                                            haptics.perform(HapticPattern.DragStart)
-                                        },
-                                        onDragStopped = {
-                                            haptics.perform(HapticPattern.DragEnd)
-                                        }
-                                    )
-                                )
-                            }
-                        )
-                    }
-                }
-            }
-
-            // Render flattened provider items - each model is its own item
-            items(
-                items = providerListItems,
-                key = { item ->
-                    when (item) {
-                        is ProviderListItem.Header -> "provider-header:${item.provider.id}"
-                        is ProviderListItem.ModelEntry -> "provider-model:${item.provider.id}:${item.model.id}"
-                    }
-                }
-            ) { item ->
-                when (item) {
-                    is ProviderListItem.Header -> {
-                        ModelSectionHeader(
-                            title = item.provider.name
-                        ) {
-                            ProviderBalanceText(
-                                providerSetting = item.provider,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    }
-                    is ProviderListItem.ModelEntry -> {
-                        ModelItem(
-                            model = item.model,
-                            onSelect = onSelect,
-                            modifier = Modifier.animateItem(),
-                            providerSetting = item.provider,
-                            select = currentModel == item.model.id,
-                            inGroup = true,
-                            position = item.position,
-                            onDismiss = {
-                                onDismiss()
-                            },
-                            tail = {
-                                IconButton(
-                                    onClick = {
-                                        coroutineScope.launch {
-                                            settingsStore.update { settings ->
-                                                if (item.isFavorite) {
-                                                    settings.copy(
-                                                        favoriteModels = settings.favoriteModels.filter { it != item.model.id }
-                                                    )
-
-                                                } else {
-                                                    settings.copy(
-                                                        favoriteModels = settings.favoriteModels + item.model.id
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                ) {
-                                    if (item.isFavorite) {
-                                        Icon(
-                                            HeartIcon,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(20.dp),
-                                            tint = MaterialTheme.colorScheme.primary,
-                                        )
-                                    } else {
-                                        Icon(
-                                            Icons.Rounded.FavoriteBorder,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        )
-                    }
-                }
-            }
-        }
-    }
-
     // 供应商Badge行
     val providerBadgeListState = rememberLazyListState()
     LaunchedEffect(lazyListState) {
-        // 当LazyColumn滚动时，LazyRow也跟随滚动
+        // 当LazyColumn滚动时，LazyRow也跟随滚动，但不会改变已选中的provider id
         snapshotFlow { lazyListState.firstVisibleItemIndex }
             .distinctUntilChanged()
             .debounce(100) // 防抖处理
             .collect { index ->
                 if (index > 0) {
                     val currentProvider = providerPositions.entries.findLast {
-                        index > it.value
+                        index >= it.value
                     }
-                    val index = providers.indexOfFirst { it.id == currentProvider?.key }
-                    if (index >= 0) {
-                        providerBadgeListState.animateScrollToItem(index)
+                    val currentProviderId = currentProvider?.key
+                    
+                    val badgeIndex = providers.indexOfFirst { it.id == currentProviderId }
+                    if (badgeIndex >= 0) {
+                        providerBadgeListState.animateScrollToItem(badgeIndex)
                     } else {
                         providerBadgeListState.requestScrollToItem(0)
                     }
@@ -647,31 +473,389 @@ internal fun ColumnScope.ModelList(
                 }
             }
     }
-    if (providers.isNotEmpty()) {
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            state = providerBadgeListState
+
+    CompositionLocalProvider(LocalLastChatBlur provides blur) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
         ) {
-            items(providers) { provider ->
-                AssistChip(
-                    onClick = {
-                        val position = providerPositions[provider.id] ?: 0
-                        coroutineScope.launch {
-                            lazyListState.animateScrollToItem(position)
-                        }
+            // 1. Scrollable List of Models
+            LazyColumn(
+                state = lazyListState,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = 84.dp, // Leave space for top floating search bar
+                    bottom = 100.dp // Leave space for bottom floating provider options
+                ),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .onGloballyPositioned { coordinates ->
+                        viewportHeight = coordinates.size.height
                     },
-                    label = {
-                        Text(provider.name)
-                    },
-                    leadingIcon = {
-                        ProviderIcon(
-                            provider = provider,
-                            modifier = Modifier.size(16.dp)
+            ) {
+                if (providers.isEmpty()) {
+                    item {
+                        Text(
+                            text = stringResource(R.string.model_list_no_providers),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.extendColors.gray6,
+                            modifier = Modifier.padding(8.dp)
                         )
+                    }
+                }
+
+                if (favoriteModels.isNotEmpty()) {
+                    item(key = "favorite-header") {
+                        ModelSectionHeader(
+                            title = stringResource(R.string.model_list_favorite),
+                            topPadding = 8.dp
+                        )
+                    }
+
+                    items(
+                        items = favoriteListItems,
+                        key = { "favorite:" + it.model.id.toString() }
+                    ) { favoriteItem ->
+                        ReorderableItem(
+                            state = reorderableState,
+                            key = "favorite:" + favoriteItem.model.id.toString()
+                        ) { isDragging ->
+                            val dragScale by animateFloatAsState(
+                                targetValue = if (isDragging) 0.95f else 1f,
+                                animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+                                label = "favorite_drag_scale"
+                            )
+                            ModelItem(
+                                model = favoriteItem.model,
+                                onSelect = onSelect,
+                                modifier = Modifier
+                                    .scale(dragScale)
+                                    .animateItem(),
+                                providerSetting = favoriteItem.provider,
+                                select = favoriteItem.model.id == currentModel,
+                                inGroup = true,
+                                position = favoriteItem.position,
+                                onDismiss = {
+                                    onDismiss()
+                                },
+                                tail = {
+                                    IconButton(
+                                        onClick = {
+                                            coroutineScope.launch {
+                                                settingsStore.update { settings ->
+                                                    settings.copy(
+                                                        favoriteModels = settings.favoriteModels.filter { it != favoriteItem.model.id }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    ) {
+                                        Icon(
+                                            HeartIcon,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(20.dp),
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+                                },
+                                dragHandle = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.DragIndicator,
+                                        contentDescription = null,
+                                        modifier = Modifier.longPressDraggableHandle(
+                                            onDragStarted = {
+                                                haptics.perform(HapticPattern.DragStart)
+                                            },
+                                            onDragStopped = {
+                                                haptics.perform(HapticPattern.DragEnd)
+                                            }
+                                        )
+                                    )
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // Render flattened provider items - each model is its own item
+                items(
+                    items = providerListItems,
+                    key = { item ->
+                        when (item) {
+                            is ProviderListItem.Header -> "provider-header:${item.provider.id}"
+                            is ProviderListItem.ModelEntry -> "provider-model:${item.provider.id}:${item.model.id}"
+                        }
+                    }
+                ) { item ->
+                    when (item) {
+                        is ProviderListItem.Header -> {
+                            ModelSectionHeader(
+                                title = item.provider.name
+                            ) {
+                                ProviderBalanceText(
+                                    providerSetting = item.provider,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
+                        is ProviderListItem.ModelEntry -> {
+                            ModelItem(
+                                model = item.model,
+                                onSelect = onSelect,
+                                modifier = Modifier.animateItem(),
+                                providerSetting = item.provider,
+                                select = currentModel == item.model.id,
+                                inGroup = true,
+                                position = item.position,
+                                onDismiss = {
+                                    onDismiss()
+                                },
+                                tail = {
+                                    IconButton(
+                                        onClick = {
+                                            coroutineScope.launch {
+                                                settingsStore.update { settings ->
+                                                    if (item.isFavorite) {
+                                                        settings.copy(
+                                                            favoriteModels = settings.favoriteModels.filter { it != item.model.id }
+                                                        )
+
+                                                    } else {
+                                                        settings.copy(
+                                                            favoriteModels = settings.favoriteModels + item.model.id
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    ) {
+                                        if (item.isFavorite) {
+                                            Icon(
+                                                HeartIcon,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(20.dp),
+                                                tint = MaterialTheme.colorScheme.primary,
+                                            )
+                                        } else {
+                                            Icon(
+                                                Icons.Rounded.FavoriteBorder,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 2. Strong Top Fade and Floating Search Bar Background (fades in/out depending on scroll position)
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            val thresholdPx = remember { with(density) { 24.dp.toPx() } }
+            val topFadeAlpha by remember {
+                derivedStateOf {
+                    if (lazyListState.firstVisibleItemIndex > 0) {
+                        1f
+                    } else {
+                        (lazyListState.firstVisibleItemScrollOffset / thresholdPx).coerceIn(0f, 1f)
+                    }
+                }
+            }
+
+            // Top fade overlay (combines a solid background and a vertical gradient below it)
+            if (topFadeAlpha > 0f) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .graphicsLayer { alpha = topFadeAlpha }
+                ) {
+                    // Solid background covering the top half of the search bar area
+                    Spacer(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(42.dp)
+                            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                    )
+                    // Strong vertical gradient fade starting from the middle of the search bar area
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(64.dp)
+                            .background(
+                                brush = Brush.verticalGradient(
+                                    colors = listOf(
+                                        MaterialTheme.colorScheme.surfaceContainerLow,
+                                        Color.Transparent
+                                    )
+                                )
+                            )
+                    )
+                }
+            }
+
+            // Search field (always fully opaque, container color matches the sheet background surfaceContainerLow, outline border is onSurfaceVariant and thicker)
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .height(84.dp)
+            ) {
+                val borderOutlineColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
+                val searchFieldShape = me.rerere.rikkahub.ui.theme.AppShapes.SearchField
+                OutlinedTextField(
+                    value = searchKeywords,
+                    onValueChange = { searchKeywords = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 12.dp)
+                        .border(
+                            width = 2.dp,
+                            color = borderOutlineColor,
+                            shape = searchFieldShape
+                        ),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                        focusedBorderColor = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent,
+                        disabledBorderColor = Color.Transparent,
+                        errorBorderColor = Color.Transparent,
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        focusedLeadingIconColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedLeadingIconColor = MaterialTheme.colorScheme.onSurface
+                    ),
+                    leadingIcon = {
+                        Icon(Icons.Rounded.Search, null)
                     },
+                    placeholder = {
+                        Text(stringResource(R.string.model_list_search_placeholder))
+                    },
+                    maxLines = 1,
+                    singleLine = true,
+                    shape = searchFieldShape,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        imeAction = androidx.compose.ui.text.input.ImeAction.Done
+                    ),
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                        onDone = {
+                            focusManager.clearFocus()
+                        }
+                    )
                 )
+            }
+
+            // 3. Strong Bottom Floating Fade (Gradient + Solid background covering provider badges area)
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+            ) {
+                // Gradient part (from transparent to solid surfaceContainerLow)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(64.dp)
+                        .background(
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    MaterialTheme.colorScheme.surfaceContainerLow
+                                )
+                            )
+                        )
+                )
+                // Solid part (completely covering the provider pills area)
+                Spacer(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(36.dp)
+                        .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                )
+            }
+
+            // 4. Bottom floating provider options row
+            if (providers.isNotEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp)
+                ) {
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        state = providerBadgeListState
+                    ) {
+                        items(providers) { provider ->
+                            val interactionSource = remember { MutableInteractionSource() }
+                            val isPressed by interactionSource.collectIsPressedAsState()
+                            val scale by animateFloatAsState(
+                                targetValue = if (isPressed) 0.85f else 1f,
+                                animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+                                label = "provider_badge_scale"
+                            )
+                            val isActive = activeProviderId == provider.id
+                            Surface(
+                                onClick = {
+                                    haptics.perform(HapticPattern.Pop)
+                                    activeProviderId = provider.id
+                                    val position = providerPositions[provider.id] ?: 0
+                                    coroutineScope.launch {
+                                        lazyListState.animateScrollToItem(position)
+                                    }
+                                },
+                                border = androidx.compose.foundation.BorderStroke(
+                                    width = 1.dp,
+                                    color = (if (isActive) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface).copy(alpha = 0.2f)
+                                ),
+                                interactionSource = interactionSource,
+                                shape = me.rerere.rikkahub.ui.theme.AppShapes.ButtonPill,
+                                color = if (isActive) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceContainerLow
+                                },
+                                contentColor = if (isActive) {
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
+                                modifier = Modifier
+                                    .graphicsLayer {
+                                        scaleX = scale
+                                        scaleY = scale
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    ProviderIcon(
+                                        provider = provider,
+                                        modifier = Modifier.size(22.dp),
+                                        contentColor = if (isActive) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = provider.name,
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
