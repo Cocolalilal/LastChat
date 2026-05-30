@@ -332,4 +332,73 @@ class MessageTest {
             )
         )
     }
+
+    @Test
+    fun `appendChunk merges blank ID tool call chunks`() {
+        val initialMessage = UIMessage(
+            role = MessageRole.ASSISTANT,
+            parts = listOf(
+                UIMessagePart.ToolCall(
+                    toolCallId = "",
+                    toolName = "eval_python",
+                    arguments = ""
+                )
+            )
+        )
+
+        // Simulating streaming delta chunks with blank ID and empty tool name
+        val chunk1 = MessageChunk(
+            id = "chunk-1",
+            model = "test",
+            choices = listOf(
+                UIMessageChoice(
+                    index = 0,
+                    delta = UIMessage(
+                        role = MessageRole.ASSISTANT,
+                        parts = listOf(
+                            UIMessagePart.ToolCall(
+                                toolCallId = "",
+                                toolName = "",
+                                arguments = """{"code":"print("""
+                            )
+                        )
+                    ),
+                    message = null,
+                    finishReason = null
+                )
+            )
+        )
+
+        val chunk2 = MessageChunk(
+            id = "chunk-2",
+            model = "test",
+            choices = listOf(
+                UIMessageChoice(
+                    index = 0,
+                    delta = UIMessage(
+                        role = MessageRole.ASSISTANT,
+                        parts = listOf(
+                            UIMessagePart.ToolCall(
+                                toolCallId = "",
+                                toolName = "",
+                                arguments = """'hello')"}"""
+                            )
+                        )
+                    ),
+                    message = null,
+                    finishReason = null
+                )
+            )
+        )
+
+        val result1 = initialMessage + chunk1
+        val result2 = result1 + chunk2
+
+        assertEquals(1, result2.parts.size)
+        val toolCall = result2.parts.single() as UIMessagePart.ToolCall
+        assertEquals("eval_python", toolCall.toolName)
+        assertEquals("""{"code":"print('hello')"}""", toolCall.arguments)
+        assertEquals("", toolCall.toolCallId)
+    }
 }
+

@@ -110,14 +110,14 @@ data class UIMessage(
                         if (deltaPart.toolCallId.isBlank()) {
                             val lastToolCall =
                                 acc.lastOrNull { it is UIMessagePart.ToolCall } as? UIMessagePart.ToolCall
-                            if (lastToolCall == null || lastToolCall.toolCallId.isBlank()) {
-                                acc + deltaPart.copy()
-                            } else {
+                            if (lastToolCall != null && (lastToolCall == acc.lastOrNull() || !lastToolCall.toolCallId.isBlank())) {
                                 acc.map { part ->
                                     if (part == lastToolCall && part is UIMessagePart.ToolCall) {
                                         part.merge(deltaPart)
                                     } else part
                                 }
+                            } else {
+                                acc + deltaPart.copy()
                             }
                         } else {
                             // insert or update

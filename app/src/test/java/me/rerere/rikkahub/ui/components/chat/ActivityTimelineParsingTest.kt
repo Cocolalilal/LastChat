@@ -6,6 +6,8 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.MessageRole
+import me.rerere.ai.ui.MessageChunk
+import me.rerere.ai.ui.UIMessageChoice
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
@@ -425,4 +427,50 @@ class ActivityTimelineParsingTest {
         assertEquals("option", state?.payload?.answers?.single()?.source)
     }
 
+    @Test
+    fun deriveActivityState_showsRunningPythonDuringCodeGenerationWithBlankToolCallId() {
+        val initialMessage = UIMessage(
+            role = MessageRole.ASSISTANT,
+            parts = listOf(
+                UIMessagePart.ToolCall(
+                    toolCallId = "",
+                    toolName = "eval_python",
+                    arguments = ""
+                )
+            )
+        )
+
+        val chunk1 = MessageChunk(
+            id = "chunk-1",
+            model = "test",
+            choices = listOf(
+                UIMessageChoice(
+                    index = 0,
+                    delta = UIMessage(
+                        role = MessageRole.ASSISTANT,
+                        parts = listOf(
+                            UIMessagePart.ToolCall(
+                                toolCallId = "",
+                                toolName = "",
+                                arguments = """{"code":"import math"""
+                            )
+                        )
+                    ),
+                    message = null,
+                    finishReason = null
+                )
+            )
+        )
+
+        val updatedMessage = initialMessage + chunk1
+        val state = deriveActivityState(
+            parts = updatedMessage.parts,
+            loading = true
+        )
+
+        assertTrue(state is ActivityState.ToolUse)
+        val toolState = state as ActivityState.ToolUse
+        assertEquals("eval_python", toolState.toolName)
+        assertEquals("Running Python", toolState.displayName)
+    }
 }
