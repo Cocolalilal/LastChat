@@ -382,6 +382,36 @@ internal fun Conversation.canAutoResumeAssistantReply(): Boolean {
     return lastMessage.role == MessageRole.ASSISTANT && lastMessage.hasDurableAssistantProgress()
 }
 
+/**
+ * Resets the trailing assistant message to an empty shell so the model receives
+ * a clean slate on an auto-resume retry.  Without this, the model would see its
+ * own dangling reasoning / partial output as prior context and typically stall or
+ * repeat the same incomplete response.
+ */
+internal fun Conversation.resetTrailingAssistantForResume(): Conversation {
+    val lastNode = messageNodes.lastOrNull() ?: return this
+    val lastMsg = lastNode.currentMessage
+    if (lastMsg.role != MessageRole.ASSISTANT) return this
+
+    val clearedMsg = lastMsg.copy(
+        parts = emptyList(),
+        annotations = emptyList(),
+        generationDurationMs = null,
+        usage = null,
+    )
+    val updatedNode = lastNode.copy(
+        messages = lastNode.messages.toMutableList().also { msgs ->
+            msgs[lastNode.selectIndex] = clearedMsg
+        }
+    )
+    return copy(
+        messageNodes = messageNodes.toMutableList().also { nodes ->
+            nodes[nodes.lastIndex] = updatedNode
+        },
+        updateAt = java.time.Instant.now(),
+    )
+}
+
 internal fun shouldPersistStreamingCheckpoint(
     conversation: Conversation,
     nowMs: Long,
@@ -1302,6 +1332,7 @@ class ChatService(
         // Set on first token arrival to exclude TTFT (time to first token) from the calculation
         var firstTokenTime: Long? = null
         var lastStreamingPersistMs = 0L
+        var autoResumeAttempts = 0
 
         runCatching {
             var conversation = normalizeConversation(getConversationFlow(conversationId).value)
@@ -1331,7 +1362,6 @@ class ChatService(
             checkInvalidMessages(conversationId)
             conversation = getConversationFlow(conversationId).value
 
-            var autoResumeAttempts = 0
             while (true) {
                 conversation = getConversationFlow(conversationId).value
                 try {
@@ -1477,6 +1507,12 @@ class ChatService(
                     ) {
                         autoResumeAttempts++
                         Log.w(TAG, "Auto-resuming interrupted assistant reply ($autoResumeAttempts/$AUTO_RESUME_MAX_RETRIES)", error)
+                        // Strip the dangling partial assistant message so the model gets a
+                        // clean slate — without this, the model sees its own half-finished
+                        // output as context and typically stalls on the next attempt.
+                        val resetConversation = latestConversation.resetTrailingAssistantForResume()
+                        updateConversation(conversationId, resetConversation)
+                        firstTokenTime = null
                         delay(AUTO_RESUME_RETRY_DELAY_MS)
                         continue
                     }
@@ -1490,6 +1526,11 @@ class ChatService(
                 ) {
                     autoResumeAttempts++
                     Log.w(TAG, "Auto-resuming assistant reply with reasoning but no visible response ($autoResumeAttempts/$AUTO_RESUME_MAX_RETRIES)")
+                    // Strip the reasoning-only assistant message so the model doesn't see
+                    // its own stale reasoning as prior context on the next attempt.
+                    val resetConversation = latestConversation.resetTrailingAssistantForResume()
+                    updateConversation(conversationId, resetConversation)
+                    firstTokenTime = null
                     delay(AUTO_RESUME_RETRY_DELAY_MS)
                     continue
                 }

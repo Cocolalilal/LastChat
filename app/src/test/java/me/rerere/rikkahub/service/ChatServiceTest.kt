@@ -377,4 +377,42 @@ class ChatServiceTest {
         val image = fork.messageNodes[1].currentMessage.parts.filterIsInstance<UIMessagePart.Image>().single()
         assertEquals("file:///tmp/image.png-copy", image.url)
     }
+
+    @Test
+    fun resetTrailingAssistantForResume_clearsReasoningOnlyLastMessage() {
+        val conversation = Conversation.ofId(
+            id = Uuid.random(),
+            messages = listOf(
+                MessageNode.of(UIMessage.user("hi")),
+                MessageNode.of(
+                    UIMessage(
+                        role = MessageRole.ASSISTANT,
+                        parts = listOf(UIMessagePart.Reasoning("thinking hard")),
+                    )
+                ),
+            ),
+        )
+
+        val reset = conversation.resetTrailingAssistantForResume()
+
+        assertEquals(2, reset.messageNodes.size)
+        assertTrue(reset.currentMessages.last().parts.isEmpty())
+        assertEquals("hi", reset.currentMessages.first().toContentText())
+    }
+
+    @Test
+    fun resetTrailingAssistantForResume_clearsLastMessageEvenIfItHasText() {
+        val conversation = Conversation.ofId(
+            id = Uuid.random(),
+            messages = listOf(
+                MessageNode.of(UIMessage.user("hi")),
+                MessageNode.of(UIMessage.assistant("full reply")),
+            ),
+        )
+
+        val reset = conversation.resetTrailingAssistantForResume()
+
+        assertEquals(2, reset.messageNodes.size)
+        assertTrue(reset.currentMessages.last().parts.isEmpty())
+    }
 }

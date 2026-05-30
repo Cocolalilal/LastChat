@@ -553,14 +553,32 @@ private fun ReasoningContent(startTimeMs: Long, title: String? = null, isLive: B
         modifier = Modifier.size(18.dp),
         tint = MaterialTheme.colorScheme.onSurfaceVariant
     )
-    Text(
-        text = title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.activity_timeline_reasoning),
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = if (isLive) Modifier.shimmer(true) else Modifier
-    )
+    // Crossfade + slide up when the title changes between reasoning sections
+    val displayTitle = title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.activity_timeline_reasoning)
+    AnimatedContent(
+        targetState = displayTitle,
+        transitionSpec = {
+            (fadeIn(tween(220)) + slideInVertically(
+                animationSpec = tween(220),
+                initialOffsetY = { it / 2 }
+            )).togetherWith(
+                fadeOut(tween(150)) + slideOutVertically(
+                    animationSpec = tween(150),
+                    targetOffsetY = { -it / 2 }
+                )
+            )
+        },
+        label = "reasoning_title"
+    ) { text ->
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = if (isLive) Modifier.shimmer(true) else Modifier
+        )
+    }
     Text(
         text = formatDuration(elapsedMs),
         style = MaterialTheme.typography.labelSmall,

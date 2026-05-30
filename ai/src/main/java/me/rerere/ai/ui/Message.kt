@@ -78,9 +78,11 @@ data class UIMessage(
                             acc.find { it is UIMessagePart.Reasoning } as? UIMessagePart.Reasoning
                         if (existingReasoningPart != null) {
                             val reasoning = existingReasoningPart.reasoning + deltaPart.reasoning
-                            val extractedTitle = reasoning.extractReasoningSummaryTitle()
+                            // Prefer: (1) explicit title on delta, (2) title from the new delta text,
+                            // (3) latest title found anywhere in the accumulated text, (4) keep old title.
                             val title = deltaPart.title
-                                ?: extractedTitle
+                                ?: deltaPart.reasoning.extractReasoningSummaryTitle()
+                                ?: reasoning.extractLatestReasoningSummaryTitle()
                                 ?: existingReasoningPart.title
                             acc.map { part ->
                                 if (part is UIMessagePart.Reasoning) {
@@ -601,41 +603,46 @@ fun String.extractReasoningSummaryTitle(): String? {
         .firstOrNull { it.isNotBlank() }
         ?: return null
 
-    val stripped = when {
-        firstLine.startsWith("**") -> {
-            val idx = firstLine.indexOf("**", startIndex = 2)
-            if (idx >= 0) {
-                firstLine.substring(2, idx).trim()
-            } else {
-                null
-            }
-        }
-        firstLine.startsWith("__") -> {
-            val idx = firstLine.indexOf("__", startIndex = 2)
-            if (idx >= 0) {
-                firstLine.substring(2, idx).trim()
-            } else {
-                null
-            }
-        }
-        firstLine.startsWith("#") -> {
-            if (this.contains("\n") || this.contains("\r")) {
-                firstLine.replace(Regex("^#+\\s*"), "")
-            } else {
-                null
-            }
-        }
-        else -> {
-            if (firstLine.endsWith(":") || (firstLine.length <= 40 && (this.contains("\n") || this.contains("\r")))) {
-                firstLine
-            } else {
-                null
-            }
-        }
-    }?.trim()
-        ?.trimEnd(':')
-        ?.trim()
+    return extractTitleFromLine(firstLine, hasMultipleLines = this.contains('\n') || this.contains('\r'))
+}
 
+/**
+ * Scans the full accumulated reasoning text and returns the title from the LAST
+ * heading/bold line found. This allows the pill to track the current reasoning
+ * section as new blocks stream in.
+ */
+fun String.extractLatestReasoningSummaryTitle(): String? {
+    val hasMultipleLines = this.contains('\n') || this.contains('\r')
+    // Walk lines in reverse, return the first (i.e. latest) title we find.
+    return lineSequence()
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .toList()
+        .asReversed()
+        .firstNotNullOfOrNull { line ->
+            extractTitleFromLine(line, hasMultipleLines)
+        }
+}
+
+private fun extractTitleFromLine(line: String, hasMultipleLines: Boolean): String? {
+    val trimmedLine = line.trim()
+        .replace(Regex("^(?:[-*+]|\\d+\\.)\\s+"), "")
+        .trim()
+
+    val stripped = when {
+        trimmedLine.startsWith("**") -> {
+            val idx = trimmedLine.indexOf("**", startIndex = 2)
+            if (idx >= 0) trimmedLine.substring(2, idx).trim() else null
+        }
+        trimmedLine.startsWith("__") -> {
+            val idx = trimmedLine.indexOf("__", startIndex = 2)
+            if (idx >= 0) trimmedLine.substring(2, idx).trim() else null
+        }
+        trimmedLine.startsWith("#") -> {
+            if (hasMultipleLines) trimmedLine.replace(Regex("^#+\\s*"), "") else null
+        }
+        else -> null
+    }?.trim()?.trimEnd(':')?.trim()
     return stripped?.takeIf { it.isNotBlank() }?.take(80)
 }
 

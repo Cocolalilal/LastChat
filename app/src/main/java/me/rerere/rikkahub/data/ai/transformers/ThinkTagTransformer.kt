@@ -5,7 +5,7 @@ import kotlinx.datetime.toInstant
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
-import me.rerere.ai.ui.extractReasoningSummaryTitle
+import me.rerere.ai.ui.extractLatestReasoningSummaryTitle
 import kotlin.time.Clock
 
 private val THINKING_REGEX = Regex(
@@ -61,7 +61,7 @@ object ThinkTagTransformer : OutputMessageTransformer {
                             hasClosingTag -> Clock.System.now()
                             else -> null
                         },
-                        title = reasoning.extractReasoningSummaryTitle()
+                        title = reasoning.extractLatestReasoningSummaryTitle()
                     )
 
                     listOf(

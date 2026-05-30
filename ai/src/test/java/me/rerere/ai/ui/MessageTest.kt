@@ -265,6 +265,41 @@ class MessageTest {
         assertEquals("**Checking details**\n\nLooking at the request.", reasoning.reasoning)
     }
 
+    @Test
+    fun `extractReasoningSummaryTitle only extracts from valid markdown headers and bold`() {
+        // Bold title
+        assertEquals("Researching", "**Researching**\nSome context".extractReasoningSummaryTitle())
+        // Underline title
+        assertEquals("Planning", "__Planning__\nStep 1".extractReasoningSummaryTitle())
+        // Heading titles
+        assertEquals("Analyzing Constraints", "### Analyzing Constraints\nSome info".extractReasoningSummaryTitle())
+        assertEquals("Final Step", "# Final Step\nWait".extractReasoningSummaryTitle())
+
+        // Bullet lists/numbered lists containing bold/underlines
+        assertEquals("List Bold", "- **List Bold**\nDetails".extractReasoningSummaryTitle())
+        assertEquals("Num Bold", "1. **Num Bold**\nDetails".extractReasoningSummaryTitle())
+        assertEquals("Star Underline", "* __Star Underline__\nDetails".extractReasoningSummaryTitle())
+
+        // Plain text should be rejected
+        assertEquals(null, "Thinking about user request".extractReasoningSummaryTitle())
+        assertEquals(null, "Thinking about user request:".extractReasoningSummaryTitle())
+        assertEquals(null, "Thinking about user request.\nAnother line".extractReasoningSummaryTitle())
+    }
+
+    @Test
+    fun `extractLatestReasoningSummaryTitle extracts the last valid header`() {
+        val text = """
+            **Step 1: Check inputs**
+            Some logic here
+            
+            ### Step 2: Formulate plan
+            Formulating logic
+            
+            Plain text sentence at the end.
+        """.trimIndent()
+        assertEquals("Step 2: Formulate plan", text.extractLatestReasoningSummaryTitle())
+    }
+
     private fun createTestMessages(count: Int): List<UIMessage> {
         return (0 until count).map { i ->
             UIMessage(
