@@ -771,7 +771,7 @@ suspend fun searchLobeHubIcon(okHttpClient: OkHttpClient, providerName: String):
                         val file = element as? JsonObject ?: return@mapNotNull null
                         file["path"]
                             ?.let { it.jsonPrimitiveOrNull }
-                            ?.let { contentOrNull(it) }
+                            ?.contentOrNull
                     }
                     .mapNotNull { path -> 
                         if (path.startsWith("/light/") && path.endsWith(".png")) {

@@ -86,6 +86,7 @@ import me.rerere.rikkahub.data.model.Skill
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.FormItem
+import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.MaterialIconPickerDialog
@@ -283,6 +284,15 @@ fun SettingSkillsPage(
                 }
                 showAddDialog = false
                 editingSkill = null
+            },
+            onAutoSave = { savedSkill ->
+                vm.updateSettings(
+                    settings.copy(
+                        skills = settings.skills.map {
+                            if (it.id == savedSkill.id) savedSkill else it
+                        }
+                    )
+                )
             }
         )
     }
@@ -696,6 +706,7 @@ fun SkillEditorSheet(
     assistants: List<me.rerere.rikkahub.data.model.Assistant>,
     onDismiss: () -> Unit,
     onSave: (Skill) -> Unit,
+    onAutoSave: ((Skill) -> Unit)? = null,
 ) {
     val isEditing = skill != null
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -781,17 +792,31 @@ fun SkillEditorSheet(
                             }
                         }
 
-                        OutlinedTextField(
+                        DebouncedTextField(
                             value = name,
-                            onValueChange = {
-                                name = it.lowercase()
+                            onValueChange = { rawNewName ->
+                                val processed = rawNewName.lowercase()
                                     .filter { c -> c.isLetterOrDigit() || c == '-' || c == '_' }
                                     .take(64)
+                                name = processed
+                                if (skill != null) {
+                                    onAutoSave?.invoke(skill.copy(
+                                        name = processed,
+                                        description = description.trim(),
+                                        icon = icon,
+                                        instructions = instructions,
+                                        alwaysEnabled = alwaysEnabled,
+                                        availableForAllAssistants = availableForAllAssistants,
+                                        availableAssistantIds = if (availableForAllAssistants) emptySet() else availableAssistantIds,
+                                        updatedAt = System.currentTimeMillis()
+                                    ))
+                                }
                             },
+                            stateKey = "skill_name_${skill?.id ?: "new"}",
                             modifier = Modifier.weight(1f),
-                            placeholder = { Text(stringResource(R.string.skills_page_name_placeholder)) },
+                            placeholder = stringResource(R.string.skills_page_name_placeholder),
                             singleLine = true,
-                            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                            showSavingIndicator = true,
                             textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace)
                         )
                     }
@@ -808,26 +833,57 @@ fun SkillEditorSheet(
                 }
 
                 FormItem(label = { Text(stringResource(R.string.skills_page_description)) }) {
-                    OutlinedTextField(
+                    DebouncedTextField(
                         value = description,
-                        onValueChange = { description = it.take(1024) },
+                        onValueChange = { rawVal ->
+                            val processed = rawVal.take(1024)
+                            description = processed
+                            if (skill != null) {
+                                onAutoSave?.invoke(skill.copy(
+                                    name = name.trim(),
+                                    description = processed.trim(),
+                                    icon = icon,
+                                    instructions = instructions,
+                                    alwaysEnabled = alwaysEnabled,
+                                    availableForAllAssistants = availableForAllAssistants,
+                                    availableAssistantIds = if (availableForAllAssistants) emptySet() else availableAssistantIds,
+                                    updatedAt = System.currentTimeMillis()
+                                ))
+                            }
+                        },
+                        stateKey = "skill_desc_${skill?.id ?: "new"}",
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text(stringResource(R.string.skills_page_description_placeholder)) },
+                        placeholder = stringResource(R.string.skills_page_description_placeholder),
                         minLines = 2,
                         maxLines = 4,
-                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                        showSavingIndicator = true,
                     )
                 }
 
                 FormItem(label = { Text(stringResource(R.string.skills_page_instructions)) }) {
-                    OutlinedTextField(
+                    DebouncedTextField(
                         value = instructions,
-                        onValueChange = { instructions = it },
+                        onValueChange = { newVal ->
+                            instructions = newVal
+                            if (skill != null) {
+                                onAutoSave?.invoke(skill.copy(
+                                    name = name.trim(),
+                                    description = description.trim(),
+                                    icon = icon,
+                                    instructions = newVal,
+                                    alwaysEnabled = alwaysEnabled,
+                                    availableForAllAssistants = availableForAllAssistants,
+                                    availableAssistantIds = if (availableForAllAssistants) emptySet() else availableAssistantIds,
+                                    updatedAt = System.currentTimeMillis()
+                                ))
+                            }
+                        },
+                        stateKey = "skill_instructions_${skill?.id ?: "new"}",
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(200.dp),
-                        placeholder = { Text(stringResource(R.string.skills_page_instructions_placeholder)) },
-                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                        placeholder = stringResource(R.string.skills_page_instructions_placeholder),
+                        showSavingIndicator = true,
                         textStyle = MaterialTheme.typography.bodyMedium.copy(
                             fontFamily = FontFamily.Monospace,
                             lineHeight = 20.sp

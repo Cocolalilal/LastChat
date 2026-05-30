@@ -22,6 +22,7 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -195,7 +196,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         Text(stringResource(R.string.setting_model_page_translate_prompt_vars))
                     }
                 ) {
-                    OutlinedTextField(
+                    DebouncedTextField(
                         value = settings.translatePrompt,
                         onValueChange = {
                             vm.updateSettings(
@@ -204,9 +205,10 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 )
                             )
                         },
+                        stateKey = "translate_prompt",
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 10,
-                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                        showSavingIndicator = true,
                     )
                     TextButton(
                         onClick = {
@@ -300,7 +302,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         Text(stringResource(R.string.setting_model_page_suggestion_prompt_vars))
                     }
                 ) {
-                    OutlinedTextField(
+                    DebouncedTextField(
                         value = settings.suggestionPrompt,
                         onValueChange = {
                             vm.updateSettings(
@@ -309,9 +311,10 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 )
                             )
                         },
+                        stateKey = "suggestion_prompt",
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 8,
-                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                        showSavingIndicator = true,
                     )
                     TextButton(
                         onClick = {
@@ -404,7 +407,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         Text(stringResource(R.string.setting_model_page_suggestion_prompt_vars))
                     }
                 ) {
-                    OutlinedTextField(
+                    DebouncedTextField(
                         value = settings.titlePrompt,
                         onValueChange = {
                             vm.updateSettings(
@@ -413,9 +416,10 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 )
                             )
                         },
+                        stateKey = "title_prompt",
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 8,
-                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                        showSavingIndicator = true,
                     )
                     TextButton(
                         onClick = {
@@ -705,7 +709,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         Text(stringResource(R.string.setting_model_page_ocr_prompt_vars))
                     }
                 ) {
-                    OutlinedTextField(
+                    DebouncedTextField(
                         value = settings.ocrPrompt,
                         onValueChange = {
                             vm.updateSettings(
@@ -714,9 +718,10 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 )
                             )
                         },
+                        stateKey = "ocr_prompt",
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 10,
-                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                        showSavingIndicator = true,
                     )
                     TextButton(
                         onClick = {

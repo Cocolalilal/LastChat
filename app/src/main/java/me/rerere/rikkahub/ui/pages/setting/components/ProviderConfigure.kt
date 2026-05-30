@@ -41,6 +41,7 @@ import me.rerere.ai.provider.ReasoningRequestBehavior
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.pages.assistant.detail.CustomBodies
+import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.foundation.layout.size
 import me.rerere.rikkahub.ui.components.ui.ProviderIcon
@@ -162,7 +163,7 @@ fun ProviderConfigure(
                     modifier = iconModifier,
                 )
             }
-            OutlinedTextField(
+            DebouncedTextField(
                 value = provider.name,
                 onValueChange = { newName ->
                     val updated = when (provider) {
@@ -173,11 +174,10 @@ fun ProviderConfigure(
                     }
                     onEdit(updated)
                 },
-                label = {
-                    Text(stringResource(id = R.string.setting_provider_page_name))
-                },
+                stateKey = "provider_name_${provider.id}",
+                label = stringResource(id = R.string.setting_provider_page_name),
                 modifier = Modifier.weight(1f),
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                showSavingIndicator = true
             )
         }
 
@@ -392,26 +392,13 @@ private fun ColumnScope.ProviderConfigureComfyUI(
 
     provider.description()
 
-    var localBaseUrl by remember(provider.id) { mutableStateOf(provider.baseUrl) }
-    LaunchedEffect(provider.baseUrl) {
-        if (provider.baseUrl != localBaseUrl) {
-            localBaseUrl = provider.baseUrl
-        }
-    }
-    LaunchedEffect(localBaseUrl) {
-        delay(300)
-        val latest = latestProvider
-        if (localBaseUrl != latest.baseUrl) {
-            onEdit(latest.copy(baseUrl = localBaseUrl.trim()))
-        }
-    }
-
-    OutlinedTextField(
-        value = localBaseUrl,
-        onValueChange = { localBaseUrl = it },
-        label = { Text(stringResource(R.string.setting_provider_page_api_base_url)) },
+    DebouncedTextField(
+        value = provider.baseUrl,
+        onValueChange = { onEdit(provider.copy(baseUrl = it.trim())) },
+        stateKey = "comfyui_base_url_${provider.id}",
+        label = stringResource(R.string.setting_provider_page_api_base_url),
         modifier = Modifier.fillMaxWidth(),
-        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+        showSavingIndicator = true
     )
 
     Button(
@@ -433,36 +420,40 @@ private fun ColumnScope.ProviderConfigureComfyUI(
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 
-    OutlinedTextField(
+    DebouncedTextField(
         value = provider.promptNodeId,
         onValueChange = { onEdit(provider.copy(promptNodeId = it.trim())) },
-        label = { Text(stringResource(R.string.setting_provider_page_comfyui_prompt_node)) },
+        stateKey = "comfyui_prompt_node_${provider.id}",
+        label = stringResource(R.string.setting_provider_page_comfyui_prompt_node),
         modifier = Modifier.fillMaxWidth(),
-        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+        showSavingIndicator = true
     )
 
-    OutlinedTextField(
+    DebouncedTextField(
         value = provider.promptInputName,
         onValueChange = { onEdit(provider.copy(promptInputName = it.trim())) },
-        label = { Text(stringResource(R.string.setting_provider_page_comfyui_prompt_input)) },
+        stateKey = "comfyui_prompt_input_${provider.id}",
+        label = stringResource(R.string.setting_provider_page_comfyui_prompt_input),
         modifier = Modifier.fillMaxWidth(),
-        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+        showSavingIndicator = true
     )
 
-    OutlinedTextField(
+    DebouncedTextField(
         value = provider.modelNodeId,
         onValueChange = { onEdit(provider.copy(modelNodeId = it.trim())) },
-        label = { Text(stringResource(R.string.setting_provider_page_comfyui_model_node)) },
+        stateKey = "comfyui_model_node_${provider.id}",
+        label = stringResource(R.string.setting_provider_page_comfyui_model_node),
         modifier = Modifier.fillMaxWidth(),
-        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+        showSavingIndicator = true
     )
 
-    OutlinedTextField(
+    DebouncedTextField(
         value = provider.modelInputName,
         onValueChange = { onEdit(provider.copy(modelInputName = it.trim())) },
-        label = { Text(stringResource(R.string.setting_provider_page_comfyui_model_input)) },
+        stateKey = "comfyui_model_input_${provider.id}",
+        label = stringResource(R.string.setting_provider_page_comfyui_model_input),
         modifier = Modifier.fillMaxWidth(),
-        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+        showSavingIndicator = true
     )
 }
 
@@ -476,83 +467,34 @@ private fun ColumnScope.ProviderConfigureOpenAI(
 
     provider.description()
 
-    var localApiKey by remember(provider.id) { mutableStateOf(provider.apiKey) }
-    LaunchedEffect(provider.apiKey) {
-        if (provider.apiKey != localApiKey) {
-            localApiKey = provider.apiKey
-        }
-    }
-    LaunchedEffect(localApiKey) {
-        delay(300)
-        val latest = latestProvider
-        if (localApiKey != latest.apiKey) {
-            onEdit(latest.copy(apiKey = localApiKey.trim()))
-        }
-    }
-    SecureOutlinedTextField(
-        value = localApiKey,
-        onValueChange = { localApiKey = it },
+    DebouncedTextField(
+        value = provider.apiKey,
+        onValueChange = { onEdit(provider.copy(apiKey = it.trim())) },
+        stateKey = "openai_api_key_${provider.id}",
         label = stringResource(id = R.string.setting_provider_page_api_key),
-        modifier = Modifier
-            .fillMaxWidth(),
-        maxVisibleLines = 3
+        modifier = Modifier.fillMaxWidth(),
+        showSavingIndicator = true,
+        isSecure = true
     )
 
-    // Local state for URL fields with debouncing to prevent lag
-    var localBaseUrl by remember(provider.id) { mutableStateOf(provider.baseUrl) }
-    
-    // Sync from external changes (e.g., preset selection)
-    LaunchedEffect(provider.baseUrl) {
-        if (provider.baseUrl != localBaseUrl) {
-            localBaseUrl = provider.baseUrl
-        }
-    }
-    
-    // Debounce commits to parent
-    LaunchedEffect(localBaseUrl) {
-        delay(300)
-        val latest = latestProvider
-        if (localBaseUrl != latest.baseUrl) {
-            onEdit(latest.copy(baseUrl = localBaseUrl.trim()))
-        }
-    }
-
-    OutlinedTextField(
-        value = localBaseUrl,
-        onValueChange = { localBaseUrl = it },
-        label = {
-            Text(stringResource(id = R.string.setting_provider_page_api_base_url))
-        },
+    DebouncedTextField(
+        value = provider.baseUrl,
+        onValueChange = { onEdit(provider.copy(baseUrl = it.trim())) },
+        stateKey = "openai_base_url_${provider.id}",
+        label = stringResource(id = R.string.setting_provider_page_api_base_url),
         modifier = Modifier.fillMaxWidth(),
-        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+        showSavingIndicator = true
     )
 
     if (!provider.useResponseApi) {
-        var localPath by remember(provider.id) { mutableStateOf(provider.chatCompletionsPath) }
-        
-        LaunchedEffect(provider.chatCompletionsPath) {
-            if (provider.chatCompletionsPath != localPath) {
-                localPath = provider.chatCompletionsPath
-            }
-        }
-        
-        LaunchedEffect(localPath) {
-            delay(300)
-            val latest = latestProvider
-            if (localPath != latest.chatCompletionsPath) {
-                onEdit(latest.copy(chatCompletionsPath = localPath.trim()))
-            }
-        }
-
-        OutlinedTextField(
-            value = localPath,
-            onValueChange = { localPath = it },
-            label = {
-                Text(stringResource(id = R.string.setting_provider_page_api_path))
-            },
+        DebouncedTextField(
+            value = provider.chatCompletionsPath,
+            onValueChange = { onEdit(provider.copy(chatCompletionsPath = it.trim())) },
+            stateKey = "openai_path_${provider.id}",
+            label = stringResource(id = R.string.setting_provider_page_api_path),
             modifier = Modifier.fillMaxWidth(),
             enabled = !provider.builtIn,
-            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+            showSavingIndicator = true
         )
     }
 
@@ -694,51 +636,23 @@ private fun ColumnScope.ProviderConfigureClaude(
     val latestProvider by rememberUpdatedState(provider)
     provider.description()
 
-    var localApiKey by remember(provider.id) { mutableStateOf(provider.apiKey) }
-    LaunchedEffect(provider.apiKey) {
-        if (provider.apiKey != localApiKey) {
-            localApiKey = provider.apiKey
-        }
-    }
-    LaunchedEffect(localApiKey) {
-        delay(300)
-        val latest = latestProvider
-        if (localApiKey != latest.apiKey) {
-            onEdit(latest.copy(apiKey = localApiKey.trim()))
-        }
-    }
-    SecureOutlinedTextField(
-        value = localApiKey,
-        onValueChange = { localApiKey = it },
+    DebouncedTextField(
+        value = provider.apiKey,
+        onValueChange = { onEdit(provider.copy(apiKey = it.trim())) },
+        stateKey = "claude_api_key_${provider.id}",
         label = stringResource(id = R.string.setting_provider_page_api_key),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        showSavingIndicator = true,
+        isSecure = true
     )
 
-    // Local state for URL field with debouncing to prevent lag
-    var localBaseUrl by remember(provider.id) { mutableStateOf(provider.baseUrl) }
-    
-    LaunchedEffect(provider.baseUrl) {
-        if (provider.baseUrl != localBaseUrl) {
-            localBaseUrl = provider.baseUrl
-        }
-    }
-    
-    LaunchedEffect(localBaseUrl) {
-        delay(300)
-        val latest = latestProvider
-        if (localBaseUrl != latest.baseUrl) {
-            onEdit(latest.copy(baseUrl = localBaseUrl.trim()))
-        }
-    }
-
-    OutlinedTextField(
-        value = localBaseUrl,
-        onValueChange = { localBaseUrl = it },
-        label = {
-            Text(stringResource(id = R.string.setting_provider_page_api_base_url))
-        },
+    DebouncedTextField(
+        value = provider.baseUrl,
+        onValueChange = { onEdit(provider.copy(baseUrl = it.trim())) },
+        stateKey = "claude_base_url_${provider.id}",
+        label = stringResource(id = R.string.setting_provider_page_api_base_url),
         modifier = Modifier.fillMaxWidth(),
-        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+        showSavingIndicator = true
     )
 }
 
@@ -763,141 +677,70 @@ private fun ColumnScope.ProviderConfigureGoogle(
     }
 
     if (!provider.vertexAI) {
-        var localApiKey by remember(provider.id) { mutableStateOf(provider.apiKey) }
-        LaunchedEffect(provider.apiKey) {
-            if (provider.apiKey != localApiKey) {
-                localApiKey = provider.apiKey
-            }
-        }
-        LaunchedEffect(localApiKey) {
-            delay(300)
-            val latest = latestProvider
-            if (localApiKey != latest.apiKey) {
-                onEdit(latest.copy(apiKey = localApiKey.trim()))
-            }
-        }
-        SecureOutlinedTextField(
-            value = localApiKey,
-            onValueChange = { localApiKey = it },
+        DebouncedTextField(
+            value = provider.apiKey,
+            onValueChange = { onEdit(provider.copy(apiKey = it.trim())) },
+            stateKey = "google_api_key_${provider.id}",
             label = stringResource(id = R.string.setting_provider_page_api_key),
             modifier = Modifier.fillMaxWidth(),
-            maxVisibleLines = 3
+            showSavingIndicator = true,
+            isSecure = true
         )
 
-        // Local state for URL field with debouncing
-        var localBaseUrl by remember(provider.id) { mutableStateOf(provider.baseUrl) }
-        
-        LaunchedEffect(provider.baseUrl) {
-            if (provider.baseUrl != localBaseUrl) {
-                localBaseUrl = provider.baseUrl
-            }
-        }
-        
-        LaunchedEffect(localBaseUrl) {
-            delay(300)
-            val latest = latestProvider
-            if (localBaseUrl != latest.baseUrl) {
-                onEdit(latest.copy(baseUrl = localBaseUrl.trim()))
-            }
-        }
-
-        OutlinedTextField(
-            value = localBaseUrl,
-            onValueChange = { localBaseUrl = it },
-            label = {
-                Text(stringResource(id = R.string.setting_provider_page_api_base_url))
-            },
+        DebouncedTextField(
+            value = provider.baseUrl,
+            onValueChange = { onEdit(provider.copy(baseUrl = it.trim())) },
+            stateKey = "google_base_url_${provider.id}",
+            label = stringResource(id = R.string.setting_provider_page_api_base_url),
             modifier = Modifier.fillMaxWidth(),
-            isError = !localBaseUrl.endsWith("/v1beta"),
-            supportingText = if (!localBaseUrl.endsWith("/v1beta")) {
+            showSavingIndicator = true,
+            trailingIcon = if (!provider.baseUrl.endsWith("/v1beta")) {
                 {
-                    Text(stringResource(R.string.setting_provider_page_vertex_ai_base_url_hint))
+                    Text(
+                        text = stringResource(R.string.setting_provider_page_vertex_ai_base_url_hint),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
                 }
-            } else null,
-            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+            } else null
         )
     } else {
-        // Local state for all Vertex AI text fields with debouncing
-        var localEmail by remember(provider.id) { mutableStateOf(provider.serviceAccountEmail) }
-        var localPrivateKey by remember(provider.id) { mutableStateOf(provider.privateKey) }
-        var localLocation by remember(provider.id) { mutableStateOf(provider.location) }
-        var localProjectId by remember(provider.id) { mutableStateOf(provider.projectId) }
-        
-        // Sync from external changes
-        LaunchedEffect(provider.serviceAccountEmail) {
-            if (provider.serviceAccountEmail != localEmail) localEmail = provider.serviceAccountEmail
-        }
-        LaunchedEffect(provider.privateKey) {
-            if (provider.privateKey != localPrivateKey) localPrivateKey = provider.privateKey
-        }
-        LaunchedEffect(provider.location) {
-            if (provider.location != localLocation) localLocation = provider.location
-        }
-        LaunchedEffect(provider.projectId) {
-            if (provider.projectId != localProjectId) localProjectId = provider.projectId
-        }
-        
-        // Debounce commits
-        LaunchedEffect(localEmail) {
-            delay(300)
-            val latest = latestProvider
-            if (localEmail != latest.serviceAccountEmail) onEdit(latest.copy(serviceAccountEmail = localEmail.trim()))
-        }
-        LaunchedEffect(localPrivateKey) {
-            delay(300)
-            val latest = latestProvider
-            if (localPrivateKey != latest.privateKey) onEdit(latest.copy(privateKey = localPrivateKey.trim()))
-        }
-        LaunchedEffect(localLocation) {
-            delay(300)
-            val latest = latestProvider
-            if (localLocation != latest.location) onEdit(latest.copy(location = localLocation.trim()))
-        }
-        LaunchedEffect(localProjectId) {
-            delay(300)
-            val latest = latestProvider
-            if (localProjectId != latest.projectId) onEdit(latest.copy(projectId = localProjectId.trim()))
-        }
-
-        OutlinedTextField(
-            value = localEmail,
-            onValueChange = { localEmail = it },
-            label = {
-                Text(stringResource(id = R.string.setting_provider_page_service_account_email))
-            },
+        DebouncedTextField(
+            value = provider.serviceAccountEmail,
+            onValueChange = { onEdit(provider.copy(serviceAccountEmail = it.trim())) },
+            stateKey = "google_email_${provider.id}",
+            label = stringResource(id = R.string.setting_provider_page_service_account_email),
             modifier = Modifier.fillMaxWidth(),
-            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+            showSavingIndicator = true
         )
-        OutlinedTextField(
-            value = localPrivateKey,
-            onValueChange = { localPrivateKey = it },
-            label = {
-                Text(stringResource(id = R.string.setting_provider_page_private_key))
-            },
+        DebouncedTextField(
+            value = provider.privateKey,
+            onValueChange = { onEdit(provider.copy(privateKey = it.trim())) },
+            stateKey = "google_private_key_${provider.id}",
+            label = stringResource(id = R.string.setting_provider_page_private_key),
             modifier = Modifier.fillMaxWidth(),
-            maxLines = 6,
             minLines = 3,
+            maxLines = 6,
             textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+            showSavingIndicator = true,
+            isSecure = true
         )
-        OutlinedTextField(
-            value = localLocation,
-            onValueChange = { localLocation = it },
-            label = {
-                // https://cloud.google.com/vertex-ai/generative-ai/docs/learn/locations#available-regions
-                Text(stringResource(id = R.string.setting_provider_page_location))
-            },
+        DebouncedTextField(
+            value = provider.location,
+            onValueChange = { onEdit(provider.copy(location = it.trim())) },
+            stateKey = "google_location_${provider.id}",
+            label = stringResource(id = R.string.setting_provider_page_location),
             modifier = Modifier.fillMaxWidth(),
-            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+            showSavingIndicator = true
         )
-        OutlinedTextField(
-            value = localProjectId,
-            onValueChange = { localProjectId = it },
-            label = {
-                Text(stringResource(id = R.string.setting_provider_page_project_id))
-            },
+        DebouncedTextField(
+            value = provider.projectId,
+            onValueChange = { onEdit(provider.copy(projectId = it.trim())) },
+            stateKey = "google_project_id_${provider.id}",
+            label = stringResource(id = R.string.setting_provider_page_project_id),
             modifier = Modifier.fillMaxWidth(),
-            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+            showSavingIndicator = true
         )
     }
 }

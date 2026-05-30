@@ -22,6 +22,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
+import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -290,17 +291,19 @@ fun AssistantModelSubPage(
                 else 
                     stringResource(R.string.assistant_page_max_tokens_no_token_limit),
                 trailing = {
-                    OutlinedTextField(
+                    DebouncedTextField(
                         value = assistant.maxTokens?.toString() ?: "",
                         onValueChange = { text ->
-                            val tokens = if (text.isBlank()) null else text.toIntOrNull()?.takeIf { it > 0 }
+                            val tokens = if (text.isBlank()) null else text.filter { it.isDigit() }.toIntOrNull()?.takeIf { it > 0 }
                             onUpdate(assistant.copy(maxTokens = tokens))
                         },
+                        stateKey = "assistant_max_tokens_${assistant.id}",
                         modifier = Modifier.width(100.dp),
-                        placeholder = { Text(stringResource(R.string.assistant_model_auto)) },
+                        placeholder = stringResource(R.string.assistant_model_auto),
                         singleLine = true,
+                        showSavingIndicator = true,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
                         textStyle = MaterialTheme.typography.bodySmall,
-                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                     )
                 }
             )

@@ -299,6 +299,15 @@ fun SettingPromptInjectionsPage(
                 }
                 showAddSkillDialog = false
                 editingSkill = null
+            },
+            onAutoSave = { savedSkill ->
+                vm.updateSettings(
+                    settings.copy(
+                        skills = settings.skills.map {
+                            if (it.id == savedSkill.id) savedSkill else it
+                        }
+                    )
+                )
             }
         )
     }

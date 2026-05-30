@@ -2077,6 +2077,7 @@ private fun ChatScrollToBottomButton(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
+    val haptics = rememberPremiumHaptics()
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -2091,16 +2092,19 @@ private fun ChatScrollToBottomButton(
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
         modifier = modifier
             .size(36.dp)
-            .lastChatBlurEffect(MaterialTheme.colorScheme.surfaceContainer, CircleShape)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             }
+            .lastChatBlurEffect(MaterialTheme.colorScheme.surfaceContainer, CircleShape)
             .clip(CircleShape)
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
-                onClick = onClick,
+                onClick = {
+                    haptics.perform(HapticPattern.Pop)
+                    onClick()
+                },
             )
     ) {
         Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
