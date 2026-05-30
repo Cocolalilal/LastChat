@@ -146,6 +146,10 @@ import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.components.ui.decodeProviderSetting
+import me.rerere.rikkahub.ui.components.ui.computeAIIconByName
+import me.rerere.rikkahub.ui.components.ui.getProviderSlugFromName
+import me.rerere.rikkahub.ui.components.ui.searchLobeHubIcon
+import me.rerere.rikkahub.ui.components.ui.lobeHubIconUri
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.HapticPattern
@@ -214,6 +218,28 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
                 providers = listOf(providerToAdd) + settings.providers
             )
         )
+        
+        // Asynchronously check if we can query LobeHub for a monochrome icon
+        if (providerToAdd.customIconUri.isNullOrBlank()) {
+            val providerName = providerToAdd.name
+            val hasLocalIcon = computeAIIconByName(providerName) != null || 
+                    getProviderSlugFromName(providerName) != null
+            if (!hasLocalIcon) {
+                scope.launch {
+                    val okHttpClient = org.koin.java.KoinJavaComponent.get<okhttp3.OkHttpClient>(okhttp3.OkHttpClient::class.java)
+                    val slug = searchLobeHubIcon(okHttpClient, providerName)
+                    if (slug != null) {
+                        val latestSettings = vm.settings.value
+                        val updatedProviders = latestSettings.providers.map { p ->
+                            if (p.id == providerToAdd.id) {
+                                p.copyProvider(customIconUri = lobeHubIconUri(slug))
+                            } else p
+                        }
+                        vm.updateSettings(latestSettings.copy(providers = updatedProviders))
+                    }
+                }
+            }
+        }
     }
 
     Scaffold(

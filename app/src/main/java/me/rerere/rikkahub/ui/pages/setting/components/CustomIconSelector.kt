@@ -243,21 +243,7 @@ private fun LobeHubIconPickerSheet(
     ModalBottomSheet(
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         sheetState = sheetState,
-        sheetGesturesEnabled = false,
         onDismissRequest = onDismiss,
-        dragHandle = {
-            IconButton(
-                onClick = {
-                    haptics.perform(HapticPattern.Pop)
-                    scope.launch {
-                        sheetState.hide()
-                        onDismiss()
-                    }
-                },
-            ) {
-                Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.cancel))
-            }
-        },
     ) {
         Column(
             modifier = Modifier

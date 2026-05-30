@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.components.ui
+package me.rerere.rikkahub.ui.components.ui
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
@@ -33,6 +33,13 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
+import me.rerere.rikkahub.utils.JsonInstant
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.contentOrNull
+import okhttp3.Request
+import okhttp3.OkHttpClient
 
 private const val LOBEHUB_ICON_URI_PREFIX = "lobehub://"
 
@@ -213,6 +220,8 @@ fun AutoProviderIcon(
         modifier = modifier,
         loading = loading,
         color = color,
+        contentColor = contentColor,
+        tint = !providerSlug.endsWith("-color"),
         padding = padding,
         fallback = {
             // Priority 3: Text avatar (final fallback)
@@ -280,7 +289,7 @@ private fun ProviderFaviconFallback(
 /**
  * Get a provider slug from a provider name for LobeHub CDN lookup
  */
-private fun getProviderSlugFromName(name: String): String? {
+internal fun getProviderSlugFromName(name: String): String? {
     val lowerName = name.lowercase()
     return when {
         lowerName.contains("openai") -> "openai"
@@ -367,6 +376,7 @@ fun AutoAIIconWithUrl(
                 loading = loading,
                 color = color,
                 contentColor = contentColor,
+                tint = !lobeHubSlug.endsWith("-color"),
                 padding = padding,
                 fallback = {
                     TextAvatar(
@@ -711,7 +721,7 @@ private fun String.isCatalogIconUrl(): Boolean {
 
 private val ICON_CACHE = mutableMapOf<String, String>()
 
-private fun computeAIIconByName(name: String): String? {
+internal fun computeAIIconByName(name: String): String? {
     val cached = ICON_CACHE[name]
     if (cached != null) return cached.ifEmpty { null }
 
@@ -733,5 +743,62 @@ fun SiliconFlowPowerByIcon(modifier: Modifier = Modifier) {
         AsyncImage(model = R.drawable.siliconflow_light, contentDescription = null, modifier = modifier)
     } else {
         AsyncImage(model = R.drawable.siliconflow_dark, contentDescription = null, modifier = modifier)
+    }
+}
+
+/**
+ * Search the LobeHub icons API for a matching monochrome slug.
+ * Returns the matching slug if found, null otherwise.
+ */
+suspend fun searchLobeHubIcon(okHttpClient: OkHttpClient, providerName: String): String? {
+    return withContext(Dispatchers.IO) {
+        runCatching {
+            val request = Request.Builder()
+                .url("https://unpkg.com/@lobehub/icons-static-png@latest/?meta")
+                .build()
+            
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@runCatching null
+                
+                val body = response.body?.string() ?: return@runCatching null
+                val root = JsonInstant.parseToJsonElement(body) as? JsonObject
+                    ?: return@runCatching null
+                val files = root["files"] as? JsonArray
+                    ?: return@runCatching null
+                
+                val slugs = files
+                    .mapNotNull { element ->
+                        val file = element as? JsonObject ?: return@mapNotNull null
+                        file["path"]
+                            ?.let { it.jsonPrimitiveOrNull }
+                            ?.let { contentOrNull(it) }
+                    }
+                    .mapNotNull { path -> 
+                        if (path.startsWith("/light/") && path.endsWith(".png")) {
+                            path.substringAfterLast('/').removeSuffix(".png").takeIf { it.isNotBlank() }
+                        } else null
+                    }
+                    .distinct()
+                
+                val normalizedName = providerName.lowercase().replace(Regex("[^a-z0-9]"), "")
+                if (normalizedName.isBlank()) return@runCatching null
+                
+                // Filter for monochrome options (those without "-color" suffix and not ending in "-text")
+                val monoSlugs = slugs.filter { !it.endsWith("-color") && !it.endsWith("-text") }
+                
+                // 1. Exact match of normalized name and slug (with hyphens/underscores removed)
+                val exactMatch = monoSlugs.find { slug ->
+                    slug.replace("-", "").replace("_", "") == normalizedName
+                }
+                if (exactMatch != null) return@runCatching exactMatch
+                
+                // 2. Fuzzy match where provider name contains slug or vice versa
+                val fuzzyMatch = monoSlugs.find { slug ->
+                    val cleanSlug = slug.replace("-", "").replace("_", "")
+                    normalizedName.contains(cleanSlug) || cleanSlug.contains(normalizedName)
+                }
+                fuzzyMatch
+            }
+        }.getOrNull()
     }
 }
