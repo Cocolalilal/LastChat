@@ -16,7 +16,7 @@ object ModelIdNormalizer {
         "bedrock.",
     )
 
-    private val removableSuffixes = setOf(
+    val removableSuffixes = setOf(
         "latest",
         "preview",
         "previewing",

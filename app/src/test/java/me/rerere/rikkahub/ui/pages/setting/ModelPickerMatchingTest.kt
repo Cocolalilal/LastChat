@@ -35,4 +35,38 @@ class ModelPickerMatchingTest {
             )
         )
     }
+
+    @Test
+    fun rejectsDifferentRemovableQualifiers() {
+        // e.g. kimi k2.6 vs kimi k2.6:(free) should not match
+        assertFalse(
+            modelsReferToSameApiModel(
+                Model(modelId = "kimi-k2.6"),
+                Model(modelId = "kimi-k2.6:(free)"),
+            )
+        )
+        assertFalse(
+            modelsReferToSameApiModel(
+                Model(modelId = "kimi-k2.6"),
+                Model(modelId = "kimi-k2.6-free"),
+            )
+        )
+        assertFalse(
+            modelsReferToSameApiModel(
+                Model(modelId = "gemini-2.5-pro"),
+                Model(modelId = "gemini-2.5-pro-preview"),
+            )
+        )
+    }
+
+    @Test
+    fun matchesSameBaseModelWithDateSuffix() {
+        // Date suffixes (no qualifiers) should match general models if needed
+        assertTrue(
+            modelsReferToSameApiModel(
+                Model(modelId = "gpt-4o"),
+                Model(modelId = "gpt-4o-2024-05-13"),
+            )
+        )
+    }
 }

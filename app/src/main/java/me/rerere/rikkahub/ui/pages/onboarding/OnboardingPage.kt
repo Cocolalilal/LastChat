@@ -262,6 +262,7 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
                 )
 
                 SetupPage.GuidedPasteKey -> PasteKeyPage(
+                    text = "Paste your API key here and\nwe’ll handle the rest.",
                     apiKey = apiKey,
                     onApiKeyChange = { apiKey = it },
                     loading = guidedModelsLoading,
@@ -277,27 +278,15 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
                     },
                 )
 
-                SetupPage.ManualSignup -> LinkOutPage(
-                    text = "Let’s get your API key! Tap\nbelow to create your\n${manualProvider?.name ?: "[Provider]"} account, then\nreturn to LastChat for the\nnext step.",
-                    button = "Open signup page",
-                    url = manualProviderPreset?.signupUrl,
-                    onReturned = {
-                        if (manualProviderPreset?.apiKeyUrl.isNullOrBlank()) {
-                            goTo(SetupPage.ManualKey)
-                        } else {
-                            goTo(SetupPage.ManualKeyLink)
-                        }
-                    },
-                )
-
                 SetupPage.ManualKeyLink -> LinkOutPage(
-                    text = "Now that you have an\naccount, let’s grab that API\nkey. API keys are like\npasswords, don’t share\nthem!",
-                    button = "Get my API key",
+                    text = "Get your API key from the\n${manualProviderPreset?.name ?: "provider"} dashboard.",
+                    button = "Get API key",
                     url = manualProviderPreset?.apiKeyUrl,
                     onReturned = { goTo(SetupPage.ManualKey) },
                 )
 
                 SetupPage.ManualKey -> PasteKeyPage(
+                    text = "${manualProvider?.name ?: "Provider"} API key:",
                     apiKey = apiKey,
                     onApiKeyChange = { apiKey = it },
                     loading = manualModelsLoading,
@@ -688,6 +677,7 @@ private fun LinkOutPage(
 
 @Composable
 private fun PasteKeyPage(
+    text: String,
     apiKey: String,
     onApiKeyChange: (String) -> Unit,
     loading: Boolean = false,
@@ -715,7 +705,7 @@ private fun PasteKeyPage(
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
-                text = "Paste your API key here and\nwe’ll handle the rest.",
+                text = text,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
@@ -1487,7 +1477,6 @@ private enum class SetupPage {
     GuidedSignup,
     GuidedKeyLink,
     GuidedPasteKey,
-    ManualSignup,
     ManualKeyLink,
     ManualKey,
     ManualModels,
@@ -1504,8 +1493,7 @@ private fun previousPage(page: SetupPage): SetupPage? {
         SetupPage.GuidedSignup -> SetupPage.GuidedChoice
         SetupPage.GuidedKeyLink -> SetupPage.GuidedSignup
         SetupPage.GuidedPasteKey -> SetupPage.GuidedKeyLink
-        SetupPage.ManualSignup -> SetupPage.ProviderOverview
-        SetupPage.ManualKeyLink -> SetupPage.ManualSignup
+        SetupPage.ManualKeyLink -> SetupPage.ProviderOverview
         SetupPage.ManualKey -> SetupPage.ManualKeyLink
         SetupPage.ManualModels -> SetupPage.ManualKey
         SetupPage.ManualDefaults -> SetupPage.ManualModels

@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.components.chat
+package me.rerere.rikkahub.ui.components.chat
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -485,9 +485,12 @@ private fun AnimatedSinglePill(
                     }
                     
                     is ActivityState.Reasoning -> {
+                        // Read title from the outer `state` (not `targetState`) so it updates
+                        // on every recomposition even though contentKey stays "reasoning".
+                        val liveTitle = (state as? ActivityState.Reasoning)?.title
                         ReasoningContent(
                             startTimeMs = targetState.startTimeMs,
-                            title = targetState.title,
+                            title = liveTitle,
                             isLive = true
                         )
                     }

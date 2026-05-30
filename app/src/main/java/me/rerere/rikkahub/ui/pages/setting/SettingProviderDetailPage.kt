@@ -210,9 +210,28 @@ internal fun modelsReferToSameApiModel(savedModel: Model, apiModel: Model): Bool
         return false
     }
 
+    if (savedModel.qualifiers() != apiModel.qualifiers()) {
+        return false
+    }
+
     val savedSlug = savedModel.providerSlug?.normalizeModelMatchToken()
     val apiSlug = apiModel.providerSlug?.normalizeModelMatchToken()
     return savedSlug == null || apiSlug == null || savedSlug == apiSlug
+}
+
+private fun Model.qualifiers(): Set<String> {
+    return buildSet {
+        modelId.lowercase().split(Regex("[\\-_:\\/\\s()]+")).forEach { token ->
+            if (token in ModelIdNormalizer.removableSuffixes) {
+                add(token)
+            }
+        }
+        canonicalModelId?.lowercase()?.split(Regex("[\\-_:\\/\\s()]+"))?.forEach { token ->
+            if (token in ModelIdNormalizer.removableSuffixes) {
+                add(token)
+            }
+        }
+    }
 }
 
 private fun Model.matchKeys(): Set<String> {

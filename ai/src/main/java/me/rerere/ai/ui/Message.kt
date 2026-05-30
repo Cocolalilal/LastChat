@@ -78,13 +78,10 @@ data class UIMessage(
                             acc.find { it is UIMessagePart.Reasoning } as? UIMessagePart.Reasoning
                         if (existingReasoningPart != null) {
                             val reasoning = existingReasoningPart.reasoning + deltaPart.reasoning
+                            val extractedTitle = reasoning.extractReasoningSummaryTitle()
                             val title = deltaPart.title
+                                ?: extractedTitle
                                 ?: existingReasoningPart.title
-                                ?: if (deltaPart.metadata.isReasoningSummary()) {
-                                    reasoning.extractReasoningSummaryTitle()
-                                } else {
-                                    null
-                                }
                             acc.map { part ->
                                 if (part is UIMessagePart.Reasoning) {
                                     UIMessagePart.Reasoning(
@@ -102,7 +99,8 @@ data class UIMessage(
                                 } else part
                             }
                         } else {
-                            acc + deltaPart
+                            val title = deltaPart.title ?: deltaPart.reasoning.extractReasoningSummaryTitle()
+                            acc + deltaPart.copy(title = title)
                         }
                     }
 
@@ -605,13 +603,35 @@ fun String.extractReasoningSummaryTitle(): String? {
 
     val stripped = when {
         firstLine.startsWith("**") -> {
-            Regex("^\\*\\*(.+?)\\*\\*\\s*$").matchEntire(firstLine)?.groupValues?.getOrNull(1)
+            val idx = firstLine.indexOf("**", startIndex = 2)
+            if (idx >= 0) {
+                firstLine.substring(2, idx).trim()
+            } else {
+                null
+            }
         }
         firstLine.startsWith("__") -> {
-            Regex("^__(.+?)__\\s*$").matchEntire(firstLine)?.groupValues?.getOrNull(1)
+            val idx = firstLine.indexOf("__", startIndex = 2)
+            if (idx >= 0) {
+                firstLine.substring(2, idx).trim()
+            } else {
+                null
+            }
         }
-        firstLine.startsWith("#") -> firstLine.replace(Regex("^#+\\s*"), "")
-        else -> firstLine
+        firstLine.startsWith("#") -> {
+            if (this.contains("\n") || this.contains("\r")) {
+                firstLine.replace(Regex("^#+\\s*"), "")
+            } else {
+                null
+            }
+        }
+        else -> {
+            if (firstLine.endsWith(":") || (firstLine.length <= 40 && (this.contains("\n") || this.contains("\r")))) {
+                firstLine
+            } else {
+                null
+            }
+        }
     }?.trim()
         ?.trimEnd(':')
         ?.trim()
