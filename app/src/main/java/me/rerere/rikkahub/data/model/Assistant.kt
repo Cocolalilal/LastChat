@@ -221,6 +221,19 @@ fun String.replaceRegexes(
     }
 }
 
+fun String.replacePersonaPlaceholders(
+    assistant: Assistant?,
+    userNickname: String,
+): String {
+    val charName = assistant?.name?.ifBlank { null } ?: "assistant"
+    val userName = userNickname.ifBlank { "user" }
+    return this
+        .replace(oldValue = "{{char}}", newValue = charName, ignoreCase = true)
+        .replace(oldValue = "{char}", newValue = charName, ignoreCase = true)
+        .replace(oldValue = "{{user}}", newValue = userName, ignoreCase = true)
+        .replace(oldValue = "{user}", newValue = userName, ignoreCase = true)
+}
+
 @Serializable
 sealed class PromptInjection {
     @Serializable

@@ -11,11 +11,8 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -46,14 +43,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.surfaceColorAtElevation
@@ -62,7 +55,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -114,7 +106,6 @@ import me.rerere.rikkahub.ui.components.chat.ChatMessageTurn
 import me.rerere.rikkahub.ui.components.chat.MessageTurnGroup
 import me.rerere.rikkahub.ui.components.chat.groupIntoTurns
 import me.rerere.rikkahub.ui.components.ui.ListSelectableItem
-import me.rerere.rikkahub.ui.components.ui.Tooltip
 import me.rerere.rikkahub.ui.hooks.ImeLazyListAutoScroller
 import me.rerere.rikkahub.utils.plus
 import kotlin.uuid.Uuid
@@ -163,11 +154,11 @@ fun ChatList(
     contentMaxWidth: Dp = Dp.Unspecified,
     recentlyRestoredNodeIds: Set<Uuid> = emptySet(),
     initialSearchQuery: String? = null,
-    shareSelectionRequestKey: Int = 0,
-    shareSelectionCancelRequestKey: Int = 0,
-    onShareSelectionRequestConsumed: () -> Unit = {},
-    onShareSelectionCancelRequestConsumed: () -> Unit = {},
-    onSelectionModeChange: (Boolean) -> Unit = {},
+    searchQuery: String = initialSearchQuery.orEmpty(),
+    onSearchQueryChange: (String) -> Unit = {},
+    shareSelecting: Boolean = false,
+    selectedShareItems: Set<Uuid> = emptySet(),
+    onSelectedShareItemsChange: (Set<Uuid>) -> Unit = {},
     onRegenerate: (UIMessage) -> Unit = {},
     onEdit: (UIMessage) -> Unit = {},
     onForkMessage: (UIMessage) -> Unit = {},
@@ -191,7 +182,8 @@ fun ChatList(
                     contentMaxWidth = contentMaxWidth,
                     onJumpToMessage = onJumpToMessage,
                     animatedVisibilityScope = this@AnimatedContent,
-                    initialSearchQuery = initialSearchQuery,
+                    searchQuery = searchQuery,
+                    onSearchQueryChange = onSearchQueryChange,
                 )
             } else {
                 ChatListNormal(
@@ -202,11 +194,9 @@ fun ChatList(
                     settings = settings,
                     contentMaxWidth = contentMaxWidth,
                     recentlyRestoredNodeIds = recentlyRestoredNodeIds,
-                    shareSelectionRequestKey = shareSelectionRequestKey,
-                    shareSelectionCancelRequestKey = shareSelectionCancelRequestKey,
-                    onShareSelectionRequestConsumed = onShareSelectionRequestConsumed,
-                    onShareSelectionCancelRequestConsumed = onShareSelectionCancelRequestConsumed,
-                    onSelectionModeChange = onSelectionModeChange,
+                    selecting = shareSelecting,
+                    selectedItems = selectedShareItems,
+                    onSelectedItemsChange = onSelectedShareItemsChange,
                     onRegenerate = onRegenerate,
                     onEdit = onEdit,
                     onForkMessage = onForkMessage,
@@ -228,11 +218,9 @@ private fun SharedTransitionScope.ChatListNormal(
     settings: Settings,
     contentMaxWidth: Dp,
     recentlyRestoredNodeIds: Set<Uuid> = emptySet(),
-    shareSelectionRequestKey: Int,
-    shareSelectionCancelRequestKey: Int,
-    onShareSelectionRequestConsumed: () -> Unit,
-    onShareSelectionCancelRequestConsumed: () -> Unit,
-    onSelectionModeChange: (Boolean) -> Unit,
+    selecting: Boolean,
+    selectedItems: Set<Uuid>,
+    onSelectedItemsChange: (Set<Uuid>) -> Unit,
     onRegenerate: (UIMessage) -> Unit,
     onEdit: (UIMessage) -> Unit,
     onForkMessage: (UIMessage) -> Unit,
@@ -285,31 +273,6 @@ private fun SharedTransitionScope.ChatListNormal(
     }
 
     // 聊天选择
-    val selectedItems = remember { mutableStateListOf<Uuid>() }
-    var selecting by remember { mutableStateOf(false) }
-    var showExportSheet by remember { mutableStateOf(false) }
-
-    LaunchedEffect(shareSelectionRequestKey) {
-        if (shareSelectionRequestKey > 0) {
-            selecting = true
-            selectedItems.clear()
-            selectedItems.addAll(conversation.messageNodes.map { it.id })
-            onShareSelectionRequestConsumed()
-        }
-    }
-
-    LaunchedEffect(shareSelectionCancelRequestKey) {
-        if (shareSelectionCancelRequestKey > 0) {
-            selecting = false
-            selectedItems.clear()
-            onShareSelectionCancelRequestConsumed()
-        }
-    }
-
-    LaunchedEffect(selecting) {
-        onSelectionModeChange(selecting)
-    }
-
     // 自动跟随键盘滚动
     ImeLazyListAutoScroller(lazyListState = state)
 
@@ -449,16 +412,17 @@ private fun SharedTransitionScope.ChatListNormal(
                 ) { index, group ->
                     Column {
                         // Check if any node in group is selected
-                        val isSelected by remember(group.nodes.map { it.id }) {
+                        val isSelected by remember(group.nodes.map { it.id }, selectedItems) {
                             derivedStateOf { group.nodes.any { selectedItems.contains(it.id) } }
                         }
                         ListSelectableItem(
                             isSelected = isSelected,
                             onSelectChange = { checked ->
+                                val groupIds = group.nodes.map { it.id }.toSet()
                                 if (checked) {
-                                    group.nodes.forEach { selectedItems.add(it.id) }
+                                    onSelectedItemsChange(selectedItems + groupIds)
                                 } else {
-                                    group.nodes.forEach { selectedItems.remove(it.id) }
+                                    onSelectedItemsChange(selectedItems - groupIds)
                                 }
                             },
                             enabled = selecting,
@@ -568,125 +532,6 @@ private fun SharedTransitionScope.ChatListNormal(
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
-            // 完成选择
-            AnimatedVisibility(
-                visible = selecting,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(horizontal = 16.dp)
-                    .padding(bottom = 8.dp),
-                enter = fadeIn(
-                    animationSpec = spring(dampingRatio = 0.65f, stiffness = 340f)
-                ) + scaleIn(
-                    initialScale = 0.92f,
-                    animationSpec = spring(dampingRatio = 0.65f, stiffness = 340f)
-                ) + slideInVertically(
-                    animationSpec = spring(dampingRatio = 0.65f, stiffness = 340f),
-                    initialOffsetY = { it }
-                ),
-                exit = fadeOut(
-                    animationSpec = spring(dampingRatio = 0.85f, stiffness = 420f)
-                ) + scaleOut(
-                    targetScale = 0.92f,
-                    animationSpec = spring(dampingRatio = 0.85f, stiffness = 420f)
-                ) + slideOutVertically(
-                    animationSpec = spring(dampingRatio = 0.85f, stiffness = 420f),
-                    targetOffsetY = { it }
-                ),
-            ) {
-                val selectionToolbarShape = RoundedCornerShape(999.dp)
-                Surface(
-                    shape = selectionToolbarShape,
-                    color = blurredContainerColor(MaterialTheme.colorScheme.surfaceContainer),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.background),
-                    modifier = Modifier
-                        .height(48.dp)
-                        .lastChatBlurEffect(MaterialTheme.colorScheme.surfaceContainer, selectionToolbarShape)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Tooltip(
-                            tooltip = {
-                                Text(stringResource(R.string.chat_clear_selection))
-                            }
-                        ) {
-                            IconButton(
-                                modifier = Modifier.size(40.dp),
-                                onClick = {
-                                    selecting = false
-                                    selectedItems.clear()
-                                }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Close,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
-                        }
-                        Tooltip(
-                            tooltip = {
-                                Text(stringResource(R.string.select_all))
-                            }
-                        ) {
-                            IconButton(
-                                modifier = Modifier.size(40.dp),
-                                onClick = {
-                                    if (selectedItems.isNotEmpty()) {
-                                        selectedItems.clear()
-                                    } else {
-                                        selectedItems.addAll(conversation.messageNodes.map { it.id })
-                                    }
-                                }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.SelectAll,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
-                        }
-                        Tooltip(
-                            tooltip = {
-                                Text(stringResource(R.string.confirm))
-                            }
-                        ) {
-                            FilledIconButton(
-                                modifier = Modifier.size(40.dp),
-                                onClick = {
-                                    selecting = false
-                                    val messages = conversation.messageNodes.filter { it.id in selectedItems }
-                                    if (messages.isNotEmpty()) {
-                                        showExportSheet = true
-                                    }
-                                }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Check,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 导出对话框
-            ChatExportSheet(
-                visible = showExportSheet,
-                onDismissRequest = {
-                    showExportSheet = false
-                    selectedItems.clear()
-                },
-                conversation = conversation,
-                selectedMessages = conversation.messageNodes.filter { it.id in selectedItems }
-                    .map { it.currentMessage }
-            )
-
             val captureProgress = LocalScrollCaptureInProgress.current
             val effectiveDisplay = settings.getEffectiveDisplaySetting(
                 settings.getAssistantById(conversation.assistantId)
@@ -778,12 +623,9 @@ private fun SharedTransitionScope.ChatListPreview(
     contentMaxWidth: Dp,
     animatedVisibilityScope: AnimatedVisibilityScope,
     onJumpToMessage: (Int) -> Unit,
-    initialSearchQuery: String? = null,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
 ) {
-    var searchQuery by remember { mutableStateOf(initialSearchQuery ?: "") }
-    LaunchedEffect(conversation.id, initialSearchQuery) {
-        searchQuery = initialSearchQuery.orEmpty()
-    }
     val previewTopPadding = 20.dp
     val appLocale = LocalContext.current.appLocale()
     val previewLayoutDirection = LocalLayoutDirection.current
@@ -823,7 +665,7 @@ private fun SharedTransitionScope.ChatListPreview(
         // 消息预览
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             LazyColumn(
-                contentPadding = PaddingValues(start = 16.dp, top = 80.dp, end = 16.dp, bottom = 32.dp),
+                contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 120.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier
                     .lastChatBlurSource()
@@ -913,54 +755,6 @@ private fun SharedTransitionScope.ChatListPreview(
             }
         }
 
-        val searchFieldShape = me.rerere.rikkahub.ui.theme.AppShapes.SearchField
-        val searchFieldContainerColor = MaterialTheme.colorScheme.surfaceContainer
-        Surface(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-                .lastChatBlurEffect(searchFieldContainerColor, searchFieldShape),
-            shape = searchFieldShape,
-            color = blurredContainerColor(searchFieldContainerColor),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.background)
-        ) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Search messages") },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Rounded.Search,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }) {
-                            Icon(
-                                imageVector = Icons.Rounded.Close,
-                                contentDescription = stringResource(R.string.clear_search),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                },
-                singleLine = true,
-                shape = searchFieldShape,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    disabledContainerColor = Color.Transparent,
-                    focusedBorderColor = Color.Transparent,
-                    unfocusedBorderColor = Color.Transparent,
-                    disabledBorderColor = Color.Transparent,
-                ),
-                maxLines = 1,
-            )
-        }
     }
 }
 

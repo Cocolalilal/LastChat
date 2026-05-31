@@ -81,6 +81,7 @@ import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.chatAttachmentDisplayName
 import me.rerere.rikkahub.data.model.chatAttachmentMimeHint
 import me.rerere.rikkahub.data.model.chatAttachmentState
+import me.rerere.rikkahub.data.model.replacePersonaPlaceholders
 import me.rerere.rikkahub.data.model.replaceRegexes
 import me.rerere.rikkahub.data.model.versionSelectionIndices
 import me.rerere.rikkahub.ui.components.message.ChatMessageActionButtons
@@ -953,6 +954,7 @@ private fun UserMessageTurn(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val settings = LocalSettings.current
     val defaultVideoLabel = stringResource(R.string.chat_message_attachment_video)
     val defaultAudioLabel = stringResource(R.string.chat_message_attachment_audio)
     val haptics = rememberPremiumHaptics()
@@ -1002,11 +1004,16 @@ private fun UserMessageTurn(
                     }
                 ) {
                     MarkdownBlock(
-                        content = part.text.replaceRegexes(
-                            assistant = assistant,
-                            scope = AssistantAffectScope.USER,
-                            visual = true,
-                        ),
+                        content = part.text
+                            .replacePersonaPlaceholders(
+                                assistant = assistant,
+                                userNickname = settings.displaySetting.userNickname,
+                            )
+                            .replaceRegexes(
+                                assistant = assistant,
+                                scope = AssistantAffectScope.USER,
+                                visual = true,
+                            ),
                         onClickCitation = {}
                     )
                 }
@@ -1306,11 +1313,17 @@ private fun AssistantMessageTurn(
                     onClick = handleBubbleClick
                 ) {
                     MarkdownBlock(
-                        content = part.text.replaceRegexes(
-                            assistant = assistant,
-                            scope = AssistantAffectScope.ASSISTANT,
-                            visual = true,
-                        ),
+                        content = part.text
+                            .replacePersonaPlaceholders(
+                                assistant = assistant,
+                                userNickname = settings.displaySetting.userNickname,
+                            )
+                            .replaceRegexes(
+                                assistant = assistant,
+                                scope = AssistantAffectScope.ASSISTANT,
+                                visual = true,
+                            ),
+                        streamingTextReveal = loading && index == allTextBubbles.lastIndex,
                         onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
                         onClickCitation = { id -> onCitationClick(id) }
                     )
@@ -1396,13 +1409,19 @@ private fun AssistantMessageTurn(
                 alignEnd = false,
             )
 
-            allTextBubbles.forEach { (_, part) ->
+            allTextBubbles.forEachIndexed { index, (_, part) ->
                 MarkdownBlock(
-                    content = part.text.replaceRegexes(
-                        assistant = assistant,
-                        scope = AssistantAffectScope.ASSISTANT,
-                        visual = true,
-                    ),
+                    content = part.text
+                        .replacePersonaPlaceholders(
+                            assistant = assistant,
+                            userNickname = settings.displaySetting.userNickname,
+                        )
+                        .replaceRegexes(
+                            assistant = assistant,
+                            scope = AssistantAffectScope.ASSISTANT,
+                            visual = true,
+                        ),
+                    streamingTextReveal = loading && index == allTextBubbles.lastIndex,
                     onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
                     onClickCitation = { id -> onCitationClick(id) },
                     modifier = Modifier.clickable { handleBubbleClick() }

@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.ui.components.richtext
 
 import android.content.Intent
+import android.os.SystemClock
 import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -20,10 +21,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
@@ -40,6 +45,7 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -47,6 +53,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -126,6 +133,15 @@ private const val POP_DIRECTIONAL_ISOLATE = '\u2069'
  * CompositionLocal for RP style rules - enables color customization throughout the markdown tree
  */
 val LocalRpStyleRules = compositionLocalOf<List<RpStyleRule>> { emptyList() }
+
+private data class StreamingTextReveal(
+    val startOffset: Int,
+    val endOffset: Int,
+    val alpha: Float,
+    val color: Color
+)
+
+private val LocalStreamingTextReveal = compositionLocalOf<StreamingTextReveal?> { null }
 
 /**
  * Safely get color from RP style rule for a given pattern.
@@ -341,12 +357,18 @@ fun MarkdownBlock(
     content: String,
     modifier: Modifier = Modifier,
     style: TextStyle = LocalTextStyle.current,
+    streamingTextReveal: Boolean = false,
     onExpandedStreamingCodeBlockChanged: (() -> Unit)? = null,
     onClickCitation: (String) -> Unit = {}
 ) {
     // Read rpStyleRules from settings
     val settings = LocalSettings.current
     val rpStyleRules = settings.displaySetting.rpStyleRules
+    val contentColor = style.color.takeOrElse { LocalContentColor.current }
+    val revealAlpha = remember { Animatable(1f) }
+    var revealStartOffset by remember { mutableStateOf(0) }
+    var previousStreamingContent by remember { mutableStateOf(preProcess(content)) }
+    var lastStreamUpdateMillis by remember { mutableStateOf(0L) }
     
     var (data, setData) = remember {
         val preprocessed = preProcess(content)
@@ -373,9 +395,53 @@ fun MarkdownBlock(
 
     val (preprocessed, astTree) = data
     val blockDirection = rememberContentDirection(preprocessed)
+    LaunchedEffect(content, streamingTextReveal) {
+        val nextContent = preProcess(content)
+        if (!streamingTextReveal) {
+            previousStreamingContent = nextContent
+            revealAlpha.snapTo(1f)
+            return@LaunchedEffect
+        }
+
+        val previousContent = previousStreamingContent
+        previousStreamingContent = nextContent
+
+        if (nextContent.length > previousContent.length) {
+            val now = SystemClock.uptimeMillis()
+            val elapsedMillis = if (lastStreamUpdateMillis == 0L) Long.MAX_VALUE else now - lastStreamUpdateMillis
+            val appendedLength = nextContent.length - previousContent.length
+            revealStartOffset = streamingRevealWordStart(
+                content = nextContent,
+                offset = commonPrefixLength(previousContent, nextContent)
+            )
+            lastStreamUpdateMillis = now
+            revealAlpha.snapTo(streamingRevealInitialAlpha(elapsedMillis, appendedLength))
+            revealAlpha.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(
+                    durationMillis = 360,
+                    easing = LinearOutSlowInEasing
+                )
+            )
+        } else if (nextContent != previousContent) {
+            revealAlpha.snapTo(1f)
+        }
+    }
+    val streamingReveal = if (streamingTextReveal && revealAlpha.value < 0.995f) {
+        StreamingTextReveal(
+            startOffset = revealStartOffset.coerceIn(0, preprocessed.length),
+            endOffset = preprocessed.length,
+            alpha = revealAlpha.value.coerceIn(0f, 1f),
+            color = contentColor
+        )
+    } else {
+        null
+    }
+
     // Provide rpStyleRules to entire tree via CompositionLocal
     CompositionLocalProvider(
         LocalRpStyleRules provides rpStyleRules,
+        LocalStreamingTextReveal provides streamingReveal,
         LocalLayoutDirection provides blockDirection.toLayoutDirection(),
     ) {
         ProvideTextStyle(style) {
@@ -393,6 +459,42 @@ fun MarkdownBlock(
             }
         }
     }
+}
+
+private fun commonPrefixLength(left: String, right: String): Int {
+    val limit = minOf(left.length, right.length)
+    for (index in 0 until limit) {
+        if (left[index] != right[index]) return index
+    }
+    return limit
+}
+
+private fun streamingRevealInitialAlpha(elapsedMillis: Long, appendedLength: Int): Float {
+    val cadenceAlpha = when {
+        elapsedMillis < 90L -> 0.22f
+        elapsedMillis < 180L -> 0.30f
+        elapsedMillis < 420L -> 0.42f
+        elapsedMillis < 900L -> 0.58f
+        else -> 0.76f
+    }
+    val tinyDeltaLift = when {
+        appendedLength <= 1 -> 0.16f
+        appendedLength <= 3 -> 0.08f
+        else -> 0f
+    }
+    return (cadenceAlpha + tinyDeltaLift).coerceAtMost(0.82f)
+}
+
+private fun streamingRevealWordStart(content: String, offset: Int): Int {
+    var index = offset.coerceIn(0, content.length)
+    while (index > 0 && content[index - 1].isStreamingWordCharacter()) {
+        index--
+    }
+    return index
+}
+
+private fun Char.isStreamingWordCharacter(): Boolean {
+    return isLetterOrDigit() || this == '_' || this == '-' || this == '\''
 }
 
 // for debug
@@ -784,9 +886,23 @@ private fun MarkdownNode(
         MarkdownTokenTypes.TEXT -> {
             val text = node.getTextInNode(content)
             val direction = rememberContentDirection(text)
+            val streamingReveal = LocalStreamingTextReveal.current
+            val revealText = remember(text, streamingReveal) {
+                buildAnnotatedString {
+                    val outputStart = length
+                    append(text)
+                    applyStreamingRevealStyle(
+                        reveal = streamingReveal,
+                        sourceStart = node.startOffset,
+                        sourceEnd = node.endOffset,
+                        outputStart = outputStart,
+                        outputEnd = length
+                    )
+                }
+            }
             CompositionLocalProvider(LocalLayoutDirection provides direction.toLayoutDirection()) {
                 Text(
-                    text = text,
+                    text = revealText,
                     modifier = modifier,
                     style = LocalTextStyle.current.copy(
                         textDirection = direction.toComposeTextDirection()
@@ -1034,7 +1150,8 @@ private fun Paragraph(
     val textStyle = LocalTextStyle.current
     val density = LocalDensity.current
     val rpStyleRules = LocalSettings.current.displaySetting.rpStyleRules
-    val annotatedString = remember(content, rpStyleRules) {
+    val streamingReveal = LocalStreamingTextReveal.current
+    val annotatedString = remember(content, rpStyleRules, streamingReveal) {
         buildAnnotatedString {
             node.children.fastForEach { child ->
                 appendMarkdownNodeContent(
@@ -1047,6 +1164,7 @@ private fun Paragraph(
                     density = density,
                     trim = trim,
                     rpStyleRules = rpStyleRules,
+                    streamingReveal = streamingReveal,
                 )
             }
         }
@@ -1142,7 +1260,9 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
     style: TextStyle,
     onClickCitation: (String) -> Unit = {},
     rpStyleRules: List<RpStyleRule> = emptyList(),
+    streamingReveal: StreamingTextReveal? = null,
 ) {
+    val outputStart = length
     when {
         node.type == MarkdownTokenTypes.BLOCK_QUOTE -> {}
 
@@ -1181,7 +1301,8 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                         density = density,
                         style = style,
                         onClickCitation = onClickCitation,
-                        rpStyleRules = rpStyleRules
+                        rpStyleRules = rpStyleRules,
+                        streamingReveal = streamingReveal
                     )
                 }
             }
@@ -1201,7 +1322,8 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                         density = density,
                         style = style,
                         onClickCitation = onClickCitation,
-                        rpStyleRules = rpStyleRules
+                        rpStyleRules = rpStyleRules,
+                        streamingReveal = streamingReveal
                     )
                 }
             }
@@ -1221,7 +1343,8 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                         density = density,
                         style = style,
                         onClickCitation = onClickCitation,
-                        rpStyleRules = rpStyleRules
+                        rpStyleRules = rpStyleRules,
+                        streamingReveal = streamingReveal
                     )
                 }
             }
@@ -1375,11 +1498,44 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                     density = density,
                     style = style,
                     onClickCitation = onClickCitation,
-                    rpStyleRules = rpStyleRules
+                    rpStyleRules = rpStyleRules,
+                    streamingReveal = streamingReveal
                 )
             }
         }
     }
+    applyStreamingRevealStyle(
+        reveal = streamingReveal,
+        sourceStart = node.startOffset,
+        sourceEnd = node.endOffset,
+        outputStart = outputStart,
+        outputEnd = length
+    )
+}
+
+private fun AnnotatedString.Builder.applyStreamingRevealStyle(
+    reveal: StreamingTextReveal?,
+    sourceStart: Int,
+    sourceEnd: Int,
+    outputStart: Int,
+    outputEnd: Int
+) {
+    if (reveal == null || reveal.alpha >= 0.995f || sourceEnd <= sourceStart || outputEnd <= outputStart) return
+    val overlapStart = maxOf(sourceStart, reveal.startOffset)
+    val overlapEnd = minOf(sourceEnd, reveal.endOffset)
+    if (overlapEnd <= overlapStart) return
+
+    val sourceLength = sourceEnd - sourceStart
+    val outputLength = outputEnd - outputStart
+    val rangeStart = outputStart + ((overlapStart - sourceStart) * outputLength / sourceLength)
+    val rangeEnd = outputStart + ((overlapEnd - sourceStart) * outputLength / sourceLength)
+    if (rangeEnd <= rangeStart) return
+
+    addStyle(
+        style = SpanStyle(color = reveal.color.copy(alpha = reveal.alpha)),
+        start = rangeStart.coerceIn(outputStart, outputEnd),
+        end = rangeEnd.coerceIn(outputStart, outputEnd)
+    )
 }
 
 private fun ASTNode.getTextInNode(text: String): String {

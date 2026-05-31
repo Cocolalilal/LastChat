@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.core.tween
 import androidx.activity.compose.BackHandler
 import androidx.core.net.toUri
 import androidx.compose.foundation.clickable
@@ -23,6 +24,9 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.size
@@ -37,12 +41,14 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -52,8 +58,10 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -80,10 +88,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.SelectAll
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.HistoryToggleOff
@@ -93,6 +103,7 @@ import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.ui.components.chat.NewChatContent
 
 import me.rerere.rikkahub.ui.components.ui.ToastType
+import me.rerere.rikkahub.ui.components.ui.Tooltip
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -603,9 +614,10 @@ private fun ChatPageContent(
     var showDeleteConfirmDialog by rememberSaveable { mutableStateOf(false) }
     var pendingDeleteMessage by rememberSaveable { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
     var showToolbarOverflowMenu by remember { mutableStateOf(false) }
-    var chatShareSelectionRequestKey by rememberSaveable { mutableStateOf(0) }
-    var chatShareSelectionCancelRequestKey by rememberSaveable { mutableStateOf(0) }
     var isChatShareSelecting by rememberSaveable { mutableStateOf(false) }
+    var selectedChatShareItems by remember(conversation.id) { mutableStateOf<Set<Uuid>>(emptySet()) }
+    var showExportSheet by remember { mutableStateOf(false) }
+    var chatSearchQuery by rememberSaveable(conversation.id) { mutableStateOf(initialSearchQuery.orEmpty()) }
     val toolbarPlacement = chatTopBarPlacement(setting)
     val isGenerating = loadingJob != null
     val density = LocalDensity.current
@@ -627,8 +639,8 @@ private fun ChatPageContent(
         showDeleteConfirmDialog = false
         pendingDeleteMessage = null
         if (isChatShareSelecting) {
-            chatShareSelectionCancelRequestKey += 1
             isChatShareSelecting = false
+            selectedChatShareItems = emptySet()
         }
     }
     
@@ -677,6 +689,29 @@ private fun ChatPageContent(
         }
     }
 
+    LaunchedEffect(conversation.id, initialSearchQuery) {
+        chatSearchQuery = initialSearchQuery.orEmpty()
+    }
+
+    fun startChatShareSelection() {
+        showToolbarOverflowMenu = false
+        previewMode = false
+        selectedChatShareItems = conversation.messageNodes.map { it.id }.toSet()
+        isChatShareSelecting = true
+    }
+
+    fun cancelChatShareSelection() {
+        isChatShareSelecting = false
+        selectedChatShareItems = emptySet()
+    }
+
+    fun confirmChatShareSelection() {
+        isChatShareSelecting = false
+        if (selectedChatShareItems.isNotEmpty()) {
+            showExportSheet = true
+        }
+    }
+
 
     LaunchedEffect(loadingJob) {
         inputState.loading = loadingJob != null
@@ -721,7 +756,7 @@ private fun ChatPageContent(
                                     previewMode = false
                                 }
                                 if (isChatShareSelecting) {
-                                    chatShareSelectionCancelRequestKey += 1
+                                    cancelChatShareSelection()
                                 }
                             },
                             onUpdateSettings = { newSettings ->
@@ -750,107 +785,158 @@ private fun ChatPageContent(
                     modifier = Modifier
                         .fillMaxSize()
                 ) {
-                    ChatList(
-                        innerPadding = PaddingValues(
-                            top = chatListTopPadding(toolbarPlacement),
-                            bottom = chatListBottomPadding(toolbarPlacement)
-                        ),
-                        conversation = conversation,
-                        state = chatListState,
-                        loading = loadingJob != null,
-                        previewMode = previewMode,
-                        settings = setting,
-                        recentlyRestoredNodeIds = vm.recentlyRestoredNodeIds.collectAsStateWithLifecycle().value,
-                        initialSearchQuery = initialSearchQuery,
-                        shareSelectionRequestKey = chatShareSelectionRequestKey,
-                        shareSelectionCancelRequestKey = chatShareSelectionCancelRequestKey,
-                        onShareSelectionRequestConsumed = {
-                            chatShareSelectionRequestKey = 0
-                        },
-                        onShareSelectionCancelRequestConsumed = {
-                            chatShareSelectionCancelRequestKey = 0
-                        },
-                        onSelectionModeChange = { isSelecting ->
-                            isChatShareSelecting = isSelecting
-                        },
-                        contentMaxWidth = contentMaxWidth,
-                        onJumpToMessage = { index ->
-                            previewMode = false
-                            scope.launch {
-                                // Wait for AnimatedContent transition to complete before scrolling
-                                delay(350)
-                                chatListState.animateScrollToItem(index)
+                    val recentlyRestoredNodeIds = vm.recentlyRestoredNodeIds.collectAsStateWithLifecycle().value
+                    val conversationSnapshots = remember { mutableStateMapOf<Uuid, Conversation>() }
+                    val chatListStateSnapshots = remember { mutableStateMapOf<Uuid, LazyListState>() }
+                    val searchQuerySnapshots = remember { mutableStateMapOf<Uuid, String?>() }
+                    SideEffect {
+                        conversationSnapshots[conversation.id] = conversation
+                        chatListStateSnapshots[conversation.id] = chatListState
+                        searchQuerySnapshots[conversation.id] = initialSearchQuery
+                    }
+                    AnimatedContent(
+                        targetState = conversation.id,
+                        transitionSpec = {
+                            if (initialState == targetState) {
+                                fadeIn(animationSpec = tween(0)) togetherWith fadeOut(animationSpec = tween(0))
+                            } else {
+                                (fadeIn(animationSpec = tween(150)) + scaleIn(
+                                    initialScale = 0.985f,
+                                    animationSpec = tween(150)
+                                )) togetherWith (fadeOut(animationSpec = tween(110)) + scaleOut(
+                                    targetScale = 0.995f,
+                                    animationSpec = tween(110)
+                                )) using SizeTransform(
+                                    clip = false,
+                                    sizeAnimationSpec = { _, _ -> tween(180) }
+                                )
                             }
                         },
-                        onRegenerate = { message ->
-                            if (message.role == me.rerere.ai.core.MessageRole.USER) {
-                                // User message regeneration always truncates - show confirmation
-                                pendingUserRegenerateMessage = message
-                                showUserRegenerateConfirmDialog = true
-                            } else if (vm.canPreserveVersionHistory(message)) {
-                                // Simple assistant message - regenerate with version history
-                                vm.regenerateAtMessage(message, forceWipe = false)
-                            } else {
-                                // Complex assistant message - show confirmation dialog
-                                pendingRegenerateMessage = message
-                                showRegenerateConfirmDialog = true
-                            }
-                        },
-                        onEdit = {
-                            inputState.editingMessage = it.id
-                            inputState.setContents(it.parts)
-                        },
-
-                        onDelete = { message ->
-                            if (message.role == me.rerere.ai.core.MessageRole.USER) {
-                                // User message deletion removes all messages after - show confirmation
-                                pendingDeleteMessage = message
-                                showDeleteConfirmDialog = true
-                            } else {
-                                // Assistant message deletion - keep existing behavior with undo toast
+                        label = "chat_conversation_content",
+                        modifier = Modifier.fillMaxSize(),
+                    ) { targetConversationId ->
+                        val frameConversation = if (targetConversationId == conversation.id) {
+                            conversation
+                        } else {
+                            conversationSnapshots[targetConversationId] ?: conversation
+                        }
+                        val frameListState = if (targetConversationId == conversation.id) {
+                            chatListState
+                        } else {
+                            chatListStateSnapshots[targetConversationId] ?: chatListState
+                        }
+                        val frameInitialSearchQuery = if (targetConversationId == conversation.id) {
+                            initialSearchQuery
+                        } else {
+                            searchQuerySnapshots[targetConversationId]
+                        }
+                        ChatList(
+                            innerPadding = PaddingValues(
+                                top = chatListTopPadding(toolbarPlacement),
+                                bottom = chatListBottomPadding(toolbarPlacement)
+                            ),
+                            conversation = frameConversation,
+                            state = frameListState,
+                            loading = targetConversationId == conversation.id && loadingJob != null,
+                            previewMode = previewMode,
+                            settings = setting,
+                            recentlyRestoredNodeIds = recentlyRestoredNodeIds,
+                            initialSearchQuery = frameInitialSearchQuery,
+                            searchQuery = chatSearchQuery,
+                            onSearchQueryChange = { chatSearchQuery = it },
+                            shareSelecting = isChatShareSelecting,
+                            selectedShareItems = selectedChatShareItems,
+                            onSelectedShareItemsChange = { selectedChatShareItems = it },
+                            contentMaxWidth = contentMaxWidth,
+                            onJumpToMessage = { index ->
+                                previewMode = false
                                 scope.launch {
-                                    val backup = conversation
-                                    val removedIds = vm.deleteMessage(message)
-                                    toaster.show(
-                                        message = context.getString(R.string.message_deleted),
-                                        action = me.rerere.rikkahub.ui.components.ui.ToastAction(
-                                            label = context.getString(R.string.undo),
-                                            onClick = {
-                                                vm.updateConversation(backup)
-                                                vm.markNodesAsRestored(removedIds)
-                                            }
-                                        )
-                                    )
+                                    // Wait for AnimatedContent transition to complete before scrolling
+                                    delay(350)
+                                    frameListState.animateScrollToItem(index)
                                 }
-                            }
-                        },
-                        onUpdateMessage = { newNode ->
-                            val oldNode = conversation.messageNodes.find { it.id == newNode.id }
-                            if (oldNode != null) {
-                                if (oldNode.selectIndex != newNode.selectIndex) {
-                                    vm.selectMessageNode(newNode.id, newNode.selectIndex)
+                            },
+                            onRegenerate = { message ->
+                                if (message.role == me.rerere.ai.core.MessageRole.USER) {
+                                    // User message regeneration always truncates - show confirmation
+                                    pendingUserRegenerateMessage = message
+                                    showUserRegenerateConfirmDialog = true
+                                } else if (vm.canPreserveVersionHistory(message)) {
+                                    // Simple assistant message - regenerate with version history
+                                    vm.regenerateAtMessage(message, forceWipe = false)
                                 } else {
-                                    vm.updateConversation(
-                                        conversation.copy(
-                                            messageNodes = conversation.messageNodes.map { node ->
-                                                if (node.id == newNode.id) {
-                                                    newNode
-                                                } else {
-                                                    node
-                                                }
-                                            }
-                                        )
-                                    )
+                                    // Complex assistant message - show confirmation dialog
+                                    pendingRegenerateMessage = message
+                                    showRegenerateConfirmDialog = true
                                 }
-                            }
-                        },
-                        onForkMessage = {
-                            scope.launch {
-                                val forkConversation = vm.forkMessage(it)
-                                navigateToChatPage(navController, forkConversation.id)
-                            }
-                        },
-                    )
+                            },
+                            onEdit = {
+                                inputState.editingMessage = it.id
+                                inputState.setContents(it.parts)
+                            },
+                            onDelete = { message ->
+                                if (message.role == me.rerere.ai.core.MessageRole.USER) {
+                                    // User message deletion removes all messages after - show confirmation
+                                    pendingDeleteMessage = message
+                                    showDeleteConfirmDialog = true
+                                } else {
+                                    // Assistant message deletion - keep existing behavior with undo toast
+                                    scope.launch {
+                                        val backup = frameConversation
+                                        val removedIds = vm.deleteMessage(message)
+                                        toaster.show(
+                                            message = context.getString(R.string.message_deleted),
+                                            action = me.rerere.rikkahub.ui.components.ui.ToastAction(
+                                                label = context.getString(R.string.undo),
+                                                onClick = {
+                                                    vm.updateConversation(backup)
+                                                    vm.markNodesAsRestored(removedIds)
+                                                }
+                                            )
+                                        )
+                                    }
+                                }
+                            },
+                            onUpdateMessage = { newNode ->
+                                val oldNode = frameConversation.messageNodes.find { it.id == newNode.id }
+                                if (oldNode != null) {
+                                    if (oldNode.selectIndex != newNode.selectIndex) {
+                                        vm.selectMessageNode(newNode.id, newNode.selectIndex)
+                                    } else {
+                                        vm.updateConversation(
+                                            frameConversation.copy(
+                                                messageNodes = frameConversation.messageNodes.map { node ->
+                                                    if (node.id == newNode.id) {
+                                                        newNode
+                                                    } else {
+                                                        node
+                                                    }
+                                                }
+                                            )
+                                        )
+                                    }
+                                }
+                            },
+                            onForkMessage = {
+                                scope.launch {
+                                    val forkConversation = vm.forkMessage(it)
+                                    navigateToChatPage(navController, forkConversation.id)
+                                }
+                            },
+                        )
+                    }
+
+                ChatExportSheet(
+                    visible = showExportSheet,
+                    onDismissRequest = {
+                        showExportSheet = false
+                        selectedChatShareItems = emptySet()
+                    },
+                    conversation = conversation,
+                    selectedMessages = conversation.messageNodes
+                        .filter { it.id in selectedChatShareItems }
+                        .map { it.currentMessage }
+                )
 
                 val hasConversationContent = hasConversationMessages(conversation)
                 val hasAnyPresetMessages = currentAssistant.presetMessages.isNotEmpty()
@@ -913,6 +999,7 @@ private fun ChatPageContent(
                 val headerStyle = effectiveDisplaySetting.newChatHeaderStyle
                 val contentStyle = effectiveDisplaySetting.newChatContentStyle
                 val showNewChatContent = headerStyle != me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.NONE || contentStyle != me.rerere.rikkahub.data.datastore.NewChatContentStyle.NONE
+                val showModeComposer = previewMode || isChatShareSelecting
                 
                 // Detect keyboard visibility
                 val isKeyboardOpen = WindowInsets.isImeVisible
@@ -926,7 +1013,7 @@ private fun ChatPageContent(
                     showNewChatContent = showNewChatContent,
                     hasTextInput = hasTextInput,
                     isKeyboardOpen = isKeyboardOpen,
-                )
+                ) && !showModeComposer
                 
                 // State for assistant picker triggered from header avatar
                 var showHeaderAssistantPicker by remember { mutableStateOf(false) }
@@ -1130,7 +1217,83 @@ private fun ChatPageContent(
                     )
                 }
 
-                MinimalChatInput(
+                val bottomToolbarContent: (@Composable () -> Unit)? = if (toolbarPlacement == ChatToolbarPlacement.Bottom) {
+                    {
+                        ChatToolbar(
+                            placement = ChatToolbarPlacement.Bottom,
+                            settings = setting,
+                            currentAssistant = currentAssistant,
+                            conversationInitialized = conversationInitialized,
+                            conversation = conversation,
+                            bigScreen = bigScreen,
+                            drawerState = drawerState,
+                            previewMode = previewMode,
+                            isTemporaryChat = isTemporaryChat,
+                            currentChatModel = currentChatModel,
+                            isGenerating = isGenerating,
+                            showCloseAction = previewMode || isChatShareSelecting,
+                            onNewChat = {
+                                navigateToChatPage(navController)
+                            },
+                            onOpenOverflowMenu = {
+                                showToolbarOverflowMenu = !showToolbarOverflowMenu
+                            },
+                            onCloseAction = {
+                                showToolbarOverflowMenu = false
+                                if (previewMode) {
+                                    previewMode = false
+                                }
+                                if (isChatShareSelecting) {
+                                    cancelChatShareSelection()
+                                }
+                            },
+                            onUpdateSettings = { newSettings ->
+                                vm.updateSettings(newSettings)
+                            },
+                            onSwitchAssistant = { assistant ->
+                                navigateToAssistantConversation(assistant)
+                            },
+                            onToggleTemporaryChat = {
+                                onManualTemporaryChatChange(!manualTemporaryChat)
+                            }
+                        )
+                    }
+                } else {
+                    null
+                }
+
+                if (showModeComposer) {
+                    ChatModeBottomControls(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .then(
+                                if (inputMaxWidth != Dp.Unspecified) {
+                                    Modifier.widthIn(max = inputMaxWidth)
+                                } else {
+                                    Modifier
+                                }
+                            ),
+                        showSearch = previewMode,
+                        searchQuery = chatSearchQuery,
+                        onSearchQueryChange = { chatSearchQuery = it },
+                        showShareSelection = isChatShareSelecting,
+                        selectedCount = selectedChatShareItems.size,
+                        allSelected = selectedChatShareItems.isNotEmpty() &&
+                            selectedChatShareItems.size == conversation.messageNodes.size,
+                        onCancelShareSelection = { cancelChatShareSelection() },
+                        onToggleSelectAll = {
+                            selectedChatShareItems = if (selectedChatShareItems.isNotEmpty()) {
+                                emptySet()
+                            } else {
+                                conversation.messageNodes.map { it.id }.toSet()
+                            }
+                        },
+                        onConfirmShareSelection = { confirmChatShareSelection() },
+                        bottomAccessory = bottomToolbarContent,
+                        bottomPadding = if (toolbarPlacement == ChatToolbarPlacement.Bottom) 12.dp else 24.dp,
+                    )
+                } else {
+                    MinimalChatInput(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .then(
@@ -1243,48 +1406,7 @@ private fun ChatPageContent(
                     },
                     onRefreshContext = { vm.refreshContext() },
                     onDeleteFile = { vm.deleteFile(it) },
-                    bottomAccessory = if (toolbarPlacement == ChatToolbarPlacement.Bottom) {
-                        {
-                            ChatToolbar(
-                                placement = ChatToolbarPlacement.Bottom,
-                                settings = setting,
-                                currentAssistant = currentAssistant,
-                                conversationInitialized = conversationInitialized,
-                                conversation = conversation,
-                                bigScreen = bigScreen,
-                                drawerState = drawerState,
-                                previewMode = previewMode,
-                                isTemporaryChat = isTemporaryChat,
-                                currentChatModel = currentChatModel,
-                                isGenerating = isGenerating,
-                                showCloseAction = previewMode || isChatShareSelecting,
-                                onNewChat = {
-                                    navigateToChatPage(navController)
-                                },
-                                onOpenOverflowMenu = {
-                                    showToolbarOverflowMenu = !showToolbarOverflowMenu
-                                },
-                                onCloseAction = {
-                                    showToolbarOverflowMenu = false
-                                    if (previewMode) {
-                                        previewMode = false
-                                    }
-                                    if (isChatShareSelecting) {
-                                        chatShareSelectionCancelRequestKey += 1
-                                    }
-                                },
-                                onUpdateSettings = { newSettings ->
-                                    vm.updateSettings(newSettings)
-                                },
-                                onSwitchAssistant = { assistant ->
-                                    navigateToAssistantConversation(assistant)
-                                },
-                                onToggleTemporaryChat = {
-                                    onManualTemporaryChatChange(!manualTemporaryChat)
-                                }
-                            )
-                        }
-                    } else null,
+                    bottomAccessory = bottomToolbarContent,
                     showScrollToBottomButton = showScrollToBottomButton,
                     onScrollToBottomClick = {
                         scope.launch {
@@ -1338,9 +1460,7 @@ private fun ChatPageContent(
                                 previewMode = !previewMode
                             },
                             onShareClick = {
-                                showToolbarOverflowMenu = false
-                                previewMode = false
-                                chatShareSelectionRequestKey += 1
+                                startChatShareSelection()
                             }
                         )
                     }
@@ -1349,6 +1469,9 @@ private fun ChatPageContent(
         }
         }
     }
+
+}
+
 }
 
 @Composable
@@ -1391,6 +1514,215 @@ private fun ChatToolbarIconButton(
         contentAlignment = Alignment.Center
     ) {
         Icon(icon, contentDescription = contentDescription)
+    }
+}
+
+@Composable
+private fun ChatModeBottomControls(
+    showSearch: Boolean,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    showShareSelection: Boolean,
+    selectedCount: Int,
+    allSelected: Boolean,
+    onCancelShareSelection: () -> Unit,
+    onToggleSelectAll: () -> Unit,
+    onConfirmShareSelection: () -> Unit,
+    bottomAccessory: (@Composable () -> Unit)?,
+    bottomPadding: Dp,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier.fillMaxWidth(),
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        Column(
+            modifier = Modifier
+                .imePadding()
+                .navigationBarsPadding()
+                .padding(bottom = bottomPadding, start = 16.dp, end = 16.dp),
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)
+        ) {
+            AnimatedContent(
+                targetState = when {
+                    showSearch -> "search"
+                    showShareSelection -> "share"
+                    else -> "none"
+                },
+                transitionSpec = {
+                    (fadeIn(animationSpec = tween(120)) + scaleIn(
+                        initialScale = 0.98f,
+                        animationSpec = tween(120)
+                    )) togetherWith (fadeOut(animationSpec = tween(90)) + scaleOut(
+                        targetScale = 0.98f,
+                        animationSpec = tween(90)
+                    ))
+                },
+                label = "chat_mode_composer"
+            ) { mode ->
+                when (mode) {
+                    "search" -> ChatSearchModeBar(
+                        query = searchQuery,
+                        onQueryChange = onSearchQueryChange,
+                    )
+                    "share" -> ChatShareSelectionModeBar(
+                        selectedCount = selectedCount,
+                        allSelected = allSelected,
+                        onCancel = onCancelShareSelection,
+                        onToggleSelectAll = onToggleSelectAll,
+                        onConfirm = onConfirmShareSelection,
+                    )
+                    else -> Spacer(Modifier.height(56.dp))
+                }
+            }
+
+            bottomAccessory?.invoke()
+        }
+    }
+}
+
+@Composable
+private fun ChatSearchModeBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+) {
+    val searchFieldShape = me.rerere.rikkahub.ui.theme.AppShapes.SearchField
+    val containerColor = MaterialTheme.colorScheme.surfaceContainer
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .lastChatBlurEffect(containerColor, searchFieldShape),
+        shape = searchFieldShape,
+        color = blurredContainerColor(containerColor),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.background)
+    ) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("Search messages") },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Rounded.Search,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+            },
+            trailingIcon = {
+                if (query.isNotEmpty()) {
+                    IconButton(onClick = { onQueryChange("") }) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = stringResource(R.string.clear_search),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            },
+            singleLine = true,
+            shape = searchFieldShape,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = Color.Transparent,
+                unfocusedContainerColor = Color.Transparent,
+                disabledContainerColor = Color.Transparent,
+                focusedBorderColor = Color.Transparent,
+                unfocusedBorderColor = Color.Transparent,
+                disabledBorderColor = Color.Transparent,
+            ),
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun ChatShareSelectionModeBar(
+    selectedCount: Int,
+    allSelected: Boolean,
+    onCancel: () -> Unit,
+    onToggleSelectAll: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val haptics = rememberPremiumHaptics()
+    val shape = RoundedCornerShape(999.dp)
+    val containerColor = MaterialTheme.colorScheme.surfaceContainer
+    Surface(
+        shape = shape,
+        color = blurredContainerColor(containerColor),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.background),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .lastChatBlurEffect(containerColor, shape)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp)
+        ) {
+            Tooltip(tooltip = { Text(stringResource(R.string.chat_clear_selection)) }) {
+                IconButton(
+                    modifier = Modifier.size(44.dp),
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        onCancel()
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = null,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+
+            Text(
+                text = selectedCount.toString(),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 8.dp)
+            )
+
+            Spacer(Modifier.weight(1f))
+
+            Tooltip(tooltip = { Text(stringResource(R.string.select_all)) }) {
+                IconButton(
+                    modifier = Modifier.size(44.dp),
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        onToggleSelectAll()
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.SelectAll,
+                        contentDescription = null,
+                        modifier = Modifier.size(22.dp),
+                        tint = if (allSelected) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
+            }
+
+            Tooltip(tooltip = { Text(stringResource(R.string.confirm)) }) {
+                FilledIconButton(
+                    modifier = Modifier.size(44.dp),
+                    enabled = selectedCount > 0,
+                    onClick = {
+                        haptics.perform(HapticPattern.Success)
+                        onConfirm()
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+        }
     }
 }
 

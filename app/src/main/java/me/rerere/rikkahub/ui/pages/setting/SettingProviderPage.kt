@@ -12,6 +12,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -275,6 +277,15 @@ fun SettingProviderPage(
             ) {
                 AnimatedContent(
                     targetState = currentTab == ProvidersTab.Models,
+                    transitionSpec = {
+                        if (targetState) {
+                            (slideInHorizontally { -it } + fadeIn()) togetherWith
+                                (slideOutHorizontally { it } + fadeOut())
+                        } else {
+                            (slideInHorizontally { it } + fadeIn()) togetherWith
+                                (slideOutHorizontally { -it } + fadeOut())
+                        }
+                    },
                     label = "providers_secondary_action"
                 ) { isModelProviders ->
                     if (isModelProviders) {
@@ -354,7 +365,7 @@ fun SettingProviderPage(
                 ProvidersTab.Models -> Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(innerPadding)
+                        .padding(top = innerPadding.calculateTopPadding())
                 ) {
             // Delete confirmation dialog state
             var showDeleteDialog by remember { mutableStateOf(false) }
