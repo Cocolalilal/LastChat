@@ -353,18 +353,7 @@ internal fun UIMessage.hasDurableAssistantProgress(): Boolean {
 internal fun UIMessage.needsAssistantReplyResume(): Boolean {
     if (role != MessageRole.ASSISTANT) return false
 
-    val hasReplyText = parts.filterIsInstance<UIMessagePart.Text>()
-        .any { part -> part.text.isNotBlank() }
     val hasToolCall = parts.any { part -> part is UIMessagePart.ToolCall }
-    val hasMediaReply = parts.any { part ->
-        when (part) {
-            is UIMessagePart.Image -> part.url.isNotBlank()
-            is UIMessagePart.Document -> part.url.isNotBlank()
-            is UIMessagePart.Video -> part.url.isNotBlank()
-            is UIMessagePart.Audio -> part.url.isNotBlank()
-            else -> false
-        }
-    }
     val hasReasoningProgress = parts.any { part ->
         when (part) {
             is UIMessagePart.Reasoning -> part.reasoning.isNotBlank()
@@ -373,7 +362,40 @@ internal fun UIMessage.needsAssistantReplyResume(): Boolean {
         }
     }
 
-    return hasReasoningProgress && !hasReplyText && !hasToolCall && !hasMediaReply
+    return hasReasoningProgress && !hasVisibleAssistantReply() && !hasToolCall
+}
+
+private fun UIMessage.hasVisibleAssistantReply(): Boolean {
+    if (role != MessageRole.ASSISTANT) return false
+
+    return parts.any { part ->
+        when (part) {
+            is UIMessagePart.Text -> part.text.isNotBlank()
+            is UIMessagePart.Image -> part.url.isNotBlank()
+            is UIMessagePart.Document -> part.url.isNotBlank()
+            is UIMessagePart.Video -> part.url.isNotBlank()
+            is UIMessagePart.Audio -> part.url.isNotBlank()
+            else -> false
+        }
+    }
+}
+
+internal fun Conversation.needsAssistantReplyAfterToolResult(): Boolean {
+    if (hasPendingToolApprovals()) return false
+
+    val selectedMessages = currentMessages
+    val lastMessage = selectedMessages.lastOrNull() ?: return false
+    if (lastMessage.role == MessageRole.TOOL) {
+        return lastMessage.getToolResults().isNotEmpty()
+    }
+
+    if (lastMessage.role != MessageRole.ASSISTANT) return false
+    if (lastMessage.hasVisibleAssistantReply()) return false
+    if (lastMessage.getToolCalls().isNotEmpty()) return false
+
+    val previousMessage = selectedMessages.dropLast(1).lastOrNull() ?: return false
+    return previousMessage.role == MessageRole.TOOL &&
+        previousMessage.getToolResults().isNotEmpty()
 }
 
 internal fun Conversation.canAutoResumeAssistantReply(): Boolean {
@@ -1522,14 +1544,19 @@ class ChatService(
                 val latestConversation = getConversationFlow(conversationId).value
                 if (
                     autoResumeAttempts < AUTO_RESUME_MAX_RETRIES &&
-                    latestConversation.currentMessages.lastOrNull()?.needsAssistantReplyResume() == true
+                    (
+                        latestConversation.currentMessages.lastOrNull()?.needsAssistantReplyResume() == true ||
+                            latestConversation.needsAssistantReplyAfterToolResult()
+                        )
                 ) {
                     autoResumeAttempts++
-                    Log.w(TAG, "Auto-resuming assistant reply with reasoning but no visible response ($autoResumeAttempts/$AUTO_RESUME_MAX_RETRIES)")
-                    // Strip the reasoning-only assistant message so the model doesn't see
-                    // its own stale reasoning as prior context on the next attempt.
-                    val resetConversation = latestConversation.resetTrailingAssistantForResume()
-                    updateConversation(conversationId, resetConversation)
+                    Log.w(TAG, "Auto-resuming assistant reply with no visible response ($autoResumeAttempts/$AUTO_RESUME_MAX_RETRIES)")
+                    if (latestConversation.currentMessages.lastOrNull()?.role == MessageRole.ASSISTANT) {
+                        // Strip the blank/reasoning-only assistant message so the model doesn't see
+                        // its own stale output as prior context on the next attempt.
+                        val resetConversation = latestConversation.resetTrailingAssistantForResume()
+                        updateConversation(conversationId, resetConversation)
+                    }
                     firstTokenTime = null
                     delay(AUTO_RESUME_RETRY_DELAY_MS)
                     continue

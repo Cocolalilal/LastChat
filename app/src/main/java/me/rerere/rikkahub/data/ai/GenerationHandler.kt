@@ -1490,7 +1490,7 @@ class GenerationHandler(
                     You may call `$MEMORY_SEARCH_TOOL_NAME` when you are deliberately trying to remember something from core memories or older chats.
                     - Use it for genuine recall, not on every turn.
                     - It searches only this character's memories and actually used chat timeline, not other characters or discarded reply versions.
-                    - You can pass `time_range` when the user asks about a rough time span, like "last week", "this month", "last month", or "4 months ago".
+                    - You can pass `time_range` when the user asks about a rough time span, like "last day", "last 2 days", "yesterday", "last week", "this month", "last month", or "4 months ago".
                     - Preserve the user's recall terms, including odd meta words; the memory subagent will expand the query internally across several variants.
                     - If the returned summary says no clear memory was found and the user keeps pressing, you may try one more narrower query.
                     - Treat returned memories as approximate, human-like recollections.

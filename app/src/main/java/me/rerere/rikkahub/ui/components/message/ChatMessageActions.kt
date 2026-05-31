@@ -47,7 +47,6 @@ import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.OpenInBrowser
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.SelectAll
-import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.StopCircle
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import kotlinx.coroutines.delay
@@ -210,7 +209,6 @@ fun ChatMessageActionsSheet(
     model: Model?,
     onDelete: () -> Unit,
     onEdit: () -> Unit,
-    onShare: () -> Unit,
     onFork: () -> Unit,
     onSelectAndCopy: () -> Unit,
     onWebViewPreview: () -> Unit,
@@ -275,17 +273,6 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         haptics.perform(HapticPattern.Pop)
                         onDismissRequest()
                         onEdit()
-                    }
-                )
-                MessageActionGroupItem(
-                    label = stringResource(R.string.share),
-                    icon = { Icon(Icons.Rounded.Share, null, modifier = Modifier.padding(4.dp)) },
-                    position = MessageActionItemPosition.MIDDLE,
-                    containerColor = groupContainerColor,
-                    onClick = {
-                        haptics.perform(HapticPattern.Pop)
-                        onDismissRequest()
-                        onShare()
                     }
                 )
                 MessageActionGroupItem(

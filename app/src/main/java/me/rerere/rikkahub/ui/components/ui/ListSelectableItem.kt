@@ -4,6 +4,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -55,7 +56,7 @@ fun ListSelectableItem(
     // Physics: Background color animation
     val backgroundColor by animateColorAsState(
         targetValue = if (isSelected) {
-            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.28f)
         } else {
             Color.Transparent
         },
@@ -65,6 +66,7 @@ fun ListSelectableItem(
         ),
         label = "item_bg_color"
     )
+    val itemShape = if (enabled) AppShapes.CardMedium else AppShapes.ListItem
 
     Surface(
         modifier = modifier
@@ -82,8 +84,13 @@ fun ListSelectableItem(
                     onSelectChange(!isSelected)
                 }
             ),
-        shape = AppShapes.ListItem,
+        shape = itemShape,
         color = backgroundColor,
+        border = if (isSelected) {
+            BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
+        } else {
+            null
+        },
     ) {
         Row(
             modifier = Modifier

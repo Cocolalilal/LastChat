@@ -2,19 +2,35 @@ package me.rerere.rikkahub.ui.pages.setting.components
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Surface
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,9 +42,14 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -46,6 +67,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.foundation.layout.size
 import me.rerere.rikkahub.ui.components.ui.ProviderIcon
 import me.rerere.rikkahub.ui.components.ui.lobeHubIconUri
+import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.utils.ImageUtils
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.nio.charset.Charset
@@ -119,25 +142,12 @@ fun ProviderConfigure(
 
         // 2. Type selector (for non-built-in remote providers)
         if (!provider.builtIn) {
-            SingleChoiceSegmentedButtonRow(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                ProviderSetting.Types.forEachIndexed { index, type ->
-                    SegmentedButton(
-                        shape = SegmentedButtonDefaults.itemShape(
-                            index = index,
-                            count = ProviderSetting.Types.size
-                        ),
-                        label = {
-                            Text(type.simpleName ?: "")
-                        },
-                        selected = provider::class == type,
-                        onClick = {
-                            onEdit(provider.convertTo(type))
-                        }
-                    )
+            ProviderTypeSelector(
+                selectedType = provider::class,
+                onTypeSelected = { type ->
+                    onEdit(provider.convertTo(type))
                 }
-            }
+            )
         }
 
         // 3. Name field with catalog icon preview
@@ -197,6 +207,100 @@ fun ProviderConfigure(
 
             is ProviderSetting.ComfyUI -> {
                 ProviderConfigureComfyUI(provider, onEdit)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProviderTypeSelector(
+    selectedType: KClass<out ProviderSetting>,
+    onTypeSelected: (KClass<out ProviderSetting>) -> Unit
+) {
+    val haptics = rememberPremiumHaptics()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .selectableGroup(),
+        horizontalArrangement = Arrangement.spacedBy((-1).dp)
+    ) {
+        ProviderSetting.Types.forEachIndexed { index, type ->
+            val selected = selectedType == type
+            val interactionSource = remember(type) { MutableInteractionSource() }
+            val isPressed by interactionSource.collectIsPressedAsState()
+            val scale by animateFloatAsState(
+                targetValue = if (isPressed) 0.96f else 1f,
+                animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+                label = "provider_type_scale"
+            )
+            val containerColor by animateColorAsState(
+                targetValue = if (selected) {
+                    MaterialTheme.colorScheme.secondaryContainer
+                } else {
+                    Color.Transparent
+                },
+                animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
+                label = "provider_type_container"
+            )
+            val contentColor by animateColorAsState(
+                targetValue = if (selected) {
+                    MaterialTheme.colorScheme.onSecondaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+                animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
+                label = "provider_type_content"
+            )
+            Surface(
+                modifier = Modifier
+                    .zIndex(if (selected) 1f else 0f)
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                    }
+                    .selectable(
+                        selected = selected,
+                        interactionSource = interactionSource,
+                        indication = null,
+                        role = Role.RadioButton,
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            if (!selected) {
+                                onTypeSelected(type)
+                            }
+                        }
+                    ),
+                shape = SegmentedButtonDefaults.itemShape(
+                    index = index,
+                    count = ProviderSetting.Types.size
+                ),
+                color = containerColor,
+                contentColor = contentColor,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .heightIn(min = 40.dp)
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (selected) {
+                        Icon(
+                            imageVector = Icons.Rounded.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.size(8.dp))
+                    }
+                    Text(
+                        text = type.simpleName ?: "",
+                        style = MaterialTheme.typography.labelLarge,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Clip
+                    )
+                }
             }
         }
     }

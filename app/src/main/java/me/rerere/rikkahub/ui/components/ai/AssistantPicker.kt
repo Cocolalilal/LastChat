@@ -7,6 +7,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -59,6 +60,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
@@ -172,11 +174,52 @@ fun AssistantPickerSheet(
     // State to lock the sheet height to its initial size to prevent jumping animations
     var sheetHeight by remember { mutableStateOf(0.dp) }
     val density = LocalDensity.current
+    var handleDragAmount by remember { mutableStateOf(0f) }
+    val handleDismissThreshold = with(density) { 48.dp.toPx() }
 
     ModalBottomSheet(
 containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        sheetGesturesEnabled = false,
+        dragHandle = {
+            IconButton(
+                modifier = Modifier.pointerInput(handleDismissThreshold) {
+                    detectVerticalDragGestures(
+                        onDragStart = {
+                            handleDragAmount = 0f
+                        },
+                        onDragEnd = {
+                            if (handleDragAmount > handleDismissThreshold) {
+                                haptics.perform(HapticPattern.Thud)
+                                scope.launch {
+                                    sheetState.hide()
+                                    onDismiss()
+                                }
+                            }
+                            handleDragAmount = 0f
+                        },
+                        onDragCancel = {
+                            handleDragAmount = 0f
+                        },
+                        onVerticalDrag = { _, dragAmount ->
+                            if (dragAmount > 0f) {
+                                handleDragAmount += dragAmount
+                            }
+                        }
+                    )
+                },
+                onClick = {
+                    haptics.perform(HapticPattern.Pop)
+                    scope.launch {
+                        sheetState.hide()
+                        onDismiss()
+                    }
+                }
+            ) {
+                Icon(Icons.Rounded.KeyboardArrowDown, null)
+            }
+        },
     ) {
         Column(
             modifier = Modifier

@@ -9,16 +9,20 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -44,12 +48,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.surfaceColorAtElevation
@@ -69,7 +73,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalScrollCaptureInProgress
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -88,7 +97,7 @@ import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.KeyboardDoubleArrowDown
 import androidx.compose.material.icons.rounded.KeyboardDoubleArrowUp
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.TouchApp
+import androidx.compose.material.icons.rounded.SelectAll
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -154,6 +163,9 @@ fun ChatList(
     contentMaxWidth: Dp = Dp.Unspecified,
     recentlyRestoredNodeIds: Set<Uuid> = emptySet(),
     initialSearchQuery: String? = null,
+    shareSelectionRequestKey: Int = 0,
+    shareSelectionCancelRequestKey: Int = 0,
+    onSelectionModeChange: (Boolean) -> Unit = {},
     onRegenerate: (UIMessage) -> Unit = {},
     onEdit: (UIMessage) -> Unit = {},
     onForkMessage: (UIMessage) -> Unit = {},
@@ -188,6 +200,9 @@ fun ChatList(
                     settings = settings,
                     contentMaxWidth = contentMaxWidth,
                     recentlyRestoredNodeIds = recentlyRestoredNodeIds,
+                    shareSelectionRequestKey = shareSelectionRequestKey,
+                    shareSelectionCancelRequestKey = shareSelectionCancelRequestKey,
+                    onSelectionModeChange = onSelectionModeChange,
                     onRegenerate = onRegenerate,
                     onEdit = onEdit,
                     onForkMessage = onForkMessage,
@@ -209,6 +224,9 @@ private fun SharedTransitionScope.ChatListNormal(
     settings: Settings,
     contentMaxWidth: Dp,
     recentlyRestoredNodeIds: Set<Uuid> = emptySet(),
+    shareSelectionRequestKey: Int,
+    shareSelectionCancelRequestKey: Int,
+    onSelectionModeChange: (Boolean) -> Unit,
     onRegenerate: (UIMessage) -> Unit,
     onEdit: (UIMessage) -> Unit,
     onForkMessage: (UIMessage) -> Unit,
@@ -264,6 +282,25 @@ private fun SharedTransitionScope.ChatListNormal(
     val selectedItems = remember { mutableStateListOf<Uuid>() }
     var selecting by remember { mutableStateOf(false) }
     var showExportSheet by remember { mutableStateOf(false) }
+
+    LaunchedEffect(shareSelectionRequestKey) {
+        if (shareSelectionRequestKey > 0) {
+            selecting = true
+            selectedItems.clear()
+            selectedItems.addAll(conversation.messageNodes.map { it.id })
+        }
+    }
+
+    LaunchedEffect(shareSelectionCancelRequestKey) {
+        if (shareSelectionCancelRequestKey > 0) {
+            selecting = false
+            selectedItems.clear()
+        }
+    }
+
+    LaunchedEffect(selecting) {
+        onSelectionModeChange(selecting)
+    }
 
     // 自动跟随键盘滚动
     ImeLazyListAutoScroller(lazyListState = state)
@@ -446,16 +483,6 @@ private fun SharedTransitionScope.ChatListNormal(
                                 onDelete = { node ->
                                     onDelete(node.currentMessage)
                                 },
-                                onShare = { node ->
-                                    selecting = true
-                                    selectedItems.clear()
-                                    val nodeIndex = conversation.messageNodes.indexOf(node)
-                                    if (nodeIndex >= 0) {
-                                        selectedItems.addAll(conversation.messageNodes
-                                            .subList(0, nodeIndex + 1)
-                                            .map { it.id })
-                                    }
-                                },
                                 onUpdate = {
                                     onUpdateMessage(it)
                                 },
@@ -538,63 +565,103 @@ private fun SharedTransitionScope.ChatListNormal(
                 visible = selecting,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .offset(y = -(48).dp),
-                enter = slideInVertically(
-                    initialOffsetY = { it * 2 },
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 8.dp),
+                enter = fadeIn(
+                    animationSpec = spring(dampingRatio = 0.65f, stiffness = 340f)
+                ) + scaleIn(
+                    initialScale = 0.92f,
+                    animationSpec = spring(dampingRatio = 0.65f, stiffness = 340f)
+                ) + slideInVertically(
+                    animationSpec = spring(dampingRatio = 0.65f, stiffness = 340f),
+                    initialOffsetY = { it }
                 ),
-                exit = slideOutVertically(
-                    targetOffsetY = { it * 2 },
+                exit = fadeOut(
+                    animationSpec = spring(dampingRatio = 0.85f, stiffness = 420f)
+                ) + scaleOut(
+                    targetScale = 0.92f,
+                    animationSpec = spring(dampingRatio = 0.85f, stiffness = 420f)
+                ) + slideOutVertically(
+                    animationSpec = spring(dampingRatio = 0.85f, stiffness = 420f),
+                    targetOffsetY = { it }
                 ),
             ) {
-                HorizontalFloatingToolbar(
-                    expanded = true,
+                val selectionToolbarShape = RoundedCornerShape(999.dp)
+                Surface(
+                    shape = selectionToolbarShape,
+                    color = blurredContainerColor(MaterialTheme.colorScheme.surfaceContainer),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.background),
+                    modifier = Modifier
+                        .height(48.dp)
+                        .lastChatBlurEffect(MaterialTheme.colorScheme.surfaceContainer, selectionToolbarShape)
                 ) {
-                    Tooltip(
-                        tooltip = {
-                            Text(stringResource(R.string.chat_clear_selection))
-                        }
+                    Row(
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        IconButton(
-                            onClick = {
-                                selecting = false
-                                selectedItems.clear()
+                        Tooltip(
+                            tooltip = {
+                                Text(stringResource(R.string.chat_clear_selection))
                             }
                         ) {
-                            Icon(Icons.Rounded.Close, null)
-                        }
-                    }
-                    Tooltip(
-                        tooltip = {
-                            Text(stringResource(R.string.select_all))
-                        }
-                    ) {
-                        IconButton(
-                            onClick = {
-                                if (selectedItems.isNotEmpty()) {
+                            IconButton(
+                                modifier = Modifier.size(40.dp),
+                                onClick = {
+                                    selecting = false
                                     selectedItems.clear()
-                                } else {
-                                    selectedItems.addAll(conversation.messageNodes.map { it.id })
                                 }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+                        Tooltip(
+                            tooltip = {
+                                Text(stringResource(R.string.select_all))
                             }
                         ) {
-                            Icon(Icons.Rounded.TouchApp, null)
-                        }
-                    }
-                    Tooltip(
-                        tooltip = {
-                            Text(stringResource(R.string.confirm))
-                        }
-                    ) {
-                        FilledIconButton(
-                            onClick = {
-                                selecting = false
-                                val messages = conversation.messageNodes.filter { it.id in selectedItems }
-                                if (messages.isNotEmpty()) {
-                                    showExportSheet = true
+                            IconButton(
+                                modifier = Modifier.size(40.dp),
+                                onClick = {
+                                    if (selectedItems.isNotEmpty()) {
+                                        selectedItems.clear()
+                                    } else {
+                                        selectedItems.addAll(conversation.messageNodes.map { it.id })
+                                    }
                                 }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.SelectAll,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+                        Tooltip(
+                            tooltip = {
+                                Text(stringResource(R.string.confirm))
                             }
                         ) {
-                            Icon(Icons.Rounded.Check, null)
+                            FilledIconButton(
+                                modifier = Modifier.size(40.dp),
+                                onClick = {
+                                    selecting = false
+                                    val messages = conversation.messageNodes.filter { it.id in selectedItems }
+                                    if (messages.isNotEmpty()) {
+                                        showExportSheet = true
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Check,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -708,6 +775,7 @@ private fun SharedTransitionScope.ChatListPreview(
     var searchQuery by remember { mutableStateOf(initialSearchQuery ?: "") }
     val previewTopPadding = 20.dp
     val appLocale = LocalContext.current.appLocale()
+    val previewLayoutDirection = LocalLayoutDirection.current
 
     // Filter messages
     val filteredMessages = remember(conversation.messageNodes, searchQuery) {
@@ -720,11 +788,15 @@ private fun SharedTransitionScope.ChatListPreview(
         }
     }
 
-    Column(
+    Box(
         modifier = Modifier
-            .padding(innerPadding)
+            .padding(
+                start = innerPadding.calculateStartPadding(previewLayoutDirection),
+                top = innerPadding.calculateTopPadding(),
+                end = innerPadding.calculateEndPadding(previewLayoutDirection),
+                bottom = 0.dp
+            )
             .padding(top = previewTopPadding)
-            .lastChatBlurSource()
             .then(
                 if (contentMaxWidth != Dp.Unspecified) {
                     Modifier
@@ -737,48 +809,36 @@ private fun SharedTransitionScope.ChatListPreview(
             ),
     ) {
         // 搜索框
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            placeholder = { Text(stringResource(R.string.chat_page_search_placeholder)) },
-            leadingIcon = {
-                Icon(
-                    imageVector = Icons.Rounded.Search,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp)
-                )
-            },
-            trailingIcon = {
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { searchQuery = "" }) {
-                        Icon(
-                            imageVector = Icons.Rounded.Close,
-                            contentDescription = stringResource(R.string.clear_search),
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-            },
-            singleLine = true,
-            shape = me.rerere.rikkahub.ui.theme.AppShapes.SearchField,
-            maxLines = 1,
-        )
-
         // 消息预览
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             LazyColumn(
-                contentPadding = PaddingValues(16.dp) + PaddingValues(bottom = 32.dp),
+                contentPadding = PaddingValues(start = 16.dp, top = 80.dp, end = 16.dp, bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier
+                    .lastChatBlurSource()
                     .sharedBounds(
                         sharedContentState = rememberSharedContentState(key = "conversation_list"),
                         animatedVisibilityScope = animatedVisibilityScope
                     )
                     .fillMaxWidth()
-                    .weight(1f),
+                    .fillMaxHeight()
+                    .graphicsLayer {
+                        compositingStrategy = CompositingStrategy.Offscreen
+                    }
+                    .drawWithContent {
+                        drawContent()
+                        drawRect(
+                            brush = Brush.verticalGradient(
+                                colorStops = arrayOf(
+                                    0f to Color.Transparent,
+                                    0.12f to Color.Black,
+                                    0.88f to Color.Black,
+                                    1f to Color.Transparent
+                                )
+                            ),
+                            blendMode = BlendMode.DstIn
+                        )
+                    },
             ) {
                 itemsIndexed(
                     items = filteredMessages,
@@ -840,6 +900,55 @@ private fun SharedTransitionScope.ChatListPreview(
                     }
                 }
             }
+        }
+
+        val searchFieldShape = me.rerere.rikkahub.ui.theme.AppShapes.SearchField
+        val searchFieldContainerColor = MaterialTheme.colorScheme.surfaceContainer
+        Surface(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .lastChatBlurEffect(searchFieldContainerColor, searchFieldShape),
+            shape = searchFieldShape,
+            color = blurredContainerColor(searchFieldContainerColor),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.background)
+        ) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Search messages") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Rounded.Search,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = stringResource(R.string.clear_search),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                },
+                singleLine = true,
+                shape = searchFieldShape,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    disabledContainerColor = Color.Transparent,
+                    focusedBorderColor = Color.Transparent,
+                    unfocusedBorderColor = Color.Transparent,
+                    disabledBorderColor = Color.Transparent,
+                ),
+                maxLines = 1,
+            )
         }
     }
 }

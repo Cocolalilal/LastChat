@@ -22,9 +22,9 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Surface
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
@@ -91,6 +91,7 @@ import me.rerere.rikkahub.ui.components.ui.TextAvatar
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.RikkahubTheme
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.exportImage
@@ -119,25 +120,35 @@ fun ChatExportSheet(
 
     if (visible) {
         ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = onDismissRequest,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 32.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 8.dp, bottom = 28.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text(text = stringResource(id = R.string.chat_page_export_format))
+                Text(
+                    text = stringResource(id = R.string.chat_page_export_share_via),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = stringResource(id = R.string.chat_page_export_format),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
 
                 val markdownSuccessMessage =
                     stringResource(
                         id = R.string.chat_page_export_success,
                         stringResource(R.string.chat_page_export_markdown)
                     )
-                OutlinedCard(
+                Card(
                     onClick = {
                         exportToMarkdown(context, conversation, selectedMessages)
                         toaster.show(
@@ -146,9 +157,17 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         )
                         onDismissRequest()
                     },
+                    shape = AppShapes.CardMedium,
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    ),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     ListItem(
+                        colors = ListItemDefaults.colors(
+                            containerColor = Color.Transparent
+                        ),
                         headlineContent = {
                             Text(stringResource(id = R.string.chat_page_export_markdown))
                         },
@@ -166,11 +185,19 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         id = R.string.chat_page_export_success,
                         stringResource(R.string.chat_page_export_image)
                     )
-                OutlinedCard(
+                Card(
+                    shape = AppShapes.CardMedium,
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    ),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column {
                         ListItem(
+                            colors = ListItemDefaults.colors(
+                                containerColor = Color.Transparent
+                            ),
                             headlineContent = {
                                 Text(stringResource(id = R.string.chat_page_export_image))
                             },
@@ -185,6 +212,9 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         HorizontalDivider()
 
                         ListItem(
+                            colors = ListItemDefaults.colors(
+                                containerColor = Color.Transparent
+                            ),
                             headlineContent = { Text(stringResource(R.string.chat_page_export_image_expand_reasoning)) },
                             trailingContent = {
                                 HapticSwitch(
@@ -199,7 +229,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
                             horizontalArrangement = Arrangement.End
                         ) {
                             Button(
@@ -231,7 +261,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                         type = ToastType.Success
                                     )
                                     onDismissRequest()
-                                }
+                                },
+                                shape = AppShapes.ButtonPill
                             ) {
                                 Text(stringResource(R.string.mermaid_export))
                             }

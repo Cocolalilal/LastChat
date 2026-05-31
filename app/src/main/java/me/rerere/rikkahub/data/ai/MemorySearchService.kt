@@ -34,6 +34,9 @@ import kotlin.uuid.Uuid
 private const val MEMORY_SEARCH_MAX_LIMIT = 8
 private const val MEMORY_SEARCH_CHAT_SUMMARY_LIMIT = 2
 private const val MEMORY_SEARCH_MAX_QUERIES = 8
+private const val MEMORY_SEARCH_EARLY_MORNING_CUTOFF_HOUR = 7
+private const val MEMORY_SEARCH_WEEK_EDGE_GRACE_HOURS = 12L
+private const val MEMORY_SEARCH_MONTH_EDGE_GRACE_DAYS = 2L
 
 internal data class ConversationRecallSpan(
     val conversationId: Uuid,
@@ -305,48 +308,84 @@ internal fun parseMemorySearchTimeRange(
 
     fun startOfDay(value: ZonedDateTime) = value.toLocalDate().atStartOfDay(zone)
     fun startOfMonth(value: ZonedDateTime) = value.withDayOfMonth(1).toLocalDate().atStartOfDay(zone)
+    fun morningAfter(value: ZonedDateTime) = startOfDay(value).plusDays(1).plusHours(MEMORY_SEARCH_EARLY_MORNING_CUTOFF_HOUR.toLong())
     fun startOfWeek(value: ZonedDateTime): ZonedDateTime {
         val delta = (value.dayOfWeek.value - DayOfWeek.MONDAY.value).floorMod(7)
         return startOfDay(value.minusDays(delta.toLong()))
     }
 
+    Regex("""(?:last|past|previous)\s+(\d+)\s+hours?""").find(text)?.groupValues?.getOrNull(1)?.toLongOrNull()?.let { hours ->
+        return range(now.minusHours(hours), now, "last $hours hours")
+    }
+    Regex("""(?:last|past|previous)\s+(\d+)\s+days?""").find(text)?.groupValues?.getOrNull(1)?.toLongOrNull()?.let { days ->
+        return range(startOfDay(now.minusDays(days)), now, "last $days days")
+    }
+    Regex("""(?:last|past|previous)\s+(\d+)\s+weeks?""").find(text)?.groupValues?.getOrNull(1)?.toLongOrNull()?.let { weeks ->
+        val start = startOfWeek(now).minusWeeks(weeks)
+        return range(start.minusHours(MEMORY_SEARCH_WEEK_EDGE_GRACE_HOURS), now, "last $weeks weeks")
+    }
+    Regex("""(?:last|past|previous)\s+(\d+)\s+months?""").find(text)?.groupValues?.getOrNull(1)?.toLongOrNull()?.let { months ->
+        val start = startOfMonth(now).minusMonths(months)
+        return range(start.minusDays(MEMORY_SEARCH_MONTH_EDGE_GRACE_DAYS), now, "last $months months")
+    }
     Regex("""(\d+)\s+months?\s+ago""").find(text)?.groupValues?.getOrNull(1)?.toLongOrNull()?.let { months ->
         val start = startOfMonth(now.minusMonths(months))
-        return range(start, start.plusMonths(1), "$months months ago")
+        return range(
+            start.minusDays(MEMORY_SEARCH_MONTH_EDGE_GRACE_DAYS),
+            start.plusMonths(1).plusDays(MEMORY_SEARCH_MONTH_EDGE_GRACE_DAYS),
+            "$months months ago"
+        )
     }
     Regex("""(\d+)\s+weeks?\s+ago""").find(text)?.groupValues?.getOrNull(1)?.toLongOrNull()?.let { weeks ->
         val start = startOfWeek(now).minusWeeks(weeks)
-        return range(start, start.plusWeeks(1), "$weeks weeks ago")
+        return range(
+            start.minusHours(MEMORY_SEARCH_WEEK_EDGE_GRACE_HOURS),
+            start.plusWeeks(1).plusHours(MEMORY_SEARCH_WEEK_EDGE_GRACE_HOURS),
+            "$weeks weeks ago"
+        )
     }
     Regex("""(\d+)\s+days?\s+ago""").find(text)?.groupValues?.getOrNull(1)?.toLongOrNull()?.let { days ->
         val start = startOfDay(now.minusDays(days))
-        return range(start, start.plusDays(1), "$days days ago")
+        return range(start, morningAfter(now.minusDays(days)), "$days days ago")
     }
 
     return when {
+        "last day" in text || "past day" in text || "previous day" in text -> {
+            val start = startOfDay(now.minusDays(1))
+            val end = morningAfter(now.minusDays(1)).coerceAtMost(now)
+            range(start, end, "last day")
+        }
         "last week" in text -> {
             val start = startOfWeek(now).minusWeeks(1)
-            range(start, start.plusWeeks(1), "last week")
+            range(
+                start.minusHours(MEMORY_SEARCH_WEEK_EDGE_GRACE_HOURS),
+                start.plusWeeks(1).plusHours(MEMORY_SEARCH_WEEK_EDGE_GRACE_HOURS),
+                "last week"
+            )
         }
         "this week" in text -> {
             val start = startOfWeek(now)
-            range(start, start.plusWeeks(1), "this week")
+            range(start.minusHours(MEMORY_SEARCH_WEEK_EDGE_GRACE_HOURS), start.plusWeeks(1), "this week")
         }
         "last month" in text -> {
             val start = startOfMonth(now).minusMonths(1)
-            range(start, start.plusMonths(1), "last month")
+            range(
+                start.minusDays(MEMORY_SEARCH_MONTH_EDGE_GRACE_DAYS),
+                start.plusMonths(1).plusDays(MEMORY_SEARCH_MONTH_EDGE_GRACE_DAYS),
+                "last month"
+            )
         }
         "this month" in text -> {
             val start = startOfMonth(now)
-            range(start, start.plusMonths(1), "this month")
+            range(start.minusDays(MEMORY_SEARCH_MONTH_EDGE_GRACE_DAYS), start.plusMonths(1), "this month")
         }
         "yesterday" in text -> {
             val start = startOfDay(now.minusDays(1))
-            range(start, start.plusDays(1), "yesterday")
+            range(start, morningAfter(now.minusDays(1)).coerceAtMost(now), "yesterday")
         }
         "today" in text || "earlier today" in text -> {
             val start = startOfDay(now)
-            range(start, start.plusDays(1), "today")
+            range(start, morningAfter(now), "today")
         }
         else -> null
     }

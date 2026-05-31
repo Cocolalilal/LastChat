@@ -9,6 +9,10 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.activity.compose.BackHandler
 import androidx.core.net.toUri
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -57,10 +61,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -76,7 +85,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.HistoryToggleOff
 
@@ -103,7 +114,9 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.ui.hooks.EditStateContent
+import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberChatInputState
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.service.ChatPersistenceMode
 import me.rerere.rikkahub.ui.theme.AssistantChatTheme
@@ -122,6 +135,7 @@ import me.rerere.rikkahub.ui.modifier.LocalLastChatBlur
 import me.rerere.rikkahub.ui.modifier.lastChatBlurEffect
 import me.rerere.rikkahub.ui.modifier.lastChatBlurSource
 import me.rerere.rikkahub.ui.modifier.blurredContainerColor
+import androidx.compose.ui.draw.clip
 
 internal fun hasConversationMessages(conversation: Conversation): Boolean {
     return conversation.messageNodes.isNotEmpty()
@@ -268,6 +282,7 @@ fun ChatPage(
 
     val setting by vm.settings.collectAsStateWithLifecycle()
     val conversation by vm.conversation.collectAsStateWithLifecycle()
+    val conversationInitialized by vm.conversationInitialized.collectAsStateWithLifecycle()
     val conversationAssistant by vm.conversationAssistant.collectAsStateWithLifecycle()
     val loadingJob by vm.conversationJob.collectAsStateWithLifecycle()
     val conversationPersistenceMode by vm.conversationPersistenceMode.collectAsStateWithLifecycle()
@@ -454,6 +469,7 @@ fun ChatPage(
                         loadingJob = loadingJob,
                         setting = setting,
                         currentAssistant = conversationAssistant,
+                        conversationInitialized = conversationInitialized,
                         conversation = conversation,
                         drawerState = drawerState,
                         navController = navController,
@@ -495,6 +511,7 @@ fun ChatPage(
                     loadingJob = loadingJob,
                     setting = setting,
                     currentAssistant = conversationAssistant,
+                    conversationInitialized = conversationInitialized,
                     conversation = conversation,
                     drawerState = drawerState,
                     navController = navController,
@@ -525,6 +542,7 @@ private fun ChatPageContent(
     loadingJob: Job?,
     setting: Settings,
     currentAssistant: Assistant,
+    conversationInitialized: Boolean,
     bigScreen: Boolean,
     conversation: Conversation,
     drawerState: DrawerState,
@@ -562,6 +580,10 @@ private fun ChatPageContent(
     // State for user message delete confirmation dialog
     var showDeleteConfirmDialog by rememberSaveable { mutableStateOf(false) }
     var pendingDeleteMessage by rememberSaveable { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
+    var showToolbarOverflowMenu by rememberSaveable { mutableStateOf(false) }
+    var chatShareSelectionRequestKey by rememberSaveable { mutableStateOf(0) }
+    var chatShareSelectionCancelRequestKey by rememberSaveable { mutableStateOf(0) }
+    var isChatShareSelecting by rememberSaveable { mutableStateOf(false) }
     val toolbarPlacement = chatTopBarPlacement(setting)
     val isGenerating = loadingJob != null
     val density = LocalDensity.current
@@ -623,23 +645,36 @@ private fun ChatPageContent(
         inputState.loading = loadingJob != null
     }
 
+    LaunchedEffect(showToolbarOverflowMenu, chatListState) {
+        if (showToolbarOverflowMenu) {
+            snapshotFlow { chatListState.isScrollInProgress }
+                .collect { isScrolling ->
+                    if (isScrolling) {
+                        showToolbarOverflowMenu = false
+                    }
+                }
+        }
+    }
+
     AssistantChatTheme(assistant = currentAssistant) {
         CompositionLocalProvider(LocalLastChatBlur provides blur) {
             Surface(
                 color = MaterialTheme.colorScheme.background,
                 modifier = Modifier.fillMaxSize()
             ) {
-                AssistantBackground(
-                    assistant = currentAssistant,
-                    modifier = Modifier.lastChatBlurSource()
-                )
-                Scaffold(
+                Box(modifier = Modifier.fillMaxSize()) {
+                    AssistantBackground(
+                        assistant = currentAssistant,
+                        modifier = Modifier.lastChatBlurSource()
+                    )
+                    Scaffold(
                 topBar = if (toolbarPlacement == ChatToolbarPlacement.Top) {
                     {
                         ChatToolbar(
                             placement = ChatToolbarPlacement.Top,
                             settings = setting,
                             currentAssistant = currentAssistant,
+                            conversationInitialized = conversationInitialized,
                             conversation = conversation,
                             bigScreen = bigScreen,
                             drawerState = drawerState,
@@ -647,11 +682,21 @@ private fun ChatPageContent(
                             isTemporaryChat = isTemporaryChat,
                             currentChatModel = currentChatModel,
                             isGenerating = isGenerating,
+                            showCloseAction = previewMode || isChatShareSelecting,
                             onNewChat = {
                                 navigateToChatPage(navController)
                             },
-                            onClickMenu = {
-                                previewMode = !previewMode
+                            onOpenOverflowMenu = {
+                                showToolbarOverflowMenu = !showToolbarOverflowMenu
+                            },
+                            onCloseAction = {
+                                showToolbarOverflowMenu = false
+                                if (previewMode) {
+                                    previewMode = false
+                                }
+                                if (isChatShareSelecting) {
+                                    chatShareSelectionCancelRequestKey += 1
+                                }
                             },
                             onUpdateSettings = { newSettings ->
                                 vm.updateSettings(newSettings)
@@ -691,6 +736,11 @@ private fun ChatPageContent(
                         settings = setting,
                         recentlyRestoredNodeIds = vm.recentlyRestoredNodeIds.collectAsStateWithLifecycle().value,
                         initialSearchQuery = initialSearchQuery,
+                        shareSelectionRequestKey = chatShareSelectionRequestKey,
+                        shareSelectionCancelRequestKey = chatShareSelectionCancelRequestKey,
+                        onSelectionModeChange = { isSelecting ->
+                            isChatShareSelecting = isSelecting
+                        },
                         contentMaxWidth = contentMaxWidth,
                         onJumpToMessage = { index ->
                             previewMode = false
@@ -1167,6 +1217,7 @@ private fun ChatPageContent(
                                 placement = ChatToolbarPlacement.Bottom,
                                 settings = setting,
                                 currentAssistant = currentAssistant,
+                                conversationInitialized = conversationInitialized,
                                 conversation = conversation,
                                 bigScreen = bigScreen,
                                 drawerState = drawerState,
@@ -1174,11 +1225,21 @@ private fun ChatPageContent(
                                 isTemporaryChat = isTemporaryChat,
                                 currentChatModel = currentChatModel,
                                 isGenerating = isGenerating,
+                                showCloseAction = previewMode || isChatShareSelecting,
                                 onNewChat = {
                                     navigateToChatPage(navController)
                                 },
-                                onClickMenu = {
-                                    previewMode = !previewMode
+                                onOpenOverflowMenu = {
+                                    showToolbarOverflowMenu = !showToolbarOverflowMenu
+                                },
+                                onCloseAction = {
+                                    showToolbarOverflowMenu = false
+                                    if (previewMode) {
+                                        previewMode = false
+                                    }
+                                    if (isChatShareSelecting) {
+                                        chatShareSelectionCancelRequestKey += 1
+                                    }
                                 },
                                 onUpdateSettings = { newSettings ->
                                     vm.updateSettings(newSettings)
@@ -1203,25 +1264,269 @@ private fun ChatPageContent(
                     bottomPadding = if (toolbarPlacement == ChatToolbarPlacement.Bottom) 12.dp else 24.dp,
                 )
                 }
+
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = showToolbarOverflowMenu,
+                        enter = fadeIn(
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = 0.75f,
+                                stiffness = 360f
+                            )
+                        ) + scaleIn(
+                            initialScale = 0.96f,
+                            transformOrigin = TransformOrigin(1f, 0f),
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = 0.75f,
+                                stiffness = 360f
+                            )
+                        ),
+                        exit = fadeOut(
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = 0.85f,
+                                stiffness = 420f
+                            )
+                        ) + scaleOut(
+                            targetScale = 0.96f,
+                            transformOrigin = TransformOrigin(1f, 0f),
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = 0.85f,
+                                stiffness = 420f
+                            )
+                        ),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                            ChatToolbarOverflowMenu(
+                                placement = toolbarPlacement,
+                                previewMode = previewMode,
+                                hasConversationContent = conversation.messageNodes.isNotEmpty(),
+                                chatListState = chatListState,
+                                onDismissRequest = { showToolbarOverflowMenu = false },
+                            onSearchClick = {
+                                showToolbarOverflowMenu = false
+                                previewMode = !previewMode
+                            },
+                            onShareClick = {
+                                showToolbarOverflowMenu = false
+                                previewMode = false
+                                chatShareSelectionRequestKey += 1
+                            }
+                        )
+                    }
+                }
             }
         }
         }
     }
 }
 
+@Composable
+private fun ChatToolbarIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    size: Dp,
+    onClick: () -> Unit,
+) {
+    val haptics = rememberPremiumHaptics()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isPressed) 0.85f else 1f,
+        animationSpec = androidx.compose.animation.core.spring(
+            dampingRatio = 0.6f,
+            stiffness = 300f
+        ),
+        label = "chat_toolbar_icon_scale"
+    )
+
+    Box(
+        modifier = Modifier
+            .size(size)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(RoundedCornerShape(999.dp))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = {
+                    haptics.perform(HapticPattern.Pop)
+                    onClick()
+                }
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, contentDescription = contentDescription)
+    }
+}
+
+@Composable
+private fun ChatToolbarOverflowMenu(
+    placement: ChatToolbarPlacement,
+    previewMode: Boolean,
+    hasConversationContent: Boolean,
+    chatListState: LazyListState,
+    onDismissRequest: () -> Unit,
+    onSearchClick: () -> Unit,
+    onShareClick: () -> Unit,
+) {
+    BackHandler(onBack = onDismissRequest)
+
+    val scrimInteractionSource = remember { MutableInteractionSource() }
+    val menuShape = RoundedCornerShape(24.dp)
+    val containerColor = MaterialTheme.colorScheme.surfaceContainer
+    val border = BorderStroke(1.dp, MaterialTheme.colorScheme.background)
+    val menuTopPadding = if (placement == ChatToolbarPlacement.Top) 64.dp else 0.dp
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.16f))
+            .clickable(
+                interactionSource = scrimInteractionSource,
+                indication = null,
+                onClick = onDismissRequest
+            )
+            .pointerInput(chatListState) {
+                detectDragGestures(
+                    onDragStart = { onDismissRequest() },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        chatListState.dispatchRawDelta(-dragAmount.y)
+                    }
+                )
+            }
+    ) {
+        Surface(
+            shape = menuShape,
+            color = blurredContainerColor(containerColor),
+            border = border,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .then(
+                    if (placement == ChatToolbarPlacement.Top) {
+                        Modifier.statusBarsPadding()
+                    } else {
+                        Modifier
+                    }
+                )
+                .padding(top = menuTopPadding, end = 16.dp)
+                .widthIn(min = 196.dp, max = 260.dp)
+                .lastChatBlurEffect(containerColor, menuShape)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {}
+                )
+        ) {
+            Column(
+                modifier = Modifier.padding(vertical = 8.dp),
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(2.dp)
+            ) {
+                ChatToolbarOverflowMenuItem(
+                    label = stringResource(R.string.search_ability_search),
+                    icon = if (previewMode) Icons.Rounded.Close else Icons.Rounded.Search,
+                    onClick = onSearchClick
+                )
+                ChatToolbarOverflowMenuItem(
+                    label = stringResource(R.string.share),
+                    icon = Icons.Rounded.Share,
+                    enabled = hasConversationContent,
+                    onClick = onShareClick
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatToolbarOverflowMenuItem(
+    label: String,
+    icon: ImageVector,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val haptics = rememberPremiumHaptics()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isPressed && enabled) 0.98f else 1f,
+        animationSpec = androidx.compose.animation.core.spring(
+            dampingRatio = 0.6f,
+            stiffness = 300f
+        ),
+        label = "chat_toolbar_menu_item_scale"
+    )
+    val contentColor = if (enabled) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clickable(
+                enabled = enabled,
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = {
+                    haptics.perform(HapticPattern.Pop)
+                    onClick()
+                }
+            )
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = contentColor
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = contentColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+private enum class TopBarActionMode {
+    CompactNewChat,
+    NewChat,
+    TemporaryNewChat,
+    InChat,
+}
+
 private data class TopBarActionState(
-    val isEmpty: Boolean,
-    val isTemporaryChat: Boolean,
-    val shouldUseCompactTemporaryToggle: Boolean,
-    val assistantId: kotlin.uuid.Uuid,
-    val conversationId: kotlin.uuid.Uuid
+    val mode: TopBarActionMode,
+    val assistantId: Uuid?,
+    val showCloseAction: Boolean,
 )
+
+private val DefaultTopBarActionState = TopBarActionState(
+    mode = TopBarActionMode.InChat,
+    assistantId = null,
+    showCloseAction = false,
+)
+
+private var lastStableTopBarActionState = DefaultTopBarActionState
 
 @Composable
 private fun ChatToolbar(
     placement: ChatToolbarPlacement,
     settings: Settings,
     currentAssistant: Assistant,
+    conversationInitialized: Boolean,
     conversation: Conversation,
     drawerState: DrawerState,
     bigScreen: Boolean,
@@ -1229,8 +1534,10 @@ private fun ChatToolbar(
     isTemporaryChat: Boolean,
     currentChatModel: Model? = null,
     isGenerating: Boolean = false,
-    onClickMenu: () -> Unit,
+    showCloseAction: Boolean,
     onNewChat: () -> Unit,
+    onOpenOverflowMenu: () -> Unit,
+    onCloseAction: () -> Unit,
     onUpdateSettings: (Settings) -> Unit,
     onSwitchAssistant: (Assistant) -> Unit,
     onToggleTemporaryChat: () -> Unit,
@@ -1243,12 +1550,38 @@ private fun ChatToolbar(
     // State for assistant picker - must be at function level for proper recomposition
     var showAssistantPicker by remember { mutableStateOf(false) }
     val isEmpty = !conversation.messageNodes.any { it.role == me.rerere.ai.core.MessageRole.USER }
-    var animateTopPillIn by remember { mutableStateOf(false) }
+    val rawActionMode = run {
+        val hasPresetMessages = currentAssistant.presetMessages.isNotEmpty()
+        val effectiveDisplay = settings.getEffectiveDisplaySetting(currentAssistant)
+        val headerShowsAvatar = effectiveDisplay.newChatShowAvatar && (
+            effectiveDisplay.newChatHeaderStyle == me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.BIG_ICON ||
+                effectiveDisplay.newChatHeaderStyle == me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.GREETING
+            )
+        val shouldUseCompactTemporaryToggle = !hasPresetMessages && headerShowsAvatar
+        when {
+            isEmpty && !isTemporaryChat && shouldUseCompactTemporaryToggle -> TopBarActionMode.CompactNewChat
+            isEmpty && !isTemporaryChat -> TopBarActionMode.NewChat
+            isEmpty && isTemporaryChat -> TopBarActionMode.TemporaryNewChat
+            else -> TopBarActionMode.InChat
+        }
+    }
+    val rawActionState = TopBarActionState(
+        mode = rawActionMode,
+        assistantId = currentAssistant.id.takeUnless { rawActionMode == TopBarActionMode.InChat },
+        showCloseAction = showCloseAction && rawActionMode == TopBarActionMode.InChat,
+    )
+    var displayedActionState by remember {
+        mutableStateOf(lastStableTopBarActionState.copy(showCloseAction = false))
+    }
 
-    LaunchedEffect(conversation.id) {
-        animateTopPillIn = false
-        delay(16)
-        animateTopPillIn = true
+    LaunchedEffect(rawActionState, conversationInitialized) {
+        if (conversationInitialized) {
+            if (displayedActionState != rawActionState) {
+                withFrameNanos { }
+            }
+            displayedActionState = rawActionState
+            lastStableTopBarActionState = rawActionState.copy(showCloseAction = false)
+        }
     }
 
     Box(
@@ -1301,43 +1634,16 @@ private fun ChatToolbar(
 
             Spacer(Modifier.weight(1f))
 
-            val topPillScale by androidx.compose.animation.core.animateFloatAsState(
-                targetValue = if (animateTopPillIn) 1f else 0.88f,
-                animationSpec = androidx.compose.animation.core.spring(
-                    dampingRatio = 0.6f,
-                    stiffness = 300f
-                ),
-                label = "top_pill_scale"
-            )
-
             Surface(
                 shape = buttonShape,
                 color = blurredContainerColor(topContainerColor),
                 border = topContainerBorder,
                 modifier = Modifier
                     .height(topPillSize)
-                    .graphicsLayer {
-                        scaleX = topPillScale
-                        scaleY = topPillScale
-                    }
                     .lastChatBlurEffect(topContainerColor, buttonShape)
             ) {
                 androidx.compose.animation.AnimatedContent(
-                    targetState = TopBarActionState(
-                        isEmpty = isEmpty,
-                        isTemporaryChat = isTemporaryChat,
-                        shouldUseCompactTemporaryToggle = run {
-                            val hasPresetMessages = currentAssistant.presetMessages.isNotEmpty()
-                            val effectiveDisplay = settings.getEffectiveDisplaySetting(currentAssistant)
-                            val headerShowsAvatar = effectiveDisplay.newChatShowAvatar && (
-                                effectiveDisplay.newChatHeaderStyle == me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.BIG_ICON ||
-                                    effectiveDisplay.newChatHeaderStyle == me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.GREETING
-                                )
-                            !hasPresetMessages && headerShowsAvatar
-                        },
-                        assistantId = currentAssistant.id,
-                        conversationId = conversation.id
-                    ),
+                    targetState = displayedActionState,
                     transitionSpec = {
                         (androidx.compose.animation.fadeIn(
                             animationSpec = androidx.compose.animation.core.spring(
@@ -1373,81 +1679,86 @@ private fun ChatToolbar(
                     },
                     label = "topbar_actions"
                 ) { actionState ->
-                    val isEmptyState = actionState.isEmpty
-                    val isTempChat = actionState.isTemporaryChat
-                    val hideTopRightAvatar = actionState.shouldUseCompactTemporaryToggle
-                    when {
-                        isEmptyState && !isTempChat && hideTopRightAvatar -> {
-                            IconButton(
-                                onClick = { onToggleTemporaryChat() },
-                                modifier = Modifier.size(topPillSize)
+                    when (actionState.mode) {
+                            TopBarActionMode.CompactNewChat -> {
+                                IconButton(
+                                    onClick = { onToggleTemporaryChat() },
+                                    modifier = Modifier.size(topPillSize)
+                                ) {
+                                    Icon(Icons.Rounded.HistoryToggleOff, "Temporary Chat")
+                                }
+                            }
+
+                            TopBarActionMode.NewChat,
+                            TopBarActionMode.TemporaryNewChat,
+                            TopBarActionMode.InChat -> Row(
+                                modifier = Modifier.height(topPillSize),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Rounded.HistoryToggleOff, "Temporary Chat")
-                            }
-                        }
-
-                        else -> Row(
-                            modifier = Modifier.height(topPillSize),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            when {
-                                isEmptyState && !isTempChat -> {
-                                    IconButton(
-                                        onClick = { onToggleTemporaryChat() },
-                                        modifier = Modifier.size(topPillSize)
-                                    ) {
-                                        Icon(Icons.Rounded.HistoryToggleOff, "Temporary Chat")
+                                when (actionState.mode) {
+                                    TopBarActionMode.NewChat -> {
+                                        IconButton(
+                                            onClick = { onToggleTemporaryChat() },
+                                            modifier = Modifier.size(topPillSize)
+                                        ) {
+                                            Icon(Icons.Rounded.HistoryToggleOff, "Temporary Chat")
+                                        }
+                                        Box(
+                                            modifier = Modifier.size(topPillSize),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            me.rerere.rikkahub.ui.components.ui.UIAvatar(
+                                                name = currentAssistant.name.ifBlank { "Character" },
+                                                value = currentAssistant.avatar,
+                                                modifier = Modifier.size(30.dp),
+                                                onClick = { showAssistantPicker = true }
+                                            )
+                                        }
                                     }
-                                    Box(
-                                        modifier = Modifier.size(topPillSize),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        me.rerere.rikkahub.ui.components.ui.UIAvatar(
-                                            name = currentAssistant.name.ifBlank { "Character" },
-                                            value = currentAssistant.avatar,
-                                            modifier = Modifier.size(30.dp),
-                                            onClick = { showAssistantPicker = true }
+
+                                    TopBarActionMode.TemporaryNewChat -> {
+                                        IconButton(
+                                            onClick = { onToggleTemporaryChat() },
+                                            modifier = Modifier.size(topPillSize)
+                                        ) {
+                                            Icon(Icons.Rounded.History, "Make Normal Chat")
+                                        }
+                                        Box(
+                                            modifier = Modifier.size(topPillSize),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            me.rerere.rikkahub.ui.components.ui.UIAvatar(
+                                                name = currentAssistant.name.ifBlank { "Character" },
+                                                value = currentAssistant.avatar,
+                                                modifier = Modifier.size(30.dp),
+                                                onClick = { showAssistantPicker = true }
+                                            )
+                                        }
+                                    }
+
+                                    TopBarActionMode.InChat,
+                                    TopBarActionMode.CompactNewChat -> {
+                                        ChatToolbarIconButton(
+                                            icon = Icons.Rounded.Add,
+                                            contentDescription = "New Message",
+                                            size = topPillSize,
+                                            onClick = onNewChat
+                                        )
+                                        val showClose = actionState.showCloseAction
+                                        ChatToolbarIconButton(
+                                            icon = if (showClose) Icons.Rounded.Close else Icons.Rounded.MoreVert,
+                                            contentDescription = if (showClose) {
+                                                stringResource(R.string.banner_dismiss)
+                                            } else {
+                                                stringResource(R.string.more_options)
+                                            },
+                                            size = topPillSize,
+                                            onClick = if (showClose) onCloseAction else onOpenOverflowMenu
                                         )
                                     }
                                 }
-
-                                isEmptyState && isTempChat -> {
-                                    IconButton(
-                                        onClick = { onToggleTemporaryChat() },
-                                        modifier = Modifier.size(topPillSize)
-                                    ) {
-                                        Icon(Icons.Rounded.History, "Make Normal Chat")
-                                    }
-                                    Box(
-                                        modifier = Modifier.size(topPillSize),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        me.rerere.rikkahub.ui.components.ui.UIAvatar(
-                                            name = currentAssistant.name.ifBlank { "Character" },
-                                            value = currentAssistant.avatar,
-                                            modifier = Modifier.size(30.dp),
-                                            onClick = { showAssistantPicker = true }
-                                        )
-                                    }
-                                }
-
-                                else -> {
-                                    IconButton(
-                                        onClick = { onClickMenu() },
-                                        modifier = Modifier.size(topPillSize)
-                                    ) {
-                                        Icon(if (previewMode) Icons.Rounded.Close else Icons.Rounded.Search, "Chat Options")
-                                    }
-                                    IconButton(
-                                        onClick = { onNewChat() },
-                                        modifier = Modifier.size(topPillSize)
-                                    ) {
-                                        Icon(Icons.Rounded.Add, "New Message")
-                                    }
-                                }
                             }
                         }
-                    }
                 }
             }
         }

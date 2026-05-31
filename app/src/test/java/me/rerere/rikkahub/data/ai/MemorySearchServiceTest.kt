@@ -10,6 +10,9 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneId
 import kotlin.uuid.Uuid
 
 class MemorySearchServiceTest {
@@ -91,6 +94,36 @@ class MemorySearchServiceTest {
         assertTrue(lastMonth?.contains(Instant.parse("2026-04-15T12:00:00Z").toEpochMilli()) == true)
         assertTrue(lastMonth?.contains(Instant.parse("2026-05-15T12:00:00Z").toEpochMilli()) == false)
         assertEquals("4 months ago", fourMonthsAgo?.label)
+    }
+
+    @Test
+    fun parseMemorySearchTimeRangeCarriesLastDayIntoEarlyMorning() {
+        val zone = ZoneId.systemDefault()
+        val now = LocalDate.of(2026, 5, 26).atTime(12, 0).atZone(zone).toInstant().toEpochMilli()
+
+        val lastDay = parseMemorySearchTimeRange("last day", now)
+
+        assertEquals("last day", lastDay?.label)
+        assertTrue(lastDay?.contains(LocalDate.of(2026, 5, 25).atTime(23, 45).atZone(zone).toInstant().toEpochMilli()) == true)
+        assertTrue(lastDay?.contains(LocalDate.of(2026, 5, 26).atTime(6, 59).atZone(zone).toInstant().toEpochMilli()) == true)
+        assertTrue(lastDay?.contains(LocalDate.of(2026, 5, 26).atTime(7, 1).atZone(zone).toInstant().toEpochMilli()) == false)
+    }
+
+    @Test
+    fun parseMemorySearchTimeRangeKeepsOtherFramesSoftAtBoundaries() {
+        val zone = ZoneId.systemDefault()
+        val now = LocalDate.of(2026, 5, 26).atTime(12, 0).atZone(zone).toInstant().toEpochMilli()
+
+        val yesterday = parseMemorySearchTimeRange("yesterday", now)
+        val lastTwoDays = parseMemorySearchTimeRange("last 2 days", now)
+        val lastWeek = parseMemorySearchTimeRange("last week", now)
+        val lastMonth = parseMemorySearchTimeRange("last month", now)
+
+        assertTrue(yesterday?.contains(LocalDate.of(2026, 5, 26).atTime(6, 30).atZone(zone).toInstant().toEpochMilli()) == true)
+        assertTrue(lastTwoDays?.contains(LocalDate.of(2026, 5, 24).atTime(8, 0).atZone(zone).toInstant().toEpochMilli()) == true)
+        assertTrue(lastTwoDays?.contains(LocalDate.of(2026, 5, 24).atStartOfDay(zone).minusMinutes(1).toInstant().toEpochMilli()) == false)
+        assertTrue(lastWeek?.contains(LocalDate.of(2026, 5, 25).atTime(LocalTime.of(5, 0)).atZone(zone).toInstant().toEpochMilli()) == true)
+        assertTrue(lastMonth?.contains(LocalDate.of(2026, 5, 1).atTime(12, 0).atZone(zone).toInstant().toEpochMilli()) == true)
     }
 
     @Test

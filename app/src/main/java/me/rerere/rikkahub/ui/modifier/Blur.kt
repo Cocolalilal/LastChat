@@ -61,5 +61,6 @@ fun Modifier.lastChatBlurEffect(
 fun blurredContainerColor(
     fallback: Color,
 ): Color {
-    return if (LocalLastChatBlur.current.enabled) fallback.copy(alpha = 0.48f) else fallback
+    val blur = LocalLastChatBlur.current
+    return if (blur.enabled && blur.hazeState != null) fallback.copy(alpha = 0.18f) else fallback
 }

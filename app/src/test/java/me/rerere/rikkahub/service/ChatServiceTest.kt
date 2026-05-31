@@ -7,6 +7,7 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MessageNode
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertFalse
@@ -166,6 +167,100 @@ class ChatServiceTest {
                 lastPersistMs = 10_000L,
             )
         )
+    }
+
+    @Test
+    fun needsAssistantReplyAfterToolResultDetectsTrailingToolResult() {
+        val conversation = Conversation.ofId(
+            id = Uuid.random(),
+            messages = listOf(
+                MessageNode.of(UIMessage.user("search it")),
+                MessageNode.of(
+                    UIMessage(
+                        role = MessageRole.ASSISTANT,
+                        parts = listOf(
+                            UIMessagePart.ToolCall(
+                                toolCallId = "call-1",
+                                toolName = "search_web",
+                                arguments = """{"query":"kotlin"}""",
+                            )
+                        ),
+                    )
+                ),
+                MessageNode.of(
+                    UIMessage(
+                        role = MessageRole.TOOL,
+                        parts = listOf(
+                            UIMessagePart.ToolResult(
+                                toolCallId = "call-1",
+                                toolName = "search_web",
+                                content = JsonPrimitive("result"),
+                                arguments = JsonPrimitive("""{"query":"kotlin"}"""),
+                            )
+                        ),
+                    )
+                ),
+            ),
+        )
+
+        assertTrue(conversation.needsAssistantReplyAfterToolResult())
+    }
+
+    @Test
+    fun needsAssistantReplyAfterToolResultDetectsBlankAssistantAfterToolResult() {
+        val conversation = Conversation.ofId(
+            id = Uuid.random(),
+            messages = listOf(
+                MessageNode.of(UIMessage.user("search it")),
+                MessageNode.of(
+                    UIMessage(
+                        role = MessageRole.TOOL,
+                        parts = listOf(
+                            UIMessagePart.ToolResult(
+                                toolCallId = "call-1",
+                                toolName = "search_web",
+                                content = JsonPrimitive("result"),
+                                arguments = JsonPrimitive("""{"query":"kotlin"}"""),
+                            )
+                        ),
+                    )
+                ),
+                MessageNode.of(
+                    UIMessage(
+                        role = MessageRole.ASSISTANT,
+                        parts = emptyList(),
+                    )
+                ),
+            ),
+        )
+
+        assertTrue(conversation.needsAssistantReplyAfterToolResult())
+    }
+
+    @Test
+    fun needsAssistantReplyAfterToolResultIgnoresVisibleAssistantReply() {
+        val conversation = Conversation.ofId(
+            id = Uuid.random(),
+            messages = listOf(
+                MessageNode.of(UIMessage.user("search it")),
+                MessageNode.of(
+                    UIMessage(
+                        role = MessageRole.TOOL,
+                        parts = listOf(
+                            UIMessagePart.ToolResult(
+                                toolCallId = "call-1",
+                                toolName = "search_web",
+                                content = JsonPrimitive("result"),
+                                arguments = JsonPrimitive("""{"query":"kotlin"}"""),
+                            )
+                        ),
+                    )
+                ),
+                MessageNode.of(UIMessage.assistant("Here is the answer.")),
+            ),
+        )
+
+        assertFalse(conversation.needsAssistantReplyAfterToolResult())
     }
 
     @Test
