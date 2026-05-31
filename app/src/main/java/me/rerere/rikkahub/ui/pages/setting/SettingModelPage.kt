@@ -77,6 +77,7 @@ import me.rerere.rikkahub.ui.components.ai.ReasoningButton
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
+import me.rerere.rikkahub.ui.components.ui.AutoSaveIndicator
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.context.LocalToaster
@@ -135,6 +136,7 @@ private fun DefaultTranslationModelSetting(
     vm: SettingVM
 ) {
     var showModal by remember { mutableStateOf(false) }
+    var promptPending by remember { mutableStateOf(false) }
     ModelFeatureCard(
         title = {
             Text(
@@ -194,7 +196,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     },
                     description = {
                         Text(stringResource(R.string.setting_model_page_translate_prompt_vars))
-                    }
+                    },
+                    tail = { AutoSaveIndicator(visible = promptPending) }
                 ) {
                     DebouncedTextField(
                         value = settings.translatePrompt,
@@ -208,7 +211,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         stateKey = "translate_prompt",
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 10,
-                        showSavingIndicator = true,
+                        onPendingChange = { promptPending = it },
                     )
                     TextButton(
                         onClick = {
@@ -233,6 +236,7 @@ private fun DefaultSuggestionModelSetting(
     vm: SettingVM
 ) {
     var showModal by remember { mutableStateOf(false) }
+    var promptPending by remember { mutableStateOf(false) }
     ModelFeatureCard(
         title = {
             Text(
@@ -300,7 +304,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     },
                     description = {
                         Text(stringResource(R.string.setting_model_page_suggestion_prompt_vars))
-                    }
+                    },
+                    tail = { AutoSaveIndicator(visible = promptPending) }
                 ) {
                     DebouncedTextField(
                         value = settings.suggestionPrompt,
@@ -314,7 +319,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         stateKey = "suggestion_prompt",
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 8,
-                        showSavingIndicator = true,
+                        onPendingChange = { promptPending = it },
                     )
                     TextButton(
                         onClick = {
@@ -349,6 +354,7 @@ private fun DefaultTitleModelSetting(
     vm: SettingVM
 ) {
     var showModal by remember { mutableStateOf(false) }
+    var promptPending by remember { mutableStateOf(false) }
     ModelFeatureCard(
         title = {
             Text(stringResource(R.string.setting_model_page_title_model), maxLines = 1)
@@ -405,7 +411,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     },
                     description = {
                         Text(stringResource(R.string.setting_model_page_suggestion_prompt_vars))
-                    }
+                    },
+                    tail = { AutoSaveIndicator(visible = promptPending) }
                 ) {
                     DebouncedTextField(
                         value = settings.titlePrompt,
@@ -419,7 +426,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         stateKey = "title_prompt",
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 8,
-                        showSavingIndicator = true,
+                        onPendingChange = { promptPending = it },
                     )
                     TextButton(
                         onClick = {
@@ -647,6 +654,7 @@ private fun DefaultOcrModelSetting(
     vm: SettingVM
 ) {
     var showModal by remember { mutableStateOf(false) }
+    var promptPending by remember { mutableStateOf(false) }
     ModelFeatureCard(
         title = {
             Text(
@@ -707,7 +715,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     },
                     description = {
                         Text(stringResource(R.string.setting_model_page_ocr_prompt_vars))
-                    }
+                    },
+                    tail = { AutoSaveIndicator(visible = promptPending) }
                 ) {
                     DebouncedTextField(
                         value = settings.ocrPrompt,
@@ -721,7 +730,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         stateKey = "ocr_prompt",
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 10,
-                        showSavingIndicator = true,
+                        onPendingChange = { promptPending = it },
                     )
                     TextButton(
                         onClick = {

@@ -41,6 +41,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -223,9 +224,11 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val catalogSnapshot by vm.modelCatalogSnapshot.collectAsStateWithLifecycle()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
     
     // State for editing a service
     var editingService by remember { mutableStateOf<SearchServiceOptions?>(null) }
+    var showCommonOptions by remember { mutableStateOf(false) }
     
     // Move lazyListState outside for canScroll detection
     val lazyListState = rememberLazyListState()
@@ -253,50 +256,41 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
                 scrollBehavior = scrollBehavior,
                 navigationIcon = {
                     BackButton()
-                },
-                actions = {
-                    var showCommonOptions by remember { mutableStateOf(false) }
-                    IconButton(
-                        onClick = {
-                            showCommonOptions = true
-                        }
-                    ) {
-                        Icon(
-                            Icons.Rounded.Settings,
-                            contentDescription = stringResource(R.string.setting_page_search_common_options)
-                        )
-                    }
-
-                    AddSearchServiceButton(
-                        enableHaptics = settings.displaySetting.enableUIHaptics,
-                        catalogSnapshot = catalogSnapshot,
-                    ) { newService ->
-                        vm.updateSettings(
-                            settings.copy(
-                                searchServices = listOf(newService) + settings.searchServices
-                            )
-                        )
-                    }
-                    
-                    if (showCommonOptions) {
-                        CommonOptionsDialog(
-                            settings = settings,
-                            onDismissRequest = { showCommonOptions = false },
-                            onUpdate = { options ->
-                                vm.updateSettings(
-                                    settings.copy(
-                                        searchCommonOptions = options
-                                    )
-                                )
-                            }
-                        )
-                    }
                 }
             )
         },
+        bottomBar = {
+            ProvidersBottomBar(selectedTab = ProvidersTab.Search) {
+                FloatingActionButton(
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        showCommonOptions = true
+                    },
+                    shape = AppShapes.CardLarge,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = MaterialTheme.colorScheme.onSurface
+                ) {
+                    Icon(
+                        Icons.Rounded.Settings,
+                        contentDescription = stringResource(R.string.setting_page_search_common_options)
+                    )
+                }
+
+                AddSearchServiceButton(
+                    enableHaptics = settings.displaySetting.enableUIHaptics,
+                    catalogSnapshot = catalogSnapshot,
+                    asFab = true
+                ) { newService ->
+                    vm.updateSettings(
+                        settings.copy(
+                            searchServices = listOf(newService) + settings.searchServices
+                        )
+                    )
+                }
+            }
+        },
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) {
-        val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
         val density = LocalDensity.current
         
         // State for swipe neighbor tracking
@@ -320,15 +314,16 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
         var showDeleteDialog by remember { mutableStateOf(false) }
         var serviceToDelete by remember { mutableStateOf<SearchServiceOptions?>(null) }
 
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .imePadding(),
-            contentPadding = it + PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-            state = lazyListState
-        ) {
-            itemsIndexed(settings.searchServices, key = { _, service -> service.id }) { index, service ->
+        Box(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .imePadding(),
+                contentPadding = it + PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 120.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                state = lazyListState
+            ) {
+                itemsIndexed(settings.searchServices, key = { _, service -> service.id }) { index, service ->
                 val position = when {
                     settings.searchServices.size == 1 -> ItemPosition.ONLY
                     index == 0 -> ItemPosition.FIRST
@@ -417,7 +412,23 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
                         }
                     }
                 }
+                }
             }
+
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(120.dp)
+                    .background(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                MaterialTheme.colorScheme.background
+                            )
+                        )
+                    )
+            )
         }
         
         // Delete confirmation dialog
@@ -455,6 +466,20 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
                 }
             )
         }
+    }
+
+    if (showCommonOptions) {
+        CommonOptionsDialog(
+            settings = settings,
+            onDismissRequest = { showCommonOptions = false },
+            onUpdate = { options ->
+                vm.updateSettings(
+                    settings.copy(
+                        searchCommonOptions = options
+                    )
+                )
+            }
+        )
     }
     
     // Edit Search Service Bottom Sheet
@@ -632,25 +657,334 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
 }
 
 @Composable
-private fun AddSearchServiceButton(
+internal fun SearchProvidersContent(
+    vm: SettingVM = koinViewModel(),
+    contentPadding: PaddingValues = PaddingValues(0.dp)
+) {
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val catalogSnapshot by vm.modelCatalogSnapshot.collectAsStateWithLifecycle()
+    val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
+    val density = LocalDensity.current
+    val lazyListState = rememberLazyListState()
+    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
+        if (from.index >= 0 && to.index >= 0 && from.index < settings.searchServices.size && to.index < settings.searchServices.size) {
+            val newServices = settings.searchServices.toMutableList().apply {
+                add(to.index, removeAt(from.index))
+            }
+            vm.updateSettings(settings.copy(searchServices = newServices))
+        }
+    }
+
+    var editingService by remember { mutableStateOf<SearchServiceOptions?>(null) }
+    var draggingIndex by remember { mutableStateOf(-1) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    var isUnlocked by remember { mutableStateOf(false) }
+    var neighborsUnlocked by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var serviceToDelete by remember { mutableStateOf<SearchServiceOptions?>(null) }
+    val canDelete = settings.searchServices.size > 1
+
+    if (dragOffset == 0f && neighborsUnlocked) {
+        neighborsUnlocked = false
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding(),
+            contentPadding = contentPadding + PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 120.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            state = lazyListState
+        ) {
+            itemsIndexed(settings.searchServices, key = { _, service -> service.id }) { index, service ->
+                val position = when {
+                    settings.searchServices.size == 1 -> ItemPosition.ONLY
+                    index == 0 -> ItemPosition.FIRST
+                    index == settings.searchServices.lastIndex -> ItemPosition.LAST
+                    else -> ItemPosition.MIDDLE
+                }
+
+                val thresholdPx = with(density) { 35.dp.toPx() }
+                if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
+                    neighborsUnlocked = true
+                }
+
+                val shouldNeighborFollow = draggingIndex >= 0 &&
+                    draggingIndex != index &&
+                    !isUnlocked &&
+                    !neighborsUnlocked
+
+                val neighborOffset = if (shouldNeighborFollow) {
+                    when (kotlin.math.abs(index - draggingIndex)) {
+                        1 -> dragOffset * 0.35f
+                        2 -> dragOffset * 0.12f
+                        else -> 0f
+                    }
+                } else {
+                    0f
+                }
+
+                ReorderableItem(
+                    state = reorderableState,
+                    key = service.id
+                ) { isDragging ->
+                    androidx.compose.runtime.key(canDelete) {
+                        PhysicsSwipeToDelete(
+                            position = position,
+                            deleteEnabled = canDelete,
+                            neighborOffset = neighborOffset,
+                            onDragProgress = { offset, unlocked ->
+                                draggingIndex = index
+                                dragOffset = offset
+                                isUnlocked = unlocked
+                            },
+                            onDragEnd = {
+                                if (draggingIndex == index) {
+                                    draggingIndex = -1
+                                    dragOffset = 0f
+                                }
+                            },
+                            onDelete = {
+                                serviceToDelete = service
+                                showDeleteDialog = true
+                            },
+                            modifier = Modifier
+                                .scale(if (isDragging) 0.95f else 1f)
+                                .fillMaxWidth()
+                        ) { _ ->
+                            SearchServiceItemContent(
+                                service = service,
+                                catalogSnapshot = catalogSnapshot,
+                                haptics = haptics,
+                                onClick = { editingService = service },
+                                dragHandle = {
+                                    IconButton(
+                                        onClick = {},
+                                        modifier = Modifier.longPressDraggableHandle(
+                                            onDragStarted = {
+                                                haptics.perform(HapticPattern.Pop)
+                                            },
+                                            onDragStopped = {
+                                                haptics.perform(HapticPattern.Thud)
+                                            }
+                                        )
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.DragIndicator,
+                                            contentDescription = null
+                                        )
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(120.dp)
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            MaterialTheme.colorScheme.background
+                        )
+                    )
+                )
+        )
+    }
+
+    if (showDeleteDialog && serviceToDelete != null) {
+        AlertDialog(
+            onDismissRequest = {
+                showDeleteDialog = false
+                serviceToDelete = null
+            },
+            title = { Text(stringResource(R.string.confirm_delete)) },
+            text = { Text(stringResource(R.string.setting_search_delete_service)) },
+            dismissButton = {
+                TextButton(onClick = {
+                    showDeleteDialog = false
+                    serviceToDelete = null
+                }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    serviceToDelete?.let { svc ->
+                        val idx = settings.searchServices.indexOfFirst { it.id == svc.id }
+                        if (idx >= 0) {
+                            val newServices = settings.searchServices.toMutableList()
+                            newServices.removeAt(idx)
+                            vm.updateSettings(settings.copy(searchServices = newServices))
+                        }
+                    }
+                    showDeleteDialog = false
+                    serviceToDelete = null
+                }) {
+                    Text(stringResource(R.string.confirm))
+                }
+            }
+        )
+    }
+
+    SearchServiceEditorSheet(
+        service = editingService,
+        settings = settings,
+        onDismiss = { editingService = null },
+        onSave = { original, updated ->
+            val newServices = settings.searchServices.map {
+                if (it.id == original.id) updated else it
+            }
+            vm.updateSettings(settings.copy(searchServices = newServices))
+            editingService = null
+        }
+    )
+}
+
+@Composable
+private fun SearchServiceEditorSheet(
+    service: SearchServiceOptions?,
+    settings: Settings,
+    onDismiss: () -> Unit,
+    onSave: (SearchServiceOptions, SearchServiceOptions) -> Unit
+) {
+    service ?: return
+    val context = LocalContext.current
+    val bottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var currentService by remember(service) { mutableStateOf(service) }
+
+    ModalBottomSheet(
+        containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+        onDismissRequest = onDismiss,
+        sheetState = bottomSheetState,
+        sheetGesturesEnabled = false,
+        dragHandle = {
+            IconButton(
+                onClick = {
+                    scope.launch {
+                        bottomSheetState.hide()
+                        onDismiss()
+                    }
+                }
+            ) {
+                Icon(Icons.Rounded.KeyboardArrowDown, null)
+            }
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+                .fillMaxHeight(0.8f),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                text = stringResource(
+                    R.string.setting_search_edit_service,
+                    SearchServiceOptions.TYPES[service::class]
+                        ?: context.getString(R.string.setting_search_service_generic)
+                ),
+                style = MaterialTheme.typography.headlineSmall
+            )
+
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f)
+                    .clipToBounds(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                item {
+                    when (currentService) {
+                        is SearchServiceOptions.TavilyOptions -> TavilyOptions(currentService as SearchServiceOptions.TavilyOptions) { currentService = it }
+                        is SearchServiceOptions.ExaOptions -> ExaOptions(currentService as SearchServiceOptions.ExaOptions) { currentService = it }
+                        is SearchServiceOptions.ZhipuOptions -> ZhipuOptions(currentService as SearchServiceOptions.ZhipuOptions) { currentService = it }
+                        is SearchServiceOptions.SearXNGOptions -> SearXNGOptions(currentService as SearchServiceOptions.SearXNGOptions) { currentService = it }
+                        is SearchServiceOptions.LinkUpOptions -> SearchLinkUpOptions(currentService as SearchServiceOptions.LinkUpOptions) { currentService = it }
+                        is SearchServiceOptions.BraveOptions -> BraveOptions(currentService as SearchServiceOptions.BraveOptions) { currentService = it }
+                        is SearchServiceOptions.MetasoOptions -> MetasoOptions(currentService as SearchServiceOptions.MetasoOptions) { currentService = it }
+                        is SearchServiceOptions.OllamaOptions -> OllamaOptions(currentService as SearchServiceOptions.OllamaOptions) { currentService = it }
+                        is SearchServiceOptions.PerplexityOptions -> PerplexityOptions(currentService as SearchServiceOptions.PerplexityOptions) { currentService = it }
+                        is SearchServiceOptions.GrokOptions -> GrokOptions(currentService as SearchServiceOptions.GrokOptions) { currentService = it }
+                        is SearchServiceOptions.BingLocalOptions -> Text(
+                            text = stringResource(R.string.setting_search_bing_no_config),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        is SearchServiceOptions.FirecrawlOptions -> FirecrawlOptions(currentService as SearchServiceOptions.FirecrawlOptions) { currentService = it }
+                        is SearchServiceOptions.JinaOptions -> JinaOptions(currentService as SearchServiceOptions.JinaOptions) { currentService = it }
+                        is SearchServiceOptions.BochaOptions -> BochaOptions(currentService as SearchServiceOptions.BochaOptions) { currentService = it }
+                        is SearchServiceOptions.NanoGPTOptions -> NanoGPTOptions(currentService as SearchServiceOptions.NanoGPTOptions) { currentService = it }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    ProvideTextStyle(MaterialTheme.typography.labelMedium) {
+                        SearchService.getService(currentService).Description()
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.cancel))
+                }
+
+                TextButton(
+                    onClick = {
+                        onSave(service, currentService)
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.chat_page_save))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun AddSearchServiceButton(
     enableHaptics: Boolean,
     catalogSnapshot: ModelCatalogSnapshot?,
+    asFab: Boolean = false,
     onAdd: (SearchServiceOptions) -> Unit
 ) {
     val context = LocalContext.current
     var showBottomSheet by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
 
-    IconButton(
-        onClick = {
-            searchQuery = ""
-            showBottomSheet = true
-        }
-    ) {
-        Icon(Icons.Rounded.Add, stringResource(R.string.setting_page_search_add_provider))
+    val haptics = rememberPremiumHaptics(enabled = enableHaptics)
+    val openSearchProviderSheet = {
+        haptics.perform(HapticPattern.Pop)
+        searchQuery = ""
+        showBottomSheet = true
     }
 
-    val haptics = rememberPremiumHaptics(enabled = enableHaptics)
+    if (asFab) {
+        FloatingActionButton(
+            onClick = openSearchProviderSheet,
+            shape = AppShapes.CardLarge
+        ) {
+            Icon(Icons.Rounded.Add, stringResource(R.string.setting_page_search_add_provider))
+        }
+    } else {
+        IconButton(onClick = openSearchProviderSheet) {
+            Icon(Icons.Rounded.Add, stringResource(R.string.setting_page_search_add_provider))
+        }
+    }
 
     if (showBottomSheet) {
         val bottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -1037,7 +1371,7 @@ fun ZhipuOptions(
 }
 
 @Composable
-private fun CommonOptionsDialog(
+internal fun CommonOptionsDialog(
     settings: Settings,
     onDismissRequest: () -> Unit,
     onUpdate: (SearchCommonOptions) -> Unit

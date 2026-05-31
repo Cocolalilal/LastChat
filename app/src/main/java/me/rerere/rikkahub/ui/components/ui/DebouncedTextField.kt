@@ -1,8 +1,6 @@
 package me.rerere.rikkahub.ui.components.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.input.OutputTransformation
 import androidx.compose.foundation.text.input.TextFieldLineLimits
@@ -13,7 +11,6 @@ import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -21,9 +18,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.TextStyle
@@ -59,10 +56,10 @@ fun DebouncedTextField(
     maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,
     textStyle: TextStyle = LocalTextStyle.current,
     debounceMs: Long = 300L,
-    showSavingIndicator: Boolean = false,
     isSecure: Boolean = false,
     keyboardOptions: androidx.compose.foundation.text.KeyboardOptions = androidx.compose.foundation.text.KeyboardOptions.Default,
     isError: Boolean = false,
+    onPendingChange: (Boolean) -> Unit = {},
     trailingIcon: @Composable (() -> Unit)? = null
 ) {
     val textFieldState = androidx.compose.runtime.key(stateKey) {
@@ -70,6 +67,9 @@ fun DebouncedTextField(
     }
     var isFocused by remember { mutableStateOf(false) }
     var visible by remember { mutableStateOf(false) }
+    val latestValue by rememberUpdatedState(value)
+    val latestOnValueChange by rememberUpdatedState(onValueChange)
+    val latestOnPendingChange by rememberUpdatedState(onPendingChange)
 
     // Sync from external state ONLY when NOT focused
     LaunchedEffect(value, stateKey, isFocused) {
@@ -86,8 +86,8 @@ fun DebouncedTextField(
             .drop(1) // Skip initial emission
             .debounce(debounceMs)
             .collect {
-                if (it.toString() != value) {
-                    onValueChange(it.toString())
+                if (it.toString() != latestValue) {
+                    latestOnValueChange(it.toString())
                 }
             }
     }
@@ -96,14 +96,15 @@ fun DebouncedTextField(
     LaunchedEffect(isFocused) {
         if (!isFocused) {
             val currentText = textFieldState.text.toString()
-            if (currentText != value) {
-                onValueChange(currentText)
+            if (currentText != latestValue) {
+                latestOnValueChange(currentText)
             }
         }
     }
 
-    val hasUnsavedChanges = remember(textFieldState.text, value) {
-        textFieldState.text.toString() != value
+    val hasPendingChanges = textFieldState.text.toString() != value
+    LaunchedEffect(hasPendingChanges) {
+        latestOnPendingChange(hasPendingChanges)
     }
 
     OutlinedTextField(
@@ -124,32 +125,22 @@ fun DebouncedTextField(
         } else null,
         isError = isError,
         keyboardOptions = keyboardOptions,
-        trailingIcon = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (showSavingIndicator && hasUnsavedChanges) {
-                    Text(
-                        text = "Saving...",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.outline,
-                        modifier = Modifier.padding(end = 8.dp)
+        trailingIcon = if (isSecure) {
+            {
+                IconButton(onClick = { visible = !visible }) {
+                    Icon(
+                        imageVector = if (visible) {
+                            Icons.Rounded.VisibilityOff
+                        } else {
+                            Icons.Rounded.Visibility
+                        },
+                        contentDescription = if (visible) "Hide" else "Show",
+                        modifier = Modifier.size(24.dp)
                     )
                 }
-                if (isSecure) {
-                    IconButton(onClick = { visible = !visible }) {
-                        Icon(
-                            imageVector = if (visible) {
-                                Icons.Rounded.VisibilityOff
-                            } else {
-                                Icons.Rounded.Visibility
-                            },
-                            contentDescription = if (visible) "Hide" else "Show",
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                } else {
-                    trailingIcon?.invoke()
-                }
             }
+        } else {
+            trailingIcon
         },
         lineLimits = if (singleLine) {
             TextFieldLineLimits.SingleLine
@@ -162,4 +153,3 @@ fun DebouncedTextField(
         shape = AppShapes.InputField
     )
 }
-

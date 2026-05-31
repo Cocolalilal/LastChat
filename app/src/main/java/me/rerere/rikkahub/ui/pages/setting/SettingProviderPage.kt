@@ -21,6 +21,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -51,6 +52,8 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.horizontalScroll
@@ -72,6 +75,7 @@ import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.ViewList
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetDefaults
@@ -79,6 +83,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -169,11 +174,18 @@ import kotlin.uuid.Uuid
 
 
 @Composable
-fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
+fun SettingProviderPage(
+    initialTab: ProvidersTab = ProvidersTab.Models,
+    vm: SettingVM = koinViewModel()
+) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val catalogSnapshot by vm.modelCatalogSnapshot.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
     val scope = rememberCoroutineScope()
+    val pager = rememberPagerState(initialPage = initialTab.ordinal) { ProvidersTab.entries.size }
+    val currentTab = ProvidersTab.entries[pager.currentPage]
+    var showSearchCommonOptions by remember { mutableStateOf(false) }
+    var showTtsFilterSettings by remember { mutableStateOf(false) }
     val providerPresets = remember(catalogSnapshot) {
         catalogSnapshot?.toProviderPresets()?.takeIf { it.isNotEmpty() }
             ?: FALLBACK_PROVIDER_PRESETS
@@ -245,31 +257,105 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
     Scaffold(
         topBar = {
             OneUITopAppBar(
-                title = stringResource(R.string.setting_provider_page_title),
+                title = stringResource(currentTab.titleRes),
                 scrollBehavior = scrollBehavior,
                 navigationIcon = {
                     BackButton()
-                },
-                actions = {
-                    ImportProviderButton {
-                        addProvider(it)
-                    }
-                    AddButton(
-                        enableHaptics = settings.displaySetting.enableUIHaptics,
-                        providerPresets = providerPresets,
-                    ) {
-                        addProvider(it)
-                    }
                 }
             )
         },
+        bottomBar = {
+            ProvidersBottomBar(
+                selectedTab = currentTab,
+                onTabSelected = { tab ->
+                    scope.launch {
+                        pager.animateScrollToPage(tab.ordinal)
+                    }
+                }
+            ) {
+                AnimatedContent(
+                    targetState = currentTab == ProvidersTab.Models,
+                    label = "providers_secondary_action"
+                ) { isModelProviders ->
+                    if (isModelProviders) {
+                        ImportProviderButton(
+                            asFab = true,
+                            onAdd = { addProvider(it) }
+                        )
+                    } else {
+                        FloatingActionButton(
+                            onClick = {
+                                haptics.perform(HapticPattern.Pop)
+                                if (currentTab == ProvidersTab.Search) {
+                                    showSearchCommonOptions = true
+                                } else {
+                                    showTtsFilterSettings = true
+                                }
+                            },
+                            shape = AppShapes.CardLarge,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        ) {
+                            Icon(
+                                Icons.Rounded.Settings,
+                                contentDescription = if (currentTab == ProvidersTab.Search) {
+                                    stringResource(R.string.setting_page_search_common_options)
+                                } else {
+                                    stringResource(R.string.setting_tts_settings_title)
+                                }
+                            )
+                        }
+                    }
+                }
+
+                when (currentTab) {
+                    ProvidersTab.Models -> AddButton(
+                        enableHaptics = settings.displaySetting.enableUIHaptics,
+                        providerPresets = providerPresets,
+                        asFab = true,
+                        onAdd = { addProvider(it) }
+                    )
+
+                    ProvidersTab.Search -> AddSearchServiceButton(
+                        enableHaptics = settings.displaySetting.enableUIHaptics,
+                        catalogSnapshot = catalogSnapshot,
+                        asFab = true
+                    ) { newService ->
+                        vm.updateSettings(
+                            settings.copy(
+                                searchServices = listOf(newService) + settings.searchServices
+                            )
+                        )
+                    }
+
+                    ProvidersTab.Tts -> AddTTSProviderButton(
+                        catalogSnapshot = catalogSnapshot,
+                        enableHaptics = settings.displaySetting.enableUIHaptics,
+                        asFab = true
+                    ) { newProvider ->
+                        vm.updateSettings(
+                            settings.copy(
+                                ttsProviders = listOf(newProvider) + settings.ttsProviders
+                            )
+                        )
+                    }
+                }
+            }
+        },
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { innerPadding ->
-        Column(
+        HorizontalPager(
+            state = pager,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
-        ) {
+                .consumeWindowInsets(innerPadding)
+        ) { page ->
+            when (ProvidersTab.entries[page]) {
+                ProvidersTab.Models -> Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                ) {
             // Delete confirmation dialog state
             var showDeleteDialog by remember { mutableStateOf(false) }
             var providerToDelete by remember { mutableStateOf<ProviderSetting?>(null) }
@@ -374,7 +460,42 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
                     }
                 )
             }
+                }
+
+                ProvidersTab.Search -> SearchProvidersContent(vm = vm, contentPadding = innerPadding)
+                ProvidersTab.Tts -> TtsProvidersContent(vm = vm, contentPadding = innerPadding)
+            }
         }
+    }
+
+    if (showSearchCommonOptions) {
+        CommonOptionsDialog(
+            settings = settings,
+            onDismissRequest = { showSearchCommonOptions = false },
+            onUpdate = { options ->
+                vm.updateSettings(
+                    settings.copy(
+                        searchCommonOptions = options
+                    )
+                )
+            }
+        )
+    }
+
+    if (showTtsFilterSettings) {
+        TtsTextFilterSettingsDialog(
+            rules = settings.displaySetting.ttsTextFilterRules,
+            onDismiss = { showTtsFilterSettings = false },
+            onUpdateRules = { newRules ->
+                vm.updateSettings(
+                    settings.copy(
+                        displaySetting = settings.displaySetting.copy(
+                            ttsTextFilterRules = newRules
+                        )
+                    )
+                )
+            }
+        )
     }
 }
 
@@ -464,24 +585,25 @@ private fun ProviderListView(
         } else null
     }
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .imePadding(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-        state = lazyListState,
-    ) {
-        // Show preset suggestion if no providers match but preset exists
-        if (matchingPreset != null) {
-            item {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding(),
+            contentPadding = PaddingValues(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 120.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            state = lazyListState,
+        ) {
+            // Show preset suggestion if no providers match but preset exists
+            if (matchingPreset != null) {
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
                     Text(
                         text = stringResource(R.string.setting_provider_page_no_providers_but_preset),
                         style = MaterialTheme.typography.bodyMedium,
@@ -527,10 +649,10 @@ private fun ProviderListView(
                         }
                     }
                 }
+                }
             }
-        }
-        
-        itemsIndexed(providers, key = { _, it -> it.id }) { index, provider ->
+
+            itemsIndexed(providers, key = { _, it -> it.id }) { index, provider ->
                 val position = when {
                     providers.size == 1 -> ItemPosition.ONLY
                     index == 0 -> ItemPosition.FIRST
@@ -619,12 +741,29 @@ private fun ProviderListView(
                         }
                     }
             }
+            }
         }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(120.dp)
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            MaterialTheme.colorScheme.background
+                        )
+                    )
+                )
+        )
     }
 }
 
 @Composable
 private fun ImportProviderButton(
+    asFab: Boolean = false,
     onAdd: (ProviderSetting) -> Unit
 ) {
     val toaster = LocalToaster.current
@@ -643,12 +782,23 @@ private fun ImportProviderButton(
         }
     }
 
-    IconButton(
-        onClick = {
-            showImportDialog = true
+    val openImportDialog = {
+        showImportDialog = true
+    }
+
+    if (asFab) {
+        FloatingActionButton(
+            onClick = openImportDialog,
+            shape = AppShapes.CardLarge,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            contentColor = MaterialTheme.colorScheme.onSurface
+        ) {
+            Icon(Icons.AutoMirrored.Rounded.Input, stringResource(R.string.import_label))
         }
-    ) {
-        Icon(Icons.AutoMirrored.Rounded.Input, null)
+    } else {
+        IconButton(onClick = openImportDialog) {
+            Icon(Icons.AutoMirrored.Rounded.Input, null)
+        }
     }
 
     if (showImportDialog) {
@@ -835,9 +985,10 @@ private fun handleImageQRCode(
 
 
 @Composable
-    private fun AddButton(
+private fun AddButton(
     enableHaptics: Boolean,
     providerPresets: List<me.rerere.rikkahub.ui.pages.setting.components.ProviderPreset>,
+    asFab: Boolean = false,
     onAdd: (ProviderSetting) -> Unit
 ) {
     var showBottomSheet by remember { mutableStateOf(false) }
@@ -849,16 +1000,25 @@ private fun handleImageQRCode(
         onAdd(it)
     }
 
-    IconButton(
-        onClick = {
-            searchQuery = ""
-            showBottomSheet = true
-        }
-    ) {
-        Icon(Icons.Rounded.Add, stringResource(R.string.add))
+    val haptics = rememberPremiumHaptics(enabled = enableHaptics)
+    val openProviderSheet = {
+        haptics.perform(HapticPattern.Pop)
+        searchQuery = ""
+        showBottomSheet = true
     }
 
-    val haptics = rememberPremiumHaptics(enabled = enableHaptics)
+    if (asFab) {
+        FloatingActionButton(
+            onClick = openProviderSheet,
+            shape = AppShapes.CardLarge
+        ) {
+            Icon(Icons.Rounded.Add, stringResource(R.string.add))
+        }
+    } else {
+        IconButton(onClick = openProviderSheet) {
+            Icon(Icons.Rounded.Add, stringResource(R.string.add))
+        }
+    }
 
     // Provider selection bottom sheet
     if (showBottomSheet) {

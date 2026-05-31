@@ -15,6 +15,7 @@ import android.webkit.MimeTypeMap
 import androidx.core.net.toFile
 import androidx.core.net.toUri
 import androidx.navigation.NavHostController
+import androidx.navigation.toRoute
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.rerere.ai.ui.UIMessage
@@ -38,6 +39,10 @@ fun navigateToChatPage(
     persistenceMode: String? = null,
 ) {
     Log.i(TAG, "navigateToChatPage: navigate to $chatId")
+    val isAlreadyOnChat = navController.currentBackStackEntry
+        ?.let { backStackEntry ->
+            runCatching { backStackEntry.toRoute<Screen.Chat>() }.isSuccess
+        } == true
     navController.navigate(
         route = Screen.Chat(
             id = chatId.toString(),
@@ -47,8 +52,10 @@ fun navigateToChatPage(
             persistenceMode = persistenceMode,
         ),
     ) {
-        popUpTo(0) {
-            inclusive = true
+        if (!isAlreadyOnChat) {
+            popUpTo(0) {
+                inclusive = true
+            }
         }
         launchSingleTop = true
     }

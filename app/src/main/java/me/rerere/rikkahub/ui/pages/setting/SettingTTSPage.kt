@@ -23,6 +23,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -121,6 +122,7 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
     val context = LocalContext.current
     var editingProvider by remember { mutableStateOf<TTSProviderSetting?>(null) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
     
     // Move lazyListState outside for canScroll detection
     val lazyListState = rememberLazyListState()
@@ -141,26 +143,38 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                 scrollBehavior = scrollBehavior,
                 navigationIcon = {
                     BackButton()
-                },
-                actions = {
-                    IconButton(onClick = { showFilterSettingsDialog = true }) {
-                        Icon(Icons.Rounded.Settings, contentDescription = stringResource(R.string.setting_tts_settings_title))
-                    }
-                    AddTTSProviderButton(catalogSnapshot = catalogSnapshot) {
-                        vm.updateSettings(
-                            settings.copy(
-                                ttsProviders = listOf(it) + settings.ttsProviders
-                            )
-                        )
-                    }
                 }
             )
         },
+        bottomBar = {
+            ProvidersBottomBar(selectedTab = ProvidersTab.Tts) {
+                FloatingActionButton(
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        showFilterSettingsDialog = true
+                    },
+                    shape = AppShapes.CardLarge,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = MaterialTheme.colorScheme.onSurface
+                ) {
+                    Icon(Icons.Rounded.Settings, contentDescription = stringResource(R.string.setting_tts_settings_title))
+                }
+
+                AddTTSProviderButton(
+                    catalogSnapshot = catalogSnapshot,
+                    enableHaptics = settings.displaySetting.enableUIHaptics,
+                    asFab = true
+                ) {
+                    vm.updateSettings(
+                        settings.copy(
+                            ttsProviders = listOf(it) + settings.ttsProviders
+                        )
+                    )
+                }
+            }
+        },
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { innerPadding ->
-        
-        val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
-        
         // State for swipe neighbor tracking
         var draggingIndex by remember { mutableStateOf(-1) }
         var dragOffset by remember { mutableFloatStateOf(0f) }
@@ -199,15 +213,16 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
             }
         }
 
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .imePadding(),
-            contentPadding = innerPadding + PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-            state = lazyListState
-        ) {
-            itemsIndexed(settings.ttsProviders, key = { _, provider -> provider.id }) { index, provider ->
+        Box(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .imePadding(),
+                contentPadding = innerPadding + PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 120.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                state = lazyListState
+            ) {
+                itemsIndexed(settings.ttsProviders, key = { _, provider -> provider.id }) { index, provider ->
                 val isSelected = settings.selectedTTSProviderId == provider.id
                 val position = when {
                     settings.ttsProviders.size == 1 -> ItemPosition.ONLY
@@ -306,7 +321,23 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                     }
                     } // key(isSelected)
                 }
+                }
             }
+
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(120.dp)
+                    .background(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                MaterialTheme.colorScheme.background
+                            )
+                        )
+                    )
+            )
         }
         
         // Delete confirmation dialog
@@ -465,7 +496,311 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
 }
 
 @Composable
-private fun TtsTextFilterSettingsDialog(
+internal fun TtsProvidersContent(
+    vm: SettingVM = koinViewModel(),
+    contentPadding: PaddingValues = PaddingValues(0.dp)
+) {
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val catalogSnapshot by vm.modelCatalogSnapshot.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
+    val lazyListState = rememberLazyListState()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
+        val newProviders = settings.ttsProviders.toMutableList().apply {
+            add(to.index, removeAt(from.index))
+        }
+        vm.updateSettings(settings.copy(ttsProviders = newProviders))
+    }
+
+    var editingProvider by remember { mutableStateOf<TTSProviderSetting?>(null) }
+    var draggingIndex by remember { mutableStateOf(-1) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    var isUnlocked by remember { mutableStateOf(false) }
+    var neighborsUnlocked by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var providerToDelete by remember { mutableStateOf<TTSProviderSetting?>(null) }
+    val canDelete = settings.ttsProviders.size > 1
+
+    if (dragOffset == 0f && neighborsUnlocked) {
+        neighborsUnlocked = false
+    }
+
+    val tts = LocalTTSState.current
+    val ttsError by tts.error.collectAsState()
+    val toaster = LocalToaster.current
+
+    LaunchedEffect(ttsError) {
+        ttsError?.let { errorMessage ->
+            toaster.show(
+                message = context.getString(R.string.setting_tts_error, errorMessage),
+                type = ToastType.Error
+            )
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding(),
+            contentPadding = contentPadding + PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 120.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            state = lazyListState
+        ) {
+            itemsIndexed(settings.ttsProviders, key = { _, provider -> provider.id }) { index, provider ->
+                val isSelected = settings.selectedTTSProviderId == provider.id
+                val position = when {
+                    settings.ttsProviders.size == 1 -> ItemPosition.ONLY
+                    index == 0 -> ItemPosition.FIRST
+                    index == settings.ttsProviders.lastIndex -> ItemPosition.LAST
+                    else -> ItemPosition.MIDDLE
+                }
+
+                val thresholdPx = with(density) { 35.dp.toPx() }
+                if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
+                    neighborsUnlocked = true
+                }
+
+                val shouldNeighborFollow = draggingIndex >= 0 &&
+                    draggingIndex != index &&
+                    !isUnlocked &&
+                    !neighborsUnlocked
+
+                val neighborOffset = if (shouldNeighborFollow) {
+                    when (kotlin.math.abs(index - draggingIndex)) {
+                        1 -> dragOffset * 0.35f
+                        2 -> dragOffset * 0.12f
+                        else -> 0f
+                    }
+                } else {
+                    0f
+                }
+
+                ReorderableItem(
+                    state = reorderableState,
+                    key = provider.id,
+                    animateItemModifier = Modifier
+                ) { isDragging ->
+                    key(isSelected) {
+                        PhysicsSwipeToDelete(
+                            position = if (isSelected) ItemPosition.ONLY else position,
+                            groupCornerRadius = if (isSelected) 100.dp else 24.dp,
+                            deleteEnabled = canDelete && !isSelected,
+                            neighborOffset = neighborOffset,
+                            onDragProgress = { offset, unlocked ->
+                                draggingIndex = index
+                                dragOffset = offset
+                                isUnlocked = unlocked
+                            },
+                            onDragEnd = {
+                                if (draggingIndex == index) {
+                                    draggingIndex = -1
+                                    dragOffset = 0f
+                                }
+                            },
+                            onDelete = {
+                                providerToDelete = provider
+                                showDeleteDialog = true
+                            },
+                            modifier = Modifier
+                                .scale(if (isDragging) 0.95f else 1f)
+                                .fillMaxWidth()
+                        ) { _ ->
+                            TTSProviderItemContent(
+                                provider = provider,
+                                isSelected = isSelected,
+                                catalogSnapshot = catalogSnapshot,
+                                haptics = haptics,
+                                onSelect = {
+                                    if (!isSelected) {
+                                        haptics.perform(HapticPattern.Pop)
+                                        vm.updateSettings(settings.copy(selectedTTSProviderId = provider.id))
+                                    }
+                                },
+                                onEdit = { editingProvider = provider },
+                                dragHandle = {
+                                    IconButton(
+                                        onClick = {},
+                                        modifier = Modifier.longPressDraggableHandle(
+                                            onDragStarted = { haptics.perform(HapticPattern.Pop) },
+                                            onDragStopped = { haptics.perform(HapticPattern.Thud) }
+                                        )
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.DragIndicator,
+                                            contentDescription = null
+                                        )
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(120.dp)
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            MaterialTheme.colorScheme.background
+                        )
+                    )
+                )
+        )
+    }
+
+    if (showDeleteDialog && providerToDelete != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = {
+                showDeleteDialog = false
+                providerToDelete = null
+            },
+            title = { Text(stringResource(R.string.confirm_delete)) },
+            text = { Text(stringResource(R.string.setting_tts_delete_service)) },
+            dismissButton = {
+                TextButton(onClick = {
+                    showDeleteDialog = false
+                    providerToDelete = null
+                }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    providerToDelete?.let { provider ->
+                        val newProviders = settings.ttsProviders - provider
+                        val newSelectedId =
+                            if (settings.selectedTTSProviderId == provider.id) DEFAULT_SYSTEM_TTS_ID else settings.selectedTTSProviderId
+                        vm.updateSettings(
+                            settings.copy(
+                                ttsProviders = newProviders,
+                                selectedTTSProviderId = newSelectedId
+                            )
+                        )
+                    }
+                    showDeleteDialog = false
+                    providerToDelete = null
+                }) {
+                    Text(stringResource(R.string.confirm))
+                }
+            }
+        )
+    }
+
+    TtsProviderEditorSheet(
+        provider = editingProvider,
+        onDismiss = { editingProvider = null },
+        onSave = { original, updated ->
+            val newProviders = settings.ttsProviders.map {
+                if (it.id == original.id) updated else it
+            }
+            vm.updateSettings(settings.copy(ttsProviders = newProviders))
+            editingProvider = null
+        }
+    )
+}
+
+@Composable
+private fun TtsProviderEditorSheet(
+    provider: TTSProviderSetting?,
+    onDismiss: () -> Unit,
+    onSave: (TTSProviderSetting, TTSProviderSetting) -> Unit
+) {
+    provider ?: return
+    val context = LocalContext.current
+    val bottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var currentProvider by remember(provider) { mutableStateOf(provider) }
+    val tts = LocalTTSState.current
+    val scope = rememberCoroutineScope()
+
+    ModalBottomSheet(
+        containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+        onDismissRequest = onDismiss,
+        sheetState = bottomSheetState,
+        sheetGesturesEnabled = false,
+        dragHandle = {
+            IconButton(
+                onClick = {
+                    scope.launch {
+                        bottomSheetState.hide()
+                        onDismiss()
+                    }
+                }
+            ) {
+                Icon(Icons.Rounded.KeyboardArrowDown, null)
+            }
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+                .fillMaxHeight(0.8f),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.setting_tts_page_edit_provider),
+                    style = MaterialTheme.typography.headlineSmall
+                )
+                IconButton(
+                    onClick = {
+                        scope.launch {
+                            tts.speak(
+                                text = context.getString(R.string.setting_tts_test_voice_preview),
+                                overrideSetting = currentProvider
+                            )
+                        }
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.VolumeUp,
+                        contentDescription = stringResource(R.string.setting_tts_test_voice)
+                    )
+                }
+            }
+
+            TTSProviderConfigure(
+                setting = currentProvider,
+                onValueChange = { currentProvider = it },
+                modifier = Modifier.weight(1f)
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.cancel))
+                }
+
+                TextButton(
+                    onClick = { onSave(provider, currentProvider) },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.chat_page_save))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun TtsTextFilterSettingsDialog(
     rules: List<me.rerere.rikkahub.data.datastore.TtsTextFilterRule>,
     onDismiss: () -> Unit,
     onUpdateRules: (List<me.rerere.rikkahub.data.datastore.TtsTextFilterRule>) -> Unit
@@ -773,22 +1108,34 @@ private fun TtsFilterRuleEditDialog(
     )
 }
 @Composable
-private fun AddTTSProviderButton(
+internal fun AddTTSProviderButton(
     catalogSnapshot: ModelCatalogSnapshot?,
+    enableHaptics: Boolean = true,
+    asFab: Boolean = false,
     onAdd: (TTSProviderSetting) -> Unit
 ) {
     var showBottomSheet by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
 
-    val haptics = rememberPremiumHaptics()
+    val haptics = rememberPremiumHaptics(enabled = enableHaptics)
 
-    IconButton(
-        onClick = {
-            searchQuery = ""
-            showBottomSheet = true
+    val openTtsProviderSheet = {
+        haptics.perform(HapticPattern.Pop)
+        searchQuery = ""
+        showBottomSheet = true
+    }
+
+    if (asFab) {
+        FloatingActionButton(
+            onClick = openTtsProviderSheet,
+            shape = AppShapes.CardLarge
+        ) {
+            Icon(Icons.Rounded.Add, stringResource(R.string.setting_tts_page_add_provider_content_description))
         }
-    ) {
-        Icon(Icons.Rounded.Add, stringResource(R.string.setting_tts_page_add_provider_content_description))
+    } else {
+        IconButton(onClick = openTtsProviderSheet) {
+            Icon(Icons.Rounded.Add, stringResource(R.string.setting_tts_page_add_provider_content_description))
+        }
     }
 
     if (showBottomSheet) {

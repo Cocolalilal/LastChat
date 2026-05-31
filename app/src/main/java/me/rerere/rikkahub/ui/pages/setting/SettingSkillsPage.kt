@@ -85,6 +85,7 @@ import me.rerere.rikkahub.data.model.InjectionPosition
 import me.rerere.rikkahub.data.model.Skill
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
+import me.rerere.rikkahub.ui.components.ui.AutoSaveIndicator
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
@@ -721,6 +722,10 @@ fun SkillEditorSheet(
     var availableAssistantIds by remember { mutableStateOf(skill?.availableAssistantIds ?: emptySet()) }
     var showIconPicker by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
+    var namePending by remember { mutableStateOf(false) }
+    var descriptionPending by remember { mutableStateOf(false) }
+    var instructionsPending by remember { mutableStateOf(false) }
+    val isAutoSaving = isEditing && (namePending || descriptionPending || instructionsPending)
 
     ModalBottomSheet(
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -759,6 +764,7 @@ fun SkillEditorSheet(
                     ),
                     style = MaterialTheme.typography.titleLarge
                 )
+                AutoSaveIndicator(visible = isAutoSaving)
             }
 
             Column(
@@ -816,7 +822,7 @@ fun SkillEditorSheet(
                             modifier = Modifier.weight(1f),
                             placeholder = stringResource(R.string.skills_page_name_placeholder),
                             singleLine = true,
-                            showSavingIndicator = true,
+                            onPendingChange = { namePending = it },
                             textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace)
                         )
                     }
@@ -856,7 +862,7 @@ fun SkillEditorSheet(
                         placeholder = stringResource(R.string.skills_page_description_placeholder),
                         minLines = 2,
                         maxLines = 4,
-                        showSavingIndicator = true,
+                        onPendingChange = { descriptionPending = it },
                     )
                 }
 
@@ -883,7 +889,7 @@ fun SkillEditorSheet(
                             .fillMaxWidth()
                             .height(200.dp),
                         placeholder = stringResource(R.string.skills_page_instructions_placeholder),
-                        showSavingIndicator = true,
+                        onPendingChange = { instructionsPending = it },
                         textStyle = MaterialTheme.typography.bodyMedium.copy(
                             fontFamily = FontFamily.Monospace,
                             lineHeight = 20.sp

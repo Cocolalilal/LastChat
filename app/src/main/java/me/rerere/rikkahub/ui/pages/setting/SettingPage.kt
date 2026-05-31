@@ -54,8 +54,6 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.InvertColors
 import androidx.compose.material.icons.rounded.Language
-import androidx.compose.material.icons.rounded.Public
-import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material.icons.rounded.PhoneAndroid
@@ -217,22 +215,6 @@ fun SettingPage(
                         icon = { Icon(Icons.Rounded.Cloud, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingProvider) }
-                    )
-
-                    SettingGroupItem(
-                        title = stringResource(R.string.setting_page_search_service),
-                        subtitle = stringResource(R.string.setting_page_search_service_desc),
-                        icon = { Icon(Icons.Rounded.Public, null, modifier = Modifier.size(20.dp)) },
-                        contentPadding = mainSettingItemPadding,
-                        onClick = { navController.navigate(Screen.SettingSearch) }
-                    )
-
-                    SettingGroupItem(
-                        title = stringResource(R.string.setting_page_tts_service),
-                        subtitle = stringResource(R.string.setting_page_tts_service_desc),
-                        icon = { Icon(Icons.Rounded.RecordVoiceOver, null, modifier = Modifier.size(20.dp)) },
-                        contentPadding = mainSettingItemPadding,
-                        onClick = { navController.navigate(Screen.SettingTTS) }
                     )
 
                     SettingGroupItem(

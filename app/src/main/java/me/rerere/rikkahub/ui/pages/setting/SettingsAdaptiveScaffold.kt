@@ -1,6 +1,9 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -9,20 +12,21 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsTopHeight
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -35,10 +39,10 @@ import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Public
-import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Tune
@@ -49,8 +53,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.currentWindowDpSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
@@ -58,6 +65,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import me.rerere.rikkahub.R
@@ -66,7 +74,11 @@ import me.rerere.rikkahub.ui.components.nav.LocalBackButtonVisible
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
-import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
+
+val LocalSettingsWideLayout = staticCompositionLocalOf { false }
+
+private var settingsPaneScrollIndex = 0
+private var settingsPaneScrollOffset = 0
 
 enum class SettingsDestination {
     Display,
@@ -109,14 +121,27 @@ fun AdaptiveSettingsScaffold(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        SettingsNavigationPane(selected = selected)
+        CompositionLocalProvider(LocalSettingsWideLayout provides true) {
+            SettingsNavigationPane(selected = selected)
+        }
         Box(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
         ) {
-            CompositionLocalProvider(LocalBackButtonVisible provides false) {
-                detailContent()
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxHeight()
+                    .widthIn(max = 900.dp)
+                    .fillMaxWidth()
+            ) {
+                CompositionLocalProvider(
+                    LocalBackButtonVisible provides false,
+                    LocalSettingsWideLayout provides true,
+                ) {
+                    detailContent()
+                }
             }
         }
     }
@@ -128,23 +153,38 @@ private fun SettingsNavigationPane(
     navController: NavHostController = LocalNavController.current,
 ) {
     val groups = settingsPaneGroups()
+    val selectedMain = selected.mainDestination()
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = settingsPaneScrollIndex,
+        initialFirstVisibleItemScrollOffset = settingsPaneScrollOffset,
+    )
+
+    LaunchedEffect(listState) {
+        snapshotFlow {
+            listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
+        }.collect { (index, offset) ->
+            settingsPaneScrollIndex = index
+            settingsPaneScrollOffset = offset
+        }
+    }
 
     Surface(
         modifier = Modifier
             .fillMaxHeight()
             .width(336.dp)
+            .statusBarsPadding()
             .padding(start = 8.dp, top = 8.dp, bottom = 8.dp),
-        shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
+        shape = RoundedCornerShape(32.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         tonalElevation = 1.dp,
     ) {
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             item {
-                Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
                 Text(
                     text = stringResource(R.string.settings),
                     style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
@@ -155,18 +195,25 @@ private fun SettingsNavigationPane(
 
             groups.forEach { group ->
                 item(key = group.titleRes) {
-                    SettingsGroup(
-                        title = stringResource(group.titleRes),
-                        horizontalPadding = 0.dp,
-                        titleStartPadding = 12.dp,
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
+                        Text(
+                            text = stringResource(group.titleRes),
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(start = 12.dp, top = 10.dp, bottom = 4.dp)
+                        )
                         group.entries.forEach { entry ->
-                            SettingsPaneItem(
-                                title = stringResource(entry.titleRes),
-                                icon = entry.icon,
-                                selected = selected == entry.destination,
-                                onClick = {
-                                    navigateSettingsPane(navController, entry.screen)
+                            val expanded = selectedMain == entry.destination && entry.children.isNotEmpty()
+                            SettingsPaneEntryGroup(
+                                entry = entry,
+                                selected = selected,
+                                selectedMain = selectedMain,
+                                expanded = expanded,
+                                onNavigate = { destination ->
+                                    navigateSettingsPane(navController, destination)
                                 }
                             )
                         }
@@ -180,8 +227,10 @@ private fun SettingsNavigationPane(
 private data class SettingsPaneEntry(
     val destination: SettingsDestination,
     val titleRes: Int,
+    val descriptionRes: Int?,
     val icon: ImageVector,
     val screen: Screen,
+    val children: List<SettingsPaneEntry> = emptyList(),
 )
 
 private data class SettingsPaneGroup(
@@ -191,8 +240,9 @@ private data class SettingsPaneGroup(
 
 private fun navigateSettingsPane(
     navController: NavHostController,
-    screen: Screen,
+    entry: SettingsPaneEntry,
 ) {
+    val screen = entry.screen
     runCatching {
         navController.navigate(screen) {
             launchSingleTop = true
@@ -209,10 +259,66 @@ private fun navigateSettingsPane(
 }
 
 @Composable
+private fun SettingsPaneEntryGroup(
+    entry: SettingsPaneEntry,
+    selected: SettingsDestination,
+    selectedMain: SettingsDestination,
+    expanded: Boolean,
+    onNavigate: (SettingsPaneEntry) -> Unit,
+) {
+    val selectedInGroup = selectedMain == entry.destination
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = if (expanded) 4.dp else 0.dp)
+            .animateContentSize(
+                animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f)
+            ),
+        verticalArrangement = Arrangement.spacedBy(if (expanded) 0.dp else 4.dp)
+    ) {
+        SettingsPaneItem(
+            entry = entry,
+            selected = selectedInGroup,
+            expanded = expanded,
+            showDescription = selectedInGroup,
+            isChild = false,
+            topRadius = 24.dp,
+            bottomRadius = if (expanded) 8.dp else 24.dp,
+            onClick = { onNavigate(entry) }
+        )
+
+        AnimatedVisibility(visible = expanded) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(0.dp)
+            ) {
+                entry.children.forEachIndexed { index, child ->
+                    SettingsPaneItem(
+                        entry = child,
+                        selected = selected == child.destination,
+                        expanded = false,
+                        showDescription = false,
+                        isChild = true,
+                        topRadius = 8.dp,
+                        bottomRadius = if (index == entry.children.lastIndex) 24.dp else 8.dp,
+                        onClick = { onNavigate(child) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun SettingsPaneItem(
-    title: String,
-    icon: ImageVector,
+    entry: SettingsPaneEntry,
     selected: Boolean,
+    expanded: Boolean,
+    showDescription: Boolean,
+    isChild: Boolean,
+    topRadius: Dp,
+    bottomRadius: Dp,
     onClick: () -> Unit,
 ) {
     val haptics = rememberPremiumHaptics()
@@ -222,6 +328,25 @@ private fun SettingsPaneItem(
         targetValue = if (isPressed) 0.96f else 1f,
         animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
         label = "settings_pane_item_scale"
+    )
+    val animatedTopRadius by animateDpAsState(
+        targetValue = topRadius,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        label = "settings_pane_item_top_radius"
+    )
+    val animatedBottomRadius by animateDpAsState(
+        targetValue = bottomRadius,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        label = "settings_pane_item_bottom_radius"
+    )
+    val itemHeight by animateDpAsState(
+        targetValue = when {
+            showDescription -> 78.dp
+            isChild -> 48.dp
+            else -> 58.dp
+        },
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        label = "settings_pane_item_height"
     )
     val containerColor = if (selected) {
         MaterialTheme.colorScheme.primaryContainer
@@ -239,21 +364,31 @@ private fun SettingsPaneItem(
             if (!selected) {
                 haptics.perform(HapticPattern.Pop)
                 onClick()
+            } else if (entry.children.isNotEmpty()) {
+                haptics.perform(HapticPattern.Pop)
+                onClick()
             }
         },
         interactionSource = interactionSource,
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(
+            topStart = animatedTopRadius,
+            topEnd = animatedTopRadius,
+            bottomStart = animatedBottomRadius,
+            bottomEnd = animatedBottomRadius,
+        ),
         color = containerColor,
         contentColor = contentColor,
-        modifier = Modifier.graphicsLayer {
-            scaleX = scale
-            scaleY = scale
-        }
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
     ) {
         Row(
             modifier = Modifier
-                .height(58.dp)
-                .padding(horizontal = 14.dp),
+                .height(itemHeight)
+                .padding(horizontal = if (isChild) 16.dp else 14.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -264,64 +399,102 @@ private fun SettingsPaneItem(
                 } else {
                     MaterialTheme.colorScheme.surfaceContainerHigh
                 },
-                modifier = Modifier.size(34.dp)
+                modifier = Modifier.size(if (isChild) 28.dp else 34.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(icon, null, modifier = Modifier.size(19.dp))
+                    Icon(entry.icon, null, modifier = Modifier.size(if (isChild) 16.dp else 19.dp))
                 }
             }
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            Column(
                 modifier = Modifier.weight(1f)
-            )
-            if (selected) {
+            ) {
+                Text(
+                    text = stringResource(entry.titleRes),
+                    style = if (isChild) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (showDescription && entry.descriptionRes != null) {
+                    Text(
+                        text = stringResource(entry.descriptionRes),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = contentColor.copy(alpha = 0.78f),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            if (entry.children.isNotEmpty()) {
+                Icon(
+                    if (expanded) Icons.Rounded.KeyboardArrowDown else Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                    null,
+                    modifier = Modifier.size(20.dp)
+                )
+            } else if (selected && !isChild) {
                 Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, modifier = Modifier.size(20.dp))
             }
         }
     }
 }
 
+private fun SettingsDestination.mainDestination(): SettingsDestination {
+    return when (this) {
+        SettingsDestination.Fonts,
+        SettingsDestination.UiCustomization,
+        SettingsDestination.RpOptimizations -> SettingsDestination.Display
+        SettingsDestination.Search,
+        SettingsDestination.Tts -> SettingsDestination.Providers
+        SettingsDestination.Skills,
+        SettingsDestination.Lorebooks -> SettingsDestination.PromptInjections
+        else -> this
+    }
+}
+
 private fun settingsPaneGroups(): List<SettingsPaneGroup> {
+    val displayChildren = listOf(
+        SettingsPaneEntry(SettingsDestination.Fonts, R.string.setting_fonts_title, null, Icons.Rounded.Tune, Screen.SettingFonts),
+        SettingsPaneEntry(SettingsDestination.UiCustomization, R.string.setting_ui_customization_title, null, Icons.Rounded.Brush, Screen.SettingUICustomization),
+        SettingsPaneEntry(SettingsDestination.RpOptimizations, R.string.setting_rp_optimizations_title, null, Icons.Rounded.AutoAwesome, Screen.SettingRpOptimizations),
+    )
+    val providerChildren = listOf(
+        SettingsPaneEntry(SettingsDestination.Search, R.string.setting_page_search_service, null, Icons.Rounded.Public, Screen.SettingSearch),
+        SettingsPaneEntry(SettingsDestination.Tts, R.string.setting_page_tts_service, null, Icons.AutoMirrored.Rounded.VolumeUp, Screen.SettingTTS),
+    )
+    val promptChildren = listOf(
+        SettingsPaneEntry(SettingsDestination.Skills, R.string.prompt_injections_page_skills, null, Icons.Rounded.Code, Screen.SettingSkills()),
+        SettingsPaneEntry(SettingsDestination.Lorebooks, R.string.prompt_injections_page_lorebooks, null, Icons.Rounded.Folder, Screen.SettingLorebooks),
+    )
+
     return listOf(
         SettingsPaneGroup(
             titleRes = R.string.setting_page_general_settings,
             entries = listOf(
-                SettingsPaneEntry(SettingsDestination.Display, R.string.setting_page_display_setting, Icons.Rounded.DesktopWindows, Screen.SettingDisplay),
-                SettingsPaneEntry(SettingsDestination.UiCustomization, R.string.setting_ui_customization_title, Icons.Rounded.Brush, Screen.SettingUICustomization),
-                SettingsPaneEntry(SettingsDestination.Fonts, R.string.setting_fonts_title, Icons.Rounded.Tune, Screen.SettingFonts),
-                SettingsPaneEntry(SettingsDestination.RpOptimizations, R.string.setting_rp_optimizations_title, Icons.Rounded.AutoAwesome, Screen.SettingRpOptimizations),
-                SettingsPaneEntry(SettingsDestination.Assistants, R.string.setting_page_assistant, Icons.Rounded.Group, Screen.Assistant),
-                SettingsPaneEntry(SettingsDestination.PromptInjections, R.string.setting_page_prompt_injections, Icons.Rounded.Extension, Screen.SettingPromptInjections),
-                SettingsPaneEntry(SettingsDestination.Skills, R.string.prompt_injections_page_skills, Icons.Rounded.Code, Screen.SettingSkills()),
-                SettingsPaneEntry(SettingsDestination.Lorebooks, R.string.prompt_injections_page_lorebooks, Icons.Rounded.Folder, Screen.SettingLorebooks),
+                SettingsPaneEntry(SettingsDestination.Display, R.string.setting_page_display_setting, R.string.setting_page_display_setting_desc, Icons.Rounded.DesktopWindows, Screen.SettingDisplay, displayChildren),
+                SettingsPaneEntry(SettingsDestination.Assistants, R.string.setting_page_assistant, R.string.setting_page_assistant_desc, Icons.Rounded.Group, Screen.Assistant),
+                SettingsPaneEntry(SettingsDestination.PromptInjections, R.string.setting_page_prompt_injections, R.string.setting_page_prompt_injections_desc, Icons.Rounded.Extension, Screen.SettingPromptInjections, promptChildren),
             )
         ),
         SettingsPaneGroup(
             titleRes = R.string.setting_page_model_and_services,
             entries = listOf(
-                SettingsPaneEntry(SettingsDestination.Models, R.string.setting_page_default_model, Icons.Rounded.AccountTree, Screen.SettingModels),
-                SettingsPaneEntry(SettingsDestination.Providers, R.string.setting_page_providers, Icons.Rounded.Cloud, Screen.SettingProvider),
-                SettingsPaneEntry(SettingsDestination.Search, R.string.setting_page_search_service, Icons.Rounded.Public, Screen.SettingSearch),
-                SettingsPaneEntry(SettingsDestination.Tts, R.string.setting_page_tts_service, Icons.Rounded.RecordVoiceOver, Screen.SettingTTS),
-                SettingsPaneEntry(SettingsDestination.Mcp, R.string.setting_page_mcp, Icons.Rounded.Settings, Screen.SettingMcp),
-                SettingsPaneEntry(SettingsDestination.Web, R.string.setting_page_web_server, Icons.Rounded.Language, Screen.SettingWeb),
-                SettingsPaneEntry(SettingsDestination.AndroidIntegration, R.string.setting_android_integration, Icons.Rounded.PhoneAndroid, Screen.SettingAndroidIntegration),
+                SettingsPaneEntry(SettingsDestination.Models, R.string.setting_page_default_model, R.string.setting_page_default_model_desc, Icons.Rounded.AccountTree, Screen.SettingModels),
+                SettingsPaneEntry(SettingsDestination.Providers, R.string.setting_page_providers, R.string.setting_page_providers_desc, Icons.Rounded.Cloud, Screen.SettingProvider, providerChildren),
+                SettingsPaneEntry(SettingsDestination.Mcp, R.string.setting_page_mcp, R.string.setting_page_mcp_desc, Icons.Rounded.Settings, Screen.SettingMcp),
+                SettingsPaneEntry(SettingsDestination.Web, R.string.setting_page_web_server, R.string.setting_page_web_server_desc, Icons.Rounded.Language, Screen.SettingWeb),
+                SettingsPaneEntry(SettingsDestination.AndroidIntegration, R.string.setting_android_integration, R.string.setting_android_integration_desc, Icons.Rounded.PhoneAndroid, Screen.SettingAndroidIntegration),
             )
         ),
         SettingsPaneGroup(
             titleRes = R.string.setting_page_data_settings,
             entries = listOf(
-                SettingsPaneEntry(SettingsDestination.Backup, R.string.setting_page_data_backup, Icons.Rounded.CloudUpload, Screen.Backup),
-                SettingsPaneEntry(SettingsDestination.ChatStorage, R.string.setting_page_chat_storage, Icons.Rounded.Storage, Screen.SettingChatStorage),
+                SettingsPaneEntry(SettingsDestination.Backup, R.string.setting_page_data_backup, R.string.setting_page_data_backup_desc, Icons.Rounded.CloudUpload, Screen.Backup),
+                SettingsPaneEntry(SettingsDestination.ChatStorage, R.string.setting_page_chat_storage, null, Icons.Rounded.Storage, Screen.SettingChatStorage),
             )
         ),
         SettingsPaneGroup(
             titleRes = R.string.setting_page_about,
             entries = listOf(
-                SettingsPaneEntry(SettingsDestination.About, R.string.setting_page_about, Icons.Rounded.Info, Screen.SettingAbout),
+                SettingsPaneEntry(SettingsDestination.About, R.string.setting_page_about, R.string.setting_page_about_desc, Icons.Rounded.Info, Screen.SettingAbout),
             )
         ),
     )

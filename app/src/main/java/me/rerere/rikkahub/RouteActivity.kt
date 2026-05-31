@@ -806,7 +806,56 @@ class RouteActivity : ComponentActivity() {
                         }
                     }
 
-                    composable<Screen.SettingProvider> {
+                    composable<Screen.SettingProvider>(
+                        enterTransition = {
+                            if (useWideSettingsLayout) {
+                                fadeIn(animationSpec = tween(120))
+                            } else if (
+                                initialState.destination.route?.contains("SettingSearch") == true ||
+                                initialState.destination.route?.contains("SettingTTS") == true
+                            ) {
+                                lateralEnterTransition(offset = { -it }, motionPolicy = motionPolicy)
+                            } else {
+                                null
+                            }
+                        },
+                        exitTransition = {
+                            if (useWideSettingsLayout) {
+                                fadeOut(animationSpec = tween(90))
+                            } else if (
+                                targetState.destination.route?.contains("SettingSearch") == true ||
+                                targetState.destination.route?.contains("SettingTTS") == true
+                            ) {
+                                lateralExitTransition(offset = { -it }, motionPolicy = motionPolicy)
+                            } else {
+                                null
+                            }
+                        },
+                        popEnterTransition = {
+                            if (useWideSettingsLayout) {
+                                fadeIn(animationSpec = tween(120))
+                            } else if (
+                                initialState.destination.route?.contains("SettingSearch") == true ||
+                                initialState.destination.route?.contains("SettingTTS") == true
+                            ) {
+                                lateralEnterTransition(offset = { -it }, motionPolicy = motionPolicy)
+                            } else {
+                                null
+                            }
+                        },
+                        popExitTransition = {
+                            if (useWideSettingsLayout) {
+                                fadeOut(animationSpec = tween(90))
+                            } else if (
+                                targetState.destination.route?.contains("SettingSearch") == true ||
+                                targetState.destination.route?.contains("SettingTTS") == true
+                            ) {
+                                lateralExitTransition(offset = { -it }, motionPolicy = motionPolicy)
+                            } else {
+                                null
+                            }
+                        }
+                    ) {
                         AdaptiveSettingsScaffold(selected = SettingsDestination.Providers) {
                             SettingProviderPage()
                         }
@@ -838,15 +887,109 @@ class RouteActivity : ComponentActivity() {
                         }
                     }
 
-                    composable<Screen.SettingSearch> {
-                        AdaptiveSettingsScaffold(selected = SettingsDestination.Search) {
-                            SettingSearchPage()
+                    composable<Screen.SettingSearch>(
+                        enterTransition = {
+                            if (useWideSettingsLayout) {
+                                fadeIn(animationSpec = tween(120))
+                            } else if (initialState.destination.route?.contains("SettingProvider") == true) {
+                                lateralEnterTransition(offset = { it }, motionPolicy = motionPolicy)
+                            } else if (initialState.destination.route?.contains("SettingTTS") == true) {
+                                lateralEnterTransition(offset = { -it }, motionPolicy = motionPolicy)
+                            } else {
+                                null
+                            }
+                        },
+                        exitTransition = {
+                            if (useWideSettingsLayout) {
+                                fadeOut(animationSpec = tween(90))
+                            } else if (targetState.destination.route?.contains("SettingProvider") == true) {
+                                lateralExitTransition(offset = { it }, motionPolicy = motionPolicy)
+                            } else if (targetState.destination.route?.contains("SettingTTS") == true) {
+                                lateralExitTransition(offset = { -it }, motionPolicy = motionPolicy)
+                            } else {
+                                null
+                            }
+                        },
+                        popEnterTransition = {
+                            if (useWideSettingsLayout) {
+                                fadeIn(animationSpec = tween(120))
+                            } else if (initialState.destination.route?.contains("SettingProvider") == true) {
+                                lateralEnterTransition(offset = { it }, motionPolicy = motionPolicy)
+                            } else if (initialState.destination.route?.contains("SettingTTS") == true) {
+                                lateralEnterTransition(offset = { -it }, motionPolicy = motionPolicy)
+                            } else {
+                                null
+                            }
+                        },
+                        popExitTransition = {
+                            if (useWideSettingsLayout) {
+                                fadeOut(animationSpec = tween(90))
+                            } else if (targetState.destination.route?.contains("SettingProvider") == true) {
+                                lateralExitTransition(offset = { it }, motionPolicy = motionPolicy)
+                            } else if (targetState.destination.route?.contains("SettingTTS") == true) {
+                                lateralExitTransition(offset = { -it }, motionPolicy = motionPolicy)
+                            } else {
+                                null
+                            }
+                        }
+                    ) {
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.Providers) {
+                            SettingProviderPage(initialTab = me.rerere.rikkahub.ui.pages.setting.ProvidersTab.Search)
                         }
                     }
 
-                    composable<Screen.SettingTTS> {
-                        AdaptiveSettingsScaffold(selected = SettingsDestination.Tts) {
-                            SettingTTSPage()
+                    composable<Screen.SettingTTS>(
+                        enterTransition = {
+                            if (useWideSettingsLayout) {
+                                fadeIn(animationSpec = tween(120))
+                            } else if (
+                                initialState.destination.route?.contains("SettingProvider") == true ||
+                                initialState.destination.route?.contains("SettingSearch") == true
+                            ) {
+                                lateralEnterTransition(offset = { it }, motionPolicy = motionPolicy)
+                            } else {
+                                null
+                            }
+                        },
+                        exitTransition = {
+                            if (useWideSettingsLayout) {
+                                fadeOut(animationSpec = tween(90))
+                            } else if (
+                                targetState.destination.route?.contains("SettingProvider") == true ||
+                                targetState.destination.route?.contains("SettingSearch") == true
+                            ) {
+                                lateralExitTransition(offset = { it }, motionPolicy = motionPolicy)
+                            } else {
+                                null
+                            }
+                        },
+                        popEnterTransition = {
+                            if (useWideSettingsLayout) {
+                                fadeIn(animationSpec = tween(120))
+                            } else if (
+                                initialState.destination.route?.contains("SettingProvider") == true ||
+                                initialState.destination.route?.contains("SettingSearch") == true
+                            ) {
+                                lateralEnterTransition(offset = { it }, motionPolicy = motionPolicy)
+                            } else {
+                                null
+                            }
+                        },
+                        popExitTransition = {
+                            if (useWideSettingsLayout) {
+                                fadeOut(animationSpec = tween(90))
+                            } else if (
+                                targetState.destination.route?.contains("SettingProvider") == true ||
+                                targetState.destination.route?.contains("SettingSearch") == true
+                            ) {
+                                lateralExitTransition(offset = { it }, motionPolicy = motionPolicy)
+                            } else {
+                                null
+                            }
+                        }
+                    ) {
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.Providers) {
+                            SettingProviderPage(initialTab = me.rerere.rikkahub.ui.pages.setting.ProvidersTab.Tts)
                         }
                     }
 

@@ -8,6 +8,7 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.service.ChatPersistenceMode
+import me.rerere.rikkahub.utils.base64Decode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -118,7 +119,7 @@ class ChatPageTest {
             persistenceMode = ChatPersistenceMode.TEMPORARY,
         )
 
-        assertEquals("draft text", navigation.initText)
+        assertEquals("draft text", navigation.initText?.base64Decode())
         assertEquals(listOf("file:///tmp/image.png"), navigation.initFiles)
         assertEquals(ChatPersistenceMode.TEMPORARY.routeValue, navigation.persistenceMode)
     }
@@ -160,5 +161,10 @@ class ChatPageTest {
             ),
             urls
         )
+    }
+
+    @Test
+    fun decodeChatRouteTextIgnoresInvalidBase64() {
+        assertEquals("", decodeChatRouteText("draft text"))
     }
 }

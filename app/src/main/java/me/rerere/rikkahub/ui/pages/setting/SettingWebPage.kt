@@ -74,6 +74,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.service.WebServerService
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
+import me.rerere.rikkahub.ui.components.ui.AutoSaveIndicator
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import me.rerere.rikkahub.ui.components.ui.ToastType
@@ -128,6 +129,8 @@ fun SettingWebPage(
     var passwordText by remember(settings.webServerAccessPassword, serverLocked) {
         mutableStateOf(settings.webServerAccessPassword)
     }
+    var portPending by remember { mutableStateOf(false) }
+    var passwordPending by remember { mutableStateOf(false) }
     var pendingStart by remember { mutableStateOf<PendingWebServerStart?>(null) }
     var showBackgroundSetupDialog by remember { mutableStateOf(false) }
 
@@ -352,6 +355,7 @@ fun SettingWebPage(
                         title = stringResource(R.string.setting_page_web_server_port),
                         subtitle = stringResource(R.string.setting_page_web_server_port_desc),
                         icon = { Icon(Icons.Rounded.Public, null) },
+                        trailing = { AutoSaveIndicator(visible = portPending) },
                     ) {
                         DebouncedTextField(
                             value = portText,
@@ -368,7 +372,7 @@ fun SettingWebPage(
                             singleLine = true,
                             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
                             isError = portText.toIntOrNull()?.let { it !in 1024..65535 } == true,
-                            showSavingIndicator = true,
+                            onPendingChange = { portPending = it },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = 58.dp),
@@ -398,6 +402,7 @@ fun SettingWebPage(
                     SettingGroupInputItem(
                         title = stringResource(R.string.setting_page_web_server_password),
                         icon = { Icon(Icons.Rounded.Lock, null) },
+                        trailing = { AutoSaveIndicator(visible = passwordPending) },
                     ) {
                         DebouncedTextField(
                             value = passwordText,
@@ -416,7 +421,7 @@ fun SettingWebPage(
                             enabled = !serverLocked,
                             label = stringResource(R.string.setting_page_web_server_password),
                             isSecure = true,
-                            showSavingIndicator = true,
+                            onPendingChange = { passwordPending = it },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = 58.dp),

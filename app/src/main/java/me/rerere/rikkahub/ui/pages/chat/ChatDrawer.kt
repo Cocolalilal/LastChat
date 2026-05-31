@@ -49,6 +49,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -67,7 +68,6 @@ import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.ChevronLeft
-import androidx.compose.material.icons.rounded.Add
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
@@ -163,6 +163,7 @@ fun ChatDrawerContent(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
+                val headerActionColor = MaterialTheme.colorScheme.surfaceContainerHighest
                 UIAvatar(
                     name = settings.displaySetting.userNickname.ifBlank { stringResource(R.string.user_default_name) },
                     value = settings.displaySetting.userAvatar,
@@ -203,6 +204,18 @@ fun ChatDrawerContent(
                             fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
                         ),
                         assistant = currentAssistant
+                    )
+                }
+
+                if (onCollapseRequest != null) {
+                    DrawerAction(
+                        icon = {
+                            Icon(Icons.Rounded.ChevronLeft, null)
+                        },
+                        label = { Text(stringResource(R.string.activity_timeline_collapse)) },
+                        onClick = onCollapseRequest,
+                        containerColor = headerActionColor,
+                        size = 42.dp
                     )
                 }
             }
@@ -325,18 +338,6 @@ fun ChatDrawerContent(
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                     }
-                }
-
-                if (onCollapseRequest != null) {
-                    DrawerAction(
-                        icon = {
-                            Icon(Icons.Rounded.ChevronLeft, null)
-                        },
-                        label = { Text(stringResource(R.string.activity_timeline_collapse)) },
-                        onClick = onCollapseRequest,
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                        size = 42.dp
-                    )
                 }
             }
                 }
@@ -471,7 +472,7 @@ fun ChatDrawerContent(
         ChatDrawerPresentation.Modal -> {
             ModalDrawerSheet(
                 modifier = Modifier.widthIn(max = drawerWidth),
-                drawerShape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
+                drawerShape = RoundedCornerShape(topEnd = 32.dp, bottomEnd = 32.dp),
                 drawerContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             ) {
                 drawerContent()
@@ -485,7 +486,7 @@ fun ChatDrawerContent(
                     .width(drawerWidth)
                     .statusBarsPadding()
                     .padding(start = 8.dp, top = 8.dp, bottom = 8.dp),
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
+                shape = RoundedCornerShape(32.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
                 tonalElevation = 1.dp,
             ) {
@@ -544,7 +545,8 @@ fun CollapsedChatSideRail(
     current: Conversation,
     settings: Settings,
     onExpand: () -> Unit,
-    onNewChat: () -> Unit,
+    onOpenImageGen: () -> Unit,
+    onOpenStatistics: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenAssistant: () -> Unit,
     modifier: Modifier = Modifier,
@@ -559,7 +561,7 @@ fun CollapsedChatSideRail(
             .width(80.dp)
             .statusBarsPadding()
             .padding(start = 8.dp, top = 8.dp, bottom = 8.dp),
-        shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
+        shape = me.rerere.rikkahub.ui.theme.AppShapes.ButtonPill,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         tonalElevation = 1.dp,
     ) {
@@ -577,13 +579,59 @@ fun CollapsedChatSideRail(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                 size = 48.dp
             )
-            DrawerAction(
-                icon = { Icon(Icons.Rounded.Add, null) },
-                label = { Text(stringResource(R.string.chat_page_new_message)) },
-                onClick = onNewChat,
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                size = 48.dp
-            )
+            Column(
+                modifier = Modifier.clip(RoundedCornerShape(24.dp)),
+                verticalArrangement = Arrangement.spacedBy(0.dp)
+            ) {
+                DrawerAction(
+                    icon = { Icon(Icons.Rounded.Image, null) },
+                    label = { Text(stringResource(R.string.chat_drawer_imagine)) },
+                    onClick = onOpenImageGen,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    shape = RoundedCornerShape(
+                        topStart = 24.dp,
+                        topEnd = 24.dp,
+                        bottomStart = 8.dp,
+                        bottomEnd = 8.dp
+                    ),
+                    size = 48.dp
+                )
+                DrawerAction(
+                    icon = { Icon(Icons.Rounded.BarChart, null) },
+                    label = { Text(stringResource(R.string.menu_statistics_title)) },
+                    onClick = onOpenStatistics,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    shape = RoundedCornerShape(
+                        topStart = 8.dp,
+                        topEnd = 8.dp,
+                        bottomStart = 24.dp,
+                        bottomEnd = 24.dp
+                    ),
+                    size = 48.dp
+                )
+            }
+
+            Spacer(Modifier.weight(1f))
+
+            Surface(
+                onClick = onOpenAssistant,
+                shape = CircleShape,
+                color = Color.Transparent,
+                modifier = Modifier.size(48.dp)
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    DrawerAvatarVisual(
+                        name = assistantName,
+                        avatar = currentAssistant.avatar,
+                        modifier = Modifier.fillMaxSize(),
+                        forceCircle = true
+                    )
+                }
+            }
+
             DrawerAction(
                 icon = { Icon(Icons.Rounded.Settings, null) },
                 label = { Text(stringResource(R.string.settings)) },
@@ -591,26 +639,6 @@ fun CollapsedChatSideRail(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                 size = 48.dp
             )
-
-            Spacer(Modifier.weight(1f))
-
-            Surface(
-                onClick = onOpenAssistant,
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                modifier = Modifier.size(48.dp)
-            ) {
-                Box(
-                    modifier = Modifier.padding(8.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    DrawerAvatarVisual(
-                        name = assistantName,
-                        avatar = currentAssistant.avatar,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-            }
         }
     }
 }
@@ -622,6 +650,7 @@ private fun DrawerAction(
     label: @Composable () -> Unit,
     onClick: () -> Unit,
     containerColor: Color = MaterialTheme.colorScheme.primaryContainer,
+    shape: Shape = CircleShape,
     size: Dp = 42.dp,
 ) {
     val containerSize = size
@@ -657,7 +686,7 @@ private fun DrawerAction(
         },
         interactionSource = interactionSource,
         color = containerColor,
-        shape = CircleShape,
+        shape = shape,
         contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
         Tooltip(
@@ -682,10 +711,11 @@ private fun DrawerAction(
 private fun DrawerAvatarVisual(
     name: String,
     avatar: Avatar,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    forceCircle: Boolean = false
 ) {
     Box(
-        modifier = modifier.clip(rememberAvatarShape(false)),
+        modifier = modifier.clip(if (forceCircle) CircleShape else rememberAvatarShape(false)),
         contentAlignment = Alignment.Center
     ) {
         when (avatar) {

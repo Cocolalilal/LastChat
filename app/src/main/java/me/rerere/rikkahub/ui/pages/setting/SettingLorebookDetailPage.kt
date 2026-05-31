@@ -89,6 +89,7 @@ import me.rerere.rikkahub.data.model.collectAttachmentFileRefs
 import me.rerere.rikkahub.data.repository.AppStorageRepository
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
+import me.rerere.rikkahub.ui.components.ui.AutoSaveIndicator
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
@@ -772,6 +773,11 @@ private fun EntryEditorSheet(
         mutableStateOf(entry?.injectionPosition ?: InjectionPosition.AFTER_SYSTEM) 
     }
     var attachments by remember { mutableStateOf(entry?.attachments ?: emptyList()) }
+    var namePending by remember { mutableStateOf(false) }
+    var promptPending by remember { mutableStateOf(false) }
+    var keywordsPending by remember { mutableStateOf(false) }
+    var scanDepthPending by remember { mutableStateOf(false) }
+    val isAutoSaving = entry != null && (namePending || promptPending || keywordsPending || scanDepthPending)
     val initialAttachmentUrls = remember(entry) {
         entry?.attachments?.map { attachment -> attachment.url }?.toSet().orEmpty()
     }
@@ -899,13 +905,20 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 .padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(
-                text = stringResource(
-                    if (entry != null) R.string.lorebook_entry_edit 
-                    else R.string.lorebook_entry_add
-                ),
-                style = MaterialTheme.typography.titleLarge
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(
+                        if (entry != null) R.string.lorebook_entry_edit
+                        else R.string.lorebook_entry_add
+                    ),
+                    style = MaterialTheme.typography.titleLarge
+                )
+                AutoSaveIndicator(visible = isAutoSaving)
+            }
 
             FormItem(
                 label = { Text(stringResource(R.string.lorebook_entry_name)) }
@@ -922,7 +935,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     placeholder = stringResource(R.string.lorebook_entry_name_placeholder),
-                    showSavingIndicator = true,
+                    onPendingChange = { namePending = it },
                 )
             }
 
@@ -942,7 +955,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         .fillMaxWidth()
                         .height(120.dp),
                     placeholder = stringResource(R.string.lorebook_entry_prompt_placeholder),
-                    showSavingIndicator = true,
+                    onPendingChange = { promptPending = it },
                 )
             }
 
@@ -980,7 +993,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                             stateKey = "entry_keywords_${entry?.id ?: "new"}",
                             modifier = Modifier.fillMaxWidth(),
                             placeholder = stringResource(R.string.lorebook_entry_keywords_placeholder),
-                            showSavingIndicator = true,
+                            onPendingChange = { keywordsPending = it },
                         )
                     }
 
@@ -1031,7 +1044,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     stateKey = "entry_scan_depth_${entry?.id ?: "new"}",
                     modifier = Modifier.width(80.dp),
                     singleLine = true,
-                    showSavingIndicator = true,
+                    onPendingChange = { scanDepthPending = it },
                 )
             }
 
@@ -1162,6 +1175,9 @@ private fun LorebookEditorSheet(
     var name by remember { mutableStateOf(lorebook.name) }
     var description by remember { mutableStateOf(lorebook.description) }
     var cover by remember { mutableStateOf(lorebook.cover) }
+    var namePending by remember { mutableStateOf(false) }
+    var descriptionPending by remember { mutableStateOf(false) }
+    val isAutoSaving = namePending || descriptionPending
     val initialCoverUrl = remember(lorebook) {
         (lorebook.cover as? Avatar.Image)?.url
     }
@@ -1221,10 +1237,17 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 .padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(
-                text = stringResource(R.string.lorebook_edit),
-                style = MaterialTheme.typography.titleLarge
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.lorebook_edit),
+                    style = MaterialTheme.typography.titleLarge
+                )
+                AutoSaveIndicator(visible = isAutoSaving)
+            }
 
             // Cover picker + Name input inline
             Row(
@@ -1287,7 +1310,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         placeholder = stringResource(R.string.lorebooks_page_name_placeholder),
-                        showSavingIndicator = true,
+                        onPendingChange = { namePending = it },
                     )
                 }
             }
@@ -1310,7 +1333,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         .fillMaxWidth()
                         .height(100.dp),
                     placeholder = stringResource(R.string.lorebooks_page_description_placeholder),
-                    showSavingIndicator = true,
+                    onPendingChange = { descriptionPending = it },
                 )
             }
 

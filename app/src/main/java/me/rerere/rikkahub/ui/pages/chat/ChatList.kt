@@ -165,6 +165,8 @@ fun ChatList(
     initialSearchQuery: String? = null,
     shareSelectionRequestKey: Int = 0,
     shareSelectionCancelRequestKey: Int = 0,
+    onShareSelectionRequestConsumed: () -> Unit = {},
+    onShareSelectionCancelRequestConsumed: () -> Unit = {},
     onSelectionModeChange: (Boolean) -> Unit = {},
     onRegenerate: (UIMessage) -> Unit = {},
     onEdit: (UIMessage) -> Unit = {},
@@ -202,6 +204,8 @@ fun ChatList(
                     recentlyRestoredNodeIds = recentlyRestoredNodeIds,
                     shareSelectionRequestKey = shareSelectionRequestKey,
                     shareSelectionCancelRequestKey = shareSelectionCancelRequestKey,
+                    onShareSelectionRequestConsumed = onShareSelectionRequestConsumed,
+                    onShareSelectionCancelRequestConsumed = onShareSelectionCancelRequestConsumed,
                     onSelectionModeChange = onSelectionModeChange,
                     onRegenerate = onRegenerate,
                     onEdit = onEdit,
@@ -226,6 +230,8 @@ private fun SharedTransitionScope.ChatListNormal(
     recentlyRestoredNodeIds: Set<Uuid> = emptySet(),
     shareSelectionRequestKey: Int,
     shareSelectionCancelRequestKey: Int,
+    onShareSelectionRequestConsumed: () -> Unit,
+    onShareSelectionCancelRequestConsumed: () -> Unit,
     onSelectionModeChange: (Boolean) -> Unit,
     onRegenerate: (UIMessage) -> Unit,
     onEdit: (UIMessage) -> Unit,
@@ -288,6 +294,7 @@ private fun SharedTransitionScope.ChatListNormal(
             selecting = true
             selectedItems.clear()
             selectedItems.addAll(conversation.messageNodes.map { it.id })
+            onShareSelectionRequestConsumed()
         }
     }
 
@@ -295,6 +302,7 @@ private fun SharedTransitionScope.ChatListNormal(
         if (shareSelectionCancelRequestKey > 0) {
             selecting = false
             selectedItems.clear()
+            onShareSelectionCancelRequestConsumed()
         }
     }
 

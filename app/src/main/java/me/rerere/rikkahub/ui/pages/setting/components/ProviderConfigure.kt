@@ -63,6 +63,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.pages.assistant.detail.CustomBodies
 import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
+import me.rerere.rikkahub.ui.components.ui.AutoSaveIndicator
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.foundation.layout.size
 import me.rerere.rikkahub.ui.components.ui.ProviderIcon
@@ -118,14 +119,8 @@ fun ProviderConfigure(
                 },
                 modifier = Modifier.weight(1f)
             )
-            if (showSavingIndicator) {
-                Text(
-                    text = stringResource(R.string.setting_provider_page_saving),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline
-                )
-                androidx.compose.foundation.layout.Spacer(modifier = Modifier.size(12.dp))
-            }
+            AutoSaveIndicator(visible = showSavingIndicator)
+            androidx.compose.foundation.layout.Spacer(modifier = Modifier.size(12.dp))
             HapticSwitch(
                 checked = provider.enabled,
                 onCheckedChange = { enabled ->
@@ -187,7 +182,6 @@ fun ProviderConfigure(
                 stateKey = "provider_name_${provider.id}",
                 label = stringResource(id = R.string.setting_provider_page_name),
                 modifier = Modifier.weight(1f),
-                showSavingIndicator = true
             )
         }
 
@@ -502,7 +496,6 @@ private fun ColumnScope.ProviderConfigureComfyUI(
         stateKey = "comfyui_base_url_${provider.id}",
         label = stringResource(R.string.setting_provider_page_api_base_url),
         modifier = Modifier.fillMaxWidth(),
-        showSavingIndicator = true
     )
 
     Button(
@@ -530,7 +523,6 @@ private fun ColumnScope.ProviderConfigureComfyUI(
         stateKey = "comfyui_prompt_node_${provider.id}",
         label = stringResource(R.string.setting_provider_page_comfyui_prompt_node),
         modifier = Modifier.fillMaxWidth(),
-        showSavingIndicator = true
     )
 
     DebouncedTextField(
@@ -539,7 +531,6 @@ private fun ColumnScope.ProviderConfigureComfyUI(
         stateKey = "comfyui_prompt_input_${provider.id}",
         label = stringResource(R.string.setting_provider_page_comfyui_prompt_input),
         modifier = Modifier.fillMaxWidth(),
-        showSavingIndicator = true
     )
 
     DebouncedTextField(
@@ -548,7 +539,6 @@ private fun ColumnScope.ProviderConfigureComfyUI(
         stateKey = "comfyui_model_node_${provider.id}",
         label = stringResource(R.string.setting_provider_page_comfyui_model_node),
         modifier = Modifier.fillMaxWidth(),
-        showSavingIndicator = true
     )
 
     DebouncedTextField(
@@ -557,7 +547,6 @@ private fun ColumnScope.ProviderConfigureComfyUI(
         stateKey = "comfyui_model_input_${provider.id}",
         label = stringResource(R.string.setting_provider_page_comfyui_model_input),
         modifier = Modifier.fillMaxWidth(),
-        showSavingIndicator = true
     )
 }
 
@@ -577,7 +566,6 @@ private fun ColumnScope.ProviderConfigureOpenAI(
         stateKey = "openai_api_key_${provider.id}",
         label = stringResource(id = R.string.setting_provider_page_api_key),
         modifier = Modifier.fillMaxWidth(),
-        showSavingIndicator = true,
         isSecure = true
     )
 
@@ -587,7 +575,6 @@ private fun ColumnScope.ProviderConfigureOpenAI(
         stateKey = "openai_base_url_${provider.id}",
         label = stringResource(id = R.string.setting_provider_page_api_base_url),
         modifier = Modifier.fillMaxWidth(),
-        showSavingIndicator = true
     )
 
     if (!provider.useResponseApi) {
@@ -598,7 +585,6 @@ private fun ColumnScope.ProviderConfigureOpenAI(
             label = stringResource(id = R.string.setting_provider_page_api_path),
             modifier = Modifier.fillMaxWidth(),
             enabled = !provider.builtIn,
-            showSavingIndicator = true
         )
     }
 
@@ -746,7 +732,6 @@ private fun ColumnScope.ProviderConfigureClaude(
         stateKey = "claude_api_key_${provider.id}",
         label = stringResource(id = R.string.setting_provider_page_api_key),
         modifier = Modifier.fillMaxWidth(),
-        showSavingIndicator = true,
         isSecure = true
     )
 
@@ -756,7 +741,6 @@ private fun ColumnScope.ProviderConfigureClaude(
         stateKey = "claude_base_url_${provider.id}",
         label = stringResource(id = R.string.setting_provider_page_api_base_url),
         modifier = Modifier.fillMaxWidth(),
-        showSavingIndicator = true
     )
 }
 
@@ -787,7 +771,6 @@ private fun ColumnScope.ProviderConfigureGoogle(
             stateKey = "google_api_key_${provider.id}",
             label = stringResource(id = R.string.setting_provider_page_api_key),
             modifier = Modifier.fillMaxWidth(),
-            showSavingIndicator = true,
             isSecure = true
         )
 
@@ -797,7 +780,6 @@ private fun ColumnScope.ProviderConfigureGoogle(
             stateKey = "google_base_url_${provider.id}",
             label = stringResource(id = R.string.setting_provider_page_api_base_url),
             modifier = Modifier.fillMaxWidth(),
-            showSavingIndicator = true,
             trailingIcon = if (!provider.baseUrl.endsWith("/v1beta")) {
                 {
                     Text(
@@ -816,7 +798,6 @@ private fun ColumnScope.ProviderConfigureGoogle(
             stateKey = "google_email_${provider.id}",
             label = stringResource(id = R.string.setting_provider_page_service_account_email),
             modifier = Modifier.fillMaxWidth(),
-            showSavingIndicator = true
         )
         DebouncedTextField(
             value = provider.privateKey,
@@ -827,7 +808,6 @@ private fun ColumnScope.ProviderConfigureGoogle(
             minLines = 3,
             maxLines = 6,
             textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-            showSavingIndicator = true,
             isSecure = true
         )
         DebouncedTextField(
@@ -836,7 +816,6 @@ private fun ColumnScope.ProviderConfigureGoogle(
             stateKey = "google_location_${provider.id}",
             label = stringResource(id = R.string.setting_provider_page_location),
             modifier = Modifier.fillMaxWidth(),
-            showSavingIndicator = true
         )
         DebouncedTextField(
             value = provider.projectId,
@@ -844,7 +823,6 @@ private fun ColumnScope.ProviderConfigureGoogle(
             stateKey = "google_project_id_${provider.id}",
             label = stringResource(id = R.string.setting_provider_page_project_id),
             modifier = Modifier.fillMaxWidth(),
-            showSavingIndicator = true
         )
     }
 }
