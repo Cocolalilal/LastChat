@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.pages.chat
 
-import android.net.Uri
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.fadeIn
@@ -35,7 +34,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
@@ -106,6 +104,7 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.navigation.ChatRouteTarget
 import me.rerere.rikkahub.data.repository.ChatAttachmentManager
 import me.rerere.rikkahub.ui.components.ai.MinimalChatInput
 import me.rerere.rikkahub.ui.context.LocalNavController
@@ -262,12 +261,13 @@ internal enum class ChatToolbarPlacement {
 
 @Composable
 fun ChatPage(
-    id: Uuid,
-    text: String?,
-    files: List<Uri>,
-    searchQuery: String? = null,
-    persistenceMode: String? = null,
+    target: ChatRouteTarget,
 ) {
+    val id = target.uuid
+    val text = target.text
+    val files = target.fileUris
+    val searchQuery = target.searchQuery
+    val persistenceMode = target.persistenceMode
     val vm: ChatVM = koinViewModel(
         key = id.toString(),
         parameters = {
@@ -281,7 +281,7 @@ fun ChatPage(
     val genericErrorMessage = context.getString(R.string.common_error)
 
     // Handle Error
-    LaunchedEffect(Unit) {
+    LaunchedEffect(vm) {
         vm.errorFlow.collect { error ->
             toaster.show(error.message ?: genericErrorMessage, type = ToastType.Error)
         }
@@ -296,7 +296,7 @@ fun ChatPage(
     val currentChatModel by vm.currentChatModel.collectAsStateWithLifecycle()
     val enableWebSearch by vm.enableWebSearch.collectAsStateWithLifecycle()
     val currentSearchMode by vm.currentSearchMode.collectAsStateWithLifecycle()
-    var manualTemporaryChat by rememberSaveable { mutableStateOf(false) }
+    var manualTemporaryChat by rememberSaveable(id) { mutableStateOf(false) }
     val activePersistenceMode = when {
         manualTemporaryChat || conversationPersistenceMode == ChatPersistenceMode.TEMPORARY -> ChatPersistenceMode.TEMPORARY
         conversationPersistenceMode == ChatPersistenceMode.PERSIST_ON_REPLY -> ChatPersistenceMode.PERSIST_ON_REPLY
@@ -307,7 +307,7 @@ fun ChatPage(
         manualTemporaryChat = false
     }
 
-    LaunchedEffect(persistenceMode) {
+    LaunchedEffect(id, persistenceMode) {
         vm.applyRoutePersistenceMode(ChatPersistenceMode.fromRouteValue(persistenceMode))
     }
 
@@ -350,13 +350,14 @@ fun ChatPage(
     }
     var isWidePanelCollapsed by rememberSaveable { mutableStateOf(false) }
 
-    val inputState = rememberChatInputState(
-        textContent = remember(text) {
-            decodeChatRouteText(text)
+    val inputState = rememberChatInputState()
+    LaunchedEffect(id, text, files) {
+        inputState.clearInput()
+        val decodedText = decodeChatRouteText(text)
+        if (decodedText.isNotBlank()) {
+            inputState.setMessageText(decodedText)
         }
-    )
-    LaunchedEffect(files) {
-        if (files.isEmpty() || inputState.messageContent.isNotEmpty()) {
+        if (files.isEmpty()) {
             return@LaunchedEffect
         }
         val importedParts = withContext(Dispatchers.IO) {
@@ -389,7 +390,7 @@ fun ChatPage(
         }
     }
 
-    val chatListState = rememberLazyListState()
+    val chatListState = remember(id) { LazyListState() }
     LaunchedEffect(conversation.messageNodes.size) {
         if (!vm.chatListInitialized && conversation.messageNodes.isNotEmpty()) {
             chatListState.scrollToItem(conversation.messageNodes.lastIndex)
@@ -614,6 +615,21 @@ private fun ChatPageContent(
             enabled = setting.displaySetting.enableBlurEffect,
             hazeState = hazeState,
         )
+    }
+
+    LaunchedEffect(conversation.id) {
+        previewMode = false
+        showToolbarOverflowMenu = false
+        showRegenerateConfirmDialog = false
+        pendingRegenerateMessage = null
+        showUserRegenerateConfirmDialog = false
+        pendingUserRegenerateMessage = null
+        showDeleteConfirmDialog = false
+        pendingDeleteMessage = null
+        if (isChatShareSelecting) {
+            chatShareSelectionCancelRequestKey += 1
+            isChatShareSelecting = false
+        }
     }
     
     // Auto-scroll to first matching message when opened from search
@@ -1558,8 +1574,6 @@ private val DefaultTopBarActionState = TopBarActionState(
     showCloseAction = false,
 )
 
-private var lastStableTopBarActionState = DefaultTopBarActionState
-
 @Composable
 private fun ChatToolbarActionPill(
     actionState: TopBarActionState,
@@ -1841,7 +1855,7 @@ private fun ChatToolbar(
         showCloseAction = showCloseAction && rawActionMode == TopBarActionMode.InChat,
     )
     var displayedActionState by remember {
-        mutableStateOf(lastStableTopBarActionState.copy(showCloseAction = false))
+        mutableStateOf(DefaultTopBarActionState)
     }
 
     LaunchedEffect(rawActionState, conversationInitialized) {
@@ -1850,7 +1864,6 @@ private fun ChatToolbar(
                 withFrameNanos { }
             }
             displayedActionState = rawActionState
-            lastStableTopBarActionState = rawActionState.copy(showCloseAction = false)
         }
     }
 

@@ -781,6 +781,9 @@ private fun SharedTransitionScope.ChatListPreview(
     initialSearchQuery: String? = null,
 ) {
     var searchQuery by remember { mutableStateOf(initialSearchQuery ?: "") }
+    LaunchedEffect(conversation.id, initialSearchQuery) {
+        searchQuery = initialSearchQuery.orEmpty()
+    }
     val previewTopPadding = 20.dp
     val appLocale = LocalContext.current.appLocale()
     val previewLayoutDirection = LocalLayoutDirection.current

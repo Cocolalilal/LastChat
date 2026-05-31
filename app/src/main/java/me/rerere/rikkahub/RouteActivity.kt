@@ -27,7 +27,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -71,6 +70,8 @@ import me.rerere.rikkahub.ui.motion.rootPopEnterTransition
 import me.rerere.rikkahub.ui.motion.rootPopExitTransition
 import me.rerere.rikkahub.ui.motion.lateralEnterTransition
 import me.rerere.rikkahub.ui.motion.lateralExitTransition
+import me.rerere.rikkahub.navigation.CHAT_ROUTE_TARGET_KEY
+import me.rerere.rikkahub.navigation.toChatRouteTarget
 import me.rerere.rikkahub.ui.pages.assistant.AssistantPage
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantDetailPage
 import me.rerere.rikkahub.ui.pages.backup.BackupPage
@@ -115,6 +116,7 @@ import me.rerere.rikkahub.service.ChatPersistenceMode
 import me.rerere.rikkahub.ui.activity.QuickAskContinuationData
 import me.rerere.rikkahub.ui.activity.buildQuickAskMessageParts
 import me.rerere.rikkahub.ui.activity.readQuickAskContinuationData
+import me.rerere.rikkahub.utils.navigateToChatPage
 import okhttp3.OkHttpClient
 import org.koin.android.ext.android.inject
 import me.rerere.rikkahub.utils.fileSizeToString
@@ -347,9 +349,7 @@ class RouteActivity : ComponentActivity() {
                         // Mark as recently used
                         settingsStore.markAssistantUsed(assistantId)
                         // Navigate to a new chat
-                        navStack?.navigate(Screen.Chat(Uuid.random().toString())) {
-                            popUpTo(0) { inclusive = true }
-                        }
+                        navStack?.let { navigateToChatPage(it, chatId = Uuid.random()) }
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
@@ -434,10 +434,19 @@ class RouteActivity : ComponentActivity() {
         LaunchedEffect(spontaneousTarget, conversationIdStr) {
             if (spontaneousTarget != null) {
                 pendingResolvedSpontaneousTarget = null
-                navBackStack.navigate(spontaneousTarget.toScreen())
+                navigateToChatPage(
+                    navController = navBackStack,
+                    chatId = spontaneousTarget.conversationId,
+                    persistenceMode = spontaneousTarget.persistenceMode.routeValue
+                        .takeIf { spontaneousTarget.persistenceMode != ChatPersistenceMode.NORMAL },
+                )
             } else if (conversationIdStr != null) {
                 pendingConversationId = null
-                navBackStack.navigate(Screen.Chat(conversationIdStr))
+                runCatching { Uuid.parse(conversationIdStr) }
+                    .getOrNull()
+                    ?.let { conversationId ->
+                        navigateToChatPage(navBackStack, chatId = conversationId)
+                    }
             }
         }
     }
@@ -525,7 +534,7 @@ class RouteActivity : ComponentActivity() {
                         chatService.saveConversation(conversationId, conversation)
                         
                         // Navigate to the conversation
-                        navBackStack.navigate(Screen.Chat(id = conversationId.toString()))
+                        navigateToChatPage(navBackStack, chatId = conversationId)
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -563,7 +572,11 @@ class RouteActivity : ComponentActivity() {
         // Navigate to the chat screen if a conversation ID is provided
         intent.getStringExtra("conversationId")?.let { text ->
             android.util.Log.d(TAG, "Navigating to conversation: $text")
-            navStack?.navigate(Screen.Chat(text))
+            runCatching { Uuid.parse(text) }
+                .getOrNull()
+                ?.let { conversationId ->
+                    navStack?.let { navigateToChatPage(it, chatId = conversationId) }
+                }
         }
         
         // Handle assistant shortcut - navigate directly instead of using state
@@ -578,11 +591,9 @@ class RouteActivity : ComponentActivity() {
                     // Mark as recently used
                     settingsStore.markAssistantUsed(assistantId)
                     // Navigate to a new chat
-                    val newChatId = Uuid.random().toString()
+                    val newChatId = Uuid.random()
                     android.util.Log.d(TAG, "Navigating to new chat: $newChatId")
-                    navStack?.navigate(Screen.Chat(newChatId)) {
-                        popUpTo(0) { inclusive = true }
-                    }
+                    navStack?.let { navigateToChatPage(it, chatId = newChatId) }
                     android.util.Log.d(TAG, "Navigation complete")
                 } catch (e: Exception) {
                     android.util.Log.e(TAG, "Error handling assistant shortcut", e)
@@ -725,12 +736,12 @@ class RouteActivity : ComponentActivity() {
                 ) {
                     composable<Screen.Chat> { backStackEntry ->
                         val route = backStackEntry.toRoute<Screen.Chat>()
+                        val initialChatTarget = route.toChatRouteTarget()
+                        val activeChatTarget by backStackEntry.savedStateHandle
+                            .getStateFlow(CHAT_ROUTE_TARGET_KEY, initialChatTarget)
+                            .collectAsStateWithLifecycle()
                         ChatPage(
-                            id = Uuid.parse(route.id),
-                            text = route.text,
-                            files = route.files.map { it.toUri() },
-                            searchQuery = route.searchQuery,
-                            persistenceMode = route.persistenceMode,
+                            target = activeChatTarget,
                         )
                     }
 

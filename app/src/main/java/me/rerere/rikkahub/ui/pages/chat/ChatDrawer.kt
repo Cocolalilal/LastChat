@@ -135,6 +135,16 @@ fun ChatDrawerContent(
 
     val recentlyRestoredIds by vm.recentlyRestoredIds.collectAsStateWithLifecycle()
 
+    fun dismissDrawerAfterSelection() {
+        when (presentation) {
+            ChatDrawerPresentation.Modal -> drawerState?.let { state ->
+                scope.launch { state.close() }
+            }
+
+            ChatDrawerPresentation.PermanentPane -> onCollapseRequest?.invoke()
+        }
+    }
+
     // 昵称编辑状态
     val nicknameEditState = useEditState<String> { newNickname ->
         vm.updateSettings(
@@ -237,6 +247,7 @@ fun ChatDrawerContent(
                     // This scrolls to the matching message; for title matches, just open normally
                     val titleMatches = searchQuery.isNotBlank() && it.title.contains(searchQuery, ignoreCase = true)
                     navigateToChatPage(navController, it.id, searchQuery = if (titleMatches) null else searchQuery.ifBlank { null })
+                    dismissDrawerAfterSelection()
                 },
                 onRegenerateTitle = {
                     vm.generateTitle(it, true)
@@ -260,6 +271,7 @@ fun ChatDrawerContent(
                     )
                     if (it.id == current.id) {
                         navigateToChatPage(navController)
+                        dismissDrawerAfterSelection()
                     }
                 },
                 onPin = {
@@ -284,6 +296,7 @@ fun ChatDrawerContent(
                             onClick = {
                                 haptics.perform(HapticPattern.Tick)
                                 navController.navigate(Screen.ImageGen)
+                                dismissDrawerAfterSelection()
                             },
                             color = itemColor,
                             shape = RoundedCornerShape(10.dp),
@@ -314,6 +327,7 @@ fun ChatDrawerContent(
                             onClick = {
                                 haptics.perform(HapticPattern.Tick)
                                 navController.navigate(Screen.Menu)
+                                dismissDrawerAfterSelection()
                             },
                             color = itemColor,
                             shape = RoundedCornerShape(10.dp),
@@ -352,7 +366,6 @@ fun ChatDrawerContent(
                         inputFiles = extractDraftFileUrls(inputState.messageContent),
                         persistenceMode = activePersistenceMode,
                     )
-                    drawerState?.close()
                     navigateToChatPage(
                         navController = navController,
                         chatId = newConversation.id,
@@ -360,6 +373,7 @@ fun ChatDrawerContent(
                         initFiles = draftNavigation.initFiles.map(String::toUri),
                         persistenceMode = draftNavigation.persistenceMode,
                     )
+                    dismissDrawerAfterSelection()
                 }
             }
             val defaultAssistantName = stringResource(R.string.assistant_page_default_assistant)
@@ -421,6 +435,7 @@ fun ChatDrawerContent(
                                 .clickable {
                                     haptics.perform(HapticPattern.Pop)
                                     navController.navigate(Screen.AssistantDetail(id = currentAssistant.id.toString()))
+                                    dismissDrawerAfterSelection()
                                 },
                             contentAlignment = Alignment.Center
                         ) {
@@ -441,6 +456,7 @@ fun ChatDrawerContent(
                     label = { Text(stringResource(R.string.settings)) },
                     onClick = {
                         navController.navigate(Screen.Setting)
+                        dismissDrawerAfterSelection()
                     },
                     containerColor = itemColor,
                     size = actionButtonSize

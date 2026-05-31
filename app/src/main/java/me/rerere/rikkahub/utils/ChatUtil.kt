@@ -21,6 +21,8 @@ import kotlinx.coroutines.withContext
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.navigation.CHAT_ROUTE_TARGET_KEY
+import me.rerere.rikkahub.navigation.ChatRouteTarget
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
@@ -39,23 +41,34 @@ fun navigateToChatPage(
     persistenceMode: String? = null,
 ) {
     Log.i(TAG, "navigateToChatPage: navigate to $chatId")
+    val target = ChatRouteTarget(
+        id = chatId.toString(),
+        text = initText,
+        files = initFiles.map { it.toString() },
+        searchQuery = searchQuery,
+        persistenceMode = persistenceMode,
+    )
     val isAlreadyOnChat = navController.currentBackStackEntry
         ?.let { backStackEntry ->
             runCatching { backStackEntry.toRoute<Screen.Chat>() }.isSuccess
         } == true
+    if (isAlreadyOnChat) {
+        navController.currentBackStackEntry
+            ?.savedStateHandle
+            ?.set(CHAT_ROUTE_TARGET_KEY, target)
+        return
+    }
     navController.navigate(
         route = Screen.Chat(
-            id = chatId.toString(),
-            text = initText,
-            files = initFiles.map { it.toString() },
-            searchQuery = searchQuery,
-            persistenceMode = persistenceMode,
+            id = target.id,
+            text = target.text,
+            files = target.files,
+            searchQuery = target.searchQuery,
+            persistenceMode = target.persistenceMode,
         ),
     ) {
-        if (!isAlreadyOnChat) {
-            popUpTo(0) {
-                inclusive = true
-            }
+        popUpTo(0) {
+            inclusive = true
         }
         launchSingleTop = true
     }
