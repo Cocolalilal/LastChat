@@ -4,7 +4,7 @@ This file provides guidance to AI agents when working with code in this reposito
 
 ## Project Overview
 
-web-ui 是 RikkaHub 项目的嵌入式 Web 前端，基于 React Router 7 的单页应用（SPA）。构建产物通过 `copy.ts` 脚本复制到 `../web/src/main/resources/static` 目录，由 Kotlin 后端的 Ktor 服务器提供静态文件服务。
+web-ui 是 RikkaHub 项目的嵌入式 Web 前端，基于 React Router 7 的单页应用（SPA）。构建产物输出到 `build/client`，Android Gradle 构建会将该目录作为 app asset 打包，由 Kotlin 后端的 Ktor 服务器提供静态文件服务。
 
 ## Technology Stack
 
@@ -342,11 +342,7 @@ react-router build
 
 ### 2. Copy to Backend
 
-```bash
-bun run copy.ts
-# 将 build/client/ 复制到 ../web/src/main/resources/static/
-# Kotlin 后端的 Ktor 服务器从该目录提供静态文件服务
-```
+Android Gradle 构建会直接打包 `build/client/`，不需要额外复制脚本。
 
 **完整构建命令**: `bun run build` (执行上述两步)
 
@@ -572,8 +568,8 @@ web-ui/build/client/
 ├── index.html
 ├── assets/*.js
 └── assets/*.css
-    ↓ (copy.ts)
-../web/src/main/resources/static/
+    ↓ (Android Gradle assets source set)
+app assets root
     ↓ (Ktor 静态文件路由)
 用户访问 http://localhost:8080/
 ```

@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -18,7 +17,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Public
-import androidx.compose.material3.FloatingToolbarDefaults.ScreenOffset
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -66,8 +64,7 @@ fun ProvidersBottomBar(
         if (!useWideLayout) {
             Surface(
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .offset(y = -ScreenOffset),
+                    .align(Alignment.BottomCenter),
                 shape = RoundedCornerShape(28.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 tonalElevation = 6.dp,
@@ -120,12 +117,33 @@ fun ProvidersBottomBar(
 
         Column(
             modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .offset(y = -ScreenOffset),
+                .align(Alignment.BottomEnd),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             actions()
+        }
+    }
+}
+
+@Composable
+fun ProvidersSecondaryActionSlot(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 16.dp, vertical = 16.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(bottom = 68.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            content()
         }
     }
 }

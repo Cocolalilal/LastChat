@@ -594,7 +594,7 @@
     <string name="setting_page_model_and_services">Models &amp; Services</string>
     <string name="setting_page_no_share_app">No share app found</string>
     <string name="setting_page_providers">Providers</string>
-    <string name="setting_page_providers_desc">Configure model, search, and TTS providers</string>
+    <string name="setting_page_providers_desc">Manage your providers</string>
     <string name="setting_page_search_add_provider">Add Search Provider</string>
     <string name="setting_page_search_common_options">Common Options</string>
     <string name="setting_page_search_delete_provider">Delete Provider</string>

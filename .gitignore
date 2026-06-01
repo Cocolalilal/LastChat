@@ -11,3 +11,7 @@ local.properties
 .cursor
 .history
 .kotlin
+__pycache__/
+*.py[cod]
+/tmp/
+/bootstrap_dump.json

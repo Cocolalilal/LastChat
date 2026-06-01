@@ -275,50 +275,6 @@ fun SettingProviderPage(
                     }
                 }
             ) {
-                AnimatedContent(
-                    targetState = currentTab == ProvidersTab.Models,
-                    transitionSpec = {
-                        if (targetState) {
-                            (slideInHorizontally { -it } + fadeIn()) togetherWith
-                                (slideOutHorizontally { it } + fadeOut())
-                        } else {
-                            (slideInHorizontally { it } + fadeIn()) togetherWith
-                                (slideOutHorizontally { -it } + fadeOut())
-                        }
-                    },
-                    label = "providers_secondary_action"
-                ) { isModelProviders ->
-                    if (isModelProviders) {
-                        ImportProviderButton(
-                            asFab = true,
-                            onAdd = { addProvider(it) }
-                        )
-                    } else {
-                        FloatingActionButton(
-                            onClick = {
-                                haptics.perform(HapticPattern.Pop)
-                                if (currentTab == ProvidersTab.Search) {
-                                    showSearchCommonOptions = true
-                                } else {
-                                    showTtsFilterSettings = true
-                                }
-                            },
-                            shape = AppShapes.CardLarge,
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            contentColor = MaterialTheme.colorScheme.onSurface
-                        ) {
-                            Icon(
-                                Icons.Rounded.Settings,
-                                contentDescription = if (currentTab == ProvidersTab.Search) {
-                                    stringResource(R.string.setting_page_search_common_options)
-                                } else {
-                                    stringResource(R.string.setting_tts_settings_title)
-                                }
-                            )
-                        }
-                    }
-                }
-
                 when (currentTab) {
                     ProvidersTab.Models -> AddButton(
                         enableHaptics = settings.displaySetting.enableUIHaptics,
@@ -355,18 +311,22 @@ fun SettingProviderPage(
         },
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { innerPadding ->
-        HorizontalPager(
-            state = pager,
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .consumeWindowInsets(innerPadding)
-        ) { page ->
+        ) {
+            HorizontalPager(
+                state = pager,
+                modifier = Modifier.fillMaxSize()
+            ) { page ->
             when (ProvidersTab.entries[page]) {
-                ProvidersTab.Models -> Column(
+                ProvidersTab.Models -> Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(top = innerPadding.calculateTopPadding())
                 ) {
+                    Column(modifier = Modifier.fillMaxSize()) {
             // Delete confirmation dialog state
             var showDeleteDialog by remember { mutableStateOf(false) }
             var providerToDelete by remember { mutableStateOf<ProviderSetting?>(null) }
@@ -471,10 +431,48 @@ fun SettingProviderPage(
                     }
                 )
             }
+                    }
+                    ProvidersSecondaryActionSlot(modifier = Modifier.fillMaxSize()) {
+                        ImportProviderButton(
+                            asFab = true,
+                            onAdd = { addProvider(it) }
+                        )
+                    }
                 }
 
                 ProvidersTab.Search -> SearchProvidersContent(vm = vm, contentPadding = innerPadding)
                 ProvidersTab.Tts -> TtsProvidersContent(vm = vm, contentPadding = innerPadding)
+            }
+        }
+            AnimatedVisibility(
+                visible = currentTab != ProvidersTab.Models,
+                enter = slideInHorizontally { it },
+                exit = slideOutHorizontally { it }
+            ) {
+                ProvidersSecondaryActionSlot(modifier = Modifier.fillMaxSize()) {
+                    FloatingActionButton(
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            if (currentTab == ProvidersTab.Search) {
+                                showSearchCommonOptions = true
+                            } else {
+                                showTtsFilterSettings = true
+                            }
+                        },
+                        shape = AppShapes.CardLarge,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    ) {
+                        Icon(
+                            Icons.Rounded.Settings,
+                            contentDescription = if (currentTab == ProvidersTab.Search) {
+                                stringResource(R.string.setting_page_search_common_options)
+                            } else {
+                                stringResource(R.string.setting_tts_settings_title)
+                            }
+                        )
+                    }
+                }
             }
         }
     }
