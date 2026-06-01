@@ -1144,8 +1144,8 @@ private fun UIMessage.toSearchableText(): String {
             is UIMessagePart.Reasoning -> ""
             is UIMessagePart.Thinking -> ""
             is UIMessagePart.Document -> listOf(part.fileName, part.mime).joinToString(" ")
-            is UIMessagePart.ToolCall -> listOf(part.toolName, part.arguments).joinToString(" ")
-            is UIMessagePart.ToolResult -> listOf(part.toolName, part.content.toString()).joinToString(" ")
+            is UIMessagePart.ToolCall -> ""
+            is UIMessagePart.ToolResult -> ""
             is UIMessagePart.Image -> part.url
             is UIMessagePart.Video -> part.url
             is UIMessagePart.Audio -> part.url

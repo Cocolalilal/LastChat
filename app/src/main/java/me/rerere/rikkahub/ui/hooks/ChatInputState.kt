@@ -93,9 +93,9 @@ class ChatInputState {
     }
 
     fun setContents(contents: List<UIMessagePart>) {
-        val text = contents.filterIsInstance<UIMessagePart.Text>().joinToString { it.text }
+        val text = contents.filterIsInstance<UIMessagePart.Text>().joinToString("\n") { it.text }
         textContent.setTextAndPlaceCursorAtEnd(text)
-        setMessageContentWithIds(contents.filter { it !is UIMessagePart.Text })
+        setMessageContentWithIds(contents.filter { it.isEditableAttachment() })
     }
 
     fun getContents(): List<UIMessagePart> {
@@ -188,6 +188,13 @@ class ChatInputState {
     private fun newAttachmentInstanceId(): String {
         return Uuid.random().toString()
     }
+}
+
+private fun UIMessagePart.isEditableAttachment(): Boolean {
+    return this is UIMessagePart.Image ||
+        this is UIMessagePart.Video ||
+        this is UIMessagePart.Audio ||
+        this is UIMessagePart.Document
 }
 
 data class ChatInputAttachment(
