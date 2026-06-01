@@ -1626,8 +1626,7 @@
       ],
       "match_patterns": [
         "grok",
-        "x-ai",
-        "xai"
+        "(^|[/._-])x-?ai($|[:/._-])"
       ],
       "icon": "icons/grok.svg",
       "type": "CHAT",
@@ -1744,6 +1743,20 @@
           ]
         },
         {
+          "id": "glm-reasoning-vision",
+          "match_patterns": [
+            "glm[-_]?(?:4\\.6|4\\.7|z1|zero|rumination).*(?:v|vision)"
+          ],
+          "input_modalities": [
+            "TEXT",
+            "IMAGE"
+          ],
+          "abilities": [
+            "TOOL",
+            "REASONING"
+          ]
+        },
+        {
           "id": "glm-reasoning",
           "match_patterns": [
             "glm[-_]?(?:4\\.6|4\\.7|z1|zero|rumination)"
@@ -1751,6 +1764,9 @@
           "abilities": [
             "TOOL",
             "REASONING"
+          ],
+          "exclude_patterns": [
+            "v|vision"
           ]
         },
         {
@@ -1767,7 +1783,12 @@
           ],
           "exclude_patterns": [
             "4\\.5",
-            "5"
+            "5",
+            "4\\.6",
+            "4\\.7",
+            "zero",
+            "z1",
+            "rumination"
           ]
         },
         {
@@ -1781,7 +1802,12 @@
           "exclude_patterns": [
             "4\\.5",
             "5",
-            "v|vision"
+            "v|vision",
+            "4\\.6",
+            "4\\.7",
+            "zero",
+            "z1",
+            "rumination"
           ]
         },
         {

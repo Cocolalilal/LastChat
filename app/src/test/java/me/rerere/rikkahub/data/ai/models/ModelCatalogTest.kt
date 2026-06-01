@@ -181,6 +181,16 @@ class ModelCatalogTest {
         assertTrue("GLM Zero should support function calling", glmZero.supportsFunctionCalling)
         assertTrue("GLM Zero should support reasoning", glmZero.supportsReasoning)
 
+        val glm47 = getEntry("glm-4.7")
+        assertTrue("GLM 4.7 should support reasoning", glm47.supportsReasoning)
+
+        val glm47v = getEntry("glm-4.7-vision")
+        assertTrue("GLM 4.7 Vision should support reasoning", glm47v.supportsReasoning)
+        assertTrue("GLM 4.7 Vision should support vision", glm47v.supportsVision)
+
+        val minimaxNvidia = getEntry("minimaxai/minimax-m2.7")
+        assertTrue("minimaxai/minimax-m2.7 should resolve to MiniMax icon", minimaxNvidia.iconUrl == "icons/minimax.svg".toCatalogIconUrl())
+
         // Qwen
         val qwenVl = getEntry("Qwen/Qwen2.5-VL-7B-Instruct")
         assertTrue("Qwen 2.5 VL should support function calling", qwenVl.supportsFunctionCalling)
