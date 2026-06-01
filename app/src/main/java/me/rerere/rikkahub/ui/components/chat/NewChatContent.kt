@@ -82,7 +82,8 @@ fun NewChatContent(
                         UIAvatar(
                             name = assistant.name.ifBlank { "Character" },
                             value = assistant.avatar,
-                            modifier = Modifier.size(80.dp)
+                            modifier = Modifier.size(80.dp),
+                            onClick = onAvatarClick
                         )
                     }
                     Text(
@@ -103,7 +104,8 @@ fun NewChatContent(
                         UIAvatar(
                             name = assistant.name.ifBlank { "Character" },
                             value = assistant.avatar,
-                            modifier = Modifier.size(44.dp)
+                            modifier = Modifier.size(44.dp),
+                            onClick = onAvatarClick
                         )
                         Greeting(
                             style = MaterialTheme.typography.titleLarge,
@@ -280,13 +282,23 @@ private fun ActionPill(
     }
 
     val pillShape = RoundedCornerShape(24.dp)
+    val pillModifier = if (hasBackgroundImage) {
+        modifier.lastChatBlurEffect(backgroundColor, pillShape)
+    } else {
+        modifier
+    }
+    val containerColor = if (hasBackgroundImage) {
+        blurredContainerColor(backgroundColor)
+    } else {
+        backgroundColor
+    }
+
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
         Surface(
             onClick = onClick,
-            modifier = modifier
-                .lastChatBlurEffect(backgroundColor, pillShape),
+            modifier = pillModifier,
             shape = pillShape,
-            color = blurredContainerColor(backgroundColor),
+            color = containerColor,
             border = BorderStroke(1.dp, borderColor)
         ) {
             Row(

@@ -165,22 +165,6 @@ class LastChatApp : Application() {
             }
         }
         
-        // One-time migration: populate DailyActivityEntity from existing conversation dates
-        // This preserves existing streaks when upgrading to the new persistent activity tracking
-        get<AppScope>().launch(Dispatchers.IO) {
-            val prefs = getSharedPreferences("app_migrations", MODE_PRIVATE)
-            if (!prefs.getBoolean("daily_activity_migrated_v1", false)) {
-                try {
-                    val conversationRepo = get<me.rerere.rikkahub.data.repository.ConversationRepository>()
-                    conversationRepo.migrateConversationDatesToActivity()
-                    prefs.edit().putBoolean("daily_activity_migrated_v1", true).apply()
-                    Log.d(TAG, "Daily activity migration completed successfully")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Daily activity migration failed", e)
-                }
-            }
-        }
-
         get<AppScope>().launch(Dispatchers.IO) {
             runCatching {
                 val catalogService = get<ModelCatalogService>()

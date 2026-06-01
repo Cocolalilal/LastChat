@@ -411,12 +411,12 @@ class ConversationRepository(
                 modelCounts.maxByOrNull { it.value }?.key
             }
 
-    // ===== Daily Activity Tracking (for persistent streaks) =====
+    // ===== Daily Activity Tracking (for the activity heatmap) =====
     
     /**
      * Record that the user was active today (sent a message).
-     * This persists independently of conversations, so streak data
-     * is preserved even when chats are deleted.
+     * This persists independently of conversations so the activity
+     * heatmap can stay useful even when chats are deleted.
      */
     suspend fun recordDailyActivity() {
         val today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
@@ -437,12 +437,6 @@ class ConversationRepository(
         }
     }
     
-    /**
-     * Get all activity dates for streak calculation.
-     * Returns dates in ISO format (YYYY-MM-DD), ordered most recent first.
-     */
-    fun getDailyActivityDatesFlow(): Flow<List<String>> = dailyActivityDAO.getAllDatesFlow()
-    
     fun getWeeklyActivityFlow(startDate: String): Flow<List<me.rerere.rikkahub.data.db.entity.DailyActivityEntity>> =
         dailyActivityDAO.getWeeklyActivityFlow(startDate)
     
@@ -454,26 +448,6 @@ class ConversationRepository(
         return dailyActivityDAO.hasActivityForDateFlow(today)
     }
     
-    /**
-     * Migrate existing conversation dates to the daily activity table.
-     * Called once during app initialization to preserve existing streaks.
-     */
-    suspend fun migrateConversationDatesToActivity() {
-        val existingDates = conversationDAO.getDistinctCreateDatesFlow().first()
-        for (dateStr in existingDates) {
-            try {
-                // Parse and re-format to ensure ISO format
-                val date = LocalDate.parse(dateStr, DateTimeFormatter.ISO_LOCAL_DATE)
-                val isoDate = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
-                // Use a timestamp in the middle of that day for migration
-                val timestamp = date.atStartOfDay().toEpochSecond(java.time.ZoneOffset.UTC) * 1000
-                dailyActivityDAO.insertDateIfNotExists(isoDate, timestamp)
-            } catch (e: Exception) {
-                // Skip invalid dates
-            }
-        }
-    }
-
     /**
      * Reconstruct missing historical activity days from conversation history.
      * This is safe to run repeatedly and fills gaps caused by imports/restores.

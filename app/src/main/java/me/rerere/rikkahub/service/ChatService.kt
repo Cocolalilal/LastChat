@@ -1152,7 +1152,7 @@ class ChatService(
                     saveConversation(conversationId, newConversation)
                 }
 
-                // Record daily activity for streak tracking (persists even if chat is deleted)
+                // Record daily activity for the heatmap (persists even if chat is deleted)
                 withContext(Dispatchers.IO) {
                     conversationRepo.recordDailyActivity()
                 }

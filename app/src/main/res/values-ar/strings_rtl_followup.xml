@@ -43,8 +43,6 @@
     <string name="setting_display_rp_optimizations_desc">تنسيق نص مخصص لأنماط لعب الأدوار</string>
 
     <string name="menu_statistics_title">الإحصاءات</string>
-    <string name="menu_stat_daily_streak">السلسلة اليومية</string>
-    <string name="menu_stat_days">يوم</string>
     <string name="menu_stat_conversations">المحادثات</string>
     <string name="menu_stat_messages">الرسائل</string>
     <string name="menu_stat_input_tokens">رموز الإدخال</string>

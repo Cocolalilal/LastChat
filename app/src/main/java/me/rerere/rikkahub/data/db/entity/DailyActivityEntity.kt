@@ -5,9 +5,9 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 
 /**
- * Entity for tracking daily activity for streak calculation.
- * This table persists independently of conversations, so streak data
- * is preserved even when chats are deleted.
+ * Entity for tracking daily message activity for the statistics heatmap.
+ * This table persists independently of conversations, so aggregate activity
+ * stays useful even when chats are deleted.
  */
 @Entity(tableName = "daily_activity")
 data class DailyActivityEntity(

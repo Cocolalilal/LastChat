@@ -109,6 +109,7 @@ import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.heroAnimation
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.pages.setting.LocalSettingsWideLayout
 import me.rerere.rikkahub.utils.AssistantExportImport
 import kotlinx.coroutines.launch
 import androidx.compose.material.icons.rounded.Upload
@@ -513,6 +514,7 @@ private fun AssistantItemContent(
     onCopy: () -> Unit,
     dragHandle: @Composable () -> Unit
 ) {
+    val useWideSettingsLayout = LocalSettingsWideLayout.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -531,7 +533,13 @@ private fun AssistantItemContent(
             value = assistant.avatar,
             modifier = Modifier
                 .size(40.dp)
-                .heroAnimation(key = "assistant_avatar_${assistant.id}")
+                .let { modifier ->
+                    if (useWideSettingsLayout) {
+                        modifier
+                    } else {
+                        modifier.heroAnimation(key = "assistant_avatar_${assistant.id}")
+                    }
+                }
         )
         Column(
             modifier = Modifier.weight(1f),

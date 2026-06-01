@@ -30,7 +30,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.automirrored.rounded.Input
 import androidx.compose.material.icons.automirrored.rounded.Message
-import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material.icons.rounded.Output
 import androidx.compose.material.icons.rounded.Savings
 import androidx.compose.material3.Card
@@ -151,12 +150,7 @@ private fun MenuStatsContent(
                     StatsRow {
                         StatCardSkeleton(
                             modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                        )
-                        StatCardSkeleton(
-                            modifier = Modifier
-                                .weight(1f)
+                                .fillMaxWidth()
                                 .fillMaxHeight()
                         )
                     }
@@ -165,24 +159,13 @@ private fun MenuStatsContent(
                     val stats = checkNotNull(loadedStats)
                     StatsRow {
                         StatCard(
-                            title = stringResource(R.string.menu_stat_daily_streak),
-                            value = "${stats.dailyChatStreak}",
-                            subtitle = stringResource(R.string.menu_stat_days),
-                            icon = Icons.Rounded.LocalFireDepartment,
-                            containerColor = MaterialTheme.colorScheme.errorContainer,
-                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                        )
-                        StatCard(
                             title = stringResource(R.string.menu_stat_conversations),
                             value = formatCount(stats.usageStats.totalConversations),
                             icon = Icons.AutoMirrored.Rounded.Chat,
                             containerColor = MaterialTheme.colorScheme.primaryContainer,
                             contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier
-                                .weight(1f)
+                                .fillMaxWidth()
                                 .fillMaxHeight()
                         )
                     }

@@ -39,11 +39,9 @@ class MenuVM(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val uiState: StateFlow<MenuUiState> = combine(
-        conversationRepository.getDailyActivityDatesFlow(),
         conversationRepository.getUsageStatsLast12MonthsFlow(),
         conversationRepository.getAllDailyActivityFlow()
-    ) { distinctDates, usageStats, allActivity ->
-        val streak = calculateStreak(distinctDates)
+    ) { usageStats, allActivity ->
         val today = LocalDate.now()
         val formatter = DateTimeFormatter.ISO_LOCAL_DATE
         val parsedActivity = allActivity.mapNotNull { entity ->
@@ -66,7 +64,6 @@ class MenuVM(
 
         classifyMenuUiState(
             MenuStats(
-                dailyChatStreak = streak,
                 usageStats = usageStats,
                 heatmapData = heatmapData
             )
@@ -79,36 +76,6 @@ class MenuVM(
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = MenuUiState.Loading
         )
-
-    private fun calculateStreak(distinctDates: List<String>): Int {
-        if (distinctDates.isEmpty()) return 0
-
-        val formatter = DateTimeFormatter.ISO_LOCAL_DATE
-        val dates = distinctDates.mapNotNull {
-            runCatching { LocalDate.parse(it, formatter) }.getOrNull()
-        }.sortedDescending()
-
-        if (dates.isEmpty()) return 0
-
-        val today = LocalDate.now()
-        val yesterday = today.minusDays(1)
-
-        val startDate = when {
-            dates.contains(today) -> today
-            dates.contains(yesterday) -> yesterday
-            else -> return 0
-        }
-
-        var streak = 0
-        var current = startDate
-
-        while (dates.contains(current)) {
-            streak++
-            current = current.minusDays(1)
-        }
-
-        return streak
-    }
 }
 
 sealed interface MenuUiState {
@@ -124,7 +91,6 @@ sealed interface MenuUiState {
 }
 
 data class MenuStats(
-    val dailyChatStreak: Int = 0,
     val usageStats: UsageStatsEntity = UsageStatsEntity(),
     val heatmapData: List<HeatmapDay> = emptyList()
 )
@@ -138,8 +104,7 @@ internal fun classifyMenuUiState(stats: MenuStats): MenuUiState {
 }
 
 internal fun MenuStats.isEmptyState(): Boolean {
-    return dailyChatStreak == 0 &&
-        usageStats.totalConversations == 0L &&
+    return usageStats.totalConversations == 0L &&
         usageStats.totalMessages == 0L &&
         usageStats.inputTokens == 0L &&
         usageStats.outputTokens == 0L &&

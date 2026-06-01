@@ -121,7 +121,6 @@ import me.rerere.rikkahub.data.repository.ChatAttachmentManager
 import me.rerere.rikkahub.ui.components.ai.MinimalChatInput
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
-import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.HapticPattern
@@ -204,26 +203,67 @@ private fun ChatTopFadeOverlay(
 @Composable
 private fun ChatWidePanelEdgeFadeOverlay(
     width: Dp,
+    placement: ChatToolbarPlacement,
     modifier: Modifier = Modifier,
 ) {
-    val fadeColor = if (LocalDarkMode.current) {
-        Color.Black
-    } else {
-        MaterialTheme.colorScheme.background
-    }
+    val backgroundColor = MaterialTheme.colorScheme.background
+    val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val topFadeHeight = if (placement == ChatToolbarPlacement.Top) 96.dp else 36.dp
     Box(
         modifier = modifier
             .width(width)
             .fillMaxHeight()
-            .background(
-                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                    0f to fadeColor.copy(alpha = 0.45f),
-                    0.18f to Color.Transparent,
-                    0.72f to Color.Transparent,
-                    1f to fadeColor.copy(alpha = 0.58f),
-                )
+    ) {
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+        ) {
+            Spacer(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(statusBarHeight)
+                    .background(backgroundColor)
             )
-    )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(topFadeHeight)
+                    .background(
+                        brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                            colors = listOf(
+                                backgroundColor.copy(alpha = 0.98f),
+                                Color.Transparent
+                            )
+                        )
+                    )
+            )
+        }
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(200.dp)
+                .background(
+                    brush = if (placement == ChatToolbarPlacement.Bottom) {
+                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                backgroundColor.copy(alpha = 0.72f),
+                                backgroundColor.copy(alpha = 0.97f)
+                            )
+                        )
+                    } else {
+                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                backgroundColor.copy(alpha = 0.92f)
+                            )
+                        )
+                    }
+                )
+        )
+    }
 }
 
 internal data class AssistantSwitchNavigation(
@@ -469,6 +509,7 @@ fun ChatPage(
                         )
                         ChatWidePanelEdgeFadeOverlay(
                             width = if (isWidePanelCollapsed) 80.dp else wideDrawerExpandedWidth,
+                            placement = chatTopBarPlacement(setting),
                             modifier = Modifier.align(Alignment.CenterStart)
                         )
                         Row(
@@ -1847,6 +1888,10 @@ private fun ChatToolbarOverflowMenu(
                 )
             }
     ) {
+        ChatTopFadeOverlay(
+            fadeHeight = if (placement == ChatToolbarPlacement.Top) 96.dp else 36.dp,
+            modifier = Modifier.align(Alignment.TopCenter)
+        )
         if (!dragDismissInProgress) {
             Surface(
                 shape = menuShape,
