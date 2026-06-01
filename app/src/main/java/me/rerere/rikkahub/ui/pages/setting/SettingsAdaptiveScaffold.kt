@@ -2,6 +2,11 @@ package me.rerere.rikkahub.ui.pages.setting
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
@@ -55,7 +60,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -79,6 +86,7 @@ val LocalSettingsWideLayout = staticCompositionLocalOf { false }
 
 private var settingsPaneScrollIndex = 0
 private var settingsPaneScrollOffset = 0
+private var lastSettingsPaneSelected: SettingsDestination? = null
 
 enum class SettingsDestination {
     Display,
@@ -153,11 +161,17 @@ private fun SettingsNavigationPane(
     navController: NavHostController = LocalNavController.current,
 ) {
     val groups = settingsPaneGroups()
-    val selectedMain = selected.mainDestination()
+    var displayedSelected by remember { mutableStateOf(lastSettingsPaneSelected ?: selected) }
+    val selectedMain = displayedSelected.mainDestination()
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = settingsPaneScrollIndex,
         initialFirstVisibleItemScrollOffset = settingsPaneScrollOffset,
     )
+
+    LaunchedEffect(selected) {
+        displayedSelected = selected
+        lastSettingsPaneSelected = selected
+    }
 
     LaunchedEffect(listState) {
         snapshotFlow {
@@ -182,7 +196,7 @@ private fun SettingsNavigationPane(
             state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             item {
                 Text(
@@ -197,7 +211,7 @@ private fun SettingsNavigationPane(
                 item(key = group.titleRes) {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Text(
                             text = stringResource(group.titleRes),
@@ -205,18 +219,14 @@ private fun SettingsNavigationPane(
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(start = 12.dp, top = 10.dp, bottom = 4.dp)
                         )
-                        group.entries.forEach { entry ->
-                            val expanded = selectedMain == entry.destination && entry.children.isNotEmpty()
-                            SettingsPaneEntryGroup(
-                                entry = entry,
-                                selected = selected,
-                                selectedMain = selectedMain,
-                                expanded = expanded,
-                                onNavigate = { destination ->
-                                    navigateSettingsPane(navController, destination)
-                                }
-                            )
-                        }
+                        SettingsPaneSection(
+                            group = group,
+                            selected = displayedSelected,
+                            selectedMain = selectedMain,
+                            onNavigate = { destination ->
+                                navigateSettingsPane(navController, destination)
+                            }
+                        )
                     }
                 }
             }
@@ -242,18 +252,62 @@ private fun navigateSettingsPane(
     navController: NavHostController,
     entry: SettingsPaneEntry,
 ) {
-    val screen = entry.screen
-    runCatching {
-        navController.navigate(screen) {
-            launchSingleTop = true
-            popUpTo(Screen.Setting) {
-                inclusive = false
-                saveState = false
+    navController.navigate(entry.screen) {
+        launchSingleTop = true
+    }
+}
+
+@Composable
+private fun SettingsPaneSection(
+    group: SettingsPaneGroup,
+    selected: SettingsDestination,
+    selectedMain: SettingsDestination,
+    onNavigate: (SettingsPaneEntry) -> Unit,
+) {
+    val expandedEntry = group.entries.firstOrNull { entry ->
+        selectedMain == entry.destination && entry.children.isNotEmpty()
+    }
+    val hasExpandedEntry = expandedEntry != null
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize(
+                animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f)
+            ),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        group.entries.forEachIndexed { index, entry ->
+            val expanded = entry == expandedEntry
+            val groupedWithSection = !hasExpandedEntry
+            val topRadius = when {
+                expanded -> 24.dp
+                groupedWithSection && index == 0 -> 24.dp
+                groupedWithSection -> 8.dp
+                else -> 24.dp
             }
-        }
-    }.onFailure {
-        navController.navigate(screen) {
-            launchSingleTop = true
+            val bottomRadius = when {
+                expanded -> 8.dp
+                groupedWithSection && index == group.entries.lastIndex -> 24.dp
+                groupedWithSection -> 8.dp
+                else -> 24.dp
+            }
+            val itemPadding by animateDpAsState(
+                targetValue = if (hasExpandedEntry && !expanded) 8.dp else 0.dp,
+                animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+                label = "settings_pane_section_item_padding"
+            )
+
+            SettingsPaneEntryGroup(
+                entry = entry,
+                selected = selected,
+                selectedMain = selectedMain,
+                expanded = expanded,
+                topRadius = topRadius,
+                bottomRadius = bottomRadius,
+                verticalPadding = itemPadding,
+                onNavigate = onNavigate,
+            )
         }
     }
 }
@@ -264,18 +318,26 @@ private fun SettingsPaneEntryGroup(
     selected: SettingsDestination,
     selectedMain: SettingsDestination,
     expanded: Boolean,
+    topRadius: Dp,
+    bottomRadius: Dp,
+    verticalPadding: Dp,
     onNavigate: (SettingsPaneEntry) -> Unit,
 ) {
     val selectedInGroup = selectedMain == entry.destination
+    val groupPadding by animateDpAsState(
+        targetValue = if (expanded) 4.dp else verticalPadding,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        label = "settings_pane_entry_group_padding"
+    )
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = if (expanded) 4.dp else 0.dp)
+            .padding(vertical = groupPadding / 2)
             .animateContentSize(
                 animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f)
             ),
-        verticalArrangement = Arrangement.spacedBy(if (expanded) 0.dp else 4.dp)
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         SettingsPaneItem(
             entry = entry,
@@ -283,15 +345,21 @@ private fun SettingsPaneEntryGroup(
             expanded = expanded,
             showDescription = selectedInGroup,
             isChild = false,
-            topRadius = 24.dp,
-            bottomRadius = if (expanded) 8.dp else 24.dp,
+            topRadius = topRadius,
+            bottomRadius = bottomRadius,
             onClick = { onNavigate(entry) }
         )
 
-        AnimatedVisibility(visible = expanded) {
+        AnimatedVisibility(
+            visible = expanded,
+            enter = fadeIn(animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f)) +
+                expandVertically(animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f)),
+            exit = fadeOut(animationSpec = spring(dampingRatio = 0.75f, stiffness = 400f)) +
+                shrinkVertically(animationSpec = spring(dampingRatio = 0.75f, stiffness = 400f)),
+        ) {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(0.dp)
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 entry.children.forEachIndexed { index, child ->
                     SettingsPaneItem(
@@ -348,16 +416,26 @@ private fun SettingsPaneItem(
         animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
         label = "settings_pane_item_height"
     )
-    val containerColor = if (selected) {
+    val targetContainerColor = if (selected) {
         MaterialTheme.colorScheme.primaryContainer
     } else {
         MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.55f)
     }
-    val contentColor = if (selected) {
+    val targetContentColor = if (selected) {
         MaterialTheme.colorScheme.onPrimaryContainer
     } else {
         MaterialTheme.colorScheme.onSurface
     }
+    val containerColor by animateColorAsState(
+        targetValue = targetContainerColor,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        label = "settings_pane_item_container_color"
+    )
+    val contentColor by animateColorAsState(
+        targetValue = targetContentColor,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        label = "settings_pane_item_content_color"
+    )
 
     Surface(
         onClick = {

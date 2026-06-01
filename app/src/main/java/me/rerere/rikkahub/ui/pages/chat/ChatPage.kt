@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -200,6 +201,31 @@ private fun ChatTopFadeOverlay(
     }
 }
 
+@Composable
+private fun ChatWidePanelEdgeFadeOverlay(
+    width: Dp,
+    modifier: Modifier = Modifier,
+) {
+    val fadeColor = if (LocalDarkMode.current) {
+        Color.Black
+    } else {
+        MaterialTheme.colorScheme.background
+    }
+    Box(
+        modifier = modifier
+            .width(width)
+            .fillMaxHeight()
+            .background(
+                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                    0f to fadeColor.copy(alpha = 0.45f),
+                    0.18f to Color.Transparent,
+                    0.72f to Color.Transparent,
+                    1f to fadeColor.copy(alpha = 0.58f),
+                )
+            )
+    )
+}
+
 internal data class AssistantSwitchNavigation(
     val initText: String?,
     val initFiles: List<String>,
@@ -360,6 +386,7 @@ fun ChatPage(
         else -> Dp.Unspecified
     }
     var isWidePanelCollapsed by rememberSaveable { mutableStateOf(false) }
+    var showWideRailAssistantPicker by remember { mutableStateOf(false) }
 
     val inputState = rememberChatInputState()
     LaunchedEffect(id, text, files) {
@@ -401,11 +428,30 @@ fun ChatPage(
         }
     }
 
-    val chatListState = remember(id) { LazyListState() }
-    LaunchedEffect(conversation.messageNodes.size) {
+    val chatListState = remember(conversation.id) { LazyListState() }
+    LaunchedEffect(conversation.id, conversation.messageNodes.size) {
         if (!vm.chatListInitialized && conversation.messageNodes.isNotEmpty()) {
             chatListState.scrollToItem(conversation.messageNodes.lastIndex)
             vm.chatListInitialized = true
+        }
+    }
+
+    fun navigateToAssistantConversation(selectedAssistant: Assistant) {
+        scope.launch {
+            val newConversation = vm.createConversationForAssistant(selectedAssistant.id)
+            val draftNavigation = buildAssistantSwitchNavigation(
+                conversation = conversation,
+                inputText = inputState.textContent.text.toString(),
+                inputFiles = extractDraftFileUrls(inputState.messageContent),
+                persistenceMode = activePersistenceMode,
+            )
+            navigateToChatPage(
+                navController = navController,
+                chatId = newConversation.id,
+                initText = draftNavigation.initText,
+                initFiles = draftNavigation.initFiles.map(String::toUri),
+                persistenceMode = draftNavigation.persistenceMode,
+            )
         }
     }
 
@@ -420,6 +466,10 @@ fun ChatPage(
                         AssistantBackground(
                             assistant = conversationAssistant,
                             modifier = Modifier.fillMaxSize()
+                        )
+                        ChatWidePanelEdgeFadeOverlay(
+                            width = if (isWidePanelCollapsed) 80.dp else wideDrawerExpandedWidth,
+                            modifier = Modifier.align(Alignment.CenterStart)
                         )
                         Row(
                             modifier = Modifier.fillMaxSize()
@@ -470,7 +520,7 @@ fun ChatPage(
                                         onOpenStatistics = { navController.navigate(Screen.Menu) },
                                         onOpenSettings = { navController.navigate(Screen.Setting) },
                                         onOpenAssistant = {
-                                            navController.navigate(Screen.AssistantDetail(id = conversationAssistant.id.toString()))
+                                            showWideRailAssistantPicker = true
                                         }
                                     )
                                 } else {
@@ -517,6 +567,22 @@ fun ChatPage(
                                     initialSearchQuery = searchQuery
                                 )
                             }
+                        }
+                        if (showWideRailAssistantPicker) {
+                            me.rerere.rikkahub.ui.components.ai.AssistantPickerSheet(
+                                settings = setting,
+                                currentAssistant = conversationAssistant,
+                                onAssistantSelected = { assistant ->
+                                    vm.setSelectedAssistant(assistant.id)
+                                },
+                                onNavigate = { assistant ->
+                                    showWideRailAssistantPicker = false
+                                    navigateToAssistantConversation(assistant)
+                                },
+                                onDismiss = {
+                                    showWideRailAssistantPicker = false
+                                }
+                            )
                         }
                     }
                 }
@@ -744,6 +810,7 @@ private fun ChatPageContent(
                             currentChatModel = currentChatModel,
                             isGenerating = isGenerating,
                             showCloseAction = previewMode || isChatShareSelecting,
+                            showTopFade = !showToolbarOverflowMenu,
                             onNewChat = {
                                 navigateToChatPage(navController)
                             },
@@ -772,9 +839,11 @@ private fun ChatPageContent(
                     }
                 } else {
                     {
-                        ChatTopFadeOverlay(
-                            fadeHeight = 36.dp,
-                        )
+                        if (!showToolbarOverflowMenu) {
+                            ChatTopFadeOverlay(
+                                fadeHeight = 36.dp,
+                            )
+                        }
                     }
                 },
                 // Input is rendered manually at the bottom of the screen
@@ -786,9 +855,9 @@ private fun ChatPageContent(
                         .fillMaxSize()
                 ) {
                     val recentlyRestoredNodeIds = vm.recentlyRestoredNodeIds.collectAsStateWithLifecycle().value
-                    val conversationSnapshots = remember { mutableStateMapOf<Uuid, Conversation>() }
-                    val chatListStateSnapshots = remember { mutableStateMapOf<Uuid, LazyListState>() }
-                    val searchQuerySnapshots = remember { mutableStateMapOf<Uuid, String?>() }
+                    val conversationSnapshots = remember { mutableMapOf<Uuid, Conversation>() }
+                    val chatListStateSnapshots = remember { mutableMapOf<Uuid, LazyListState>() }
+                    val searchQuerySnapshots = remember { mutableMapOf<Uuid, String?>() }
                     SideEffect {
                         conversationSnapshots[conversation.id] = conversation
                         chatListStateSnapshots[conversation.id] = chatListState
@@ -800,16 +869,7 @@ private fun ChatPageContent(
                             if (initialState == targetState) {
                                 fadeIn(animationSpec = tween(0)) togetherWith fadeOut(animationSpec = tween(0))
                             } else {
-                                (fadeIn(animationSpec = tween(150)) + scaleIn(
-                                    initialScale = 0.985f,
-                                    animationSpec = tween(150)
-                                )) togetherWith (fadeOut(animationSpec = tween(110)) + scaleOut(
-                                    targetScale = 0.995f,
-                                    animationSpec = tween(110)
-                                )) using SizeTransform(
-                                    clip = false,
-                                    sizeAnimationSpec = { _, _ -> tween(180) }
-                                )
+                                fadeIn(animationSpec = tween(150)) togetherWith fadeOut(animationSpec = tween(110))
                             }
                         },
                         label = "chat_conversation_content",
@@ -818,12 +878,12 @@ private fun ChatPageContent(
                         val frameConversation = if (targetConversationId == conversation.id) {
                             conversation
                         } else {
-                            conversationSnapshots[targetConversationId] ?: conversation
+                            conversationSnapshots[targetConversationId] ?: Conversation.ofId(targetConversationId)
                         }
                         val frameListState = if (targetConversationId == conversation.id) {
                             chatListState
                         } else {
-                            chatListStateSnapshots[targetConversationId] ?: chatListState
+                            chatListStateSnapshots.getOrPut(targetConversationId) { LazyListState() }
                         }
                         val frameInitialSearchQuery = if (targetConversationId == conversation.id) {
                             initialSearchQuery
@@ -1052,9 +1112,9 @@ private fun ChatPageContent(
                         currentAssistant = currentAssistant,
                         onAssistantSelected = { selectedAssistant ->
                             vm.setSelectedAssistant(selectedAssistant.id)
-                            showHeaderAssistantPicker = false
                         },
                         onNavigate = { selectedAssistant ->
+                            showHeaderAssistantPicker = false
                             navigateToAssistantConversation(selectedAssistant)
                         },
                         onDismiss = { showHeaderAssistantPicker = false }
@@ -1502,15 +1562,20 @@ private fun ChatToolbarIconButton(
                 scaleY = scale
             }
             .clip(RoundedCornerShape(999.dp))
-            .clickable(
-                enabled = enabled,
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = {
-                    haptics.perform(HapticPattern.Pop)
-                    onClick()
+            .let { modifier ->
+                if (enabled) {
+                    modifier.clickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            onClick()
+                        }
+                    )
+                } else {
+                    modifier
                 }
-            ),
+            },
         contentAlignment = Alignment.Center
     ) {
         Icon(icon, contentDescription = contentDescription)
@@ -1977,42 +2042,50 @@ private fun ChatToolbarActionPill(
             .lastChatBlurEffect(containerColor, buttonShape)
     ) {
         Box(Modifier.fillMaxSize()) {
-            ChatToolbarCompactLayer(
-                alpha = compactAlpha,
-                enabled = actionState.mode == TopBarActionMode.CompactNewChat,
-                topPillSize = topPillSize,
-                onToggleTemporaryChat = onToggleTemporaryChat
-            )
-            ChatToolbarNewChatLayer(
-                alpha = newChatAlpha,
-                enabled = actionState.mode == TopBarActionMode.NewChat,
-                topPillSize = topPillSize,
-                fullPillWidth = fullPillWidth,
-                currentAssistant = currentAssistant,
-                temporary = false,
-                onToggleTemporaryChat = onToggleTemporaryChat,
-                onOpenAssistantPicker = onOpenAssistantPicker
-            )
-            ChatToolbarNewChatLayer(
-                alpha = temporaryAlpha,
-                enabled = actionState.mode == TopBarActionMode.TemporaryNewChat,
-                topPillSize = topPillSize,
-                fullPillWidth = fullPillWidth,
-                currentAssistant = currentAssistant,
-                temporary = true,
-                onToggleTemporaryChat = onToggleTemporaryChat,
-                onOpenAssistantPicker = onOpenAssistantPicker
-            )
-            ChatToolbarInChatLayer(
-                alpha = inChatAlpha,
-                enabled = actionState.mode == TopBarActionMode.InChat,
-                topPillSize = topPillSize,
-                fullPillWidth = fullPillWidth,
-                showCloseAction = actionState.showCloseAction,
-                onNewChat = onNewChat,
-                onOpenOverflowMenu = onOpenOverflowMenu,
-                onCloseAction = onCloseAction
-            )
+            if (compactAlpha > 0f) {
+                ChatToolbarCompactLayer(
+                    alpha = compactAlpha,
+                    enabled = actionState.mode == TopBarActionMode.CompactNewChat,
+                    topPillSize = topPillSize,
+                    onToggleTemporaryChat = onToggleTemporaryChat
+                )
+            }
+            if (newChatAlpha > 0f) {
+                ChatToolbarNewChatLayer(
+                    alpha = newChatAlpha,
+                    enabled = actionState.mode == TopBarActionMode.NewChat,
+                    topPillSize = topPillSize,
+                    fullPillWidth = fullPillWidth,
+                    currentAssistant = currentAssistant,
+                    temporary = false,
+                    onToggleTemporaryChat = onToggleTemporaryChat,
+                    onOpenAssistantPicker = onOpenAssistantPicker
+                )
+            }
+            if (temporaryAlpha > 0f) {
+                ChatToolbarNewChatLayer(
+                    alpha = temporaryAlpha,
+                    enabled = actionState.mode == TopBarActionMode.TemporaryNewChat,
+                    topPillSize = topPillSize,
+                    fullPillWidth = fullPillWidth,
+                    currentAssistant = currentAssistant,
+                    temporary = true,
+                    onToggleTemporaryChat = onToggleTemporaryChat,
+                    onOpenAssistantPicker = onOpenAssistantPicker
+                )
+            }
+            if (inChatAlpha > 0f) {
+                ChatToolbarInChatLayer(
+                    alpha = inChatAlpha,
+                    enabled = actionState.mode == TopBarActionMode.InChat,
+                    topPillSize = topPillSize,
+                    fullPillWidth = fullPillWidth,
+                    showCloseAction = actionState.showCloseAction,
+                    onNewChat = onNewChat,
+                    onOpenOverflowMenu = onOpenOverflowMenu,
+                    onCloseAction = onCloseAction
+                )
+            }
         }
     }
 }
@@ -2036,13 +2109,13 @@ private fun androidx.compose.foundation.layout.BoxScope.ChatToolbarCompactLayer(
             },
         contentAlignment = Alignment.Center
     ) {
-        IconButton(
+        ChatToolbarIconButton(
+            icon = Icons.Rounded.HistoryToggleOff,
+            contentDescription = "Temporary Chat",
+            size = topPillSize,
             enabled = enabled,
-            onClick = onToggleTemporaryChat,
-            modifier = Modifier.size(topPillSize)
-        ) {
-            Icon(Icons.Rounded.HistoryToggleOff, "Temporary Chat")
-        }
+            onClick = onToggleTemporaryChat
+        )
     }
 }
 
@@ -2069,16 +2142,13 @@ private fun androidx.compose.foundation.layout.BoxScope.ChatToolbarNewChatLayer(
             },
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(
+        ChatToolbarIconButton(
+            icon = if (temporary) Icons.Rounded.History else Icons.Rounded.HistoryToggleOff,
+            contentDescription = if (temporary) "Make Normal Chat" else "Temporary Chat",
+            size = topPillSize,
             enabled = enabled,
-            onClick = onToggleTemporaryChat,
-            modifier = Modifier.size(topPillSize)
-        ) {
-            Icon(
-                if (temporary) Icons.Rounded.History else Icons.Rounded.HistoryToggleOff,
-                if (temporary) "Make Normal Chat" else "Temporary Chat"
-            )
-        }
+            onClick = onToggleTemporaryChat
+        )
         Box(
             modifier = Modifier.size(topPillSize),
             contentAlignment = Alignment.Center
@@ -2151,6 +2221,7 @@ private fun ChatToolbar(
     currentChatModel: Model? = null,
     isGenerating: Boolean = false,
     showCloseAction: Boolean,
+    showTopFade: Boolean = true,
     onNewChat: () -> Unit,
     onOpenOverflowMenu: () -> Unit,
     onCloseAction: () -> Unit,
@@ -2203,7 +2274,7 @@ private fun ChatToolbar(
         modifier = Modifier
             .fillMaxWidth()
     ) {
-        if (placement == ChatToolbarPlacement.Top) {
+        if (placement == ChatToolbarPlacement.Top && showTopFade) {
             ChatTopFadeOverlay(
                 fadeHeight = 96.dp,
                 modifier = Modifier.align(Alignment.TopCenter)

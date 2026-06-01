@@ -695,7 +695,7 @@ class RouteActivity : ComponentActivity() {
                             isSettingsPaneRoute(initialState.destination.route) &&
                             isSettingsPaneRoute(targetState.destination.route)
                         ) {
-                            fadeIn(animationSpec = tween(120))
+                            fadeIn(animationSpec = tween(0))
                         } else {
                             rootEnterTransition(motionPolicy)
                         }
@@ -706,7 +706,7 @@ class RouteActivity : ComponentActivity() {
                             isSettingsPaneRoute(initialState.destination.route) &&
                             isSettingsPaneRoute(targetState.destination.route)
                         ) {
-                            fadeOut(animationSpec = tween(90))
+                            fadeOut(animationSpec = tween(0))
                         } else {
                             rootExitTransition(motionPolicy)
                         }
@@ -717,7 +717,7 @@ class RouteActivity : ComponentActivity() {
                             isSettingsPaneRoute(initialState.destination.route) &&
                             isSettingsPaneRoute(targetState.destination.route)
                         ) {
-                            fadeIn(animationSpec = tween(120))
+                            fadeIn(animationSpec = tween(0))
                         } else {
                             rootPopEnterTransition(motionPolicy)
                         }
@@ -728,7 +728,7 @@ class RouteActivity : ComponentActivity() {
                             isSettingsPaneRoute(initialState.destination.route) &&
                             isSettingsPaneRoute(targetState.destination.route)
                         ) {
-                            fadeOut(animationSpec = tween(90))
+                            fadeOut(animationSpec = tween(0))
                         } else {
                             rootPopExitTransition(motionPolicy)
                         }
@@ -820,7 +820,7 @@ class RouteActivity : ComponentActivity() {
                     composable<Screen.SettingProvider>(
                         enterTransition = {
                             if (useWideSettingsLayout) {
-                                fadeIn(animationSpec = tween(120))
+                                null
                             } else if (
                                 initialState.destination.route?.contains("SettingSearch") == true ||
                                 initialState.destination.route?.contains("SettingTTS") == true
@@ -832,7 +832,7 @@ class RouteActivity : ComponentActivity() {
                         },
                         exitTransition = {
                             if (useWideSettingsLayout) {
-                                fadeOut(animationSpec = tween(90))
+                                null
                             } else if (
                                 targetState.destination.route?.contains("SettingSearch") == true ||
                                 targetState.destination.route?.contains("SettingTTS") == true
@@ -844,7 +844,7 @@ class RouteActivity : ComponentActivity() {
                         },
                         popEnterTransition = {
                             if (useWideSettingsLayout) {
-                                fadeIn(animationSpec = tween(120))
+                                null
                             } else if (
                                 initialState.destination.route?.contains("SettingSearch") == true ||
                                 initialState.destination.route?.contains("SettingTTS") == true
@@ -856,7 +856,7 @@ class RouteActivity : ComponentActivity() {
                         },
                         popExitTransition = {
                             if (useWideSettingsLayout) {
-                                fadeOut(animationSpec = tween(90))
+                                null
                             } else if (
                                 targetState.destination.route?.contains("SettingSearch") == true ||
                                 targetState.destination.route?.contains("SettingTTS") == true
@@ -901,7 +901,7 @@ class RouteActivity : ComponentActivity() {
                     composable<Screen.SettingSearch>(
                         enterTransition = {
                             if (useWideSettingsLayout) {
-                                fadeIn(animationSpec = tween(120))
+                                null
                             } else if (initialState.destination.route?.contains("SettingProvider") == true) {
                                 lateralEnterTransition(offset = { it }, motionPolicy = motionPolicy)
                             } else if (initialState.destination.route?.contains("SettingTTS") == true) {
@@ -912,7 +912,7 @@ class RouteActivity : ComponentActivity() {
                         },
                         exitTransition = {
                             if (useWideSettingsLayout) {
-                                fadeOut(animationSpec = tween(90))
+                                null
                             } else if (targetState.destination.route?.contains("SettingProvider") == true) {
                                 lateralExitTransition(offset = { it }, motionPolicy = motionPolicy)
                             } else if (targetState.destination.route?.contains("SettingTTS") == true) {
@@ -923,7 +923,7 @@ class RouteActivity : ComponentActivity() {
                         },
                         popEnterTransition = {
                             if (useWideSettingsLayout) {
-                                fadeIn(animationSpec = tween(120))
+                                null
                             } else if (initialState.destination.route?.contains("SettingProvider") == true) {
                                 lateralEnterTransition(offset = { it }, motionPolicy = motionPolicy)
                             } else if (initialState.destination.route?.contains("SettingTTS") == true) {
@@ -934,7 +934,7 @@ class RouteActivity : ComponentActivity() {
                         },
                         popExitTransition = {
                             if (useWideSettingsLayout) {
-                                fadeOut(animationSpec = tween(90))
+                                null
                             } else if (targetState.destination.route?.contains("SettingProvider") == true) {
                                 lateralExitTransition(offset = { it }, motionPolicy = motionPolicy)
                             } else if (targetState.destination.route?.contains("SettingTTS") == true) {
@@ -944,7 +944,7 @@ class RouteActivity : ComponentActivity() {
                             }
                         }
                     ) {
-                        AdaptiveSettingsScaffold(selected = SettingsDestination.Providers) {
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.Search) {
                             SettingProviderPage(initialTab = me.rerere.rikkahub.ui.pages.setting.ProvidersTab.Search)
                         }
                     }
@@ -952,7 +952,7 @@ class RouteActivity : ComponentActivity() {
                     composable<Screen.SettingTTS>(
                         enterTransition = {
                             if (useWideSettingsLayout) {
-                                fadeIn(animationSpec = tween(120))
+                                null
                             } else if (
                                 initialState.destination.route?.contains("SettingProvider") == true ||
                                 initialState.destination.route?.contains("SettingSearch") == true
@@ -964,7 +964,7 @@ class RouteActivity : ComponentActivity() {
                         },
                         exitTransition = {
                             if (useWideSettingsLayout) {
-                                fadeOut(animationSpec = tween(90))
+                                null
                             } else if (
                                 targetState.destination.route?.contains("SettingProvider") == true ||
                                 targetState.destination.route?.contains("SettingSearch") == true
@@ -976,7 +976,7 @@ class RouteActivity : ComponentActivity() {
                         },
                         popEnterTransition = {
                             if (useWideSettingsLayout) {
-                                fadeIn(animationSpec = tween(120))
+                                null
                             } else if (
                                 initialState.destination.route?.contains("SettingProvider") == true ||
                                 initialState.destination.route?.contains("SettingSearch") == true
@@ -988,7 +988,7 @@ class RouteActivity : ComponentActivity() {
                         },
                         popExitTransition = {
                             if (useWideSettingsLayout) {
-                                fadeOut(animationSpec = tween(90))
+                                null
                             } else if (
                                 targetState.destination.route?.contains("SettingProvider") == true ||
                                 targetState.destination.route?.contains("SettingSearch") == true
@@ -999,7 +999,7 @@ class RouteActivity : ComponentActivity() {
                             }
                         }
                     ) {
-                        AdaptiveSettingsScaffold(selected = SettingsDestination.Providers) {
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.Tts) {
                             SettingProviderPage(initialTab = me.rerere.rikkahub.ui.pages.setting.ProvidersTab.Tts)
                         }
                     }
@@ -1031,7 +1031,7 @@ class RouteActivity : ComponentActivity() {
                     composable<Screen.SettingLorebooks>(
                         enterTransition = {
                             if (useWideSettingsLayout) {
-                                fadeIn(animationSpec = tween(120))
+                                null
                             } else if (initialState.destination.route?.contains("SettingSkills") == true) {
                                 lateralEnterTransition(
                                     offset = { it },
@@ -1043,7 +1043,7 @@ class RouteActivity : ComponentActivity() {
                         },
                         exitTransition = {
                             if (useWideSettingsLayout) {
-                                fadeOut(animationSpec = tween(90))
+                                null
                             } else if (targetState.destination.route?.contains("SettingSkills") == true) {
                                 lateralExitTransition(
                                     offset = { it },
@@ -1055,7 +1055,7 @@ class RouteActivity : ComponentActivity() {
                         },
                         popEnterTransition = {
                             if (useWideSettingsLayout) {
-                                fadeIn(animationSpec = tween(120))
+                                null
                             } else if (initialState.destination.route?.contains("SettingSkills") == true) {
                                 lateralEnterTransition(
                                     offset = { it },
@@ -1067,7 +1067,7 @@ class RouteActivity : ComponentActivity() {
                         },
                         popExitTransition = {
                             if (useWideSettingsLayout) {
-                                fadeOut(animationSpec = tween(90))
+                                null
                             } else if (targetState.destination.route?.contains("SettingSkills") == true) {
                                 lateralExitTransition(
                                     offset = { it },
@@ -1093,7 +1093,7 @@ class RouteActivity : ComponentActivity() {
                     composable<Screen.SettingSkills>(
                         enterTransition = {
                             if (useWideSettingsLayout) {
-                                fadeIn(animationSpec = tween(120))
+                                null
                             } else if (initialState.destination.route?.contains("SettingLorebooks") == true) {
                                 lateralEnterTransition(
                                     offset = { -it },
@@ -1105,7 +1105,7 @@ class RouteActivity : ComponentActivity() {
                         },
                         exitTransition = {
                             if (useWideSettingsLayout) {
-                                fadeOut(animationSpec = tween(90))
+                                null
                             } else if (targetState.destination.route?.contains("SettingLorebooks") == true) {
                                 lateralExitTransition(
                                     offset = { -it },
@@ -1117,7 +1117,7 @@ class RouteActivity : ComponentActivity() {
                         },
                         popEnterTransition = {
                             if (useWideSettingsLayout) {
-                                fadeIn(animationSpec = tween(120))
+                                null
                             } else if (initialState.destination.route?.contains("SettingLorebooks") == true) {
                                 lateralEnterTransition(
                                     offset = { -it },
@@ -1129,7 +1129,7 @@ class RouteActivity : ComponentActivity() {
                         },
                         popExitTransition = {
                             if (useWideSettingsLayout) {
-                                fadeOut(animationSpec = tween(90))
+                                null
                             } else if (targetState.destination.route?.contains("SettingLorebooks") == true) {
                                 lateralExitTransition(
                                     offset = { -it },

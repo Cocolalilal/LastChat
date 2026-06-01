@@ -597,19 +597,14 @@ fun CollapsedChatSideRail(
             )
             Column(
                 modifier = Modifier.clip(RoundedCornerShape(24.dp)),
-                verticalArrangement = Arrangement.spacedBy(0.dp)
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 DrawerAction(
                     icon = { Icon(Icons.Rounded.Image, null) },
                     label = { Text(stringResource(R.string.chat_drawer_imagine)) },
                     onClick = onOpenImageGen,
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    shape = RoundedCornerShape(
-                        topStart = 24.dp,
-                        topEnd = 24.dp,
-                        bottomStart = 8.dp,
-                        bottomEnd = 8.dp
-                    ),
+                    shape = RoundedCornerShape(10.dp),
                     size = 48.dp
                 )
                 DrawerAction(
@@ -617,12 +612,7 @@ fun CollapsedChatSideRail(
                     label = { Text(stringResource(R.string.menu_statistics_title)) },
                     onClick = onOpenStatistics,
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    shape = RoundedCornerShape(
-                        topStart = 8.dp,
-                        topEnd = 8.dp,
-                        bottomStart = 24.dp,
-                        bottomEnd = 24.dp
-                    ),
+                    shape = RoundedCornerShape(10.dp),
                     size = 48.dp
                 )
             }
