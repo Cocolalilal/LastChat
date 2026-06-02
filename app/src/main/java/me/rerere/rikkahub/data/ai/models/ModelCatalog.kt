@@ -1038,6 +1038,7 @@ private fun ProviderSetting.catalogBaseUrl(): String {
         is ProviderSetting.Google -> baseUrl
         is ProviderSetting.OpenAI -> baseUrl
         is ProviderSetting.ComfyUI -> baseUrl
+        is ProviderSetting.Local -> ""
     }
 }
 
@@ -1062,6 +1063,7 @@ private fun ProviderSetting.catalogProviderTokens(): Set<String> {
         }
 
         is ProviderSetting.ComfyUI -> setOf("comfyui")
+        is ProviderSetting.Local -> setOf("local")
     }.map { it.normalizeCatalogToken() }.toSet()
 }
 

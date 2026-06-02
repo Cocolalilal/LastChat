@@ -25,6 +25,7 @@ import me.rerere.rikkahub.data.datastore.SpontaneousMessagingStateStore
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.Migration_6_7
 import me.rerere.rikkahub.data.ai.mcp.McpManager
+import me.rerere.rikkahub.data.localmodel.LocalModelRepository
 import me.rerere.rikkahub.data.sync.WebdavSync
 import me.rerere.rikkahub.utils.appLocale
 import androidx.work.WorkManager
@@ -59,7 +60,7 @@ val dataSourceModule = module {
 
     single {
         Room.databaseBuilder(get(), AppDatabase::class.java, "rikka_hub")
-            .addMigrations(Migration_6_7, AppDatabase.MIGRATION_11_12, AppDatabase.MIGRATION_12_13, AppDatabase.MIGRATION_14_16, AppDatabase.MIGRATION_22_23, AppDatabase.MIGRATION_23_24, AppDatabase.MIGRATION_24_25, AppDatabase.MIGRATION_25_26, AppDatabase.MIGRATION_26_27, AppDatabase.MIGRATION_27_28, AppDatabase.MIGRATION_28_29)
+            .addMigrations(Migration_6_7, AppDatabase.MIGRATION_11_12, AppDatabase.MIGRATION_12_13, AppDatabase.MIGRATION_14_16, AppDatabase.MIGRATION_22_23, AppDatabase.MIGRATION_23_24, AppDatabase.MIGRATION_24_25, AppDatabase.MIGRATION_25_26, AppDatabase.MIGRATION_26_27, AppDatabase.MIGRATION_27_28, AppDatabase.MIGRATION_28_29, AppDatabase.MIGRATION_29_30)
             .addCallback(object : RoomDatabase.Callback() {
                 override fun onOpen(db: SupportSQLiteDatabase) {
                     super.onOpen(db)
@@ -71,6 +72,16 @@ val dataSourceModule = module {
 
     single {
         WorkManager.getInstance(get())
+    }
+
+    single {
+        LocalModelRepository(
+            context = get(),
+            client = get(),
+            dao = get(),
+            settingsStore = get(),
+            workManager = get(),
+        )
     }
 
     single {
@@ -121,6 +132,10 @@ val dataSourceModule = module {
 
     single {
         get<AppDatabase>().usageStatsDao()
+    }
+
+    single {
+        get<AppDatabase>().localModelInstallDao()
     }
 
     single { McpManager(settingsStore = get(), appScope = get()) }

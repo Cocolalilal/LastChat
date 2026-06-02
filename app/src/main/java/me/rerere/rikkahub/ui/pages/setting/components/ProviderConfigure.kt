@@ -129,6 +129,7 @@ fun ProviderConfigure(
                         is ProviderSetting.Google -> provider.copy(enabled = enabled)
                         is ProviderSetting.Claude -> provider.copy(enabled = enabled)
                         is ProviderSetting.ComfyUI -> provider.copy(enabled = enabled)
+                        is ProviderSetting.Local -> provider.copy(enabled = true)
                     }
                     onEdit(updated)
                 }
@@ -176,6 +177,7 @@ fun ProviderConfigure(
                         is ProviderSetting.Google -> provider.copy(name = newName)
                         is ProviderSetting.Claude -> provider.copy(name = newName)
                         is ProviderSetting.ComfyUI -> provider.copy(name = newName)
+                        is ProviderSetting.Local -> provider.copy(name = "Local")
                     }
                     onEdit(updated)
                 },
@@ -202,6 +204,8 @@ fun ProviderConfigure(
             is ProviderSetting.ComfyUI -> {
                 ProviderConfigureComfyUI(provider, onEdit)
             }
+
+            is ProviderSetting.Local -> Unit
         }
     }
 }
@@ -313,6 +317,7 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
         is ProviderSetting.Google -> this.apiKey
         is ProviderSetting.Claude -> this.apiKey
         is ProviderSetting.ComfyUI -> ""
+        is ProviderSetting.Local -> ""
     }
 
     val sourceBaseUrl = when (this) {
@@ -320,12 +325,14 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
         is ProviderSetting.Google -> this.baseUrl
         is ProviderSetting.Claude -> this.baseUrl
         is ProviderSetting.ComfyUI -> this.baseUrl
+        is ProviderSetting.Local -> ""
     }
     val targetDefaultBaseUrl = when (type) {
         ProviderSetting.OpenAI::class -> ProviderSetting.OpenAI().baseUrl
         ProviderSetting.Google::class -> ProviderSetting.Google().baseUrl
         ProviderSetting.Claude::class -> ProviderSetting.Claude().baseUrl
         ProviderSetting.ComfyUI::class -> ProviderSetting.ComfyUI().baseUrl
+        ProviderSetting.Local::class -> ""
         else -> error("Unsupported provider type: $type")
     }
     val convertedBaseUrl = sourceBaseUrl.convertToTargetBaseUrl(targetDefaultBaseUrl)
@@ -408,6 +415,15 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
             promptInputName = if (this is ProviderSetting.ComfyUI) this.promptInputName else "text",
             modelNodeId = if (this is ProviderSetting.ComfyUI) this.modelNodeId else "",
             modelInputName = if (this is ProviderSetting.ComfyUI) this.modelInputName else "ckpt_name",
+        )
+
+        ProviderSetting.Local::class -> ProviderSetting.Local(
+            id = this.id,
+            enabled = true,
+            name = "Local",
+            models = this.models,
+            tags = this.tags,
+            builtIn = true,
         )
 
         else -> error("Unsupported provider type: $type")

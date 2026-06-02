@@ -76,6 +76,8 @@ private fun ProviderSetting.withCatalogProviderDefaults(
         is ProviderSetting.Claude -> copy(customIconUri = resolvedIcon)
 
         is ProviderSetting.ComfyUI -> copy(customIconUri = resolvedIcon)
+
+        is ProviderSetting.Local -> this
     }
 }
 
@@ -131,6 +133,7 @@ private val ProviderSetting.matchType: CatalogProviderType
         is ProviderSetting.Google -> CatalogProviderType.GOOGLE
         is ProviderSetting.Claude -> CatalogProviderType.CLAUDE
         is ProviderSetting.ComfyUI -> CatalogProviderType.OPENAI
+        is ProviderSetting.Local -> CatalogProviderType.OPENAI
     }
 
 private fun ProviderSetting.baseUrlForCatalogMatch(): String {
@@ -139,6 +142,7 @@ private fun ProviderSetting.baseUrlForCatalogMatch(): String {
         is ProviderSetting.Google -> baseUrl
         is ProviderSetting.Claude -> baseUrl
         is ProviderSetting.ComfyUI -> baseUrl
+        is ProviderSetting.Local -> ""
     }
 }
 

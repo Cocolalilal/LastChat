@@ -4,6 +4,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelType
+import me.rerere.ai.provider.ProviderProxy
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
@@ -412,23 +413,44 @@ fun Settings.getSelectedTTSProvider(): TTSProviderSetting? {
 
 internal fun Settings.ensureBuiltInProviders(): Settings {
     val defaultById = DEFAULT_PROVIDERS.associateBy { it.id }
-    val normalizedProviders = providers.map { provider ->
+    val normalizedProviders = providers.mapNotNull { provider ->
+        if (provider is ProviderSetting.Local && provider.id != DEFAULT_LOCAL_PROVIDER_ID) {
+            null
+        } else {
         defaultById[provider.id]?.let { defaultProvider ->
             provider.copyProvider(
                 id = defaultProvider.id,
+                enabled = if (defaultProvider is ProviderSetting.Local) true else provider.enabled,
+                name = if (defaultProvider is ProviderSetting.Local) defaultProvider.name else provider.name,
                 builtIn = defaultProvider.builtIn,
                 description = defaultProvider.description,
                 shortDescription = defaultProvider.shortDescription,
+                customIconUri = if (defaultProvider is ProviderSetting.Local) null else provider.customIconUri,
             )
         } ?: provider
+        }
     }
 
     val missingDefaults = DEFAULT_PROVIDERS
         .filterNot { default -> normalizedProviders.any { it.id == default.id } }
 
+    val localProvider = (normalizedProviders + missingDefaults)
+        .firstOrNull { it.id == DEFAULT_LOCAL_PROVIDER_ID }
+        ?: DEFAULT_LOCAL_PROVIDER
+    val localFirst = localProvider.copyProvider(
+        id = DEFAULT_LOCAL_PROVIDER_ID,
+        enabled = true,
+        name = "Local",
+        proxy = ProviderProxy.None,
+        customIconUri = null,
+        builtIn = true,
+    )
     val updatedProviders = buildList {
-        addAll(normalizedProviders)
-        addAll(missingDefaults)
+        add(localFirst)
+        addAll(
+            (normalizedProviders + missingDefaults)
+                .filterNot { it.id == DEFAULT_LOCAL_PROVIDER_ID }
+        )
     }
     return if (updatedProviders != providers) {
         copy(providers = updatedProviders)

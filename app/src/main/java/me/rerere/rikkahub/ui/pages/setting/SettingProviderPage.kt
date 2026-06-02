@@ -204,7 +204,8 @@ fun SettingProviderPage(
     
     // Filter providers based on search and tags
     val filteredProviders = remember(settings.providers, searchQuery, selectedTagIds) {
-        var result = settings.providers
+        val localProvider = settings.providers.firstOrNull { it is ProviderSetting.Local }
+        var result = settings.providers.filterNot { it is ProviderSetting.Local }
         
         // Filter by search query
         if (searchQuery.isNotBlank()) {
@@ -220,7 +221,10 @@ fun SettingProviderPage(
             }
         }
         
-        result
+        buildList {
+            localProvider?.let(::add)
+            addAll(result)
+        }
     }
     
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -373,14 +377,18 @@ fun SettingProviderPage(
                     navController.navigate(Screen.SettingProviderDetail(providerId = provider.id.toString()))
                 },
                 onDeleteRequest = { provider ->
+                    if (provider is ProviderSetting.Local) return@ProviderListView
                     providerToDelete = provider
                     showDeleteDialog = true
                 },
                 onReorder = { fromProvider, toProvider ->
+                    if (fromProvider is ProviderSetting.Local || toProvider is ProviderSetting.Local) {
+                        return@ProviderListView
+                    }
                     val reorderedProviders = settings.providers.toMutableList()
                     val from = reorderedProviders.indexOfFirst { it.id == fromProvider.id }
                     val to = reorderedProviders.indexOfFirst { it.id == toProvider.id }
-                    if (from >= 0 && to >= 0 && from != to) {
+                    if (from >= 0 && to > 0 && from != to) {
                         reorderedProviders.add(to, reorderedProviders.removeAt(from))
                         vm.updateSettings(settings.copy(providers = reorderedProviders))
                     }
@@ -415,7 +423,7 @@ fun SettingProviderPage(
                     confirmButton = {
                         TextButton(
                             onClick = {
-                                providerToDelete?.let { p ->
+                                providerToDelete?.takeUnless { it is ProviderSetting.Local }?.let { p ->
                                     vm.updateSettings(
                                         settings.copy(
                                             providers = settings.providers.filter { it.id != p.id }
@@ -577,7 +585,7 @@ private fun ProviderListView(
     var neighborsUnlocked by remember { mutableStateOf(false) }
     
     
-    val canDelete = allProviders.size > 1
+    val canDelete = allProviders.count { it !is ProviderSetting.Local } > 1
     
     // Reset neighborsUnlocked when offset returns to 0
     if (dragOffset == 0f && neighborsUnlocked) {
@@ -662,6 +670,8 @@ private fun ProviderListView(
             }
 
             itemsIndexed(providers, key = { _, it -> it.id }) { index, provider ->
+                val isLocalProvider = provider is ProviderSetting.Local
+                val itemCanDelete = canDelete && !isLocalProvider
                 val position = when {
                     providers.size == 1 -> ItemPosition.ONLY
                     index == 0 -> ItemPosition.FIRST
@@ -696,10 +706,10 @@ private fun ProviderListView(
                     state = reorderableState,
                     key = provider.id
                 ) { isDragging ->
-                    androidx.compose.runtime.key(canDelete) {
+                    androidx.compose.runtime.key(itemCanDelete) {
                         PhysicsSwipeToDelete(
                             position = position,
-                            deleteEnabled = canDelete,
+                            deleteEnabled = itemCanDelete,
                             neighborOffset = neighborOffset,
                             onDragProgress = { offset, unlocked ->
                                 draggingIndex = index
@@ -724,7 +734,10 @@ private fun ProviderListView(
                                 animatedShape = animatedShape,
                                 providerTags = settings.providerTags,
                                 haptics = haptics,
-                                dragHandle = {
+                                dragHandle = if (isLocalProvider) {
+                                    {}
+                                } else {
+                                    {
                                     IconButton(
                                         onClick = {},
                                         modifier = Modifier
@@ -741,6 +754,7 @@ private fun ProviderListView(
                                             imageVector = Icons.Rounded.DragIndicator,
                                             contentDescription = null
                                         )
+                                    }
                                     }
                                 },
                                 onClick = {

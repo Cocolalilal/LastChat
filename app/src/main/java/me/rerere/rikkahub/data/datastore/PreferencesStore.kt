@@ -279,9 +279,12 @@ class SettingsStore(
                 val defaultProvider = DEFAULT_PROVIDERS.find { it.id == provider.id }
                 if (defaultProvider != null) {
                     provider.copyProvider(
+                        enabled = if (defaultProvider is ProviderSetting.Local) true else provider.enabled,
+                        name = if (defaultProvider is ProviderSetting.Local) defaultProvider.name else provider.name,
                         builtIn = defaultProvider.builtIn,
                         description = defaultProvider.description,
                         shortDescription = defaultProvider.shortDescription,
+                        customIconUri = if (defaultProvider is ProviderSetting.Local) null else provider.customIconUri,
                     )
                 } else provider
             }.toMutableList()
@@ -296,7 +299,7 @@ class SettingsStore(
                 providers = providers,
                 assistants = assistants,
                 ttsProviders = ttsProviders,
-            ).normalizeWebServerSettings().normalizeFontSettings()
+            ).ensureBuiltInProviders().normalizeWebServerSettings().normalizeFontSettings()
         }
         .map { settings ->
             // 去重并清理无效引用
@@ -317,6 +320,10 @@ class SettingsStore(
                         )
 
                         is ProviderSetting.ComfyUI -> provider.copy(
+                            models = provider.models.distinctBy { model -> model.id }
+                        )
+
+                        is ProviderSetting.Local -> provider.copy(
                             models = provider.models.distinctBy { model -> model.id }
                         )
                     }

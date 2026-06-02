@@ -39,6 +39,7 @@ val viewModelModule = module {
             modelCatalogService = get(),
             modelMetadataResolver = get(),
             memoryRepository = get(),
+            localModelRepository = get(),
         )
     }
     viewModelOf(::AssistantVM)
