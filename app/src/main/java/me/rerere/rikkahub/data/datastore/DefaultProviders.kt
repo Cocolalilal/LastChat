@@ -4,17 +4,7 @@ import me.rerere.ai.provider.BalanceOption
 import me.rerere.ai.provider.ProviderSetting
 import kotlin.uuid.Uuid
 
-val DEFAULT_LOCAL_PROVIDER_ID = Uuid.parse("6d7f46e3-dfc7-4f57-9d95-8ef0e9c79f01")
-
-val DEFAULT_LOCAL_PROVIDER = ProviderSetting.Local(
-    id = DEFAULT_LOCAL_PROVIDER_ID,
-    name = "Local",
-    builtIn = true,
-    enabled = true,
-)
-
 val DEFAULT_PROVIDERS = listOf(
-    DEFAULT_LOCAL_PROVIDER,
     ProviderSetting.OpenAI(
         id = Uuid.parse("d5734028-d39b-4d41-9841-fd648d65440e"),
         name = "OpenRouter",

@@ -18,12 +18,8 @@ import me.rerere.rikkahub.data.ai.models.mergeCatalogIntoSettings
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.ai.mcp.McpManager
-import me.rerere.rikkahub.data.localmodel.LocalModelCatalogEntry
-import me.rerere.rikkahub.data.localmodel.LocalModelRepository
 import me.rerere.rikkahub.data.repository.AppStorageRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
-import me.rerere.ai.provider.Model
-import android.net.Uri
 import me.rerere.rikkahub.utils.IconStorageManager
 import okhttp3.OkHttpClient
 
@@ -36,16 +32,12 @@ class SettingVM(
     private val modelCatalogService: ModelCatalogService,
     private val modelMetadataResolver: ModelMetadataResolver,
     private val memoryRepository: MemoryRepository,
-    val localModelRepository: LocalModelRepository,
 ) :
     ViewModel() {
     val settings: StateFlow<Settings> = settingsStore.settingsFlow
         .stateIn(viewModelScope, SharingStarted.Lazily, Settings(init = true, providers = emptyList()))
     val modelCatalogStatus: StateFlow<ModelCatalogStatus> = modelCatalogService.status
     val modelCatalogSnapshot: StateFlow<ModelCatalogSnapshot?> = modelCatalogService.snapshotFlow
-    val localModelCatalog = localModelRepository.catalog
-    val localModelInstalls = localModelRepository.installs
-        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     fun updateSettings(
         newSettings: Settings,
@@ -138,40 +130,6 @@ class SettingVM(
             }.onFailure {
                 onError(it)
             }
-        }
-    }
-
-    fun refreshLocalModelCatalog(
-        onError: (Throwable) -> Unit = {},
-    ) {
-        viewModelScope.launch {
-            runCatching {
-                localModelRepository.refreshCatalog()
-            }.onFailure {
-                onError(it)
-            }
-        }
-    }
-
-    fun downloadLocalModel(entry: LocalModelCatalogEntry, update: Boolean = false) {
-        localModelRepository.download(entry, update)
-    }
-
-    fun importLocalModel(uri: Uri) {
-        viewModelScope.launch {
-            localModelRepository.importModel(uri)
-        }
-    }
-
-    fun deleteLocalModel(model: Model) {
-        viewModelScope.launch {
-            localModelRepository.delete(model)
-        }
-    }
-
-    fun updateLocalModelConfig(model: Model) {
-        viewModelScope.launch {
-            localModelRepository.updateModelConfig(model)
         }
     }
 

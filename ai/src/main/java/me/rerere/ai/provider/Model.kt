@@ -23,17 +23,6 @@ data class Model(
     val customIconUri: String? = null, // User-selected custom icon URI
     val imageGenerationMethod: ImageGenerationMethod? = null, // Only for IMAGE type models
     val reasoningBehavior: ReasoningRequestBehavior? = null,
-    val contextWindowTokens: Int? = null,
-    val localRuntime: LocalModelRuntime? = null,
-    val localModelPath: String? = null,
-    val localCatalogId: String? = null,
-    val localRevision: String? = null,
-    val localFileName: String? = null,
-    val localDownloadState: LocalModelDownloadState = LocalModelDownloadState.NOT_DOWNLOADED,
-    val localUpdateInfo: LocalModelUpdateInfo? = null,
-    val localSamplerDefaults: LocalModelSamplerDefaults? = null,
-    val localAccelerator: LocalModelAccelerator? = null,
-    val localImported: Boolean = false,
 )
 
 @Serializable
@@ -62,71 +51,6 @@ enum class ModelAbility {
     TOOL,
     REASONING,
 }
-
-@Serializable
-enum class LocalModelRuntime {
-    @SerialName("litert_lm")
-    LITERT_LM,
-}
-
-@Serializable
-enum class LocalModelDownloadState {
-    @SerialName("not_downloaded")
-    NOT_DOWNLOADED,
-
-    @SerialName("downloading")
-    DOWNLOADING,
-
-    @SerialName("importing")
-    IMPORTING,
-
-    @SerialName("downloaded")
-    DOWNLOADED,
-
-    @SerialName("updating")
-    UPDATING,
-
-    @SerialName("failed")
-    FAILED,
-}
-
-@Serializable
-enum class LocalModelAccelerator {
-    @SerialName("auto")
-    AUTO,
-
-    @SerialName("cpu")
-    CPU,
-
-    @SerialName("gpu")
-    GPU,
-
-    @SerialName("npu")
-    NPU,
-
-    @SerialName("tpu")
-    TPU,
-}
-
-@Serializable
-data class LocalModelSamplerDefaults(
-    val topK: Int = 64,
-    val topP: Float = 0.95f,
-    val temperature: Float = 1.0f,
-    val maxTokens: Int = 1024,
-    val maxContextLength: Int? = null,
-    val accelerators: List<LocalModelAccelerator> = listOf(LocalModelAccelerator.GPU, LocalModelAccelerator.CPU),
-    val visionAccelerator: LocalModelAccelerator? = null,
-    val speculativeDecoding: Boolean = false,
-)
-
-@Serializable
-data class LocalModelUpdateInfo(
-    val latestRevision: String,
-    val latestFileName: String,
-    val message: String = "",
-    val updateAvailable: Boolean = false,
-)
 
 // 模型(提供商)提供的内置工具选项
 @Serializable

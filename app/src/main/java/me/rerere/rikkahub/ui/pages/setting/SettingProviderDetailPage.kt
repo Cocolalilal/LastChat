@@ -30,7 +30,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -67,7 +66,6 @@ import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SwipeToDismissBox
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
@@ -110,11 +108,9 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DragIndicator
 import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material.icons.rounded.FileOpen
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.NetworkCheck
-import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Share
@@ -137,9 +133,6 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ImageGenerationMethod
-import me.rerere.ai.provider.LocalModelAccelerator
-import me.rerere.ai.provider.LocalModelDownloadState
-import me.rerere.ai.provider.LocalModelSamplerDefaults
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
@@ -151,8 +144,6 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.models.ModelMetadataResolver
 import me.rerere.rikkahub.data.ai.models.ModelResolutionOptions
-import me.rerere.rikkahub.data.localmodel.LocalModelCatalogEntry
-import me.rerere.rikkahub.data.localmodel.recommendedLocalModel
 import me.rerere.rikkahub.ui.components.ai.ModelAbilityTag
 import me.rerere.rikkahub.ui.components.ai.ModelModalityTag
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
@@ -298,8 +289,6 @@ private fun ProviderSetting.apiModelCacheKey(): String {
             baseUrl,
             workflowJson.hashCode().toString(),
         )
-
-        is ProviderSetting.Local -> listOf("local", id.toString())
     }.joinToString("|")
 }
 
@@ -313,7 +302,6 @@ private fun ProviderSetting.canFetchApiModels(): Boolean {
         }
         is ProviderSetting.Claude -> apiKey.isNotBlank()
         is ProviderSetting.ComfyUI -> workflowJson.isNotBlank()
-        is ProviderSetting.Local -> false
     }
 }
 
@@ -345,397 +333,6 @@ private object ApiModelListCache {
             modelsByProvider[key] = models
         }
     }
-}
-
-@Composable
-private fun LocalProviderDetailPage(
-    provider: ProviderSetting.Local,
-    vm: SettingVM,
-    onEditModel: (Model) -> Unit,
-) {
-    val context = LocalContext.current
-    val catalog by vm.localModelCatalog.collectAsStateWithLifecycle()
-    val installs by vm.localModelInstalls.collectAsStateWithLifecycle()
-    val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
-    val recommended = remember(catalog) { recommendedLocalModel(catalog, context) }
-    var selectedModel by remember { mutableStateOf<Model?>(null) }
-    val importLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-        haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Success)
-        vm.importLocalModel(uri)
-    }
-
-    LaunchedEffect(Unit) {
-        vm.refreshLocalModelCatalog()
-    }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                navigationIcon = { BackButton() },
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(Icons.Rounded.PhoneAndroid, contentDescription = null, modifier = Modifier.size(22.dp))
-                        Text("Local", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                },
-            )
-        },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = {
-                    haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
-                    importLauncher.launch(arrayOf("application/octet-stream", "*/*"))
-                },
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                contentColor = MaterialTheme.colorScheme.onSurface,
-            ) {
-                Icon(Icons.Rounded.FileOpen, contentDescription = "Import model")
-            }
-        }
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .consumeWindowInsets(padding)
-                .padding(horizontal = 16.dp),
-            contentPadding = PaddingValues(
-                top = padding.calculateTopPadding() + 8.dp,
-                bottom = padding.calculateBottomPadding() + 120.dp,
-            ),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            item { LocalSectionHeader("Downloaded") }
-            if (provider.models.isEmpty()) {
-                item { LocalEmptyCard("No local models downloaded yet.") }
-            } else {
-                items(provider.models, key = { it.id }) { model ->
-                    LocalDownloadedModelCard(
-                        model = model,
-                        onClick = {
-                            haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
-                            selectedModel = model
-                        },
-                        onDelete = {
-                            haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Thud)
-                            vm.deleteLocalModel(model)
-                        },
-                    )
-                }
-            }
-
-            recommended?.let { entry ->
-                item {
-                    LocalSectionHeader("Recommended for this device")
-                    LocalCatalogModelCard(
-                        entry = entry,
-                        install = installs.firstOrNull { it.catalogId == entry.catalogId },
-                        recommended = true,
-                        onDownload = { vm.downloadLocalModel(entry) },
-                        onUpdate = { vm.downloadLocalModel(entry, update = true) },
-                    )
-                }
-            }
-
-            item { LocalSectionHeader("Downloadable") }
-            items(catalog, key = { it.catalogId }) { entry ->
-                LocalCatalogModelCard(
-                    entry = entry,
-                    install = installs.firstOrNull { it.catalogId == entry.catalogId },
-                    recommended = entry.catalogId == recommended?.catalogId,
-                    onDownload = { vm.downloadLocalModel(entry) },
-                    onUpdate = { vm.downloadLocalModel(entry, update = true) },
-                )
-            }
-        }
-    }
-
-    selectedModel?.let { model ->
-        LocalModelEditorSheet(
-            model = model,
-            onDismiss = { selectedModel = null },
-            onSave = { updated ->
-                onEditModel(updated)
-                selectedModel = updated
-            },
-        )
-    }
-}
-
-@Composable
-private fun LocalSectionHeader(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.titleMedium,
-        modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
-    )
-}
-
-@Composable
-private fun LocalEmptyCard(text: String) {
-    Surface(
-        shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(16.dp),
-        )
-    }
-}
-
-@Composable
-private fun LocalDownloadedModelCard(
-    model: Model,
-    onClick: () -> Unit,
-    onDelete: () -> Unit,
-) {
-    Surface(
-        onClick = onClick,
-        shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Rounded.PhoneAndroid, contentDescription = null, modifier = Modifier.size(34.dp))
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(model.displayName.ifBlank { model.modelId }, style = MaterialTheme.typography.titleMedium)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    LocalChip("Running locally")
-                    model.contextWindowTokens?.let { LocalChip("${it / 1000}K context") }
-                    if (model.inputModalities.contains(Modality.IMAGE)) LocalChip("Vision")
-                    if (model.abilities.contains(ModelAbility.REASONING)) LocalChip("Reasoning")
-                    if (model.abilities.contains(ModelAbility.TOOL)) LocalChip("Tools")
-                }
-            }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Rounded.Delete, contentDescription = "Delete model")
-            }
-        }
-    }
-}
-
-@Composable
-private fun LocalCatalogModelCard(
-    entry: LocalModelCatalogEntry,
-    install: me.rerere.rikkahub.data.db.entity.LocalModelInstallEntity?,
-    recommended: Boolean,
-    onDownload: () -> Unit,
-    onUpdate: () -> Unit,
-) {
-    val status = install?.status?.let { runCatching { LocalModelDownloadState.valueOf(it) }.getOrNull() }
-    val downloaded = status == LocalModelDownloadState.DOWNLOADED
-    val updateAvailable = downloaded && install.updateRevision.isNotBlank() && install.updateRevision != install.revision && !install.imported
-    Surface(
-        shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
-                Icon(Icons.Rounded.PhoneAndroid, contentDescription = null, modifier = Modifier.size(32.dp))
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(entry.name, style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "${formatLocalModelBytes(entry.sizeBytes)} • ${entry.minRamGb} GB min RAM",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                if (recommended) {
-                    LocalChip("Recommended")
-                }
-            }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                LocalChip("${(entry.defaults.maxContextLength ?: entry.defaults.maxTokens) / 1000}K context")
-                if (entry.supportsImage) LocalChip("Vision")
-                if (entry.supportsAudio) LocalChip("Audio")
-                if (entry.supportsReasoning) LocalChip("Reasoning")
-                if (entry.supportsTools) LocalChip("Tools")
-            }
-            install?.let {
-                LocalProgressPill(status = status, progress = it.progressPercent, error = it.lastError)
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                when {
-                    updateAvailable -> Button(onClick = onUpdate, shape = me.rerere.rikkahub.ui.theme.AppShapes.ButtonPill) {
-                        Text("Update")
-                    }
-                    downloaded -> OutlinedButton(onClick = {}, enabled = false, shape = me.rerere.rikkahub.ui.theme.AppShapes.ButtonPill) {
-                        Text("Downloaded")
-                    }
-                    status == LocalModelDownloadState.DOWNLOADING || status == LocalModelDownloadState.UPDATING -> OutlinedButton(
-                        onClick = {},
-                        enabled = false,
-                        shape = me.rerere.rikkahub.ui.theme.AppShapes.ButtonPill,
-                    ) {
-                        Text("Working")
-                    }
-                    else -> Button(onClick = onDownload, shape = me.rerere.rikkahub.ui.theme.AppShapes.ButtonPill) {
-                        Text("Download")
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun LocalProgressPill(
-    status: LocalModelDownloadState?,
-    progress: Int,
-    error: String,
-) {
-    val label = when (status) {
-        LocalModelDownloadState.DOWNLOADING -> "Downloading model $progress%"
-        LocalModelDownloadState.UPDATING -> "Updating model $progress%"
-        LocalModelDownloadState.IMPORTING -> "Importing model"
-        LocalModelDownloadState.FAILED -> error.ifBlank { "Local model error" }
-        LocalModelDownloadState.DOWNLOADED -> "Ready"
-        LocalModelDownloadState.NOT_DOWNLOADED, null -> return
-    }
-    LocalChip(label)
-}
-
-@Composable
-private fun LocalChip(text: String) {
-    Surface(
-        shape = me.rerere.rikkahub.ui.theme.AppShapes.ButtonPill,
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-            maxLines = 1,
-        )
-    }
-}
-
-@Composable
-private fun LocalModelEditorSheet(
-    model: Model,
-    onDismiss: () -> Unit,
-    onSave: (Model) -> Unit,
-) {
-    var maxTokens by remember(model.id) { mutableFloatStateOf((model.localSamplerDefaults?.maxTokens ?: 1024).toFloat()) }
-    var topK by remember(model.id) { mutableFloatStateOf((model.localSamplerDefaults?.topK ?: 64).toFloat()) }
-    var topP by remember(model.id) { mutableFloatStateOf(model.localSamplerDefaults?.topP ?: 0.95f) }
-    var temperature by remember(model.id) { mutableFloatStateOf(model.localSamplerDefaults?.temperature ?: 1.0f) }
-    var accelerator by remember(model.id) { mutableStateOf(model.localAccelerator ?: LocalModelAccelerator.AUTO) }
-    val supportedAccelerators = remember(model) {
-        (listOf(LocalModelAccelerator.AUTO) + (model.localSamplerDefaults?.accelerators ?: listOf(LocalModelAccelerator.CPU))).distinct()
-    }
-    val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 12.dp)
-                .navigationBarsPadding(),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.PhoneAndroid, contentDescription = null, modifier = Modifier.size(40.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(model.displayName.ifBlank { model.modelId }, style = MaterialTheme.typography.titleLarge)
-                    Text(model.localFileName.orEmpty(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-
-            LocalSlider("Max tokens", maxTokens, 256f..(model.contextWindowTokens ?: 32768).toFloat()) { maxTokens = it }
-            LocalSlider("TopK", topK, 1f..128f) { topK = it }
-            LocalSlider("TopP", topP, 0.05f..1f) { topP = it }
-            LocalSlider("Temperature", temperature, 0f..2f) { temperature = it }
-
-            Text("Accelerator", style = MaterialTheme.typography.labelLarge)
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.widthIn(max = 520.dp)) {
-                supportedAccelerators.forEachIndexed { index, item ->
-                    SegmentedButton(
-                        selected = accelerator == item,
-                        onClick = {
-                            accelerator = item
-                            haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
-                        },
-                        shape = SegmentedButtonDefaults.itemShape(index, supportedAccelerators.size),
-                    ) {
-                        Text(item.name)
-                    }
-                }
-            }
-
-            Button(
-                onClick = {
-                    haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Success)
-                    val defaults = model.localSamplerDefaults ?: LocalModelSamplerDefaults()
-                    onSave(
-                        model.copy(
-                            localSamplerDefaults = defaults.copy(
-                                maxTokens = maxTokens.toInt(),
-                                topK = topK.toInt(),
-                                topP = topP,
-                                temperature = temperature,
-                                maxContextLength = model.contextWindowTokens ?: defaults.maxContextLength,
-                            ),
-                            localAccelerator = accelerator,
-                        )
-                    )
-                    onDismiss()
-                },
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.ButtonPill,
-                modifier = Modifier.align(Alignment.End),
-            ) {
-                Text("Save")
-            }
-        }
-    }
-}
-
-@Composable
-private fun LocalSlider(
-    label: String,
-    value: Float,
-    range: ClosedFloatingPointRange<Float>,
-    onValueChange: (Float) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(label, style = MaterialTheme.typography.labelLarge)
-            Text(
-                if (label == "TopP" || label == "Temperature") "%.2f".format(value) else value.toInt().toString(),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Slider(value = value.coerceIn(range.start, range.endInclusive), onValueChange = onValueChange, valueRange = range)
-    }
-}
-
-private fun formatLocalModelBytes(bytes: Long): String {
-    val gb = bytes / 1_073_741_824.0
-    return if (gb >= 1.0) "%.1f GB".format(gb) else "${bytes / 1_048_576L} MB"
 }
 
 @Composable
@@ -774,19 +371,6 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
         )
         vm.updateSettings(newSettings)
         navController.popBackStack()
-    }
-
-    if (provider is ProviderSetting.Local) {
-        LocalProviderDetailPage(
-            provider = provider,
-            vm = vm,
-            onEditModel = { model ->
-                val updated = provider.editModel(model)
-                onEdit(updated)
-                vm.updateLocalModelConfig(model)
-            },
-        )
-        return
     }
 
     Scaffold(
@@ -1894,7 +1478,6 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 is ProviderSetting.Google -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.Claude -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.ComfyUI -> parentProvider.workflowJson.isNotBlank()
-                                is ProviderSetting.Local -> true
                             }
                             
                             Column(
@@ -2228,7 +1811,6 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 is ProviderSetting.Google -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.Claude -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.ComfyUI -> parentProvider.workflowJson.isNotBlank()
-                                is ProviderSetting.Local -> true
                             }
                             
                             Column(
@@ -2395,7 +1977,6 @@ private suspend fun probeModelCapabilities(
         )
 
         is ProviderSetting.ComfyUI -> null
-        is ProviderSetting.Local -> null
     }
 }
 
@@ -2630,7 +2211,6 @@ private fun buildToolProbeCustomBodies(provider: ProviderSetting): List<CustomBo
         )
 
         is ProviderSetting.ComfyUI -> emptyList()
-        is ProviderSetting.Local -> emptyList()
     }
 }
 

@@ -38,13 +38,6 @@
     android:theme="@style/Theme.Rikkahub"
         android:usesCleartextTraffic="true"
     tools:targetApi="33">
-    <uses-native-library
-      android:name="libvndksupport.so"
-      android:required="false" />
-    <uses-native-library
-      android:name="libOpenCL.so"
-      android:required="false" />
-
     <!-- AGP lint can fail to resolve ComponentActivity/Glance inheritance here during lintVitalRelease. -->
     <activity
       android:name=".RouteActivity"

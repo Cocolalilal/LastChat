@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -65,16 +64,6 @@ fun ProviderIcon(
     contentColor: Color = LocalContentColor.current,
     padding: Dp = 4.dp,
 ) {
-    if (provider is ProviderSetting.Local) {
-        Icon(
-            imageVector = Icons.Rounded.PhoneAndroid,
-            contentDescription = null,
-            modifier = modifier.padding(padding),
-            tint = if (provider.enabled) contentColor else contentColor.copy(alpha = 0.38f),
-        )
-        return
-    }
-
     val effectiveContentColor = if (provider.enabled) {
         contentColor
     } else {

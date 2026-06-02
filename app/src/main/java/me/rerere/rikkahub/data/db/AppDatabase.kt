@@ -19,7 +19,6 @@ import me.rerere.rikkahub.data.db.dao.ConversationAttachmentRefDao
 import me.rerere.rikkahub.data.db.dao.DailyActivityDAO
 import me.rerere.rikkahub.data.db.dao.EmbeddingCacheDAO
 import me.rerere.rikkahub.data.db.dao.GenMediaDAO
-import me.rerere.rikkahub.data.db.dao.LocalModelInstallDao
 import me.rerere.rikkahub.data.db.dao.UsageStatsDAO
 import me.rerere.rikkahub.data.db.dao.MemoryDAO
 import me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity
@@ -29,7 +28,6 @@ import me.rerere.rikkahub.data.db.entity.ConversationAttachmentRefEntity
 import me.rerere.rikkahub.data.db.entity.DailyActivityEntity
 import me.rerere.rikkahub.data.db.entity.EmbeddingCacheEntity
 import me.rerere.rikkahub.data.db.entity.GenMediaEntity
-import me.rerere.rikkahub.data.db.entity.LocalModelInstallEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEntity
 import me.rerere.rikkahub.data.db.entity.UsageStatsEntity
 import me.rerere.rikkahub.data.model.MessageNode
@@ -44,8 +42,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 @Database(
-    entities = [ConversationEntity::class, MemoryEntity::class, GenMediaEntity::class, ChatEpisodeEntity::class, EmbeddingCacheEntity::class, DailyActivityEntity::class, UsageStatsEntity::class, ChatAttachmentEntity::class, ConversationAttachmentRefEntity::class, LocalModelInstallEntity::class],
-    version = 30,
+    entities = [ConversationEntity::class, MemoryEntity::class, GenMediaEntity::class, ChatEpisodeEntity::class, EmbeddingCacheEntity::class, DailyActivityEntity::class, UsageStatsEntity::class, ChatAttachmentEntity::class, ConversationAttachmentRefEntity::class],
+    version = 29,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -72,7 +70,6 @@ import kotlinx.serialization.json.put
         // 26->27 is manual migration (MIGRATION_26_27) - adds local model install registry
         // 27->28 is manual migration (MIGRATION_27_28) - adds local model progress and metadata fields
         // 28->29 is manual migration (MIGRATION_28_29) - drops removed local model install registry
-        // 29->30 is manual migration (MIGRATION_29_30) - recreates LiteRT-LM local model registry
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -94,8 +91,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun dailyActivityDao(): DailyActivityDAO
 
     abstract fun usageStatsDao(): UsageStatsDAO
-
-    abstract fun localModelInstallDao(): LocalModelInstallDao
 
     companion object {
         const val TAG = "AppDatabase"
@@ -464,55 +459,6 @@ abstract class AppDatabase : RoomDatabase() {
                 Log.i(TAG, "migrate: start migrate from 28 to 29")
                 db.execSQL("DROP TABLE IF EXISTS `local_model_install`")
                 Log.i(TAG, "migrate: migrate from 28 to 29 success")
-            }
-        }
-
-        val MIGRATION_29_30 = object : Migration(29, 30) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "migrate: start migrate from 29 to 30")
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `local_model_install` (
-                        `catalog_id` TEXT NOT NULL,
-                        `repo_id` TEXT NOT NULL,
-                        `revision` TEXT NOT NULL,
-                        `model_id` TEXT NOT NULL,
-                        `display_name` TEXT NOT NULL,
-                        `file_name` TEXT NOT NULL,
-                        `local_path` TEXT NOT NULL,
-                        `status` TEXT NOT NULL,
-                        `progress_percent` INTEGER NOT NULL DEFAULT 0,
-                        `bytes_downloaded` INTEGER NOT NULL DEFAULT 0,
-                        `bytes_total` INTEGER NOT NULL DEFAULT 0,
-                        `size_bytes` INTEGER NOT NULL DEFAULT 0,
-                        `min_ram_gb` INTEGER NOT NULL DEFAULT 0,
-                        `description` TEXT NOT NULL DEFAULT '',
-                        `top_k` INTEGER NOT NULL DEFAULT 64,
-                        `top_p` REAL NOT NULL DEFAULT 0.95,
-                        `temperature` REAL NOT NULL DEFAULT 1.0,
-                        `max_tokens` INTEGER NOT NULL DEFAULT 1024,
-                        `context_window_tokens` INTEGER,
-                        `accelerators_csv` TEXT NOT NULL DEFAULT 'gpu,cpu',
-                        `selected_accelerator` TEXT NOT NULL DEFAULT 'auto',
-                        `vision_accelerator` TEXT NOT NULL DEFAULT '',
-                        `supports_image` INTEGER NOT NULL DEFAULT 0,
-                        `supports_audio` INTEGER NOT NULL DEFAULT 0,
-                        `supports_reasoning` INTEGER NOT NULL DEFAULT 0,
-                        `supports_tools` INTEGER NOT NULL DEFAULT 0,
-                        `speculative_decoding` INTEGER NOT NULL DEFAULT 0,
-                        `update_revision` TEXT NOT NULL DEFAULT '',
-                        `update_file_name` TEXT NOT NULL DEFAULT '',
-                        `update_info` TEXT NOT NULL DEFAULT '',
-                        `imported` INTEGER NOT NULL DEFAULT 0,
-                        `last_error` TEXT NOT NULL DEFAULT '',
-                        `updated_at` INTEGER NOT NULL,
-                        PRIMARY KEY(`catalog_id`)
-                    )
-                    """.trimIndent()
-                )
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_local_model_install_status` ON `local_model_install` (`status`)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_local_model_install_repo_id_file_name` ON `local_model_install` (`repo_id`, `file_name`)")
-                Log.i(TAG, "migrate: migrate from 29 to 30 success")
             }
         }
     }

@@ -3,7 +3,6 @@ package me.rerere.ai.provider
 import me.rerere.ai.provider.providers.ClaudeProvider
 import me.rerere.ai.provider.providers.ComfyUIProvider
 import me.rerere.ai.provider.providers.GoogleProvider
-import me.rerere.ai.provider.providers.LocalProvider
 import me.rerere.ai.provider.providers.OpenAIProvider
 import okhttp3.OkHttpClient
 
@@ -19,7 +18,6 @@ class ProviderManager(client: OkHttpClient) {
         registerProvider("openai", OpenAIProvider(client))
         registerProvider("google", GoogleProvider(client))
         registerProvider("claude", ClaudeProvider(client))
-        registerProvider("local", LocalProvider())
         registerProvider("comfyui", ComfyUIProvider(client))
     }
 
@@ -55,7 +53,6 @@ class ProviderManager(client: OkHttpClient) {
             is ProviderSetting.OpenAI -> getProvider("openai")
             is ProviderSetting.Google -> getProvider("google")
             is ProviderSetting.Claude -> getProvider("claude")
-            is ProviderSetting.Local -> getProvider("local")
             is ProviderSetting.ComfyUI -> getProvider("comfyui")
         } as Provider<T>
     }

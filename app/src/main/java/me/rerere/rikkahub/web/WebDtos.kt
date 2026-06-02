@@ -907,7 +907,6 @@ private fun ProviderSetting.toWebProviderDto(
             is ProviderSetting.Google -> "google"
             is ProviderSetting.Claude -> "claude"
             is ProviderSetting.ComfyUI -> "comfyui"
-            is ProviderSetting.Local -> "local"
         },
         enabled = enabled,
         name = name,

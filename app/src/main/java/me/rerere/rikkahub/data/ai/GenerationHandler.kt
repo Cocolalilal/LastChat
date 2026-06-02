@@ -653,18 +653,7 @@ class GenerationHandler(
         fun estimateTokens(text: String) = text.length / 4
         fun estimateTokens(message: UIMessage) = estimateTokens(message.toText())
 
-        val effectiveContextTokens = minOf(
-            assistant.maxTokenUsage,
-            model.contextWindowTokens ?: assistant.maxTokenUsage,
-        )
-        val outputReserveTokens = if (model.contextWindowTokens != null) {
-            assistant.maxTokens ?: model.localSamplerDefaults?.maxTokens ?: 0
-        } else {
-            0
-        }
-        val maxTokens = (effectiveContextTokens - outputReserveTokens)
-            .coerceAtLeast(512)
-            .coerceAtMost(effectiveContextTokens)
+        val maxTokens = assistant.maxTokenUsage
         var currentTokens = 0
 
         // Cosine similarity for RAG matching
@@ -1260,10 +1249,10 @@ class GenerationHandler(
         }
         val params = TextGenerationParams(
             model = model,
-            temperature = assistant.temperature ?: model.localSamplerDefaults?.temperature,
-            topP = assistant.topP ?: model.localSamplerDefaults?.topP,
-            topK = model.localSamplerDefaults?.topK,
-            maxTokens = assistant.maxTokens ?: model.localSamplerDefaults?.maxTokens,
+            temperature = assistant.temperature,
+            topP = assistant.topP,
+            topK = null,
+            maxTokens = assistant.maxTokens,
             tools = tools,
             builtInTools = resolveActiveBuiltInTools(model, assistant),
             thinkingBudget = assistant.thinkingBudget,

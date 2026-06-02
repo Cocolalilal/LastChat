@@ -297,7 +297,6 @@ private fun ModelCatalogEntry.matchesProviderHint(providerHint: ProviderSetting?
         }
 
         is ProviderSetting.ComfyUI -> emptySet()
-        is ProviderSetting.Local -> emptySet()
 
         null -> emptySet()
     }

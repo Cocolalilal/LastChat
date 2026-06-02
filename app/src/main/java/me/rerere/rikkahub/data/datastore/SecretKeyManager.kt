@@ -185,7 +185,6 @@ class SecretKeyManager(
                         setApiKey(newProvider.id, "")
                     }
                 }
-                oldProvider is ProviderSetting.Local && newProvider is ProviderSetting.Local -> Unit
             }
         }
 
@@ -254,7 +253,6 @@ class SecretKeyManager(
             }
 
             is ProviderSetting.ComfyUI -> provider
-            is ProviderSetting.Local -> provider
         }
     }
 
@@ -344,7 +342,6 @@ class SecretKeyManager(
             }
 
             is ProviderSetting.ComfyUI -> provider
-            is ProviderSetting.Local -> provider
         }
     }
 

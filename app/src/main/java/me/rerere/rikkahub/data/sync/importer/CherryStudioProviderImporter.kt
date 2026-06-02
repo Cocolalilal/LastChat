@@ -123,7 +123,6 @@ object CherryStudioProviderImporter {
             is ProviderSetting.Google -> "google|${provider.baseUrl}|${provider.apiKey}"
             is ProviderSetting.Claude -> "claude|${provider.baseUrl}|${provider.apiKey}"
             is ProviderSetting.ComfyUI -> "comfyui|${provider.baseUrl}|${provider.workflowJson.hashCode()}"
-            is ProviderSetting.Local -> "local|${provider.id}"
         }
     }
 }
