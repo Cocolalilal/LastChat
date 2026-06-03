@@ -185,6 +185,7 @@ fun SettingProviderPage(
     val catalogSnapshot by vm.modelCatalogSnapshot.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
     val scope = rememberCoroutineScope()
+    val useWideLayout = LocalSettingsWideLayout.current
     val pager = rememberPagerState(initialPage = initialTab.ordinal) { ProvidersTab.entries.size }
     val currentTab = ProvidersTab.entries[pager.currentPage]
     var showSearchCommonOptions by remember { mutableStateOf(false) }
@@ -319,7 +320,8 @@ fun SettingProviderPage(
         ) {
             HorizontalPager(
                 state = pager,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
+                userScrollEnabled = !useWideLayout,
             ) { page ->
             when (ProvidersTab.entries[page]) {
                 ProvidersTab.Models -> Box(

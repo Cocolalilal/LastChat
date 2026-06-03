@@ -70,6 +70,7 @@ fun SettingPromptInjectionsPage(
     val context = LocalContext.current
     val toaster = LocalToaster.current
     val scope = rememberCoroutineScope()
+    val useWideLayout = LocalSettingsWideLayout.current
     val pagerState = rememberPagerState { 2 }
     val skillsListState = rememberLazyListState()
     val lorebooksListState = rememberLazyListState()
@@ -135,72 +136,74 @@ fun SettingPromptInjectionsPage(
                     .navigationBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 16.dp)
             ) {
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter),
-                    shape = RoundedCornerShape(28.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    tonalElevation = 6.dp,
-                    shadowElevation = 8.dp
-                ) {
-                    Row(
-                        modifier = Modifier.padding(4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                if (!useWideLayout) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter),
+                        shape = RoundedCornerShape(28.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        tonalElevation = 6.dp,
+                        shadowElevation = 8.dp
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .then(
-                                    if (pagerState.currentPage == 0) {
-                                        Modifier.background(MaterialTheme.colorScheme.primaryContainer)
-                                    } else {
-                                        Modifier.clickable {
-                                            haptics.perform(HapticPattern.Tick)
-                                            scope.launch { pagerState.animateScrollToPage(0) }
-                                        }
-                                    }
-                                )
-                                .padding(12.dp),
-                            contentAlignment = Alignment.Center
+                        Row(
+                            modifier = Modifier.padding(4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Category,
-                                contentDescription = null,
-                                tint = if (pagerState.currentPage == 0) {
-                                    MaterialTheme.colorScheme.onPrimaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
+                            Box(
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .then(
+                                        if (pagerState.currentPage == 0) {
+                                            Modifier.background(MaterialTheme.colorScheme.primaryContainer)
+                                        } else {
+                                            Modifier.clickable {
+                                                haptics.perform(HapticPattern.Tick)
+                                                scope.launch { pagerState.animateScrollToPage(0) }
+                                            }
+                                        }
+                                    )
+                                    .padding(12.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Category,
+                                    contentDescription = null,
+                                    tint = if (pagerState.currentPage == 0) {
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
 
-                        Box(
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .then(
-                                    if (pagerState.currentPage == 1) {
-                                        Modifier.background(MaterialTheme.colorScheme.primaryContainer)
-                                    } else {
-                                        Modifier.clickable {
-                                            haptics.perform(HapticPattern.Tick)
-                                            scope.launch { pagerState.animateScrollToPage(1) }
+                            Box(
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .then(
+                                        if (pagerState.currentPage == 1) {
+                                            Modifier.background(MaterialTheme.colorScheme.primaryContainer)
+                                        } else {
+                                            Modifier.clickable {
+                                                haptics.perform(HapticPattern.Tick)
+                                                scope.launch { pagerState.animateScrollToPage(1) }
+                                            }
                                         }
-                                    }
+                                    )
+                                    .padding(12.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Book,
+                                    contentDescription = null,
+                                    tint = if (pagerState.currentPage == 1) {
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                    modifier = Modifier.size(24.dp)
                                 )
-                                .padding(12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Book,
-                                contentDescription = null,
-                                tint = if (pagerState.currentPage == 1) {
-                                    MaterialTheme.colorScheme.onPrimaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                                modifier = Modifier.size(24.dp)
-                            )
+                            }
                         }
                     }
                 }
@@ -250,7 +253,8 @@ fun SettingPromptInjectionsPage(
     ) { contentPadding ->
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
+            userScrollEnabled = !useWideLayout,
         ) { page ->
             when (page) {
                 0 -> {

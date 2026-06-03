@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
@@ -34,6 +35,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -43,6 +45,7 @@ import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.DesktopWindows
 import androidx.compose.material.icons.rounded.Extension
+import androidx.compose.material.icons.rounded.FileUpload
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Info
@@ -54,6 +57,7 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -83,6 +87,7 @@ import me.rerere.rikkahub.ui.components.nav.LocalBackButtonVisible
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.pages.backup.BackupTab
 
 val LocalSettingsWideLayout = staticCompositionLocalOf { false }
 
@@ -96,9 +101,9 @@ private const val SettingsPaneShapeMillis = 120
 private const val SettingsPaneExpandMillis = 140
 
 private val SettingsPaneItemOuterRadius = 24.dp
-private val SettingsPaneItemInnerRadius = 14.dp
+private val SettingsPaneItemInnerRadius = 8.dp
 private val SettingsPaneChildOuterRadius = 20.dp
-private val SettingsPaneChildInnerRadius = 12.dp
+private val SettingsPaneChildInnerRadius = 8.dp
 
 enum class SettingsDestination {
     Display,
@@ -106,12 +111,15 @@ enum class SettingsDestination {
     PromptInjections,
     Models,
     Providers,
+    ProviderModels,
     Search,
     Tts,
     Mcp,
     Web,
     AndroidIntegration,
     Backup,
+    BackupWebDav,
+    BackupLocal,
     ChatStorage,
     Lorebooks,
     Skills,
@@ -130,10 +138,15 @@ fun AdaptiveSettingsScaffold(
 ) {
     val windowSize = currentWindowDpSize()
     val useWideLayout = windowSize.width >= 840.dp && windowSize.height >= 600.dp
+    val navController = LocalNavController.current
 
     if (!useWideLayout) {
         compactContent?.invoke() ?: detailContent()
         return
+    }
+
+    BackHandler {
+        handleSettingsPaneBack(navController)
     }
 
     Row(
@@ -211,12 +224,30 @@ private fun SettingsNavigationPane(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             item {
-                Text(
-                    text = stringResource(R.string.settings),
-                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp)
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 4.dp, end = 12.dp, top = 4.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    val haptics = rememberPremiumHaptics()
+                    IconButton(
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            handleSettingsPaneBack(navController)
+                        }
+                    ) {
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, null)
+                    }
+                    Text(
+                        text = stringResource(R.string.settings),
+                        style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
 
             groups.forEach { group ->
@@ -267,6 +298,44 @@ private fun navigateSettingsPane(
     navController.navigate(entry.screen) {
         launchSingleTop = true
     }
+}
+
+private fun handleSettingsPaneBack(navController: NavHostController) {
+    val currentRoute = navController.currentBackStackEntry?.destination?.route.orEmpty()
+    val parent = settingsDetailParent(currentRoute)
+    if (parent != null) {
+        navController.navigate(parent) {
+            launchSingleTop = true
+        }
+        return
+    }
+
+    repeat(24) {
+        val route = navController.currentBackStackEntry?.destination?.route
+        if (!isSettingsPaneRoute(route)) {
+            return
+        }
+        if (!navController.popBackStack()) {
+            return
+        }
+    }
+}
+
+private fun settingsDetailParent(route: String): Screen? {
+    return when {
+        route.contains("SettingProviderDetail") -> Screen.SettingProvider
+        route.contains("SettingLorebookDetail") -> Screen.SettingLorebooks
+        route.contains("AssistantDetail") -> Screen.Assistant
+        else -> null
+    }
+}
+
+private fun isSettingsPaneRoute(route: String?): Boolean {
+    return route != null && (
+        route.contains("Setting") ||
+            route.contains("Assistant") ||
+            route.contains("Backup")
+        )
 }
 
 @Composable
@@ -581,6 +650,9 @@ private fun SettingsDestination.mainDestination(): SettingsDestination {
         SettingsDestination.Fonts,
         SettingsDestination.UiCustomization,
         SettingsDestination.RpOptimizations -> SettingsDestination.Display
+        SettingsDestination.BackupWebDav,
+        SettingsDestination.BackupLocal -> SettingsDestination.Backup
+        SettingsDestination.ProviderModels,
         SettingsDestination.Search,
         SettingsDestination.Tts -> SettingsDestination.Providers
         SettingsDestination.Skills,
@@ -596,12 +668,17 @@ private fun settingsPaneGroups(): List<SettingsPaneGroup> {
         SettingsPaneEntry(SettingsDestination.RpOptimizations, R.string.setting_rp_optimizations_title, null, Icons.Rounded.AutoAwesome, Screen.SettingRpOptimizations),
     )
     val providerChildren = listOf(
+        SettingsPaneEntry(SettingsDestination.ProviderModels, R.string.setting_provider_page_title, null, Icons.Rounded.Cloud, Screen.SettingProvider),
         SettingsPaneEntry(SettingsDestination.Search, R.string.setting_page_search_service, null, Icons.Rounded.Public, Screen.SettingSearch),
         SettingsPaneEntry(SettingsDestination.Tts, R.string.setting_page_tts_service, null, Icons.AutoMirrored.Rounded.VolumeUp, Screen.SettingTTS),
     )
     val promptChildren = listOf(
         SettingsPaneEntry(SettingsDestination.Skills, R.string.prompt_injections_page_skills, null, Icons.Rounded.Code, Screen.SettingSkills()),
         SettingsPaneEntry(SettingsDestination.Lorebooks, R.string.prompt_injections_page_lorebooks, null, Icons.Rounded.Folder, Screen.SettingLorebooks),
+    )
+    val backupChildren = listOf(
+        SettingsPaneEntry(SettingsDestination.BackupWebDav, R.string.backup_page_webdav_backup, null, Icons.Rounded.CloudUpload, Screen.Backup(BackupTab.WebDav.routeValue)),
+        SettingsPaneEntry(SettingsDestination.BackupLocal, R.string.backup_page_import_export, null, Icons.Rounded.FileUpload, Screen.Backup(BackupTab.Local.routeValue)),
     )
 
     return listOf(
@@ -626,7 +703,7 @@ private fun settingsPaneGroups(): List<SettingsPaneGroup> {
         SettingsPaneGroup(
             titleRes = R.string.setting_page_data_settings,
             entries = listOf(
-                SettingsPaneEntry(SettingsDestination.Backup, R.string.setting_page_data_backup, R.string.setting_page_data_backup_desc, Icons.Rounded.CloudUpload, Screen.Backup),
+                SettingsPaneEntry(SettingsDestination.Backup, R.string.setting_page_data_backup, R.string.setting_page_data_backup_desc, Icons.Rounded.CloudUpload, Screen.Backup(), backupChildren),
                 SettingsPaneEntry(SettingsDestination.ChatStorage, R.string.setting_page_chat_storage, null, Icons.Rounded.Storage, Screen.SettingChatStorage),
             )
         ),

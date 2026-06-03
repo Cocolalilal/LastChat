@@ -152,7 +152,7 @@
     <string name="backup_page_backup_items">Backup Items</string>
     <string name="backup_page_backup_now">Backup Now</string>
     <string name="backup_page_backup_success">Backup Success</string>
-    <string name="backup_page_chat_records">Chat Records</string>
+    <string name="backup_page_chat_records">Chats</string>
     <string name="backup_page_connection_failed">Connection Failed: %s</string>
     <string name="backup_page_connection_success">Connection Success</string>
     <string name="backup_page_delete">Delete</string>

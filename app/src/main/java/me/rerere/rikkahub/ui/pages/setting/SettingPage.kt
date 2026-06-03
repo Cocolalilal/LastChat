@@ -253,7 +253,7 @@ fun SettingPage(
                         subtitle = stringResource(R.string.setting_page_data_backup_desc),
                         icon = { Icon(Icons.Rounded.CloudUpload, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
-                        onClick = { navController.navigate(Screen.Backup) }
+                        onClick = { navController.navigate(Screen.Backup()) }
                     )
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_chat_storage),

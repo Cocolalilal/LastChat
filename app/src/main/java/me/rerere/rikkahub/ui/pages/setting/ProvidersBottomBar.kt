@@ -131,6 +131,8 @@ fun ProvidersSecondaryActionSlot(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
+    val useWideLayout = LocalSettingsWideLayout.current
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -140,7 +142,7 @@ fun ProvidersSecondaryActionSlot(
         Box(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(bottom = 88.dp),
+                .padding(bottom = if (useWideLayout) 0.dp else 88.dp),
             contentAlignment = Alignment.Center
         ) {
             content()

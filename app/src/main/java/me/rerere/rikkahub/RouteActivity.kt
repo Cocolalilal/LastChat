@@ -796,9 +796,16 @@ class RouteActivity : ComponentActivity() {
                         }
                     }
 
-                    composable<Screen.Backup> {
-                        AdaptiveSettingsScaffold(selected = SettingsDestination.Backup) {
-                            BackupPage()
+                    composable<Screen.Backup> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.Backup>()
+                        val initialTab = me.rerere.rikkahub.ui.pages.backup.BackupTab.fromRoute(route.tab)
+                        AdaptiveSettingsScaffold(
+                            selected = when (initialTab) {
+                                me.rerere.rikkahub.ui.pages.backup.BackupTab.WebDav -> SettingsDestination.BackupWebDav
+                                me.rerere.rikkahub.ui.pages.backup.BackupTab.Local -> SettingsDestination.BackupLocal
+                            }
+                        ) {
+                            BackupPage(initialTab = initialTab)
                         }
                     }
 
@@ -867,7 +874,7 @@ class RouteActivity : ComponentActivity() {
                             }
                         }
                     ) {
-                        AdaptiveSettingsScaffold(selected = SettingsDestination.Providers) {
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.ProviderModels) {
                             SettingProviderPage()
                         }
                     }
@@ -1212,7 +1219,7 @@ sealed interface Screen {
     data object Setting : Screen
 
     @Serializable
-    data object Backup : Screen
+    data class Backup(val tab: String = "webdav") : Screen
 
     @Serializable
     data object ImageGen : Screen
