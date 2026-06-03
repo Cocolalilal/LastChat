@@ -480,7 +480,7 @@ private fun FullScreenSystemPromptEditor(
                 modifier = Modifier
                     .widthIn(max = 800.dp)
                     .fillMaxHeight(0.9f),
-                shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.BottomSheet,
                 color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) {
                     MaterialTheme.colorScheme.surfaceContainerLow
                 } else {
@@ -521,7 +521,7 @@ private fun FullScreenSystemPromptEditor(
                         modifier = Modifier
                             .imePadding()
                             .fillMaxSize(),
-                        shape = RoundedCornerShape(16.dp),
+                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                         placeholder = {
                             Text(stringResource(R.string.assistant_page_system_prompt))
                         },

@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.db.dao.ChatEpisodeDAO
 import me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.data.model.Assistant
@@ -37,7 +38,9 @@ class AssistantDetailVM(
     private val providerManager: me.rerere.ai.provider.ProviderManager,
     private val appStorageRepository: AppStorageRepository,
 ) : ViewModel() {
-    private val assistantId = Uuid.parse(id)
+    private val assistantId = runCatching { Uuid.parse(id) }
+        .onFailure { Log.w(TAG, "Invalid assistant id route parameter: $id", it) }
+        .getOrElse { me.rerere.rikkahub.data.datastore.DEFAULT_ASSISTANT_ID }
 
     val settings: StateFlow<Settings> =
         settingsStore.settingsFlow.stateIn(viewModelScope, SharingStarted.Lazily, Settings.dummy())
@@ -52,7 +55,7 @@ class AssistantDetailVM(
     val assistant: StateFlow<Assistant> = settingsStore
         .settingsFlow
         .map { settings ->
-            settings.assistants.find { it.id == assistantId } ?: Assistant()
+            settings.assistants.find { it.id == assistantId } ?: settings.getCurrentAssistant()
         }.stateIn(
             scope = viewModelScope, started = SharingStarted.Lazily, initialValue = Assistant()
         )

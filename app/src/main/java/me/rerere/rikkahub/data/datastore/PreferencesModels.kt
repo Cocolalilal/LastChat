@@ -377,7 +377,7 @@ fun Settings.resolveConversationContext(conversation: Conversation): Conversatio
 }
 
 fun Settings.getCurrentAssistant(): Assistant {
-    return assistants.find { it.id == assistantId } ?: assistants.first()
+    return assistants.find { it.id == assistantId } ?: assistants.firstOrNull() ?: DEFAULT_ASSISTANTS.first()
 }
 
 fun Settings.getAssistantById(id: Uuid): Assistant? {

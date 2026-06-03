@@ -103,6 +103,7 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.graphics.Brush
@@ -111,6 +112,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.components.ui.ToastType
 
@@ -850,28 +855,18 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 }
             }
             
-            // Description
             androidx.compose.material3.Card(
                 colors = androidx.compose.material3.CardDefaults.cardColors(
                     containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
                 ),
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
             ) {
-                Column(
+                Text(
+                    text = stringResource(R.string.setting_tts_filter_desc),
                     modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = stringResource(R.string.setting_tts_filter_title),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                    )
-                    Text(
-                        text = stringResource(R.string.setting_tts_filter_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             
             // Rules list
@@ -882,17 +877,25 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     ),
                     shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
                 ) {
-                    Box(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(32.dp),
-                        contentAlignment = Alignment.Center
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(
                             text = stringResource(R.string.setting_tts_filter_empty),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
                         )
+                        IconButton(onClick = { showAddDialog = true }) {
+                            Icon(
+                                Icons.Rounded.Add,
+                                contentDescription = stringResource(R.string.setting_tts_filter_add_rule)
+                            )
+                        }
                     }
                 }
             } else {
@@ -929,9 +932,10 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 editingRule = null
             },
             onSave = { newRule ->
-                if (editingRule != null) {
+                val ruleToEdit = editingRule
+                if (ruleToEdit != null) {
                     onUpdateRules(rules.map {
-                        if (it.id == editingRule!!.id) newRule else it
+                        if (it.id == ruleToEdit.id) newRule else it
                     })
                 } else {
                     onUpdateRules(rules + newRule)
@@ -1230,110 +1234,128 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 
-                LazyColumn(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                    contentPadding = PaddingValues(bottom = 16.dp)
+                CompositionLocalProvider(
+                    LocalOverscrollFactory provides null
                 ) {
-                    itemsIndexed(filteredPresets, key = { _, preset -> preset.name }) { index, preset ->
-                        val position = when {
-                            filteredPresets.size == 1 -> ItemPosition.ONLY
-                            index == 0 -> ItemPosition.FIRST
-                            index == filteredPresets.lastIndex -> ItemPosition.LAST
-                            else -> ItemPosition.MIDDLE
-                        }
-                        
-                        val shape = when (position) {
-                            ItemPosition.FIRST -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
-                            ItemPosition.LAST -> RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
-                            ItemPosition.MIDDLE -> RoundedCornerShape(10.dp)
-                            ItemPosition.ONLY -> RoundedCornerShape(24.dp)
-                        }
-                        
-                        androidx.compose.material3.Surface(
-                            onClick = {
-                                haptics.perform(HapticPattern.Pop)
-                                val newProvider = when (preset.type) {
-                                    TTSProviderSetting.SystemTTS::class -> TTSProviderSetting.SystemTTS()
-                                    TTSProviderSetting.OpenAI::class -> TTSProviderSetting.OpenAI()
-                                    TTSProviderSetting.Gemini::class -> TTSProviderSetting.Gemini()
-                                    TTSProviderSetting.ElevenLabs::class -> TTSProviderSetting.ElevenLabs()
-                                    TTSProviderSetting.MiniMax::class -> TTSProviderSetting.MiniMax()
-                                    TTSProviderSetting.Qwen::class -> TTSProviderSetting.Qwen()
-                                    else -> TTSProviderSetting.SystemTTS()
+                    val lazyListState = rememberLazyListState()
+                    val nestedScrollConnection = remember {
+                        object : NestedScrollConnection {
+                            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                                if (lazyListState.firstVisibleItemIndex > 0 || lazyListState.firstVisibleItemScrollOffset > 0) {
+                                    return Offset.Zero
                                 }
-                                onAdd(newProvider)
-                                showBottomSheet = false
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = shape,
-                            color = if (LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                return Offset.Zero
+                            }
+                        }
+                    }
+                    LazyColumn(
+                        state = lazyListState,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clipToBounds()
+                            .nestedScroll(nestedScrollConnection),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        contentPadding = PaddingValues(bottom = 16.dp)
+                    ) {
+                        itemsIndexed(filteredPresets, key = { _, preset -> preset.name }) { index, preset ->
+                            val position = when {
+                                filteredPresets.size == 1 -> ItemPosition.ONLY
+                                index == 0 -> ItemPosition.FIRST
+                                index == filteredPresets.lastIndex -> ItemPosition.LAST
+                                else -> ItemPosition.MIDDLE
+                            }
+
+                            val shape = when (position) {
+                                ItemPosition.FIRST -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
+                                ItemPosition.LAST -> RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
+                                ItemPosition.MIDDLE -> RoundedCornerShape(10.dp)
+                                ItemPosition.ONLY -> RoundedCornerShape(24.dp)
+                            }
+
+                            Surface(
+                                onClick = {
+                                    haptics.perform(HapticPattern.Pop)
+                                    val newProvider = when (preset.type) {
+                                        TTSProviderSetting.SystemTTS::class -> TTSProviderSetting.SystemTTS()
+                                        TTSProviderSetting.OpenAI::class -> TTSProviderSetting.OpenAI()
+                                        TTSProviderSetting.Gemini::class -> TTSProviderSetting.Gemini()
+                                        TTSProviderSetting.ElevenLabs::class -> TTSProviderSetting.ElevenLabs()
+                                        TTSProviderSetting.MiniMax::class -> TTSProviderSetting.MiniMax()
+                                        TTSProviderSetting.Qwen::class -> TTSProviderSetting.Qwen()
+                                        else -> TTSProviderSetting.SystemTTS()
+                                    }
+                                    onAdd(newProvider)
+                                    showBottomSheet = false
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = shape,
+                                color = if (LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
                             ) {
-                                // Icon
-                                when (preset.type) {
-                                    TTSProviderSetting.SystemTTS::class -> {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(40.dp)
-                                                .background(
-                                                    color = MaterialTheme.colorScheme.secondaryContainer,
-                                                    shape = me.rerere.rikkahub.ui.hooks.rememberAvatarShape(false)
-                                                ),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Rounded.PhoneAndroid,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(24.dp)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    when (preset.type) {
+                                        TTSProviderSetting.SystemTTS::class -> {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(40.dp)
+                                                    .background(
+                                                        color = MaterialTheme.colorScheme.secondaryContainer,
+                                                        shape = me.rerere.rikkahub.ui.hooks.rememberAvatarShape(false)
+                                                    ),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.PhoneAndroid,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                            }
+                                        }
+
+                                        else -> {
+                                            AutoAIIconWithUrl(
+                                                name = preset.name,
+                                                customIconUri = preset.catalogId?.let { catalogSnapshot?.ttsProviderIconUri(it) },
+                                                modifier = Modifier.size(40.dp)
                                             )
                                         }
                                     }
-                                    else -> {
-                                        AutoAIIconWithUrl(
-                                            name = preset.name,
-                                            customIconUri = preset.catalogId?.let { catalogSnapshot?.ttsProviderIconUri(it) },
-                                            modifier = Modifier.size(40.dp)
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = preset.name,
+                                            style = MaterialTheme.typography.titleMedium
+                                        )
+                                        Text(
+                                            text = preset.description,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
-                                }
-                                
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = preset.name,
-                                        style = MaterialTheme.typography.titleMedium
-                                    )
-                                    Text(
-                                        text = preset.description,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                                
-                                // Tags on right side
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    if (preset.isLocal) {
-                                        Tag(type = TagType.SUCCESS) {
-                                            Text(stringResource(R.string.local_label))
+
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        if (preset.isLocal) {
+                                            Tag(type = TagType.SUCCESS) {
+                                                Text(stringResource(R.string.local_label))
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
-                    }
-                    
-                    item {
-                        Spacer(modifier = Modifier.height(16.dp))
+
+                        item {
+                            Spacer(modifier = Modifier.height(16.dp))
+                        }
                     }
                 }
             }

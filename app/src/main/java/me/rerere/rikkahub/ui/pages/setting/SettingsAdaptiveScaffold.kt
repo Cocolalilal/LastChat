@@ -7,9 +7,11 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -87,6 +89,16 @@ val LocalSettingsWideLayout = staticCompositionLocalOf { false }
 private var settingsPaneScrollIndex = 0
 private var settingsPaneScrollOffset = 0
 private var lastSettingsPaneSelected: SettingsDestination? = null
+
+private const val SettingsPanePressMillis = 80
+private const val SettingsPaneFadeMillis = 90
+private const val SettingsPaneShapeMillis = 120
+private const val SettingsPaneExpandMillis = 140
+
+private val SettingsPaneItemOuterRadius = 24.dp
+private val SettingsPaneItemInnerRadius = 14.dp
+private val SettingsPaneChildOuterRadius = 20.dp
+private val SettingsPaneChildInnerRadius = 12.dp
 
 enum class SettingsDestination {
     Display,
@@ -273,7 +285,10 @@ private fun SettingsPaneSection(
         modifier = Modifier
             .fillMaxWidth()
             .animateContentSize(
-                animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f)
+                animationSpec = tween(
+                    durationMillis = SettingsPaneExpandMillis,
+                    easing = FastOutSlowInEasing
+                )
             ),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
@@ -281,20 +296,23 @@ private fun SettingsPaneSection(
             val expanded = entry == expandedEntry
             val groupedWithSection = !hasExpandedEntry
             val topRadius = when {
-                expanded -> 24.dp
-                groupedWithSection && index == 0 -> 24.dp
-                groupedWithSection -> 8.dp
-                else -> 24.dp
+                expanded -> SettingsPaneItemOuterRadius
+                groupedWithSection && index == 0 -> SettingsPaneItemOuterRadius
+                groupedWithSection -> SettingsPaneItemInnerRadius
+                else -> SettingsPaneItemOuterRadius
             }
             val bottomRadius = when {
-                expanded -> 8.dp
-                groupedWithSection && index == group.entries.lastIndex -> 24.dp
-                groupedWithSection -> 8.dp
-                else -> 24.dp
+                expanded -> SettingsPaneItemInnerRadius
+                groupedWithSection && index == group.entries.lastIndex -> SettingsPaneItemOuterRadius
+                groupedWithSection -> SettingsPaneItemInnerRadius
+                else -> SettingsPaneItemOuterRadius
             }
             val itemPadding by animateDpAsState(
                 targetValue = if (hasExpandedEntry && !expanded) 8.dp else 0.dp,
-                animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+                animationSpec = tween(
+                    durationMillis = SettingsPaneShapeMillis,
+                    easing = FastOutSlowInEasing
+                ),
                 label = "settings_pane_section_item_padding"
             )
 
@@ -323,19 +341,25 @@ private fun SettingsPaneEntryGroup(
     verticalPadding: Dp,
     onNavigate: (SettingsPaneEntry) -> Unit,
 ) {
-    val selectedInGroup = selectedMain == entry.destination
+    val selectedInGroup = selected == entry.destination
     val groupPadding by animateDpAsState(
         targetValue = if (expanded) 4.dp else verticalPadding,
-        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        animationSpec = tween(
+            durationMillis = SettingsPaneShapeMillis,
+            easing = FastOutSlowInEasing
+        ),
         label = "settings_pane_entry_group_padding"
     )
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = groupPadding / 2)
+            .padding(vertical = groupPadding.coerceAtLeast(0.dp) / 2)
             .animateContentSize(
-                animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f)
+                animationSpec = tween(
+                    durationMillis = SettingsPaneExpandMillis,
+                    easing = FastOutSlowInEasing
+                )
             ),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
@@ -352,10 +376,25 @@ private fun SettingsPaneEntryGroup(
 
         AnimatedVisibility(
             visible = expanded,
-            enter = fadeIn(animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f)) +
-                expandVertically(animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f)),
-            exit = fadeOut(animationSpec = spring(dampingRatio = 0.75f, stiffness = 400f)) +
-                shrinkVertically(animationSpec = spring(dampingRatio = 0.75f, stiffness = 400f)),
+            enter = fadeIn(
+                animationSpec = tween(
+                    durationMillis = SettingsPaneFadeMillis,
+                    easing = LinearOutSlowInEasing
+                )
+            ) + expandVertically(
+                animationSpec = tween(
+                    durationMillis = SettingsPaneExpandMillis,
+                    easing = FastOutSlowInEasing
+                )
+            ),
+            exit = fadeOut(
+                animationSpec = tween(durationMillis = SettingsPaneFadeMillis)
+            ) + shrinkVertically(
+                animationSpec = tween(
+                    durationMillis = SettingsPaneExpandMillis,
+                    easing = FastOutSlowInEasing
+                )
+            ),
         ) {
             Column(
                 modifier = Modifier.fillMaxWidth(),
@@ -368,8 +407,12 @@ private fun SettingsPaneEntryGroup(
                         expanded = false,
                         showDescription = false,
                         isChild = true,
-                        topRadius = 8.dp,
-                        bottomRadius = if (index == entry.children.lastIndex) 24.dp else 8.dp,
+                        topRadius = SettingsPaneChildInnerRadius,
+                        bottomRadius = if (index == entry.children.lastIndex) {
+                            SettingsPaneChildOuterRadius
+                        } else {
+                            SettingsPaneChildInnerRadius
+                        },
                         onClick = { onNavigate(child) }
                     )
                 }
@@ -394,17 +437,26 @@ private fun SettingsPaneItem(
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
         targetValue = if (isPressed) 0.96f else 1f,
-        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        animationSpec = tween(
+            durationMillis = SettingsPanePressMillis,
+            easing = FastOutSlowInEasing
+        ),
         label = "settings_pane_item_scale"
     )
     val animatedTopRadius by animateDpAsState(
         targetValue = topRadius,
-        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        animationSpec = tween(
+            durationMillis = SettingsPaneShapeMillis,
+            easing = FastOutSlowInEasing
+        ),
         label = "settings_pane_item_top_radius"
     )
     val animatedBottomRadius by animateDpAsState(
         targetValue = bottomRadius,
-        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        animationSpec = tween(
+            durationMillis = SettingsPaneShapeMillis,
+            easing = FastOutSlowInEasing
+        ),
         label = "settings_pane_item_bottom_radius"
     )
     val itemHeight by animateDpAsState(
@@ -413,7 +465,10 @@ private fun SettingsPaneItem(
             isChild -> 48.dp
             else -> 58.dp
         },
-        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        animationSpec = tween(
+            durationMillis = SettingsPaneShapeMillis,
+            easing = FastOutSlowInEasing
+        ),
         label = "settings_pane_item_height"
     )
     val targetContainerColor = if (selected) {
@@ -428,12 +483,18 @@ private fun SettingsPaneItem(
     }
     val containerColor by animateColorAsState(
         targetValue = targetContainerColor,
-        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        animationSpec = tween(
+            durationMillis = SettingsPaneShapeMillis,
+            easing = FastOutSlowInEasing
+        ),
         label = "settings_pane_item_container_color"
     )
     val contentColor by animateColorAsState(
         targetValue = targetContentColor,
-        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        animationSpec = tween(
+            durationMillis = SettingsPaneShapeMillis,
+            easing = FastOutSlowInEasing
+        ),
         label = "settings_pane_item_content_color"
     )
 
