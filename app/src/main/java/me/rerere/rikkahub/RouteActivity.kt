@@ -762,8 +762,8 @@ class RouteActivity : ComponentActivity() {
                     // All assistant-related routes share the same AnimatedVisibilityScope
                     // for seamless hero animations across all screens
                     composable<Screen.Assistant> {
-                        AdaptiveSettingsScaffold(selected = SettingsDestination.Assistants) {
-                            CompositionLocalProvider(LocalAnimatedVisibilityScope provides this@composable) {
+                        CompositionLocalProvider(LocalAnimatedVisibilityScope provides this@composable) {
+                            AdaptiveSettingsScaffold(selected = SettingsDestination.Assistants) {
                                 AssistantPage()
                             }
                         }
@@ -771,8 +771,8 @@ class RouteActivity : ComponentActivity() {
 
                     composable<Screen.AssistantDetail> { backStackEntry ->
                         val route = backStackEntry.toRoute<Screen.AssistantDetail>()
-                        AdaptiveSettingsScaffold(selected = SettingsDestination.Assistants) {
-                            CompositionLocalProvider(LocalAnimatedVisibilityScope provides this@composable) {
+                        CompositionLocalProvider(LocalAnimatedVisibilityScope provides this@composable) {
+                            AdaptiveSettingsScaffold(selected = SettingsDestination.Assistants) {
                                 AssistantDetailPage(
                                     id = route.id,
                                     startRoute = route.startRoute,

@@ -8,6 +8,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -446,8 +447,14 @@ fun SettingProviderPage(
         }
             AnimatedVisibility(
                 visible = currentTab != ProvidersTab.Models,
-                enter = slideInHorizontally { it },
-                exit = slideOutHorizontally { it }
+                enter = slideInHorizontally(
+                    animationSpec = tween(120),
+                    initialOffsetX = { it }
+                ) + fadeIn(animationSpec = tween(90)),
+                exit = slideOutHorizontally(
+                    animationSpec = tween(120),
+                    targetOffsetX = { it }
+                ) + fadeOut(animationSpec = tween(70))
             ) {
                 ProvidersSecondaryActionSlot(modifier = Modifier.fillMaxSize()) {
                     FloatingActionButton(

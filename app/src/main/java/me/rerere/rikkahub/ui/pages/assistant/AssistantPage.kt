@@ -118,6 +118,7 @@ import androidx.compose.material.icons.rounded.Upload
 @Composable
 fun AssistantPage(vm: AssistantVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val useWideSettingsLayout = LocalSettingsWideLayout.current
     val createState = useEditState<Assistant> {
         vm.addAssistant(it)
     }
@@ -182,12 +183,16 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
     
     // Move lazyListState outside for canScroll detection
     val lazyListState = rememberLazyListState()
-    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        if (!isFiltering) {
-            val newAssistants = settings.assistants.toMutableList().apply {
-                add(to.index, removeAt(from.index))
+    val reorderableState = if (useWideSettingsLayout) {
+        null
+    } else {
+        rememberReorderableLazyListState(lazyListState) { from, to ->
+            if (!isFiltering) {
+                val newAssistants = settings.assistants.toMutableList().apply {
+                    add(to.index, removeAt(from.index))
+                }
+                vm.updateSettings(settings.copy(assistants = newAssistants))
             }
-            vm.updateSettings(settings.copy(assistants = newAssistants))
         }
     }
 
@@ -270,7 +275,49 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
             
 
             
-            LazyColumn(
+            if (useWideSettingsLayout) {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .imePadding(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    state = lazyListState,
+                ) {
+                    itemsIndexed(filteredAssistants, key = { _, assistant -> assistant.id }) { index, assistant ->
+                        val memories by vm.getMemories(assistant).collectAsStateWithLifecycle(
+                            initialValue = emptyList(),
+                        )
+
+                        AssistantItemContent(
+                            assistant = assistant,
+                            settings = settings,
+                            memories = memories,
+                            haptics = haptics,
+                            onClick = {
+                                navController.navigate(Screen.AssistantDetail(id = assistant.id.toString()))
+                            },
+                            onCopy = {
+                                vm.copyAssistant(assistant)
+                            },
+                            dragHandle = {
+                                IconButton(
+                                    onClick = {
+                                        haptics.perform(HapticPattern.Pop)
+                                        navController.navigate(Screen.AssistantDetail(id = assistant.id.toString()))
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Settings,
+                                        contentDescription = stringResource(R.string.settings)
+                                    )
+                                }
+                            }
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .imePadding(),
@@ -315,7 +362,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                     )
 
                     ReorderableItem(
-                        state = reorderableState, 
+                        state = reorderableState!!,
                         key = assistant.id
                     ) { isDragging ->
                         // Key on canDelete to force complete PhysicsSwipeToDelete recreation when list size changes
@@ -387,6 +434,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                         }  // key(canDelete)
                     }  // ReorderableItem
                 }
+            }
             }
             
         }
