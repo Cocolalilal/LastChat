@@ -427,13 +427,13 @@ private fun WebDavPage(
                                 color = Color.Transparent,
                                 contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                                modifier = Modifier.size(48.dp),
+                                modifier = Modifier.size(40.dp),
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
                                         Icons.Rounded.CloudSync,
                                         contentDescription = stringResource(R.string.backup_page_test_connection),
-                                        modifier = Modifier.size(22.dp),
+                                        modifier = Modifier.size(20.dp),
                                     )
                                 }
                             }

@@ -11,6 +11,7 @@ local.properties
 .cursor
 .history
 .kotlin
+.gradle-local/jdks/
 __pycache__/
 *.py[cod]
 /tmp/

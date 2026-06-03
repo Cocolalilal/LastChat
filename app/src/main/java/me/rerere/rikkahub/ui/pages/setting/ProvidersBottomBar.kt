@@ -142,7 +142,7 @@ fun ProvidersSecondaryActionSlot(
         Box(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(bottom = if (useWideLayout) 0.dp else 88.dp),
+                .padding(bottom = if (useWideLayout) 0.dp else 82.dp),
             contentAlignment = Alignment.Center
         ) {
             content()

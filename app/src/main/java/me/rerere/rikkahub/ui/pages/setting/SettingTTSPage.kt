@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
@@ -812,35 +813,10 @@ internal fun TtsTextFilterSettingsDialog(
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
     var editingRule by remember { mutableStateOf<me.rerere.rikkahub.data.datastore.TtsTextFilterRule?>(null) }
-    
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
-    
-    ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+
+    androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        sheetGesturesEnabled = false,
-        dragHandle = {
-            IconButton(
-                onClick = {
-                    scope.launch {
-                        sheetState.hide()
-                        onDismiss()
-                    }
-                }
-            ) {
-                Icon(Icons.Rounded.KeyboardArrowDown, null)
-            }
-        }
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // Header
+        title = {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -848,80 +824,91 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
             ) {
                 Text(
                     text = stringResource(R.string.setting_tts_filter_title),
-                    style = MaterialTheme.typography.titleLarge
+                    style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.weight(1f)
                 )
                 IconButton(onClick = { showAddDialog = true }) {
                     Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.setting_tts_filter_add_rule))
                 }
             }
-            
-            androidx.compose.material3.Card(
-                colors = androidx.compose.material3.CardDefaults.cardColors(
-                    containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
-                ),
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Text(
-                    text = stringResource(R.string.setting_tts_filter_desc),
-                    modifier = Modifier.padding(16.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            
-            // Rules list
-            if (rules.isEmpty()) {
                 androidx.compose.material3.Card(
                     colors = androidx.compose.material3.CardDefaults.cardColors(
                         containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
                     ),
                     shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(32.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Text(
-                            text = stringResource(R.string.setting_tts_filter_empty),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center
-                        )
-                        IconButton(onClick = { showAddDialog = true }) {
-                            Icon(
-                                Icons.Rounded.Add,
-                                contentDescription = stringResource(R.string.setting_tts_filter_add_rule)
+                    Text(
+                        text = stringResource(R.string.setting_tts_filter_desc),
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                LazyColumn(
+                    modifier = Modifier.heightIn(max = 360.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (rules.isEmpty()) {
+                        item {
+                            androidx.compose.material3.Card(
+                                colors = androidx.compose.material3.CardDefaults.cardColors(
+                                    containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+                                ),
+                                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(32.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.setting_tts_filter_empty),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    IconButton(onClick = { showAddDialog = true }) {
+                                        Icon(
+                                            Icons.Rounded.Add,
+                                            contentDescription = stringResource(R.string.setting_tts_filter_add_rule)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        items(rules, key = { it.id }) { rule ->
+                            TtsFilterRuleItem(
+                                rule = rule,
+                                onToggle = { enabled ->
+                                    onUpdateRules(rules.map {
+                                        if (it.id == rule.id) it.copy(enabled = enabled) else it
+                                    })
+                                },
+                                onEdit = { editingRule = rule },
+                                onDelete = {
+                                    onUpdateRules(rules.filter { it.id != rule.id })
+                                }
                             )
                         }
                     }
                 }
-            } else {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    rules.forEach { rule ->
-                        TtsFilterRuleItem(
-                            rule = rule,
-                            onToggle = { enabled ->
-                                onUpdateRules(rules.map {
-                                    if (it.id == rule.id) it.copy(enabled = enabled) else it
-                                })
-                            },
-                            onEdit = { editingRule = rule },
-                            onDelete = {
-                                onUpdateRules(rules.filter { it.id != rule.id })
-                            }
-                        )
-                    }
-                }
             }
-            
-            Spacer(modifier = Modifier.height(16.dp))
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(android.R.string.ok))
+            }
         }
-    }
+    )
     
     // Add/Edit Dialog
     if (showAddDialog || editingRule != null) {
