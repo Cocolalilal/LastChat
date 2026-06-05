@@ -65,6 +65,12 @@ private const val LEADING_ASSISTANT_COMPATIBILITY_USER_PROMPT =
         "This is not a real user message. Do not answer, quote, or infer user intent from this marker; " +
         "use the later USER messages as the user's words."
 
+private data class PromptCachePolicy(
+    val explicitBreakpoints: Boolean,
+    val topLevelCacheControl: Boolean,
+    val useSingleStableBreakpoint: Boolean = false,
+)
+
 class ChatCompletionsAPI(
     private val client: OkHttpClient,
     private val keyRoulette: KeyRoulette
@@ -294,7 +300,21 @@ class ChatCompletionsAPI(
                 }
             }
 
-            put("messages", buildMessages(safeMessages, providerSetting, host, params.model.modelId))
+            val promptCachePolicy = providerSetting.promptCachePolicy(host, params.model.modelId)
+            if (promptCachePolicy.topLevelCacheControl) {
+                put("cache_control", buildPromptCacheControl())
+            }
+
+            put(
+                "messages",
+                buildMessages(
+                    messages = safeMessages,
+                    providerSetting = providerSetting,
+                    host = host,
+                    modelId = params.model.modelId,
+                    promptCachePolicy = promptCachePolicy
+                )
+            )
 
             if (isModelAllowTemperature(params.model)) {
                 if (params.temperature != null) put("temperature", params.temperature)
@@ -429,13 +449,13 @@ class ChatCompletionsAPI(
         messages: List<UIMessage>,
         providerSetting: ProviderSetting.OpenAI,
         host: String,
-        modelId: String
+        modelId: String,
+        promptCachePolicy: PromptCachePolicy
     ) = buildJsonArray {
         val shouldReplayDeepSeekReasoning = providerSetting.shouldReplayReasoningContent(host, modelId)
-        messages
-            .filter {
-                it.isValidToUpload()
-            }
+        val uploadableMessages = messages.filter { it.isValidToUpload() }
+        val cacheBreakpointIndices = uploadableMessages.cacheBreakpointIndices(promptCachePolicy)
+        uploadableMessages
             .forEachIndexed { index, message ->
                 if (message.role == MessageRole.TOOL) {
                     message.getToolResults().forEach { result ->
@@ -458,7 +478,8 @@ class ChatCompletionsAPI(
                     put("role", JsonPrimitive(message.role.name.lowercase()))
 
                     // content
-                    if (message.parts.isOnlyTextPart()) {
+                    val shouldCacheMessage = index in cacheBreakpointIndices
+                    if (message.parts.isOnlyTextPart() && !shouldCacheMessage) {
                         // 如果只是纯文本，直接赋值给content
                         put(
                             "content",
@@ -466,15 +487,25 @@ class ChatCompletionsAPI(
                         )
                     } else {
                         // 否则，使用parts构建
+                        val uploadableParts = message.parts
+                            .filter { it is UIMessagePart.Text || it is UIMessagePart.Image }
+                        val cacheableTextPartIndex = if (shouldCacheMessage) {
+                            uploadableParts.indexOfLast { part ->
+                                part is UIMessagePart.Text && part.text.isNotBlank()
+                            }
+                        } else {
+                            -1
+                        }
                         putJsonArray("content") {
-                            message.parts
-                                .filter { it is UIMessagePart.Text || it is UIMessagePart.Image }
-                                .forEach { part ->
+                            uploadableParts.forEachIndexed { partIndex, part ->
                                 when (part) {
                                     is UIMessagePart.Text -> {
                                         add(buildJsonObject {
                                             put("type", "text")
                                             put("text", part.text)
+                                            if (partIndex == cacheableTextPartIndex) {
+                                                put("cache_control", buildPromptCacheControl())
+                                            }
                                         })
                                     }
 
@@ -580,6 +611,64 @@ class ChatCompletionsAPI(
         }
     }
 
+    private fun ProviderSetting.OpenAI.promptCachePolicy(host: String, modelId: String): PromptCachePolicy {
+        val normalizedHost = host.lowercase()
+        val normalizedModelId = modelId.lowercase()
+        val isOpenRouterCacheControlModel = normalizedModelId.contains("anthropic") ||
+            normalizedModelId.contains("claude") ||
+            normalizedModelId.contains("gemini") ||
+            normalizedModelId.contains("qwen") ||
+            normalizedModelId.contains("deepseek")
+        return when {
+            normalizedHost == "openrouter.ai" && isOpenRouterCacheControlModel -> PromptCachePolicy(
+                explicitBreakpoints = true,
+                topLevelCacheControl = false,
+                useSingleStableBreakpoint = normalizedModelId.contains("gemini")
+            )
+
+            normalizedHost == "opencode.ai" ||
+                normalizedHost.endsWith(".opencode.ai") ||
+                normalizedModelId.startsWith("opencode-go/") -> PromptCachePolicy(
+                explicitBreakpoints = true,
+                topLevelCacheControl = false
+            )
+
+            else -> PromptCachePolicy(
+                explicitBreakpoints = false,
+                topLevelCacheControl = false
+            )
+        }
+    }
+
+    private fun buildPromptCacheControl() = buildJsonObject {
+        put("type", "ephemeral")
+    }
+
+    private fun List<UIMessage>.cacheBreakpointIndices(policy: PromptCachePolicy): Set<Int> {
+        if (!policy.explicitBreakpoints) return emptySet()
+
+        val eligibleIndices = mapIndexedNotNull { index, message ->
+            val hasCacheableText = message.parts.any { part ->
+                part is UIMessagePart.Text &&
+                    part.text.isNotBlank() &&
+                    part.text != LEADING_ASSISTANT_COMPATIBILITY_USER_PROMPT
+            }
+            if (message.role != MessageRole.TOOL && hasCacheableText) index else null
+        }
+        if (eligibleIndices.isEmpty()) return emptySet()
+
+        if (policy.useSingleStableBreakpoint) {
+            val lastUserIndex = indexOfLast { it.role == MessageRole.USER }
+            return eligibleIndices
+                .filter { it < lastUserIndex }
+                .lastOrNull()
+                ?.let { setOf(it) }
+                ?: setOf(eligibleIndices.last())
+        }
+
+        return eligibleIndices.takeLast(4).toSet()
+    }
+
     private fun parseMessage(jsonObject: JsonObject): UIMessage {
         val role = MessageRole.valueOf(
             jsonObject["role"]?.jsonPrimitive?.contentOrNull?.uppercase() ?: "ASSISTANT"
@@ -660,12 +749,23 @@ class ChatCompletionsAPI(
 
     private fun parseTokenUsage(jsonObject: JsonObject?): TokenUsage? {
         if (jsonObject == null) return null
+        val promptTokens = jsonObject["prompt_tokens"]?.jsonPrimitive?.intOrNull
+        val completionTokens = jsonObject["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val cacheCreationTokens = jsonObject["cache_creation_input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val cacheReadTokens = jsonObject["cache_read_input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val inputTokens = jsonObject["input_tokens"]?.jsonPrimitive?.intOrNull
+        val effectivePromptTokens = promptTokens
+            ?: inputTokens?.let { it + cacheCreationTokens + cacheReadTokens }
+            ?: 0
         return TokenUsage(
-            promptTokens = jsonObject["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            completionTokens = jsonObject["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            totalTokens = jsonObject["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
+            promptTokens = effectivePromptTokens,
+            completionTokens = completionTokens,
+            totalTokens = jsonObject["total_tokens"]?.jsonPrimitive?.intOrNull
+                ?: (effectivePromptTokens + completionTokens),
             cachedTokens = jsonObject["prompt_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
-                ?: 0
+                ?: jsonObject["input_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
+                ?: jsonObject["cached_tokens"]?.jsonPrimitive?.intOrNull
+                ?: cacheReadTokens
         )
     }
 

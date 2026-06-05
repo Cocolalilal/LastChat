@@ -544,12 +544,19 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
 
     private fun parseTokenUsage(jsonObject: JsonObject?): TokenUsage? {
         if (jsonObject == null) return null
+        val promptTokens = jsonObject["input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val completionTokens = jsonObject["output_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val cacheReadTokens = jsonObject["cache_read_input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val cacheCreationTokens = jsonObject["cache_creation_input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val effectivePromptTokens = promptTokens + cacheReadTokens + cacheCreationTokens
         return TokenUsage(
-            promptTokens = jsonObject["input_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            completionTokens = jsonObject["output_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            totalTokens = jsonObject["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
+            promptTokens = effectivePromptTokens,
+            completionTokens = completionTokens,
+            totalTokens = jsonObject["total_tokens"]?.jsonPrimitive?.intOrNull
+                ?: (effectivePromptTokens + completionTokens),
             cachedTokens = jsonObject["input_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
-                ?: 0
+                ?: jsonObject["cached_tokens"]?.jsonPrimitive?.intOrNull
+                ?: cacheReadTokens
         )
     }
 }

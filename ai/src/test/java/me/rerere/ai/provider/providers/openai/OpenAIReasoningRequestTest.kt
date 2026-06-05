@@ -238,6 +238,101 @@ class OpenAIReasoningRequestTest {
     }
 
     @Test
+    fun chatCompletionsAddsOpenRouterPromptCacheBreakpoints() {
+        val body = chatCompletionsBody(
+            messages = listOf(
+                UIMessage.system("Stable system prompt"),
+                UIMessage.user("First user turn"),
+                UIMessage.assistant("First answer"),
+                UIMessage.user("Current user turn")
+            ),
+            model = reasoningModel.copy(modelId = "anthropic/claude-sonnet-4.5"),
+            providerSetting = providerSetting.copy(baseUrl = "https://openrouter.ai/api/v1")
+        )
+
+        assertFalse(body.containsKey("cache_control"))
+
+        val messages = body["messages"]?.jsonArray ?: error("messages are missing")
+        val systemContent = messages[0].jsonObject["content"]?.jsonArray ?: error("system content is missing")
+        assertEquals(
+            "ephemeral",
+            systemContent[0].jsonObject["cache_control"]?.jsonObject?.get("type")?.jsonPrimitive?.contentOrNull
+        )
+    }
+
+    @Test
+    fun chatCompletionsUsesStableBreakpointForOpenRouterGemini() {
+        val body = chatCompletionsBody(
+            messages = listOf(
+                UIMessage.system("Stable system prompt"),
+                UIMessage.user("Current question")
+            ),
+            model = reasoningModel.copy(modelId = "google/gemini-2.5-pro"),
+            providerSetting = providerSetting.copy(baseUrl = "https://openrouter.ai/api/v1")
+        )
+
+        assertFalse(body.containsKey("cache_control"))
+
+        val messages = body["messages"]?.jsonArray ?: error("messages are missing")
+        val systemContent = messages[0].jsonObject["content"]?.jsonArray ?: error("system content is missing")
+        assertEquals(
+            "ephemeral",
+            systemContent[0].jsonObject["cache_control"]?.jsonObject?.get("type")?.jsonPrimitive?.contentOrNull
+        )
+        assertEquals("Current question", messages[1].jsonObject["content"]?.jsonPrimitive?.contentOrNull)
+    }
+
+    @Test
+    fun chatCompletionsAddsOpenCodeGoPromptCacheControlsWithoutTopLevelCacheControl() {
+        val body = chatCompletionsBody(
+            messages = listOf(UIMessage.system("Stable system prompt"), UIMessage.user("Hello")),
+            model = reasoningModel.copy(modelId = "opencode-go/qwen3.7-plus"),
+            providerSetting = providerSetting.copy(baseUrl = "https://opencode.ai/zen/go/v1")
+        )
+
+        assertFalse(body.containsKey("cache_control"))
+
+        val messages = body["messages"]?.jsonArray ?: error("messages are missing")
+        val userContent = messages[1].jsonObject["content"]?.jsonArray ?: error("user content is missing")
+        assertEquals(
+            "ephemeral",
+            userContent[0].jsonObject["cache_control"]?.jsonObject?.get("type")?.jsonPrimitive?.contentOrNull
+        )
+    }
+
+    @Test
+    fun chatCompletionsLeavesGenericProviderPromptShapeUnchanged() {
+        val body = chatCompletionsBody(
+            messages = listOf(UIMessage.system("Stable system prompt"), UIMessage.user("Hello")),
+            model = reasoningModel,
+            providerSetting = providerSetting
+        )
+
+        assertFalse(body.containsKey("cache_control"))
+
+        val messages = body["messages"]?.jsonArray ?: error("messages are missing")
+        assertEquals("Stable system prompt", messages[0].jsonObject["content"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("Hello", messages[1].jsonObject["content"]?.jsonPrimitive?.contentOrNull)
+    }
+
+    @Test
+    fun parseChatCompletionsUsageReadsAnthropicStyleCacheFields() {
+        val usage = parseChatCompletionsUsage(
+            buildJsonObject {
+                put("input_tokens", 100)
+                put("cache_creation_input_tokens", 200)
+                put("cache_read_input_tokens", 300)
+                put("completion_tokens", 50)
+            }
+        ) ?: error("usage is missing")
+
+        assertEquals(600, usage.promptTokens)
+        assertEquals(50, usage.completionTokens)
+        assertEquals(300, usage.cachedTokens)
+        assertEquals(650, usage.totalTokens)
+    }
+
+    @Test
     fun parseMessageTreatsThinkingFieldAsReasoning() {
         val message = parseOpenAIMessage(
             JsonObject(
@@ -326,6 +421,21 @@ class OpenAIReasoningRequestTest {
         )
         method.isAccessible = true
         return method.invoke(api, message) as UIMessage
+    }
+
+    private fun parseChatCompletionsUsage(usage: JsonObject): me.rerere.ai.core.TokenUsage? {
+        val api = ChatCompletionsAPI(
+            client = OkHttpClient(),
+            keyRoulette = object : KeyRoulette {
+                override fun next(keys: String): String = keys
+            }
+        )
+        val method = ChatCompletionsAPI::class.java.getDeclaredMethod(
+            "parseTokenUsage",
+            JsonObject::class.java,
+        )
+        method.isAccessible = true
+        return method.invoke(api, usage) as me.rerere.ai.core.TokenUsage?
     }
 
     private fun responseApiBody(thinkingBudget: Int?): JsonObject {
