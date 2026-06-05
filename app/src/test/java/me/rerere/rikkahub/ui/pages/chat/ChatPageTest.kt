@@ -8,7 +8,6 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.service.ChatPersistenceMode
-import me.rerere.rikkahub.utils.base64Decode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -90,52 +89,19 @@ class ChatPageTest {
     }
 
     @Test
-    fun canPreserveAssistantSwitchDraftOnlyForAssistantSeededDrafts() {
-        val presetOnlyConversation = Conversation.ofId(
-            id = Uuid.random(),
-            messages = listOf(MessageNode.of(UIMessage.assistant("Preset"))),
-        )
-        val activeConversation = Conversation.ofId(
-            id = Uuid.random(),
-            messages = listOf(
-                MessageNode.of(UIMessage.assistant("Preset")),
-                MessageNode.of(UIMessage.user("Hello")),
-            ),
-        )
-
-        assertTrue(canPreserveAssistantSwitchDraft(presetOnlyConversation))
-        assertFalse(canPreserveAssistantSwitchDraft(activeConversation))
-    }
-
-    @Test
-    fun buildAssistantSwitchNavigationCarriesDraftOnlyForPresetOnlyConversation() {
+    fun buildAssistantSwitchNavigationKeepsDraftOutOfRoute() {
         val navigation = buildAssistantSwitchNavigation(
-            conversation = Conversation.ofId(
-                id = Uuid.random(),
-                messages = listOf(MessageNode.of(UIMessage.assistant("Preset"))),
-            ),
-            inputText = "draft text",
-            inputFiles = listOf("file:///tmp/image.png"),
             persistenceMode = ChatPersistenceMode.TEMPORARY,
         )
 
-        assertEquals("draft text", navigation.initText?.base64Decode())
-        assertEquals(listOf("file:///tmp/image.png"), navigation.initFiles)
+        assertEquals(null, navigation.initText)
+        assertTrue(navigation.initFiles.isEmpty())
         assertEquals(ChatPersistenceMode.TEMPORARY.routeValue, navigation.persistenceMode)
     }
 
     @Test
-    fun buildAssistantSwitchNavigationDropsDraftForActiveConversation() {
+    fun buildAssistantSwitchNavigationDropsNormalPersistenceMode() {
         val navigation = buildAssistantSwitchNavigation(
-            conversation = Conversation.ofId(
-                id = Uuid.random(),
-                messages = listOf(
-                    MessageNode.of(UIMessage.assistant("Preset")),
-                    MessageNode.of(UIMessage.user("Hello")),
-                ),
-            ),
-            inputText = "draft text",
-            inputFiles = listOf("file:///tmp/image.png"),
             persistenceMode = ChatPersistenceMode.NORMAL,
         )
 
@@ -145,26 +111,30 @@ class ChatPageTest {
     }
 
     @Test
-    fun extractDraftFileUrlsKeepsMediaPartsOnly() {
-        val urls = extractDraftFileUrls(
-            listOf(
-                UIMessagePart.Text("ignore me"),
-                UIMessagePart.Image("file:///tmp/image.png"),
-                UIMessagePart.Document("file:///tmp/file.pdf", "file.pdf", "application/pdf"),
-            )
-        )
-
-        assertEquals(
-            listOf(
-                "file:///tmp/image.png",
-                "file:///tmp/file.pdf",
-            ),
-            urls
-        )
+    fun decodeChatRouteTextIgnoresInvalidBase64() {
+        assertEquals("", decodeChatRouteText("draft text"))
     }
 
     @Test
-    fun decodeChatRouteTextIgnoresInvalidBase64() {
-        assertEquals("", decodeChatRouteText("draft text"))
+    fun chatSessionDraftStoreMovesDraftWithoutEditingState() {
+        ChatSessionDraftStore.clear()
+        val fromId = Uuid.random()
+        val toId = Uuid.random()
+        val editingMessageId = Uuid.random()
+        val draft = ChatInputDraft(
+            text = "draft text",
+            messageContent = listOf(UIMessagePart.Image("file:///tmp/image.png")),
+            editingMessage = editingMessageId,
+        )
+
+        ChatSessionDraftStore.put(fromId, draft)
+        ChatSessionDraftStore.moveDraft(fromId, toId, draft)
+
+        assertEquals(null, ChatSessionDraftStore.get(fromId))
+        assertEquals(
+            draft.copy(editingMessage = null),
+            ChatSessionDraftStore.get(toId)
+        )
+        ChatSessionDraftStore.clear()
     }
 }

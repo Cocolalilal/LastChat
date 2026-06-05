@@ -71,6 +71,7 @@ import me.rerere.rikkahub.ui.motion.lateralEnterTransition
 import me.rerere.rikkahub.ui.motion.lateralExitTransition
 import me.rerere.rikkahub.navigation.CHAT_ROUTE_TARGET_KEY
 import me.rerere.rikkahub.navigation.toChatRouteTarget
+import me.rerere.rikkahub.ui.pages.chat.ChatSessionDraftStore
 import me.rerere.rikkahub.ui.pages.assistant.AssistantPage
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantDetailPage
 import me.rerere.rikkahub.ui.pages.backup.BackupPage
@@ -407,6 +408,13 @@ class RouteActivity : ComponentActivity() {
         } catch (e: Exception) {
             android.util.Log.e(TAG, "Fatal error in RouteActivity.onCreate", e)
         }
+    }
+
+    override fun onDestroy() {
+        if (!isChangingConfigurations) {
+            ChatSessionDraftStore.clear()
+        }
+        super.onDestroy()
     }
 
     private fun disableNavigationBarContrast() {

@@ -359,11 +359,14 @@ fun ChatDrawerContent(
 
             fun navigateToAssistantConversation(assistant: me.rerere.rikkahub.data.model.Assistant) {
                 scope.launch {
+                    val draft = inputState.toDraft()
                     val newConversation = vm.createConversationForAssistant(assistant.id)
+                    ChatSessionDraftStore.moveDraft(
+                        fromConversationId = current.id,
+                        toConversationId = newConversation.id,
+                        draft = draft,
+                    )
                     val draftNavigation = buildAssistantSwitchNavigation(
-                        conversation = current,
-                        inputText = inputState.textContent.text.toString(),
-                        inputFiles = extractDraftFileUrls(inputState.messageContent),
                         persistenceMode = activePersistenceMode,
                     )
                     navigateToChatPage(

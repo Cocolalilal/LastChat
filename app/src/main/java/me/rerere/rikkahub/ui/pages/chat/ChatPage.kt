@@ -68,6 +68,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -99,7 +100,6 @@ import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.HistoryToggleOff
 
-import me.rerere.ai.core.MessageRole
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.ui.components.chat.NewChatContent
 
@@ -107,6 +107,7 @@ import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.components.ui.Tooltip
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessagePart
@@ -129,7 +130,6 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.service.ChatPersistenceMode
 import me.rerere.rikkahub.ui.theme.AssistantChatTheme
-import me.rerere.rikkahub.utils.base64Encode
 import me.rerere.rikkahub.utils.base64Decode
 import me.rerere.rikkahub.utils.getFileNameFromUri
 import me.rerere.rikkahub.utils.getFileMimeType
@@ -150,22 +150,6 @@ import androidx.compose.ui.draw.clip
 
 internal fun hasConversationMessages(conversation: Conversation): Boolean {
     return conversation.messageNodes.isNotEmpty()
-}
-
-internal fun canPreserveAssistantSwitchDraft(conversation: Conversation): Boolean {
-    return conversation.messageNodes.none { it.role == MessageRole.USER }
-}
-
-internal fun extractDraftFileUrls(parts: List<UIMessagePart>): List<String> {
-    return parts.mapNotNull { part ->
-        when (part) {
-            is UIMessagePart.Image -> part.url.takeIf { it.isNotBlank() }
-            is UIMessagePart.Document -> part.url.takeIf { it.isNotBlank() }
-            is UIMessagePart.Video -> part.url.takeIf { it.isNotBlank() }
-            is UIMessagePart.Audio -> part.url.takeIf { it.isNotBlank() }
-            else -> null
-        }
-    }
 }
 
 @Composable
@@ -274,15 +258,11 @@ internal data class AssistantSwitchNavigation(
 )
 
 internal fun buildAssistantSwitchNavigation(
-    conversation: Conversation,
-    inputText: String,
-    inputFiles: List<String>,
     persistenceMode: ChatPersistenceMode,
 ): AssistantSwitchNavigation {
-    val preserveDraft = canPreserveAssistantSwitchDraft(conversation)
     return AssistantSwitchNavigation(
-        initText = inputText.takeIf { preserveDraft && it.isNotBlank() }?.base64Encode(),
-        initFiles = if (preserveDraft) inputFiles else emptyList(),
+        initText = null,
+        initFiles = emptyList(),
         persistenceMode = persistenceMode.takeIf { it != ChatPersistenceMode.NORMAL }?.routeValue,
     )
 }
@@ -291,6 +271,63 @@ internal fun decodeChatRouteText(text: String?): String {
     return text?.let { encoded ->
         runCatching { encoded.base64Decode() }.getOrDefault("")
     }.orEmpty()
+}
+
+internal data class ChatInputDraft(
+    val text: String = "",
+    val messageContent: List<UIMessagePart> = emptyList(),
+    val editingMessage: Uuid? = null,
+) {
+    val isEmpty: Boolean
+        get() = text.isEmpty() && messageContent.isEmpty() && editingMessage == null
+
+    fun forAssistantSwitch(): ChatInputDraft {
+        return copy(editingMessage = null)
+    }
+}
+
+internal object ChatSessionDraftStore {
+    private val drafts = mutableMapOf<Uuid, ChatInputDraft>()
+
+    fun get(conversationId: Uuid): ChatInputDraft? {
+        return drafts[conversationId]
+    }
+
+    fun put(conversationId: Uuid, draft: ChatInputDraft) {
+        if (draft.isEmpty) {
+            drafts.remove(conversationId)
+        } else {
+            drafts[conversationId] = draft
+        }
+    }
+
+    fun moveDraft(fromConversationId: Uuid, toConversationId: Uuid, draft: ChatInputDraft) {
+        drafts.remove(fromConversationId)
+        put(toConversationId, draft.forAssistantSwitch())
+    }
+
+    fun clear() {
+        drafts.clear()
+    }
+}
+
+internal fun ChatInputState.toDraft(): ChatInputDraft {
+    return ChatInputDraft(
+        text = textContent.text.toString(),
+        messageContent = messageContent,
+        editingMessage = editingMessage,
+    )
+}
+
+internal fun ChatInputState.applyDraft(draft: ChatInputDraft) {
+    clearInput()
+    if (draft.text.isNotEmpty()) {
+        setMessageText(draft.text)
+    }
+    if (draft.messageContent.isNotEmpty()) {
+        messageContent = draft.messageContent
+    }
+    editingMessage = draft.editingMessage
 }
 
 internal fun shouldShowNewChatContent(
@@ -424,43 +461,65 @@ fun ChatPage(
     var showWideRailAssistantPicker by remember { mutableStateOf(false) }
 
     val inputState = rememberChatInputState()
+    var inputRestored by remember(id) { mutableStateOf(false) }
     LaunchedEffect(id, text, files) {
+        inputRestored = false
         inputState.clearInput()
         val decodedText = decodeChatRouteText(text)
-        if (decodedText.isNotBlank()) {
-            inputState.setMessageText(decodedText)
-        }
-        if (files.isEmpty()) {
-            return@LaunchedEffect
-        }
-        val importedParts = withContext(Dispatchers.IO) {
-            buildList {
-                files.forEach { sourceFile ->
-                    val mimeType = context.getFileMimeType(sourceFile)
-                    val fileName = context.getFileNameFromUri(sourceFile) ?: "file"
-                    val localFile = ChatAttachmentManager.importChatFile(
-                        uri = sourceFile,
-                        fileNameHint = fileName,
-                        mimeHint = mimeType,
-                    )?.uri ?: return@forEach
-                    when {
-                        mimeType?.startsWith("image/") == true -> add(UIMessagePart.Image(url = localFile.toString()))
-                        mimeType?.startsWith("video/") == true -> add(UIMessagePart.Video(url = localFile.toString()))
-                        mimeType?.startsWith("audio/") == true -> add(UIMessagePart.Audio(url = localFile.toString()))
-                        else -> add(
-                            UIMessagePart.Document(
-                                url = localFile.toString(),
-                                fileName = fileName,
-                                mime = mimeType ?: "application/octet-stream"
+        val importedParts = if (files.isNotEmpty()) {
+            withContext(Dispatchers.IO) {
+                buildList {
+                    files.forEach { sourceFile ->
+                        val mimeType = context.getFileMimeType(sourceFile)
+                        val fileName = context.getFileNameFromUri(sourceFile) ?: "file"
+                        val localFile = ChatAttachmentManager.importChatFile(
+                            uri = sourceFile,
+                            fileNameHint = fileName,
+                            mimeHint = mimeType,
+                        )?.uri ?: return@forEach
+                        when {
+                            mimeType?.startsWith("image/") == true -> add(UIMessagePart.Image(url = localFile.toString()))
+                            mimeType?.startsWith("video/") == true -> add(UIMessagePart.Video(url = localFile.toString()))
+                            mimeType?.startsWith("audio/") == true -> add(UIMessagePart.Audio(url = localFile.toString()))
+                            else -> add(
+                                UIMessagePart.Document(
+                                    url = localFile.toString(),
+                                    fileName = fileName,
+                                    mime = mimeType ?: "application/octet-stream"
+                                )
                             )
-                        )
+                        }
                     }
                 }
             }
+        } else {
+            emptyList()
         }
-        if (importedParts.isNotEmpty()) {
-            inputState.messageContent = importedParts
+        val routeDraft = ChatInputDraft(
+            text = decodedText,
+            messageContent = importedParts,
+        )
+        val draft = routeDraft.takeUnless { it.isEmpty }
+            ?: ChatSessionDraftStore.get(id)
+            ?: ChatInputDraft()
+        inputState.applyDraft(draft)
+        inputRestored = true
+    }
+
+    LaunchedEffect(id, inputState) {
+        snapshotFlow {
+            if (inputRestored) {
+                inputState.toDraft()
+            } else {
+                null
+            }
         }
+            .distinctUntilChanged()
+            .collect { draft ->
+                if (draft != null) {
+                    ChatSessionDraftStore.put(id, draft)
+                }
+            }
     }
 
     val chatListState = remember(conversation.id) { LazyListState() }
@@ -479,11 +538,14 @@ fun ChatPage(
 
     fun navigateToAssistantConversation(selectedAssistant: Assistant) {
         scope.launch {
+            val draft = inputState.toDraft()
             val newConversation = vm.createConversationForAssistant(selectedAssistant.id)
+            ChatSessionDraftStore.moveDraft(
+                fromConversationId = conversation.id,
+                toConversationId = newConversation.id,
+                draft = draft,
+            )
             val draftNavigation = buildAssistantSwitchNavigation(
-                conversation = conversation,
-                inputText = inputState.textContent.text.toString(),
-                inputFiles = extractDraftFileUrls(inputState.messageContent),
                 persistenceMode = activePersistenceMode,
             )
             navigateToChatPage(
@@ -788,11 +850,14 @@ private fun ChatPageContent(
 
     fun navigateToAssistantConversation(selectedAssistant: Assistant) {
         scope.launch {
+            val draft = inputState.toDraft()
             val newConversation = vm.createConversationForAssistant(selectedAssistant.id)
+            ChatSessionDraftStore.moveDraft(
+                fromConversationId = conversation.id,
+                toConversationId = newConversation.id,
+                draft = draft,
+            )
             val draftNavigation = buildAssistantSwitchNavigation(
-                conversation = conversation,
-                inputText = inputState.textContent.text.toString(),
-                inputFiles = extractDraftFileUrls(inputState.messageContent),
                 persistenceMode = activePersistenceMode,
             )
             navigateToChatPage(
