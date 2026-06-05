@@ -11,6 +11,7 @@ import androidx.activity.compose.BackHandler
 import androidx.core.net.toUri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
@@ -189,6 +190,7 @@ private fun ChatTopFadeOverlay(
 private fun ChatWidePanelEdgeFadeOverlay(
     width: Dp,
     placement: ChatToolbarPlacement,
+    showBottomFade: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val backgroundColor = MaterialTheme.colorScheme.background
@@ -229,25 +231,37 @@ private fun ChatWidePanelEdgeFadeOverlay(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .height(200.dp)
-                .background(
-                    brush = if (placement == ChatToolbarPlacement.Bottom) {
-                        androidx.compose.ui.graphics.Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                backgroundColor.copy(alpha = 0.72f),
-                                backgroundColor.copy(alpha = 0.97f)
+        ) {
+            androidx.compose.animation.AnimatedVisibility(
+                visible = showBottomFade,
+                enter = androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.fadeOut(),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                        brush = if (placement == ChatToolbarPlacement.Bottom) {
+                            androidx.compose.ui.graphics.Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    backgroundColor.copy(alpha = 0.72f),
+                                    backgroundColor.copy(alpha = 0.97f)
+                                )
                             )
-                        )
-                    } else {
-                        androidx.compose.ui.graphics.Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                backgroundColor.copy(alpha = 0.92f)
+                        } else {
+                            androidx.compose.ui.graphics.Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    backgroundColor.copy(alpha = 0.92f)
+                                )
                             )
+                        }
                         )
-                    }
                 )
-        )
+            }
+        }
     }
 }
 
@@ -565,6 +579,13 @@ fun ChatPage(
                     color = MaterialTheme.colorScheme.background,
                     modifier = Modifier.fillMaxSize()
                 ) {
+                    val wideHazeState = rememberHazeState()
+                    val wideBlur = remember(setting.displaySetting.enableBlurEffect, wideHazeState) {
+                        LastChatBlur(
+                            enabled = setting.displaySetting.enableBlurEffect,
+                            hazeState = wideHazeState,
+                        )
+                    }
                     val widePanelWidth by androidx.compose.animation.core.animateDpAsState(
                         targetValue = if (isWidePanelCollapsed) 80.dp else wideDrawerExpandedWidth,
                         animationSpec = androidx.compose.animation.core.tween(
@@ -573,14 +594,29 @@ fun ChatPage(
                         ),
                         label = "chat_wide_panel_width"
                     )
+                    val widePanelHaptics = rememberPremiumHaptics(enabled = setting.displaySetting.enableUIHaptics)
+                    var widePanelDragX by remember { mutableStateOf(0f) }
+                    val wideEffectiveDisplaySetting = setting.getEffectiveDisplaySetting(conversationAssistant)
+                    val wideShowsNewChatContent =
+                        wideEffectiveDisplaySetting.newChatHeaderStyle != me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.NONE ||
+                            wideEffectiveDisplaySetting.newChatContentStyle != me.rerere.rikkahub.data.datastore.NewChatContentStyle.NONE
+                    val showWideBottomFade =
+                        hasConversationMessages(conversation) ||
+                            conversationAssistant.presetMessages.isNotEmpty() ||
+                            activePersistenceMode == ChatPersistenceMode.TEMPORARY ||
+                            !wideShowsNewChatContent
+                    CompositionLocalProvider(LocalLastChatBlur provides wideBlur) {
                     Box(modifier = Modifier.fillMaxSize()) {
                         AssistantBackground(
                             assistant = conversationAssistant,
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .lastChatBlurSource()
                         )
                         ChatWidePanelEdgeFadeOverlay(
                             width = widePanelWidth,
                             placement = chatTopBarPlacement(setting),
+                            showBottomFade = showWideBottomFade,
                             modifier = Modifier.align(Alignment.CenterStart)
                         )
                         Row(
@@ -591,6 +627,37 @@ fun ChatPage(
                                     .width(widePanelWidth)
                                     .fillMaxHeight()
                                     .clipToBounds()
+                                    .pointerInput(isWidePanelCollapsed) {
+                                        detectHorizontalDragGestures(
+                                            onDragStart = {
+                                                widePanelDragX = 0f
+                                            },
+                                            onHorizontalDrag = { change, dragAmount ->
+                                                widePanelDragX += dragAmount
+                                                change.consume()
+                                            },
+                                            onDragEnd = {
+                                                val threshold = 36.dp.toPx()
+                                                val shouldCollapse = !isWidePanelCollapsed && widePanelDragX < -threshold
+                                                val shouldExpand = isWidePanelCollapsed && widePanelDragX > threshold
+                                                when {
+                                                    shouldCollapse -> {
+                                                        widePanelHaptics.perform(HapticPattern.Pop)
+                                                        isWidePanelCollapsed = true
+                                                    }
+
+                                                    shouldExpand -> {
+                                                        widePanelHaptics.perform(HapticPattern.Pop)
+                                                        isWidePanelCollapsed = false
+                                                    }
+                                                }
+                                                widePanelDragX = 0f
+                                            },
+                                            onDragCancel = {
+                                                widePanelDragX = 0f
+                                            }
+                                        )
+                                    }
                             ) {
                                 AnimatedContent(
                                     targetState = isWidePanelCollapsed,
@@ -676,7 +743,9 @@ fun ChatPage(
                                     bigScreen = true,
                                     contentMaxWidth = chatContentMaxWidth,
                                     inputMaxWidth = inputMaxWidth,
-                                    initialSearchQuery = searchQuery
+                                    initialSearchQuery = searchQuery,
+                                    renderBackground = false,
+                                    inheritedBlur = wideBlur,
                                 )
                             }
                         }
@@ -696,6 +765,7 @@ fun ChatPage(
                                 }
                             )
                         }
+                    }
                     }
                 }
             }
@@ -769,6 +839,8 @@ private fun ChatPageContent(
     contentMaxWidth: Dp = Dp.Unspecified,
     inputMaxWidth: Dp = Dp.Unspecified,
     initialSearchQuery: String? = null,
+    renderBackground: Boolean = true,
+    inheritedBlur: LastChatBlur? = null,
 ) {
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
@@ -800,12 +872,13 @@ private fun ChatPageContent(
     val isGenerating = loadingJob != null
     val density = LocalDensity.current
     val hazeState = rememberHazeState()
-    val blur = remember(setting.displaySetting.enableBlurEffect, hazeState) {
+    val localBlur = remember(setting.displaySetting.enableBlurEffect, hazeState) {
         LastChatBlur(
             enabled = setting.displaySetting.enableBlurEffect,
             hazeState = hazeState,
         )
     }
+    val blur = inheritedBlur ?: localBlur
 
     LaunchedEffect(conversation.id) {
         previewMode = false
@@ -901,14 +974,20 @@ private fun ChatPageContent(
     AssistantChatTheme(assistant = currentAssistant) {
         CompositionLocalProvider(LocalLastChatBlur provides blur) {
             Surface(
-                color = MaterialTheme.colorScheme.background,
+                color = if (renderBackground) {
+                    MaterialTheme.colorScheme.background
+                } else {
+                    Color.Transparent
+                },
                 modifier = Modifier.fillMaxSize()
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    AssistantBackground(
-                        assistant = currentAssistant,
-                        modifier = Modifier.lastChatBlurSource()
-                    )
+                    if (renderBackground) {
+                        AssistantBackground(
+                            assistant = currentAssistant,
+                            modifier = Modifier.lastChatBlurSource()
+                        )
+                    }
                     Scaffold(
                 topBar = if (toolbarPlacement == ChatToolbarPlacement.Top) {
                     {
@@ -925,7 +1004,7 @@ private fun ChatPageContent(
                             currentChatModel = currentChatModel,
                             isGenerating = isGenerating,
                             showCloseAction = previewMode || isChatShareSelecting,
-                            showTopFade = !showToolbarOverflowMenu,
+                            showTopFade = true,
                             onNewChat = {
                                 navigateToChatPage(navController)
                             },
@@ -954,11 +1033,9 @@ private fun ChatPageContent(
                     }
                 } else {
                     {
-                        if (!showToolbarOverflowMenu) {
-                            ChatTopFadeOverlay(
-                                fadeHeight = 36.dp,
-                            )
-                        }
+                        ChatTopFadeOverlay(
+                            fadeHeight = 36.dp,
+                        )
                     }
                 },
                 // Input is rendered manually at the bottom of the screen
@@ -1962,10 +2039,6 @@ private fun ChatToolbarOverflowMenu(
                 )
             }
     ) {
-        ChatTopFadeOverlay(
-            fadeHeight = if (placement == ChatToolbarPlacement.Top) 96.dp else 36.dp,
-            modifier = Modifier.align(Alignment.TopCenter)
-        )
         if (!dragDismissInProgress) {
             Surface(
                 shape = menuShape,
