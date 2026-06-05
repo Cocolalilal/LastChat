@@ -39,6 +39,7 @@ fun navigateToChatPage(
     initFiles: List<Uri> = emptyList(),
     searchQuery: String? = null,
     persistenceMode: String? = null,
+    focusLatestMessageKey: String? = null,
 ) {
     Log.i(TAG, "navigateToChatPage: navigate to $chatId")
     val target = ChatRouteTarget(
@@ -47,6 +48,7 @@ fun navigateToChatPage(
         files = initFiles.map { it.toString() },
         searchQuery = searchQuery,
         persistenceMode = persistenceMode,
+        focusLatestMessageKey = focusLatestMessageKey,
     )
     val isAlreadyOnChat = navController.currentBackStackEntry
         ?.let { backStackEntry ->
@@ -65,6 +67,7 @@ fun navigateToChatPage(
             files = target.files,
             searchQuery = target.searchQuery,
             persistenceMode = target.persistenceMode,
+            focusLatestMessageKey = target.focusLatestMessageKey,
         ),
     ) {
         popUpTo(0) {

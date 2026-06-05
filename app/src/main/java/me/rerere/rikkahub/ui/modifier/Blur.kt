@@ -1,11 +1,13 @@
 package me.rerere.rikkahub.ui.modifier
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import dev.chrisbanes.haze.ExperimentalHazeApi
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.blurEffect
 import dev.chrisbanes.haze.blur.materials.HazeMaterials
@@ -31,6 +33,7 @@ fun Modifier.lastChatBlurSource(): Modifier {
 }
 
 @Composable
+@OptIn(ExperimentalHazeApi::class)
 fun Modifier.lastChatBlurEffect(
     containerColor: Color,
     shape: Shape? = null,
@@ -43,6 +46,8 @@ fun Modifier.lastChatBlurEffect(
         val effectModifier = clippedModifier.hazeEffect(state = hazeState) {
             clipToAreasBounds = true
             expandLayerBounds = false
+            forceInvalidateOnPreDraw = false
+            canDrawArea = { true }
             blurEffect {
                 this.style = style
             }
@@ -62,5 +67,15 @@ fun blurredContainerColor(
     fallback: Color,
 ): Color {
     val blur = LocalLastChatBlur.current
-    return if (blur.enabled && blur.hazeState != null) fallback.copy(alpha = 0.18f) else fallback
+    if (!blur.enabled || blur.hazeState == null) {
+        return fallback
+    }
+
+    val minimumAlpha = if (isSystemInDarkTheme()) 0.34f else 0.28f
+    val glassAlpha = if (fallback.alpha < 1f) {
+        fallback.alpha.coerceAtLeast(minimumAlpha)
+    } else {
+        minimumAlpha
+    }
+    return fallback.copy(alpha = glassAlpha)
 }

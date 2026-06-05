@@ -140,6 +140,7 @@ import org.koin.core.parameter.parametersOf
 import kotlinx.coroutines.withContext
 import kotlin.uuid.Uuid
 import dev.chrisbanes.haze.rememberHazeState
+import androidx.compose.ui.draw.clipToBounds
 import me.rerere.rikkahub.ui.modifier.LastChatBlur
 import me.rerere.rikkahub.ui.modifier.LocalLastChatBlur
 import me.rerere.rikkahub.ui.modifier.lastChatBlurEffect
@@ -345,6 +346,7 @@ fun ChatPage(
     val files = target.fileUris
     val searchQuery = target.searchQuery
     val persistenceMode = target.persistenceMode
+    val focusLatestMessageKey = target.focusLatestMessageKey
     val vm: ChatVM = koinViewModel(
         key = id.toString(),
         parameters = {
@@ -407,14 +409,7 @@ fun ChatPage(
 
     val windowSize = currentWindowDpSize()
     val useWideLayout = shouldUseWideChatLayout(windowSize.width, windowSize.height)
-    val wideDrawerCollapsedWidth = when {
-        windowSize.width >= 1280.dp -> 376.dp
-        else -> 336.dp
-    }
-    val wideDrawerExpandedWidth = when {
-        windowSize.width >= 1280.dp -> 480.dp
-        else -> 400.dp
-    }
+    val wideDrawerExpandedWidth = 336.dp
     val chatContentMaxWidth = when {
         useWideLayout && windowSize.width >= 1440.dp -> 980.dp
         useWideLayout -> 900.dp
@@ -476,6 +471,12 @@ fun ChatPage(
         }
     }
 
+    LaunchedEffect(focusLatestMessageKey, conversation.id, conversation.messageNodes.size) {
+        if (focusLatestMessageKey != null && conversation.messageNodes.isNotEmpty()) {
+            chatListState.animateScrollToItem(conversation.messageNodes.lastIndex)
+        }
+    }
+
     fun navigateToAssistantConversation(selectedAssistant: Assistant) {
         scope.launch {
             val newConversation = vm.createConversationForAssistant(selectedAssistant.id)
@@ -502,82 +503,90 @@ fun ChatPage(
                     color = MaterialTheme.colorScheme.background,
                     modifier = Modifier.fillMaxSize()
                 ) {
+                    val widePanelWidth by androidx.compose.animation.core.animateDpAsState(
+                        targetValue = if (isWidePanelCollapsed) 80.dp else wideDrawerExpandedWidth,
+                        animationSpec = androidx.compose.animation.core.tween(
+                            durationMillis = 260,
+                            easing = androidx.compose.animation.core.FastOutSlowInEasing
+                        ),
+                        label = "chat_wide_panel_width"
+                    )
                     Box(modifier = Modifier.fillMaxSize()) {
                         AssistantBackground(
                             assistant = conversationAssistant,
                             modifier = Modifier.fillMaxSize()
                         )
                         ChatWidePanelEdgeFadeOverlay(
-                            width = if (isWidePanelCollapsed) 80.dp else wideDrawerExpandedWidth,
+                            width = widePanelWidth,
                             placement = chatTopBarPlacement(setting),
                             modifier = Modifier.align(Alignment.CenterStart)
                         )
                         Row(
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            AnimatedContent(
-                                targetState = isWidePanelCollapsed,
-                                transitionSpec = {
-                                    (fadeIn(
-                                        animationSpec = androidx.compose.animation.core.spring(
-                                            dampingRatio = 0.7f,
-                                            stiffness = 360f
-                                        )
-                                    ) + scaleIn(
-                                        initialScale = 0.96f,
-                                        animationSpec = androidx.compose.animation.core.spring(
-                                            dampingRatio = 0.7f,
-                                            stiffness = 360f
-                                        )
-                                    )) togetherWith (fadeOut(
-                                        animationSpec = androidx.compose.animation.core.spring(
-                                            dampingRatio = 0.85f,
-                                            stiffness = 420f
-                                        )
-                                    ) + scaleOut(
-                                        targetScale = 0.96f,
-                                        animationSpec = androidx.compose.animation.core.spring(
-                                            dampingRatio = 0.85f,
-                                            stiffness = 420f
-                                        )
-                                    )) using SizeTransform(
-                                        clip = false,
-                                        sizeAnimationSpec = { _, _ ->
-                                            androidx.compose.animation.core.spring(
-                                                dampingRatio = 0.72f,
+                            Box(
+                                modifier = Modifier
+                                    .width(widePanelWidth)
+                                    .fillMaxHeight()
+                                    .clipToBounds()
+                            ) {
+                                AnimatedContent(
+                                    targetState = isWidePanelCollapsed,
+                                    transitionSpec = {
+                                        (fadeIn(
+                                            animationSpec = androidx.compose.animation.core.spring(
+                                                dampingRatio = 0.7f,
                                                 stiffness = 360f
                                             )
-                                        }
-                                    )
-                                },
-                                label = "chat_side_panel"
-                            ) { collapsed ->
-                                if (collapsed) {
-                                    CollapsedChatSideRail(
-                                        current = conversation,
-                                        settings = setting,
-                                        onExpand = { isWidePanelCollapsed = false },
-                                        onOpenImageGen = { navController.navigate(Screen.ImageGen) },
-                                        onOpenStatistics = { navController.navigate(Screen.Menu) },
-                                        onOpenSettings = { navController.navigate(Screen.Setting) },
-                                        onOpenAssistant = {
-                                            showWideRailAssistantPicker = true
-                                        }
-                                    )
-                                } else {
-                                    ChatDrawerContent(
-                                        navController = navController,
-                                        current = conversation,
-                                        vm = vm,
-                                        settings = setting,
-                                        inputState = inputState,
-                                        activePersistenceMode = activePersistenceMode,
-                                        drawerState = null,
-                                        presentation = ChatDrawerPresentation.PermanentPane,
-                                        collapsedWidth = wideDrawerCollapsedWidth,
-                                        expandedWidth = wideDrawerExpandedWidth,
-                                        onCollapseRequest = { isWidePanelCollapsed = true },
-                                    )
+                                        ) + scaleIn(
+                                            initialScale = 0.96f,
+                                            animationSpec = androidx.compose.animation.core.spring(
+                                                dampingRatio = 0.7f,
+                                                stiffness = 360f
+                                            )
+                                        )) togetherWith (fadeOut(
+                                            animationSpec = androidx.compose.animation.core.spring(
+                                                dampingRatio = 0.85f,
+                                                stiffness = 420f
+                                            )
+                                        ) + scaleOut(
+                                            targetScale = 0.96f,
+                                            animationSpec = androidx.compose.animation.core.spring(
+                                                dampingRatio = 0.85f,
+                                                stiffness = 420f
+                                            )
+                                        )) using SizeTransform(clip = true)
+                                    },
+                                    label = "chat_side_panel",
+                                    modifier = Modifier.fillMaxSize()
+                                ) { collapsed ->
+                                    if (collapsed) {
+                                        CollapsedChatSideRail(
+                                            current = conversation,
+                                            settings = setting,
+                                            onExpand = { isWidePanelCollapsed = false },
+                                            onOpenImageGen = { navController.navigate(Screen.ImageGen) },
+                                            onOpenStatistics = { navController.navigate(Screen.Menu) },
+                                            onOpenSettings = { navController.navigate(Screen.Setting) },
+                                            onOpenAssistant = {
+                                                showWideRailAssistantPicker = true
+                                            }
+                                        )
+                                    } else {
+                                        ChatDrawerContent(
+                                            navController = navController,
+                                            current = conversation,
+                                            vm = vm,
+                                            settings = setting,
+                                            inputState = inputState,
+                                            activePersistenceMode = activePersistenceMode,
+                                            drawerState = null,
+                                            presentation = ChatDrawerPresentation.PermanentPane,
+                                            collapsedWidth = wideDrawerExpandedWidth,
+                                            expandedWidth = wideDrawerExpandedWidth,
+                                            onCollapseRequest = { isWidePanelCollapsed = true },
+                                        )
+                                    }
                                 }
                             }
                             Box(

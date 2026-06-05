@@ -256,6 +256,12 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                         state = lazyListState,
                     ) {
                         itemsIndexed(filteredAssistants, key = { _, assistant -> assistant.id }) { index, assistant ->
+                            val position = when {
+                                filteredAssistants.size == 1 -> ItemPosition.ONLY
+                                index == 0 -> ItemPosition.FIRST
+                                index == filteredAssistants.lastIndex -> ItemPosition.LAST
+                                else -> ItemPosition.MIDDLE
+                            }
                             val memories by vm.getMemories(assistant).collectAsStateWithLifecycle(
                                 initialValue = emptyList(),
                             )
@@ -264,6 +270,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                                 assistant = assistant,
                                 settings = settings,
                                 memories = memories,
+                                position = position,
                                 haptics = haptics,
                                 onClick = {
                                     navController.navigate(Screen.AssistantDetail(id = assistant.id.toString()))
@@ -553,6 +560,7 @@ private fun AssistantItemContent(
     assistant: Assistant,
     settings: Settings,
     memories: List<AssistantMemory>,
+    position: ItemPosition = ItemPosition.ONLY,
     haptics: me.rerere.rikkahub.ui.hooks.PremiumHaptics,
     onClick: () -> Unit,
     onCopy: () -> Unit,
@@ -562,7 +570,7 @@ private fun AssistantItemContent(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(0.dp))
+            .clip(if (useWideSettingsLayout) assistantItemShape(position) else RoundedCornerShape(0.dp))
             .background(if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh)
             .clickable {
                 haptics.perform(HapticPattern.Pop)
@@ -661,6 +669,25 @@ private fun AssistantItemContent(
             tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)
         )
         dragHandle()
+    }
+}
+
+private fun assistantItemShape(position: ItemPosition): RoundedCornerShape {
+    return when (position) {
+        ItemPosition.ONLY -> RoundedCornerShape(24.dp)
+        ItemPosition.FIRST -> RoundedCornerShape(
+            topStart = 24.dp,
+            topEnd = 24.dp,
+            bottomStart = 10.dp,
+            bottomEnd = 10.dp,
+        )
+        ItemPosition.MIDDLE -> RoundedCornerShape(10.dp)
+        ItemPosition.LAST -> RoundedCornerShape(
+            topStart = 10.dp,
+            topEnd = 10.dp,
+            bottomStart = 24.dp,
+            bottomEnd = 24.dp,
+        )
     }
 }
 

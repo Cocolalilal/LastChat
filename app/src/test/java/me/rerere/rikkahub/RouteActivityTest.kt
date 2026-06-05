@@ -65,8 +65,9 @@ class RouteActivityTest {
                 assertEquals(conversationId, targetConversationId)
                 conversationId
             },
-            seedDraftConversation = { _, _ -> error("Draft seeding should not be used") },
-            markEventConsumed = { consumedEventId = it },
+            seedDraftConversation = { _, _, _ -> error("Draft seeding should not be used") },
+            getConsumedTarget = { null },
+            markEventConsumed = { eventId, _ -> consumedEventId = eventId },
         )
 
         assertEquals(assistantId, selectedAssistantId)
@@ -76,6 +77,7 @@ class RouteActivityTest {
                 conversationId = conversationId,
                 persistenceMode = ChatPersistenceMode.NORMAL,
                 assistantId = assistantId,
+                focusLatestMessageKey = "event-1",
             ),
             target,
         )
@@ -103,8 +105,9 @@ class RouteActivityTest {
                 appended = true
                 null
             },
-            seedDraftConversation = { _, _ -> draftConversationId },
-            markEventConsumed = { consumed = true },
+            seedDraftConversation = { _, _, _ -> draftConversationId },
+            getConsumedTarget = { null },
+            markEventConsumed = { _, _ -> consumed = true },
         )
 
         assertFalse(appended)
@@ -129,12 +132,48 @@ class RouteActivityTest {
             updateAssistantSelection = { },
             hasConversation = { false },
             appendToConversation = { _, _, _ -> null },
-            seedDraftConversation = { _, _ -> Uuid.random() },
-            markEventConsumed = { consumed = true },
+            seedDraftConversation = { _, _, _ -> Uuid.random() },
+            getConsumedTarget = { null },
+            markEventConsumed = { _, _ -> consumed = true },
         )
 
         assertNull(target)
         assertFalse(consumed)
+    }
+
+    @Test
+    fun resolveSpontaneousNotificationTargetReusesConsumedTarget() = runBlocking {
+        val assistantId = Uuid.random()
+        val conversationId = Uuid.random()
+        val consumedTarget = ResolvedSpontaneousChatTarget(
+            conversationId = conversationId,
+            persistenceMode = ChatPersistenceMode.NORMAL,
+            assistantId = assistantId,
+        )
+        var selectedAssistantId: Uuid? = null
+        var consumedAgain = false
+
+        val target = resolveSpontaneousNotificationTarget(
+            data = SpontaneousNotificationData(
+                assistantId = assistantId.toString(),
+                conversationId = conversationId.toString(),
+                eventId = "event-consumed",
+                message = "Already added",
+                relation = SpontaneousMessageRelation.RECENT_CHAT,
+            ),
+            isEventConsumed = { true },
+            getConsumedTarget = { consumedTarget },
+            updateAssistantSelection = { selectedAssistantId = it },
+            hasConversation = { it == conversationId },
+            appendToConversation = { _, _, _ -> error("Consumed event should not append again") },
+            seedDraftConversation = { _, _, _ -> error("Consumed normal target should not seed a draft") },
+            markEventConsumed = { _, _ -> consumedAgain = true },
+        )
+
+        assertEquals(assistantId, selectedAssistantId)
+        assertFalse(consumedAgain)
+        assertEquals(conversationId, target?.conversationId)
+        assertEquals("event-consumed", target?.focusLatestMessageKey)
     }
 
     @Test

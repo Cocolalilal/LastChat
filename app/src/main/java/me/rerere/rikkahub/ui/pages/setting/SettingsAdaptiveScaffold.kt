@@ -87,7 +87,6 @@ import me.rerere.rikkahub.ui.components.nav.LocalBackButtonVisible
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
-import me.rerere.rikkahub.ui.pages.backup.BackupTab
 
 val LocalSettingsWideLayout = staticCompositionLocalOf { false }
 
@@ -677,8 +676,8 @@ private fun settingsPaneGroups(): List<SettingsPaneGroup> {
         SettingsPaneEntry(SettingsDestination.Lorebooks, R.string.prompt_injections_page_lorebooks, null, Icons.Rounded.Folder, Screen.SettingLorebooks),
     )
     val backupChildren = listOf(
-        SettingsPaneEntry(SettingsDestination.BackupWebDav, R.string.backup_page_webdav_backup, null, Icons.Rounded.CloudUpload, Screen.Backup(BackupTab.WebDav.routeValue)),
-        SettingsPaneEntry(SettingsDestination.BackupLocal, R.string.backup_page_import_export, null, Icons.Rounded.FileUpload, Screen.Backup(BackupTab.Local.routeValue)),
+        SettingsPaneEntry(SettingsDestination.BackupWebDav, R.string.backup_page_webdav_backup, null, Icons.Rounded.CloudUpload, Screen.BackupWebDav),
+        SettingsPaneEntry(SettingsDestination.BackupLocal, R.string.backup_page_import_export, null, Icons.Rounded.FileUpload, Screen.BackupLocal),
     )
 
     return listOf(
@@ -703,7 +702,7 @@ private fun settingsPaneGroups(): List<SettingsPaneGroup> {
         SettingsPaneGroup(
             titleRes = R.string.setting_page_data_settings,
             entries = listOf(
-                SettingsPaneEntry(SettingsDestination.Backup, R.string.setting_page_data_backup, R.string.setting_page_data_backup_desc, Icons.Rounded.CloudUpload, Screen.Backup(), backupChildren),
+                SettingsPaneEntry(SettingsDestination.Backup, R.string.setting_page_data_backup, R.string.setting_page_data_backup_desc, Icons.Rounded.CloudUpload, Screen.BackupWebDav, backupChildren),
                 SettingsPaneEntry(SettingsDestination.ChatStorage, R.string.setting_page_chat_storage, null, Icons.Rounded.Storage, Screen.SettingChatStorage),
             )
         ),

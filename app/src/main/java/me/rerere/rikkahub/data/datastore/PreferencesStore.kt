@@ -22,6 +22,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.provider.withComfyDefaults
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
@@ -318,6 +319,7 @@ class SettingsStore(
 
                         is ProviderSetting.ComfyUI -> provider.copy(
                             models = provider.models.distinctBy { model -> model.id }
+                                .map { model -> model.withComfyDefaults() }
                         )
                     }
                 },

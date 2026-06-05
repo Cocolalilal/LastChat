@@ -7,10 +7,9 @@ import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SharedTransitionLayout
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -136,6 +135,7 @@ internal data class ResolvedSpontaneousChatTarget(
     val conversationId: Uuid,
     val persistenceMode: ChatPersistenceMode,
     val assistantId: Uuid,
+    val focusLatestMessageKey: String? = null,
 )
 
 internal fun resolveSpontaneousNotificationRelation(
@@ -153,15 +153,45 @@ internal fun resolveSpontaneousNotificationRelation(
 internal suspend fun resolveSpontaneousNotificationTarget(
     data: SpontaneousNotificationData,
     isEventConsumed: (String) -> Boolean,
+    getConsumedTarget: (String) -> ResolvedSpontaneousChatTarget?,
     updateAssistantSelection: suspend (Uuid) -> Unit,
     hasConversation: suspend (Uuid) -> Boolean,
     appendToConversation: suspend (Uuid, String, Uuid) -> Uuid?,
-    seedDraftConversation: suspend (Uuid, String) -> Uuid?,
-    markEventConsumed: (String) -> Unit,
+    seedDraftConversation: suspend (Uuid, String, Uuid?) -> Uuid?,
+    markEventConsumed: (String, ResolvedSpontaneousChatTarget) -> Unit,
 ): ResolvedSpontaneousChatTarget? {
     val assistantId = runCatching { Uuid.parse(data.assistantId) }.getOrNull() ?: return null
     val message = data.message.trim()
-    if (message.isBlank() || isEventConsumed(data.eventId)) return null
+    if (message.isBlank()) return null
+
+    getConsumedTarget(data.eventId)?.let { consumedTarget ->
+        updateAssistantSelection(consumedTarget.assistantId)
+        if (consumedTarget.persistenceMode != ChatPersistenceMode.NORMAL) {
+            seedDraftConversation(
+                consumedTarget.assistantId,
+                message,
+                consumedTarget.conversationId,
+            ) ?: return null
+        } else if (!hasConversation(consumedTarget.conversationId)) {
+            return null
+        }
+        return consumedTarget.copy(focusLatestMessageKey = data.eventId)
+    }
+
+    if (isEventConsumed(data.eventId)) {
+        val conversationId = data.conversationId
+            ?.let { raw -> runCatching { Uuid.parse(raw) }.getOrNull() }
+            ?.takeIf { data.relation == me.rerere.rikkahub.service.SpontaneousMessageRelation.RECENT_CHAT }
+            ?.takeIf { hasConversation(it) }
+            ?: return null
+        updateAssistantSelection(assistantId)
+        return ResolvedSpontaneousChatTarget(
+            conversationId = conversationId,
+            persistenceMode = ChatPersistenceMode.NORMAL,
+            assistantId = assistantId,
+            focusLatestMessageKey = data.eventId,
+        )
+    }
 
     updateAssistantSelection(assistantId)
 
@@ -180,7 +210,7 @@ internal suspend fun resolveSpontaneousNotificationTarget(
                 null
             }
             val conversationId = existingConversationId
-                ?: seedDraftConversation(assistantId, message)
+                ?: seedDraftConversation(assistantId, message, null)
                 ?: return null
             ResolvedSpontaneousChatTarget(
                 conversationId = conversationId,
@@ -190,20 +220,22 @@ internal suspend fun resolveSpontaneousNotificationTarget(
                     ChatPersistenceMode.PERSIST_ON_REPLY
                 },
                 assistantId = assistantId,
+                focusLatestMessageKey = data.eventId,
             )
         }
 
         me.rerere.rikkahub.service.SpontaneousMessageRelation.UNRELATED -> {
-            val conversationId = seedDraftConversation(assistantId, message) ?: return null
+            val conversationId = seedDraftConversation(assistantId, message, null) ?: return null
             ResolvedSpontaneousChatTarget(
                 conversationId = conversationId,
                 persistenceMode = ChatPersistenceMode.PERSIST_ON_REPLY,
                 assistantId = assistantId,
+                focusLatestMessageKey = data.eventId,
             )
         }
     }
 
-    markEventConsumed(data.eventId)
+    markEventConsumed(data.eventId, target)
     return target
 }
 
@@ -231,6 +263,23 @@ private fun ResolvedSpontaneousChatTarget.toScreen(): Screen.Chat {
     return Screen.Chat(
         id = conversationId.toString(),
         persistenceMode = persistenceMode.routeValue.takeIf { persistenceMode != ChatPersistenceMode.NORMAL },
+        focusLatestMessageKey = focusLatestMessageKey,
+    )
+}
+
+private fun me.rerere.rikkahub.data.datastore.ConsumedSpontaneousEventRecord.toResolvedSpontaneousTarget(): ResolvedSpontaneousChatTarget? {
+    val conversationId = conversationId
+        ?.let { raw -> runCatching { Uuid.parse(raw) }.getOrNull() }
+        ?: return null
+    val assistantId = assistantId
+        ?.let { raw -> runCatching { Uuid.parse(raw) }.getOrNull() }
+        ?: return null
+    val persistenceMode = ChatPersistenceMode.fromRouteValue(persistenceMode)
+        ?: ChatPersistenceMode.NORMAL
+    return ResolvedSpontaneousChatTarget(
+        conversationId = conversationId,
+        persistenceMode = persistenceMode,
+        assistantId = assistantId,
     )
 }
 
@@ -439,6 +488,7 @@ class RouteActivity : ComponentActivity() {
                     chatId = spontaneousTarget.conversationId,
                     persistenceMode = spontaneousTarget.persistenceMode.routeValue
                         .takeIf { spontaneousTarget.persistenceMode != ChatPersistenceMode.NORMAL },
+                    focusLatestMessageKey = spontaneousTarget.focusLatestMessageKey,
                 )
             } else if (conversationIdStr != null) {
                 pendingConversationId = null
@@ -457,6 +507,10 @@ class RouteActivity : ComponentActivity() {
         return resolveSpontaneousNotificationTarget(
             data = data,
             isEventConsumed = spontaneousMessagingStateStore::isEventConsumed,
+            getConsumedTarget = { eventId ->
+                spontaneousMessagingStateStore.getConsumedEventRecord(eventId)
+                    ?.toResolvedSpontaneousTarget()
+            },
             updateAssistantSelection = { assistantId ->
                 settingsStore.updateAssistant(assistantId)
                 settingsStore.markAssistantUsed(assistantId)
@@ -471,13 +525,21 @@ class RouteActivity : ComponentActivity() {
                     conversationId = conversationId,
                 ).id
             },
-            seedDraftConversation = { assistantId, message ->
+            seedDraftConversation = { assistantId, message, conversationId ->
                 chatService.seedSpontaneousDraftConversation(
                     assistantId = assistantId,
                     content = message,
+                    conversationId = conversationId ?: Uuid.random(),
                 ).id
             },
-            markEventConsumed = spontaneousMessagingStateStore::markEventConsumed,
+            markEventConsumed = { eventId, target ->
+                spontaneousMessagingStateStore.markEventConsumed(
+                    eventId = eventId,
+                    conversationId = target.conversationId,
+                    assistantId = target.assistantId,
+                    persistenceMode = target.persistenceMode.routeValue,
+                )
+            },
         )
     }
 
@@ -695,7 +757,7 @@ class RouteActivity : ComponentActivity() {
                             isSettingsPaneRoute(initialState.destination.route) &&
                             isSettingsPaneRoute(targetState.destination.route)
                         ) {
-                            fadeIn(animationSpec = tween(0))
+                            EnterTransition.None
                         } else {
                             rootEnterTransition(motionPolicy)
                         }
@@ -706,7 +768,7 @@ class RouteActivity : ComponentActivity() {
                             isSettingsPaneRoute(initialState.destination.route) &&
                             isSettingsPaneRoute(targetState.destination.route)
                         ) {
-                            fadeOut(animationSpec = tween(0))
+                            ExitTransition.None
                         } else {
                             rootExitTransition(motionPolicy)
                         }
@@ -717,7 +779,7 @@ class RouteActivity : ComponentActivity() {
                             isSettingsPaneRoute(initialState.destination.route) &&
                             isSettingsPaneRoute(targetState.destination.route)
                         ) {
-                            fadeIn(animationSpec = tween(0))
+                            EnterTransition.None
                         } else {
                             rootPopEnterTransition(motionPolicy)
                         }
@@ -728,7 +790,7 @@ class RouteActivity : ComponentActivity() {
                             isSettingsPaneRoute(initialState.destination.route) &&
                             isSettingsPaneRoute(targetState.destination.route)
                         ) {
-                            fadeOut(animationSpec = tween(0))
+                            ExitTransition.None
                         } else {
                             rootPopExitTransition(motionPolicy)
                         }
@@ -806,6 +868,18 @@ class RouteActivity : ComponentActivity() {
                             }
                         ) {
                             BackupPage(initialTab = initialTab)
+                        }
+                    }
+
+                    composable<Screen.BackupWebDav> {
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.BackupWebDav) {
+                            BackupPage(initialTab = me.rerere.rikkahub.ui.pages.backup.BackupTab.WebDav)
+                        }
+                    }
+
+                    composable<Screen.BackupLocal> {
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.BackupLocal) {
+                            BackupPage(initialTab = me.rerere.rikkahub.ui.pages.backup.BackupTab.Local)
                         }
                     }
 
@@ -1192,6 +1266,7 @@ sealed interface Screen {
         val files: List<String> = emptyList(),
         val searchQuery: String? = null,
         val persistenceMode: String? = null,
+        val focusLatestMessageKey: String? = null,
     ) : Screen
 
     @Serializable
@@ -1220,6 +1295,12 @@ sealed interface Screen {
 
     @Serializable
     data class Backup(val tab: String = "webdav") : Screen
+
+    @Serializable
+    data object BackupWebDav : Screen
+
+    @Serializable
+    data object BackupLocal : Screen
 
     @Serializable
     data object ImageGen : Screen

@@ -120,6 +120,7 @@ fun SettingSkillsPage(
     val context = LocalContext.current
     val toaster = LocalToaster.current
     val listState = rememberLazyListState()
+    val useWideLayout = LocalSettingsWideLayout.current
 
     var showAddDialog by remember { mutableStateOf(false) }
     var editingSkill by remember { mutableStateOf<Skill?>(null) }
@@ -166,53 +167,55 @@ fun SettingSkillsPage(
                     .navigationBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 16.dp)
             ) {
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .offset(y = -ScreenOffset),
-                    shape = RoundedCornerShape(28.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    tonalElevation = 6.dp,
-                    shadowElevation = 8.dp
-                ) {
-                    Row(
-                        modifier = Modifier.padding(4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                if (!useWideLayout) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .offset(y = -ScreenOffset),
+                        shape = RoundedCornerShape(28.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        tonalElevation = 6.dp,
+                        shadowElevation = 8.dp
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primaryContainer)
-                                .padding(12.dp),
-                            contentAlignment = Alignment.Center
+                        Row(
+                            modifier = Modifier.padding(4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Category,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
+                            Box(
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primaryContainer)
+                                    .padding(12.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Category,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
 
-                        Box(
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .clickable {
-                                    haptics.perform(HapticPattern.Tick)
-                                    navController.navigate(Screen.SettingLorebooks) {
-                                        popUpTo(Screen.SettingSkills()) { inclusive = true }
-                                        launchSingleTop = true
+                            Box(
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .clickable {
+                                        haptics.perform(HapticPattern.Tick)
+                                        navController.navigate(Screen.SettingLorebooks) {
+                                            popUpTo(Screen.SettingSkills()) { inclusive = true }
+                                            launchSingleTop = true
+                                        }
                                     }
-                                }
-                                .padding(12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Book,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(24.dp)
-                            )
+                                    .padding(12.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Book,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -220,7 +223,7 @@ fun SettingSkillsPage(
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .offset(y = -ScreenOffset),
+                        .then(if (useWideLayout) Modifier else Modifier.offset(y = -ScreenOffset)),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {

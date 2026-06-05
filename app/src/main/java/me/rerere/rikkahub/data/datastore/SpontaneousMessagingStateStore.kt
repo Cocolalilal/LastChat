@@ -43,7 +43,16 @@ class SpontaneousMessagingStateStore(context: Context) {
         return loadConsumedEventRecords().any { it.eventId == eventId }
     }
 
-    fun markEventConsumed(eventId: String) {
+    fun getConsumedEventRecord(eventId: String): ConsumedSpontaneousEventRecord? {
+        return loadConsumedEventRecords().firstOrNull { it.eventId == eventId }
+    }
+
+    fun markEventConsumed(
+        eventId: String,
+        conversationId: Uuid? = null,
+        assistantId: Uuid? = null,
+        persistenceMode: String? = null,
+    ) {
         val now = System.currentTimeMillis()
         val updated = loadConsumedEventRecords()
             .filterNot { it.eventId == eventId }
@@ -52,6 +61,9 @@ class SpontaneousMessagingStateStore(context: Context) {
                     ConsumedSpontaneousEventRecord(
                         eventId = eventId,
                         updatedAt = now,
+                        conversationId = conversationId?.toString(),
+                        assistantId = assistantId?.toString(),
+                        persistenceMode = persistenceMode,
                     )
                 ) + records
             }
@@ -77,4 +89,7 @@ class SpontaneousMessagingStateStore(context: Context) {
 data class ConsumedSpontaneousEventRecord(
     val eventId: String,
     val updatedAt: Long = 0L,
+    val conversationId: String? = null,
+    val assistantId: String? = null,
+    val persistenceMode: String? = null,
 )

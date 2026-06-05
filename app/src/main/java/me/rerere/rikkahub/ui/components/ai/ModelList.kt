@@ -116,16 +116,10 @@ import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import kotlin.uuid.Uuid
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.height
-import me.rerere.rikkahub.ui.modifier.LocalLastChatBlur
-import me.rerere.rikkahub.ui.modifier.LastChatBlur
-import me.rerere.rikkahub.ui.modifier.lastChatBlurSource
-import me.rerere.rikkahub.ui.modifier.lastChatBlurEffect
-import me.rerere.rikkahub.ui.modifier.blurredContainerColor
 
 
 @Composable
@@ -280,14 +274,6 @@ internal fun ColumnScope.ModelList(
     val settingsStore = koinInject<SettingsStore>()
     val settings = settingsStore.settingsFlow
         .collectAsStateWithLifecycle()
-    val hazeState = remember { dev.chrisbanes.haze.HazeState() }
-    val displaySetting = settings.value.displaySetting
-    val blur = remember(displaySetting.enableBlurEffect, hazeState) {
-        LastChatBlur(
-            enabled = displaySetting.enableBlurEffect,
-            hazeState = hazeState
-        )
-    }
     
     var activeProviderId by remember { mutableStateOf<Uuid?>(null) }
     
@@ -474,12 +460,11 @@ internal fun ColumnScope.ModelList(
             }
     }
 
-    CompositionLocalProvider(LocalLastChatBlur provides blur) {
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-        ) {
+    Box(
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxWidth()
+    ) {
             // 1. Scrollable List of Models
             LazyColumn(
                 state = lazyListState,
@@ -857,7 +842,6 @@ internal fun ColumnScope.ModelList(
                     }
                 }
             }
-        }
     }
 }
 

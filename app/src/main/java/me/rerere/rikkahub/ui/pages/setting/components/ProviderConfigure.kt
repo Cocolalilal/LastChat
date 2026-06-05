@@ -59,6 +59,7 @@ import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.ai.provider.OpenAICompatibilityMode
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.ReasoningRequestBehavior
+import me.rerere.ai.provider.withComfyDefaults
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.pages.assistant.detail.CustomBodies
@@ -80,6 +81,7 @@ fun ProviderConfigure(
     provider: ProviderSetting,
     modifier: Modifier = Modifier,
     showSavingIndicator: Boolean = false,
+    showEnabledToggle: Boolean = true,
     onEdit: (provider: ProviderSetting) -> Unit
 ) {
     val context = LocalContext.current
@@ -108,31 +110,35 @@ fun ProviderConfigure(
         modifier = modifier
     ) {
         // 1. Enable/Disable Toggle with text
-        Row(
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = if (provider.enabled) {
-                    stringResource(id = R.string.setting_provider_page_enabled)
-                } else {
-                    stringResource(id = R.string.setting_provider_page_disabled)
-                },
-                modifier = Modifier.weight(1f)
-            )
-            AutoSaveIndicator(visible = showSavingIndicator)
-            androidx.compose.foundation.layout.Spacer(modifier = Modifier.size(12.dp))
-            HapticSwitch(
-                checked = provider.enabled,
-                onCheckedChange = { enabled ->
-                    val updated = when (provider) {
-                        is ProviderSetting.OpenAI -> provider.copy(enabled = enabled)
-                        is ProviderSetting.Google -> provider.copy(enabled = enabled)
-                        is ProviderSetting.Claude -> provider.copy(enabled = enabled)
-                        is ProviderSetting.ComfyUI -> provider.copy(enabled = enabled)
+        if (showEnabledToggle) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (provider.enabled) {
+                        stringResource(id = R.string.setting_provider_page_enabled)
+                    } else {
+                        stringResource(id = R.string.setting_provider_page_disabled)
+                    },
+                    modifier = Modifier.weight(1f)
+                )
+                AutoSaveIndicator(visible = showSavingIndicator)
+                androidx.compose.foundation.layout.Spacer(modifier = Modifier.size(12.dp))
+                HapticSwitch(
+                    checked = provider.enabled,
+                    onCheckedChange = { enabled ->
+                        val updated = when (provider) {
+                            is ProviderSetting.OpenAI -> provider.copy(enabled = enabled)
+                            is ProviderSetting.Google -> provider.copy(enabled = enabled)
+                            is ProviderSetting.Claude -> provider.copy(enabled = enabled)
+                            is ProviderSetting.ComfyUI -> provider.copy(enabled = enabled)
+                        }
+                        onEdit(updated)
                     }
-                    onEdit(updated)
-                }
-            )
+                )
+            }
+        } else if (showSavingIndicator) {
+            AutoSaveIndicator(visible = true)
         }
 
         // 2. Type selector (for non-built-in remote providers)
@@ -394,7 +400,7 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
             id = this.id,
             enabled = this.enabled,
             name = this.name,
-            models = this.models,
+            models = this.models.map { it.withComfyDefaults() },
             proxy = this.proxy,
             balanceOption = this.balanceOption,
             tags = this.tags,

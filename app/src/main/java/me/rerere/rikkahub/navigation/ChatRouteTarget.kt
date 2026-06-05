@@ -14,6 +14,7 @@ data class ChatRouteTarget(
     val files: List<String> = emptyList(),
     val searchQuery: String? = null,
     val persistenceMode: String? = null,
+    val focusLatestMessageKey: String? = null,
 ) : Serializable {
     val uuid: Uuid
         get() = Uuid.parse(id)
@@ -29,6 +30,6 @@ fun Screen.Chat.toChatRouteTarget(): ChatRouteTarget {
         files = files,
         searchQuery = searchQuery,
         persistenceMode = persistenceMode,
+        focusLatestMessageKey = focusLatestMessageKey,
     )
 }
-

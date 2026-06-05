@@ -358,22 +358,22 @@ sealed class ProviderSetting {
                 shortDescription = shortDescription
             )
         }
-
-        private fun Model.withComfyDefaults(): Model {
-            val normalizedId = modelId.withDefaultSafetensorsExtension()
-            return copy(
-                modelId = normalizedId,
-                displayName = displayName.ifBlank { normalizedId },
-                type = ModelType.IMAGE,
-                inputModalities = listOf(Modality.TEXT),
-                outputModalities = listOf(Modality.IMAGE),
-                imageGenerationMethod = ImageGenerationMethod.DIFFUSION,
-            )
-        }
     }
 }
 
 private val MODEL_FILENAME_EXTENSIONS = setOf("safetensors", "ckpt", "pt", "pth", "bin")
+
+fun Model.withComfyDefaults(): Model {
+    val normalizedId = modelId.withDefaultSafetensorsExtension()
+    return copy(
+        modelId = normalizedId,
+        displayName = displayName.ifBlank { normalizedId },
+        type = ModelType.IMAGE,
+        inputModalities = listOf(Modality.TEXT),
+        outputModalities = listOf(Modality.IMAGE),
+        imageGenerationMethod = ImageGenerationMethod.DIFFUSION,
+    )
+}
 
 fun String.withDefaultSafetensorsExtension(): String {
     val trimmed = trim()

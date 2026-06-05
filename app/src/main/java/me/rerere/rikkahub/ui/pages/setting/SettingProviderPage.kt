@@ -277,6 +277,38 @@ fun SettingProviderPage(
                     }
                 }
             ) {
+                if (useWideLayout) {
+                    when (currentTab) {
+                        ProvidersTab.Models -> ImportProviderButton(
+                            asFab = true,
+                            onAdd = { addProvider(it) }
+                        )
+
+                        ProvidersTab.Search,
+                        ProvidersTab.Tts -> FloatingActionButton(
+                            onClick = {
+                                haptics.perform(HapticPattern.Pop)
+                                if (currentTab == ProvidersTab.Search) {
+                                    showSearchCommonOptions = true
+                                } else {
+                                    showTtsFilterSettings = true
+                                }
+                            },
+                            shape = AppShapes.CardLarge,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        ) {
+                            Icon(
+                                Icons.Rounded.Settings,
+                                contentDescription = if (currentTab == ProvidersTab.Search) {
+                                    stringResource(R.string.setting_page_search_common_options)
+                                } else {
+                                    stringResource(R.string.setting_tts_settings_title)
+                                }
+                            )
+                        }
+                    }
+                }
                 when (currentTab) {
                     ProvidersTab.Models -> AddButton(
                         enableHaptics = settings.displaySetting.enableUIHaptics,
@@ -435,11 +467,13 @@ fun SettingProviderPage(
                 )
             }
                     }
-                    ProvidersSecondaryActionSlot(modifier = Modifier.fillMaxSize()) {
-                        ImportProviderButton(
-                            asFab = true,
-                            onAdd = { addProvider(it) }
-                        )
+                    if (!useWideLayout) {
+                        ProvidersSecondaryActionSlot(modifier = Modifier.fillMaxSize()) {
+                            ImportProviderButton(
+                                asFab = true,
+                                onAdd = { addProvider(it) }
+                            )
+                        }
                     }
                 }
 
@@ -448,7 +482,7 @@ fun SettingProviderPage(
             }
         }
             AnimatedVisibility(
-                visible = currentTab != ProvidersTab.Models,
+                visible = !useWideLayout && currentTab != ProvidersTab.Models,
                 enter = slideInHorizontally(
                     animationSpec = tween(120),
                     initialOffsetX = { it }
@@ -1257,9 +1291,13 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
             },
             text = {
                 customDialogState.currentState?.let {
-                    ProviderConfigure(it) { newState ->
-                        customDialogState.currentState = newState
-                    }
+                    ProviderConfigure(
+                        provider = it,
+                        showEnabledToggle = false,
+                        onEdit = { newState ->
+                            customDialogState.currentState = newState
+                        }
+                    )
                 }
             },
             confirmButton = {

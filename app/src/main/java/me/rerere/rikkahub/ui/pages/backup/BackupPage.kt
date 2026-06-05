@@ -88,6 +88,8 @@ import me.rerere.rikkahub.data.sync.WebDavBackupItem
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.pages.setting.LocalSettingsWideLayout
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
@@ -125,6 +127,7 @@ fun BackupPage(
     initialTab: BackupTab = BackupTab.WebDav,
     vm: BackupVM = koinViewModel(),
 ) {
+    val settings by vm.settings.collectAsStateWithLifecycle()
     val pagerState = rememberPagerState(initialPage = initialTab.ordinal) { BackupTab.entries.size }
     val scope = rememberCoroutineScope()
     val useWideLayout = LocalSettingsWideLayout.current
@@ -151,6 +154,7 @@ fun BackupPage(
             if (!useWideLayout) {
                 BackupTabPillBar(
                     selectedTab = currentTab,
+                    enableHaptics = settings.displaySetting.enableUIHaptics,
                     onTabSelected = { tab ->
                         scope.launch { pagerState.animateScrollToPage(tab.ordinal) }
                     }
@@ -158,16 +162,31 @@ fun BackupPage(
             }
         }
     ) { innerPadding ->
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = innerPadding.calculateTopPadding()),
-            userScrollEnabled = !useWideLayout,
-        ) { page ->
-            when (BackupTab.entries[page]) {
-                BackupTab.WebDav -> WebDavPage(vm)
-                BackupTab.Local -> ImportExportPage(vm)
+        if (useWideLayout) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+                    .padding(top = innerPadding.calculateTopPadding())
+            ) {
+                when (currentTab) {
+                    BackupTab.WebDav -> WebDavPage(vm)
+                    BackupTab.Local -> ImportExportPage(vm)
+                }
+            }
+        } else {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = innerPadding.calculateTopPadding())
+                    .background(MaterialTheme.colorScheme.background),
+                userScrollEnabled = true,
+            ) { page ->
+                when (BackupTab.entries[page]) {
+                    BackupTab.WebDav -> WebDavPage(vm)
+                    BackupTab.Local -> ImportExportPage(vm)
+                }
             }
         }
     }
@@ -176,8 +195,11 @@ fun BackupPage(
 @Composable
 private fun BackupTabPillBar(
     selectedTab: BackupTab,
+    enableHaptics: Boolean,
     onTabSelected: (BackupTab) -> Unit,
 ) {
+    val haptics = rememberPremiumHaptics(enabled = enableHaptics)
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -204,7 +226,10 @@ private fun BackupTabPillBar(
                                 if (selected) {
                                     Modifier.background(MaterialTheme.colorScheme.primaryContainer)
                                 } else {
-                                    Modifier.clickable { onTabSelected(tab) }
+                                    Modifier.clickable {
+                                        haptics.perform(HapticPattern.Tick)
+                                        onTabSelected(tab)
+                                    }
                                 }
                             )
                             .padding(12.dp),
