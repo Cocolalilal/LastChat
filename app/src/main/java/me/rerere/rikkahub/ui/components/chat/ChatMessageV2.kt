@@ -1014,6 +1014,7 @@ private fun UserMessageTurn(
                                 scope = AssistantAffectScope.USER,
                                 visual = true,
                             ),
+                        paragraphSpacing = 12.dp,
                         onClickCitation = {}
                     )
                 }
@@ -1323,6 +1324,7 @@ private fun AssistantMessageTurn(
                                 scope = AssistantAffectScope.ASSISTANT,
                                 visual = true,
                             ),
+                        paragraphSpacing = 12.dp,
                         streamingTextReveal = loading && index == allTextBubbles.lastIndex,
                         onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
                         onClickCitation = { id -> onCitationClick(id) }
@@ -1421,6 +1423,7 @@ private fun AssistantMessageTurn(
                             scope = AssistantAffectScope.ASSISTANT,
                             visual = true,
                         ),
+                    paragraphSpacing = 12.dp,
                     streamingTextReveal = loading && index == allTextBubbles.lastIndex,
                     onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
                     onClickCitation = { id -> onCitationClick(id) },

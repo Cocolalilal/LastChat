@@ -4,8 +4,12 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -41,11 +45,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -57,6 +62,7 @@ import coil3.request.allowHardware
 import coil3.request.crossfade
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Build
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Description
@@ -91,13 +97,17 @@ import me.rerere.rikkahub.ui.components.ui.TextAvatar
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.theme.RikkahubTheme
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.exportImage
 import me.rerere.rikkahub.utils.getActivity
 import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
 import me.rerere.rikkahub.utils.toLocalString
+import me.rerere.rikkahub.utils.writeClipboardText
 import org.koin.compose.koinInject
 import java.io.FileOutputStream
 import java.time.LocalDateTime
@@ -116,11 +126,22 @@ fun ChatExportSheet(
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val settings = LocalSettings.current
+    val haptics = rememberPremiumHaptics()
+    val isDarkMode = LocalDarkMode.current
+    val sheetContainerColor = MaterialTheme.colorScheme.surfaceContainerLow
+    val sheetContentColor = MaterialTheme.colorScheme.onSurface
+    val sheetSupportingColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val optionContainerColor = if (isDarkMode) {
+        MaterialTheme.colorScheme.surface
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerHigh
+    }
     var imageExportOptions by remember { mutableStateOf(ImageExportOptions()) }
 
     if (visible) {
         ModalBottomSheet(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            containerColor = sheetContainerColor,
+            contentColor = sheetContentColor,
             onDismissRequest = onDismissRequest,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         ) {
@@ -135,12 +156,12 @@ fun ChatExportSheet(
                 Text(
                     text = stringResource(id = R.string.chat_page_export_share_via),
                     style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = sheetContentColor
                 )
                 Text(
                     text = stringResource(id = R.string.chat_page_export_format),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = sheetSupportingColor
                 )
 
                 val markdownSuccessMessage =
@@ -148,8 +169,12 @@ fun ChatExportSheet(
                         id = R.string.chat_page_export_success,
                         stringResource(R.string.chat_page_export_markdown)
                     )
-                Card(
+                ShareOptionCard(
+                    icon = Icons.Rounded.Description,
+                    title = stringResource(id = R.string.chat_page_export_markdown),
+                    description = stringResource(id = R.string.chat_page_export_markdown_desc),
                     onClick = {
+                        haptics.perform(HapticPattern.Pop)
                         exportToMarkdown(context, conversation, selectedMessages)
                         toaster.show(
                             markdownSuccessMessage,
@@ -157,28 +182,31 @@ fun ChatExportSheet(
                         )
                         onDismissRequest()
                     },
-                    shape = AppShapes.CardMedium,
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = MaterialTheme.colorScheme.onSurface
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    ListItem(
-                        colors = ListItemDefaults.colors(
-                            containerColor = Color.Transparent
-                        ),
-                        headlineContent = {
-                            Text(stringResource(id = R.string.chat_page_export_markdown))
-                        },
-                        supportingContent = {
-                            Text(stringResource(id = R.string.chat_page_export_markdown_desc))
-                        },
-                        leadingContent = {
-                            Icon(Icons.Rounded.Description, contentDescription = null)
-                        }
-                    )
-                }
+                    modifier = Modifier.fillMaxWidth(),
+                    containerColor = optionContainerColor,
+                    contentColor = sheetContentColor,
+                    supportingColor = sheetSupportingColor
+                )
+
+                val copySuccessMessage = stringResource(R.string.chat_page_export_copied)
+                ShareOptionCard(
+                    icon = Icons.Rounded.ContentCopy,
+                    title = stringResource(id = R.string.chat_page_export_copy),
+                    description = stringResource(id = R.string.chat_page_export_copy_desc),
+                    onClick = {
+                        haptics.perform(HapticPattern.Success)
+                        context.writeClipboardText(buildMarkdownExportText(conversation, selectedMessages))
+                        toaster.show(
+                            copySuccessMessage,
+                            type = ToastType.Success
+                        )
+                        onDismissRequest()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    containerColor = optionContainerColor,
+                    contentColor = sheetContentColor,
+                    supportingColor = sheetSupportingColor
+                )
 
                 val imageSuccessMessage =
                     stringResource(
@@ -188,15 +216,18 @@ fun ChatExportSheet(
                 Card(
                     shape = AppShapes.CardMedium,
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = MaterialTheme.colorScheme.onSurface
+                        containerColor = optionContainerColor,
+                        contentColor = sheetContentColor
                     ),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column {
                         ListItem(
                             colors = ListItemDefaults.colors(
-                                containerColor = Color.Transparent
+                                containerColor = Color.Transparent,
+                                headlineColor = sheetContentColor,
+                                supportingColor = sheetSupportingColor,
+                                leadingIconColor = sheetContentColor
                             ),
                             headlineContent = {
                                 Text(stringResource(id = R.string.chat_page_export_image))
@@ -213,7 +244,8 @@ fun ChatExportSheet(
 
                         ListItem(
                             colors = ListItemDefaults.colors(
-                                containerColor = Color.Transparent
+                                containerColor = Color.Transparent,
+                                headlineColor = sheetContentColor
                             ),
                             headlineContent = { Text(stringResource(R.string.chat_page_export_image_expand_reasoning)) },
                             trailingContent = {
@@ -234,6 +266,7 @@ fun ChatExportSheet(
                         ) {
                             Button(
                                 onClick = {
+                                    haptics.perform(HapticPattern.Pop)
                                     scope.launch {
                                         runCatching {
                                             exportToImage(
@@ -274,51 +307,107 @@ fun ChatExportSheet(
     }
 }
 
+@Composable
+private fun ShareOptionCard(
+    icon: ImageVector,
+    title: String,
+    description: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    contentColor: Color = MaterialTheme.colorScheme.onSurface,
+    supportingColor: Color = MaterialTheme.colorScheme.onSurfaceVariant
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.98f else 1f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        label = "share_option_card_scale"
+    )
+
+    Card(
+        onClick = onClick,
+        interactionSource = interactionSource,
+        shape = AppShapes.CardMedium,
+        colors = CardDefaults.cardColors(
+            containerColor = containerColor,
+            contentColor = contentColor
+        ),
+        modifier = modifier.graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+        }
+    ) {
+        ListItem(
+            colors = ListItemDefaults.colors(
+                containerColor = Color.Transparent,
+                headlineColor = contentColor,
+                supportingColor = supportingColor,
+                leadingIconColor = contentColor
+            ),
+            headlineContent = {
+                Text(title)
+            },
+            supportingContent = {
+                Text(description)
+            },
+            leadingContent = {
+                Icon(icon, contentDescription = null)
+            }
+        )
+    }
+}
+
+private fun buildMarkdownExportText(
+    conversation: Conversation,
+    messages: List<UIMessage>
+): String = buildString {
+    append("# ${conversation.title}\n\n")
+    append("*Exported on ${LocalDateTime.now().toLocalString()}*\n\n")
+
+    messages.forEach { message ->
+        val role = if (message.role == MessageRole.USER) "**User**" else "**Assistant**"
+        append("$role:\n\n")
+        message.parts.toSortedMessageParts().forEach { part ->
+            when (part) {
+                is UIMessagePart.Text -> {
+                    append(part.text)
+                    appendLine()
+                }
+
+                is UIMessagePart.Image -> {
+                    append("![Image](${part.encodeBase64().getOrNull()})")
+                    appendLine()
+                }
+
+                is UIMessagePart.Reasoning -> {
+                    part.reasoning.lines()
+                        .filter { it.isNotBlank() }
+                        .map { "> $it" }
+                        .forEach {
+                            append(it)
+                        }
+                    appendLine()
+                    appendLine()
+                }
+
+                else -> {}
+            }
+        }
+        appendLine()
+        append("---")
+        appendLine()
+    }
+}
+
 private fun exportToMarkdown(
     context: Context,
     conversation: Conversation,
     messages: List<UIMessage>
 ) {
     val filename = "chat-export-${LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"))}.md"
-
-    val sb = buildAnnotatedString {
-        append("# ${conversation.title}\n\n")
-        append("*Exported on ${LocalDateTime.now().toLocalString()}*\n\n")
-
-        messages.forEach { message ->
-            val role = if (message.role == MessageRole.USER) "**User**" else "**Assistant**"
-            append("$role:\n\n")
-            message.parts.toSortedMessageParts().forEach { part ->
-                when (part) {
-                    is UIMessagePart.Text -> {
-                        append(part.text)
-                        appendLine()
-                    }
-
-                    is UIMessagePart.Image -> {
-                        append("![Image](${part.encodeBase64().getOrNull()})")
-                        appendLine()
-                    }
-
-                    is UIMessagePart.Reasoning -> {
-                        part.reasoning.lines()
-                            .filter { it.isNotBlank() }
-                            .map { "> $it" }
-                            .forEach {
-                                append(it)
-                            }
-                        appendLine()
-                        appendLine()
-                    }
-
-                    else -> {}
-                }
-            }
-            appendLine()
-            append("---")
-            appendLine()
-        }
-    }
+    val markdown = buildMarkdownExportText(conversation, messages)
 
     try {
         val dir = context.appTempFolder
@@ -330,7 +419,7 @@ private fun exportToMarkdown(
             file.createNewFile()
         }
         FileOutputStream(file).use {
-            it.write(sb.toString().toByteArray())
+            it.write(markdown.toByteArray())
         }
 
         // Share the file

@@ -311,6 +311,9 @@
     <string name="chat_page_export_image">Export as Image</string>
     <string name="chat_page_export_image_desc">Export chat as PNG image</string>
     <string name="chat_page_export_image_expand_reasoning">Expand Reasoning</string>
+    <string name="chat_page_export_copy">Copy to Clipboard</string>
+    <string name="chat_page_export_copy_desc">Copy chat as Markdown text</string>
+    <string name="chat_page_export_copied">Copied to clipboard</string>
     <string name="chat_page_export_markdown">Markdown</string>
     <string name="chat_page_export_markdown_desc">Export chat as markdown file</string>
     <string name="chat_page_export_share_via">Share via</string>

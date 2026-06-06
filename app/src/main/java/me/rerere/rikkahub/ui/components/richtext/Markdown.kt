@@ -74,6 +74,7 @@ import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -142,6 +143,7 @@ private data class StreamingTextReveal(
 )
 
 private val LocalStreamingTextReveal = compositionLocalOf<StreamingTextReveal?> { null }
+private val LocalMarkdownParagraphSpacing = compositionLocalOf { 4.dp }
 
 /**
  * Safely get color from RP style rule for a given pattern.
@@ -357,6 +359,7 @@ fun MarkdownBlock(
     content: String,
     modifier: Modifier = Modifier,
     style: TextStyle = LocalTextStyle.current,
+    paragraphSpacing: Dp = 4.dp,
     streamingTextReveal: Boolean = false,
     onExpandedStreamingCodeBlockChanged: (() -> Unit)? = null,
     onClickCitation: (String) -> Unit = {}
@@ -442,6 +445,7 @@ fun MarkdownBlock(
     CompositionLocalProvider(
         LocalRpStyleRules provides rpStyleRules,
         LocalStreamingTextReveal provides streamingReveal,
+        LocalMarkdownParagraphSpacing provides paragraphSpacing,
         LocalLayoutDirection provides blockDirection.toLayoutDirection(),
     ) {
         ProvideTextStyle(style) {
@@ -1170,11 +1174,15 @@ private fun Paragraph(
         }
     }
     CompositionLocalProvider(LocalLayoutDirection provides paragraphDirection.toLayoutDirection()) {
+        val paragraphSpacing = LocalMarkdownParagraphSpacing.current
         Text(
             text = annotatedString,
             modifier = modifier.then(
-                if (node.nextSibling() != null) Modifier.padding(bottom = 4.dp)
-                else Modifier
+                if (node.nextRenderableSibling() != null && paragraphSpacing > 0.dp) {
+                    Modifier.padding(bottom = paragraphSpacing)
+                } else {
+                    Modifier
+                }
             ),
             inlineContent = inlineContents,
             softWrap = true,
@@ -1559,16 +1567,12 @@ private fun ASTNode.getTextInNode(text: String, type: IElementType): String {
     return text.substring(startOffset, endOffset)
 }
 
-private fun ASTNode.nextSibling(): ASTNode? {
-    val brother = this.parent?.children ?: return null
-    for (i in brother.indices) {
-        if (brother[i] == this) {
-            if (i + 1 < brother.size) {
-                return brother[i + 1]
-            }
-        }
-    }
-    return null
+private fun ASTNode.nextRenderableSibling(): ASTNode? {
+    val siblings = this.parent?.children ?: return null
+    val currentIndex = siblings.indexOf(this).takeIf { it >= 0 } ?: return null
+    return siblings
+        .drop(currentIndex + 1)
+        .firstOrNull { it.type != MarkdownTokenTypes.EOL }
 }
 
 private fun ASTNode.findChildOfTypeRecursive(vararg types: IElementType): ASTNode? {
