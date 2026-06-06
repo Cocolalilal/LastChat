@@ -654,6 +654,14 @@
     <string name="setting_provider_page_import_dialog_message">Select import method:</string>
     <string name="setting_provider_page_import_dialog_title">Import Config</string>
     <string name="setting_provider_page_import_success">Import Success</string>
+    <string name="setting_provider_page_multi_qr_duplicate">This QR part was already scanned</string>
+    <string name="setting_provider_page_multi_qr_message">Scanned %1$d of %2$d QR codes. Continue with the remaining codes.</string>
+    <string name="setting_provider_page_multi_qr_parts">Parts: %1$s</string>
+    <string name="setting_provider_page_multi_qr_progress">Scanned QR %1$d of %2$d</string>
+    <string name="setting_provider_page_multi_qr_title">Multi-QR Import</string>
+    <string name="setting_provider_page_multi_qr_wrong_transfer">This QR code belongs to another provider transfer</string>
+    <string name="setting_provider_page_back_step">Back a step</string>
+    <string name="setting_provider_page_scan_next_qr">Scan next QR</string>
     <string name="setting_provider_page_input_modality">Input Modality</string>
     <string name="setting_provider_page_location">Location (e.g. us-central1)</string>
     <string name="setting_provider_page_model_count">%d models</string>

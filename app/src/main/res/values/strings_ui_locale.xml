@@ -39,6 +39,8 @@
 
     <!-- Share / WebView -->
     <string name="provider_share_title">Share your LLM configuration</string>
+    <string name="provider_share_qr_next">Next</string>
+    <string name="provider_share_qr_progress">QR %1$d of %2$d</string>
     <string name="webview_refresh">Refresh</string>
     <string name="webview_forward">Forward</string>
     <string name="webview_more_options">More options</string>

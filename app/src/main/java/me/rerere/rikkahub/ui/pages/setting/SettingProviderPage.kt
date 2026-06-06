@@ -153,9 +153,12 @@ import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
-import me.rerere.rikkahub.ui.components.ui.decodeProviderSetting
+import me.rerere.rikkahub.ui.components.ui.ProviderShareQrContent
+import me.rerere.rikkahub.ui.components.ui.ProviderShareQrPart
 import me.rerere.rikkahub.ui.components.ui.computeAIIconByName
+import me.rerere.rikkahub.ui.components.ui.decodeProviderSettingParts
 import me.rerere.rikkahub.ui.components.ui.getProviderSlugFromName
+import me.rerere.rikkahub.ui.components.ui.parseProviderShareQrContent
 import me.rerere.rikkahub.ui.components.ui.searchLobeHubIcon
 import me.rerere.rikkahub.ui.components.ui.lobeHubIconUri
 import me.rerere.rikkahub.ui.context.LocalNavController
@@ -281,6 +284,7 @@ fun SettingProviderPage(
                     when (currentTab) {
                         ProvidersTab.Models -> ImportProviderButton(
                             asFab = true,
+                            enableHaptics = settings.displaySetting.enableUIHaptics,
                             onAdd = { addProvider(it) }
                         )
 
@@ -471,6 +475,7 @@ fun SettingProviderPage(
                         ProvidersSecondaryActionSlot(modifier = Modifier.fillMaxSize()) {
                             ImportProviderButton(
                                 asFab = true,
+                                enableHaptics = settings.displaySetting.enableUIHaptics,
                                 onAdd = { addProvider(it) }
                             )
                         }
@@ -816,25 +821,49 @@ private fun ProviderListView(
 @Composable
 private fun ImportProviderButton(
     asFab: Boolean = false,
+    enableHaptics: Boolean,
     onAdd: (ProviderSetting) -> Unit
 ) {
     val toaster = LocalToaster.current
     val context = LocalContext.current
+    val haptics = rememberPremiumHaptics(enabled = enableHaptics)
     var showImportDialog by remember { mutableStateOf(false) }
+    var importSession by remember { mutableStateOf<ProviderQrImportSession?>(null) }
 
     val scanQrCodeLauncher = rememberLauncherForActivityResult(ScanQRCode()) { result ->
-        handleQRResult(result, onAdd, toaster, context)
+        handleQRResult(
+            result = result,
+            onAdd = onAdd,
+            toaster = toaster,
+            context = context,
+            importSession = importSession,
+            onImportSessionChange = { importSession = it },
+            onSuccess = { haptics.perform(HapticPattern.Success) },
+            onProgress = { haptics.perform(HapticPattern.Pop) },
+            onError = { haptics.perform(HapticPattern.Error) }
+        )
     }
 
     val pickImageLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         uri?.let {
-            handleImageQRCode(it, onAdd, toaster, context)
+            handleImageQRCode(
+                uri = it,
+                onAdd = onAdd,
+                toaster = toaster,
+                context = context,
+                importSession = importSession,
+                onImportSessionChange = { session -> importSession = session },
+                onSuccess = { haptics.perform(HapticPattern.Success) },
+                onProgress = { haptics.perform(HapticPattern.Pop) },
+                onError = { haptics.perform(HapticPattern.Error) }
+            )
         }
     }
 
     val openImportDialog = {
+        haptics.perform(HapticPattern.Pop)
         showImportDialog = true
     }
 
@@ -878,6 +907,7 @@ private fun ImportProviderButton(
                     ) {
                         Button(
                             onClick = {
+                                haptics.perform(HapticPattern.Pop)
                                 showImportDialog = false
                                 scanQrCodeLauncher.launch(null)
                             },
@@ -906,6 +936,7 @@ private fun ImportProviderButton(
 
                         OutlinedButton(
                             onClick = {
+                                haptics.perform(HapticPattern.Pop)
                                 showImportDialog = false
                                 pickImageLauncher.launch(
                                     androidx.activity.result.PickVisualMediaRequest(
@@ -941,13 +972,82 @@ private fun ImportProviderButton(
             confirmButton = {},
             dismissButton = {
                 TextButton(
-                    onClick = { showImportDialog = false },
+                    onClick = {
+                        haptics.perform(HapticPattern.Cancel)
+                        showImportDialog = false
+                    },
                     shape = MaterialTheme.shapes.large
                 ) {
                     Text(
                         text = stringResource(R.string.cancel),
                         style = MaterialTheme.typography.labelLarge
                     )
+                }
+            }
+        )
+    }
+
+    importSession?.let { session ->
+        AlertDialog(
+            onDismissRequest = {},
+            title = {
+                Text(
+                    text = stringResource(R.string.setting_provider_page_multi_qr_title),
+                    style = MaterialTheme.typography.headlineSmall
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = stringResource(
+                            R.string.setting_provider_page_multi_qr_message,
+                            session.scannedCount,
+                            session.total
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.setting_provider_page_multi_qr_parts,
+                            session.scannedIndexes
+                        ),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        scanQrCodeLauncher.launch(null)
+                    },
+                    shape = MaterialTheme.shapes.large
+                ) {
+                    Text(stringResource(R.string.setting_provider_page_scan_next_qr))
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            importSession = session.removeLastScannedPart()
+                        },
+                        shape = MaterialTheme.shapes.large
+                    ) {
+                        Text(stringResource(R.string.setting_provider_page_back_step))
+                    }
+                    TextButton(
+                        onClick = {
+                            haptics.perform(HapticPattern.Cancel)
+                            importSession = null
+                        },
+                        shape = MaterialTheme.shapes.large
+                    ) {
+                        Text(stringResource(R.string.cancel))
+                    }
                 }
             }
         )
@@ -961,15 +1061,42 @@ private fun ProviderSetting.withUniqueId(existingProviders: List<ProviderSetting
     return copyProvider(id = Uuid.random())
 }
 
+private data class ProviderQrImportSession(
+    val transferId: String,
+    val total: Int,
+    val parts: Map<Int, ProviderShareQrPart>,
+    val scanOrder: List<Int>
+) {
+    val scannedCount: Int get() = parts.size
+    val scannedIndexes: String get() = parts.keys.sorted().joinToString(", ")
+
+    fun removeLastScannedPart(): ProviderQrImportSession? {
+        val lastIndex = scanOrder.lastOrNull() ?: return null
+        val nextParts = parts - lastIndex
+        val nextScanOrder = scanOrder.dropLast(1)
+        return if (nextParts.isEmpty()) {
+            null
+        } else {
+            copy(parts = nextParts, scanOrder = nextScanOrder)
+        }
+    }
+}
+
 private fun handleQRResult(
     result: QRResult,
     onAdd: (ProviderSetting) -> Unit,
     toaster: AppToasterState,
-    context: android.content.Context
+    context: android.content.Context,
+    importSession: ProviderQrImportSession?,
+    onImportSessionChange: (ProviderQrImportSession?) -> Unit,
+    onSuccess: () -> Unit,
+    onProgress: () -> Unit,
+    onError: () -> Unit
 ) {
     runCatching {
         when (result) {
             is QRResult.QRError -> {
+                onError()
                 toaster.show(
                     context.getString(
                         R.string.setting_provider_page_scan_error,
@@ -979,6 +1106,7 @@ private fun handleQRResult(
             }
 
             QRResult.QRMissingPermission -> {
+                onError()
                 toaster.show(
                     context.getString(R.string.setting_provider_page_no_permission),
                     type = ToastType.Error
@@ -986,17 +1114,23 @@ private fun handleQRResult(
             }
 
             is QRResult.QRSuccess -> {
-                val setting = decodeProviderSetting(result.content.rawValue ?: "")
-                onAdd(setting)
-                toaster.show(
-                    context.getString(R.string.setting_provider_page_import_success),
-                    type = ToastType.Success
+                handleProviderShareQrValue(
+                    value = result.content.rawValue ?: "",
+                    onAdd = onAdd,
+                    toaster = toaster,
+                    context = context,
+                    importSession = importSession,
+                    onImportSessionChange = onImportSessionChange,
+                    onSuccess = onSuccess,
+                    onProgress = onProgress,
+                    onError = onError
                 )
             }
 
             QRResult.QRUserCanceled -> {}
         }
     }.onFailure { error ->
+        onError()
         toaster.show(
             context.getString(R.string.setting_provider_page_qr_decode_failed, error.message ?: ""),
             type = ToastType.Error
@@ -1008,12 +1142,18 @@ private fun handleImageQRCode(
     uri: Uri,
     onAdd: (ProviderSetting) -> Unit,
     toaster: AppToasterState,
-    context: android.content.Context
+    context: android.content.Context,
+    importSession: ProviderQrImportSession?,
+    onImportSessionChange: (ProviderQrImportSession?) -> Unit,
+    onSuccess: () -> Unit,
+    onProgress: () -> Unit,
+    onError: () -> Unit
 ) {
     runCatching {
         val qrContent = ImageUtils.decodeQRCodeFromUri(context, uri)
 
         if (qrContent.isNullOrEmpty()) {
+            onError()
             toaster.show(
                 context.getString(R.string.setting_provider_page_no_qr_found),
                 type = ToastType.Error
@@ -1021,17 +1161,103 @@ private fun handleImageQRCode(
             return
         }
 
-        val setting = decodeProviderSetting(qrContent)
-        onAdd(setting)
-        toaster.show(
-            context.getString(R.string.setting_provider_page_import_success),
-            type = ToastType.Success
+        handleProviderShareQrValue(
+            value = qrContent,
+            onAdd = onAdd,
+            toaster = toaster,
+            context = context,
+            importSession = importSession,
+            onImportSessionChange = onImportSessionChange,
+            onSuccess = onSuccess,
+            onProgress = onProgress,
+            onError = onError
         )
     }.onFailure { error ->
+        onError()
         toaster.show(
             context.getString(R.string.setting_provider_page_image_qr_decode_failed, error.message ?: ""),
             type = ToastType.Error
         )
+    }
+}
+
+private fun handleProviderShareQrValue(
+    value: String,
+    onAdd: (ProviderSetting) -> Unit,
+    toaster: AppToasterState,
+    context: android.content.Context,
+    importSession: ProviderQrImportSession?,
+    onImportSessionChange: (ProviderQrImportSession?) -> Unit,
+    onSuccess: () -> Unit,
+    onProgress: () -> Unit,
+    onError: () -> Unit
+) {
+    when (val content = parseProviderShareQrContent(value)) {
+        is ProviderShareQrContent.Single -> {
+            onImportSessionChange(null)
+            onAdd(content.provider)
+            onSuccess()
+            toaster.show(
+                context.getString(R.string.setting_provider_page_import_success),
+                type = ToastType.Success
+            )
+        }
+
+        is ProviderShareQrContent.Part -> {
+            val part = content.part
+            val currentSession = importSession ?: ProviderQrImportSession(
+                transferId = part.transferId,
+                total = part.total,
+                parts = emptyMap(),
+                scanOrder = emptyList()
+            )
+
+            if (currentSession.transferId != part.transferId || currentSession.total != part.total) {
+                onError()
+                toaster.show(
+                    context.getString(R.string.setting_provider_page_multi_qr_wrong_transfer),
+                    type = ToastType.Error
+                )
+                return
+            }
+
+            if (currentSession.parts[part.index]?.data == part.data) {
+                onProgress()
+                toaster.show(
+                    context.getString(R.string.setting_provider_page_multi_qr_duplicate),
+                    type = ToastType.Info
+                )
+                onImportSessionChange(currentSession)
+                return
+            }
+
+            val updatedSession = currentSession.copy(
+                parts = currentSession.parts + (part.index to part),
+                scanOrder = currentSession.scanOrder + part.index
+            )
+
+            if (updatedSession.scannedCount == updatedSession.total) {
+                val setting = decodeProviderSettingParts(updatedSession.parts.values)
+                onImportSessionChange(null)
+                onAdd(setting)
+                onSuccess()
+                toaster.show(
+                    context.getString(R.string.setting_provider_page_import_success),
+                    type = ToastType.Success
+                )
+            } else {
+                onImportSessionChange(updatedSession)
+                onProgress()
+                toaster.show(
+                    context.getString(
+                        R.string.setting_provider_page_multi_qr_progress,
+                        updatedSession.scannedCount,
+                        updatedSession.total
+                    ),
+                    type = ToastType.Info
+                )
+            }
+        }
     }
 }
 
