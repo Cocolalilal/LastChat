@@ -110,18 +110,24 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.Model
+import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.datastore.TtsAutoplayMode
 import me.rerere.rikkahub.data.datastore.findProvider
+import me.rerere.rikkahub.data.datastore.getEffectiveTTSProvider
+import me.rerere.rikkahub.data.datastore.getEffectiveTtsAutoplayMode
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.navigation.ChatRouteTarget
 import me.rerere.rikkahub.data.repository.ChatAttachmentManager
 import me.rerere.rikkahub.ui.components.ai.MinimalChatInput
 import me.rerere.rikkahub.ui.context.LocalNavController
+import me.rerere.rikkahub.ui.context.LocalTTSState
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.ui.hooks.EditStateContent
@@ -376,6 +382,103 @@ internal fun chatListBottomPadding(placement: ChatToolbarPlacement): androidx.co
     return if (placement == ChatToolbarPlacement.Bottom) 204.dp else 140.dp
 }
 
+private fun latestAssistantSpeechMessage(conversation: Conversation): UIMessage? {
+    return conversation.currentMessages.lastOrNull { message ->
+        message.role == MessageRole.ASSISTANT && message.toContentText().isNotBlank()
+    }
+}
+
+private fun speakablePrefixLength(text: String, final: Boolean): Int {
+    val trimmedEnd = text.indexOfLast { !it.isWhitespace() }
+    if (trimmedEnd < 0) return 0
+
+    val paragraphBreak = text.indexOf("\n\n")
+    if (paragraphBreak >= 0) return paragraphBreak + 2
+
+    val sentenceBoundary = text.indexOfFirst { it == '.' || it == '!' || it == '?' || it == '。' || it == '！' || it == '？' }
+    if (sentenceBoundary >= 0) return sentenceBoundary + 1
+
+    val softBoundary = text.indexOfFirst { it == '\n' || it == ';' || it == '；' }
+    if (softBoundary >= 0) return softBoundary + 1
+
+    return if (final) trimmedEnd + 1 else 0
+}
+
+@Composable
+private fun ChatTtsAutoplayEffect(
+    vm: ChatVM,
+    settings: Settings,
+    assistant: Assistant,
+    conversation: Conversation,
+    loadingJob: Job?,
+) {
+    val tts = LocalTTSState.current
+    val mode = settings.getEffectiveTtsAutoplayMode(assistant)
+    val provider = remember(
+        settings.ttsProviders,
+        settings.selectedTTSVoiceId,
+        settings.selectedTTSProviderId,
+        assistant.ttsVoiceId,
+    ) {
+        settings.getEffectiveTTSProvider(assistant)
+    }
+    var completedMessageId by remember(conversation.id) { mutableStateOf<Uuid?>(null) }
+    var streamingMessageId by remember(conversation.id) { mutableStateOf<Uuid?>(null) }
+    var spokenLength by remember(conversation.id) { mutableStateOf(0) }
+
+    LaunchedEffect(vm, conversation.id, mode, provider) {
+        vm.generationDoneFlow.collect { completedConversationId ->
+            if (completedConversationId != conversation.id || provider == null) return@collect
+            val latestMessage = latestAssistantSpeechMessage(vm.conversation.value) ?: return@collect
+            val text = latestMessage.toContentText()
+
+            when (mode) {
+                TtsAutoplayMode.OFF -> Unit
+                TtsAutoplayMode.AFTER_GENERATION -> {
+                    if (completedMessageId != latestMessage.id) {
+                        completedMessageId = latestMessage.id
+                        tts.speak(text, flushCalled = true, overrideSetting = provider)
+                    }
+                }
+                TtsAutoplayMode.WHILE_GENERATING -> {
+                    if (streamingMessageId != latestMessage.id) {
+                        streamingMessageId = latestMessage.id
+                        spokenLength = 0
+                    }
+                    val remaining = text.drop(spokenLength)
+                    val length = speakablePrefixLength(remaining, final = true)
+                    val segment = remaining.take(length).trim()
+                    if (segment.isNotBlank()) {
+                        spokenLength += length
+                        tts.speak(segment, flushCalled = false, overrideSetting = provider)
+                    }
+                    completedMessageId = latestMessage.id
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(conversation.id, conversation.currentMessages, loadingJob, mode, provider) {
+        if (mode != TtsAutoplayMode.WHILE_GENERATING || loadingJob == null || provider == null) return@LaunchedEffect
+        val latestMessage = latestAssistantSpeechMessage(conversation) ?: return@LaunchedEffect
+        val text = latestMessage.toContentText()
+        if (streamingMessageId != latestMessage.id) {
+            streamingMessageId = latestMessage.id
+            spokenLength = 0
+        }
+        if (spokenLength > text.length) {
+            spokenLength = 0
+        }
+        val remaining = text.drop(spokenLength)
+        val length = speakablePrefixLength(remaining, final = false)
+        val segment = remaining.take(length).trim()
+        if (segment.isNotBlank()) {
+            spokenLength += length
+            tts.speak(segment, flushCalled = false, overrideSetting = provider)
+        }
+    }
+}
+
 internal fun shouldUseWideChatLayout(
     windowWidth: Dp,
     windowHeight: Dp,
@@ -432,6 +535,13 @@ fun ChatPage(
         conversationPersistenceMode == ChatPersistenceMode.PERSIST_ON_REPLY -> ChatPersistenceMode.PERSIST_ON_REPLY
         else -> ChatPersistenceMode.NORMAL
     }
+    ChatTtsAutoplayEffect(
+        vm = vm,
+        settings = setting,
+        assistant = conversationAssistant,
+        conversation = conversation,
+        loadingJob = loadingJob,
+    )
 
     LaunchedEffect(conversation.id) {
         manualTemporaryChat = false

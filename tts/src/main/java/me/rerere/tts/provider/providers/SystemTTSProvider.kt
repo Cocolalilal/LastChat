@@ -48,6 +48,16 @@ class SystemTTSProvider : TTSProvider<TTSProviderSetting.SystemTTS> {
                     Log.w(TAG, "generateSpeech: Language $locale not supported")
                 }
 
+                val voiceName = providerSetting.voiceName?.takeIf { it.isNotBlank() }
+                if (voiceName != null) {
+                    val voice = ttsInstance.voices?.firstOrNull { it.name == voiceName }
+                    if (voice == null) {
+                        Log.w(TAG, "generateSpeech: Voice $voiceName not found")
+                    } else if (ttsInstance.setVoice(voice) != TextToSpeech.SUCCESS) {
+                        Log.w(TAG, "generateSpeech: Failed to select voice $voiceName")
+                    }
+                }
+
                 // Set speech parameters
                 ttsInstance.setSpeechRate(providerSetting.speechRate)
                 ttsInstance.setPitch(providerSetting.pitch)
@@ -134,7 +144,8 @@ class SystemTTSProvider : TTSProvider<TTSProviderSetting.SystemTTS> {
                     "provider" to "system",
                     "speechRate" to providerSetting.speechRate.toString(),
                     "pitch" to providerSetting.pitch.toString(),
-                    "enginePackageName" to (providerSetting.enginePackageName ?: "")
+                    "enginePackageName" to (providerSetting.enginePackageName ?: ""),
+                    "voiceName" to (providerSetting.voiceName ?: "")
                 )
             )
         )

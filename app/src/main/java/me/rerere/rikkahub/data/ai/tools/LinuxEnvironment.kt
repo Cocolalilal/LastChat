@@ -52,7 +52,10 @@ class LinuxEnvironmentManager(private val context: Context) {
     private val downloadsDir: File = File(baseDir, "downloads")
     private val logsDir: File = File(baseDir, "logs")
     private val binDir: File = File(baseDir, "bin")
-    val runnerFile: File = File(binDir, "proot")
+    private val assetRunnerFile: File = File(binDir, "proot")
+    private val nativeRunnerFile: File = File(context.applicationInfo.nativeLibraryDir, "libproot.so")
+    val runnerFile: File
+        get() = if (nativeRunnerFile.isUsableExecutable()) nativeRunnerFile else assetRunnerFile
 
     suspend fun installOrRepair(fullToolchain: Boolean): LinuxInstallResult = withContext(Dispatchers.IO) {
         runCatching {
@@ -68,7 +71,7 @@ class LinuxEnvironmentManager(private val context: Context) {
                 return@withContext LinuxInstallResult(
                     success = false,
                     status = status,
-                    message = "Alpine rootfs installed, but PRoot runner asset is missing for ${status.runnerAbi}.",
+                    message = "Alpine rootfs installed, but PRoot runner is missing or not executable for ${status.runnerAbi}.",
                 )
             }
             configureRootfs()
@@ -296,7 +299,10 @@ class LinuxEnvironmentManager(private val context: Context) {
     }
 
     private fun ensureRunnerInstalled(): Boolean {
-        if (runnerFile.isFile && runnerFile.canExecute()) {
+        if (nativeRunnerFile.isUsableExecutable()) {
+            return true
+        }
+        if (assetRunnerFile.isUsableExecutable()) {
             return true
         }
 
@@ -304,12 +310,12 @@ class LinuxEnvironmentManager(private val context: Context) {
             binDir.mkdirs()
             val assetPath = "linux/proot/${currentAbi()}/proot"
             context.assets.open(assetPath).use { input ->
-                runnerFile.outputStream().use { output ->
+                assetRunnerFile.outputStream().use { output ->
                     input.copyTo(output)
                 }
             }
-            runnerFile.setExecutable(true, true)
-            runnerFile.isFile && runnerFile.canExecute()
+            assetRunnerFile.setExecutable(true, true)
+            assetRunnerFile.isUsableExecutable()
         }.getOrDefault(false)
     }
 
@@ -517,6 +523,10 @@ private fun String.truncateLinuxOutput(): String {
 
 private fun File.existsWithoutFollowingLinks(): Boolean {
     return Files.exists(toPath(), LinkOption.NOFOLLOW_LINKS)
+}
+
+private fun File.isUsableExecutable(): Boolean {
+    return isFile && canExecute()
 }
 
 private fun InputStream.readFullyOrEnd(buffer: ByteArray): Boolean {

@@ -90,6 +90,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingPage
 import me.rerere.rikkahub.ui.pages.setting.SettingProviderDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingProviderPage
 import me.rerere.rikkahub.ui.pages.setting.SettingSearchPage
+import me.rerere.rikkahub.ui.pages.setting.SettingTTSProviderDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingTTSPage
 import me.rerere.rikkahub.ui.pages.setting.SettingWebPage
 import me.rerere.rikkahub.ui.pages.setting.SettingRpOptimizationsPage
@@ -969,6 +970,14 @@ class RouteActivity : ComponentActivity() {
                         }
                     }
 
+                    composable<Screen.SettingTTSProviderDetail> {
+                        val route = it.toRoute<Screen.SettingTTSProviderDetail>()
+                        val id = Uuid.parse(route.providerId)
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.Tts) {
+                            SettingTTSProviderDetailPage(id = id)
+                        }
+                    }
+
                     composable<Screen.SettingModels> {
                         AdaptiveSettingsScaffold(selected = SettingsDestination.Models) {
                             SettingModelPage()
@@ -1324,6 +1333,9 @@ sealed interface Screen {
 
     @Serializable
     data class SettingProviderDetail(val providerId: String) : Screen
+
+    @Serializable
+    data class SettingTTSProviderDetail(val providerId: String) : Screen
 
     @Serializable
     data object SettingModels : Screen

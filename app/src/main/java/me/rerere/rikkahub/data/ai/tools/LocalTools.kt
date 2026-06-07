@@ -37,7 +37,7 @@ import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.db.entity.GenMediaEntity
 import me.rerere.rikkahub.data.repository.GenMediaRepository
 import me.rerere.rikkahub.data.datastore.TtsFilterMode
-import me.rerere.rikkahub.data.datastore.getSelectedTTSProvider
+import me.rerere.rikkahub.data.datastore.getEffectiveTTSProvider
 import me.rerere.rikkahub.utils.createImageFileFromBase64
 import me.rerere.rikkahub.utils.getImagesDir
 import me.rerere.rikkahub.utils.stripMarkdown
@@ -349,7 +349,7 @@ class LocalTools(
             },
             execute = {
                 val rawText = it.jsonObject["text"]?.jsonPrimitive?.contentOrNull.orEmpty()
-                val provider = settingsStore.settingsFlow.value.getSelectedTTSProvider()
+                val provider = settingsStore.settingsFlow.value.getEffectiveTTSProvider()
                 if (provider == null) {
                     buildJsonObject {
                         put("success", false)

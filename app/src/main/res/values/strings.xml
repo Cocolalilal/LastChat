@@ -768,6 +768,7 @@
     <string name="setting_tts_page_default_name">System TTS</string>
     <string name="setting_tts_page_default_openai_name">OpenAI TTS</string>
     <string name="setting_tts_page_default_system_name">System TTS</string>
+    <string name="setting_tts_page_default_voice">Default voice</string>
     <string name="setting_tts_page_disabled">Disabled</string>
     <string name="setting_tts_page_edit_provider">Edit Provider</string>
     <string name="setting_tts_page_emotion">Emotion</string>

@@ -172,6 +172,7 @@ import me.rerere.rikkahub.ui.pages.setting.components.toProviderSetting
 import me.rerere.rikkahub.ui.pages.setting.components.toProviderPresets
 import me.rerere.rikkahub.ui.pages.setting.components.withSpecialProviderPresets
 import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.tts.provider.withDefaultVoices
 import me.rerere.rikkahub.utils.ImageUtils
 import org.koin.androidx.compose.koinViewModel
 import sh.calvin.reorderable.ReorderableItem
@@ -340,9 +341,10 @@ fun SettingProviderPage(
                         enableHaptics = settings.displaySetting.enableUIHaptics,
                         asFab = true
                     ) { newProvider ->
+                        val providerToAdd = newProvider.withDefaultVoices()
                         vm.updateSettings(
                             settings.copy(
-                                ttsProviders = listOf(newProvider) + settings.ttsProviders
+                                ttsProviders = listOf(providerToAdd) + settings.ttsProviders
                             )
                         )
                     }

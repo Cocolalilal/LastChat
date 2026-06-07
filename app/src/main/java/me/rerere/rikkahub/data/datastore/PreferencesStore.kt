@@ -46,6 +46,7 @@ import me.rerere.rikkahub.utils.toMutableStateFlow
 import me.rerere.search.SearchCommonOptions
 import me.rerere.search.SearchServiceOptions
 import me.rerere.tts.provider.TTSProviderSetting
+import me.rerere.tts.provider.withDefaultVoices
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
 import kotlin.uuid.Uuid
@@ -126,6 +127,8 @@ class SettingsStore(
         // TTS
         val TTS_PROVIDERS = stringPreferencesKey("tts_providers")
         val SELECTED_TTS_PROVIDER = stringPreferencesKey("selected_tts_provider")
+        val SELECTED_TTS_VOICE = stringPreferencesKey("selected_tts_voice")
+        val TTS_AUTOPLAY_MODE = stringPreferencesKey("tts_autoplay_mode")
 
         // Web Server
         val WEB_SERVER_ENABLED = booleanPreferencesKey("web_server_enabled")
@@ -238,6 +241,11 @@ class SettingsStore(
                     } ?: emptyList(),
                     selectedTTSProviderId = preferences[SELECTED_TTS_PROVIDER]?.let { Uuid.parse(it) }
                         ?: DEFAULT_SYSTEM_TTS_ID,
+                    selectedTTSVoiceId = preferences[SELECTED_TTS_VOICE]?.let { Uuid.parse(it) }
+                        ?: DEFAULT_SYSTEM_TTS_VOICE_ID,
+                    ttsAutoplayMode = preferences[TTS_AUTOPLAY_MODE]?.let {
+                        JsonInstant.decodeFromString<TtsAutoplayMode>(it)
+                    } ?: TtsAutoplayMode.OFF,
                     webServerEnabled = preferences[WEB_SERVER_ENABLED] == true,
                     webServerPort = preferences[WEB_SERVER_PORT] ?: 8080,
                     webServerJwtEnabled = preferences[WEB_SERVER_JWT_ENABLED] == true,
@@ -287,17 +295,30 @@ class SettingsStore(
                 } else provider
             }.toMutableList()
             val assistants = it.assistants.ifEmpty { DEFAULT_ASSISTANTS }.toMutableList()
-            val ttsProviders = it.ttsProviders.ifEmpty { DEFAULT_TTS_PROVIDERS }.toMutableList()
+            val ttsProviders = it.ttsProviders.ifEmpty { DEFAULT_TTS_PROVIDERS }.map { provider ->
+                val defaultVoiceId = if (provider.id == DEFAULT_SYSTEM_TTS_ID) DEFAULT_SYSTEM_TTS_VOICE_ID else null
+                provider.withDefaultVoices(defaultVoiceId)
+            }.toMutableList()
             DEFAULT_TTS_PROVIDERS.forEach { defaultTTSProvider ->
                 if (ttsProviders.none { provider -> provider.id == defaultTTSProvider.id }) {
                     ttsProviders.add(defaultTTSProvider.copyProvider())
                 }
             }
+            val selectedTtsVoiceId = ttsProviders
+                .flatMap { provider -> provider.voices }
+                .firstOrNull { voice -> voice.id == it.selectedTTSVoiceId }
+                ?.id
+                ?: ttsProviders.find { provider -> provider.id == it.selectedTTSProviderId }
+                    ?.voices
+                    ?.firstOrNull()
+                    ?.id
+                ?: DEFAULT_SYSTEM_TTS_VOICE_ID
             it.copy(
                 providers = providers,
                 assistants = assistants,
                 ttsProviders = ttsProviders,
-            ).normalizeWebServerSettings().normalizeFontSettings()
+                selectedTTSVoiceId = selectedTtsVoiceId,
+            ).normalizeWebServerSettings().normalizeFontSettings().normalizeTtsSettings()
         }
         .map { settings ->
             // 去重并清理无效引用
@@ -331,7 +352,21 @@ class SettingsStore(
                         }.toSet()
                     )
                 },
-                ttsProviders = settings.ttsProviders.distinctBy { it.id },
+                ttsProviders = settings.ttsProviders.distinctBy { it.id }.map { provider ->
+                    val defaultVoiceId = if (provider.id == DEFAULT_SYSTEM_TTS_ID) DEFAULT_SYSTEM_TTS_VOICE_ID else null
+                    provider.copyProvider(
+                        voices = provider.withDefaultVoices(defaultVoiceId).voices.distinctBy { voice -> voice.id }
+                    )
+                },
+                selectedTTSVoiceId = settings.ttsProviders
+                    .flatMap { it.voices }
+                    .firstOrNull { it.id == settings.selectedTTSVoiceId }
+                    ?.id
+                    ?: settings.ttsProviders.find { it.id == settings.selectedTTSProviderId }
+                        ?.voices
+                        ?.firstOrNull()
+                        ?.id
+                    ?: DEFAULT_SYSTEM_TTS_VOICE_ID,
                 favoriteModels = settings.favoriteModels.filter { uuid ->
                     settings.providers.flatMap { it.models }.any { it.id == uuid }
                 }
@@ -457,6 +492,7 @@ class SettingsStore(
             .migrateLegacyModesToSkills()
             .normalizeFontSettings()
             .normalizeThemeId()
+            .normalizeTtsSettings()
 
         // Handle explicit secret deletions (user cleared a field that had a value)
         // This must be called BEFORE migration to remove deleted secrets from SecureStore
@@ -468,6 +504,7 @@ class SettingsStore(
 
         settingsFlow.value = secretKeyManager.populateSecretsForExport(migratedSettings)
             .normalizeFontSettings()
+            .normalizeTtsSettings()
         dataStore.edit { preferences ->
             preferences[DYNAMIC_COLOR] = normalizedSettings.dynamicColor
             preferences[SETUP_COMPLETED] = normalizedSettings.setupCompleted
@@ -520,6 +557,8 @@ class SettingsStore(
             normalizedSettings.selectedTTSProviderId?.let {
                 preferences[SELECTED_TTS_PROVIDER] = it.toString()
             } ?: preferences.remove(SELECTED_TTS_PROVIDER)
+            preferences[SELECTED_TTS_VOICE] = normalizedSettings.selectedTTSVoiceId.toString()
+            preferences[TTS_AUTOPLAY_MODE] = JsonInstant.encodeToString(normalizedSettings.ttsAutoplayMode)
             preferences[WEB_SERVER_ENABLED] = normalizedSettings.webServerEnabled
             preferences[WEB_SERVER_PORT] = normalizedSettings.webServerPort
             preferences[WEB_SERVER_JWT_ENABLED] = normalizedSettings.webServerJwtEnabled

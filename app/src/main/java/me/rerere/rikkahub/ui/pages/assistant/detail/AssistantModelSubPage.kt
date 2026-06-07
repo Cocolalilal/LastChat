@@ -40,6 +40,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.ai.ReasoningButton
+import me.rerere.rikkahub.ui.components.ai.VoiceSelector
 import me.rerere.rikkahub.ui.components.ui.AutoSaveIndicator
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
@@ -47,6 +48,7 @@ import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.toFixed
+import me.rerere.tts.provider.TTSProviderSetting
 
 /**
  * Model tab - All model and generation-related settings.
@@ -56,6 +58,7 @@ import me.rerere.rikkahub.utils.toFixed
 fun AssistantModelSubPage(
     assistant: Assistant,
     providers: List<ProviderSetting>,
+    ttsProviders: List<TTSProviderSetting>,
     onUpdate: (Assistant) -> Unit
 ) {
     var maxTokensPending by remember { mutableStateOf(false) }
@@ -99,6 +102,39 @@ fun AssistantModelSubPage(
                         providers = providers,
                         type = ModelType.CHAT,
                         onSelect = { onUpdate(assistant.copy(chatModelId = it.id)) },
+                    )
+                }
+            }
+
+            // Voice
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = if (LocalDarkMode.current)
+                    MaterialTheme.colorScheme.surfaceContainerLow
+                else
+                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Voice",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Character voice for TTS. Leave empty to use the global default.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    VoiceSelector(
+                        voiceId = assistant.ttsVoiceId,
+                        providers = ttsProviders,
+                        allowClear = true,
+                        onClear = { onUpdate(assistant.copy(ttsVoiceId = null)) },
+                        onSelect = { onUpdate(assistant.copy(ttsVoiceId = it.id)) },
                     )
                 }
             }

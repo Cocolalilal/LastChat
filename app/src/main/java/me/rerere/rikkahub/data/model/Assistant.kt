@@ -38,6 +38,8 @@ data class AssistantUISettings(
 data class Assistant(
     val id: Uuid = Uuid.random(),
     val chatModelId: Uuid? = null, // 如果为null, 使用全局默认模型
+    val ttsVoiceId: Uuid? = null,
+    val ttsAutoplayMode: me.rerere.rikkahub.data.datastore.TtsAutoplayMode? = null,
     val backgroundModelId: Uuid? = null, // 用于后台检查的模型
     val searchMode: AssistantSearchMode = AssistantSearchMode.Off, // Search mode for this assistant
     val preferBuiltInSearch: Boolean = false, // If true, use built-in search when model supports it, otherwise fall back to searchMode

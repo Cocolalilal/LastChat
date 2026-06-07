@@ -73,6 +73,8 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.models.ModelCatalogSnapshot
 import me.rerere.rikkahub.data.ai.models.ttsProviderIconUri
 import me.rerere.rikkahub.data.datastore.DEFAULT_SYSTEM_TTS_ID
+import me.rerere.rikkahub.data.datastore.DEFAULT_SYSTEM_TTS_VOICE_ID
+import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
@@ -86,6 +88,7 @@ import me.rerere.rikkahub.utils.plus
 import me.rerere.tts.provider.LocalTtsEngine
 import me.rerere.tts.provider.TTSProviderSetting
 import me.rerere.tts.provider.discoverLocalTtsEngines
+import me.rerere.tts.provider.withDefaultVoices
 import org.koin.androidx.compose.koinViewModel
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -176,7 +179,7 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                 ) {
                     vm.updateSettings(
                         settings.copy(
-                            ttsProviders = listOf(it) + settings.ttsProviders
+                            ttsProviders = listOf(it.withDefaultVoices()) + settings.ttsProviders
                         )
                     )
                 }
@@ -232,7 +235,8 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                 state = lazyListState
             ) {
                 itemsIndexed(settings.ttsProviders, key = { _, provider -> provider.id }) { index, provider ->
-                val isSelected = settings.selectedTTSProviderId == provider.id
+                val isSelected = provider.voices.any { it.id == settings.selectedTTSVoiceId } ||
+                    settings.selectedTTSProviderId == provider.id
                 val position = when {
                     settings.ttsProviders.size == 1 -> ItemPosition.ONLY
                     index == 0 -> ItemPosition.FIRST
@@ -302,11 +306,17 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                             onSelect = {
                                 if (!isSelected) {
                                     haptics.perform(HapticPattern.Pop)
-                                    vm.updateSettings(settings.copy(selectedTTSProviderId = provider.id))
+                                    vm.updateSettings(
+                                        settings.copy(
+                                            selectedTTSProviderId = provider.id,
+                                            selectedTTSVoiceId = provider.voices.firstOrNull()?.id
+                                                ?: settings.selectedTTSVoiceId
+                                        )
+                                    )
                                 }
                             },
                             onEdit = {
-                                editingProvider = provider
+                                navController.navigate(Screen.SettingTTSProviderDetail(provider.id.toString()))
                             },
                             dragHandle = {
                                 IconButton(
@@ -369,12 +379,21 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                 confirmButton = {
                     TextButton(onClick = {
                         providerToDelete?.let { p ->
+                            val removedVoiceIds = p.voices.map { it.id }.toSet()
                             val newProviders = settings.ttsProviders - p
                             val newSelectedId =
                                 if (settings.selectedTTSProviderId == p.id) DEFAULT_SYSTEM_TTS_ID else settings.selectedTTSProviderId
+                            val newSelectedVoiceId = if (settings.selectedTTSVoiceId in removedVoiceIds) {
+                                newProviders.find { it.id == newSelectedId }?.voices?.firstOrNull()?.id
+                                    ?: newProviders.firstOrNull()?.voices?.firstOrNull()?.id
+                                    ?: DEFAULT_SYSTEM_TTS_VOICE_ID
+                            } else {
+                                settings.selectedTTSVoiceId
+                            }
                             vm.updateSettings(settings.copy(
                                 ttsProviders = newProviders,
-                                selectedTTSProviderId = newSelectedId
+                                selectedTTSProviderId = newSelectedId,
+                                selectedTTSVoiceId = newSelectedVoiceId
                             ))
                         }
                         showDeleteDialog = false
@@ -511,6 +530,7 @@ internal fun TtsProvidersContent(
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val catalogSnapshot by vm.modelCatalogSnapshot.collectAsStateWithLifecycle()
+    val navController = LocalNavController.current
     val context = LocalContext.current
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
     val lazyListState = rememberLazyListState()
@@ -558,7 +578,8 @@ internal fun TtsProvidersContent(
             state = lazyListState
         ) {
             itemsIndexed(settings.ttsProviders, key = { _, provider -> provider.id }) { index, provider ->
-                val isSelected = settings.selectedTTSProviderId == provider.id
+                val isSelected = provider.voices.any { it.id == settings.selectedTTSVoiceId } ||
+                    settings.selectedTTSProviderId == provider.id
                 val position = when {
                     settings.ttsProviders.size == 1 -> ItemPosition.ONLY
                     index == 0 -> ItemPosition.FIRST
@@ -624,10 +645,19 @@ internal fun TtsProvidersContent(
                                 onSelect = {
                                     if (!isSelected) {
                                         haptics.perform(HapticPattern.Pop)
-                                        vm.updateSettings(settings.copy(selectedTTSProviderId = provider.id))
+                                        val defaultVoiceId = provider.voices.firstOrNull()?.id
+                                            ?: if (provider.id == DEFAULT_SYSTEM_TTS_ID) DEFAULT_SYSTEM_TTS_VOICE_ID else null
+                                        vm.updateSettings(
+                                            settings.copy(
+                                                selectedTTSProviderId = provider.id,
+                                                selectedTTSVoiceId = defaultVoiceId ?: settings.selectedTTSVoiceId
+                                            )
+                                        )
                                     }
                                 },
-                                onEdit = { editingProvider = provider },
+                                onEdit = {
+                                    navController.navigate(Screen.SettingTTSProviderDetail(provider.id.toString()))
+                                },
                                 dragHandle = {
                                     IconButton(
                                         onClick = {},
@@ -687,10 +717,18 @@ internal fun TtsProvidersContent(
                         val newProviders = settings.ttsProviders - provider
                         val newSelectedId =
                             if (settings.selectedTTSProviderId == provider.id) DEFAULT_SYSTEM_TTS_ID else settings.selectedTTSProviderId
+                        val removedVoiceIds = provider.voices.map { it.id }.toSet()
+                        val newSelectedVoiceId = if (settings.selectedTTSVoiceId in removedVoiceIds) {
+                            newProviders.find { it.id == newSelectedId }?.voices?.firstOrNull()?.id
+                                ?: DEFAULT_SYSTEM_TTS_VOICE_ID
+                        } else {
+                            settings.selectedTTSVoiceId
+                        }
                         vm.updateSettings(
                             settings.copy(
                                 ttsProviders = newProviders,
-                                selectedTTSProviderId = newSelectedId
+                                selectedTTSProviderId = newSelectedId,
+                                selectedTTSVoiceId = newSelectedVoiceId
                             )
                         )
                     }
