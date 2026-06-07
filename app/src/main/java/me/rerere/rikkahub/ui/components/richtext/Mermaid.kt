@@ -64,6 +64,8 @@ import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.exportImage
 import me.rerere.rikkahub.utils.toCssHex
 
+private const val EXPORT_WATERMARK = "LastChat"
+
 // Simple LRU cache for mermaid heights (max 100 entries)
 private val mermaidHeightCache = LruCache<String, Int>(100)
 
@@ -122,20 +124,18 @@ fun Mermaid(
             },
             onExportImage = { base64Image ->
                 runCatching {
+                    check(base64Image.isNotBlank()) { "Exported image was empty" }
                     activity?.let {
                         // 解码Base64图像并保存
-                        try {
-                            val imageBytes = Base64.decode(base64Image, Base64.DEFAULT)
-                            val bitmap =
-                                BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
-                            context.exportImage(
-                                it,
-                                bitmap,
-                                "mermaid_${System.currentTimeMillis()}.png"
-                            )
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                        }
+                        val imageBytes = Base64.decode(base64Image, Base64.DEFAULT)
+                        val bitmap =
+                            BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+                        checkNotNull(bitmap) { "Could not decode exported image" }
+                        context.exportImage(
+                            it,
+                            bitmap,
+                            "mermaid_${System.currentTimeMillis()}.png"
+                        )
                     }
                     toaster.show(
                         context.getString(R.string.mermaid_export_success),
@@ -399,6 +399,7 @@ private fun buildMermaidHtml(
     val tertiaryColor = colorScheme.tertiaryContainer.toCssHex()
     val background = colorScheme.background.toCssHex()
     val surface = colorScheme.surface.toCssHex()
+    val onSurfaceVariant = colorScheme.onSurfaceVariant.toCssHex()
     val onPrimary = colorScheme.onPrimaryContainer.toCssHex()
     val onSecondary = colorScheme.onSecondaryContainer.toCssHex()
     val onTertiary = colorScheme.onTertiaryContainer.toCssHex()
@@ -519,10 +520,6 @@ private fun buildMermaidHtml(
                         return;
                     }
 
-                    // Create a temporary canvas
-                    const canvas = document.createElement('canvas');
-                    const ctx = canvas.getContext('2d');
-
                     // Get SVG's dimensions
                     const svgRect = svgElement.getBoundingClientRect();
                     const width = svgRect.width;
@@ -530,8 +527,12 @@ private fun buildMermaidHtml(
 
                     // Set canvas dimensions with scaling for better resolution
                     const scaleFactor = window.devicePixelRatio * 2; // Increase resolution
-                    canvas.width = width * scaleFactor;
-                    canvas.height = height * scaleFactor;
+                    const padding = 24 * scaleFactor;
+                    const footerHeight = 34 * scaleFactor;
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    canvas.width = Math.ceil(width * scaleFactor + padding * 2);
+                    canvas.height = Math.ceil(height * scaleFactor + padding * 2 + footerHeight);
 
                     // Serialize SVG to XML
                     const svgXml = new XMLSerializer().serializeToString(svgElement);
@@ -539,17 +540,23 @@ private fun buildMermaidHtml(
 
                     const img = new Image();
                     img.onload = function() {
-                        // Set background color (optional, matches HTML background)
-                        ctx.fillStyle = '${background}';
+                        // Match LastChat's Material surface and leave room for branding.
+                        ctx.fillStyle = '${surface}';
                         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
                         // Draw the SVG image onto the canvas
-                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        ctx.drawImage(
+                            img,
+                            padding,
+                            padding,
+                            width * scaleFactor,
+                            height * scaleFactor
+                        );
 
-                        // Draw watermark
-                        ctx.font = '14px Arial';
-                        ctx.fillStyle = '${onBackground}';
-                        ctx.fillText('rikka-ai.com', 20, canvas.height - 10);
+                        // Draw subtle LastChat branding.
+                        ctx.font = Math.round(12 * scaleFactor) + 'px sans-serif';
+                        ctx.fillStyle = '${onSurfaceVariant}';
+                        ctx.fillText('${EXPORT_WATERMARK}', padding, canvas.height - padding);
 
                         // Get PNG image as base64
                         const pngBase64 = canvas.toDataURL('image/png').split(',')[1];

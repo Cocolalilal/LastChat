@@ -63,6 +63,16 @@
     <string name="assistant_page_local_tools_javascript_engine_title">JavaScript Engine</string>
     <string name="assistant_page_local_tools_python_engine_title">Python Engine</string>
     <string name="assistant_page_local_tools_python_engine_desc">Execute Python code with pip packages and file I/O. Supports numpy and Pillow.</string>
+    <string name="assistant_page_local_tools_linux_environment_title">Linux Environment</string>
+    <string name="assistant_page_local_tools_linux_environment_desc">Run a persistent Alpine Linux workspace with shell commands, apk, pip, Git, Python, Node, and Java.</string>
+    <string name="assistant_page_local_tools_linux_status_title">Environment Status</string>
+    <string name="assistant_page_local_tools_linux_status_ready">Ready</string>
+    <string name="assistant_page_local_tools_linux_status_missing">Setup required: missing %1$s</string>
+    <string name="assistant_page_local_tools_linux_profile_title">Package Profile</string>
+    <string name="assistant_page_local_tools_linux_profile_base">Base</string>
+    <string name="assistant_page_local_tools_linux_profile_full">Full Toolchain</string>
+    <string name="assistant_page_local_tools_linux_network_title">Package and Internet Access</string>
+    <string name="assistant_page_local_tools_linux_network_desc">Allow commands such as apk add, pip install, npm install, Git network operations, curl, and wget.</string>
     <string name="assistant_page_local_tools_tts_title">Text to Speech</string>
     <string name="assistant_page_local_tools_tts_desc">Let the assistant read text aloud using your selected TTS provider</string>
     <string name="assistant_page_local_tools_character_questions_title">Character Questions</string>
@@ -215,6 +225,8 @@
     <string name="chat_message_tool_python_list_files">Listing sandbox files</string>
     <string name="chat_message_tool_python_delete_file">Deleting file: %1$s</string>
     <string name="chat_message_tool_python_import">Importing attachment</string>
+    <string name="chat_message_tool_linux_command">Running Linux</string>
+    <string name="chat_message_tool_linux_status">Checking Linux environment</string>
     <string name="chat_message_tool_ask_user">Asking a question</string>
     <string name="chat_message_tool_python_code">Code</string>
     <string name="chat_message_tool_python_output">Output</string>
@@ -699,9 +711,14 @@
     <string name="setting_provider_page_compatibility_auto">Auto</string>
     <string name="setting_provider_page_compatibility_on">On</string>
     <string name="setting_provider_page_compatibility_off">Off</string>
-    <string name="setting_provider_page_comfyui_import_workflow" translatable="false">Import Workflow JSON</string>
-    <string name="setting_provider_page_comfyui_workflow_missing" translatable="false">No workflow imported. Export an API workflow from ComfyUI and import it here.</string>
-    <string name="setting_provider_page_comfyui_workflow_ready" translatable="false">Workflow imported. Leave node ids blank to auto-detect common ComfyUI nodes.</string>
+    <string name="setting_provider_page_comfyui_setup_title" translatable="false">ComfyUI setup</string>
+    <string name="setting_provider_page_comfyui_setup_desc" translatable="false">Start ComfyUI, enter its server URL, then import an API workflow JSON. LastChat will auto-detect common prompt and checkpoint nodes.</string>
+    <string name="setting_provider_page_comfyui_server_url" translatable="false">ComfyUI Server URL</string>
+    <string name="setting_provider_page_comfyui_import_workflow" translatable="false">Import API Workflow JSON</string>
+    <string name="setting_provider_page_comfyui_workflow_missing" translatable="false">Workflow needed. In ComfyUI, export the workflow in API format and import it here.</string>
+    <string name="setting_provider_page_comfyui_workflow_ready" translatable="false">Workflow ready. Add or rename the model below to match your checkpoint file.</string>
+    <string name="setting_provider_page_comfyui_advanced_mapping" translatable="false">Advanced node mapping</string>
+    <string name="setting_provider_page_comfyui_advanced_mapping_desc" translatable="false">Only change these if auto-detect picks the wrong workflow nodes.</string>
     <string name="setting_provider_page_comfyui_prompt_node" translatable="false">Prompt Node ID</string>
     <string name="setting_provider_page_comfyui_prompt_input" translatable="false">Prompt Input Name</string>
     <string name="setting_provider_page_comfyui_model_node" translatable="false">Model Node ID</string>

@@ -170,6 +170,7 @@ import me.rerere.rikkahub.ui.pages.setting.components.FALLBACK_PROVIDER_PRESETS
 import me.rerere.rikkahub.ui.pages.setting.components.ProviderConfigure
 import me.rerere.rikkahub.ui.pages.setting.components.toProviderSetting
 import me.rerere.rikkahub.ui.pages.setting.components.toProviderPresets
+import me.rerere.rikkahub.ui.pages.setting.components.withSpecialProviderPresets
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.utils.ImageUtils
 import org.koin.androidx.compose.koinViewModel
@@ -194,8 +195,9 @@ fun SettingProviderPage(
     var showSearchCommonOptions by remember { mutableStateOf(false) }
     var showTtsFilterSettings by remember { mutableStateOf(false) }
     val providerPresets = remember(catalogSnapshot) {
-        catalogSnapshot?.toProviderPresets()?.takeIf { it.isNotEmpty() }
+        (catalogSnapshot?.toProviderPresets()?.takeIf { it.isNotEmpty() }
             ?: FALLBACK_PROVIDER_PRESETS
+        ).withSpecialProviderPresets()
     }
     
     // Search query state

@@ -65,6 +65,7 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.pages.assistant.detail.CustomBodies
 import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import me.rerere.rikkahub.ui.components.ui.AutoSaveIndicator
+import me.rerere.rikkahub.ui.theme.AppShapes
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.foundation.layout.size
 import me.rerere.rikkahub.ui.components.ui.ProviderIcon
@@ -142,7 +143,7 @@ fun ProviderConfigure(
         }
 
         // 2. Type selector (for non-built-in remote providers)
-        if (!provider.builtIn) {
+        if (!provider.builtIn && provider !is ProviderSetting.ComfyUI) {
             ProviderTypeSelector(
                 selectedType = provider::class,
                 onTypeSelected = { type ->
@@ -314,6 +315,7 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
         return this
     }
 
+    val convertedName = convertProviderNameTo(type)
     val apiKey = when (this) {
         is ProviderSetting.OpenAI -> this.apiKey
         is ProviderSetting.Google -> this.apiKey
@@ -340,7 +342,7 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
         ProviderSetting.OpenAI::class -> ProviderSetting.OpenAI(
             id = this.id,
             enabled = this.enabled,
-            name = this.name,
+            name = convertedName,
             models = this.models,
             proxy = this.proxy,
             balanceOption = this.balanceOption,
@@ -362,7 +364,7 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
         ProviderSetting.Google::class -> ProviderSetting.Google(
             id = this.id,
             enabled = this.enabled,
-            name = this.name,
+            name = convertedName,
             models = this.models,
             proxy = this.proxy,
             balanceOption = this.balanceOption,
@@ -383,7 +385,7 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
         ProviderSetting.Claude::class -> ProviderSetting.Claude(
             id = this.id,
             enabled = this.enabled,
-            name = this.name,
+            name = convertedName,
             models = this.models,
             proxy = this.proxy,
             balanceOption = this.balanceOption,
@@ -399,7 +401,7 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
         ProviderSetting.ComfyUI::class -> ProviderSetting.ComfyUI(
             id = this.id,
             enabled = this.enabled,
-            name = this.name,
+            name = convertedName,
             models = this.models.map { it.withComfyDefaults() },
             proxy = this.proxy,
             balanceOption = this.balanceOption,
@@ -417,6 +419,26 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
         )
 
         else -> error("Unsupported provider type: $type")
+    }
+}
+
+private fun ProviderSetting.convertProviderNameTo(type: KClass<out ProviderSetting>): String {
+    val currentDefaultName = this::class.defaultProviderName()
+    val targetDefaultName = type.defaultProviderName()
+    return if (name.isBlank() || name == currentDefaultName) {
+        targetDefaultName
+    } else {
+        name
+    }
+}
+
+private fun KClass<out ProviderSetting>.defaultProviderName(): String {
+    return when (this) {
+        ProviderSetting.OpenAI::class -> ProviderSetting.OpenAI().name
+        ProviderSetting.Google::class -> ProviderSetting.Google().name
+        ProviderSetting.Claude::class -> ProviderSetting.Claude().name
+        ProviderSetting.ComfyUI::class -> ProviderSetting.ComfyUI().name
+        else -> simpleName.orEmpty()
     }
 }
 
@@ -478,6 +500,10 @@ private fun ColumnScope.ProviderConfigureComfyUI(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val latestProvider by rememberUpdatedState(provider)
+    val haptics = rememberPremiumHaptics()
+    var showAdvancedMapping by remember(provider.id) {
+        mutableStateOf(provider.promptNodeId.isNotBlank() || provider.modelNodeId.isNotBlank())
+    }
     val workflowLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -496,64 +522,127 @@ private fun ColumnScope.ProviderConfigureComfyUI(
 
     provider.description()
 
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = AppShapes.CardMedium,
+        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f),
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.setting_provider_page_comfyui_setup_title),
+                style = MaterialTheme.typography.titleSmall,
+            )
+            Text(
+                text = stringResource(R.string.setting_provider_page_comfyui_setup_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.82f),
+            )
+        }
+    }
+
     DebouncedTextField(
         value = provider.baseUrl,
         onValueChange = { onEdit(provider.copy(baseUrl = it.trim())) },
         stateKey = "comfyui_base_url_${provider.id}",
-        label = stringResource(R.string.setting_provider_page_api_base_url),
+        label = stringResource(R.string.setting_provider_page_comfyui_server_url),
         modifier = Modifier.fillMaxWidth(),
     )
 
     Button(
-        onClick = { workflowLauncher.launch(arrayOf("application/json", "text/*", "*/*")) },
+        onClick = {
+            haptics.perform(HapticPattern.Pop)
+            workflowLauncher.launch(arrayOf("application/json", "text/*", "*/*"))
+        },
         modifier = Modifier.fillMaxWidth(),
+        shape = AppShapes.ButtonPill,
     ) {
         Text(stringResource(R.string.setting_provider_page_comfyui_import_workflow))
     }
 
-    Text(
-        text = stringResource(
-            if (provider.workflowJson.isBlank()) {
-                R.string.setting_provider_page_comfyui_workflow_missing
-            } else {
-                R.string.setting_provider_page_comfyui_workflow_ready
-            }
-        ),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-
-    DebouncedTextField(
-        value = provider.promptNodeId,
-        onValueChange = { onEdit(provider.copy(promptNodeId = it.trim())) },
-        stateKey = "comfyui_prompt_node_${provider.id}",
-        label = stringResource(R.string.setting_provider_page_comfyui_prompt_node),
+    Surface(
         modifier = Modifier.fillMaxWidth(),
-    )
+        shape = AppShapes.CardMedium,
+        color = if (provider.workflowJson.isBlank()) {
+            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f)
+        } else {
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+        },
+        contentColor = if (provider.workflowJson.isBlank()) {
+            MaterialTheme.colorScheme.onErrorContainer
+        } else {
+            MaterialTheme.colorScheme.onPrimaryContainer
+        },
+    ) {
+        Text(
+            text = stringResource(
+                if (provider.workflowJson.isBlank()) {
+                    R.string.setting_provider_page_comfyui_workflow_missing
+                } else {
+                    R.string.setting_provider_page_comfyui_workflow_ready
+                }
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(14.dp),
+        )
+    }
 
-    DebouncedTextField(
-        value = provider.promptInputName,
-        onValueChange = { onEdit(provider.copy(promptInputName = it.trim())) },
-        stateKey = "comfyui_prompt_input_${provider.id}",
-        label = stringResource(R.string.setting_provider_page_comfyui_prompt_input),
-        modifier = Modifier.fillMaxWidth(),
-    )
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.setting_provider_page_comfyui_advanced_mapping),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = stringResource(R.string.setting_provider_page_comfyui_advanced_mapping_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        HapticSwitch(
+            checked = showAdvancedMapping,
+            onCheckedChange = { showAdvancedMapping = it },
+        )
+    }
 
-    DebouncedTextField(
-        value = provider.modelNodeId,
-        onValueChange = { onEdit(provider.copy(modelNodeId = it.trim())) },
-        stateKey = "comfyui_model_node_${provider.id}",
-        label = stringResource(R.string.setting_provider_page_comfyui_model_node),
-        modifier = Modifier.fillMaxWidth(),
-    )
+    if (showAdvancedMapping) {
+        DebouncedTextField(
+            value = provider.promptNodeId,
+            onValueChange = { onEdit(provider.copy(promptNodeId = it.trim())) },
+            stateKey = "comfyui_prompt_node_${provider.id}",
+            label = stringResource(R.string.setting_provider_page_comfyui_prompt_node),
+            modifier = Modifier.fillMaxWidth(),
+        )
 
-    DebouncedTextField(
-        value = provider.modelInputName,
-        onValueChange = { onEdit(provider.copy(modelInputName = it.trim())) },
-        stateKey = "comfyui_model_input_${provider.id}",
-        label = stringResource(R.string.setting_provider_page_comfyui_model_input),
-        modifier = Modifier.fillMaxWidth(),
-    )
+        DebouncedTextField(
+            value = provider.promptInputName,
+            onValueChange = { onEdit(provider.copy(promptInputName = it.trim())) },
+            stateKey = "comfyui_prompt_input_${provider.id}",
+            label = stringResource(R.string.setting_provider_page_comfyui_prompt_input),
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        DebouncedTextField(
+            value = provider.modelNodeId,
+            onValueChange = { onEdit(provider.copy(modelNodeId = it.trim())) },
+            stateKey = "comfyui_model_node_${provider.id}",
+            label = stringResource(R.string.setting_provider_page_comfyui_model_node),
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        DebouncedTextField(
+            value = provider.modelInputName,
+            onValueChange = { onEdit(provider.copy(modelInputName = it.trim())) },
+            stateKey = "comfyui_model_input_${provider.id}",
+            label = stringResource(R.string.setting_provider_page_comfyui_model_input),
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
 }
 
 @Composable

@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -53,7 +52,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.navigation.compose.rememberNavController
 import coil3.compose.AsyncImage
@@ -90,6 +88,9 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.ui.components.chat.BubbleRole
+import me.rerere.rikkahub.ui.components.chat.GroupedMessageBubble
+import me.rerere.rikkahub.ui.components.chat.getBubblePosition
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.ui.BitmapComposer
 import me.rerere.rikkahub.ui.components.ui.ModelIcon
@@ -113,6 +114,8 @@ import java.io.FileOutputStream
 import java.time.LocalDateTime
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.DurationUnit
+
+private const val EXPORT_BRAND = "LastChat"
 
 @Composable
 fun ChatExportSheet(
@@ -533,50 +536,62 @@ private fun ExportedChatImage(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(MaterialTheme.colorScheme.surface)
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    Row(
+                    Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        shape = AppShapes.CardLarge,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
                     ) {
-                        Column(modifier = Modifier.weight(1f, fill = false)) {
-                            Text(
-                                text = conversation.title,
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Image(
+                                painter = painterResource(id = R.mipmap.ic_launcher_lastchat_foreground),
+                                contentDescription = stringResource(R.string.a11y_logo),
+                                modifier = Modifier.size(44.dp)
                             )
-                            Text(
-                                text = "${LocalDateTime.now().toLocalString()}  rikka-ai.com",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = conversation.title,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "${LocalDateTime.now().toLocalString()}  -  $EXPORT_BRAND",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
-                        // Use painterResource for the logo
-                        val painter = painterResource(id = R.mipmap.ic_launcher_lastchat_foreground)
-                        Image(
-                            painter = painter,
-                            contentDescription = stringResource(R.string.a11y_logo),
-                            modifier = Modifier.size(60.dp)
-                        )
                     }
 
                     // Messages
-                    messages.forEach { message ->
+                    messages.forEachIndexed { index, message ->
                         ExportedChatMessage(
                             message = message,
                             options = options,
-                            prevMessage = messages.getOrNull(messages.indexOf(message) - 1)
+                            prevMessage = messages.getOrNull(index - 1)
                         )
                     }
 
-                    // Watermark
-                    Column {
+                    Surface(
+                        shape = AppShapes.CardSmall,
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ) {
                         Text(
-                            text = stringResource(R.string.export_image_warning),
-                            fontSize = 10.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                            text = "$EXPORT_BRAND - ${stringResource(R.string.export_image_warning)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                         )
                     }
                 }
@@ -604,6 +619,11 @@ private fun ExportedChatMessage(
         else -> "AI"
     }
     val messageContent: @Composable () -> Unit = {
+        val sortedParts = message.parts.toSortedMessageParts()
+        val textPartCount = sortedParts.count { part ->
+            part is UIMessagePart.Text && part.text.isNotBlank()
+        }
+        var textPartIndex = 0
         Column(
             modifier = Modifier
                 .widthIn(max = (540 * 0.9).dp)
@@ -611,26 +631,27 @@ private fun ExportedChatMessage(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             horizontalAlignment = if (message.role == MessageRole.USER) Alignment.End else Alignment.Start
         ) {
-            message.parts.toSortedMessageParts().forEach { part ->
+            sortedParts.forEach { part ->
                 when (part) {
                     is UIMessagePart.Text -> {
                         if (part.text.isNotBlank()) {
-                            Card(
-                                shape = RoundedCornerShape(12.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = when (message.role) {
-                                        MessageRole.USER -> MaterialTheme.colorScheme.primaryContainer
-                                        else -> Color.Transparent
-                                    }
-                                )
+                            GroupedMessageBubble(
+                                position = getBubblePosition(textPartIndex, textPartCount),
+                                role = if (message.role == MessageRole.USER) {
+                                    BubbleRole.USER
+                                } else {
+                                    BubbleRole.ASSISTANT
+                                },
+                                modifier = Modifier.widthIn(max = (540 * 0.82).dp)
                             ) {
                                 ProvideTextStyle(MaterialTheme.typography.bodyMedium) {
                                     MarkdownBlock(
                                         content = part.text,
-                                        modifier = Modifier.padding(12.dp)
+                                        paragraphSpacing = 12.dp
                                     )
                                 }
                             }
+                            textPartIndex++
                         }
                     }
 
@@ -644,7 +665,7 @@ private fun ExportedChatMessage(
                             contentDescription = stringResource(R.string.a11y_image),
                             modifier = Modifier
                                 .sizeIn(maxHeight = 300.dp)
-                                .clip(RoundedCornerShape(12.dp)),
+                                .clip(AppShapes.MessageBubbleInner),
                         )
                     }
 
@@ -672,29 +693,27 @@ private fun ExportedChatMessage(
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(top = 8.dp)
+            modifier = Modifier.padding(top = 4.dp)
         ) {
             if (model != null) {
                 ModelIcon(
                     model = model,
                     provider = provider,
                     modifier = Modifier
-                        .padding(top = 8.dp)
-                        .size(36.dp)
+                        .size(32.dp)
                 )
             } else {
                 TextAvatar(
                     text = iconLabel,
                     modifier = Modifier
-                        .padding(top = 8.dp)
-                        .size(36.dp)
+                        .size(32.dp)
                 )
             }
 
             Text(
                 text = iconLabel,
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(top = 8.dp)
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
@@ -708,18 +727,16 @@ private fun ExportedReasoningCard(reasoning: UIMessagePart.Reasoning, expanded: 
     } ?: (kotlin.time.Clock.System.now() - reasoning.createdAt)
 
     Surface(
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        shape = if (expanded) AppShapes.CardMedium else AppShapes.ButtonPill,
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
     ) {
         Column(
             modifier = Modifier
-                .padding(8.dp),
+                .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
-                modifier = Modifier
-                    .padding(horizontal = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -732,24 +749,29 @@ private fun ExportedReasoningCard(reasoning: UIMessagePart.Reasoning, expanded: 
                 Text(
                     text = stringResource(R.string.deep_thinking),
                     style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.secondary
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 if (duration > 0.seconds) {
                     Text(
                         text = "(${duration.toString(DurationUnit.SECONDS, 1)})",
                         style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.secondary
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f)
                     )
                 }
             }
             if (expanded) {
-                MarkdownBlock(
-                    content = reasoning.reasoning,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp),
-                )
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = AppShapes.CardMediumInner12,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                ) {
+                    MarkdownBlock(
+                        content = reasoning.reasoning,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(12.dp),
+                    )
+                }
             }
         }
     }
@@ -760,14 +782,14 @@ private fun ExportedToolCall(
     toolCall: UIMessagePart.ToolCall
 ) {
     Surface(
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        shape = AppShapes.ButtonPill,
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp)
+            modifier = Modifier.padding(vertical = 9.dp, horizontal = 14.dp)
         ) {
             Icon(
                 imageVector = when (toolCall.toolName) {
@@ -779,7 +801,7 @@ private fun ExportedToolCall(
                 },
                 contentDescription = null,
                 modifier = Modifier.size(20.dp),
-                tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Column {
                 Text(
@@ -798,7 +820,7 @@ private fun ExportedToolCall(
                         else -> stringResource(R.string.chat_message_tool_call_generic, toolCall.toolName)
                     },
                     style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -808,14 +830,14 @@ private fun ExportedToolCall(
 @Composable
 private fun ExportedToolResult(toolResult: UIMessagePart.ToolResult) {
     Surface(
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        shape = AppShapes.ButtonPill,
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp)
+            modifier = Modifier.padding(vertical = 9.dp, horizontal = 14.dp)
         ) {
             Icon(
                 imageVector = when (toolResult.toolName) {
@@ -827,7 +849,7 @@ private fun ExportedToolResult(toolResult: UIMessagePart.ToolResult) {
                 },
                 contentDescription = null,
                 modifier = Modifier.size(20.dp),
-                tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Column {
                 Text(
@@ -845,7 +867,7 @@ private fun ExportedToolResult(toolResult: UIMessagePart.ToolResult) {
                         else -> stringResource(R.string.chat_message_tool_call_generic, toolResult.toolName)
                     },
                     style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }

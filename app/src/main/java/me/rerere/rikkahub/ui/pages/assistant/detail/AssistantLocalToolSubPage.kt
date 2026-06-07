@@ -22,7 +22,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.ai.tools.LinuxEnvironmentManager
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
+import me.rerere.rikkahub.data.ai.tools.setLinuxEnvironmentEnabled
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.utils.PermissionChecker
@@ -62,20 +64,51 @@ fun AssistantLocalToolSubPage(
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // JavaScript 引擎工具卡片
+        val linuxOption = assistant.localTools.filterIsInstance<LocalToolOption.LinuxEnvironment>().firstOrNull()
+        val linuxEnabled = linuxOption != null
+
         LocalToolCard(
-            title = stringResource(R.string.assistant_page_local_tools_javascript_engine_title),
-            description = stringResource(R.string.assistant_page_local_tools_javascript_engine_desc),
-            isEnabled = assistant.localTools.contains(LocalToolOption.JavascriptEngine),
+            title = stringResource(R.string.assistant_page_local_tools_linux_environment_title),
+            description = stringResource(R.string.assistant_page_local_tools_linux_environment_desc),
+            isEnabled = linuxEnabled,
             onToggle = { enabled ->
-                val newLocalTools = if (enabled) {
-                    assistant.localTools + LocalToolOption.JavascriptEngine
-                } else {
-                    assistant.localTools - LocalToolOption.JavascriptEngine
-                }
-                onUpdate(assistant.copy(localTools = newLocalTools))
+                onUpdate(
+                    assistant.copy(
+                        localTools = setLinuxEnvironmentEnabled(assistant.localTools, enabled)
+                    )
+                )
+            },
+            content = {
+                val status = remember(linuxEnabled) { LinuxEnvironmentManager(context).getStatus() }
+                Text(
+                    text = if (status.ready) {
+                        stringResource(R.string.assistant_page_local_tools_linux_status_ready)
+                    } else {
+                        stringResource(
+                            R.string.assistant_page_local_tools_linux_status_missing,
+                            status.missing.joinToString()
+                        )
+                    },
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
             }
         )
+        // JavaScript 引擎工具卡片
+        if (!linuxEnabled) {
+            LocalToolCard(
+                title = stringResource(R.string.assistant_page_local_tools_javascript_engine_title),
+                description = stringResource(R.string.assistant_page_local_tools_javascript_engine_desc),
+                isEnabled = assistant.localTools.contains(LocalToolOption.JavascriptEngine),
+                onToggle = { enabled ->
+                    val newLocalTools = if (enabled) {
+                        assistant.localTools + LocalToolOption.JavascriptEngine
+                    } else {
+                        assistant.localTools - LocalToolOption.JavascriptEngine
+                    }
+                    onUpdate(assistant.copy(localTools = newLocalTools))
+                }
+            )
+        }
 
         LocalToolCard(
             title = stringResource(R.string.notification_tools_title),
@@ -104,19 +137,21 @@ fun AssistantLocalToolSubPage(
 
         // Python Engine
         val pythonOption = assistant.localTools.filterIsInstance<LocalToolOption.PythonEngine>().firstOrNull()
-        LocalToolCard(
-            title = stringResource(R.string.assistant_page_local_tools_python_engine_title),
-            description = stringResource(R.string.assistant_page_local_tools_python_engine_desc),
-            isEnabled = pythonOption != null,
-            onToggle = { enabled ->
-                val newLocalTools = if (enabled) {
-                    assistant.localTools + LocalToolOption.PythonEngine
-                } else {
-                    assistant.localTools.filterNot { it is LocalToolOption.PythonEngine }
+        if (!linuxEnabled) {
+            LocalToolCard(
+                title = stringResource(R.string.assistant_page_local_tools_python_engine_title),
+                description = stringResource(R.string.assistant_page_local_tools_python_engine_desc),
+                isEnabled = pythonOption != null,
+                onToggle = { enabled ->
+                    val newLocalTools = if (enabled) {
+                        assistant.localTools + LocalToolOption.PythonEngine
+                    } else {
+                        assistant.localTools.filterNot { it is LocalToolOption.PythonEngine }
+                    }
+                    onUpdate(assistant.copy(localTools = newLocalTools))
                 }
-                onUpdate(assistant.copy(localTools = newLocalTools))
-            }
-        )
+            )
+        }
 
         LocalToolCard(
             title = stringResource(R.string.assistant_page_local_tools_character_questions_title),

@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.ui
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -7,7 +8,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
@@ -24,7 +25,6 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.svg.css
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.ui.hooks.rememberAvatarShape
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.toCssHex
 import me.rerere.ai.provider.Model
@@ -137,15 +137,12 @@ private fun AIIcon(
             )
             .build()
     }
-    Surface(
-        modifier = modifier.size(24.dp),
-        shape = rememberAvatarShape(loading),
-        color = Color.Transparent,
-    ) {
+    Box(modifier = modifier.size(24.dp)) {
         AsyncImage(
             model = model,
             contentDescription = name,
-            modifier = Modifier.padding(padding)
+            modifier = Modifier.padding(padding),
+            contentScale = ContentScale.Fit,
         )
     }
 }
@@ -400,16 +397,12 @@ fun AutoAIIconWithUrl(
             )
         } else {
             // Non-catalog custom icon (user picked from gallery, etc.)
-            Surface(
-                modifier = modifier.size(24.dp),
-                shape = rememberAvatarShape(loading),
-                color = Color.Transparent,
-            ) {
+            Box(modifier = modifier.size(24.dp)) {
                 AsyncImage(
                     model = android.net.Uri.parse(customIconUri),
                     contentDescription = name,
                     modifier = Modifier.padding(padding),
-                    contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                    contentScale = ContentScale.Fit,
                 )
             }
         }
@@ -430,7 +423,21 @@ fun AutoAIIconWithUrl(
         return
     }
 
-    // Fallback: Text avatar (no CDN or local pattern matching for models/providers)
+    // Fallback: local known logo, then text avatar
+    val localPath = remember(name) { computeAIIconByName(name) }
+    if (localPath != null) {
+        AIIcon(
+            path = localPath,
+            name = name,
+            modifier = modifier,
+            loading = loading,
+            color = color,
+            contentColor = contentColor,
+            padding = padding,
+        )
+        return
+    }
+
     TextAvatar(
         text = name,
         modifier = modifier,
@@ -501,11 +508,7 @@ fun CatalogIcon(
         )
     } else {
         // Loading/checking assets state placeholder
-        Surface(
-            modifier = modifier.size(24.dp),
-            shape = rememberAvatarShape(loading),
-            color = Color.Transparent
-        ) {}
+        Box(modifier = modifier.size(24.dp))
     }
 }
 
@@ -610,16 +613,13 @@ private fun RemoteIcon(
     
     // If we have a local icon, use it directly (instant!)
     if (localUri != null) {
-        Surface(
-            modifier = modifier.size(24.dp),
-            shape = rememberAvatarShape(loading),
-            color = Color.Transparent,
-        ) {
+        Box(modifier = modifier.size(24.dp)) {
             AsyncImage(
                 model = localUri,
                 contentDescription = name,
                 modifier = Modifier.padding(padding),
                 colorFilter = if (tint) ColorFilter.tint(contentColor) else null,
+                contentScale = ContentScale.Fit,
             )
         }
         return
@@ -638,16 +638,13 @@ private fun RemoteIcon(
         }
         
         // Show fallback URL while downloading
-        Surface(
-            modifier = modifier.size(24.dp),
-            shape = rememberAvatarShape(loading),
-            color = Color.Transparent,
-        ) {
+        Box(modifier = modifier.size(24.dp)) {
             AsyncImage(
                 model = fallbackUrl,
                 contentDescription = name,
                 modifier = Modifier.padding(padding),
                 colorFilter = if (tint) ColorFilter.tint(contentColor) else null,
+                contentScale = ContentScale.Fit,
                 onError = { fallbackFailed = true }
             )
         }
@@ -675,16 +672,13 @@ private fun RemoteIcon(
     }
     
     // Show loading state while downloading (use remote URL with Coil cache as temporary display)
-    Surface(
-        modifier = modifier.size(24.dp),
-        shape = rememberAvatarShape(loading),
-        color = Color.Transparent,
-    ) {
+    Box(modifier = modifier.size(24.dp)) {
         AsyncImage(
             model = url,
             contentDescription = name,
             modifier = Modifier.padding(padding),
             colorFilter = if (tint) ColorFilter.tint(contentColor) else null,
+            contentScale = ContentScale.Fit,
             onError = { downloadFailed = true }
         )
     }
@@ -727,6 +721,7 @@ internal fun computeAIIconByName(name: String): String? {
 
     val lowerName = name.lowercase()
     val path = when {
+        lowerName.contains("comfyui") || lowerName.contains("comfy ui") -> "comfyui.svg"
         lowerName.contains("tavern") -> "tavern.png"
         
         else -> null

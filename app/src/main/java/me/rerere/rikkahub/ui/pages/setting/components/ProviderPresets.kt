@@ -1,8 +1,10 @@
 package me.rerere.rikkahub.ui.pages.setting.components
 
 import me.rerere.ai.provider.BalanceOption
+import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.OpenAICompatibilityMode
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.provider.withComfyDefaults
 import me.rerere.rikkahub.data.ai.models.CatalogProvider
 import me.rerere.rikkahub.data.ai.models.CatalogProviderType
 import me.rerere.rikkahub.data.ai.models.CatalogSetupDefaults
@@ -69,6 +71,21 @@ val FALLBACK_PROVIDER_PRESETS = listOf(
         baseUrl = "https://api.anthropic.com/v1",
     ),
 )
+
+val SPECIAL_PROVIDER_PRESETS = listOf(
+    ProviderPreset(
+        name = "ComfyUI",
+        description = "Connect to your local ComfyUI for workflow-based image generation",
+        type = ProviderSetting.ComfyUI::class,
+        baseUrl = "http://127.0.0.1:8188",
+        customIconUri = "icons/comfyui.svg",
+    ),
+)
+
+fun List<ProviderPreset>.withSpecialProviderPresets(): List<ProviderPreset> {
+    val existingNames = map { it.name.lowercase() }.toSet()
+    return this + SPECIAL_PROVIDER_PRESETS.filter { it.name.lowercase() !in existingNames }
+}
 
 fun ModelCatalogSnapshot.toProviderPresets(): List<ProviderPreset> {
     return providers
@@ -141,6 +158,19 @@ fun ProviderPreset.toProviderSetting(): ProviderSetting {
             baseUrl = baseUrl,
             balanceOption = balanceOption,
             customIconUri = customIconUri,
+        )
+
+        ProviderSetting.ComfyUI::class -> ProviderSetting.ComfyUI(
+            id = parsedId ?: Uuid.random(),
+            name = name,
+            baseUrl = baseUrl,
+            customIconUri = customIconUri,
+            models = listOf(
+                Model(
+                    modelId = "model.safetensors",
+                    displayName = "ComfyUI model",
+                ).withComfyDefaults()
+            ),
         )
 
         else -> ProviderSetting.OpenAI(

@@ -30,6 +30,7 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import me.rerere.rikkahub.data.ai.tools.LinuxSandbox
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
 import java.time.Instant
@@ -250,6 +251,9 @@ class ConversationRepository(
         )
         chatEpisodeDAO.deleteEpisodeByConversationId(conversation.id.toString())
         chatAttachmentRepository.removeConversationReferences(conversation.id)
+        withContext(Dispatchers.IO) {
+            LinuxSandbox(context).cleanupConversation(conversation.id)
+        }
     }
 
     suspend fun deleteConversationOfAssistant(assistantId: Uuid) {

@@ -632,6 +632,8 @@ private fun getToolDisplayName(toolName: String): String {
         "search_web" -> "Searching web"
         "search_memory" -> "Recalling memories"
         "scrape_web" -> "Reading page"
+        "run_linux_command" -> "Running Linux"
+        "linux_environment_status" -> "Checking Linux"
         "eval_python" -> "Running Python"
         "pip_install" -> "Installing packages"
         "write_sandbox_file" -> "Writing file"

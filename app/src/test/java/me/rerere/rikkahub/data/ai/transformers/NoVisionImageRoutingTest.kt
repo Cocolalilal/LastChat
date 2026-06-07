@@ -76,4 +76,18 @@ class NoVisionImageRoutingTest {
         assertFalse(pythonDisabled.contains("Python can use the original image"))
         assertTrue(pythonDisabled.contains("Do not infer image contents"))
     }
+
+    @Test
+    fun `buildResidualImageFallbackText prefers linux when enabled`() {
+        val linuxEnabled = UnsupportedFileTransformer.buildResidualImageFallbackText(
+            fileName = "photo.png",
+            sourceUrl = "file:///tmp/photo.png",
+            pythonEnabled = true,
+            linuxEnabled = true,
+        )
+
+        assertTrue(linuxEnabled.contains("Linux can use the original image"))
+        assertTrue(linuxEnabled.contains("preloaded workspace files"))
+        assertFalse(linuxEnabled.contains("Python can use the original image"))
+    }
 }

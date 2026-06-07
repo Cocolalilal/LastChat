@@ -35,10 +35,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.ai.tools.LinuxEnvironmentManager
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.ai.mcp.McpStatus
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
+import me.rerere.rikkahub.data.ai.tools.setLinuxEnvironmentEnabled
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantSearchMode
 import me.rerere.rikkahub.ui.components.ai.McpPicker
@@ -163,24 +165,114 @@ fun AssistantToolsSubPage(
         // LOCAL TOOLS GROUP
         // ═══════════════════════════════════════════════════════════════════
         SettingsGroup(title = stringResource(R.string.assistant_page_tab_local_tools)) {
-            // JavaScript Engine
+            val linuxOption = assistant.localTools.filterIsInstance<LocalToolOption.LinuxEnvironment>().firstOrNull()
+            val linuxEnabled = linuxOption != null
+
             SettingGroupItem(
-                title = stringResource(R.string.assistant_page_local_tools_javascript_engine_title),
-                subtitle = stringResource(R.string.assistant_page_local_tools_javascript_engine_desc),
+                title = stringResource(R.string.assistant_page_local_tools_linux_environment_title),
+                subtitle = stringResource(R.string.assistant_page_local_tools_linux_environment_desc),
                 trailing = {
                     HapticSwitch(
-                        checked = assistant.localTools.contains(LocalToolOption.JavascriptEngine),
+                        checked = linuxEnabled,
                         onCheckedChange = { enabled ->
-                            val newLocalTools = if (enabled) {
-                                assistant.localTools + LocalToolOption.JavascriptEngine
-                            } else {
-                                assistant.localTools - LocalToolOption.JavascriptEngine
-                            }
-                            onUpdate(assistant.copy(localTools = newLocalTools))
+                            onUpdate(
+                                assistant.copy(
+                                    localTools = setLinuxEnvironmentEnabled(assistant.localTools, enabled)
+                                )
+                            )
                         }
                     )
                 }
             )
+
+            if (linuxEnabled) {
+                val activeLinuxOption = linuxOption ?: LocalToolOption.LinuxEnvironment()
+                val linuxStatus = remember(linuxEnabled) {
+                    LinuxEnvironmentManager(context).getStatus()
+                }
+                data class LinuxProfileOption(val fullToolchain: Boolean, val label: String)
+                val profileOptions = listOf(
+                    LinuxProfileOption(false, stringResource(R.string.assistant_page_local_tools_linux_profile_base)),
+                    LinuxProfileOption(true, stringResource(R.string.assistant_page_local_tools_linux_profile_full)),
+                )
+                val selectedProfile = profileOptions.first { it.fullToolchain == activeLinuxOption.fullToolchain }
+
+                SettingGroupItem(
+                    title = stringResource(R.string.assistant_page_local_tools_linux_status_title),
+                    subtitle = if (linuxStatus.ready) {
+                        stringResource(R.string.assistant_page_local_tools_linux_status_ready)
+                    } else {
+                        stringResource(
+                            R.string.assistant_page_local_tools_linux_status_missing,
+                            linuxStatus.missing.joinToString()
+                        )
+                    }
+                )
+
+                SettingGroupItem(
+                    title = stringResource(R.string.assistant_page_local_tools_linux_profile_title),
+                    subtitle = selectedProfile.label,
+                    trailing = {
+                        Select(
+                            options = profileOptions,
+                            selectedOption = selectedProfile,
+                            onOptionSelected = { option ->
+                                val updated = assistant.localTools.map { tool ->
+                                    if (tool is LocalToolOption.LinuxEnvironment) {
+                                        tool.copy(fullToolchain = option.fullToolchain)
+                                    } else {
+                                        tool
+                                    }
+                                }
+                                onUpdate(assistant.copy(localTools = updated))
+                            },
+                            optionToString = { it.label },
+                            modifier = Modifier.width(170.dp)
+                        )
+                    }
+                )
+
+                SettingGroupItem(
+                    title = stringResource(R.string.assistant_page_local_tools_linux_network_title),
+                    subtitle = stringResource(R.string.assistant_page_local_tools_linux_network_desc),
+                    trailing = {
+                        HapticSwitch(
+                            checked = activeLinuxOption.networkAccess,
+                            onCheckedChange = { enabled ->
+                                val updated = assistant.localTools.map { tool ->
+                                    if (tool is LocalToolOption.LinuxEnvironment) {
+                                        tool.copy(networkAccess = enabled)
+                                    } else {
+                                        tool
+                                    }
+                                }
+                                onUpdate(assistant.copy(localTools = updated))
+                            }
+                        )
+                    }
+                )
+            }
+
+            // JavaScript Engine
+            if (!linuxEnabled) {
+                SettingGroupItem(
+                    title = stringResource(R.string.assistant_page_local_tools_javascript_engine_title),
+                    subtitle = stringResource(R.string.assistant_page_local_tools_javascript_engine_desc),
+                    trailing = {
+                        HapticSwitch(
+                            checked = assistant.localTools.contains(LocalToolOption.JavascriptEngine),
+                            onCheckedChange = { enabled ->
+                                val newLocalTools = if (enabled) {
+                                    assistant.localTools + LocalToolOption.JavascriptEngine
+                                } else {
+                                    assistant.localTools - LocalToolOption.JavascriptEngine
+                                }
+                                onUpdate(assistant.copy(localTools = newLocalTools))
+                            }
+                        )
+                    }
+                )
+            }
             
             SettingGroupItem(
                 title = stringResource(R.string.notification_tools_title),
@@ -204,23 +296,25 @@ fun AssistantToolsSubPage(
             
             // Python Engine
             val pythonOption = assistant.localTools.filterIsInstance<LocalToolOption.PythonEngine>().firstOrNull()
-            SettingGroupItem(
-                title = stringResource(R.string.assistant_page_local_tools_python_engine_title),
-                subtitle = stringResource(R.string.assistant_page_local_tools_python_engine_desc),
-                trailing = {
-                    HapticSwitch(
-                        checked = pythonOption != null,
-                        onCheckedChange = { enabled ->
-                            val newLocalTools = if (enabled) {
-                                assistant.localTools + LocalToolOption.PythonEngine
-                            } else {
-                                assistant.localTools.filterNot { it is LocalToolOption.PythonEngine }
+            if (!linuxEnabled) {
+                SettingGroupItem(
+                    title = stringResource(R.string.assistant_page_local_tools_python_engine_title),
+                    subtitle = stringResource(R.string.assistant_page_local_tools_python_engine_desc),
+                    trailing = {
+                        HapticSwitch(
+                            checked = pythonOption != null,
+                            onCheckedChange = { enabled ->
+                                val newLocalTools = if (enabled) {
+                                    assistant.localTools + LocalToolOption.PythonEngine
+                                } else {
+                                    assistant.localTools.filterNot { it is LocalToolOption.PythonEngine }
+                                }
+                                onUpdate(assistant.copy(localTools = newLocalTools))
                             }
-                            onUpdate(assistant.copy(localTools = newLocalTools))
-                        }
-                    )
-                }
-            )
+                        )
+                    }
+                )
+            }
 
             SettingGroupItem(
                 title = stringResource(R.string.assistant_page_local_tools_tts_title),

@@ -2,6 +2,7 @@ package me.rerere.rikkahub.data.model
 
 import kotlinx.serialization.json.Json
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
+import me.rerere.rikkahub.data.ai.tools.setLinuxEnvironmentEnabled
 import me.rerere.rikkahub.utils.JsonInstant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -136,5 +137,43 @@ class AssistantSerializationTest {
 
         assertTrue(encoded.contains("\"character_questions\""))
         assertTrue(decoded.localTools.contains(LocalToolOption.AskUser))
+    }
+
+    @Test
+    fun linuxEnvironmentLocalToolRoundTripsThroughSerialization() {
+        val assistant = Assistant(
+            id = Uuid.parse("00000000-0000-0000-0000-000000000015"),
+            name = "Ada",
+            localTools = listOf(
+                LocalToolOption.LinuxEnvironment(
+                    networkAccess = false,
+                    fullToolchain = true,
+                )
+            )
+        )
+
+        val encoded = JsonInstant.encodeToString(Assistant.serializer(), assistant)
+        val decoded = JsonInstant.decodeFromString(Assistant.serializer(), encoded)
+        val linux = decoded.localTools.filterIsInstance<LocalToolOption.LinuxEnvironment>().single()
+
+        assertTrue(encoded.contains("\"linux_environment\""))
+        assertFalse(linux.networkAccess)
+        assertTrue(linux.fullToolchain)
+    }
+
+    @Test
+    fun enablingLinuxEnvironmentRemovesPythonAndJavascriptRuntimes() {
+        val localTools = listOf(
+            LocalToolOption.JavascriptEngine,
+            LocalToolOption.PythonEngine,
+            LocalToolOption.Notifications,
+        )
+
+        val updated = setLinuxEnvironmentEnabled(localTools, enabled = true)
+
+        assertTrue(updated.first() is LocalToolOption.LinuxEnvironment)
+        assertFalse(updated.contains(LocalToolOption.JavascriptEngine))
+        assertFalse(updated.contains(LocalToolOption.PythonEngine))
+        assertTrue(updated.contains(LocalToolOption.Notifications))
     }
 }
