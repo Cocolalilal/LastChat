@@ -63,6 +63,7 @@ sealed class TTSProviderSetting {
         override var name: String = "System TTS",
         val speechRate: Float = 1.0f,
         val pitch: Float = 1.0f,
+        val enginePackageName: String? = null,
     ) : TTSProviderSetting() {
         override fun copyProvider(
             id: Uuid,

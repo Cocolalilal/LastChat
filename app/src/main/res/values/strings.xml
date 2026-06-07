@@ -68,6 +68,9 @@
     <string name="assistant_page_local_tools_linux_status_title">Environment Status</string>
     <string name="assistant_page_local_tools_linux_status_ready">Ready</string>
     <string name="assistant_page_local_tools_linux_status_missing">Setup required: missing %1$s</string>
+    <string name="assistant_page_local_tools_linux_install">Install</string>
+    <string name="assistant_page_local_tools_linux_repair">Repair</string>
+    <string name="assistant_page_local_tools_linux_installing">Installing Linux environment...</string>
     <string name="assistant_page_local_tools_linux_profile_title">Package Profile</string>
     <string name="assistant_page_local_tools_linux_profile_base">Base</string>
     <string name="assistant_page_local_tools_linux_profile_full">Full Toolchain</string>
@@ -771,6 +774,8 @@
     <string name="setting_tts_page_emotion_description">Emotional style for speech</string>
     <string name="setting_tts_page_emotion_placeholder">Happy</string>
     <string name="setting_tts_page_enabled">Enabled</string>
+    <string name="setting_tts_page_engine">TTS Engine</string>
+    <string name="setting_tts_page_engine_description">Installed Android speech engine used for this local provider</string>
     <string name="setting_tts_page_language">Language</string>
     <string name="setting_tts_page_language_description">TTS Language Code (e.g. en-US)</string>
     <string name="setting_tts_page_language_type">Language Type</string>

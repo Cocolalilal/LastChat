@@ -88,7 +88,9 @@ fun ProviderIcon(
  * Priority:
  * 1. Custom icon (user-selected or catalog-assigned)
  * 2. Catalog icon URL
- * 3. Text avatar fallback
+ * 3. LobeHub provider/family slug
+ * 4. Parent provider icon fallback
+ * 5. Text avatar fallback
  */
 @Composable
 fun ModelIcon(
@@ -110,6 +112,18 @@ fun ModelIcon(
         color = color,
         contentColor = contentColor,
         padding = padding,
+        fallback = provider?.let {
+            {
+                ProviderIcon(
+                    provider = it,
+                    modifier = modifier,
+                    loading = loading,
+                    color = color,
+                    contentColor = contentColor,
+                    padding = padding,
+                )
+            }
+        },
     )
 }
 
@@ -352,7 +366,8 @@ fun AutoAIIconWithUrl(
     loading: Boolean = false,
     color: Color = MaterialTheme.colorScheme.secondaryContainer,
     contentColor: Color = LocalContentColor.current,
-    padding: Dp = 4.dp
+    padding: Dp = 4.dp,
+    fallback: @Composable (() -> Unit)? = null,
 ) {
     // Priority 1: Custom icon URI (user-selected or catalog-assigned)
     if (!customIconUri.isNullOrBlank()) {
@@ -375,7 +390,7 @@ fun AutoAIIconWithUrl(
                 contentColor = contentColor,
                 tint = !lobeHubSlug.endsWith("-color"),
                 padding = padding,
-                fallback = {
+                fallback = fallback ?: {
                     TextAvatar(
                         text = name,
                         modifier = modifier,
@@ -423,7 +438,7 @@ fun AutoAIIconWithUrl(
         return
     }
 
-    // Fallback: local known logo, then text avatar
+    // Priority 3: Local known logo.
     val localPath = remember(name) { computeAIIconByName(name) }
     if (localPath != null) {
         AIIcon(
@@ -435,6 +450,48 @@ fun AutoAIIconWithUrl(
             contentColor = contentColor,
             padding = padding,
         )
+        return
+    }
+
+    // Priority 4: LobeHub provider/family slug when metadata supplied one.
+    val lobeHubSlug = remember(providerSlug) {
+        providerSlug
+            ?.normalizeLobeHubIconSlug()
+            ?.takeIf { it.isNotBlank() }
+    }
+    if (lobeHubSlug != null) {
+        val darkMode = LocalDarkMode.current
+        val lobeHubUrls = getLobeHubIconUrls(lobeHubSlug, darkMode)
+        RemoteIcon(
+            url = lobeHubUrls.coloredUrl,
+            iconKey = me.rerere.rikkahub.utils.IconStorageManager.generateIconKey(
+                lobeHubSlug,
+                null,
+                darkMode,
+            ),
+            fallbackUrl = lobeHubUrls.monochromeUrl,
+            name = name,
+            modifier = modifier,
+            loading = loading,
+            color = color,
+            contentColor = contentColor,
+            tint = !lobeHubSlug.endsWith("-color"),
+            padding = padding,
+            fallback = fallback ?: {
+                TextAvatar(
+                    text = name,
+                    modifier = modifier,
+                    loading = loading,
+                    color = color,
+                    contentColor = contentColor,
+                )
+            },
+        )
+        return
+    }
+
+    if (fallback != null) {
+        fallback()
         return
     }
 

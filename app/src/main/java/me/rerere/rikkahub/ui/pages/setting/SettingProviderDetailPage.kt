@@ -1068,7 +1068,6 @@ private fun ModelSettingsForm(
 ) {
     val pagerState = rememberPagerState { 2 }
     val scope = rememberCoroutineScope()
-    val modelMetadataResolver = koinInject<ModelMetadataResolver>()
     val providerManager = koinInject<ProviderManager>()
     val toaster = LocalToaster.current
     val context = LocalContext.current
@@ -1093,15 +1092,7 @@ private fun ModelSettingsForm(
     }
 
     fun setModelId(id: String) {
-        onModelChange(
-            modelMetadataResolver.applyToModel(
-                model.copy(modelId = id),
-                providerHint = parentProvider,
-                options = ModelResolutionOptions(
-                    preserveExistingType = model.type != ModelType.CHAT,
-                )
-            )
-        )
+        onModelChange(model.copy(modelId = id, canonicalModelId = null))
     }
 
     Column {
@@ -1594,6 +1585,7 @@ private fun AddNewModelFab(
     val dialogState = useEditState<Model> { onAddModel(it) }
     val scope = rememberCoroutineScope()
     val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
+    val modelMetadataResolver = koinInject<ModelMetadataResolver>()
     
     FloatingActionButton(
         onClick = { 
@@ -1668,7 +1660,16 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         }
                         Button(
                             onClick = {
-                                if (modelState.modelId.isNotBlank() && modelState.displayName.isNotBlank()) {
+                                if (modelState.modelId.isNotBlank()) {
+                                    dialogState.currentState = modelMetadataResolver.applyToModel(
+                                        model = modelState,
+                                        providerHint = parentProvider,
+                                        options = ModelResolutionOptions(
+                                            preserveDisplayName = true,
+                                            preserveExistingCapabilities = true,
+                                            preserveExistingType = modelState.type != ModelType.CHAT,
+                                        ),
+                                    )
                                     dialogState.confirm()
                                 }
                             },

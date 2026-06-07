@@ -451,6 +451,22 @@ private fun SystemTTSConfiguration(
     setting: TTSProviderSetting.SystemTTS,
     onValueChange: (TTSProviderSetting) -> Unit
 ) {
+    val enginePackageName = setting.enginePackageName
+    if (!enginePackageName.isNullOrBlank()) {
+        FormItem(
+            label = { Text(stringResource(R.string.setting_tts_page_engine)) },
+            description = { Text(stringResource(R.string.setting_tts_page_engine_description)) }
+        ) {
+            OutlinedTextField(
+                value = enginePackageName,
+                onValueChange = {},
+                modifier = Modifier.fillMaxWidth(),
+                readOnly = true,
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+            )
+        }
+    }
+
     // Speech Rate
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_speech_rate)) },

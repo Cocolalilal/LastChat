@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -16,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -28,6 +30,7 @@ import me.rerere.rikkahub.data.ai.tools.setLinuxEnvironmentEnabled
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.utils.PermissionChecker
+import kotlinx.coroutines.launch
 
 @Composable
 fun AssistantLocalToolSubPage(
@@ -35,6 +38,7 @@ fun AssistantLocalToolSubPage(
     onUpdate: (Assistant) -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var pendingNotificationAccess by remember {
         mutableStateOf(PermissionChecker.MissingFeatureAccess())
     }
@@ -79,10 +83,15 @@ fun AssistantLocalToolSubPage(
                 )
             },
             content = {
-                val status = remember(linuxEnabled) { LinuxEnvironmentManager(context).getStatus() }
+                val linuxManager = remember { LinuxEnvironmentManager(context) }
+                var status by remember(linuxEnabled) { mutableStateOf(linuxManager.getStatus()) }
+                var installing by remember { mutableStateOf(false) }
+                var installMessage by remember { mutableStateOf("") }
                 Text(
                     text = if (status.ready) {
                         stringResource(R.string.assistant_page_local_tools_linux_status_ready)
+                    } else if (installMessage.isNotBlank()) {
+                        installMessage
                     } else {
                         stringResource(
                             R.string.assistant_page_local_tools_linux_status_missing,
@@ -91,6 +100,30 @@ fun AssistantLocalToolSubPage(
                     },
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                 )
+                Button(
+                    enabled = !installing,
+                    onClick = {
+                        installing = true
+                        installMessage = context.getString(R.string.assistant_page_local_tools_linux_installing)
+                        scope.launch {
+                            val result = linuxManager.installOrRepair(
+                                fullToolchain = linuxOption?.fullToolchain == true
+                            )
+                            status = result.status
+                            installMessage = result.message
+                            installing = false
+                        }
+                    },
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        if (status.ready) {
+                            stringResource(R.string.assistant_page_local_tools_linux_repair)
+                        } else {
+                            stringResource(R.string.assistant_page_local_tools_linux_install)
+                        }
+                    )
+                }
             }
         )
         // JavaScript 引擎工具卡片

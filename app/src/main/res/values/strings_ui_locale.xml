@@ -384,6 +384,7 @@
     <string name="setting_tts_filter_only_read_desc">Only text inside %1$s...%1$s will be read</string>
     <string name="setting_tts_filter_delete">Delete</string>
     <string name="setting_tts_preset_system_desc">Uses device\'s built-in TTS engine</string>
+    <string name="setting_tts_preset_local_engine_desc">Local engine: %1$s</string>
     <string name="setting_tts_preset_openai_desc">High-quality voices with emotion</string>
     <string name="setting_tts_preset_gemini_desc">Google\'s TTS with natural voices</string>
     <string name="setting_tts_preset_elevenlabs_desc">Professional voice cloning</string>

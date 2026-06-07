@@ -26,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,6 +50,7 @@ import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import me.rerere.rikkahub.utils.PermissionChecker
 import me.rerere.search.SearchServiceOptions
+import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 
 /**
@@ -64,6 +66,7 @@ fun AssistantToolsSubPage(
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var pendingNotificationAccess by remember {
         mutableStateOf(PermissionChecker.MissingFeatureAccess())
     }
@@ -187,9 +190,10 @@ fun AssistantToolsSubPage(
 
             if (linuxEnabled) {
                 val activeLinuxOption = linuxOption ?: LocalToolOption.LinuxEnvironment()
-                val linuxStatus = remember(linuxEnabled) {
-                    LinuxEnvironmentManager(context).getStatus()
-                }
+                val linuxManager = remember { LinuxEnvironmentManager(context) }
+                var linuxStatus by remember(linuxEnabled) { mutableStateOf(linuxManager.getStatus()) }
+                var installingLinux by remember { mutableStateOf(false) }
+                var linuxInstallMessage by remember { mutableStateOf("") }
                 data class LinuxProfileOption(val fullToolchain: Boolean, val label: String)
                 val profileOptions = listOf(
                     LinuxProfileOption(false, stringResource(R.string.assistant_page_local_tools_linux_profile_base)),
@@ -201,11 +205,38 @@ fun AssistantToolsSubPage(
                     title = stringResource(R.string.assistant_page_local_tools_linux_status_title),
                     subtitle = if (linuxStatus.ready) {
                         stringResource(R.string.assistant_page_local_tools_linux_status_ready)
+                    } else if (linuxInstallMessage.isNotBlank()) {
+                        linuxInstallMessage
                     } else {
                         stringResource(
                             R.string.assistant_page_local_tools_linux_status_missing,
                             linuxStatus.missing.joinToString()
                         )
+                    },
+                    trailing = {
+                        Button(
+                            enabled = !installingLinux,
+                            onClick = {
+                                installingLinux = true
+                                linuxInstallMessage = context.getString(R.string.assistant_page_local_tools_linux_installing)
+                                scope.launch {
+                                    val result = linuxManager.installOrRepair(
+                                        fullToolchain = activeLinuxOption.fullToolchain
+                                    )
+                                    linuxStatus = result.status
+                                    linuxInstallMessage = result.message
+                                    installingLinux = false
+                                }
+                            }
+                        ) {
+                            Text(
+                                if (linuxStatus.ready) {
+                                    stringResource(R.string.assistant_page_local_tools_linux_repair)
+                                } else {
+                                    stringResource(R.string.assistant_page_local_tools_linux_install)
+                                }
+                            )
+                        }
                     }
                 )
 
