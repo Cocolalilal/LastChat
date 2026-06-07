@@ -14,6 +14,8 @@ import kotlinx.serialization.json.put
 import java.io.File
 import java.io.InputStream
 import java.net.URL
+import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import java.util.zip.GZIPInputStream
@@ -106,7 +108,9 @@ class LinuxEnvironmentManager(private val context: Context) {
     }
 
     private fun isRootfsInstalled(): Boolean {
-        return File(rootfsDir, "bin/sh").isFile && File(rootfsDir, "etc/alpine-release").isFile
+        return File(rootfsDir, "bin/sh").existsWithoutFollowingLinks() &&
+            File(rootfsDir, "bin/busybox").isFile &&
+            File(rootfsDir, "etc/alpine-release").isFile
     }
 
     private fun installRootfs() {
@@ -123,7 +127,12 @@ class LinuxEnvironmentManager(private val context: Context) {
         GZIPInputStream(archive.inputStream().buffered()).use { input ->
             extractTar(input, tempRootfs)
         }
-        require(File(tempRootfs, "bin/sh").isFile) { "Downloaded Alpine rootfs did not contain /bin/sh" }
+        require(File(tempRootfs, "bin/sh").existsWithoutFollowingLinks()) {
+            "Downloaded Alpine rootfs did not contain /bin/sh"
+        }
+        require(File(tempRootfs, "bin/busybox").isFile) {
+            "Downloaded Alpine rootfs did not contain /bin/busybox"
+        }
         require(File(tempRootfs, "etc/alpine-release").isFile) { "Downloaded Alpine rootfs did not contain /etc/alpine-release" }
 
         rootfsDir.deleteRecursively()
@@ -504,6 +513,10 @@ private fun String.truncateLinuxOutput(): String {
     } else {
         this
     }
+}
+
+private fun File.existsWithoutFollowingLinks(): Boolean {
+    return Files.exists(toPath(), LinkOption.NOFOLLOW_LINKS)
 }
 
 private fun InputStream.readFullyOrEnd(buffer: ByteArray): Boolean {
