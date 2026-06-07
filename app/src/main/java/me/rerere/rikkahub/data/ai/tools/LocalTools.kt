@@ -1108,7 +1108,7 @@ class LocalTools(
                             put("note", "Use generated_files[].markdown_link in your reply so users can open/download outputs directly in chat.")
                         }
                         if (!result.ready) {
-                            put("status", linuxEnvironmentManager.getStatus().toJsonElement())
+                            put("status", linuxEnvironmentManager.getVerifiedStatus().toJsonElement())
                         }
                     }.truncateLinuxToolResult()
                 }
@@ -1124,7 +1124,7 @@ class LocalTools(
                 },
                 execute = {
                     buildJsonObject {
-                        put("environment", linuxEnvironmentManager.getStatus().toJsonElement())
+                        put("environment", linuxEnvironmentManager.getVerifiedStatus().toJsonElement())
                         put("network_access", option.networkAccess)
                         put("full_toolchain", option.fullToolchain)
                     }

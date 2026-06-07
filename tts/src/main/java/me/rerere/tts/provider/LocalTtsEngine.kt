@@ -58,7 +58,7 @@ suspend fun discoverLocalTtsEngines(context: Context): List<LocalTtsEngine> = wi
 suspend fun discoverLocalTtsVoices(
     context: Context,
     enginePackageName: String?,
-): List<LocalTtsVoice> = withContext(Dispatchers.IO) {
+): List<LocalTtsVoice> = withContext(Dispatchers.Main.immediate) {
     suspendCancellableCoroutine { continuation ->
         var tts: TextToSpeech? = null
         val listener = TextToSpeech.OnInitListener { status ->

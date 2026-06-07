@@ -235,8 +235,6 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                 state = lazyListState
             ) {
                 itemsIndexed(settings.ttsProviders, key = { _, provider -> provider.id }) { index, provider ->
-                val isSelected = provider.voices.any { it.id == settings.selectedTTSVoiceId } ||
-                    settings.selectedTTSProviderId == provider.id
                 val position = when {
                     settings.ttsProviders.size == 1 -> ItemPosition.ONLY
                     index == 0 -> ItemPosition.FIRST
@@ -272,12 +270,11 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                     key = provider.id,
                     animateItemModifier = Modifier
                 ) { isDragging ->
-                    // Key on isSelected to force complete PhysicsSwipeToDelete recreation when selection changes
-                    key(isSelected) {
+                    key(provider.id) {
                         PhysicsSwipeToDelete(
-                            position = if (isSelected) ItemPosition.ONLY else position,
-                            groupCornerRadius = if (isSelected) 100.dp else 24.dp, // Pill shape for selected
-                            deleteEnabled = canDelete && !isSelected,
+                            position = position,
+                            groupCornerRadius = 24.dp,
+                            deleteEnabled = canDelete,
                             neighborOffset = neighborOffset,
                             onDragProgress = { offset, unlocked ->
                                 draggingIndex = index
@@ -300,22 +297,9 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                         ) { _ ->
                         TTSProviderItemContent(
                             provider = provider,
-                            isSelected = isSelected,
                             catalogSnapshot = catalogSnapshot,
                             haptics = haptics,
-                            onSelect = {
-                                if (!isSelected) {
-                                    haptics.perform(HapticPattern.Pop)
-                                    vm.updateSettings(
-                                        settings.copy(
-                                            selectedTTSProviderId = provider.id,
-                                            selectedTTSVoiceId = provider.voices.firstOrNull()?.id
-                                                ?: settings.selectedTTSVoiceId
-                                        )
-                                    )
-                                }
-                            },
-                            onEdit = {
+                            onClick = {
                                 navController.navigate(Screen.SettingTTSProviderDetail(provider.id.toString()))
                             },
                             dragHandle = {
@@ -338,7 +322,7 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                             }
                         )
                     }
-                    } // key(isSelected)
+                    }
                 }
                 }
             }
@@ -578,8 +562,6 @@ internal fun TtsProvidersContent(
             state = lazyListState
         ) {
             itemsIndexed(settings.ttsProviders, key = { _, provider -> provider.id }) { index, provider ->
-                val isSelected = provider.voices.any { it.id == settings.selectedTTSVoiceId } ||
-                    settings.selectedTTSProviderId == provider.id
                 val position = when {
                     settings.ttsProviders.size == 1 -> ItemPosition.ONLY
                     index == 0 -> ItemPosition.FIRST
@@ -612,11 +594,11 @@ internal fun TtsProvidersContent(
                     key = provider.id,
                     animateItemModifier = Modifier
                 ) { isDragging ->
-                    key(isSelected) {
+                    key(provider.id) {
                         PhysicsSwipeToDelete(
-                            position = if (isSelected) ItemPosition.ONLY else position,
-                            groupCornerRadius = if (isSelected) 100.dp else 24.dp,
-                            deleteEnabled = canDelete && !isSelected,
+                            position = position,
+                            groupCornerRadius = 24.dp,
+                            deleteEnabled = canDelete,
                             neighborOffset = neighborOffset,
                             onDragProgress = { offset, unlocked ->
                                 draggingIndex = index
@@ -639,23 +621,9 @@ internal fun TtsProvidersContent(
                         ) { _ ->
                             TTSProviderItemContent(
                                 provider = provider,
-                                isSelected = isSelected,
                                 catalogSnapshot = catalogSnapshot,
                                 haptics = haptics,
-                                onSelect = {
-                                    if (!isSelected) {
-                                        haptics.perform(HapticPattern.Pop)
-                                        val defaultVoiceId = provider.voices.firstOrNull()?.id
-                                            ?: if (provider.id == DEFAULT_SYSTEM_TTS_ID) DEFAULT_SYSTEM_TTS_VOICE_ID else null
-                                        vm.updateSettings(
-                                            settings.copy(
-                                                selectedTTSProviderId = provider.id,
-                                                selectedTTSVoiceId = defaultVoiceId ?: settings.selectedTTSVoiceId
-                                            )
-                                        )
-                                    }
-                                },
-                                onEdit = {
+                                onClick = {
                                     navController.navigate(Screen.SettingTTSProviderDetail(provider.id.toString()))
                                 },
                                 dragHandle = {
@@ -1408,35 +1376,20 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
 @Composable
 private fun TTSProviderItemContent(
     provider: TTSProviderSetting,
-    isSelected: Boolean,
     catalogSnapshot: ModelCatalogSnapshot?,
     haptics: me.rerere.rikkahub.ui.hooks.PremiumHaptics,
-    onSelect: () -> Unit,
-    onEdit: () -> Unit,
+    onClick: () -> Unit,
     dragHandle: @Composable () -> Unit
 ) {
-    val tts = LocalTTSState.current
-    val isSpeaking by tts.isSpeaking.collectAsState()
-    val isAvailable by tts.isAvailable.collectAsState()
-    
-    // Animated color transition for selection
     val backgroundColor by androidx.compose.animation.animateColorAsState(
-        targetValue = if (isSelected) {
-            MaterialTheme.colorScheme.primaryContainer
-        } else {
-            if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
-        },
+        targetValue = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
         animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
-        label = "selectionBackground"
+        label = "ttsProviderBackground"
     )
     val textColor by androidx.compose.animation.animateColorAsState(
-        targetValue = if (isSelected) {
-            MaterialTheme.colorScheme.onPrimaryContainer
-        } else {
-            MaterialTheme.colorScheme.onSurface
-        },
+        targetValue = MaterialTheme.colorScheme.onSurface,
         animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
-        label = "textColor"
+        label = "ttsProviderTextColor"
     )
     
     Row(
@@ -1446,7 +1399,7 @@ private fun TTSProviderItemContent(
             .background(backgroundColor)
             .clickable {
                 haptics.perform(HapticPattern.Pop)
-                onSelect()
+                onClick()
             }
             .padding(16.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -1531,20 +1484,6 @@ private fun TTSProviderItemContent(
             }
         }
         
-        // Settings button first
-        IconButton(
-            onClick = {
-                haptics.perform(HapticPattern.Pop)
-                onEdit()
-            }
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.Settings,
-                contentDescription = stringResource(R.string.setting_tts_page_more_options_content_description)
-            )
-        }
-        
-        // Drag handle at the end
         dragHandle()
     }
 }

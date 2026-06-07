@@ -63,7 +63,6 @@ import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TITLE_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TRANSLATION_PROMPT
 import me.rerere.rikkahub.data.datastore.DISABLED_MODEL_ID
 import me.rerere.rikkahub.data.datastore.Settings
-import me.rerere.rikkahub.data.datastore.TtsAutoplayMode
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.ui.components.ai.ReasoningPicker
 import androidx.compose.foundation.background
@@ -81,7 +80,6 @@ import me.rerere.rikkahub.ui.components.ai.VoiceSelector
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.AutoSaveIndicator
-import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.context.LocalToaster
@@ -117,7 +115,6 @@ fun SettingModelPage(vm: SettingVM = koinViewModel()) {
                 SettingsGroup(title = stringResource(R.string.setting_model_page_group_conversation)) {
                     DefaultChatModelSetting(settings = settings, vm = vm)
                     DefaultTtsVoiceSetting(settings = settings, vm = vm)
-                    DefaultTtsAutoplaySetting(settings = settings, vm = vm)
                     DefaultTitleModelSetting(settings = settings, vm = vm)
                     DefaultSummarizerModelSetting(settings = settings, vm = vm)
                     DefaultSubagentModelSetting(settings = settings, vm = vm)
@@ -164,33 +161,6 @@ private fun DefaultTtsVoiceSetting(
                     }
                 )
             }
-        }
-    )
-}
-
-@Composable
-private fun DefaultTtsAutoplaySetting(
-    settings: Settings,
-    vm: SettingVM
-) {
-    ModelFeatureCard(
-        title = { Text("TTS Autoplay", maxLines = 1) },
-        description = { Text("Read assistant replies automatically") },
-        icon = { Icon(Icons.AutoMirrored.Rounded.VolumeUp, null) },
-        actions = {
-            Select(
-                options = TtsAutoplayMode.entries.toList(),
-                selectedOption = settings.ttsAutoplayMode,
-                onOptionSelected = { vm.updateSettings(settings.copy(ttsAutoplayMode = it)) },
-                optionToString = { mode ->
-                    when (mode) {
-                        TtsAutoplayMode.OFF -> "Off"
-                        TtsAutoplayMode.AFTER_GENERATION -> "After generation"
-                        TtsAutoplayMode.WHILE_GENERATING -> "While generating"
-                    }
-                },
-                modifier = Modifier.wrapContentWidth(),
-            )
         }
     )
 }

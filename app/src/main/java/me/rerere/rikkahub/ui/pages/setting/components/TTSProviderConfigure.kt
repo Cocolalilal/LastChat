@@ -48,11 +48,16 @@ fun TTSProviderConfigure(
     setting: TTSProviderSetting,
     modifier: Modifier = Modifier,
     showVoiceFields: Boolean = true,
+    scrollable: Boolean = true,
     onValueChange: (TTSProviderSetting) -> Unit
 ) {
     Column(
         verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = modifier.verticalScroll(rememberScrollState())
+        modifier = if (scrollable) {
+            modifier.verticalScroll(rememberScrollState())
+        } else {
+            modifier
+        }
     ) {
         // Name
         FormItem(
@@ -478,10 +483,15 @@ private fun SystemTTSConfiguration(
     val enginePackageName = setting.enginePackageName
     val localVoices by produceState(
         initialValue = emptyList<LocalTtsVoice>(),
+        showVoiceFields,
         enginePackageName,
         context,
     ) {
-        value = discoverLocalTtsVoices(context, enginePackageName)
+        value = if (showVoiceFields) {
+            discoverLocalTtsVoices(context, enginePackageName)
+        } else {
+            emptyList()
+        }
     }
 
     if (!enginePackageName.isNullOrBlank()) {

@@ -207,6 +207,7 @@ private fun TtsProviderConfigTab(
                     setting = provider,
                     modifier = Modifier.padding(16.dp),
                     showVoiceFields = false,
+                    scrollable = false,
                     onValueChange = onUpdateProvider,
                 )
             }

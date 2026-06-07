@@ -37,7 +37,12 @@ data class LinuxEnvironmentStatus(
     val runnerAbi: String,
     val rootfsPath: String,
     val runnerPath: String,
+    val userlandRunnerPath: String? = null,
+    val loaderPath: String,
+    val loader32Path: String? = null,
     val missing: List<String> = emptyList(),
+    val verified: Boolean = false,
+    val healthError: String? = null,
 )
 
 data class LinuxInstallResult(
@@ -52,10 +57,20 @@ class LinuxEnvironmentManager(private val context: Context) {
     private val downloadsDir: File = File(baseDir, "downloads")
     private val logsDir: File = File(baseDir, "logs")
     private val binDir: File = File(baseDir, "bin")
+    private val prootTmpDir: File = File(baseDir, "tmp/proot")
+    private val prootLinkDir: File = File(baseDir, "rootfs/.proot.meta")
     private val assetRunnerFile: File = File(binDir, "proot")
     private val nativeRunnerFile: File = File(context.applicationInfo.nativeLibraryDir, "libproot.so")
+    private val nativeUserlandRunnerFile: File = File(context.applicationInfo.nativeLibraryDir, "libproot-userland.so")
+    private val nativeLoaderFile: File = File(context.applicationInfo.nativeLibraryDir, "libproot-loader.so")
+    private val nativeLoader32File: File = File(context.applicationInfo.nativeLibraryDir, "libproot-loader32.so")
     val runnerFile: File
-        get() = if (nativeRunnerFile.isUsableExecutable()) nativeRunnerFile else assetRunnerFile
+        get() = when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && nativeUserlandRunnerFile.isUsableExecutable() -> nativeUserlandRunnerFile
+            nativeRunnerFile.isUsableExecutable() -> nativeRunnerFile
+            nativeUserlandRunnerFile.isUsableExecutable() -> nativeUserlandRunnerFile
+            else -> assetRunnerFile
+        }
 
     suspend fun installOrRepair(fullToolchain: Boolean): LinuxInstallResult = withContext(Dispatchers.IO) {
         runCatching {
@@ -76,11 +91,15 @@ class LinuxEnvironmentManager(private val context: Context) {
             }
             configureRootfs()
             bootstrapPackages(fullToolchain)
-            val status = getStatus()
+            val status = getVerifiedStatus()
             LinuxInstallResult(
                 success = status.ready,
                 status = status,
-                message = if (status.ready) "Linux environment is ready." else "Linux setup did not reach ready state.",
+                message = if (status.ready) {
+                    "Linux environment is ready."
+                } else {
+                    status.healthError ?: "Linux setup did not reach ready state."
+                },
             )
         }.getOrElse { error ->
             val status = getStatus()
@@ -95,18 +114,49 @@ class LinuxEnvironmentManager(private val context: Context) {
     fun getStatus(): LinuxEnvironmentStatus {
         val rootfsInstalled = isRootfsInstalled()
         val runnerInstalled = ensureRunnerInstalled()
+        val loaderInstalled = nativeLoaderFile.isUsableExecutable()
         val missing = buildList {
             if (!rootfsInstalled) add("Alpine rootfs")
             if (!runnerInstalled) add("PRoot runner asset")
+            if (!loaderInstalled) add("PRoot loader")
         }
         return LinuxEnvironmentStatus(
-            ready = rootfsInstalled && runnerInstalled,
+            ready = rootfsInstalled && runnerInstalled && loaderInstalled,
             rootfsInstalled = rootfsInstalled,
             runnerInstalled = runnerInstalled,
             runnerAbi = currentAbi(),
             rootfsPath = rootfsDir.absolutePath,
             runnerPath = runnerFile.absolutePath,
+            userlandRunnerPath = nativeUserlandRunnerFile.takeIf { file -> file.isUsableExecutable() }?.absolutePath,
+            loaderPath = nativeLoaderFile.absolutePath,
+            loader32Path = nativeLoader32File.takeIf { file -> file.isUsableExecutable() }?.absolutePath,
             missing = missing,
+        )
+    }
+
+    suspend fun getVerifiedStatus(): LinuxEnvironmentStatus = withContext(Dispatchers.IO) {
+        val status = getStatus()
+        if (!status.ready) {
+            return@withContext status
+        }
+        val result = runCatching {
+            runRootfsCommand("printf linux-ready", timeoutSeconds = 15)
+        }.getOrElse { error ->
+            return@withContext status.copy(
+                ready = false,
+                verified = true,
+                healthError = error.message ?: "Linux runner health check failed",
+            )
+        }
+        val healthy = result.exitCode == 0 && !result.timedOut && result.stdout.contains("linux-ready")
+        status.copy(
+            ready = healthy,
+            verified = true,
+            healthError = if (healthy) {
+                null
+            } else {
+                result.error ?: result.stderr.ifBlank { "Linux runner health check failed" }
+            },
         )
     }
 
@@ -200,6 +250,12 @@ class LinuxEnvironmentManager(private val context: Context) {
 
     private fun configureRootfs() {
         File(rootfsDir, "etc/apk").mkdirs()
+        File(rootfsDir, "tmp").apply {
+            mkdirs()
+            setReadable(true, false)
+            setWritable(true, false)
+            setExecutable(true, false)
+        }
         File(rootfsDir, "etc/apk/repositories").writeText(
             """
             https://dl-cdn.alpinelinux.org/alpine/latest-stable/main
@@ -278,27 +334,65 @@ class LinuxEnvironmentManager(private val context: Context) {
     }
 
     internal fun buildRootfsProcess(command: String, workspaceDir: File): ProcessBuilder {
-        workspaceDir.mkdirs()
-        return ProcessBuilder(
+        prepareRuntimeDirectories(workspaceDir)
+        val processBuilder = ProcessBuilder(
             runnerFile.absolutePath,
             "-0",
+            "--kill-on-exit",
+            "--link2symlink",
+            "-p",
+            "-L",
+            "--tcsetsf2tcsets",
+            "--mute-setxid",
             "-R",
             rootfsDir.absolutePath,
             "-b",
             "${workspaceDir.absolutePath}:/workspace",
             "-b",
+            "/dev:/dev",
+            "-b",
             "/proc:/proc",
             "-b",
-            "/dev:/dev",
+            "/sys:/sys",
+            "-b",
+            "/system:/system",
+            "-b",
+            "/vendor:/vendor",
+            "-b",
+            "/storage:/storage",
+            "-b",
+            "${prootTmpDir.absolutePath}:/tmp",
             "-w",
             "/workspace",
             "/bin/sh",
             "-lc",
-            command,
+            "export TMPDIR=/tmp HOME=/workspace; $command",
         ).redirectErrorStream(false)
+        processBuilder.directory(context.filesDir)
+        processBuilder.environment()["PROOT_TMP_DIR"] = prootTmpDir.absolutePath
+        processBuilder.environment()["PROOT_L2S_DIR"] = prootLinkDir.absolutePath
+        processBuilder.environment()["PROOT_LOADER"] = nativeLoaderFile.absolutePath
+        if (nativeLoader32File.isUsableExecutable()) {
+            processBuilder.environment()["PROOT_LOADER_32"] = nativeLoader32File.absolutePath
+        }
+        processBuilder.environment()["PROOT_NO_SECCOMP"] = "1"
+        processBuilder.environment()["TMPDIR"] = prootTmpDir.absolutePath
+        return processBuilder
+    }
+
+    private fun prepareRuntimeDirectories(workspaceDir: File) {
+        listOf(baseDir, workspaceDir, prootTmpDir, prootLinkDir, File(rootfsDir, "tmp")).forEach { directory ->
+            directory.mkdirs()
+            directory.setReadable(true, false)
+            directory.setWritable(true, false)
+            directory.setExecutable(true, false)
+        }
     }
 
     private fun ensureRunnerInstalled(): Boolean {
+        if (runnerFile.isUsableExecutable()) {
+            return true
+        }
         if (nativeRunnerFile.isUsableExecutable()) {
             return true
         }
@@ -445,7 +539,7 @@ class LinuxCommandRunner(
             )
         }
 
-        val status = environmentManager.getStatus()
+        val status = environmentManager.getVerifiedStatus()
         if (!status.ready) {
             return@withContext LinuxCommandResult(
                 ready = false,
@@ -453,12 +547,23 @@ class LinuxCommandRunner(
                 stdout = "",
                 stderr = "",
                 timedOut = false,
-                error = "Linux environment is not ready. Missing: ${status.missing.joinToString()}",
+                error = status.healthError ?: "Linux environment is not ready. Missing: ${status.missing.joinToString()}",
             )
         }
 
         workspaceDir.mkdirs()
-        val process = environmentManager.buildRootfsProcess(trimmedCommand, workspaceDir).start()
+        val process = runCatching {
+            environmentManager.buildRootfsProcess(trimmedCommand, workspaceDir).start()
+        }.getOrElse { error ->
+            return@withContext LinuxCommandResult(
+                ready = false,
+                exitCode = null,
+                stdout = "",
+                stderr = "",
+                timedOut = false,
+                error = error.message ?: "Failed to start Linux runner",
+            )
+        }
 
         val stdoutThread = StreamCollector(process.inputStream)
         val stderrThread = StreamCollector(process.errorStream)
@@ -472,11 +577,12 @@ class LinuxCommandRunner(
         stdoutThread.join(1000L)
         stderrThread.join(1000L)
 
+        val stderr = stderrThread.text.truncateLinuxOutput()
         LinuxCommandResult(
-            ready = true,
+            ready = !stderr.isProotStartupFailure(),
             exitCode = if (finished) process.exitValue() else null,
             stdout = stdoutThread.text.truncateLinuxOutput(),
-            stderr = stderrThread.text.truncateLinuxOutput(),
+            stderr = stderr,
             timedOut = !finished,
             error = if (finished) null else "Command timed out after ${timeoutSeconds}s",
         )
@@ -503,12 +609,23 @@ internal fun LinuxEnvironmentStatus.toJsonElement(): JsonElement {
         put("runner_abi", runnerAbi)
         put("rootfs_path", rootfsPath)
         put("runner_path", runnerPath)
+        userlandRunnerPath?.let { path ->
+            put("userland_runner_path", path)
+        }
+        put("loader_path", loaderPath)
+        loader32Path?.let { path ->
+            put("loader32_path", path)
+        }
         put("missing", JsonArray(missing.map(::JsonPrimitive)))
         if (!runnerInstalled) {
             put("runner_asset_hint", "Bundle assets/linux/proot/$runnerAbi/proot for this ABI.")
         }
         if (!rootfsInstalled) {
             put("rootfs_hint", "Install Alpine minirootfs into linux_env/rootfs before running commands.")
+        }
+        put("verified", verified)
+        healthError?.let { error ->
+            put("health_error", error)
         }
     }
 }
@@ -519,6 +636,13 @@ private fun String.truncateLinuxOutput(): String {
     } else {
         this
     }
+}
+
+private fun String.isProotStartupFailure(): Boolean {
+    return contains("can't create glue rootfs", ignoreCase = true) ||
+        contains("PROOT_TMP_DIR", ignoreCase = true) ||
+        contains("execve(\"/bin/sh\")", ignoreCase = true) ||
+        contains("Unable to create temp directory", ignoreCase = true)
 }
 
 private fun File.existsWithoutFollowingLinks(): Boolean {
