@@ -7,9 +7,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -21,9 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CloudDownload
-import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DragIndicator
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.ViewModule
 import androidx.compose.material3.Card
@@ -33,6 +36,8 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingToolbarDefaults.ScreenOffset
+import androidx.compose.material3.FloatingToolbarDefaults.floatingToolbarVerticalNestedScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -55,7 +60,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -73,10 +83,13 @@ import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.OutlinedNumberInput
+import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.data.ai.models.ttsProviderIconUri
 import me.rerere.rikkahub.ui.context.LocalTTSState
+import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.pages.setting.components.TTSProviderConfigure
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
@@ -84,6 +97,7 @@ import me.rerere.tts.provider.TTSProviderSetting
 import me.rerere.tts.provider.TTSVoice
 import me.rerere.tts.provider.discoverLocalTtsVoices
 import me.rerere.tts.provider.withVoiceApplied
+import me.rerere.rikkahub.utils.plus
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.koin.androidx.compose.koinViewModel
@@ -124,40 +138,76 @@ fun SettingTTSProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
             )
         },
         bottomBar = {
-            Surface(
+            val haptics = rememberPremiumHaptics()
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
-                shape = AppShapes.ButtonPill,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                tonalElevation = 6.dp,
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 16.dp)
             ) {
-                Row(
-                    modifier = Modifier.padding(4.dp),
-                    horizontalArrangement = Arrangement.Center,
+                Surface(
+                    modifier = Modifier.align(Alignment.Center),
+                    shape = RoundedCornerShape(28.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    tonalElevation = 6.dp,
+                    shadowElevation = 8.dp,
                 ) {
-                    DetailTabButton(
-                        selected = pager.currentPage == 0,
-                        icon = { Icon(Icons.Rounded.Settings, null) },
-                        onClick = { scope.launch { pager.animateScrollToPage(0) } },
-                    )
-                    DetailTabButton(
-                        selected = pager.currentPage == 1,
-                        icon = { Icon(Icons.Rounded.ViewModule, null) },
-                        onClick = { scope.launch { pager.animateScrollToPage(1) } },
-                    )
+                    Row(
+                        modifier = Modifier.padding(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        DetailTabButton(
+                            selected = pager.currentPage == 0,
+                            icon = { tint ->
+                                Icon(
+                                    Icons.Rounded.Settings,
+                                    contentDescription = "Configuration",
+                                    tint = tint,
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            },
+                            onClick = {
+                                haptics.perform(HapticPattern.Tick)
+                                scope.launch { pager.animateScrollToPage(0) }
+                            },
+                        )
+                        DetailTabButton(
+                            selected = pager.currentPage == 1,
+                            icon = { tint ->
+                                Icon(
+                                    Icons.Rounded.ViewModule,
+                                    contentDescription = "Voices",
+                                    tint = tint,
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            },
+                            onClick = {
+                                haptics.perform(HapticPattern.Tick)
+                                scope.launch { pager.animateScrollToPage(1) }
+                            },
+                        )
+                    }
                 }
             }
         }
-    ) { padding ->
+    ) { contentPadding ->
         HorizontalPager(
             state = pager,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(top = padding.calculateTopPadding()),
+            modifier = Modifier
+                .fillMaxSize()
+                .consumeWindowInsets(contentPadding),
         ) { page ->
             when (page) {
-                0 -> TtsProviderConfigTab(provider = provider, onUpdateProvider = ::updateProvider)
-                1 -> TtsVoiceTab(provider = provider, onUpdateProvider = ::updateProvider)
+                0 -> TtsProviderConfigTab(
+                    provider = provider,
+                    onUpdateProvider = ::updateProvider,
+                    contentPadding = contentPadding,
+                )
+                1 -> TtsVoiceTab(
+                    provider = provider,
+                    onUpdateProvider = ::updateProvider,
+                    contentPadding = contentPadding,
+                )
             }
         }
     }
@@ -166,18 +216,29 @@ fun SettingTTSProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
 @Composable
 private fun DetailTabButton(
     selected: Boolean,
-    icon: @Composable () -> Unit,
+    icon: @Composable (Color) -> Unit,
     onClick: () -> Unit,
 ) {
     Box(
         modifier = Modifier
             .clip(CircleShape)
-            .background(if (selected) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent)
-            .clickable(onClick = onClick)
+            .then(
+                if (selected) {
+                    Modifier.background(MaterialTheme.colorScheme.primaryContainer)
+                } else {
+                    Modifier.clickable(onClick = onClick)
+                }
+            )
             .padding(12.dp),
         contentAlignment = Alignment.Center,
     ) {
-        icon()
+        icon(
+            if (selected) {
+                MaterialTheme.colorScheme.onPrimaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            }
+        )
     }
 }
 
@@ -185,12 +246,13 @@ private fun DetailTabButton(
 private fun TtsProviderConfigTab(
     provider: TTSProviderSetting,
     onUpdateProvider: (TTSProviderSetting) -> Unit,
+    contentPadding: PaddingValues,
 ) {
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .imePadding(),
-        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp),
+        contentPadding = contentPadding + PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 80.dp),
     ) {
         item {
             Card(
@@ -219,6 +281,7 @@ private fun TtsProviderConfigTab(
 private fun TtsVoiceTab(
     provider: TTSProviderSetting,
     onUpdateProvider: (TTSProviderSetting) -> Unit,
+    contentPadding: PaddingValues,
 ) {
     val lazyListState = rememberLazyListState()
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
@@ -227,21 +290,55 @@ private fun TtsVoiceTab(
     var editingVoice by remember(provider.id) { mutableStateOf<TTSVoice?>(null) }
     var showAddSheet by remember(provider.id) { mutableStateOf(false) }
     val tts = LocalTTSState.current
+    val density = LocalDensity.current
+    val haptics = rememberPremiumHaptics()
+    var expanded by remember { mutableStateOf(true) }
+    var draggingIndex by remember { mutableStateOf(-1) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    var isUnlocked by remember { mutableStateOf(false) }
+    var neighborsUnlocked by remember { mutableStateOf(false) }
+
+    if (dragOffset == 0f && neighborsUnlocked) {
+        neighborsUnlocked = false
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
             state = lazyListState,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 120.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .floatingToolbarVerticalNestedScroll(
+                    expanded = expanded,
+                    onExpand = { expanded = true },
+                    onCollapse = { expanded = false },
+                ),
+            contentPadding = contentPadding + PaddingValues(horizontal = 16.dp, vertical = 8.dp) + PaddingValues(bottom = 60.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             if (provider.voices.isEmpty()) {
                 item {
-                    Text(
-                        text = "No voices yet. Add or fetch voices to use this provider.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(16.dp),
-                    )
+                    Column(
+                        modifier = Modifier
+                            .fillParentMaxHeight(0.8f)
+                            .fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Text(
+                            text = "No voices yet",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Add or fetch voices to use this provider.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 32.dp),
+                        )
+                    }
                 }
             }
             itemsIndexed(provider.voices, key = { _, voice -> voice.id }) { index, voice ->
@@ -251,12 +348,45 @@ private fun TtsVoiceTab(
                     index == provider.voices.lastIndex -> ItemPosition.LAST
                     else -> ItemPosition.MIDDLE
                 }
-                ReorderableItem(reorderableState, key = voice.id) {
+
+                val thresholdPx = with(density) { 35.dp.toPx() }
+                if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
+                    neighborsUnlocked = true
+                }
+
+                val shouldNeighborFollow = draggingIndex >= 0 &&
+                    draggingIndex != index &&
+                    !isUnlocked &&
+                    !neighborsUnlocked
+
+                val neighborOffset = if (shouldNeighborFollow) {
+                    when (kotlin.math.abs(index - draggingIndex)) {
+                        1 -> dragOffset * 0.35f
+                        2 -> dragOffset * 0.12f
+                        else -> 0f
+                    }
+                } else {
+                    0f
+                }
+
+                ReorderableItem(reorderableState, key = voice.id) { isDragging ->
                     TtsVoiceRow(
                         voice = voice,
                         position = position,
                         onEdit = { editingVoice = voice },
                         onDelete = { onUpdateProvider(provider.delVoice(voice)) },
+                        neighborOffset = neighborOffset,
+                        onDragProgress = { offset, unlocked ->
+                            draggingIndex = index
+                            dragOffset = offset
+                            isUnlocked = unlocked
+                        },
+                        onDragEnd = {
+                            if (draggingIndex == index) {
+                                draggingIndex = -1
+                                dragOffset = 0f
+                            }
+                        },
                         onTest = {
                             tts.speak(
                                 text = "Hello, this is what this voice sounds like.",
@@ -264,22 +394,55 @@ private fun TtsVoiceTab(
                             )
                         },
                         dragHandle = {
-                            Icon(
-                                Icons.Rounded.DragIndicator,
-                                null,
-                                modifier = Modifier.longPressDraggableHandle(),
-                            )
-                        }
+                            IconButton(
+                                onClick = {},
+                                modifier = Modifier.longPressDraggableHandle(
+                                    onDragStarted = {
+                                        haptics.perform(HapticPattern.Pop)
+                                    },
+                                    onDragStopped = {
+                                        haptics.perform(HapticPattern.Thud)
+                                    }
+                                ),
+                            ) {
+                                Icon(Icons.Rounded.DragIndicator, null)
+                            }
+                        },
+                        modifier = Modifier.graphicsLayer {
+                            if (isDragging) {
+                                scaleX = 0.95f
+                                scaleY = 0.95f
+                            } else {
+                                scaleX = 1f
+                                scaleY = 1f
+                            }
+                        },
                     )
                 }
             }
         }
 
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(120.dp)
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            MaterialTheme.colorScheme.background,
+                        )
+                    )
+                )
+        )
+
         FloatingActionButton(
             onClick = { showAddSheet = true },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(16.dp),
+                .padding(16.dp)
+                .offset(y = -ScreenOffset),
             shape = AppShapes.CardLarge,
         ) {
             Icon(Icons.Rounded.Add, null)
@@ -316,37 +479,44 @@ private fun TtsVoiceRow(
     position: ItemPosition,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    neighborOffset: Float,
+    onDragProgress: (Float, Boolean) -> Unit,
+    onDragEnd: () -> Unit,
     onTest: () -> Unit,
     dragHandle: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    val shape = when (position) {
-        ItemPosition.FIRST -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
-        ItemPosition.LAST -> RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
-        ItemPosition.MIDDLE -> RoundedCornerShape(10.dp)
-        ItemPosition.ONLY -> RoundedCornerShape(24.dp)
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest)
-            .clickable(onClick = onEdit)
-            .padding(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    PhysicsSwipeToDelete(
+        position = position,
+        deleteEnabled = true,
+        neighborOffset = neighborOffset,
+        onDragProgress = onDragProgress,
+        onDragEnd = onDragEnd,
+        onDelete = onDelete,
+        modifier = modifier.fillMaxWidth(),
     ) {
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(voice.name.ifBlank { voice.providerVoiceId.ifBlank { "Voice" } }, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                val locale = voice.locale
-                if (!locale.isNullOrBlank()) Tag(type = TagType.INFO) { Text(locale) }
-                Tag { Text("x${"%.2f".format(voice.speed)}") }
-                Tag { Text("p${"%.2f".format(voice.pitch)}") }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(0.dp))
+                .background(if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh)
+                .clickable(onClick = onEdit)
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(voice.name.ifBlank { voice.providerVoiceId.ifBlank { "Voice" } }, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    val locale = voice.locale
+                    if (!locale.isNullOrBlank()) Tag(type = TagType.INFO) { Text(locale) }
+                    Tag { Text("x${"%.2f".format(voice.speed)}") }
+                    Tag { Text("p${"%.2f".format(voice.pitch)}") }
+                }
             }
+            IconButton(onClick = onTest) { Icon(Icons.AutoMirrored.Rounded.VolumeUp, null) }
+            dragHandle()
         }
-        IconButton(onClick = onTest) { Icon(Icons.AutoMirrored.Rounded.VolumeUp, null) }
-        IconButton(onClick = onDelete) { Icon(Icons.Rounded.Delete, null) }
-        dragHandle()
     }
 }
 

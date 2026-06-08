@@ -65,12 +65,7 @@ class LinuxEnvironmentManager(private val context: Context) {
     private val nativeLoaderFile: File = File(context.applicationInfo.nativeLibraryDir, "libproot-loader.so")
     private val nativeLoader32File: File = File(context.applicationInfo.nativeLibraryDir, "libproot-loader32.so")
     val runnerFile: File
-        get() = when {
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && nativeUserlandRunnerFile.isUsableExecutable() -> nativeUserlandRunnerFile
-            nativeRunnerFile.isUsableExecutable() -> nativeRunnerFile
-            nativeUserlandRunnerFile.isUsableExecutable() -> nativeUserlandRunnerFile
-            else -> assetRunnerFile
-        }
+        get() = executableRunnerFiles().firstOrNull() ?: assetRunnerFile
 
     suspend fun installOrRepair(fullToolchain: Boolean): LinuxInstallResult = withContext(Dispatchers.IO) {
         runCatching {
@@ -151,6 +146,7 @@ class LinuxEnvironmentManager(private val context: Context) {
         val healthy = result.exitCode == 0 && !result.timedOut && result.stdout.contains("linux-ready")
         status.copy(
             ready = healthy,
+            runnerPath = if (healthy) result.runnerPath ?: status.runnerPath else status.runnerPath,
             verified = true,
             healthError = if (healthy) {
                 null
@@ -312,7 +308,80 @@ class LinuxEnvironmentManager(private val context: Context) {
 
     internal fun runRootfsCommand(command: String, timeoutSeconds: Long): LinuxCommandResult {
         val workspace = File(baseDir, "setup-workspace").apply { mkdirs() }
-        val process = buildRootfsProcess(command = command, workspaceDir = workspace).start()
+        return runRootfsCommand(command = command, workspaceDir = workspace, timeoutSeconds = timeoutSeconds)
+    }
+
+    internal fun runRootfsCommand(command: String, workspaceDir: File, timeoutSeconds: Long): LinuxCommandResult {
+        val runners = executableRunnerFiles()
+        if (runners.isEmpty()) {
+            return LinuxCommandResult(
+                ready = false,
+                exitCode = null,
+                stdout = "",
+                stderr = "",
+                timedOut = false,
+                error = "PRoot runner is missing or not executable for ${currentAbi()}",
+            )
+        }
+
+        val startupFailures = mutableListOf<String>()
+        runners.forEachIndexed { index, runner ->
+            val result = runRootfsCommandWithRunner(
+                command = command,
+                workspaceDir = workspaceDir,
+                timeoutSeconds = timeoutSeconds,
+                runner = runner,
+            )
+            if (result.isRetryableProotStartupFailure() && index < runners.lastIndex) {
+                startupFailures += result.prootFailureSummary(runner)
+                return@forEachIndexed
+            }
+            return if (startupFailures.isEmpty()) {
+                result
+            } else {
+                result.copy(
+                    error = if (result.isRetryableProotStartupFailure()) {
+                        buildString {
+                            append("PRoot failed to start with all packaged runners.")
+                            append(" Tried: ")
+                            append((startupFailures + result.prootFailureSummary(runner)).joinToString(" | "))
+                        }
+                    } else {
+                        result.error
+                    },
+                )
+            }
+        }
+
+        return LinuxCommandResult(
+            ready = false,
+            exitCode = null,
+            stdout = "",
+            stderr = "",
+            timedOut = false,
+            error = "PRoot runner is missing or not executable for ${currentAbi()}",
+        )
+    }
+
+    private fun runRootfsCommandWithRunner(
+        command: String,
+        workspaceDir: File,
+        timeoutSeconds: Long,
+        runner: File,
+    ): LinuxCommandResult {
+        val process = runCatching {
+            buildRootfsProcess(command = command, workspaceDir = workspaceDir, runner = runner).start()
+        }.getOrElse { error ->
+            return LinuxCommandResult(
+                ready = false,
+                exitCode = null,
+                stdout = "",
+                stderr = "",
+                timedOut = false,
+                error = error.message ?: "Failed to start Linux runner",
+                runnerPath = runner.absolutePath,
+            )
+        }
         val stdoutThread = StreamCollector(process.inputStream)
         val stderrThread = StreamCollector(process.errorStream)
         stdoutThread.start()
@@ -323,20 +392,28 @@ class LinuxEnvironmentManager(private val context: Context) {
         }
         stdoutThread.join(1000L)
         stderrThread.join(1000L)
+        val stderr = stderrThread.text.truncateLinuxOutput()
         return LinuxCommandResult(
             ready = true,
             exitCode = if (finished) process.exitValue() else null,
             stdout = stdoutThread.text.truncateLinuxOutput(),
-            stderr = stderrThread.text.truncateLinuxOutput(),
+            stderr = stderr,
             timedOut = !finished,
             error = if (finished) null else "Command timed out after ${timeoutSeconds}s",
-        )
+            runnerPath = runner.absolutePath,
+        ).let { result ->
+            result.copy(ready = !result.isRetryableProotStartupFailure())
+        }
     }
 
     internal fun buildRootfsProcess(command: String, workspaceDir: File): ProcessBuilder {
+        return buildRootfsProcess(command = command, workspaceDir = workspaceDir, runner = runnerFile)
+    }
+
+    private fun buildRootfsProcess(command: String, workspaceDir: File, runner: File): ProcessBuilder {
         prepareRuntimeDirectories(workspaceDir)
         val processBuilder = ProcessBuilder(
-            runnerFile.absolutePath,
+            runner.absolutePath,
             "-0",
             "--kill-on-exit",
             "--link2symlink",
@@ -390,13 +467,7 @@ class LinuxEnvironmentManager(private val context: Context) {
     }
 
     private fun ensureRunnerInstalled(): Boolean {
-        if (runnerFile.isUsableExecutable()) {
-            return true
-        }
-        if (nativeRunnerFile.isUsableExecutable()) {
-            return true
-        }
-        if (assetRunnerFile.isUsableExecutable()) {
+        if (executableRunnerFiles().isNotEmpty()) {
             return true
         }
 
@@ -411,6 +482,17 @@ class LinuxEnvironmentManager(private val context: Context) {
             assetRunnerFile.setExecutable(true, true)
             assetRunnerFile.isUsableExecutable()
         }.getOrDefault(false)
+    }
+
+    private fun executableRunnerFiles(): List<File> {
+        val nativeRunners = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            listOf(nativeUserlandRunnerFile, nativeRunnerFile)
+        } else {
+            listOf(nativeRunnerFile, nativeUserlandRunnerFile)
+        }
+        return (nativeRunners + assetRunnerFile)
+            .distinctBy { file -> file.absolutePath }
+            .filter { file -> file.isUsableExecutable() }
     }
 
     private fun currentAbi(): String {
@@ -506,6 +588,7 @@ data class LinuxCommandResult(
     val stderr: String,
     val timedOut: Boolean,
     val error: String?,
+    val runnerPath: String? = null,
 )
 
 class LinuxCommandRunner(
@@ -552,40 +635,7 @@ class LinuxCommandRunner(
         }
 
         workspaceDir.mkdirs()
-        val process = runCatching {
-            environmentManager.buildRootfsProcess(trimmedCommand, workspaceDir).start()
-        }.getOrElse { error ->
-            return@withContext LinuxCommandResult(
-                ready = false,
-                exitCode = null,
-                stdout = "",
-                stderr = "",
-                timedOut = false,
-                error = error.message ?: "Failed to start Linux runner",
-            )
-        }
-
-        val stdoutThread = StreamCollector(process.inputStream)
-        val stderrThread = StreamCollector(process.errorStream)
-        stdoutThread.start()
-        stderrThread.start()
-
-        val finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS)
-        if (!finished) {
-            process.destroyForcibly()
-        }
-        stdoutThread.join(1000L)
-        stderrThread.join(1000L)
-
-        val stderr = stderrThread.text.truncateLinuxOutput()
-        LinuxCommandResult(
-            ready = !stderr.isProotStartupFailure(),
-            exitCode = if (finished) process.exitValue() else null,
-            stdout = stdoutThread.text.truncateLinuxOutput(),
-            stderr = stderr,
-            timedOut = !finished,
-            error = if (finished) null else "Command timed out after ${timeoutSeconds}s",
-        )
+        environmentManager.runRootfsCommand(trimmedCommand, workspaceDir, timeoutSeconds)
     }
 
 }
@@ -638,11 +688,29 @@ private fun String.truncateLinuxOutput(): String {
     }
 }
 
-private fun String.isProotStartupFailure(): Boolean {
+internal fun String.isProotStartupFailure(): Boolean {
+    val lower = lowercase()
     return contains("can't create glue rootfs", ignoreCase = true) ||
         contains("PROOT_TMP_DIR", ignoreCase = true) ||
         contains("execve(\"/bin/sh\")", ignoreCase = true) ||
-        contains("Unable to create temp directory", ignoreCase = true)
+        contains("Unable to create temp directory", ignoreCase = true) ||
+        (lower.contains("proot") && lower.contains("function not implemented")) ||
+        (lower.contains("proot") && lower.contains("ptrace(peekdata)"))
+}
+
+private fun LinuxCommandResult.isRetryableProotStartupFailure(): Boolean {
+    if (timedOut) {
+        return false
+    }
+    if (exitCode == 0) {
+        return false
+    }
+    return listOf(stderr, error.orEmpty()).joinToString("\n").isProotStartupFailure()
+}
+
+private fun LinuxCommandResult.prootFailureSummary(runner: File): String {
+    val detail = error ?: stderr.lineSequence().firstOrNull { line -> line.isNotBlank() } ?: "startup failed"
+    return "${runner.name}: ${detail.truncateLinuxOutput()}"
 }
 
 private fun File.existsWithoutFollowingLinks(): Boolean {
