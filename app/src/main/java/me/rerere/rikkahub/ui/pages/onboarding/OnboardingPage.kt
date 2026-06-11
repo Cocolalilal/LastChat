@@ -1607,6 +1607,7 @@ private fun CustomProviderKeyPage(
                     onProviderChange(newProvider)
                 },
                 label = { Text("Base URL") },
+                shape = AppShapes.InputField,
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(modifier = Modifier.height(12.dp))
