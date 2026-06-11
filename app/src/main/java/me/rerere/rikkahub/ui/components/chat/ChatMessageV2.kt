@@ -1325,7 +1325,7 @@ private fun AssistantMessageTurn(
                     onClick = handleBubbleClick
                 ) {
                     MarkdownBlock(
-                        content = part.text
+                        content = part.text.trimStart()
                             .replacePersonaPlaceholders(
                                 assistant = assistant,
                                 userNickname = settings.displaySetting.userNickname,
@@ -1424,7 +1424,7 @@ private fun AssistantMessageTurn(
 
             allTextBubbles.forEachIndexed { index, (_, part) ->
                 MarkdownBlock(
-                    content = part.text
+                    content = part.text.trimStart()
                         .replacePersonaPlaceholders(
                             assistant = assistant,
                             userNickname = settings.displaySetting.userNickname,

@@ -47,11 +47,12 @@ data class UIMessage(
                         if (existingTextPart != null) {
                             acc.map { part ->
                                 if (part is UIMessagePart.Text) {
-                                    UIMessagePart.Text(existingTextPart.text + deltaPart.text)
+                                    val combined = existingTextPart.text + deltaPart.text
+                                    UIMessagePart.Text(if (existingTextPart.text.isEmpty()) combined.trimStart() else combined)
                                 } else part
                             }
                         } else {
-                            acc + deltaPart
+                            acc + deltaPart.copy(text = deltaPart.text.trimStart())
                         }
                     }
 
