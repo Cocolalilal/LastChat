@@ -159,6 +159,12 @@ internal fun hasConversationMessages(conversation: Conversation): Boolean {
     return conversation.messageNodes.isNotEmpty()
 }
 
+internal fun hasConversationPresetMessages(conversation: Conversation, assistant: Assistant): Boolean {
+    if (assistant.presetMessages.isEmpty()) return false
+    val presetIds = assistant.presetMessages.map { it.id }.toSet()
+    return conversation.currentMessages.any { it.id in presetIds }
+}
+
 @Composable
 private fun ChatTopFadeOverlay(
     fadeHeight: Dp,
@@ -406,7 +412,6 @@ private fun speakablePrefixLength(text: String, final: Boolean): Int {
 
 @Composable
 private fun ChatTtsAutoplayEffect(
-    vm: ChatVM,
     settings: Settings,
     assistant: Assistant,
     conversation: Conversation,
@@ -424,43 +429,53 @@ private fun ChatTtsAutoplayEffect(
     }
     var completedMessageId by remember(conversation.id) { mutableStateOf<Uuid?>(null) }
     var streamingMessageId by remember(conversation.id) { mutableStateOf<Uuid?>(null) }
+    var generationBaselineMessageId by remember(conversation.id) { mutableStateOf<Uuid?>(null) }
+    var generationBaselineText by remember(conversation.id) { mutableStateOf("") }
     var spokenLength by remember(conversation.id) { mutableStateOf(0) }
-
-    LaunchedEffect(vm, conversation.id, mode, provider) {
-        vm.generationDoneFlow.collect { completedConversationId ->
-            if (completedConversationId != conversation.id || provider == null) return@collect
-            val latestMessage = latestAssistantSpeechMessage(vm.conversation.value) ?: return@collect
-            val text = latestMessage.toContentText()
-
-            when (mode) {
-                TtsAutoplayMode.OFF -> Unit
-                TtsAutoplayMode.AFTER_GENERATION -> {
-                    if (completedMessageId != latestMessage.id) {
-                        completedMessageId = latestMessage.id
-                        tts.speak(text, flushCalled = true, overrideSetting = provider)
-                    }
-                }
-                TtsAutoplayMode.WHILE_GENERATING -> {
-                    if (streamingMessageId != latestMessage.id) {
-                        streamingMessageId = latestMessage.id
-                        spokenLength = 0
-                    }
-                    val remaining = text.drop(spokenLength)
-                    val length = speakablePrefixLength(remaining, final = true)
-                    val segment = remaining.take(length).trim()
-                    if (segment.isNotBlank()) {
-                        spokenLength += length
-                        tts.speak(segment, flushCalled = false, overrideSetting = provider)
-                    }
-                    completedMessageId = latestMessage.id
-                }
-            }
-        }
-    }
+    var wasGenerating by remember(conversation.id) { mutableStateOf(false) }
 
     LaunchedEffect(conversation.id, conversation.currentMessages, loadingJob, mode, provider) {
-        if (mode != TtsAutoplayMode.WHILE_GENERATING || loadingJob == null || provider == null) return@LaunchedEffect
+        if (mode == TtsAutoplayMode.OFF || provider == null) return@LaunchedEffect
+        if (loadingJob == null) {
+            if (!wasGenerating) return@LaunchedEffect
+            wasGenerating = false
+            val latestMessage = latestAssistantSpeechMessage(conversation) ?: return@LaunchedEffect
+            val text = latestMessage.toContentText()
+            if (latestMessage.id == generationBaselineMessageId && text == generationBaselineText) {
+                return@LaunchedEffect
+            }
+            if (completedMessageId == latestMessage.id && spokenLength >= text.length) {
+                return@LaunchedEffect
+            }
+            if (streamingMessageId != latestMessage.id || spokenLength > text.length) {
+                streamingMessageId = latestMessage.id
+                spokenLength = 0
+            }
+            val remaining = text.drop(spokenLength)
+            val length = speakablePrefixLength(remaining, final = true)
+            val segment = remaining.take(length).trim()
+            if (segment.isNotBlank()) {
+                tts.speak(
+                    text = segment,
+                    flushCalled = spokenLength == 0,
+                    overrideSetting = provider,
+                )
+                spokenLength += length
+            }
+            completedMessageId = latestMessage.id
+            return@LaunchedEffect
+        }
+
+        if (!wasGenerating) {
+            val baselineMessage = latestAssistantSpeechMessage(conversation)
+            generationBaselineMessageId = baselineMessage?.id
+            generationBaselineText = baselineMessage?.toContentText().orEmpty()
+            wasGenerating = true
+        }
         val latestMessage = latestAssistantSpeechMessage(conversation) ?: return@LaunchedEffect
+        if (latestMessage.id == generationBaselineMessageId && latestMessage.toContentText() == generationBaselineText) {
+            return@LaunchedEffect
+        }
         val text = latestMessage.toContentText()
         if (streamingMessageId != latestMessage.id) {
             streamingMessageId = latestMessage.id
@@ -536,7 +551,6 @@ fun ChatPage(
         else -> ChatPersistenceMode.NORMAL
     }
     ChatTtsAutoplayEffect(
-        vm = vm,
         settings = setting,
         assistant = conversationAssistant,
         conversation = conversation,
@@ -653,14 +667,40 @@ fun ChatPage(
             firstVisibleItemScrollOffset = initialChatListScrollPosition?.firstVisibleItemScrollOffset ?: 0,
         )
     }
-    LaunchedEffect(conversation.id, conversation.messageNodes.size) {
-        if (
-            !vm.chatListInitialized &&
-            vm.chatListScrollPosition == null &&
-            conversation.messageNodes.isNotEmpty()
-        ) {
-            chatListState.scrollToItem(conversation.messageNodes.lastIndex)
-            vm.chatListInitialized = true
+    var chatListReady by remember(conversation.id) { mutableStateOf(false) }
+    LaunchedEffect(
+        conversation.id,
+        conversationInitialized,
+        conversation.messageNodes.size,
+        chatListState,
+    ) {
+        if (!conversationInitialized) {
+            return@LaunchedEffect
+        }
+        val savedPosition = vm.chatListScrollPosition
+        when {
+            conversation.messageNodes.isEmpty() -> {
+                chatListReady = true
+            }
+
+            savedPosition != null -> {
+                chatListState.scrollToItem(
+                    index = savedPosition.firstVisibleItemIndex,
+                    scrollOffset = savedPosition.firstVisibleItemScrollOffset,
+                )
+                vm.chatListInitialized = true
+                chatListReady = true
+            }
+
+            !vm.chatListInitialized -> {
+                chatListState.scrollToItem(conversation.messageNodes.lastIndex)
+                vm.chatListInitialized = true
+                chatListReady = true
+            }
+
+            else -> {
+                chatListReady = true
+            }
         }
     }
 
@@ -670,8 +710,8 @@ fun ChatPage(
         }
     }
 
-    LaunchedEffect(conversation.id, conversation.messageNodes.isNotEmpty(), chatListState) {
-        if (conversation.messageNodes.isEmpty()) {
+    LaunchedEffect(conversation.id, conversation.messageNodes.isNotEmpty(), chatListReady, chatListState) {
+        if (conversation.messageNodes.isEmpty() || !chatListReady) {
             return@LaunchedEffect
         }
         snapshotFlow {
@@ -873,6 +913,7 @@ fun ChatPage(
                                     navController = navController,
                                     vm = vm,
                                     chatListState = chatListState,
+                                    chatListReady = chatListReady,
                                     enableWebSearch = enableWebSearch,
                                     currentSearchMode = currentSearchMode,
                                     currentChatModel = currentChatModel,
@@ -937,6 +978,7 @@ fun ChatPage(
                     navController = navController,
                     vm = vm,
                     chatListState = chatListState,
+                    chatListReady = chatListReady,
                     enableWebSearch = enableWebSearch,
                     currentSearchMode = currentSearchMode,
                     currentChatModel = currentChatModel,
@@ -969,6 +1011,7 @@ private fun ChatPageContent(
     navController: NavHostController,
     vm: ChatVM,
     chatListState: LazyListState,
+    chatListReady: Boolean,
     enableWebSearch: Boolean,
     currentSearchMode: me.rerere.rikkahub.data.model.AssistantSearchMode,
     currentChatModel: Model?,
@@ -1330,7 +1373,7 @@ private fun ChatPageContent(
                 )
 
                 val hasConversationContent = hasConversationMessages(conversation)
-                val hasAnyPresetMessages = currentAssistant.presetMessages.isNotEmpty()
+                val hasAnyPresetMessages = hasConversationPresetMessages(conversation, currentAssistant)
                 val effectiveDisplaySetting = setting.getEffectiveDisplaySetting(currentAssistant)
                 val scrollToBottomRevealThresholdPx = with(density) { 72.dp.roundToPx() }
                 val showScrollToBottomButton by remember(

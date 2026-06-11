@@ -1422,7 +1422,6 @@ private fun StorageCategoryUsage.icon(): ImageVector {
         CATEGORY_LOREBOOK_MEDIA -> Icons.Rounded.FolderOpen
         CATEGORY_GENERATED_MEDIA -> Icons.Rounded.Image
         CATEGORY_PYTHON_SANDBOX -> Icons.Rounded.Code
-        CATEGORY_LINUX_ENVIRONMENT -> Icons.Rounded.Code
         CATEGORY_ICONS_AND_FONTS -> Icons.Rounded.AutoAwesome
         CATEGORY_DATABASES -> Icons.Rounded.Memory
         CATEGORY_ICON_CACHE -> Icons.Rounded.Inventory2

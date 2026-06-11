@@ -85,9 +85,7 @@ import me.rerere.rikkahub.ui.context.LocalTTSState
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.pages.setting.components.TTSProviderConfigure
 import me.rerere.rikkahub.utils.plus
-import me.rerere.tts.provider.LocalTtsEngine
 import me.rerere.tts.provider.TTSProviderSetting
-import me.rerere.tts.provider.discoverLocalTtsEngines
 import me.rerere.tts.provider.withDefaultVoices
 import org.koin.androidx.compose.koinViewModel
 import sh.calvin.reorderable.ReorderableItem
@@ -1125,10 +1123,6 @@ internal fun AddTTSProviderButton(
 ) {
     var showBottomSheet by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
-    val context = LocalContext.current
-    val localTtsEngines by produceState(initialValue = emptyList<LocalTtsEngine>(), context) {
-        value = discoverLocalTtsEngines(context)
-    }
 
     val haptics = rememberPremiumHaptics(enabled = enableHaptics)
 
@@ -1161,22 +1155,10 @@ internal fun AddTTSProviderButton(
             val description: String,
             val catalogId: String? = null,
             val isLocal: Boolean = false,
-            val enginePackageName: String? = null,
         )
-
-        val localEnginePresets = localTtsEngines.map { engine ->
-            TTSPreset(
-                type = TTSProviderSetting.SystemTTS::class,
-                name = engine.label,
-                description = stringResource(R.string.setting_tts_preset_local_engine_desc, engine.packageName),
-                isLocal = true,
-                enginePackageName = engine.packageName,
-            )
-        }
 
         val allTtsPresets = listOf(
             TTSPreset(TTSProviderSetting.SystemTTS::class, stringResource(R.string.setting_tts_page_default_system_name), stringResource(R.string.setting_tts_preset_system_desc), isLocal = true),
-            *localEnginePresets.toTypedArray(),
             TTSPreset(TTSProviderSetting.OpenAI::class, "OpenAI", stringResource(R.string.setting_tts_preset_openai_desc), catalogId = "openai"),
             TTSPreset(TTSProviderSetting.Gemini::class, "Gemini", stringResource(R.string.setting_tts_preset_gemini_desc), catalogId = "gemini"),
             TTSPreset(TTSProviderSetting.ElevenLabs::class, "ElevenLabs", stringResource(R.string.setting_tts_preset_elevenlabs_desc), catalogId = "elevenlabs"),
@@ -1190,8 +1172,7 @@ internal fun AddTTSProviderButton(
         } else {
             allTtsPresets.filter { preset ->
                 preset.name.contains(searchQuery, ignoreCase = true) ||
-                    preset.description.contains(searchQuery, ignoreCase = true) ||
-                    preset.enginePackageName?.contains(searchQuery, ignoreCase = true) == true
+                    preset.description.contains(searchQuery, ignoreCase = true)
             }
         }
         
@@ -1277,7 +1258,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                         contentPadding = PaddingValues(bottom = 16.dp)
                     ) {
-                        itemsIndexed(filteredPresets, key = { _, preset -> "${preset.name}:${preset.enginePackageName.orEmpty()}" }) { index, preset ->
+                        itemsIndexed(filteredPresets, key = { _, preset -> preset.name }) { index, preset ->
                             val position = when {
                                 filteredPresets.size == 1 -> ItemPosition.ONLY
                                 index == 0 -> ItemPosition.FIRST
@@ -1296,10 +1277,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 onClick = {
                                     haptics.perform(HapticPattern.Pop)
                                     val newProvider = when (preset.type) {
-                                        TTSProviderSetting.SystemTTS::class -> TTSProviderSetting.SystemTTS(
-                                            name = preset.name,
-                                            enginePackageName = preset.enginePackageName,
-                                        )
+                                        TTSProviderSetting.SystemTTS::class -> TTSProviderSetting.SystemTTS(name = preset.name)
                                         TTSProviderSetting.OpenAI::class -> TTSProviderSetting.OpenAI()
                                         TTSProviderSetting.Gemini::class -> TTSProviderSetting.Gemini()
                                         TTSProviderSetting.ElevenLabs::class -> TTSProviderSetting.ElevenLabs()

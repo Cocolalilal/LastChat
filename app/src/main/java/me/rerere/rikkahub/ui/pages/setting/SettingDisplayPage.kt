@@ -297,19 +297,19 @@ fun SettingDisplayPage(vm: SettingVM = koinViewModel()) {
                         title = "TTS Autoplay",
                         subtitle = "Read assistant replies automatically",
                         trailing = {
-                            Select(
-                                options = TtsAutoplayMode.entries.toList(),
-                                selectedOption = settings.ttsAutoplayMode,
-                                onOptionSelected = {
-                                    vm.updateSettings(settings.copy(ttsAutoplayMode = it))
-                                },
-                                optionToString = { mode ->
-                                    when (mode) {
-                                        TtsAutoplayMode.OFF -> "Off"
-                                        TtsAutoplayMode.AFTER_GENERATION -> "After generation"
-                                        TtsAutoplayMode.WHILE_GENERATING -> "While generating"
-                                    }
-                                },
+                            HapticSwitch(
+                                checked = settings.ttsAutoplayMode != TtsAutoplayMode.OFF,
+                                onCheckedChange = { enabled ->
+                                    vm.updateSettings(
+                                        settings.copy(
+                                            ttsAutoplayMode = if (enabled) {
+                                                TtsAutoplayMode.WHILE_GENERATING
+                                            } else {
+                                                TtsAutoplayMode.OFF
+                                            }
+                                        )
+                                    )
+                                }
                             )
                         }
                     )

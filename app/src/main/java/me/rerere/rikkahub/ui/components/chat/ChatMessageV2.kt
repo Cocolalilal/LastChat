@@ -106,6 +106,7 @@ import me.rerere.rikkahub.utils.getFileNameFromUri
 import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
 import me.rerere.rikkahub.utils.openAttachmentUri
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
+import me.rerere.rikkahub.data.datastore.getEffectiveTTSProvider
 import me.rerere.ai.core.MessageRole as AIMessageRole
 
 /**
@@ -787,6 +788,14 @@ fun ChatMessageTurn(
     val navController = LocalNavController.current
     val colorScheme = MaterialTheme.colorScheme
     val effectiveDisplay = settings.getEffectiveDisplaySetting(assistant)
+    val ttsProviderOverride = remember(
+        settings.ttsProviders,
+        settings.selectedTTSVoiceId,
+        settings.selectedTTSProviderId,
+        assistant?.ttsVoiceId,
+    ) {
+        settings.getEffectiveTTSProvider(assistant)
+    }
     val textStyle = LocalTextStyle.current.copy(
         fontSize = LocalTextStyle.current.fontSize * effectiveDisplay.fontSizeRatio,
         lineHeight = LocalTextStyle.current.lineHeight * effectiveDisplay.fontSizeRatio
@@ -898,6 +907,7 @@ fun ChatMessageTurn(
                     onModeClick = onModeClick,
                     onMemoryClick = onMemoryClick,
                     onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
+                    ttsProviderOverride = ttsProviderOverride,
                     modifier = modifier
                 )
             }
@@ -1125,6 +1135,7 @@ private fun AssistantMessageTurn(
     onModeClick: ((me.rerere.ai.ui.UsedMode) -> Unit)?,
     onMemoryClick: ((me.rerere.ai.ui.UsedMemory) -> Unit)?,
     onExpandedStreamingCodeBlockChanged: (() -> Unit)?,
+    ttsProviderOverride: me.rerere.tts.provider.TTSProviderSetting?,
     modifier: Modifier = Modifier
 ) {
     val settings = LocalSettings.current
@@ -1463,6 +1474,7 @@ private fun AssistantMessageTurn(
                 onEditLorebookEntry = onEditLorebookEntry,
                 onModeClick = onModeClick,
                 onMemoryClick = onMemoryClick,
+                ttsProviderOverride = ttsProviderOverride,
             )
         }
     }

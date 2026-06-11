@@ -22,7 +22,6 @@ import me.rerere.tts.model.PlaybackStatus
 import me.rerere.tts.model.TTSResponse
 import me.rerere.tts.provider.TTSManager
 import me.rerere.tts.provider.TTSProviderSetting
-import java.util.UUID
 
 private const val TAG = "TtsController"
 
@@ -51,7 +50,7 @@ class TtsController(
     // 队列与缓存（基于稳定 ID）
     private val queue: java.util.concurrent.ConcurrentLinkedQueue<TtsChunk> = java.util.concurrent.ConcurrentLinkedQueue()
     private val allChunks: MutableList<TtsChunk> = mutableListOf()
-    private val cache = java.util.concurrent.ConcurrentHashMap<UUID, kotlinx.coroutines.Deferred<TTSResponse>>()
+    private val cache = java.util.concurrent.ConcurrentHashMap<TtsCacheKey, kotlinx.coroutines.Deferred<TTSResponse>>()
     private var lastPrefetchedIndex: Int = -1
 
     // 行为参数
@@ -95,9 +94,11 @@ class TtsController(
 
     /** 选择/取消选择 Provider */
     fun setProvider(provider: TTSProviderSetting?) {
+        if (currentProvider != provider) {
+            stop()
+        }
         currentProvider = provider
         _isAvailable.update { provider != null }
-        if (provider == null) stop()
     }
 
     /**
@@ -374,7 +375,7 @@ class TtsController(
 
         for (i in begin until endExclusive) {
             val chunk = allChunks.getOrNull(i) ?: continue
-            cache.computeIfAbsent(chunk.id) {
+            cache.computeIfAbsent(TtsCacheKey(chunk.text, provider)) {
                 scope.async(Dispatchers.IO) { synthesizer.synthesize(provider, chunk) }
             }
         }
@@ -382,7 +383,7 @@ class TtsController(
     }
 
     private suspend fun awaitOrCreate(chunk: TtsChunk, provider: TTSProviderSetting): TTSResponse {
-        val deferred = cache.computeIfAbsent(chunk.id) {
+        val deferred = cache.computeIfAbsent(TtsCacheKey(chunk.text, provider)) {
             scope.async(Dispatchers.IO) { synthesizer.synthesize(provider, chunk) }
         }
         return try {
@@ -499,7 +500,7 @@ class TtsController(
 
         for (i in begin until endExclusive) {
             val chunk = allChunks.getOrNull(i) ?: continue
-            cache.computeIfAbsent(chunk.id) {
+            cache.computeIfAbsent(TtsCacheKey(chunk.text, provider)) {
                 scope.async(Dispatchers.IO) { synthesizer.synthesize(provider, chunk) }
             }
         }
@@ -507,3 +508,8 @@ class TtsController(
     }
     // endregion
 }
+
+private data class TtsCacheKey(
+    val text: String,
+    val provider: TTSProviderSetting,
+)

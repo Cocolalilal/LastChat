@@ -44,6 +44,10 @@ fun TTSProviderSetting.legacyDefaultVoice(defaultVoiceId: Uuid? = null): TTSVoic
         is TTSProviderSetting.SystemTTS -> TTSVoice(
             id = id(),
             name = "System TTS",
+            providerVoiceId = voiceName.orEmpty(),
+            enginePackageName = enginePackageName,
+            pitch = pitch,
+            speed = speechRate,
         )
 
         is TTSProviderSetting.MiniMax -> TTSVoice(
@@ -87,6 +91,7 @@ fun TTSProviderSetting.withVoiceApplied(voice: TTSVoice): TTSProviderSetting {
 
         is TTSProviderSetting.SystemTTS -> copy(
             voiceName = providerVoiceId,
+            enginePackageName = voice.enginePackageName ?: enginePackageName,
             pitch = voice.pitch,
             speechRate = voice.speed,
         )

@@ -66,6 +66,7 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.copyMessageToClipboard
 import me.rerere.rikkahub.utils.toLocalString
+import me.rerere.tts.provider.TTSProviderSetting
 
 @Composable
 fun ColumnScope.ChatMessageActionButtons(
@@ -78,6 +79,7 @@ fun ColumnScope.ChatMessageActionButtons(
     onEditLorebookEntry: ((UsedLorebookEntry) -> Unit)? = null,
     onModeClick: ((me.rerere.ai.ui.UsedMode) -> Unit)? = null,
     onMemoryClick: ((me.rerere.ai.ui.UsedMemory) -> Unit)? = null,
+    ttsProviderOverride: TTSProviderSetting? = null,
 ) {
     val context = LocalContext.current
     val settings = LocalSettings.current
@@ -168,7 +170,10 @@ fun ColumnScope.ChatMessageActionButtons(
                         indication = LocalIndication.current,
                         onClick = {
                             if (!isSpeaking) {
-                                tts.speak(message.toContentText())
+                                tts.speak(
+                                    text = message.toContentText(),
+                                    overrideSetting = ttsProviderOverride,
+                                )
                             } else {
                                 tts.stop()
                             }

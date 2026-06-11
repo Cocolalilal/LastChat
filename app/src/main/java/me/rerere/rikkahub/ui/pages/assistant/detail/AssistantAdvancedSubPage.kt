@@ -97,7 +97,11 @@ fun AssistantAdvancedSubPage(
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
         SettingsGroup(title = "TTS") {
-            val autoplayOptions: List<TtsAutoplayMode?> = listOf(null) + TtsAutoplayMode.entries
+            val autoplayOptions: List<TtsAutoplayMode?> = listOf(
+                null,
+                TtsAutoplayMode.WHILE_GENERATING,
+                TtsAutoplayMode.OFF,
+            )
             SettingGroupItem(
                 title = "TTS Autoplay",
                 subtitle = "Override automatic reading for this character",
@@ -109,14 +113,14 @@ fun AssistantAdvancedSubPage(
                         onOptionSelected = { mode -> onUpdate(assistant.copy(ttsAutoplayMode = mode)) },
                         optionToString = { mode ->
                             when (mode) {
-                                null -> when (settings.ttsAutoplayMode) {
-                                    TtsAutoplayMode.OFF -> "Use global: Off"
-                                    TtsAutoplayMode.AFTER_GENERATION -> "Use global: After"
-                                    TtsAutoplayMode.WHILE_GENERATING -> "Use global: While"
+                                null -> if (settings.ttsAutoplayMode == TtsAutoplayMode.OFF) {
+                                    "Use global: Off"
+                                } else {
+                                    "Use global: On"
                                 }
                                 TtsAutoplayMode.OFF -> "Off"
-                                TtsAutoplayMode.AFTER_GENERATION -> "After generation"
-                                TtsAutoplayMode.WHILE_GENERATING -> "While generating"
+                                TtsAutoplayMode.AFTER_GENERATION,
+                                TtsAutoplayMode.WHILE_GENERATING -> "On"
                             }
                         },
                     )

@@ -15,6 +15,7 @@ data class TTSVoice(
     val model: String? = null,
     val emotion: String? = null,
     val languageType: String? = null,
+    val enginePackageName: String? = null,
     val requiresNetwork: Boolean = false,
 )
 

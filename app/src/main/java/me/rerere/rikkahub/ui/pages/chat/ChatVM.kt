@@ -78,7 +78,7 @@ class ChatVM(
     val conversation: StateFlow<Conversation> = chatService.getConversationFlow(_conversationId)
     private val _conversationInitialized = MutableStateFlow(false)
     val conversationInitialized: StateFlow<Boolean> = _conversationInitialized
-    var chatListScrollPosition: ChatListScrollPosition? = null
+    internal var chatListScrollPosition: ChatListScrollPosition? = null
         private set
 
     fun updateChatListScrollPosition(

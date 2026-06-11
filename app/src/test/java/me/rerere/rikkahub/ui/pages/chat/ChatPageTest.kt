@@ -5,6 +5,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.datastore.DisplaySetting
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.service.ChatPersistenceMode
@@ -23,6 +24,54 @@ class ChatPageTest {
         )
 
         assertTrue(hasConversationMessages(conversation))
+    }
+
+    @Test
+    fun presetAssistantMessageKeepsStableTurnKeyInsteadOfPendingPlaceholderKey() {
+        val node = MessageNode.of(UIMessage.assistant("Hey there"))
+        val group = me.rerere.rikkahub.ui.components.chat.MessageTurnGroup(
+            nodes = listOf(node),
+            role = me.rerere.ai.core.MessageRole.ASSISTANT,
+        )
+
+        assertEquals(
+            "turn:${node.id}:0",
+            chatListTurnKey(
+                group = group,
+                index = 0,
+                isPendingAssistantTurn = false,
+            )
+        )
+        assertEquals(
+            PendingAssistantTurnKey,
+            chatListTurnKey(
+                group = group,
+                index = 0,
+                isPendingAssistantTurn = true,
+            )
+        )
+    }
+
+    @Test
+    fun assistantPresetDefinitionAloneDoesNotCountAsVisibleConversationPreset() {
+        val preset = UIMessage.assistant("Hey there")
+        val assistant = Assistant(presetMessages = listOf(preset))
+
+        assertFalse(
+            hasConversationPresetMessages(
+                conversation = Conversation.ofId(Uuid.random()),
+                assistant = assistant,
+            )
+        )
+        assertTrue(
+            hasConversationPresetMessages(
+                conversation = Conversation.ofId(
+                    id = Uuid.random(),
+                    messages = listOf(MessageNode.of(preset)),
+                ),
+                assistant = assistant,
+            )
+        )
     }
 
     @Test

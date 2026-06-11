@@ -479,37 +479,32 @@ private fun SystemTTSConfiguration(
     showVoiceFields: Boolean,
     onValueChange: (TTSProviderSetting) -> Unit
 ) {
+    if (!showVoiceFields) {
+        return
+    }
+
     val context = LocalContext.current
-    val enginePackageName = setting.enginePackageName
     val localVoices by produceState(
         initialValue = emptyList<LocalTtsVoice>(),
-        showVoiceFields,
-        enginePackageName,
+        setting.enginePackageName,
         context,
     ) {
-        value = if (showVoiceFields) {
-            discoverLocalTtsVoices(context, enginePackageName)
-        } else {
-            emptyList()
-        }
+        value = discoverLocalTtsVoices(context, setting.enginePackageName)
     }
 
-    if (!enginePackageName.isNullOrBlank()) {
-        FormItem(
-            label = { Text(stringResource(R.string.setting_tts_page_engine)) },
-            description = { Text(stringResource(R.string.setting_tts_page_engine_description)) }
-        ) {
-            OutlinedTextField(
-                value = enginePackageName,
-                onValueChange = {},
-                modifier = Modifier.fillMaxWidth(),
-                readOnly = true,
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
-            )
-        }
+    FormItem(
+        label = { Text(stringResource(R.string.setting_tts_page_engine)) },
+        description = { Text(stringResource(R.string.setting_tts_page_engine_description)) }
+    ) {
+        OutlinedTextField(
+            value = setting.enginePackageName.orEmpty(),
+            onValueChange = { onValueChange(setting.copy(enginePackageName = it.takeIf(String::isNotBlank))) },
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+        )
     }
 
-    if (showVoiceFields && localVoices.isNotEmpty()) {
+    if (localVoices.isNotEmpty()) {
         var voiceExpanded by remember { mutableStateOf(false) }
         val selectedVoice = localVoices.firstOrNull { it.name == setting.voiceName }
         val selectedVoiceLabel = selectedVoice?.displayLabel()
@@ -561,40 +556,38 @@ private fun SystemTTSConfiguration(
         }
     }
 
-    if (showVoiceFields) {
-        // Speech Rate
-        FormItem(
-            label = { Text(stringResource(R.string.setting_tts_page_speech_rate)) },
-            description = { Text(stringResource(R.string.setting_tts_page_speech_rate_description)) }
-        ) {
-            OutlinedNumberInput(
-                value = setting.speechRate,
-                onValueChange = { newRate ->
-                    if (newRate in 0.1f..3.0f) {
-                        onValueChange(setting.copy(speechRate = newRate))
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                label = stringResource(R.string.setting_tts_page_speech_rate)
-            )
-        }
+    // Speech Rate
+    FormItem(
+        label = { Text(stringResource(R.string.setting_tts_page_speech_rate)) },
+        description = { Text(stringResource(R.string.setting_tts_page_speech_rate_description)) }
+    ) {
+        OutlinedNumberInput(
+            value = setting.speechRate,
+            onValueChange = { newRate ->
+                if (newRate in 0.1f..3.0f) {
+                    onValueChange(setting.copy(speechRate = newRate))
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            label = stringResource(R.string.setting_tts_page_speech_rate)
+        )
+    }
 
-        // Pitch
-        FormItem(
-            label = { Text(stringResource(R.string.setting_tts_page_pitch)) },
-            description = { Text(stringResource(R.string.setting_tts_page_pitch_description)) }
-        ) {
-            OutlinedNumberInput(
-                value = setting.pitch,
-                onValueChange = { newPitch ->
-                    if (newPitch in 0.1f..2.0f) {
-                        onValueChange(setting.copy(pitch = newPitch))
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                label = stringResource(R.string.setting_tts_page_pitch)
-            )
-        }
+    // Pitch
+    FormItem(
+        label = { Text(stringResource(R.string.setting_tts_page_pitch)) },
+        description = { Text(stringResource(R.string.setting_tts_page_pitch_description)) }
+    ) {
+        OutlinedNumberInput(
+            value = setting.pitch,
+            onValueChange = { newPitch ->
+                if (newPitch in 0.1f..2.0f) {
+                    onValueChange(setting.copy(pitch = newPitch))
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            label = stringResource(R.string.setting_tts_page_pitch)
+        )
     }
 }
 

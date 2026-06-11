@@ -139,6 +139,14 @@ enum class TtsAutoplayMode {
     WHILE_GENERATING,
 }
 
+fun TtsAutoplayMode.asEnabledMode(): TtsAutoplayMode {
+    return when (this) {
+        TtsAutoplayMode.OFF -> TtsAutoplayMode.OFF
+        TtsAutoplayMode.AFTER_GENERATION,
+        TtsAutoplayMode.WHILE_GENERATING -> TtsAutoplayMode.WHILE_GENERATING
+    }
+}
+
 @Serializable
 enum class FontSource {
     System,
@@ -441,24 +449,21 @@ fun Settings.getEffectiveTTSProvider(assistant: Assistant? = null): TTSProviderS
 }
 
 fun Settings.getEffectiveTtsAutoplayMode(assistant: Assistant? = null): TtsAutoplayMode {
-    return assistant?.ttsAutoplayMode ?: ttsAutoplayMode
+    return (assistant?.ttsAutoplayMode ?: ttsAutoplayMode).asEnabledMode()
 }
 
 fun Settings.normalizeTtsSettings(): Settings {
     val normalizedProviders = ttsProviders.distinctBy { it.id }.map { provider ->
         if (provider is TTSProviderSetting.SystemTTS) {
-            val voiceId = if (provider.id == DEFAULT_SYSTEM_TTS_ID) {
-                DEFAULT_SYSTEM_TTS_VOICE_ID
-            } else {
-                provider.voices.firstOrNull()?.id ?: Uuid.random()
-            }
+            val defaultVoiceId = if (provider.id == DEFAULT_SYSTEM_TTS_ID) DEFAULT_SYSTEM_TTS_VOICE_ID else null
             provider.copyProvider(
-                voices = listOf(
-                    TTSVoice(
-                        id = voiceId,
-                        name = "System TTS",
-                    )
-                )
+                voices = provider.withDefaultVoices(defaultVoiceId).voices.distinctBy { voice ->
+                    if (voice.providerVoiceId.isBlank()) {
+                        voice.id.toString()
+                    } else {
+                        "${voice.enginePackageName.orEmpty()}:${voice.providerVoiceId}"
+                    }
+                }
             )
         } else {
             provider.withDefaultVoices().let { normalized ->
@@ -483,8 +488,12 @@ fun Settings.normalizeTtsSettings(): Settings {
         ttsProviders = normalizedProviders,
         selectedTTSProviderId = normalizedProviderId,
         selectedTTSVoiceId = normalizedVoiceId,
+        ttsAutoplayMode = ttsAutoplayMode.asEnabledMode(),
         assistants = assistants.map { assistant ->
-            assistant.copy(ttsVoiceId = assistant.ttsVoiceId?.takeIf { it in allVoiceIds })
+            assistant.copy(
+                ttsVoiceId = assistant.ttsVoiceId?.takeIf { it in allVoiceIds },
+                ttsAutoplayMode = assistant.ttsAutoplayMode?.asEnabledMode(),
+            )
         }
     )
 }

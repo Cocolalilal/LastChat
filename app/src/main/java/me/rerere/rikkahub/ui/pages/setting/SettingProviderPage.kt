@@ -174,6 +174,7 @@ import me.rerere.rikkahub.ui.pages.setting.components.withSpecialProviderPresets
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.tts.provider.withDefaultVoices
 import me.rerere.rikkahub.utils.ImageUtils
+import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -411,6 +412,7 @@ fun SettingProviderPage(
                 allProviders = settings.providers,
                 settings = settings,
                 haptics = haptics,
+                contentPadding = PaddingValues(bottom = innerPadding.calculateBottomPadding()),
                 searchQuery = searchQuery,
                 onNavigateToDetail = { provider ->
                     navController.navigate(Screen.SettingProviderDetail(providerId = provider.id.toString()))
@@ -604,6 +606,7 @@ private fun ProviderListView(
     allProviders: List<ProviderSetting>,
     settings: me.rerere.rikkahub.data.datastore.Settings,
     haptics: me.rerere.rikkahub.ui.hooks.PremiumHaptics,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
     searchQuery: String,
     providerPresets: List<me.rerere.rikkahub.ui.pages.setting.components.ProviderPreset>,
     onNavigateToDetail: (ProviderSetting) -> Unit,
@@ -651,7 +654,7 @@ private fun ProviderListView(
             modifier = Modifier
                 .fillMaxSize()
                 .imePadding(),
-            contentPadding = PaddingValues(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 120.dp),
+            contentPadding = contentPadding + PaddingValues(horizontal = 16.dp, vertical = 8.dp) + PaddingValues(bottom = 104.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
             state = lazyListState,
         ) {

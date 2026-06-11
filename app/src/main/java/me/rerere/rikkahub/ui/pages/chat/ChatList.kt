@@ -130,6 +130,19 @@ import me.rerere.rikkahub.ui.modifier.lastChatBlurSource
 private const val TAG = "ChatList"
 private const val LoadingIndicatorKey = "LoadingIndicator"
 private const val ScrollBottomKey = "ScrollBottomKey"
+internal const val PendingAssistantTurnKey = "pending_assistant"
+
+internal fun chatListTurnKey(
+    group: MessageTurnGroup,
+    index: Int,
+    isPendingAssistantTurn: Boolean,
+): String {
+    return if (isPendingAssistantTurn) {
+        PendingAssistantTurnKey
+    } else {
+        "turn:${group.firstNode.id}:$index"
+    }
+}
 
 private fun BidiDirection.toLayoutDirection(): LayoutDirection {
     return if (this == BidiDirection.Rtl) LayoutDirection.Rtl else LayoutDirection.Ltr
@@ -403,11 +416,11 @@ private fun SharedTransitionScope.ChatListNormal(
                 itemsIndexed(
                     items = displayGroups,
                     key = { index, group ->
-                        if (group.role == me.rerere.ai.core.MessageRole.ASSISTANT && index == displayGroups.lastIndex) {
-                            "pending_assistant"
-                        } else {
-                            "turn:${group.firstNode.id}:$index"
-                        }
+                        chatListTurnKey(
+                            group = group,
+                            index = index,
+                            isPendingAssistantTurn = needsPhantomLoadingTurn && index == displayGroups.lastIndex,
+                        )
                     },
                 ) { index, group ->
                     Column {
