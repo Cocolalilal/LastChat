@@ -21,6 +21,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -59,9 +60,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -172,10 +177,12 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
         }
     }
 
+    val isDark = isSystemInDarkTheme()
+
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = Color.Black,
-        contentColor = Color.White,
+        color = if (isDark) Color.Black else MaterialTheme.colorScheme.surface,
+        contentColor = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface,
     ) {
         AnimatedContent(
             targetState = page,
@@ -285,26 +292,52 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
                     onReturned = { goTo(SetupPage.ManualKey) },
                 )
 
-                SetupPage.ManualKey -> PasteKeyPage(
-                    text = "${manualProvider?.name ?: "Provider"} API key:",
-                    apiKey = apiKey,
-                    onApiKeyChange = { apiKey = it },
-                    loading = manualModelsLoading,
-                    onContinue = {
-                        val provider = manualProvider ?: return@PasteKeyPage
-                        haptics.perform(HapticPattern.Pop)
-                        val keyedProvider = vm.providerWithKey(provider, apiKey)
-                        manualProvider = keyedProvider
-                        manualModelsLoading = true
-                        vm.fetchModels(keyedProvider) { models ->
-                            manualModelsLoading = false
-                            manualModels = models
-                            selectedModels.clear()
-                            roleModels = SetupRoleModels()
-                            goTo(SetupPage.ManualModels)
-                        }
-                    },
-                )
+                SetupPage.ManualKey -> {
+                    if (manualProvider?.name == "Custom provider") {
+                        CustomProviderKeyPage(
+                            provider = manualProvider!!,
+                            onProviderChange = { manualProvider = it },
+                            apiKey = apiKey,
+                            onApiKeyChange = { apiKey = it },
+                            loading = manualModelsLoading,
+                            onContinue = {
+                                val provider = manualProvider ?: return@CustomProviderKeyPage
+                                haptics.perform(HapticPattern.Pop)
+                                val keyedProvider = vm.providerWithKey(provider, apiKey)
+                                manualProvider = keyedProvider
+                                manualModelsLoading = true
+                                vm.fetchModels(keyedProvider) { models ->
+                                    manualModelsLoading = false
+                                    manualModels = models
+                                    selectedModels.clear()
+                                    roleModels = SetupRoleModels()
+                                    goTo(SetupPage.ManualModels)
+                                }
+                            }
+                        )
+                    } else {
+                        PasteKeyPage(
+                            text = "${manualProvider?.name ?: "Provider"} API key:",
+                            apiKey = apiKey,
+                            onApiKeyChange = { apiKey = it },
+                            loading = manualModelsLoading,
+                            onContinue = {
+                                val provider = manualProvider ?: return@PasteKeyPage
+                                haptics.perform(HapticPattern.Pop)
+                                val keyedProvider = vm.providerWithKey(provider, apiKey)
+                                manualProvider = keyedProvider
+                                manualModelsLoading = true
+                                vm.fetchModels(keyedProvider) { models ->
+                                    manualModelsLoading = false
+                                    manualModels = models
+                                    selectedModels.clear()
+                                    roleModels = SetupRoleModels()
+                                    goTo(SetupPage.ManualModels)
+                                }
+                            },
+                        )
+                    }
+                }
 
                 SetupPage.ManualModels -> ManualModelsPage(
                     provider = manualProvider,
@@ -446,10 +479,12 @@ private fun IntroPage(
 
 @Composable
 private fun IntroRipple(progress: Float) {
+    val isDark = isSystemInDarkTheme()
+    val blendColor = if (isDark) Color.Black else MaterialTheme.colorScheme.surface
     val colors = listOf(
-        lerp(MaterialTheme.colorScheme.primary, Color.Black, 0.34f),
-        lerp(MaterialTheme.colorScheme.secondary, Color.Black, 0.42f),
-        lerp(MaterialTheme.colorScheme.tertiary, Color.Black, 0.38f),
+        lerp(MaterialTheme.colorScheme.primary, blendColor, 0.34f),
+        lerp(MaterialTheme.colorScheme.secondary, blendColor, 0.42f),
+        lerp(MaterialTheme.colorScheme.tertiary, blendColor, 0.38f),
     )
     Box(
         modifier = Modifier
@@ -946,6 +981,8 @@ private fun SetupScaffold(
     bottom: @Composable () -> Unit = {},
     content: @Composable () -> Unit,
 ) {
+    val isDark = isSystemInDarkTheme()
+    val bgColor = if (isDark) Color.Black else MaterialTheme.colorScheme.surface
     Box(modifier = Modifier.fillMaxSize()) {
         content()
         Box(
@@ -956,8 +993,8 @@ private fun SetupScaffold(
                     Brush.verticalGradient(
                         listOf(
                             Color.Transparent,
-                            Color.Black.copy(alpha = 0.9f),
-                            Color.Black,
+                            bgColor.copy(alpha = 0.9f),
+                            bgColor,
                         )
                     )
                 )
@@ -1116,8 +1153,8 @@ private fun SetupButton(
             border = BorderStroke(3.dp, setupCardColor()),
             contentPadding = PaddingValues(horizontal = 16.dp),
             colors = ButtonDefaults.outlinedButtonColors(
-                contentColor = Color.White,
-                containerColor = Color.Black,
+                contentColor = if (isSystemInDarkTheme()) Color.White else MaterialTheme.colorScheme.onSurface,
+                containerColor = if (isSystemInDarkTheme()) Color.Black else MaterialTheme.colorScheme.surface,
             ),
             modifier = modifier
                 .height(52.dp)
@@ -1326,7 +1363,7 @@ private fun SetupModelSelectableRow(
             provider = provider,
             modifier = Modifier.size(38.dp),
             color = Color.Transparent,
-            contentColor = Color.White,
+            contentColor = if (isSystemInDarkTheme()) Color.White else MaterialTheme.colorScheme.onSurface,
         )
         Column(
             modifier = Modifier.weight(1f),
@@ -1426,6 +1463,8 @@ private fun SetupModelFeatureCard(
 
 @Composable
 private fun FadingLazyColumn(content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
+    val isDark = isSystemInDarkTheme()
+    val bgColor = if (isDark) Color.Black else MaterialTheme.colorScheme.surface
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -1443,7 +1482,7 @@ private fun FadingLazyColumn(content: androidx.compose.foundation.lazy.LazyListS
                 .height(100.dp)
                 .background(
                     Brush.verticalGradient(
-                        listOf(Color.Transparent, Color.Black)
+                        listOf(Color.Transparent, bgColor)
                     )
                 )
         )
@@ -1482,6 +1521,111 @@ private enum class SetupPage {
     ManualModels,
     ManualDefaults,
     Success,
+}
+
+@Composable
+private fun CustomProviderKeyPage(
+    provider: ProviderSetting,
+    onProviderChange: (ProviderSetting) -> Unit,
+    apiKey: String,
+    onApiKeyChange: (String) -> Unit,
+    loading: Boolean,
+    onContinue: () -> Unit,
+) {
+    val apiTypes = listOf("OpenAI", "Google", "Claude")
+    val selectedType = when (provider) {
+        is ProviderSetting.OpenAI -> "OpenAI"
+        is ProviderSetting.Google -> "Google"
+        is ProviderSetting.Claude -> "Claude"
+        else -> "OpenAI"
+    }
+
+    val baseUrl = when (provider) {
+        is ProviderSetting.OpenAI -> provider.baseUrl
+        is ProviderSetting.Google -> provider.baseUrl
+        is ProviderSetting.Claude -> provider.baseUrl
+        else -> ""
+    }
+
+    SetupScaffold(
+        bottom = {
+            SetupButton(
+                filled = true,
+                enabled = apiKey.isNotBlank() && baseUrl.isNotBlank() && !loading,
+                icon = Icons.AutoMirrored.Rounded.ArrowForward,
+                onClick = onContinue,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 110.dp),
+            )
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding()
+                .padding(horizontal = SetupEdgePadding),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                text = "Configure your custom provider",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                lineHeight = MaterialTheme.typography.titleLarge.lineHeight,
+            )
+            Spacer(modifier = Modifier.height(26.dp))
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                apiTypes.forEachIndexed { index, type ->
+                    SegmentedButton(
+                        selected = selectedType == type,
+                        onClick = {
+                            val newProvider = when (type) {
+                                "Google" -> ProviderSetting.Google(name = "Custom provider", baseUrl = "")
+                                "Claude" -> ProviderSetting.Claude(name = "Custom provider", baseUrl = "")
+                                else -> ProviderSetting.OpenAI(name = "Custom provider", baseUrl = "")
+                            }
+                            onProviderChange(newProvider)
+                        },
+                        shape = SegmentedButtonDefaults.itemShape(index = index, count = apiTypes.size),
+                    ) {
+                        Text(type)
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedTextField(
+                value = baseUrl,
+                onValueChange = { newUrl ->
+                    val newProvider = when (provider) {
+                        is ProviderSetting.OpenAI -> provider.copy(baseUrl = newUrl)
+                        is ProviderSetting.Google -> provider.copy(baseUrl = newUrl)
+                        is ProviderSetting.Claude -> provider.copy(baseUrl = newUrl)
+                        else -> provider
+                    }
+                    onProviderChange(newProvider)
+                },
+                label = { Text("Base URL") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            SecureOutlinedTextField(
+                value = apiKey,
+                onValueChange = onApiKeyChange,
+                label = "API Key",
+                modifier = Modifier.fillMaxWidth(),
+            )
+            AnimatedVisibility(visible = loading) {
+                CircularProgressIndicator(
+                    modifier = Modifier
+                        .padding(top = 18.dp)
+                        .size(28.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+    }
 }
 
 private fun previousPage(page: SetupPage): SetupPage? {

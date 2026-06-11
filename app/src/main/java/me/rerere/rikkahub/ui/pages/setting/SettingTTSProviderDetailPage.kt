@@ -891,7 +891,7 @@ private fun ProviderVoicesFab(
                             },
                         shape = AppShapes.CardLarge,
                         colors = CardDefaults.cardColors(
-                            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else Color.Transparent
                         ),
                     ) {
                         Row(
