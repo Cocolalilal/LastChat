@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -17,20 +16,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.ai.tools.LinuxEnvironmentManager
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
-import me.rerere.rikkahub.data.ai.tools.setLinuxEnvironmentEnabled
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.utils.PermissionChecker
-import kotlinx.coroutines.launch
 
 @Composable
 fun AssistantLocalToolSubPage(
@@ -38,7 +33,6 @@ fun AssistantLocalToolSubPage(
     onUpdate: (Assistant) -> Unit
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     var pendingNotificationAccess by remember {
         mutableStateOf(PermissionChecker.MissingFeatureAccess())
     }
@@ -68,80 +62,20 @@ fun AssistantLocalToolSubPage(
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        val linuxOption = assistant.localTools.filterIsInstance<LocalToolOption.LinuxEnvironment>().firstOrNull()
-        val linuxEnabled = linuxOption != null
-
+        // JavaScript 引擎工具卡片
         LocalToolCard(
-            title = stringResource(R.string.assistant_page_local_tools_linux_environment_title),
-            description = stringResource(R.string.assistant_page_local_tools_linux_environment_desc),
-            isEnabled = linuxEnabled,
+            title = stringResource(R.string.assistant_page_local_tools_javascript_engine_title),
+            description = stringResource(R.string.assistant_page_local_tools_javascript_engine_desc),
+            isEnabled = assistant.localTools.contains(LocalToolOption.JavascriptEngine),
             onToggle = { enabled ->
-                onUpdate(
-                    assistant.copy(
-                        localTools = setLinuxEnvironmentEnabled(assistant.localTools, enabled)
-                    )
-                )
-            },
-            content = {
-                val linuxManager = remember { LinuxEnvironmentManager(context) }
-                var status by remember(linuxEnabled) { mutableStateOf(linuxManager.getStatus()) }
-                var installing by remember { mutableStateOf(false) }
-                var installMessage by remember { mutableStateOf("") }
-                Text(
-                    text = if (status.ready) {
-                        stringResource(R.string.assistant_page_local_tools_linux_status_ready)
-                    } else if (installMessage.isNotBlank()) {
-                        installMessage
-                    } else {
-                        stringResource(
-                            R.string.assistant_page_local_tools_linux_status_missing,
-                            status.missing.joinToString()
-                        )
-                    },
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                )
-                Button(
-                    enabled = !installing,
-                    onClick = {
-                        installing = true
-                        installMessage = context.getString(R.string.assistant_page_local_tools_linux_installing)
-                        scope.launch {
-                            val result = linuxManager.installOrRepair(
-                                fullToolchain = linuxOption?.fullToolchain == true
-                            )
-                            status = result.status
-                            installMessage = result.message
-                            installing = false
-                        }
-                    },
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        if (status.ready) {
-                            stringResource(R.string.assistant_page_local_tools_linux_repair)
-                        } else {
-                            stringResource(R.string.assistant_page_local_tools_linux_install)
-                        }
-                    )
+                val newLocalTools = if (enabled) {
+                    assistant.localTools + LocalToolOption.JavascriptEngine
+                } else {
+                    assistant.localTools - LocalToolOption.JavascriptEngine
                 }
+                onUpdate(assistant.copy(localTools = newLocalTools))
             }
         )
-        // JavaScript 引擎工具卡片
-        if (!linuxEnabled) {
-            LocalToolCard(
-                title = stringResource(R.string.assistant_page_local_tools_javascript_engine_title),
-                description = stringResource(R.string.assistant_page_local_tools_javascript_engine_desc),
-                isEnabled = assistant.localTools.contains(LocalToolOption.JavascriptEngine),
-                onToggle = { enabled ->
-                    val newLocalTools = if (enabled) {
-                        assistant.localTools + LocalToolOption.JavascriptEngine
-                    } else {
-                        assistant.localTools - LocalToolOption.JavascriptEngine
-                    }
-                    onUpdate(assistant.copy(localTools = newLocalTools))
-                }
-            )
-        }
 
         LocalToolCard(
             title = stringResource(R.string.notification_tools_title),
@@ -170,21 +104,19 @@ fun AssistantLocalToolSubPage(
 
         // Python Engine
         val pythonOption = assistant.localTools.filterIsInstance<LocalToolOption.PythonEngine>().firstOrNull()
-        if (!linuxEnabled) {
-            LocalToolCard(
-                title = stringResource(R.string.assistant_page_local_tools_python_engine_title),
-                description = stringResource(R.string.assistant_page_local_tools_python_engine_desc),
-                isEnabled = pythonOption != null,
-                onToggle = { enabled ->
-                    val newLocalTools = if (enabled) {
-                        assistant.localTools + LocalToolOption.PythonEngine
-                    } else {
-                        assistant.localTools.filterNot { it is LocalToolOption.PythonEngine }
-                    }
-                    onUpdate(assistant.copy(localTools = newLocalTools))
+        LocalToolCard(
+            title = stringResource(R.string.assistant_page_local_tools_python_engine_title),
+            description = stringResource(R.string.assistant_page_local_tools_python_engine_desc),
+            isEnabled = pythonOption != null,
+            onToggle = { enabled ->
+                val newLocalTools = if (enabled) {
+                    assistant.localTools + LocalToolOption.PythonEngine
+                } else {
+                    assistant.localTools.filterNot { it is LocalToolOption.PythonEngine }
                 }
-            )
-        }
+                onUpdate(assistant.copy(localTools = newLocalTools))
+            }
+        )
 
         LocalToolCard(
             title = stringResource(R.string.assistant_page_local_tools_character_questions_title),

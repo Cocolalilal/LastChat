@@ -140,7 +140,6 @@ enum class ActivityType {
     SEARCH,
     MEMORY_RECALL,
     PYTHON,
-    LINUX,
     SKILL,
     MCP,
     TOOL_OTHER
@@ -152,7 +151,6 @@ private fun ActivityType.toTestTag(): String = when (this) {
     ActivityType.SEARCH -> "activity_pill_search"
     ActivityType.MEMORY_RECALL -> "activity_pill_memory_recall"
     ActivityType.PYTHON -> "activity_pill_python"
-    ActivityType.LINUX -> "activity_pill_linux"
     ActivityType.SKILL -> "activity_pill_skill"
     ActivityType.MCP -> "activity_pill_mcp"
     ActivityType.TOOL_OTHER -> "activity_pill_tool_other"
@@ -167,7 +165,6 @@ private fun ActivityType.getIcon(): ImageVector = when (this) {
     ActivityType.SEARCH -> Icons.Rounded.Public
     ActivityType.MEMORY_RECALL -> Icons.Rounded.Memory
     ActivityType.PYTHON -> Icons.Rounded.Terminal
-    ActivityType.LINUX -> Icons.Rounded.Terminal
     ActivityType.SKILL -> Icons.Rounded.Category
     ActivityType.MCP -> Icons.Rounded.Memory
     ActivityType.TOOL_OTHER -> Icons.Rounded.Build
@@ -182,7 +179,6 @@ private fun ActivityType.getDisplayText(): String = when (this) {
     ActivityType.SEARCH -> "Searched"
     ActivityType.MEMORY_RECALL -> "Recalled"
     ActivityType.PYTHON -> "Ran Python"
-    ActivityType.LINUX -> "Ran Linux"
     ActivityType.SKILL -> "Skills"
     ActivityType.MCP -> "MCP"
     ActivityType.TOOL_OTHER -> "Used tools"
@@ -194,7 +190,6 @@ private fun ActivityType.getDisplayText(): String = when (this) {
 internal fun categorizeToolName(toolName: String): ActivityType = when (toolName) {
     "search_web", "scrape_web" -> ActivityType.SEARCH
     "search_memory" -> ActivityType.MEMORY_RECALL
-    "run_linux_command", "linux_environment_status" -> ActivityType.LINUX
     "eval_python", "pip_install", "write_sandbox_file", 
     "read_sandbox_file", "list_sandbox_files", "delete_sandbox_file" -> ActivityType.PYTHON
     "manage_skills" -> ActivityType.SKILL
@@ -659,7 +654,6 @@ private fun ExpandedActivityContent(item: ActivityItem) {
         ActivityType.SEARCH -> "Searched the Web"
         ActivityType.MEMORY_RECALL -> stringResource(R.string.activity_pill_memory_recalled)
         ActivityType.PYTHON -> "Ran Python"
-        ActivityType.LINUX -> "Ran Linux"
         ActivityType.SKILL -> "Managed skills"
         ActivityType.MCP -> "MCP"
         ActivityType.TOOL_OTHER -> "Used tool"
@@ -880,9 +874,6 @@ private fun ExpandedActivityPill(
             }
             ActivityType.PYTHON -> {
                 if (item.count > 1) "Ran Python Ã—${item.count}" else "Ran Python"
-            }
-            ActivityType.LINUX -> {
-                if (item.count > 1) "Ran Linux x${item.count}" else "Ran Linux"
             }
             ActivityType.SKILL -> {
                 if (item.count > 1) "Managed skills x${item.count}" else "Managed skills"

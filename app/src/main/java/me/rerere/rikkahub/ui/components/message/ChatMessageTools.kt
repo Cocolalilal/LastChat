@@ -115,7 +115,6 @@ fun ToolCallItem(
                         "delete_memory" -> Icons.Rounded.BookmarkRemove
                         "search_web" -> Icons.Rounded.Public
                         "scrape_web" -> Icons.Rounded.Public
-                        "run_linux_command", "linux_environment_status" -> Icons.Rounded.Terminal
                         "eval_python", "pip_install", "write_sandbox_file", "read_sandbox_file",
                         "list_sandbox_files", "delete_sandbox_file", "import_attachment" -> Icons.Rounded.Terminal
                         else -> Icons.Rounded.Build
@@ -139,8 +138,6 @@ fun ToolCallItem(
                                 ?: ""
                         )
                         "scrape_web" -> stringResource(R.string.chat_message_tool_scrape_web)
-                        "run_linux_command" -> stringResource(R.string.chat_message_tool_linux_command)
-                        "linux_environment_status" -> stringResource(R.string.chat_message_tool_linux_status)
                         "eval_python" -> stringResource(R.string.chat_message_tool_python_eval)
                         "pip_install" -> stringResource(R.string.chat_message_tool_python_pip)
                         "write_sandbox_file" -> stringResource(

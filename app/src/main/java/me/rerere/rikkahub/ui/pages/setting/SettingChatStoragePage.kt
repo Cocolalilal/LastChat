@@ -137,7 +137,6 @@ private const val CATEGORY_ASSISTANT_MEDIA = "assistant_media"
 private const val CATEGORY_LOREBOOK_MEDIA = "lorebook_media"
 private const val CATEGORY_GENERATED_MEDIA = "generated_media"
 private const val CATEGORY_PYTHON_SANDBOX = "python_sandbox"
-private const val CATEGORY_LINUX_ENVIRONMENT = "linux_environment"
 private const val CATEGORY_ICONS_AND_FONTS = "icons_and_fonts"
 private const val CATEGORY_DATABASES = "databases"
 private const val CATEGORY_ICON_CACHE = "icon_cache"
@@ -1403,7 +1402,6 @@ private fun StorageCategoryUsage.localizedLabel(context: Context): String {
         CATEGORY_LOREBOOK_MEDIA -> context.getString(R.string.setting_chat_storage_category_lorebook_media)
         CATEGORY_GENERATED_MEDIA -> context.getString(R.string.setting_chat_storage_category_generated_media)
         CATEGORY_PYTHON_SANDBOX -> context.getString(R.string.setting_chat_storage_category_python_sandbox)
-        CATEGORY_LINUX_ENVIRONMENT -> context.getString(R.string.setting_chat_storage_category_linux_environment)
         CATEGORY_ICONS_AND_FONTS -> context.getString(R.string.setting_chat_storage_category_icons_and_fonts)
         CATEGORY_DATABASES -> context.getString(R.string.setting_chat_storage_category_settings_database)
         CATEGORY_ICON_CACHE -> context.getString(R.string.setting_chat_storage_category_icon_cache)

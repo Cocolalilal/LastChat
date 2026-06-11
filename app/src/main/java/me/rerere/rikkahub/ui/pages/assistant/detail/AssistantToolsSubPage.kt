@@ -26,7 +26,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,12 +35,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.ai.tools.LinuxEnvironmentManager
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.ai.mcp.McpStatus
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
-import me.rerere.rikkahub.data.ai.tools.setLinuxEnvironmentEnabled
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantSearchMode
 import me.rerere.rikkahub.ui.components.ai.McpPicker
@@ -50,7 +47,6 @@ import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import me.rerere.rikkahub.utils.PermissionChecker
 import me.rerere.search.SearchServiceOptions
-import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 
 /**
@@ -66,7 +62,6 @@ fun AssistantToolsSubPage(
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     var pendingNotificationAccess by remember {
         mutableStateOf(PermissionChecker.MissingFeatureAccess())
     }
@@ -168,142 +163,24 @@ fun AssistantToolsSubPage(
         // LOCAL TOOLS GROUP
         // ═══════════════════════════════════════════════════════════════════
         SettingsGroup(title = stringResource(R.string.assistant_page_tab_local_tools)) {
-            val linuxOption = assistant.localTools.filterIsInstance<LocalToolOption.LinuxEnvironment>().firstOrNull()
-            val linuxEnabled = linuxOption != null
-
+            // JavaScript Engine
             SettingGroupItem(
-                title = stringResource(R.string.assistant_page_local_tools_linux_environment_title),
-                subtitle = stringResource(R.string.assistant_page_local_tools_linux_environment_desc),
+                title = stringResource(R.string.assistant_page_local_tools_javascript_engine_title),
+                subtitle = stringResource(R.string.assistant_page_local_tools_javascript_engine_desc),
                 trailing = {
                     HapticSwitch(
-                        checked = linuxEnabled,
+                        checked = assistant.localTools.contains(LocalToolOption.JavascriptEngine),
                         onCheckedChange = { enabled ->
-                            onUpdate(
-                                assistant.copy(
-                                    localTools = setLinuxEnvironmentEnabled(assistant.localTools, enabled)
-                                )
-                            )
+                            val newLocalTools = if (enabled) {
+                                assistant.localTools + LocalToolOption.JavascriptEngine
+                            } else {
+                                assistant.localTools - LocalToolOption.JavascriptEngine
+                            }
+                            onUpdate(assistant.copy(localTools = newLocalTools))
                         }
                     )
                 }
             )
-
-            if (linuxEnabled) {
-                val activeLinuxOption = linuxOption ?: LocalToolOption.LinuxEnvironment()
-                val linuxManager = remember { LinuxEnvironmentManager(context) }
-                var linuxStatus by remember(linuxEnabled) { mutableStateOf(linuxManager.getStatus()) }
-                var installingLinux by remember { mutableStateOf(false) }
-                var linuxInstallMessage by remember { mutableStateOf("") }
-                data class LinuxProfileOption(val fullToolchain: Boolean, val label: String)
-                val profileOptions = listOf(
-                    LinuxProfileOption(false, stringResource(R.string.assistant_page_local_tools_linux_profile_base)),
-                    LinuxProfileOption(true, stringResource(R.string.assistant_page_local_tools_linux_profile_full)),
-                )
-                val selectedProfile = profileOptions.first { it.fullToolchain == activeLinuxOption.fullToolchain }
-
-                SettingGroupItem(
-                    title = stringResource(R.string.assistant_page_local_tools_linux_status_title),
-                    subtitle = if (linuxStatus.ready) {
-                        stringResource(R.string.assistant_page_local_tools_linux_status_ready)
-                    } else if (linuxInstallMessage.isNotBlank()) {
-                        linuxInstallMessage
-                    } else {
-                        stringResource(
-                            R.string.assistant_page_local_tools_linux_status_missing,
-                            linuxStatus.missing.joinToString()
-                        )
-                    },
-                    trailing = {
-                        Button(
-                            enabled = !installingLinux,
-                            onClick = {
-                                installingLinux = true
-                                linuxInstallMessage = context.getString(R.string.assistant_page_local_tools_linux_installing)
-                                scope.launch {
-                                    val result = linuxManager.installOrRepair(
-                                        fullToolchain = activeLinuxOption.fullToolchain
-                                    )
-                                    linuxStatus = result.status
-                                    linuxInstallMessage = result.message
-                                    installingLinux = false
-                                }
-                            }
-                        ) {
-                            Text(
-                                if (linuxStatus.ready) {
-                                    stringResource(R.string.assistant_page_local_tools_linux_repair)
-                                } else {
-                                    stringResource(R.string.assistant_page_local_tools_linux_install)
-                                }
-                            )
-                        }
-                    }
-                )
-
-                SettingGroupItem(
-                    title = stringResource(R.string.assistant_page_local_tools_linux_profile_title),
-                    subtitle = selectedProfile.label,
-                    trailing = {
-                        Select(
-                            options = profileOptions,
-                            selectedOption = selectedProfile,
-                            onOptionSelected = { option ->
-                                val updated = assistant.localTools.map { tool ->
-                                    if (tool is LocalToolOption.LinuxEnvironment) {
-                                        tool.copy(fullToolchain = option.fullToolchain)
-                                    } else {
-                                        tool
-                                    }
-                                }
-                                onUpdate(assistant.copy(localTools = updated))
-                            },
-                            optionToString = { it.label },
-                            modifier = Modifier.width(170.dp)
-                        )
-                    }
-                )
-
-                SettingGroupItem(
-                    title = stringResource(R.string.assistant_page_local_tools_linux_network_title),
-                    subtitle = stringResource(R.string.assistant_page_local_tools_linux_network_desc),
-                    trailing = {
-                        HapticSwitch(
-                            checked = activeLinuxOption.networkAccess,
-                            onCheckedChange = { enabled ->
-                                val updated = assistant.localTools.map { tool ->
-                                    if (tool is LocalToolOption.LinuxEnvironment) {
-                                        tool.copy(networkAccess = enabled)
-                                    } else {
-                                        tool
-                                    }
-                                }
-                                onUpdate(assistant.copy(localTools = updated))
-                            }
-                        )
-                    }
-                )
-            }
-
-            // JavaScript Engine
-            if (!linuxEnabled) {
-                SettingGroupItem(
-                    title = stringResource(R.string.assistant_page_local_tools_javascript_engine_title),
-                    subtitle = stringResource(R.string.assistant_page_local_tools_javascript_engine_desc),
-                    trailing = {
-                        HapticSwitch(
-                            checked = assistant.localTools.contains(LocalToolOption.JavascriptEngine),
-                            onCheckedChange = { enabled ->
-                                val newLocalTools = if (enabled) {
-                                    assistant.localTools + LocalToolOption.JavascriptEngine
-                                } else {
-                                    assistant.localTools - LocalToolOption.JavascriptEngine
-                                }
-                                onUpdate(assistant.copy(localTools = newLocalTools))
-                            }
-                        )
-                    }
-                )
-            }
             
             SettingGroupItem(
                 title = stringResource(R.string.notification_tools_title),
@@ -327,25 +204,23 @@ fun AssistantToolsSubPage(
             
             // Python Engine
             val pythonOption = assistant.localTools.filterIsInstance<LocalToolOption.PythonEngine>().firstOrNull()
-            if (!linuxEnabled) {
-                SettingGroupItem(
-                    title = stringResource(R.string.assistant_page_local_tools_python_engine_title),
-                    subtitle = stringResource(R.string.assistant_page_local_tools_python_engine_desc),
-                    trailing = {
-                        HapticSwitch(
-                            checked = pythonOption != null,
-                            onCheckedChange = { enabled ->
-                                val newLocalTools = if (enabled) {
-                                    assistant.localTools + LocalToolOption.PythonEngine
-                                } else {
-                                    assistant.localTools.filterNot { it is LocalToolOption.PythonEngine }
-                                }
-                                onUpdate(assistant.copy(localTools = newLocalTools))
+            SettingGroupItem(
+                title = stringResource(R.string.assistant_page_local_tools_python_engine_title),
+                subtitle = stringResource(R.string.assistant_page_local_tools_python_engine_desc),
+                trailing = {
+                    HapticSwitch(
+                        checked = pythonOption != null,
+                        onCheckedChange = { enabled ->
+                            val newLocalTools = if (enabled) {
+                                assistant.localTools + LocalToolOption.PythonEngine
+                            } else {
+                                assistant.localTools.filterNot { it is LocalToolOption.PythonEngine }
                             }
-                        )
-                    }
-                )
-            }
+                            onUpdate(assistant.copy(localTools = newLocalTools))
+                        }
+                    )
+                }
+            )
 
             SettingGroupItem(
                 title = stringResource(R.string.assistant_page_local_tools_tts_title),

@@ -62,13 +62,6 @@ sealed class LocalToolOption {
     data object PythonEngine : LocalToolOption()
 
     @Serializable
-    @SerialName("linux_environment")
-    data class LinuxEnvironment(
-        val networkAccess: Boolean = true,
-        val fullToolchain: Boolean = false,
-    ) : LocalToolOption()
-
-    @Serializable
     @SerialName("tts")
     data object Tts : LocalToolOption()
 
@@ -146,13 +139,6 @@ internal fun buildPreloadedPythonDescription(preloadedFiles: List<PreloadedSandb
     return " Latest user attachments are already copied into the Python sandbox as $fileList. Open these files directly by sandbox filename in Python. Use import_attachment only for original chat attachment URLs."
 }
 
-internal fun buildPreloadedLinuxDescription(preloadedFiles: List<PreloadedSandboxAttachment>): String {
-    val visibleFiles = visiblePreloadedSandboxAttachments(preloadedFiles)
-    if (visibleFiles.isEmpty()) return ""
-    val fileList = visibleFiles.joinToString(", ") { "'${it.sandboxName}'" }
-    return " Latest user attachments are already copied into the Linux workspace as $fileList. Open these files directly from /workspace."
-}
-
 internal fun visiblePreloadedSandboxAttachments(
     preloadedFiles: List<PreloadedSandboxAttachment>,
 ): List<PreloadedSandboxAttachment> {
@@ -184,34 +170,6 @@ private fun shortStableHash(value: String): String {
         .digest(value.toByteArray())
         .joinToString(separator = "") { byte -> "%02x".format(byte) }
         .take(8)
-}
-
-private fun JsonObject.truncateLinuxToolResult(maxLength: Int = 16_000): JsonObject {
-    val output = toString()
-    return if (output.length > maxLength) {
-        buildJsonObject {
-            put("output", output.take(maxLength) + "... (truncated)")
-            put("note", "Output truncated to save context. Use files for large output and list_sandbox_files to inspect artifacts.")
-        }
-    } else {
-        this
-    }
-}
-
-internal fun setLinuxEnvironmentEnabled(
-    localTools: List<LocalToolOption>,
-    enabled: Boolean,
-): List<LocalToolOption> {
-    val withoutCodeRuntimes = localTools.filterNot { tool ->
-        tool is LocalToolOption.LinuxEnvironment ||
-            tool is LocalToolOption.PythonEngine ||
-            tool is LocalToolOption.JavascriptEngine
-    }
-    return if (enabled) {
-        listOf(LocalToolOption.LinuxEnvironment()) + withoutCodeRuntimes
-    } else {
-        withoutCodeRuntimes
-    }
 }
 
 class LocalTools(
@@ -327,9 +285,6 @@ class LocalTools(
     }
 
     private val pythonSandbox by lazy { PythonSandbox(context) }
-    private val linuxSandbox by lazy { LinuxSandbox(context) }
-    private val linuxEnvironmentManager by lazy { LinuxEnvironmentManager(context) }
-    private val linuxCommandRunner by lazy { LinuxCommandRunner(linuxEnvironmentManager) }
     private val ttsController by lazy { TtsController(context, ttsManager) }
 
     val ttsTool by lazy {
@@ -1010,16 +965,13 @@ class LocalTools(
         attachments: List<PythonAttachmentReference> = emptyList(),
     ): List<Tool> {
         val tools = mutableListOf<Tool>()
-        val linuxOption = options.filterIsInstance<LocalToolOption.LinuxEnvironment>().firstOrNull()
-        if (linuxOption == null && options.contains(LocalToolOption.JavascriptEngine)) {
+        if (options.contains(LocalToolOption.JavascriptEngine)) {
             tools.add(javascriptTool)
         }
         if (options.contains(LocalToolOption.Notifications)) {
             tools.addAll(getNotificationTools(assistantId, conversationId))
         }
-        if (linuxOption != null) {
-            tools.addAll(getLinuxTools(conversationId, attachments, linuxOption))
-        } else if (options.contains(LocalToolOption.PythonEngine)) {
+        if (options.contains(LocalToolOption.PythonEngine)) {
             tools.addAll(getPythonTools(conversationId, attachments))
         }
         if (options.contains(LocalToolOption.Tts)) {
@@ -1032,292 +984,6 @@ class LocalTools(
             tools.add(imageGenerationTool)
         }
         return tools
-    }
-
-    fun getLinuxTools(
-        conversationId: Uuid,
-        attachments: List<PythonAttachmentReference> = emptyList(),
-        option: LocalToolOption.LinuxEnvironment = LocalToolOption.LinuxEnvironment(),
-    ): List<Tool> {
-        val workspaceDir = linuxSandbox.getConversationDir(conversationId)
-        val preloadedFiles = preloadLinuxAttachments(conversationId, attachments)
-        val preloadedInfo = buildPreloadedLinuxDescription(preloadedFiles)
-
-        return listOf(
-            Tool(
-                name = "run_linux_command",
-                description = "Run a shell command in LastChat's persistent Alpine Linux environment. It includes apk, pip, Git, Python, Node, and Java when installed.$preloadedInfo Work in /workspace for conversation files. After execution, include any generated_files[].markdown_link in your reply.",
-                parameters = {
-                    InputSchema.Obj(
-                        properties = buildJsonObject {
-                            put("command", buildJsonObject {
-                                put("type", "string")
-                                put("description", "Shell command to run")
-                            })
-                            put("timeout_seconds", buildJsonObject {
-                                put("type", "integer")
-                                put("description", "Timeout in seconds, from 1 to 120. Defaults to 30.")
-                            })
-                        },
-                        required = listOf("command")
-                    )
-                },
-                execute = {
-                    val command = it.jsonObject["command"]?.jsonPrimitive?.contentOrNull.orEmpty()
-                    val timeoutSeconds = it.jsonObject["timeout_seconds"]
-                        ?.jsonPrimitive
-                        ?.contentOrNull
-                        ?.toLongOrNull()
-                        ?.coerceIn(1L, 120L) ?: 30L
-                    val filesBefore = linuxSandbox.listFiles(conversationId)
-                    val beforeNames = filesBefore.map { file -> file.name }.toSet()
-                    val result = linuxCommandRunner.runCommand(
-                        command = command,
-                        workspaceDir = workspaceDir,
-                        timeoutSeconds = timeoutSeconds,
-                        networkAccess = option.networkAccess,
-                    )
-                    buildJsonObject {
-                        put("ready", result.ready)
-                        put("exit_code", result.exitCode)
-                        result.stdout.takeIf { stdout -> stdout.isNotBlank() }?.let { stdout -> put("stdout", stdout) }
-                        result.stderr.takeIf { stderr -> stderr.isNotBlank() }?.let { stderr -> put("stderr", stderr) }
-                        result.error?.let { error -> put("error", error) }
-                        put("timed_out", result.timedOut)
-                        val visiblePreloadedFiles = visiblePreloadedSandboxAttachments(preloadedFiles)
-                        if (visiblePreloadedFiles.isNotEmpty()) {
-                            put(
-                                "preloaded_attachments",
-                                JsonArray(
-                                    visiblePreloadedFiles.map { file ->
-                                        buildJsonObject {
-                                            put("name", file.sandboxName)
-                                            put("original_name", file.originalFileName)
-                                            put("mime", file.mimeType)
-                                            put("source_url", file.sourceUrl)
-                                        }
-                                    }
-                                )
-                            )
-                        }
-                        val generatedFiles = linuxSandbox.listFiles(conversationId)
-                            .filter { file -> file.name !in beforeNames }
-                            .map { file -> linuxSandboxFileJson(conversationId, file) }
-                        if (generatedFiles.isNotEmpty()) {
-                            put("generated_files", JsonArray(generatedFiles))
-                            put("note", "Use generated_files[].markdown_link in your reply so users can open/download outputs directly in chat.")
-                        }
-                        if (!result.ready) {
-                            put("status", linuxEnvironmentManager.getVerifiedStatus().toJsonElement())
-                        }
-                    }.truncateLinuxToolResult()
-                }
-            ),
-            Tool(
-                name = "linux_environment_status",
-                description = "Check whether the Linux environment is installed, ready, and which capabilities are enabled.",
-                parameters = {
-                    InputSchema.Obj(
-                        properties = buildJsonObject { },
-                        required = emptyList()
-                    )
-                },
-                execute = {
-                    buildJsonObject {
-                        put("environment", linuxEnvironmentManager.getVerifiedStatus().toJsonElement())
-                        put("network_access", option.networkAccess)
-                        put("full_toolchain", option.fullToolchain)
-                    }
-                }
-            ),
-            Tool(
-                name = "list_sandbox_files",
-                description = "List files in the Linux workspace for this conversation. Returns markdown links that can be included in the response.",
-                parameters = {
-                    InputSchema.Obj(
-                        properties = buildJsonObject { },
-                        required = emptyList()
-                    )
-                },
-                execute = {
-                    buildJsonObject {
-                        put(
-                            "files",
-                            JsonArray(linuxSandbox.listFiles(conversationId).map { file ->
-                                linuxSandboxFileJson(conversationId, file)
-                            })
-                        )
-                    }
-                }
-            ),
-            Tool(
-                name = "read_sandbox_file",
-                description = "Read a UTF-8 text file from the Linux workspace.",
-                parameters = {
-                    InputSchema.Obj(
-                        properties = buildJsonObject {
-                            put("path", buildJsonObject {
-                                put("type", "string")
-                                put("description", "Relative path to the file in the Linux workspace")
-                            })
-                        },
-                        required = listOf("path")
-                    )
-                },
-                execute = {
-                    val path = it.jsonObject["path"]?.jsonPrimitive?.contentOrNull.orEmpty()
-                    runCatching {
-                        buildJsonObject { put("content", linuxSandbox.readTextFile(conversationId, path)) }
-                    }.getOrElse { error ->
-                        buildJsonObject { put("error", error.message ?: "Failed to read file") }
-                    }
-                }
-            ),
-            Tool(
-                name = "write_sandbox_file",
-                description = "Write a UTF-8 text file to the Linux workspace. Returns markdown_link which should be included in the response.",
-                parameters = {
-                    InputSchema.Obj(
-                        properties = buildJsonObject {
-                            put("path", buildJsonObject {
-                                put("type", "string")
-                                put("description", "Relative path for the file")
-                            })
-                            put("content", buildJsonObject {
-                                put("type", "string")
-                                put("description", "Content to write")
-                            })
-                        },
-                        required = listOf("path", "content")
-                    )
-                },
-                execute = {
-                    val path = it.jsonObject["path"]?.jsonPrimitive?.contentOrNull.orEmpty()
-                    val content = it.jsonObject["content"]?.jsonPrimitive?.contentOrNull.orEmpty()
-                    runCatching {
-                        linuxSandbox.writeTextFile(conversationId, path, content)
-                        val uri = linuxSandbox.getFileUri(conversationId, path)
-                        buildJsonObject {
-                            put("success", true)
-                            put("path", path)
-                            put("uri", uri.toString())
-                            put("markdown_link", "[$path]($uri)")
-                        }
-                    }.getOrElse { error ->
-                        buildJsonObject { put("error", error.message ?: "Failed to write file") }
-                    }
-                }
-            ),
-            Tool(
-                name = "delete_sandbox_file",
-                description = "Delete a file from the Linux workspace.",
-                parameters = {
-                    InputSchema.Obj(
-                        properties = buildJsonObject {
-                            put("path", buildJsonObject {
-                                put("type", "string")
-                                put("description", "Relative path to delete")
-                            })
-                        },
-                        required = listOf("path")
-                    )
-                },
-                execute = {
-                    val path = it.jsonObject["path"]?.jsonPrimitive?.contentOrNull.orEmpty()
-                    runCatching {
-                        buildJsonObject {
-                            put("success", linuxSandbox.deleteFile(conversationId, path))
-                            put("path", path)
-                        }
-                    }.getOrElse { error ->
-                        buildJsonObject { put("error", error.message ?: "Failed to delete file") }
-                    }
-                }
-            ),
-            Tool(
-                name = "import_attachment",
-                description = "Import an original chat attachment URL into the Linux workspace.",
-                parameters = {
-                    InputSchema.Obj(
-                        properties = buildJsonObject {
-                            put("url", buildJsonObject {
-                                put("type", "string")
-                                put("description", "Original file/content URL from the message attachment")
-                            })
-                            put("filename", buildJsonObject {
-                                put("type", "string")
-                                put("description", "Filename to save as in the workspace")
-                            })
-                        },
-                        required = listOf("url", "filename")
-                    )
-                },
-                execute = {
-                    val url = it.jsonObject["url"]?.jsonPrimitive?.contentOrNull.orEmpty()
-                    val filename = it.jsonObject["filename"]?.jsonPrimitive?.contentOrNull.orEmpty()
-                    runCatching {
-                        val savedPath = linuxSandbox.importFile(conversationId, android.net.Uri.parse(url), filename)
-                        val uri = linuxSandbox.getFileUri(conversationId, filename)
-                        buildJsonObject {
-                            put("success", true)
-                            put("path", savedPath)
-                            put("filename", filename)
-                            put("uri", uri.toString())
-                            put("markdown_link", "[$filename]($uri)")
-                        }
-                    }.getOrElse { error ->
-                        buildJsonObject {
-                            put("success", false)
-                            put("error", error.message ?: "Failed to import file")
-                        }
-                    }
-                }
-            )
-        )
-    }
-
-    private fun preloadLinuxAttachments(
-        conversationId: Uuid,
-        attachments: List<PythonAttachmentReference>,
-    ): List<PreloadedSandboxAttachment> {
-        return attachments.mapIndexedNotNull { index, attachment ->
-            runCatching {
-                val originalFileName = attachment.fileName.ifBlank { "attachment_$index" }
-                val filename = buildSandboxAttachmentFilename(
-                    originalName = originalFileName,
-                    sourceUrl = attachment.url,
-                )
-                linuxSandbox.importFile(
-                    conversationId = conversationId,
-                    sourceUri = android.net.Uri.parse(attachment.url),
-                    filename = filename,
-                )
-                PreloadedSandboxAttachment(
-                    sandboxName = filename,
-                    originalFileName = originalFileName,
-                    mimeType = attachment.mimeType,
-                    sourceUrl = attachment.url,
-                    promptVisible = attachment.promptVisible,
-                )
-            }.onFailure { e ->
-                android.util.Log.w("LocalTools", "Failed to auto-import Linux attachment $index: ${e.message}")
-            }.getOrNull()
-        }
-    }
-
-    private fun linuxSandboxFileJson(
-        conversationId: Uuid,
-        file: LinuxSandbox.FileInfo,
-    ): JsonObject {
-        val uri = linuxSandbox.getFileUri(conversationId, file.name)
-        return buildJsonObject {
-            put("name", file.name)
-            put("size", file.size)
-            put("is_image", file.isImage)
-            put("mime", file.mimeType)
-            put("uri", uri.toString())
-            put("markdown_link", if (file.isImage) "![${file.name}]($uri)" else "[${file.name}]($uri)")
-        }
     }
 
     private suspend fun saveGeneratedImageFromTool(

@@ -25,7 +25,6 @@ internal object BackupArchiveFormat {
         "lorebook_covers",
         "lorebook_attachments",
         "python_sandbox",
-        "linux_env",
         "model_catalog",
     )
 
