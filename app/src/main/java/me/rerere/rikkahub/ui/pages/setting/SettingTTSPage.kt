@@ -274,7 +274,7 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                         PhysicsSwipeToDelete(
                             position = position,
                             groupCornerRadius = 24.dp,
-                            deleteEnabled = canDelete,
+                            deleteEnabled = canDelete || provider is TTSProviderSetting.SystemTTS,
                             neighborOffset = neighborOffset,
                             onDragProgress = { offset, unlocked ->
                                 draggingIndex = index
@@ -366,7 +366,11 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                             val removedVoiceIds = p.voices.map { it.id }.toSet()
                             val newProviders = settings.ttsProviders - p
                             val newSelectedId =
-                                if (settings.selectedTTSProviderId == p.id) DEFAULT_SYSTEM_TTS_ID else settings.selectedTTSProviderId
+                                if (settings.selectedTTSProviderId == p.id) {
+                                    newProviders.firstOrNull()?.id ?: DEFAULT_SYSTEM_TTS_ID
+                                } else {
+                                    settings.selectedTTSProviderId
+                                }
                             val newSelectedVoiceId = if (settings.selectedTTSVoiceId in removedVoiceIds) {
                                 newProviders.find { it.id == newSelectedId }?.voices?.firstOrNull()?.id
                                     ?: newProviders.firstOrNull()?.voices?.firstOrNull()?.id
@@ -598,7 +602,7 @@ internal fun TtsProvidersContent(
                         PhysicsSwipeToDelete(
                             position = position,
                             groupCornerRadius = 24.dp,
-                            deleteEnabled = canDelete,
+                            deleteEnabled = canDelete || provider is TTSProviderSetting.SystemTTS,
                             neighborOffset = neighborOffset,
                             onDragProgress = { offset, unlocked ->
                                 draggingIndex = index
@@ -684,10 +688,15 @@ internal fun TtsProvidersContent(
                     providerToDelete?.let { provider ->
                         val newProviders = settings.ttsProviders - provider
                         val newSelectedId =
-                            if (settings.selectedTTSProviderId == provider.id) DEFAULT_SYSTEM_TTS_ID else settings.selectedTTSProviderId
+                            if (settings.selectedTTSProviderId == provider.id) {
+                                newProviders.firstOrNull()?.id ?: DEFAULT_SYSTEM_TTS_ID
+                            } else {
+                                settings.selectedTTSProviderId
+                            }
                         val removedVoiceIds = provider.voices.map { it.id }.toSet()
                         val newSelectedVoiceId = if (settings.selectedTTSVoiceId in removedVoiceIds) {
                             newProviders.find { it.id == newSelectedId }?.voices?.firstOrNull()?.id
+                                ?: newProviders.firstOrNull()?.voices?.firstOrNull()?.id
                                 ?: DEFAULT_SYSTEM_TTS_VOICE_ID
                         } else {
                             settings.selectedTTSVoiceId

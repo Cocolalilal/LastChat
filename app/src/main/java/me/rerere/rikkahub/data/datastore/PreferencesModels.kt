@@ -445,13 +445,29 @@ fun Settings.getEffectiveTtsAutoplayMode(assistant: Assistant? = null): TtsAutop
 }
 
 fun Settings.normalizeTtsSettings(): Settings {
-    val normalizedProviders = ttsProviders.ifEmpty { DEFAULT_TTS_PROVIDERS }.distinctBy { it.id }.map { provider ->
-        val defaultVoiceId = if (provider.id == DEFAULT_SYSTEM_TTS_ID) DEFAULT_SYSTEM_TTS_VOICE_ID else null
-        provider.withDefaultVoices(defaultVoiceId).let { normalized ->
-            normalized.copyProvider(voices = normalized.voices.distinctBy { voice -> voice.id })
+    val normalizedProviders = ttsProviders.distinctBy { it.id }.map { provider ->
+        if (provider is TTSProviderSetting.SystemTTS) {
+            val voiceId = if (provider.id == DEFAULT_SYSTEM_TTS_ID) {
+                DEFAULT_SYSTEM_TTS_VOICE_ID
+            } else {
+                provider.voices.firstOrNull()?.id ?: Uuid.random()
+            }
+            provider.copyProvider(
+                voices = listOf(
+                    TTSVoice(
+                        id = voiceId,
+                        name = "System TTS",
+                    )
+                )
+            )
+        } else {
+            provider.withDefaultVoices().let { normalized ->
+                normalized.copyProvider(voices = normalized.voices.distinctBy { voice -> voice.id })
+            }
         }
     }
     val allVoiceIds = normalizedProviders.flatMap { it.voices }.map { it.id }.toSet()
+    val allProviderIds = normalizedProviders.map { it.id }.toSet()
     val fallbackVoiceId = normalizedProviders.find { it.id == selectedTTSProviderId }
         ?.voices
         ?.firstOrNull()
@@ -459,8 +475,13 @@ fun Settings.normalizeTtsSettings(): Settings {
         ?: normalizedProviders.firstOrNull()?.voices?.firstOrNull()?.id
         ?: DEFAULT_SYSTEM_TTS_VOICE_ID
     val normalizedVoiceId = selectedTTSVoiceId.takeIf { it in allVoiceIds } ?: fallbackVoiceId
+    val normalizedProviderId = selectedTTSProviderId.takeIf { it in allProviderIds }
+        ?: normalizedProviders.firstOrNull { provider -> provider.voices.any { voice -> voice.id == normalizedVoiceId } }?.id
+        ?: normalizedProviders.firstOrNull()?.id
+        ?: DEFAULT_SYSTEM_TTS_ID
     return copy(
         ttsProviders = normalizedProviders,
+        selectedTTSProviderId = normalizedProviderId,
         selectedTTSVoiceId = normalizedVoiceId,
         assistants = assistants.map { assistant ->
             assistant.copy(ttsVoiceId = assistant.ttsVoiceId?.takeIf { it in allVoiceIds })
@@ -605,7 +626,7 @@ internal val DEFAULT_TTS_PROVIDERS = listOf(
         voices = listOf(
             TTSVoice(
                 id = DEFAULT_SYSTEM_TTS_VOICE_ID,
-                name = "System Voice",
+                name = "System TTS",
             )
         ),
     ),

@@ -238,7 +238,7 @@ class SettingsStore(
                     } ?: WebDavConfig(),
                     ttsProviders = preferences[TTS_PROVIDERS]?.let {
                         JsonInstant.decodeFromString(it)
-                    } ?: emptyList(),
+                    } ?: DEFAULT_TTS_PROVIDERS,
                     selectedTTSProviderId = preferences[SELECTED_TTS_PROVIDER]?.let { Uuid.parse(it) }
                         ?: DEFAULT_SYSTEM_TTS_ID,
                     selectedTTSVoiceId = preferences[SELECTED_TTS_VOICE]?.let { Uuid.parse(it) }
@@ -295,15 +295,10 @@ class SettingsStore(
                 } else provider
             }.toMutableList()
             val assistants = it.assistants.ifEmpty { DEFAULT_ASSISTANTS }.toMutableList()
-            val ttsProviders = it.ttsProviders.ifEmpty { DEFAULT_TTS_PROVIDERS }.map { provider ->
+            val ttsProviders = it.ttsProviders.map { provider ->
                 val defaultVoiceId = if (provider.id == DEFAULT_SYSTEM_TTS_ID) DEFAULT_SYSTEM_TTS_VOICE_ID else null
                 provider.withDefaultVoices(defaultVoiceId)
             }.toMutableList()
-            DEFAULT_TTS_PROVIDERS.forEach { defaultTTSProvider ->
-                if (ttsProviders.none { provider -> provider.id == defaultTTSProvider.id }) {
-                    ttsProviders.add(defaultTTSProvider.copyProvider())
-                }
-            }
             val selectedTtsVoiceId = ttsProviders
                 .flatMap { provider -> provider.voices }
                 .firstOrNull { voice -> voice.id == it.selectedTTSVoiceId }

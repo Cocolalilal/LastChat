@@ -646,9 +646,19 @@ fun ChatPage(
             }
     }
 
-    val chatListState = remember(conversation.id) { LazyListState() }
+    val initialChatListScrollPosition = vm.chatListScrollPosition
+    val chatListState = remember(conversation.id) {
+        LazyListState(
+            firstVisibleItemIndex = initialChatListScrollPosition?.firstVisibleItemIndex ?: 0,
+            firstVisibleItemScrollOffset = initialChatListScrollPosition?.firstVisibleItemScrollOffset ?: 0,
+        )
+    }
     LaunchedEffect(conversation.id, conversation.messageNodes.size) {
-        if (!vm.chatListInitialized && conversation.messageNodes.isNotEmpty()) {
+        if (
+            !vm.chatListInitialized &&
+            vm.chatListScrollPosition == null &&
+            conversation.messageNodes.isNotEmpty()
+        ) {
             chatListState.scrollToItem(conversation.messageNodes.lastIndex)
             vm.chatListInitialized = true
         }
@@ -658,6 +668,25 @@ fun ChatPage(
         if (focusLatestMessageKey != null && conversation.messageNodes.isNotEmpty()) {
             chatListState.animateScrollToItem(conversation.messageNodes.lastIndex)
         }
+    }
+
+    LaunchedEffect(conversation.id, conversation.messageNodes.isNotEmpty(), chatListState) {
+        if (conversation.messageNodes.isEmpty()) {
+            return@LaunchedEffect
+        }
+        snapshotFlow {
+            ChatListScrollPosition(
+                firstVisibleItemIndex = chatListState.firstVisibleItemIndex,
+                firstVisibleItemScrollOffset = chatListState.firstVisibleItemScrollOffset,
+            )
+        }
+            .distinctUntilChanged()
+            .collect { position ->
+                vm.updateChatListScrollPosition(
+                    firstVisibleItemIndex = position.firstVisibleItemIndex,
+                    firstVisibleItemScrollOffset = position.firstVisibleItemScrollOffset,
+                )
+            }
     }
 
     fun navigateToAssistantConversation(selectedAssistant: Assistant) {

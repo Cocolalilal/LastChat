@@ -43,10 +43,7 @@ fun TTSProviderSetting.legacyDefaultVoice(defaultVoiceId: Uuid? = null): TTSVoic
 
         is TTSProviderSetting.SystemTTS -> TTSVoice(
             id = id(),
-            name = voiceName?.takeIf { it.isNotBlank() } ?: name.ifBlank { "System Voice" },
-            providerVoiceId = voiceName.orEmpty(),
-            pitch = pitch,
-            speed = speechRate,
+            name = "System TTS",
         )
 
         is TTSProviderSetting.MiniMax -> TTSVoice(

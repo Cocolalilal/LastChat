@@ -25,10 +25,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.DragIndicator
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.ViewModule
+import androidx.compose.material.icons.rounded.Widgets
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenuItem
@@ -75,9 +77,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
@@ -265,13 +267,29 @@ private fun TtsProviderConfigTab(
                     }
                 )
             ) {
-                TTSProviderConfigure(
-                    setting = provider,
-                    modifier = Modifier.padding(16.dp),
-                    showVoiceFields = false,
-                    scrollable = false,
-                    onValueChange = onUpdateProvider,
-                )
+                if (provider is TTSProviderSetting.SystemTTS) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text("System TTS", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            text = "No settings available.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                } else {
+                    TTSProviderConfigure(
+                        setting = provider,
+                        modifier = Modifier.padding(16.dp),
+                        showVoiceFields = false,
+                        scrollable = false,
+                        onValueChange = onUpdateProvider,
+                    )
+                }
             }
         }
     }
@@ -283,12 +301,18 @@ private fun TtsVoiceTab(
     onUpdateProvider: (TTSProviderSetting) -> Unit,
     contentPadding: PaddingValues,
 ) {
+    if (provider is TTSProviderSetting.SystemTTS) {
+        SystemTtsVoiceTab(provider = provider, contentPadding = contentPadding)
+        return
+    }
+
     val lazyListState = rememberLazyListState()
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
         onUpdateProvider(provider.moveVoice(from.index, to.index))
     }
     var editingVoice by remember(provider.id) { mutableStateOf<TTSVoice?>(null) }
-    var showAddSheet by remember(provider.id) { mutableStateOf(false) }
+    var showManualVoiceSheet by remember(provider.id) { mutableStateOf(false) }
+    var showProviderVoicesSheet by remember(provider.id) { mutableStateOf(false) }
     val tts = LocalTTSState.current
     val density = LocalDensity.current
     val haptics = rememberPremiumHaptics()
@@ -437,15 +461,37 @@ private fun TtsVoiceTab(
                 )
         )
 
-        FloatingActionButton(
-            onClick = { showAddSheet = true },
+        Column(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(16.dp)
                 .offset(y = -ScreenOffset),
-            shape = AppShapes.CardLarge,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Icon(Icons.Rounded.Add, null)
+            ProviderVoicesFab(
+                provider = provider,
+                onAddVoice = { voice ->
+                    onUpdateProvider(provider.addVoice(voice.copy(id = Uuid.random())))
+                },
+                onRemoveVoice = { voice ->
+                    provider.voices.firstOrNull { selected -> voicesReferToSameProviderVoice(selected, voice) }?.let {
+                        onUpdateProvider(provider.delVoice(it))
+                    }
+                },
+                onOpen = { showProviderVoicesSheet = true },
+                showSheet = showProviderVoicesSheet,
+                onDismiss = { showProviderVoicesSheet = false },
+            )
+            FloatingActionButton(
+                onClick = {
+                    haptics.perform(HapticPattern.Pop)
+                    showManualVoiceSheet = true
+                },
+                shape = AppShapes.CardLarge,
+            ) {
+                Icon(Icons.Rounded.Add, null)
+            }
         }
     }
 
@@ -459,17 +505,71 @@ private fun TtsVoiceTab(
         }
     )
 
-    if (showAddSheet) {
-        AddVoiceSheet(
+    if (showManualVoiceSheet) {
+        ManualVoiceSheet(
             provider = provider,
-            onDismiss = { showAddSheet = false },
-            onAddVoices = { voices ->
-                var updated = provider
-                voices.forEach { voice -> updated = updated.addVoice(voice) }
-                onUpdateProvider(updated)
-                showAddSheet = false
+            onDismiss = { showManualVoiceSheet = false },
+            onAddVoice = { voice ->
+                onUpdateProvider(provider.addVoice(voice))
+                showManualVoiceSheet = false
             }
         )
+    }
+}
+
+@Composable
+private fun SystemTtsVoiceTab(
+    provider: TTSProviderSetting.SystemTTS,
+    contentPadding: PaddingValues,
+) {
+    val tts = LocalTTSState.current
+    val haptics = rememberPremiumHaptics()
+    val voice = provider.voices.firstOrNull() ?: TTSVoice(name = "System TTS")
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .imePadding(),
+        contentPadding = contentPadding + PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 80.dp),
+    ) {
+        item {
+            Surface(
+                shape = AppShapes.CardLarge,
+                color = if (LocalDarkMode.current) {
+                    MaterialTheme.colorScheme.surfaceContainerLow
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainerHigh
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("System TTS", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            text = "Default Android voice",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            tts.speak(
+                                text = "Hello, this is what this voice sounds like.",
+                                overrideSetting = provider.withVoiceApplied(voice),
+                            )
+                        }
+                    ) {
+                        Icon(Icons.AutoMirrored.Rounded.VolumeUp, null)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -629,18 +729,47 @@ private fun VoiceEditorSheet(
 }
 
 @Composable
-private fun AddVoiceSheet(
+private fun ProviderVoicesFab(
     provider: TTSProviderSetting,
+    onAddVoice: (TTSVoice) -> Unit,
+    onRemoveVoice: (TTSVoice) -> Unit,
+    onOpen: () -> Unit,
+    showSheet: Boolean,
     onDismiss: () -> Unit,
-    onAddVoices: (List<TTSVoice>) -> Unit,
 ) {
-    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val okHttpClient = koinInject<OkHttpClient>()
+    val haptics = rememberPremiumHaptics()
+    val tts = LocalTTSState.current
     var discovered by remember(provider.id) { mutableStateOf(providerPresetVoices(provider)) }
     var isFetching by remember { mutableStateOf(false) }
-    var customVoice by remember { mutableStateOf(TTSVoice(name = "", providerVoiceId = "")) }
+
+    fun fetchVoices() {
+        if (isFetching) return
+        scope.launch {
+            isFetching = true
+            discovered = fetchProviderVoices(context, okHttpClient, provider).ifEmpty { discovered }
+            isFetching = false
+        }
+    }
+
+    FloatingActionButton(
+        onClick = {
+            haptics.perform(HapticPattern.Tick)
+            onOpen()
+            if (discovered.isEmpty()) fetchVoices()
+        },
+        shape = AppShapes.CardLarge,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    ) {
+        Icon(Icons.Rounded.Widgets, contentDescription = "Provider voices")
+    }
+
+    if (!showSheet) return
+
+    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -659,62 +788,152 @@ private fun AddVoiceSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Add Voices", style = MaterialTheme.typography.headlineSmall)
+                Text("Provider Voices", style = MaterialTheme.typography.headlineSmall)
                 IconButton(
                     enabled = !isFetching,
-                    onClick = {
-                        scope.launch {
-                            isFetching = true
-                            discovered = fetchProviderVoices(context, okHttpClient, provider).ifEmpty { discovered }
-                            isFetching = false
-                        }
-                    }
+                    onClick = { fetchVoices() }
                 ) {
                     Icon(Icons.Rounded.CloudDownload, null)
                 }
             }
 
-            OutlinedTextField(
-                value = customVoice.providerVoiceId,
-                onValueChange = {
-                    customVoice = customVoice.copy(
-                        providerVoiceId = it,
-                        name = customVoice.name.ifBlank { it },
-                    )
-                },
-                label = { Text("Manual voice id") },
-                modifier = Modifier.fillMaxWidth(),
-                shape = AppShapes.InputField,
-            )
-            TextButton(
-                enabled = customVoice.providerVoiceId.isNotBlank(),
-                onClick = {
-                    onAddVoices(listOf(customVoice.copy(name = customVoice.name.ifBlank { customVoice.providerVoiceId })))
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Add manual voice")
-            }
-            HorizontalDivider()
             LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.weight(1f)) {
-                itemsIndexed(discovered, key = { _, voice -> "${voice.providerVoiceId}:${voice.name}" }) { _, voice ->
-                    Surface(
-                        onClick = { onAddVoices(listOf(voice.copy(id = Uuid.random()))) },
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(voice.name.ifBlank { voice.providerVoiceId }, style = MaterialTheme.typography.titleMedium)
+                if (discovered.isEmpty()) {
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 48.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
                             Text(
-                                listOfNotNull(voice.providerVoiceId, voice.locale).filter { it.isNotBlank() }.joinToString(" - "),
-                                style = MaterialTheme.typography.bodySmall,
+                                text = if (isFetching) "Loading voices..." else "No provider voices found",
+                                style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
+                                textAlign = TextAlign.Center,
                             )
+                            if (!isFetching) {
+                                TextButton(onClick = { fetchVoices() }) {
+                                    Text("Fetch voices")
+                                }
+                            }
                         }
                     }
+                }
+                itemsIndexed(discovered, key = { _, voice -> "${voice.providerVoiceId}:${voice.name}" }) { _, voice ->
+                    val selected = provider.voices.any { selectedVoice -> voicesReferToSameProviderVoice(selectedVoice, voice) }
+                    Surface(
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            if (selected) {
+                                onRemoveVoice(voice)
+                            } else {
+                                onAddVoice(voice)
+                            }
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        color = when {
+                            selected -> MaterialTheme.colorScheme.primaryContainer
+                            LocalDarkMode.current -> MaterialTheme.colorScheme.surfaceContainerLow
+                            else -> MaterialTheme.colorScheme.surfaceContainerHigh
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(voice.name.ifBlank { voice.providerVoiceId }, style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    listOfNotNull(voice.providerVoiceId, voice.locale).filter { it.isNotBlank() }.joinToString(" - "),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (selected) {
+                                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f)
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            IconButton(
+                                onClick = {
+                                    haptics.perform(HapticPattern.Pop)
+                                    tts.speak(
+                                        text = "Hello, this is what this voice sounds like.",
+                                        overrideSetting = provider.withVoiceApplied(voice),
+                                    )
+                                }
+                            ) {
+                                Icon(Icons.AutoMirrored.Rounded.VolumeUp, null)
+                            }
+                            if (selected) {
+                                Icon(Icons.Rounded.Check, contentDescription = null)
+                            } else {
+                                Icon(Icons.Rounded.Add, contentDescription = null)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ManualVoiceSheet(
+    provider: TTSProviderSetting,
+    onDismiss: () -> Unit,
+    onAddVoice: (TTSVoice) -> Unit,
+) {
+    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val haptics = rememberPremiumHaptics()
+    var voiceName by remember(provider.id) { mutableStateOf("") }
+    var voiceId by remember(provider.id) { mutableStateOf("") }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = state,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .imePadding()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Manual Voice", style = MaterialTheme.typography.headlineSmall)
+            OutlinedTextField(
+                value = voiceName,
+                onValueChange = { voiceName = it },
+                label = { Text("Name") },
+                modifier = Modifier.fillMaxWidth(),
+                shape = AppShapes.InputField,
+                singleLine = true,
+            )
+            OutlinedTextField(
+                value = voiceId,
+                onValueChange = { voiceId = it },
+                label = { Text("Provider voice id") },
+                modifier = Modifier.fillMaxWidth(),
+                shape = AppShapes.InputField,
+                singleLine = true,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                TextButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
+                TextButton(
+                    enabled = voiceId.isNotBlank(),
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        onAddVoice(manualVoiceForProvider(provider, voiceName, voiceId))
+                    },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Add")
                 }
             }
         }
@@ -740,6 +959,62 @@ private fun providerPresetVoices(provider: TTSProviderSetting): List<TTSVoice> {
     }
 }
 
+private fun manualVoiceForProvider(
+    provider: TTSProviderSetting,
+    voiceName: String,
+    voiceId: String,
+): TTSVoice {
+    val trimmedVoiceId = voiceId.trim()
+    val trimmedName = voiceName.trim()
+    val displayName = trimmedName.ifBlank { trimmedVoiceId }
+    return when (provider) {
+        is TTSProviderSetting.OpenAI -> TTSVoice(
+            name = displayName,
+            providerVoiceId = trimmedVoiceId,
+            model = provider.model,
+        )
+
+        is TTSProviderSetting.Gemini -> TTSVoice(
+            name = displayName,
+            providerVoiceId = trimmedVoiceId,
+            model = provider.model,
+        )
+
+        is TTSProviderSetting.SystemTTS -> TTSVoice(
+            name = displayName,
+            providerVoiceId = trimmedVoiceId,
+            pitch = provider.pitch,
+            speed = provider.speechRate,
+        )
+
+        is TTSProviderSetting.MiniMax -> TTSVoice(
+            name = displayName,
+            providerVoiceId = trimmedVoiceId,
+            model = provider.model,
+            emotion = provider.emotion,
+            speed = provider.speed,
+        )
+
+        is TTSProviderSetting.ElevenLabs -> TTSVoice(
+            name = displayName,
+            providerVoiceId = trimmedVoiceId,
+            model = provider.modelId,
+        )
+
+        is TTSProviderSetting.Qwen -> TTSVoice(
+            name = displayName,
+            providerVoiceId = trimmedVoiceId,
+            model = provider.model,
+            languageType = provider.languageType,
+        )
+    }
+}
+
+private fun voicesReferToSameProviderVoice(a: TTSVoice, b: TTSVoice): Boolean {
+    return a.providerVoiceId.equals(b.providerVoiceId, ignoreCase = true) &&
+        (a.model ?: "").equals(b.model ?: "", ignoreCase = true)
+}
+
 private suspend fun fetchProviderVoices(
     context: android.content.Context,
     okHttpClient: OkHttpClient,
@@ -763,10 +1038,12 @@ private suspend fun fetchProviderVoices(
             okHttpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@runCatching emptyList()
                 val body = response.body.string()
-                Json.parseToJsonElement(body).jsonObject["voices"]?.jsonArray.orEmpty().mapNotNull { item ->
-                    val obj = item.jsonObject
-                    val voiceId = obj["voice_id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                    val name = obj["name"]?.jsonPrimitive?.contentOrNull ?: voiceId
+                val root = Json.parseToJsonElement(body) as? JsonObject ?: return@runCatching emptyList()
+                val voices = root["voices"] as? JsonArray ?: return@runCatching emptyList()
+                voices.mapNotNull { item ->
+                    val obj = item as? JsonObject ?: return@mapNotNull null
+                    val voiceId = (obj["voice_id"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+                    val name = (obj["name"] as? JsonPrimitive)?.contentOrNull ?: voiceId
                     TTSVoice(name = name, providerVoiceId = voiceId, model = provider.modelId)
                 }
             }

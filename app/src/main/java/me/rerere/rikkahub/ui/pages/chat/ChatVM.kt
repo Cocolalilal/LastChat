@@ -58,6 +58,11 @@ import kotlin.uuid.Uuid
 
 private const val TAG = "ChatVM"
 
+internal data class ChatListScrollPosition(
+    val firstVisibleItemIndex: Int = 0,
+    val firstVisibleItemScrollOffset: Int = 0,
+)
+
 class ChatVM(
     id: String,
     private val context: Application,
@@ -73,6 +78,18 @@ class ChatVM(
     val conversation: StateFlow<Conversation> = chatService.getConversationFlow(_conversationId)
     private val _conversationInitialized = MutableStateFlow(false)
     val conversationInitialized: StateFlow<Boolean> = _conversationInitialized
+    var chatListScrollPosition: ChatListScrollPosition? = null
+        private set
+
+    fun updateChatListScrollPosition(
+        firstVisibleItemIndex: Int,
+        firstVisibleItemScrollOffset: Int,
+    ) {
+        chatListScrollPosition = ChatListScrollPosition(
+            firstVisibleItemIndex = firstVisibleItemIndex,
+            firstVisibleItemScrollOffset = firstVisibleItemScrollOffset,
+        )
+    }
     var chatListInitialized by mutableStateOf(false) // 聊天列表是否已经滚动到底部
 
     // 异步任务 (从ChatService获取，响应式)
