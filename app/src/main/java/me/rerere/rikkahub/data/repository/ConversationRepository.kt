@@ -215,11 +215,11 @@ class ConversationRepository(
         try { usageStatsDAO.incrementConversations() } catch (_: Exception) {}
     }
 
-    suspend fun updateConversation(conversation: Conversation) {
+    suspend fun updateConversation(conversation: Conversation, preserveConsolidation: Boolean = false) {
         val syncedConversation = chatAttachmentRepository.syncConversationAttachments(conversation)
         // Invalidation Logic: If a consolidated conversation is updated (e.g. new message),
         // we must invalidate the old memory episode to allow re-consolidation.
-        if (syncedConversation.isConsolidated) {
+        if (shouldInvalidateConsolidation(syncedConversation, preserveConsolidation)) {
             val updatedConversation = syncedConversation.copy(isConsolidated = false)
 
             conversationDAO.update(
@@ -340,6 +340,14 @@ class ConversationRepository(
         conversationDAO.updateConsolidatedStatus(
             id = conversationId.toString(),
             isConsolidated = false
+        )
+    }
+
+    suspend fun updateTitle(conversationId: Uuid, title: String, updateAt: Instant) {
+        conversationDAO.updateTitle(
+            id = conversationId.toString(),
+            title = title,
+            updateAt = updateAt.toEpochMilli(),
         )
     }
 
@@ -781,6 +789,11 @@ class ConversationRepository(
             "os error - 11" in text
     }
 }
+
+internal fun shouldInvalidateConsolidation(
+    conversation: Conversation,
+    preserveConsolidation: Boolean,
+): Boolean = conversation.isConsolidated && !preserveConsolidation
 
 /**
  * 轻量级的会话查询结果，不包含 nodes 和 suggestions 字段

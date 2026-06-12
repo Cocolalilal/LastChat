@@ -419,8 +419,9 @@ private fun Route.webRoutes(
             } ?: throw NotFoundException("Conversation not found")
 
             chatService.saveConversation(
-                conversationId,
-                conversation.copy(title = nextTitle, updateAt = Instant.now()),
+                conversationId = conversationId,
+                conversation = conversation.copy(title = nextTitle, updateAt = Instant.now()),
+                preserveConsolidation = true,
             )
             call.respond(HttpStatusCode.OK, mapOf("status" to "updated"))
         }

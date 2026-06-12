@@ -532,7 +532,11 @@ class ChatVM(
     fun updateTitle(title: String) {
         viewModelScope.launch {
             val updatedConversation = conversation.value.copy(title = title)
-            chatService.saveConversation(_conversationId, updatedConversation)
+            chatService.saveConversation(
+                conversationId = _conversationId,
+                conversation = updatedConversation,
+                preserveConsolidation = true,
+            )
         }
     }
 
@@ -552,7 +556,11 @@ class ChatVM(
 
     fun updateConversationTitle(conversation: Conversation, title: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            conversationRepo.updateConversation(conversation.copy(title = title))
+            conversationRepo.updateTitle(
+                conversationId = conversation.id,
+                title = title,
+                updateAt = conversation.updateAt,
+            )
         }
     }
 

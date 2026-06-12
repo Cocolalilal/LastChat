@@ -849,7 +849,10 @@ class ChatService(
         return conversation
     }
 
-    private suspend fun persistConversationToRepository(conversation: Conversation): Boolean {
+    private suspend fun persistConversationToRepository(
+        conversation: Conversation,
+        preserveConsolidation: Boolean = false,
+    ): Boolean {
         val normalizedConversation = normalizeConversation(conversation)
         if (normalizedConversation.title.isBlank() && normalizedConversation.messageNodes.isEmpty()) return false
 
@@ -860,7 +863,10 @@ class ChatService(
                     if (conversationRepo.getConversationById(normalizedConversation.id) == null) {
                         conversationRepo.insertConversation(normalizedConversation)
                     } else {
-                        conversationRepo.updateConversation(normalizedConversation)
+                        conversationRepo.updateConversation(
+                            conversation = normalizedConversation,
+                            preserveConsolidation = preserveConsolidation,
+                        )
                     }
                 }
                 return true
@@ -1208,9 +1214,14 @@ class ChatService(
                     val newConversation = conversation.copy(
                         messageNodes = conversation.messageNodes.subList(0, indexAt + 1)
                     )
-                    saveConversation(conversationId, newConversation)
+                    saveConversation(
+                        conversationId = conversationId,
+                        conversation = newConversation,
+                        preserveConsolidation = true,
+                    )
                     handleMessageComplete(
                         conversationId = conversationId,
+                        preserveConsolidation = true,
                         suppressCompletionNotification = suppressCompletionNotification,
                     )
                 } else {
@@ -1261,10 +1272,15 @@ class ChatService(
                                 val newConversation = conversation.copy(
                                     messageNodes = nodesBeforeTurn
                                 )
-                                saveConversation(conversationId, newConversation)
+                                saveConversation(
+                                    conversationId = conversationId,
+                                    conversation = newConversation,
+                                    preserveConsolidation = true,
+                                )
                                 handleMessageComplete(
                                     conversationId = conversationId,
                                     messageRange = 0..firstAssistantIndex,
+                                    preserveConsolidation = true,
                                     suppressCompletionNotification = suppressCompletionNotification,
                                 )
                             } else {
@@ -1305,10 +1321,15 @@ class ChatService(
                                 val newConversation = conversation.copy(
                                     messageNodes = nodesBeforeTurn
                                 )
-                                saveConversation(conversationId, newConversation)
+                                saveConversation(
+                                    conversationId = conversationId,
+                                    conversation = newConversation,
+                                    preserveConsolidation = true,
+                                )
                                 handleMessageComplete(
                                     conversationId = conversationId,
                                     messageRange = 0..firstAssistantIndex,
+                                    preserveConsolidation = true,
                                     suppressCompletionNotification = suppressCompletionNotification,
                                 )
                             }
@@ -1317,11 +1338,16 @@ class ChatService(
                             handleMessageComplete(
                                 conversationId = conversationId,
                                 messageRange = 0..clickedIndex, // Ensure we encompass up to clickedIndex 
+                                preserveConsolidation = true,
                                 suppressCompletionNotification = suppressCompletionNotification,
                             )
                         }
                     } else {
-                        saveConversation(conversationId, conversation)
+                        saveConversation(
+                            conversationId = conversationId,
+                            conversation = conversation,
+                            preserveConsolidation = true,
+                        )
                     }
                 }
 
@@ -1346,6 +1372,7 @@ class ChatService(
     private suspend fun handleMessageComplete(
         conversationId: Uuid,
         messageRange: ClosedRange<Int>? = null,
+        preserveConsolidation: Boolean = false,
         suppressCompletionNotification: Boolean = false,
     ) {
         val settings = settingsStore.settingsFlow.first()
@@ -1473,7 +1500,10 @@ class ChatService(
                 val cleanedConversation = updatedConversation.removeTrailingEmptyOcrPlaceholder()
                 updateConversation(conversationId, cleanedConversation)
                 val completionPersisted = if (getConversationPersistenceMode(conversationId) == ChatPersistenceMode.NORMAL) {
-                    persistConversationToRepository(cleanedConversation)
+                    persistConversationToRepository(
+                        conversation = cleanedConversation,
+                        preserveConsolidation = preserveConsolidation,
+                    )
                 } else {
                     true
                 }
@@ -1513,7 +1543,11 @@ class ChatService(
                                 lastPersistMs = lastStreamingPersistMs,
                             )
                         ) {
-                            if (persistConversationToRepository(updatedConversation)) {
+                            if (persistConversationToRepository(
+                                    conversation = updatedConversation,
+                                    preserveConsolidation = preserveConsolidation,
+                                )
+                            ) {
                                 lastStreamingPersistMs = nowMs
                             }
                         }
@@ -1571,7 +1605,11 @@ class ChatService(
             Logging.log(TAG, it.stackTraceToString())
         }.onSuccess {
             val finalConversation = getConversationFlow(conversationId).value
-            saveConversation(conversationId, finalConversation)
+            saveConversation(
+                conversationId = conversationId,
+                conversation = finalConversation,
+                preserveConsolidation = preserveConsolidation,
+            )
             if (finalConversation.hasPendingToolApprovals()) {
                 return@onSuccess
             }
@@ -1591,7 +1629,13 @@ class ChatService(
                             Log.w(TAG, "generateTitle: conversation not found in DB for $conversationId")
                         }
                     }
-                    launch { generateSuggestion(conversationId, finalConversation) }
+                    launch {
+                        generateSuggestion(
+                            conversationId = conversationId,
+                            conversation = finalConversation,
+                            preserveConsolidation = preserveConsolidation,
+                        )
+                    }
                     
                     // Auto-summarization check
                     launch {
@@ -1979,8 +2023,9 @@ class ChatService(
             // 生成完，conversation可能不是最新了，因此需要重新获取
             getConversationSnapshot(conversationId)?.let {
                 saveConversation(
-                    conversationId,
-                    it.copy(title = result.choices[0].message?.toContentText()?.trim() ?: "")
+                    conversationId = conversationId,
+                    conversation = it.copy(title = result.choices[0].message?.toContentText()?.trim() ?: ""),
+                    preserveConsolidation = true,
                 )
             }
         }.onFailure {
@@ -1989,7 +2034,11 @@ class ChatService(
     }
 
     // 生成建议
-    suspend fun generateSuggestion(conversationId: Uuid, conversation: Conversation) {
+    suspend fun generateSuggestion(
+        conversationId: Uuid,
+        conversation: Conversation,
+        preserveConsolidation: Boolean = false,
+    ) {
         runCatching {
             val settings = settingsStore.settingsFlow.first()
             val model = settings.findModelById(settings.suggestionModelId) ?: return
@@ -2024,8 +2073,9 @@ class ChatService(
             // Apply suggestions to the current live snapshot so a stale DB checkpoint cannot overwrite messages.
             getConversationSnapshot(conversationId)?.let { freshConversation ->
                 saveConversation(
-                    conversationId,
-                    freshConversation.copy(chatSuggestions = suggestions)
+                    conversationId = conversationId,
+                    conversation = freshConversation.copy(chatSuggestions = suggestions),
+                    preserveConsolidation = preserveConsolidation,
                 )
             }
         }.onFailure {
@@ -2442,7 +2492,11 @@ class ChatService(
 
 
     // 保存对话
-    suspend fun saveConversation(conversationId: Uuid, conversation: Conversation) {
+    suspend fun saveConversation(
+        conversationId: Uuid,
+        conversation: Conversation,
+        preserveConsolidation: Boolean = false,
+    ) {
         val normalizedConversation = mergeLiveMessagesIfIncomingIsStale(
             liveConversation = conversations[conversationId]?.value,
             incomingConversation = normalizeConversation(conversation),
@@ -2465,7 +2519,10 @@ class ChatService(
         // Skip database persist for empty conversations (no messages and no title)
         if (updatedConversation.title.isBlank() && updatedConversation.messageNodes.isEmpty()) return
 
-        persistConversationToRepository(updatedConversation)
+        persistConversationToRepository(
+            conversation = updatedConversation,
+            preserveConsolidation = preserveConsolidation,
+        )
     }
 
     // 翻译消息
