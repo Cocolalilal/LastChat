@@ -55,6 +55,7 @@ data class TextGenerationParams(
     val tools: List<Tool> = emptyList(),
     val builtInTools: Set<BuiltInTools> = emptySet(),
     val thinkingBudget: Int? = null,
+    val sessionId: String? = null,
     val customHeaders: List<CustomHeader> = emptyList(),
     val customBody: List<CustomBody> = emptyList(),
 )

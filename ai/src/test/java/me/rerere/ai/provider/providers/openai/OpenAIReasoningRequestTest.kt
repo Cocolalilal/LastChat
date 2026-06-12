@@ -301,6 +301,72 @@ class OpenAIReasoningRequestTest {
     }
 
     @Test
+    fun chatCompletionsAddsOpenRouterSessionId() {
+        val body = chatCompletionsBody(
+            messages = listOf(UIMessage.system("Stable system prompt"), UIMessage.user("Hello")),
+            model = reasoningModel.copy(modelId = "google/gemini-2.5-pro"),
+            providerSetting = providerSetting.copy(baseUrl = "https://openrouter.ai/api/v1"),
+            sessionId = "conversation-123",
+        )
+
+        assertEquals("conversation-123", body["session_id"]?.jsonPrimitive?.contentOrNull)
+        assertFalse(body.containsKey("prompt_cache_key"))
+    }
+
+    @Test
+    fun chatCompletionsAddsPromptCacheKeyForOpenAI() {
+        val body = chatCompletionsBody(
+            messages = listOf(UIMessage.system("Stable system prompt"), UIMessage.user("Hello")),
+            model = reasoningModel,
+            providerSetting = providerSetting.copy(baseUrl = "https://api.openai.com/v1"),
+            sessionId = "conversation-123",
+        )
+
+        assertEquals("conversation-123", body["prompt_cache_key"]?.jsonPrimitive?.contentOrNull)
+    }
+
+    @Test
+    fun chatCompletionsAddsPromptCacheKeyForMistral() {
+        val body = chatCompletionsBody(
+            messages = listOf(UIMessage.system("Stable system prompt"), UIMessage.user("Hello")),
+            model = reasoningModel.copy(modelId = "mistral-large-latest"),
+            providerSetting = providerSetting.copy(baseUrl = "https://api.mistral.ai/v1"),
+            sessionId = "conversation-123",
+        )
+
+        assertEquals("conversation-123", body["prompt_cache_key"]?.jsonPrimitive?.contentOrNull)
+    }
+
+    @Test
+    fun chatCompletionsDoesNotLeakSessionIdToGenericProviders() {
+        val body = chatCompletionsBody(
+            messages = listOf(UIMessage.user("Hello")),
+            model = reasoningModel,
+            providerSetting = providerSetting,
+            sessionId = "conversation-123",
+        )
+
+        assertFalse(body.containsKey("session_id"))
+        assertFalse(body.containsKey("prompt_cache_key"))
+    }
+
+    @Test
+    fun chatCompletionsAddsDashScopePromptCacheBreakpoints() {
+        val body = chatCompletionsBody(
+            messages = listOf(UIMessage.system("Stable system prompt"), UIMessage.user("Hello")),
+            model = reasoningModel.copy(modelId = "qwen3.7-max"),
+            providerSetting = providerSetting.copy(baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1")
+        )
+
+        val messages = body["messages"]?.jsonArray ?: error("messages are missing")
+        val userContent = messages[1].jsonObject["content"]?.jsonArray ?: error("user content is missing")
+        assertEquals(
+            "ephemeral",
+            userContent[0].jsonObject["cache_control"]?.jsonObject?.get("type")?.jsonPrimitive?.contentOrNull
+        )
+    }
+
+    @Test
     fun chatCompletionsLeavesGenericProviderPromptShapeUnchanged() {
         val body = chatCompletionsBody(
             messages = listOf(UIMessage.system("Stable system prompt"), UIMessage.user("Hello")),
@@ -330,6 +396,71 @@ class OpenAIReasoningRequestTest {
         assertEquals(50, usage.completionTokens)
         assertEquals(300, usage.cachedTokens)
         assertEquals(650, usage.totalTokens)
+    }
+
+    @Test
+    fun parseChatCompletionsUsageReadsCacheReadTokenAliases() {
+        val usage = parseChatCompletionsUsage(
+            buildJsonObject {
+                put("prompt_tokens", 1000)
+                put("completion_tokens", 50)
+                put("prompt_tokens_details", buildJsonObject {
+                    put("cache_read_tokens", 400)
+                    put("cache_write_tokens", 300)
+                })
+            }
+        ) ?: error("usage is missing")
+
+        assertEquals(1000, usage.promptTokens)
+        assertEquals(50, usage.completionTokens)
+        assertEquals(400, usage.cachedTokens)
+        assertEquals(1050, usage.totalTokens)
+    }
+
+    @Test
+    fun parseChatCompletionsUsageReadsDeepSeekCacheFields() {
+        val usage = parseChatCompletionsUsage(
+            buildJsonObject {
+                put("prompt_cache_hit_tokens", 400)
+                put("prompt_cache_miss_tokens", 600)
+                put("completion_tokens", 50)
+            }
+        ) ?: error("usage is missing")
+
+        assertEquals(1000, usage.promptTokens)
+        assertEquals(50, usage.completionTokens)
+        assertEquals(400, usage.cachedTokens)
+        assertEquals(1050, usage.totalTokens)
+    }
+
+    @Test
+    fun parseResponseApiUsageReadsCacheReadTokenAliases() {
+        val usage = parseResponseUsage(
+            buildJsonObject {
+                put("input_tokens", 1000)
+                put("output_tokens", 50)
+                put("input_tokens_details", buildJsonObject {
+                    put("cache_read_tokens", 400)
+                    put("cache_write_tokens", 300)
+                })
+            }
+        ) ?: error("usage is missing")
+
+        assertEquals(1700, usage.promptTokens)
+        assertEquals(50, usage.completionTokens)
+        assertEquals(400, usage.cachedTokens)
+        assertEquals(1750, usage.totalTokens)
+    }
+
+    @Test
+    fun responseApiAddsPromptCacheKeyForOpenAI() {
+        val body = responseApiBody(
+            thinkingBudget = null,
+            providerSetting = providerSetting.copy(baseUrl = "https://api.openai.com/v1"),
+            sessionId = "conversation-123",
+        )
+
+        assertEquals("conversation-123", body["prompt_cache_key"]?.jsonPrimitive?.contentOrNull)
     }
 
     @Test
@@ -384,6 +515,7 @@ class OpenAIReasoningRequestTest {
         model: Model,
         providerSetting: ProviderSetting.OpenAI,
         thinkingBudget: Int? = null,
+        sessionId: String? = null,
     ): JsonObject {
         val api = ChatCompletionsAPI(
             client = OkHttpClient(),
@@ -402,7 +534,7 @@ class OpenAIReasoningRequestTest {
         return method.invoke(
             api,
             messages,
-            TextGenerationParams(model = model, thinkingBudget = thinkingBudget),
+            TextGenerationParams(model = model, thinkingBudget = thinkingBudget, sessionId = sessionId),
             providerSetting,
             false,
         ) as JsonObject
@@ -438,6 +570,16 @@ class OpenAIReasoningRequestTest {
         return method.invoke(api, usage) as me.rerere.ai.core.TokenUsage?
     }
 
+    private fun parseResponseUsage(usage: JsonObject): me.rerere.ai.core.TokenUsage? {
+        val api = ResponseAPI(OkHttpClient())
+        val method = ResponseAPI::class.java.getDeclaredMethod(
+            "parseTokenUsage",
+            JsonObject::class.java,
+        )
+        method.isAccessible = true
+        return method.invoke(api, usage) as me.rerere.ai.core.TokenUsage?
+    }
+
     private fun responseApiBody(thinkingBudget: Int?): JsonObject {
         val api = ResponseAPI(OkHttpClient())
         val method = ResponseAPI::class.java.getDeclaredMethod(
@@ -452,6 +594,33 @@ class OpenAIReasoningRequestTest {
             messages,
             TextGenerationParams(model = reasoningModel, thinkingBudget = thinkingBudget),
             false,
+        ) as JsonObject
+    }
+
+    private fun responseApiBody(
+        thinkingBudget: Int?,
+        providerSetting: ProviderSetting.OpenAI,
+        sessionId: String?,
+    ): JsonObject {
+        val api = ResponseAPI(OkHttpClient())
+        val method = ResponseAPI::class.java.getDeclaredMethod(
+            "buildRequestBody",
+            List::class.java,
+            TextGenerationParams::class.java,
+            Boolean::class.javaPrimitiveType,
+            ProviderSetting.OpenAI::class.java,
+        )
+        method.isAccessible = true
+        return method.invoke(
+            api,
+            messages,
+            TextGenerationParams(
+                model = reasoningModel,
+                thinkingBudget = thinkingBudget,
+                sessionId = sessionId,
+            ),
+            false,
+            providerSetting,
         ) as JsonObject
     }
 

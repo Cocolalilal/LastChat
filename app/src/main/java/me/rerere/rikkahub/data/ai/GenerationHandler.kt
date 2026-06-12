@@ -536,6 +536,7 @@ class GenerationHandler(
                 stream = assistant.streamOutput,
                 conversationEnabledModeIds = conversationSkillIds,
                 turnScopedEnabledModeIds = currentTurnScopedSkillIds,
+                activeConversationId = activeConversationId,
             )
             messages = messages.visualTransforms(
                 transformers = outputTransformers,
@@ -1201,6 +1202,7 @@ class GenerationHandler(
         stream: Boolean,
         conversationEnabledModeIds: Set<Uuid> = emptySet(),
         turnScopedEnabledModeIds: Set<Uuid> = emptySet(),
+        activeConversationId: Uuid? = null,
     ) {
         val buildResult = buildMessages(
             assistant = assistant,
@@ -1256,6 +1258,7 @@ class GenerationHandler(
             tools = tools,
             builtInTools = resolveActiveBuiltInTools(model, assistant),
             thinkingBudget = assistant.thinkingBudget,
+            sessionId = activeConversationId?.toString(),
             customHeaders = buildList {
                 addAll(assistant.customHeaders)
                 addAll(model.customHeaders)

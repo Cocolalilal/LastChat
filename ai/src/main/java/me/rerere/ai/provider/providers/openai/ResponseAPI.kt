@@ -63,6 +63,7 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
             messages = messages,
             params = params,
             stream = false,
+            providerSetting = providerSetting,
         )
         val request = Request.Builder()
             .url("${providerSetting.baseUrl}/responses")
@@ -97,6 +98,7 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
             messages = messages,
             params = params,
             stream = true,
+            providerSetting = providerSetting,
         )
         val request = Request.Builder()
             .url("${providerSetting.baseUrl}/responses")
@@ -169,9 +171,28 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
         params: TextGenerationParams,
         stream: Boolean
     ): JsonObject {
+        return buildRequestBody(
+            messages = messages,
+            params = params,
+            stream = stream,
+            providerSetting = null,
+        )
+    }
+
+    private fun buildRequestBody(
+        messages: List<UIMessage>,
+        params: TextGenerationParams,
+        stream: Boolean,
+        providerSetting: ProviderSetting.OpenAI?,
+    ): JsonObject {
         return buildJsonObject {
             put("model", params.model.modelId)
             put("stream", stream)
+            if (providerSetting?.baseUrl?.contains("api.openai.com", ignoreCase = true) == true &&
+                !params.sessionId.isNullOrBlank()
+            ) {
+                put("prompt_cache_key", params.sessionId)
+            }
 
             if (isModelAllowTemperature(params.model)) {
                 if (params.temperature != null) put("temperature", params.temperature)
@@ -546,18 +567,67 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
         if (jsonObject == null) return null
         val promptTokens = jsonObject["input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
         val completionTokens = jsonObject["output_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-        val cacheReadTokens = jsonObject["cache_read_input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-        val cacheCreationTokens = jsonObject["cache_creation_input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-        val effectivePromptTokens = promptTokens + cacheReadTokens + cacheCreationTokens
+        val inputTokensDetails = jsonObject["input_tokens_details"]?.jsonObjectOrNull
+        val promptTokensDetails = jsonObject["prompt_tokens_details"]?.jsonObjectOrNull
+        val cacheReadTokens = inputTokensDetails?.firstPositiveIntOrNull(
+            "cached_tokens",
+            "cache_read_input_tokens",
+            "cache_read_tokens",
+            "prompt_cache_hit_tokens"
+        )
+            ?: promptTokensDetails?.firstPositiveIntOrNull(
+                "cached_tokens",
+                "cache_read_input_tokens",
+                "cache_read_tokens",
+                "prompt_cache_hit_tokens"
+            )
+            ?: jsonObject.firstPositiveIntOrNull(
+                "cache_read_input_tokens",
+                "cache_read_tokens",
+                "cached_tokens",
+                "prompt_cache_hit_tokens"
+            )
+            ?: 0
+        val cacheCreationTokens = inputTokensDetails?.firstPositiveIntOrNull(
+            "cache_creation_input_tokens",
+            "cache_creation_tokens",
+            "cache_write_tokens"
+        )
+            ?: promptTokensDetails?.firstPositiveIntOrNull(
+                "cache_creation_input_tokens",
+                "cache_creation_tokens",
+                "cache_write_tokens"
+            )
+            ?: jsonObject.firstPositiveIntOrNull(
+                "cache_creation_input_tokens",
+                "cache_creation_tokens",
+                "cache_write_tokens"
+            )
+            ?: 0
+        val cacheMissTokens = inputTokensDetails?.firstPositiveIntOrNull("prompt_cache_miss_tokens")
+            ?: promptTokensDetails?.firstPositiveIntOrNull("prompt_cache_miss_tokens")
+            ?: jsonObject.firstPositiveIntOrNull("prompt_cache_miss_tokens")
+            ?: 0
+        val effectivePromptTokens = if (promptTokens > 0) {
+            promptTokens + cacheReadTokens + cacheCreationTokens
+        } else {
+            cacheReadTokens + cacheMissTokens + cacheCreationTokens
+        }
         return TokenUsage(
             promptTokens = effectivePromptTokens,
             completionTokens = completionTokens,
             totalTokens = jsonObject["total_tokens"]?.jsonPrimitive?.intOrNull
                 ?: (effectivePromptTokens + completionTokens),
-            cachedTokens = jsonObject["input_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
-                ?: jsonObject["cached_tokens"]?.jsonPrimitive?.intOrNull
-                ?: cacheReadTokens
+            cachedTokens = cacheReadTokens
         )
+    }
+
+    private fun JsonObject.firstPositiveIntOrNull(vararg keys: String): Int? {
+        for (key in keys) {
+            val value = this[key]?.jsonPrimitive?.intOrNull
+            if (value != null && value > 0) return value
+        }
+        return null
     }
 }
 

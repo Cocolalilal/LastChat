@@ -266,6 +266,12 @@ class ChatCompletionsAPI(
         val host = providerSetting.baseUrl.toHttpUrl().host
         return buildJsonObject {
             put("model", params.model.modelId)
+            if (host == "openrouter.ai" && !params.sessionId.isNullOrBlank()) {
+                put("session_id", params.sessionId)
+            }
+            if (providerSetting.shouldIncludePromptCacheKey(host) && !params.sessionId.isNullOrBlank()) {
+                put("prompt_cache_key", params.sessionId)
+            }
             val processedMessages = if (params.model.abilities.contains(ModelAbility.REASONING) && 
                 ReasoningLevel.fromBudgetTokens(params.thinkingBudget) == ReasoningLevel.OFF) {
                 // If reasoning is OFF but it's a reasoning model, inject an empty think tag as an assistant prefill
@@ -611,6 +617,11 @@ class ChatCompletionsAPI(
         }
     }
 
+    private fun ProviderSetting.OpenAI.shouldIncludePromptCacheKey(host: String): Boolean {
+        val normalizedHost = host.lowercase()
+        return normalizedHost == "api.openai.com" || normalizedHost == "api.mistral.ai"
+    }
+
     private fun ProviderSetting.OpenAI.promptCachePolicy(host: String, modelId: String): PromptCachePolicy {
         val normalizedHost = host.lowercase()
         val normalizedModelId = modelId.lowercase()
@@ -624,6 +635,12 @@ class ChatCompletionsAPI(
                 explicitBreakpoints = true,
                 topLevelCacheControl = false,
                 useSingleStableBreakpoint = normalizedModelId.contains("gemini")
+            )
+
+            normalizedHost == "dashscope.aliyuncs.com" &&
+                (normalizedModelId.contains("qwen") || normalizedModelId.contains("deepseek")) -> PromptCachePolicy(
+                explicitBreakpoints = true,
+                topLevelCacheControl = false
             )
 
             normalizedHost == "opencode.ai" ||
@@ -751,22 +768,67 @@ class ChatCompletionsAPI(
         if (jsonObject == null) return null
         val promptTokens = jsonObject["prompt_tokens"]?.jsonPrimitive?.intOrNull
         val completionTokens = jsonObject["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-        val cacheCreationTokens = jsonObject["cache_creation_input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-        val cacheReadTokens = jsonObject["cache_read_input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val promptTokensDetails = jsonObject["prompt_tokens_details"]?.jsonObjectOrNull
+        val inputTokensDetails = jsonObject["input_tokens_details"]?.jsonObjectOrNull
+        val cacheCreationTokens = promptTokensDetails?.firstPositiveIntOrNull(
+            "cache_creation_input_tokens",
+            "cache_creation_tokens",
+            "cache_write_tokens"
+        )
+            ?: inputTokensDetails?.firstPositiveIntOrNull(
+                "cache_creation_input_tokens",
+                "cache_creation_tokens",
+                "cache_write_tokens"
+            )
+            ?: jsonObject.firstPositiveIntOrNull(
+                "cache_creation_input_tokens",
+                "cache_creation_tokens",
+                "cache_write_tokens"
+            )
+            ?: 0
+        val cacheReadTokens = promptTokensDetails?.firstPositiveIntOrNull(
+            "cached_tokens",
+            "cache_read_input_tokens",
+            "cache_read_tokens",
+            "prompt_cache_hit_tokens"
+        )
+            ?: inputTokensDetails?.firstPositiveIntOrNull(
+                "cached_tokens",
+                "cache_read_input_tokens",
+                "cache_read_tokens",
+                "prompt_cache_hit_tokens"
+            )
+            ?: jsonObject.firstPositiveIntOrNull(
+                "cache_read_input_tokens",
+                "cache_read_tokens",
+                "cached_tokens",
+                "prompt_cache_hit_tokens"
+            )
+            ?: 0
+        val cacheMissTokens = promptTokensDetails?.firstPositiveIntOrNull("prompt_cache_miss_tokens")
+            ?: inputTokensDetails?.firstPositiveIntOrNull("prompt_cache_miss_tokens")
+            ?: jsonObject.firstPositiveIntOrNull("prompt_cache_miss_tokens")
+            ?: 0
         val inputTokens = jsonObject["input_tokens"]?.jsonPrimitive?.intOrNull
         val effectivePromptTokens = promptTokens
             ?: inputTokens?.let { it + cacheCreationTokens + cacheReadTokens }
+            ?: (cacheReadTokens + cacheMissTokens).takeIf { it > 0 }
             ?: 0
         return TokenUsage(
             promptTokens = effectivePromptTokens,
             completionTokens = completionTokens,
             totalTokens = jsonObject["total_tokens"]?.jsonPrimitive?.intOrNull
                 ?: (effectivePromptTokens + completionTokens),
-            cachedTokens = jsonObject["prompt_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
-                ?: jsonObject["input_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
-                ?: jsonObject["cached_tokens"]?.jsonPrimitive?.intOrNull
-                ?: cacheReadTokens
+            cachedTokens = cacheReadTokens
         )
+    }
+
+    private fun JsonObject.firstPositiveIntOrNull(vararg keys: String): Int? {
+        for (key in keys) {
+            val value = this[key]?.jsonPrimitive?.intOrNull
+            if (value != null && value > 0) return value
+        }
+        return null
     }
 
     private fun List<UIMessagePart>.isOnlyTextPart(): Boolean {
