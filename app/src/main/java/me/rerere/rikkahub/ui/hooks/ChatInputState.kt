@@ -4,25 +4,15 @@ import android.net.Uri
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.Saver
-import androidx.compose.runtime.saveable.SaverScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.focus.FocusRequester
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.decodeFromJsonElement
-import kotlinx.serialization.json.encodeToJsonElement
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
 import me.rerere.ai.ui.UIMessagePart
-import me.rerere.rikkahub.utils.JsonInstant
 import kotlin.uuid.Uuid
 
 @Composable
@@ -31,7 +21,7 @@ fun rememberChatInputState(
     message: List<UIMessagePart> = emptyList(),
     loading: Boolean = false,
 ): ChatInputState {
-    return rememberSaveable(textContent, message, loading, saver = ChatInputStateSaver) {
+    return remember(textContent, message, loading) {
         ChatInputState().apply {
             this.textContent.setTextAndPlaceCursorAtEnd(textContent)
             this.messageContent = message
@@ -42,7 +32,17 @@ fun rememberChatInputState(
 
 class ChatInputState {
     val textContent = TextFieldState()
-    var messageContent by mutableStateOf(listOf<UIMessagePart>())
+    var messageContent: List<UIMessagePart>
+        get() = pendingAttachments.map { it.part }
+        set(value) {
+            pendingAttachments = reconcileAttachments(
+                previousAttachments = pendingAttachments,
+                nextContent = value,
+            )
+        }
+
+    var pendingAttachments by mutableStateOf(listOf<ChatInputAttachment>())
+        private set
     var editingMessage by mutableStateOf<Uuid?>(null)
     var loading by mutableStateOf(false)
     
@@ -51,7 +51,7 @@ class ChatInputState {
 
     fun clearInput() {
         textContent.setTextAndPlaceCursorAtEnd("")
-        messageContent = emptyList()
+        setMessageContentWithIds(emptyList(), emptyList())
         editingMessage = null
     }
 
@@ -83,9 +83,9 @@ class ChatInputState {
     }
 
     fun setContents(contents: List<UIMessagePart>) {
-        val text = contents.filterIsInstance<UIMessagePart.Text>().joinToString { it.text }
+        val text = contents.filterIsInstance<UIMessagePart.Text>().joinToString("\n") { it.text }
         textContent.setTextAndPlaceCursorAtEnd(text)
-        messageContent = contents.filter { it !is UIMessagePart.Text }
+        setMessageContentWithIds(contents.filter { it.isEditableAttachment() })
     }
 
     fun getContents(): List<UIMessagePart> {
@@ -97,60 +97,97 @@ class ChatInputState {
     }
 
     fun addImages(uris: List<Uri>) {
-        val newMessage = messageContent.toMutableList()
-        uris.forEach { uri ->
-            newMessage.add(UIMessagePart.Image(uri.toString()))
-        }
-        messageContent = newMessage
+        addAttachments(uris.map { uri -> UIMessagePart.Image(uri.toString()) })
     }
 
     fun addVideos(uris: List<Uri>) {
-        val newMessage = messageContent.toMutableList()
-        uris.forEach { uri ->
-            newMessage.add(UIMessagePart.Video(uri.toString()))
-        }
-        messageContent = newMessage
+        addAttachments(uris.map { uri -> UIMessagePart.Video(uri.toString()) })
     }
 
     fun addAudios(uris: List<Uri>) {
-        val newMessage = messageContent.toMutableList()
-        uris.forEach { uri ->
-            newMessage.add(UIMessagePart.Audio(uri.toString()))
-        }
-        messageContent = newMessage
+        addAttachments(uris.map { uri -> UIMessagePart.Audio(uri.toString()) })
     }
 
     fun addFiles(uris: List<UIMessagePart.Document>) {
-        val newMessage = messageContent.toMutableList()
-        uris.forEach {
-            newMessage.add(it)
+        addAttachments(uris)
+    }
+
+    fun replaceAttachment(instanceId: String, part: UIMessagePart): UIMessagePart? {
+        val index = pendingAttachments.indexOfFirst { it.id == instanceId }
+        if (index < 0) return null
+        val previousPart = pendingAttachments[index].part
+        pendingAttachments = pendingAttachments.toMutableList().apply {
+            set(index, ChatInputAttachment(id = instanceId, part = part))
         }
-        messageContent = newMessage
+        return previousPart
+    }
+
+    fun removeAttachment(instanceId: String): UIMessagePart? {
+        val index = pendingAttachments.indexOfFirst { it.id == instanceId }
+        if (index < 0) return null
+        val removedPart = pendingAttachments[index].part
+        pendingAttachments = pendingAttachments.toMutableList().apply {
+            removeAt(index)
+        }
+        return removedPart
+    }
+
+    private fun addAttachments(parts: List<UIMessagePart>) {
+        if (parts.isEmpty()) return
+        pendingAttachments = pendingAttachments + parts.map { part ->
+            ChatInputAttachment(id = newAttachmentInstanceId(), part = part)
+        }
+    }
+
+    private fun setMessageContentWithIds(
+        parts: List<UIMessagePart>,
+        ids: List<String> = List(parts.size) { newAttachmentInstanceId() },
+    ) {
+        pendingAttachments = parts.mapIndexed { index, part ->
+            ChatInputAttachment(
+                id = ids.getOrNull(index) ?: newAttachmentInstanceId(),
+                part = part,
+            )
+        }
+    }
+
+    private fun reconcileAttachments(
+        previousAttachments: List<ChatInputAttachment>,
+        nextContent: List<UIMessagePart>,
+    ): List<ChatInputAttachment> {
+        val usedPreviousIndexes = mutableSetOf<Int>()
+        return nextContent.mapIndexed { index, part ->
+            if (previousAttachments.getOrNull(index)?.part == part) {
+                usedPreviousIndexes += index
+                previousAttachments[index].copy(part = part)
+            } else {
+                val matchedIndex = previousAttachments.indices.firstOrNull { previousIndex ->
+                    previousIndex !in usedPreviousIndexes &&
+                        previousAttachments[previousIndex].part == part
+                }
+                if (matchedIndex != null) {
+                    usedPreviousIndexes += matchedIndex
+                    previousAttachments[matchedIndex].copy(part = part)
+                } else {
+                    ChatInputAttachment(id = newAttachmentInstanceId(), part = part)
+                }
+            }
+        }
+    }
+
+    private fun newAttachmentInstanceId(): String {
+        return Uuid.random().toString()
     }
 }
 
-object ChatInputStateSaver : Saver<ChatInputState, String> {
-    override fun restore(value: String): ChatInputState? {
-        val jsonObject = JsonInstant.parseToJsonElement(value).jsonObject
-        val messageContent = jsonObject["messageContent"]?.let {
-            JsonInstant.decodeFromJsonElement<List<UIMessagePart>>(it)
-        }
-        val editingMessage = jsonObject["editingMessage"]?.jsonPrimitive?.contentOrNull?.let {
-            Uuid.parse(it)
-        }
-        val textContent = jsonObject["textContent"]?.jsonPrimitive?.contentOrNull ?: ""
-        val state = ChatInputState()
-        state.messageContent = messageContent ?: emptyList()
-        state.editingMessage = editingMessage
-        state.setMessageText(textContent)
-        return state
-    }
-
-    override fun SaverScope.save(value: ChatInputState): String? {
-        return JsonInstant.encodeToString(buildJsonObject {
-            put("textContent", value.textContent.text.toString())
-            put("messageContent", JsonInstant.encodeToJsonElement(value.messageContent))
-            put("editingMessage", JsonInstant.encodeToJsonElement(value.editingMessage))
-        })
-    }
+private fun UIMessagePart.isEditableAttachment(): Boolean {
+    return this is UIMessagePart.Image ||
+        this is UIMessagePart.Video ||
+        this is UIMessagePart.Audio ||
+        this is UIMessagePart.Document
 }
+
+data class ChatInputAttachment(
+    val id: String,
+    val part: UIMessagePart,
+)

@@ -139,13 +139,6 @@ class OpenAIProvider(
                 outputModalities.contains(Modality.IMAGE) &&
                 !outputModalities.contains(Modality.TEXT)
             
-            // Extract icon URL if available (some APIs provide this)
-            val iconUrl = modelObj["icon"]?.jsonPrimitive?.contentOrNull
-                ?: architecture?.get("icon")?.jsonPrimitive?.contentOrNull
-            
-            // Extract provider slug from model ID (e.g., "anthropic/claude-3.5" -> "anthropic")
-            // Used for LobeHub CDN icon lookup
-            val providerSlug = if (id.contains("/")) id.substringBefore("/") else null
             val canonicalSlug = modelObj["canonical_slug"]?.jsonPrimitive?.contentOrNull
             val displayName = modelObj["name"]?.jsonPrimitive?.contentOrNull?.ifBlank { null } ?: id
             val abilities = buildList {
@@ -169,8 +162,6 @@ class OpenAIProvider(
                 inputModalities = inputModalities,
                 outputModalities = if (isEmbedding) listOf(Modality.TEXT) else outputModalities,
                 abilities = abilities,
-                iconUrl = iconUrl,
-                providerSlug = providerSlug
             )
         }
     }

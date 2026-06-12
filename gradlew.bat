@@ -52,25 +52,42 @@ goto fail
 
 :findJavaFromJavaHome
 set JAVA_HOME=%JAVA_HOME:"=%
-set JAVA_EXE=%JAVA_HOME%/bin/java.exe
+set JAVA_EXE=%JAVA_HOME%\bin\java.exe
 
-if exist "%JAVA_EXE%" goto execute
+if not exist "%JAVA_EXE%" goto findJavaFallback
 
 @rem Gradle/Kotlin in this repository currently fails on JDK 25+ during script evaluation.
 @rem If JAVA_HOME points to 25+, try a local JDK 21 fallback.
-for /f "tokens=3" %%v in ('"%JAVA_EXE%" -version 2^>^&1 ^| findstr /i "version"') do set JAVA_VERSION_RAW=%%~v
+set JAVA_VERSION_RAW=
+for /f "usebackq tokens=3" %%v in (`""%JAVA_EXE%" -version 2>&1 | findstr /i "version""`) do set JAVA_VERSION_RAW=%%~v
+if not defined JAVA_VERSION_RAW goto checkFallbackDone
 set JAVA_VERSION_RAW=%JAVA_VERSION_RAW:"=%
 for /f "tokens=1 delims=." %%m in ("%JAVA_VERSION_RAW%") do set JAVA_VERSION_MAJOR=%%m
-if "%JAVA_VERSION_MAJOR%"=="25" (
-    if defined JAVA21_HOME if exist "%JAVA21_HOME%\bin\java.exe" (
-        set JAVA_HOME=%JAVA21_HOME%
-        set JAVA_EXE=%JAVA_HOME%/bin/java.exe
-    ) else if exist "%USERPROFILE%\.local\share\mise\installs\java\21.0.2\bin\java.exe" (
-        set JAVA_HOME=%USERPROFILE%\.local\share\mise\installs\java\21.0.2
-        set JAVA_EXE=%JAVA_HOME%/bin/java.exe
+if not "%JAVA_VERSION_MAJOR%"=="25" goto checkFallbackDone
+
+:findJavaFallback
+set JDK21_FOUND=
+if defined JAVA21_HOME if exist "%JAVA21_HOME%\bin\java.exe" set JDK21_FOUND=1
+if defined JDK21_FOUND (
+    set JAVA_HOME=%JAVA21_HOME%
+    set JAVA_EXE=%JAVA_HOME%\bin\java.exe
+    goto checkFallbackDone
+)
+if exist "%USERPROFILE%\.local\share\mise\installs\java\21.0.2\bin\java.exe" (
+    set JAVA_HOME=%USERPROFILE%\.local\share\mise\installs\java\21.0.2
+    set JAVA_EXE=%JAVA_HOME%\bin\java.exe
+    goto checkFallbackDone
+)
+if exist "%USERPROFILE%\.gradle\jdks" (
+    for /r "%USERPROFILE%\.gradle\jdks" %%i in (java.exe) do (
+        if exist "%%i" (
+            set "JAVA_EXE=%%i"
+            for %%j in ("%%~dpi..") do set "JAVA_HOME=%%~fj"
+        )
     )
 )
 
+:checkFallbackDone
 if exist "%JAVA_EXE%" goto execute
 
 echo.

@@ -43,8 +43,6 @@
     <string name="setting_display_rp_optimizations_desc">为角色扮演模式提供自定义文本样式</string>
 
     <string name="menu_statistics_title">统计</string>
-    <string name="menu_stat_daily_streak">连续天数</string>
-    <string name="menu_stat_days">天</string>
     <string name="menu_stat_conversations">对话数</string>
     <string name="menu_stat_messages">消息数</string>
     <string name="menu_stat_input_tokens">输入令牌</string>

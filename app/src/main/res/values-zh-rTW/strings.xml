@@ -369,8 +369,6 @@
   <string name="setting_display_page_show_updates_title">顯示更新</string>
   <string name="setting_display_page_show_user_avatar_desc">是否在聊天消息中顯示用戶頭像</string>
   <string name="setting_display_page_show_user_avatar_title">顯示用戶頭像</string>
-  <string name="setting_display_page_skip_crop_image_desc">匯入圖片或拍照後跳過裁剪介面</string>
-  <string name="setting_display_page_skip_crop_image_title">跳過圖片編輯</string>
   <string name="setting_display_page_title">顯示設定</string>
   <string name="setting_mcp_page_add_header">添加請求頭</string>
   <string name="setting_mcp_page_add_one_to_get_started">新增一個即可開始使用</string>

@@ -7,6 +7,8 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import me.rerere.common.http.jsonPrimitiveOrNull
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.Model
@@ -45,11 +47,12 @@ data class UIMessage(
                         if (existingTextPart != null) {
                             acc.map { part ->
                                 if (part is UIMessagePart.Text) {
-                                    UIMessagePart.Text(existingTextPart.text + deltaPart.text)
+                                    val combined = existingTextPart.text + deltaPart.text
+                                    UIMessagePart.Text(if (existingTextPart.text.isEmpty()) combined.trimStart() else combined)
                                 } else part
                             }
                         } else {
-                            acc + deltaPart
+                            acc + deltaPart.copy(text = deltaPart.text.trimStart())
                         }
                     }
 
@@ -75,12 +78,21 @@ data class UIMessage(
                         val existingReasoningPart =
                             acc.find { it is UIMessagePart.Reasoning } as? UIMessagePart.Reasoning
                         if (existingReasoningPart != null) {
+                            val reasoning = existingReasoningPart.reasoning + deltaPart.reasoning
+                            // Prefer: (1) explicit title on delta, (2) title from the new delta text,
+                            // (3) latest title found anywhere in the accumulated text, (4) keep old title.
+                            val title = deltaPart.title
+                                ?: deltaPart.reasoning.extractReasoningSummaryTitle()
+                                ?: reasoning.extractLatestReasoningSummaryTitle()
+                                ?: existingReasoningPart.title
                             acc.map { part ->
                                 if (part is UIMessagePart.Reasoning) {
                                     UIMessagePart.Reasoning(
-                                        reasoning = existingReasoningPart.reasoning + deltaPart.reasoning,
+                                        reasoning = reasoning,
                                         createdAt = existingReasoningPart.createdAt,
                                         finishedAt = null,
+                                        title = title,
+                                        metadata = deltaPart.metadata ?: existingReasoningPart.metadata,
                                     ).also {
                                         if (deltaPart.metadata != null) {
                                             it.metadata = deltaPart.metadata // 更新metadata
@@ -90,7 +102,8 @@ data class UIMessage(
                                 } else part
                             }
                         } else {
-                            acc + deltaPart
+                            val title = deltaPart.title ?: deltaPart.reasoning.extractReasoningSummaryTitle()
+                            acc + deltaPart.copy(title = title)
                         }
                     }
 
@@ -98,14 +111,14 @@ data class UIMessage(
                         if (deltaPart.toolCallId.isBlank()) {
                             val lastToolCall =
                                 acc.lastOrNull { it is UIMessagePart.ToolCall } as? UIMessagePart.ToolCall
-                            if (lastToolCall == null || lastToolCall.toolCallId.isBlank()) {
-                                acc + deltaPart.copy()
-                            } else {
+                            if (lastToolCall != null && (lastToolCall == acc.lastOrNull() || !lastToolCall.toolCallId.isBlank())) {
                                 acc.map { part ->
                                     if (part == lastToolCall && part is UIMessagePart.ToolCall) {
                                         part.merge(deltaPart)
                                     } else part
                                 }
+                            } else {
+                                acc + deltaPart.copy()
                             }
                         } else {
                             // insert or update
@@ -170,8 +183,8 @@ data class UIMessage(
     fun toText() = parts.joinToString(separator = "\n") { part ->
         when (part) {
             is UIMessagePart.Text -> part.text
-            is UIMessagePart.Thinking -> part.thinking
-            is UIMessagePart.Reasoning -> part.reasoning
+
+
             else -> ""
         }
     }
@@ -191,8 +204,16 @@ data class UIMessage(
 
     fun getToolResults() = parts.filterIsInstance<UIMessagePart.ToolResult>()
 
-    fun isValidToUpload() = parts.any {
-        it !is UIMessagePart.Reasoning
+    fun isValidToUpload() = parts.any { part ->
+        when (part) {
+            is UIMessagePart.Text -> part.text.isNotBlank()
+            is UIMessagePart.Image -> part.url.isNotBlank()
+            is UIMessagePart.Video -> part.url.isNotBlank()
+            is UIMessagePart.Audio -> part.url.isNotBlank()
+            is UIMessagePart.Document -> part.url.isNotBlank()
+            is UIMessagePart.Reasoning -> part.reasoning.isNotBlank()
+            else -> true
+        }
     }
 
     inline fun <reified P : UIMessagePart> hasPart(): Boolean {
@@ -279,7 +300,7 @@ fun List<UIMessage>.handleMessageChunk(chunk: MessageChunk, model: Model? = null
         "messages must not be empty"
     }
     val choice = chunk.choices.getOrNull(0) ?: return this
-    val message = choice.delta ?: choice.message ?: throw Exception("delta/message is null")
+    val message = choice.delta ?: choice.message ?: return this
     if (this.last().role != message.role) {
         return this + message.copy(modelId = model?.id)
     } else {
@@ -427,6 +448,7 @@ sealed class UIMessagePart {
         val reasoning: String,
         val createdAt: Instant = Clock.System.now(),
         val finishedAt: Instant? = Clock.System.now(),
+        val title: String? = null,
         override var metadata: JsonObject? = null
     ) : UIMessagePart() {
         override val priority: Int = -1
@@ -575,3 +597,56 @@ data class UIMessageChoice(
     val message: UIMessage?,
     val finishReason: String?
 )
+
+fun String.extractReasoningSummaryTitle(): String? {
+    val firstLine = lineSequence()
+        .map { it.trim() }
+        .firstOrNull { it.isNotBlank() }
+        ?: return null
+
+    return extractTitleFromLine(firstLine, hasMultipleLines = this.contains('\n') || this.contains('\r'))
+}
+
+/**
+ * Scans the full accumulated reasoning text and returns the title from the LAST
+ * heading/bold line found. This allows the pill to track the current reasoning
+ * section as new blocks stream in.
+ */
+fun String.extractLatestReasoningSummaryTitle(): String? {
+    val hasMultipleLines = this.contains('\n') || this.contains('\r')
+    // Walk lines in reverse, return the first (i.e. latest) title we find.
+    return lineSequence()
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .toList()
+        .asReversed()
+        .firstNotNullOfOrNull { line ->
+            extractTitleFromLine(line, hasMultipleLines)
+        }
+}
+
+private fun extractTitleFromLine(line: String, hasMultipleLines: Boolean): String? {
+    val trimmedLine = line.trim()
+        .replace(Regex("^(?:[-*+]|\\d+\\.)\\s+"), "")
+        .trim()
+
+    val stripped = when {
+        trimmedLine.startsWith("**") -> {
+            val idx = trimmedLine.indexOf("**", startIndex = 2)
+            if (idx >= 0) trimmedLine.substring(2, idx).trim() else null
+        }
+        trimmedLine.startsWith("__") -> {
+            val idx = trimmedLine.indexOf("__", startIndex = 2)
+            if (idx >= 0) trimmedLine.substring(2, idx).trim() else null
+        }
+        trimmedLine.startsWith("#") -> {
+            if (hasMultipleLines) trimmedLine.replace(Regex("^#+\\s*"), "") else null
+        }
+        else -> null
+    }?.trim()?.trimEnd(':')?.trim()
+    return stripped?.takeIf { it.isNotBlank() }?.take(80)
+}
+
+private fun JsonObject?.isReasoningSummary(): Boolean {
+    return this?.get("reasoning_kind")?.jsonPrimitiveOrNull?.contentOrNull == "summary"
+}

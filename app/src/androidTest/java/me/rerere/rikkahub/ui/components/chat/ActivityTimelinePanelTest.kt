@@ -16,6 +16,8 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.ui.context.LocalSettings
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import kotlin.time.Clock
@@ -24,6 +26,55 @@ import kotlin.time.Duration.Companion.seconds
 class ActivityTimelinePanelTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    fun deriveActivityState_blankToolNameWithStreamingPythonArgumentsShowsPython() {
+        val state = deriveActivityState(
+            parts = listOf(
+                UIMessagePart.ToolCall(
+                    toolCallId = "",
+                    toolName = "",
+                    arguments = """{"code":"print('hello')"""
+                )
+            ),
+            loading = true
+        )
+
+        assertTrue(state is ActivityState.ToolUse)
+        val toolState = state as ActivityState.ToolUse
+        assertEquals(ActivityType.PYTHON, categorizeToolName(toolState.toolName))
+    }
+
+    @Test
+    fun buildTimelineEntries_usesUniqueIdsForBlankOrRepeatedToolCallIds() {
+        val entries = buildTimelineEntries(
+            parts = listOf(
+                UIMessagePart.ToolCall(
+                    toolCallId = "",
+                    toolName = "search_web",
+                    arguments = """{"query":"first"}"""
+                ),
+                UIMessagePart.ToolCall(
+                    toolCallId = "",
+                    toolName = "search_web",
+                    arguments = """{"query":"second"}"""
+                ),
+                UIMessagePart.ToolCall(
+                    toolCallId = "repeat",
+                    toolName = "eval_python",
+                    arguments = """{"code":"print(1)"}"""
+                ),
+                UIMessagePart.ToolCall(
+                    toolCallId = "repeat",
+                    toolName = "eval_python",
+                    arguments = """{"code":"print(2)"}"""
+                )
+            ),
+            loading = true
+        )
+
+        assertEquals(entries.size, entries.map { it.id }.toSet().size)
+    }
 
     @Test
     fun chatMessageTurn_completedTimelineOpensCollapsedAndRefocuses() {
@@ -377,5 +428,45 @@ class ActivityTimelinePanelTest {
         composeRule.onNodeWithText(beforeLabel).assertExists()
         composeRule.onNodeWithText(afterLabel).assertExists()
         composeRule.onNodeWithText(revertLabel).assertExists()
+    }
+
+    @Test
+    fun activityTimelinePanel_rendersMemoryRecallPreviewInline() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val memoryRecallLabel = context.getString(R.string.activity_timeline_tool_search_memory)
+        val recallSummary = "I found one possible memory about the Lisbon train plan."
+
+        composeRule.setContent {
+            CompositionLocalProvider(LocalSettings provides Settings()) {
+                MaterialTheme {
+                    ActivityTimelinePanel(
+                        entries = listOf(
+                            TimelineEntry.ToolCall(
+                                id = "memory-search-1",
+                                toolName = "search_memory",
+                                displayName = "Recalling memories",
+                                argumentsText = """{"query":"Lisbon train"}""",
+                                resultText = recallSummary,
+                                argumentsJson = buildJsonObject {
+                                    put("query", "Lisbon train")
+                                },
+                                resultJson = buildJsonObject {
+                                    put("summary", recallSummary)
+                                    put("source", "past_chat")
+                                }
+                            )
+                        ),
+                        initialOpenRequest = TimelineOpenRequest(
+                            focusType = ActivityType.MEMORY_RECALL,
+                            openMode = TimelineOpenMode.Collapsed
+                        )
+                    )
+                }
+            }
+        }
+
+        composeRule.onNodeWithTag("activity_timeline_panel").assertExists()
+        composeRule.onNodeWithText(memoryRecallLabel).assertExists()
+        composeRule.onNodeWithText(recallSummary).assertExists()
     }
 }

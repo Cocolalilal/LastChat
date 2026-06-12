@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.di
 
 import me.rerere.rikkahub.data.ai.rag.EmbeddingService
+import me.rerere.rikkahub.data.ai.MemorySearchService
 import me.rerere.rikkahub.data.repository.AppStorageRepository
 import me.rerere.rikkahub.data.repository.ChatAttachmentRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
@@ -39,6 +40,10 @@ val repositoryModule = module {
 
     single {
         MemoryRepository(get(), get(), get(), get())
+    }
+
+    single {
+        MemorySearchService(get(), get(), get(), get())
     }
 
     single {

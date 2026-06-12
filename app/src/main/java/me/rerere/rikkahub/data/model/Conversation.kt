@@ -81,7 +81,13 @@ data class Conversation(
      */
     val currentMessages
         get(): List<UIMessage> {
-            return messageNodes.map { node -> node.messages[node.selectIndex] }
+            return messageNodes.mapNotNull { node ->
+                if (node.messages.isEmpty()) {
+                    null
+                } else {
+                    node.messages.getOrNull(node.selectIndex) ?: node.messages.first()
+                }
+            }
         }
 
     fun getMessageNodeByMessage(message: UIMessage): MessageNode? {
@@ -165,7 +171,14 @@ data class MessageNode(
     val forceTurnBreakBefore: Boolean = false,
 ) {
     val currentMessage get() = if (messages.isEmpty() || selectIndex !in messages.indices) {
-        throw IllegalStateException("MessageNode has no valid current message: messages.size=${messages.size}, selectIndex=$selectIndex")
+        if (messages.isNotEmpty()) {
+            messages[selectIndex.coerceIn(messages.indices)]
+        } else {
+            UIMessage(
+                role = MessageRole.USER,
+                parts = emptyList()
+            )
+        }
     } else {
         messages[selectIndex]
     }

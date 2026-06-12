@@ -89,7 +89,9 @@ import me.rerere.rikkahub.data.model.collectAttachmentFileRefs
 import me.rerere.rikkahub.data.repository.AppStorageRepository
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
+import me.rerere.rikkahub.ui.components.ui.AutoSaveIndicator
 import me.rerere.rikkahub.ui.components.ui.FormItem
+import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
@@ -597,6 +599,31 @@ fun SettingLorebookDetailPage(
                 }
                 showAddEntrySheet = false
                 editingEntry = null
+            },
+            onAutoSave = { savedEntry ->
+                val currentLorebook = lorebook
+                scope.launch {
+                    val finalEntry = if (savedEntry.activationType == LorebookActivationType.RAG && savedEntry.prompt.isNotBlank()) {
+                        try {
+                            val embeddingResult = embeddingService.embedWithModelId(savedEntry.prompt)
+                            savedEntry.copy(
+                                embedding = embeddingResult.embeddings.firstOrNull(),
+                                hasEmbedding = true,
+                                embeddingModelId = embeddingResult.modelId
+                            )
+                        } catch (e: Exception) {
+                            android.util.Log.w("LorebookDetail", "Failed to generate embedding", e)
+                            savedEntry.copy(hasEmbedding = false)
+                        }
+                    } else {
+                        savedEntry.copy(embedding = null, hasEmbedding = false, embeddingModelId = null)
+                    }
+                    
+                    val updatedEntries = currentLorebook.entries.map {
+                        if (it.id == finalEntry.id) finalEntry else it
+                    }
+                    updateLorebook(currentLorebook.copy(entries = updatedEntries))
+                }
             }
         )
     }
@@ -617,6 +644,9 @@ fun SettingLorebookDetailPage(
                     vm.cleanupFilesIfUnreferenced(listOf(previousCoverUrl))
                 }
                 showEditLorebookSheet = false
+            },
+            onAutoSave = { updated ->
+                updateLorebook(updated)
             }
         )
     }
@@ -719,7 +749,8 @@ private fun EntryCard(
 private fun EntryEditorSheet(
     entry: LorebookEntry?,
     onDismiss: (List<String>) -> Unit,
-    onSave: (LorebookEntry) -> Unit
+    onSave: (LorebookEntry) -> Unit,
+    onAutoSave: ((LorebookEntry) -> Unit)? = null
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
@@ -742,8 +773,32 @@ private fun EntryEditorSheet(
         mutableStateOf(entry?.injectionPosition ?: InjectionPosition.AFTER_SYSTEM) 
     }
     var attachments by remember { mutableStateOf(entry?.attachments ?: emptyList()) }
+    var namePending by remember { mutableStateOf(false) }
+    var promptPending by remember { mutableStateOf(false) }
+    var keywordsPending by remember { mutableStateOf(false) }
+    var scanDepthPending by remember { mutableStateOf(false) }
+    val isAutoSaving = entry != null && (namePending || promptPending || keywordsPending || scanDepthPending)
     val initialAttachmentUrls = remember(entry) {
         entry?.attachments?.map { attachment -> attachment.url }?.toSet().orEmpty()
+    }
+
+    fun buildCurrentEntry(
+        currentName: String = name,
+        currentPrompt: String = prompt,
+        currentKeywords: String = keywords,
+        currentScanDepth: Int = scanDepth,
+    ): LorebookEntry {
+        return (entry ?: LorebookEntry()).copy(
+            name = currentName,
+            prompt = currentPrompt,
+            activationType = activationType,
+            keywords = currentKeywords.split(",").map { it.trim() }.filter { it.isNotBlank() },
+            caseSensitive = caseSensitive,
+            useRegex = useRegex,
+            scanDepth = currentScanDepth,
+            injectionPosition = injectionPosition,
+            attachments = attachments
+        )
     }
 
     fun cleanupUnsavedAttachments(urls: Collection<String>) {
@@ -850,38 +905,57 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 .padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(
-                text = stringResource(
-                    if (entry != null) R.string.lorebook_entry_edit 
-                    else R.string.lorebook_entry_add
-                ),
-                style = MaterialTheme.typography.titleLarge
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(
+                        if (entry != null) R.string.lorebook_entry_edit
+                        else R.string.lorebook_entry_add
+                    ),
+                    style = MaterialTheme.typography.titleLarge
+                )
+                AutoSaveIndicator(visible = isAutoSaving)
+            }
 
             FormItem(
                 label = { Text(stringResource(R.string.lorebook_entry_name)) }
             ) {
-                OutlinedTextField(
+                DebouncedTextField(
                     value = name,
-                    onValueChange = { name = it },
+                    onValueChange = { newVal ->
+                        name = newVal
+                        if (entry != null && newVal.isNotBlank()) {
+                            onAutoSave?.invoke(buildCurrentEntry(currentName = newVal))
+                        }
+                    },
+                    stateKey = "entry_name_${entry?.id ?: "new"}",
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    placeholder = { Text(stringResource(R.string.lorebook_entry_name_placeholder)) },
-                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                    placeholder = stringResource(R.string.lorebook_entry_name_placeholder),
+                    onPendingChange = { namePending = it },
                 )
             }
 
             FormItem(
                 label = { Text(stringResource(R.string.lorebook_entry_prompt)) }
             ) {
-                OutlinedTextField(
+                DebouncedTextField(
                     value = prompt,
-                    onValueChange = { prompt = it },
+                    onValueChange = { newVal ->
+                        prompt = newVal
+                        if (entry != null && newVal.isNotBlank()) {
+                            onAutoSave?.invoke(buildCurrentEntry(currentPrompt = newVal))
+                        }
+                    },
+                    stateKey = "entry_prompt_${entry?.id ?: "new"}",
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(120.dp),
-                    placeholder = { Text(stringResource(R.string.lorebook_entry_prompt_placeholder)) },
-                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                    placeholder = stringResource(R.string.lorebook_entry_prompt_placeholder),
+                    onPendingChange = { promptPending = it },
                 )
             }
 
@@ -908,12 +982,18 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     FormItem(
                         label = { Text(stringResource(R.string.lorebook_entry_keywords)) }
                     ) {
-                        OutlinedTextField(
+                        DebouncedTextField(
                             value = keywords,
-                            onValueChange = { keywords = it },
+                            onValueChange = { newVal ->
+                                keywords = newVal
+                                if (entry != null) {
+                                    onAutoSave?.invoke(buildCurrentEntry(currentKeywords = newVal))
+                                }
+                            },
+                            stateKey = "entry_keywords_${entry?.id ?: "new"}",
                             modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text(stringResource(R.string.lorebook_entry_keywords_placeholder)) },
-                            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                            placeholder = stringResource(R.string.lorebook_entry_keywords_placeholder),
+                            onPendingChange = { keywordsPending = it },
                         )
                     }
 
@@ -952,12 +1032,19 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
             FormItem(
                 label = { Text(stringResource(R.string.lorebook_entry_scan_depth)) }
             ) {
-                OutlinedTextField(
+                DebouncedTextField(
                     value = scanDepth.toString(),
-                    onValueChange = { scanDepth = it.toIntOrNull() ?: 5 },
+                    onValueChange = { newVal ->
+                        val parsed = newVal.filter { it.isDigit() }.toIntOrNull() ?: 5
+                        scanDepth = parsed
+                        if (entry != null) {
+                            onAutoSave?.invoke(buildCurrentEntry(currentScanDepth = parsed))
+                        }
+                    },
+                    stateKey = "entry_scan_depth_${entry?.id ?: "new"}",
                     modifier = Modifier.width(80.dp),
                     singleLine = true,
-                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                    onPendingChange = { scanDepthPending = it },
                 )
             }
 
@@ -1077,7 +1164,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
 private fun LorebookEditorSheet(
     lorebook: Lorebook,
     onDismiss: (List<String>) -> Unit,
-    onSave: (Lorebook) -> Unit
+    onSave: (Lorebook) -> Unit,
+    onAutoSave: ((Lorebook) -> Unit)? = null
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
@@ -1087,6 +1175,9 @@ private fun LorebookEditorSheet(
     var name by remember { mutableStateOf(lorebook.name) }
     var description by remember { mutableStateOf(lorebook.description) }
     var cover by remember { mutableStateOf(lorebook.cover) }
+    var namePending by remember { mutableStateOf(false) }
+    var descriptionPending by remember { mutableStateOf(false) }
+    val isAutoSaving = namePending || descriptionPending
     val initialCoverUrl = remember(lorebook) {
         (lorebook.cover as? Avatar.Image)?.url
     }
@@ -1122,7 +1213,13 @@ private fun LorebookEditorSheet(
                     directory = OwnedFileDirectory.LOREBOOK_COVER,
                 )?.let { localUri ->
                     cleanupIfUnsaved(previousUnsavedCoverUrl)
-                    cover = me.rerere.rikkahub.data.model.Avatar.Image(localUri.toString())
+                    val newCover = me.rerere.rikkahub.data.model.Avatar.Image(localUri.toString())
+                    cover = newCover
+                    onAutoSave?.invoke(lorebook.copy(
+                        name = name,
+                        description = description,
+                        cover = newCover
+                    ))
                 }
             }
         }
@@ -1140,10 +1237,17 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 .padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(
-                text = stringResource(R.string.lorebook_edit),
-                style = MaterialTheme.typography.titleLarge
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.lorebook_edit),
+                    style = MaterialTheme.typography.titleLarge
+                )
+                AutoSaveIndicator(visible = isAutoSaving)
+            }
 
             // Cover picker + Name input inline
             Row(
@@ -1190,13 +1294,23 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    OutlinedTextField(
+                    DebouncedTextField(
                         value = name,
-                        onValueChange = { name = it },
+                        onValueChange = { newVal ->
+                            name = newVal
+                            if (newVal.isNotBlank()) {
+                                onAutoSave?.invoke(lorebook.copy(
+                                    name = newVal,
+                                    description = description,
+                                    cover = cover
+                                ))
+                            }
+                        },
+                        stateKey = "lorebook_name_${lorebook.id}",
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        placeholder = { Text(stringResource(R.string.lorebooks_page_name_placeholder)) },
-                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                        placeholder = stringResource(R.string.lorebooks_page_name_placeholder),
+                        onPendingChange = { namePending = it },
                     )
                 }
             }
@@ -1204,14 +1318,22 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
             FormItem(
                 label = { Text(stringResource(R.string.lorebooks_page_description)) }
             ) {
-                OutlinedTextField(
+                DebouncedTextField(
                     value = description,
-                    onValueChange = { description = it },
+                    onValueChange = { newVal ->
+                        description = newVal
+                        onAutoSave?.invoke(lorebook.copy(
+                            name = name,
+                            description = newVal,
+                            cover = cover
+                        ))
+                    },
+                    stateKey = "lorebook_desc_${lorebook.id}",
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(100.dp),
-                    placeholder = { Text(stringResource(R.string.lorebooks_page_description_placeholder)) },
-                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                    placeholder = stringResource(R.string.lorebooks_page_description_placeholder),
+                    onPendingChange = { descriptionPending = it },
                 )
             }
 

@@ -8,23 +8,25 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Spacer
-import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
 import me.rerere.search.SearchServiceOptions
 import coil3.compose.AsyncImage
 import me.rerere.ai.ui.UIMessagePart
-import me.rerere.rikkahub.utils.deleteChatFiles
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.ui.util.fastForEach
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.foundation.clickable
@@ -49,10 +51,12 @@ import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
@@ -69,6 +73,7 @@ import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Image
@@ -77,9 +82,11 @@ import androidx.compose.material.icons.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Summarize
 import androidx.compose.material.icons.rounded.ViewModule
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -101,6 +108,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -110,6 +118,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -120,6 +129,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import me.rerere.ai.provider.Model
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.ai.models.ModelCatalogService
+import me.rerere.rikkahub.data.ai.models.searchProviderIconUri
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
@@ -127,19 +138,22 @@ import me.rerere.rikkahub.data.datastore.resolveConversationContext
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.canManuallySummarizeConversation
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.model.hasManualSkillSelectionOverride
 import me.rerere.rikkahub.data.model.Skill
+import me.rerere.rikkahub.data.model.withoutSkillSelectionOverride
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.ui.components.crop.CropImageScreen
 import me.rerere.rikkahub.ui.components.ui.icons.ModeIcons
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionCamera
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionManager
 import me.rerere.rikkahub.ui.components.ui.permission.rememberPermissionState
-import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.modifier.blurredContainerColor
+import me.rerere.rikkahub.ui.modifier.lastChatBlurEffect
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
 import me.rerere.rikkahub.data.ai.tools.AskUserAnswer
 import me.rerere.rikkahub.data.ai.tools.AskUserAnswerPayload
@@ -150,7 +164,9 @@ import me.rerere.rikkahub.data.ai.tools.toJsonElement
 import me.rerere.rikkahub.data.repository.ChatAttachmentManager
 import me.rerere.rikkahub.utils.JsonInstantPretty
 import java.io.File
+import java.time.Instant
 import kotlin.uuid.Uuid
+import org.koin.compose.koinInject
 
 /**
  * Minimal ChatGPT-style input bar with bottom sheet picker.
@@ -187,6 +203,8 @@ fun MinimalChatInput(
     },
     onDeleteFile: (Uri) -> Unit = {},
     bottomAccessory: @Composable (() -> Unit)? = null,
+    showScrollToBottomButton: Boolean = false,
+    onScrollToBottomClick: () -> Unit = {},
     bottomPadding: androidx.compose.ui.unit.Dp = 24.dp,
 ) {
     val context = LocalContext.current
@@ -198,9 +216,10 @@ fun MinimalChatInput(
     val currentChatModel = conversationContext.chatModel
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
     val keyboardController = LocalSoftwareKeyboardController.current
-    val localSettings = LocalSettings.current
     val scope = rememberCoroutineScope()
-    val availableSkills = remember(settings.skills) { settings.skills }
+    val availableSkills = remember(settings.skills, assistant.id) {
+        settings.skills.filter { it.isAvailableForAssistant(assistant.id) }
+    }
     val availableSkillIds = remember(availableSkills) { availableSkills.map { it.id }.toSet() }
     val pendingQuestionnaire = remember(conversation.messageNodes) {
         conversation.currentMessages.findPendingAskUserToolCall()
@@ -233,6 +252,7 @@ fun MinimalChatInput(
     
     var showPicker by remember { mutableStateOf(false) }
     var isFocused by remember { mutableStateOf(false) }
+    var imageToCrop by remember { mutableStateOf<PendingImageCrop?>(null) }
 
     LaunchedEffect(questionnaireToolCallId, questionnaire?.questions?.size) {
         if (questionnaire == null) {
@@ -342,6 +362,49 @@ fun MinimalChatInput(
         haptics.perform(HapticPattern.Send)
         if (state.loading) onCancelClick() else onSendClick()
     }
+
+    fun replaceCroppedImage(original: PendingImageCrop, croppedUri: Uri) {
+        scope.launch {
+            val importedUri = withContext(Dispatchers.IO) {
+                ChatAttachmentManager.importChatFiles(listOf(croppedUri)).firstOrNull()
+            }
+            if (importedUri == null) {
+                Log.w("MinimalChatInput", "Failed to import cropped image: $croppedUri")
+                toaster.show(context.getString(R.string.chat_input_selected_image_failed))
+                withContext(Dispatchers.IO) {
+                    if (croppedUri.scheme == "file") {
+                        runCatching { File(croppedUri.path.orEmpty()).delete() }
+                    }
+                }
+                return@launch
+            }
+
+            state.replaceAttachment(
+                instanceId = original.instanceId,
+                part = UIMessagePart.Image(importedUri.toString()),
+            )
+            withContext(Dispatchers.IO) {
+                if (croppedUri.scheme == "file") {
+                    runCatching { File(croppedUri.path.orEmpty()).delete() }
+                }
+            }
+            haptics.perform(HapticPattern.Success)
+        }
+    }
+
+    imageToCrop?.let { image ->
+        CropImageScreen(
+            sourceUri = image.image.url.toUri(),
+            onCropComplete = { croppedUri ->
+                imageToCrop = null
+                replaceCroppedImage(image, croppedUri)
+            },
+            onCancel = {
+                imageToCrop = null
+                haptics.perform(HapticPattern.Pop)
+            }
+        )
+    }
     
     Box(
         modifier = modifier.fillMaxWidth(),
@@ -354,24 +417,44 @@ fun MinimalChatInput(
                 .padding(bottom = bottomPadding, start = 16.dp, end = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Media preview row
-            if (!isQuestionnaireActive && state.messageContent.isNotEmpty()) {
-                MediaFileInputRow(
-                    state = state,
-                    onDelete = onDeleteFile
-                )
-            }
-            
-            // Suggestions row
+            val showSuggestions = !isQuestionnaireActive && chatSuggestions.isNotEmpty()
+            val showScrollToBottom = !isQuestionnaireActive && showScrollToBottomButton
+
+            // Suggestions and scroll-to-bottom affordance share a row so they never overlap.
             androidx.compose.animation.AnimatedVisibility(
-                visible = !isQuestionnaireActive && chatSuggestions.isNotEmpty(),
+                visible = showSuggestions || showScrollToBottom,
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
-                ChatSuggestionsRow(
-                    suggestions = chatSuggestions,
-                    onClickSuggestion = onClickSuggestion
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(36.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (showSuggestions) {
+                        ChatSuggestionsRow(
+                            modifier = Modifier.weight(1f),
+                            suggestions = chatSuggestions,
+                            onClickSuggestion = onClickSuggestion
+                        )
+                    } else {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = showScrollToBottom,
+                        enter = fadeIn() + expandHorizontally(expandFrom = Alignment.End),
+                        exit = fadeOut() + shrinkHorizontally(shrinkTowards = Alignment.End),
+                    ) {
+                        ChatScrollToBottomButton(
+                            onClick = {
+                                haptics.perform(HapticPattern.Pop)
+                                onScrollToBottomClick()
+                            }
+                        )
+                    }
+                }
             }
 
             androidx.compose.animation.AnimatedVisibility(
@@ -457,9 +540,11 @@ fun MinimalChatInput(
                             keyboardController?.hide()
                         },
                         shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        color = blurredContainerColor(MaterialTheme.colorScheme.surfaceContainer),
                         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
-                        modifier = Modifier.size(48.dp)
+                        modifier = Modifier
+                            .size(48.dp)
+                            .lastChatBlurEffect(MaterialTheme.colorScheme.surfaceContainer, CircleShape)
                     ) {
                         Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                             Icon(
@@ -473,17 +558,47 @@ fun MinimalChatInput(
                 }
                 // Text field capsule with embedded action button
                 // Corner radius = 24dp (user confirmed this was correct)
+                val inputShape = RoundedCornerShape(24.dp)
                 Surface(
-                    shape = RoundedCornerShape(24.dp),  // Fixed radius - correct per user
-                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    shape = inputShape,  // Fixed radius - correct per user
+                    color = blurredContainerColor(MaterialTheme.colorScheme.surfaceContainer),
                     border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp)  // Matches plus button, allows 4dp padding all around
+                        .lastChatBlurEffect(MaterialTheme.colorScheme.surfaceContainer, inputShape)
                 ) {
                     Column(
                         modifier = Modifier.fillMaxWidth()
                     ) {
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = !isQuestionnaireActive && state.messageContent.isNotEmpty(),
+                            enter = fadeIn(
+                                animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f)
+                            ) + expandVertically(
+                                animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+                                expandFrom = Alignment.Top
+                            ),
+                            exit = fadeOut(
+                                animationSpec = spring(dampingRatio = 0.75f, stiffness = 360f)
+                            ) + shrinkVertically(
+                                animationSpec = spring(dampingRatio = 0.75f, stiffness = 360f),
+                                shrinkTowards = Alignment.Top
+                            )
+                        ) {
+                            MediaFileInputRow(
+                                state = state,
+                                onDelete = { uri ->
+                                    haptics.perform(HapticPattern.Pop)
+                                    onDeleteFile(uri)
+                                },
+                                onCropImage = { instanceId, image ->
+                                    haptics.perform(HapticPattern.Pop)
+                                    imageToCrop = PendingImageCrop(instanceId, image)
+                                }
+                            )
+                        }
+
                         // Editing indicator - shown when editing a message
                         if (!isQuestionnaireActive && state.isEditing()) {
                             Surface(
@@ -524,8 +639,10 @@ fun MinimalChatInput(
                         Box(
                             modifier = Modifier.fillMaxWidth()
                         ) {
+                            val activeTextState =
+                                if (isQuestionnaireActive) questionnaireTextState else state.textContent
                             TextField(
-                                state = if (isQuestionnaireActive) questionnaireTextState else state.textContent,
+                                state = activeTextState,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .defaultMinSize(minHeight = 1.dp)  // Override internal min height (56dp)
@@ -549,26 +666,26 @@ fun MinimalChatInput(
                                         overflow = TextOverflow.Ellipsis
                                     )
                                 },
-                                lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),  // MultiLine for proper Enter key
+                                lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),
+                                contentPadding = PaddingValues(
+                                    start = 16.dp,
+                                    top = 12.dp,
+                                    end = 52.dp,
+                                    bottom = 12.dp,
+                                ),
                                 colors = TextFieldDefaults.colors().copy(
                                     unfocusedIndicatorColor = Color.Transparent,
                                     focusedIndicatorColor = Color.Transparent,
                                     focusedContainerColor = Color.Transparent,
                                     unfocusedContainerColor = Color.Transparent,
-                                ),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                                    start = 16.dp,
-                                    end = 48.dp,  // Space for 40dp button + 4dp padding
-                                    top = 12.dp,
-                                    bottom = 12.dp
                                 )
                             )
                             
-                            // Action button - bottom-right, extra bottom padding for visual alignment
+                            // Action button - bottom-right for multiline, optically centered when collapsed
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
-                                    .padding(start = 4.dp, end = 6.dp, top = 4.dp, bottom = 6.dp)
+                                    .padding(start = 6.dp, end = 6.dp, top = 6.dp, bottom = 6.dp)
                             ) {
                                 val currentAction = when {
                                     isQuestionnaireActive && isFinalQuestion -> "questionnaire_submit"
@@ -688,6 +805,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 onUpdateSearchService = onUpdateSearchService,
                 onNavigateToLorebook = onNavigateToLorebook,
                 onRefreshContext = onRefreshContext,
+                importScope = scope,
                 onDismiss = { showPicker = false }
             )
         }
@@ -863,12 +981,17 @@ private fun MinimalPickerContent(
     onUpdateSearchService: (Int) -> Unit,
     onNavigateToLorebook: (String) -> Unit,
     onRefreshContext: suspend () -> ChatService.ContextRefreshResult,
+    importScope: CoroutineScope,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val localSettings = LocalSettings.current
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
+    val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
+    val availableSkills = remember(settings.skills, assistant.id) {
+        settings.skills.filter { it.isAvailableForAssistant(assistant.id) }
+    }
+    val availableSkillIds = remember(availableSkills) { availableSkills.map { it.id }.toSet() }
     
     // OLED dark mode detection for buttons (not sheet backgrounds)
     val amoledMode by me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode()
@@ -881,24 +1004,26 @@ private fun MinimalPickerContent(
     var cameraOutputUri by remember { mutableStateOf<Uri?>(null) }
     var cameraOutputFile by remember { mutableStateOf<File?>(null) }
     
-    // Crop state
-    var showCropScreen by remember { mutableStateOf(false) }
-    var imageToCrop by remember { mutableStateOf<Uri?>(null) }
-    
     // Sub-picker states
     var showModelPicker by remember { mutableStateOf(false) }
     var showReasoningPicker by remember { mutableStateOf(false) }
     var showSkillsPicker by remember { mutableStateOf(false) }
     var showLorebooksPicker by remember { mutableStateOf(false) }
     var showContextRefreshDialog by remember { mutableStateOf(false) }
+    var showContextSummaryEditDialog by remember { mutableStateOf(false) }
+    var editableContextSummary by remember(conversation.contextSummary) {
+        mutableStateOf(conversation.contextSummary.orEmpty())
+    }
     var showSearchPicker by remember { mutableStateOf(false) }
-    val assistantDefaultSkillIds = assistant.enabledSkillIds
-    val alwaysEnabledSkillIds = settings.skills.filter { it.alwaysEnabled }.map { it.id }.toSet()
-    val effectiveActiveSkillIds = if (conversation.enabledModeIds.isNotEmpty()) {
-        conversation.enabledModeIds + alwaysEnabledSkillIds
+    val modelCatalogService: ModelCatalogService = koinInject()
+    val catalogSnapshot by modelCatalogService.snapshotFlow.collectAsStateWithLifecycle()
+    val assistantDefaultSkillIds = assistant.enabledSkillIds.intersect(availableSkillIds)
+    val alwaysEnabledSkillIds = availableSkills.filter { it.alwaysEnabled }.map { it.id }.toSet()
+    val effectiveActiveSkillIds = if (conversation.enabledModeIds.hasManualSkillSelectionOverride() || conversation.enabledModeIds.isNotEmpty()) {
+        conversation.enabledModeIds.withoutSkillSelectionOverride()
     } else {
         assistantDefaultSkillIds + alwaysEnabledSkillIds
-    }
+    }.intersect(availableSkillIds)
     
     // Track the last valid search provider index so selection persists when search is disabled
     // Initialize from assistant's searchMode if available, otherwise use global setting
@@ -932,7 +1057,6 @@ private fun MinimalPickerContent(
 
     fun importImages(
         uris: List<Uri>,
-        dismissOnSuccess: Boolean = false,
         onFinally: () -> Unit = {}
     ) {
         if (uris.isEmpty()) {
@@ -940,7 +1064,7 @@ private fun MinimalPickerContent(
             return
         }
 
-        scope.launch {
+        importScope.launch {
             val importedUris = withContext(Dispatchers.IO) {
                 ChatAttachmentManager.importChatFiles(uris)
             }
@@ -949,38 +1073,9 @@ private fun MinimalPickerContent(
                 toaster.show(context.getString(R.string.chat_input_selected_image_failed))
             } else {
                 state.addImages(importedUris)
-                if (dismissOnSuccess) {
-                    onDismiss()
-                }
             }
             onFinally()
         }
-    }
-    
-    // Crop screen dialog
-    if (showCropScreen && imageToCrop != null) {
-        CropImageScreen(
-            sourceUri = imageToCrop!!,
-            onCropComplete = { croppedUri ->
-                importImages(
-                    uris = listOf(croppedUri),
-                    onFinally = {
-                        showCropScreen = false
-                        imageToCrop = null
-                        cameraOutputFile?.delete()
-                        cameraOutputFile = null
-                        cameraOutputUri = null
-                    }
-                )
-            },
-            onCancel = {
-                showCropScreen = false
-                imageToCrop = null
-                cameraOutputFile?.delete()
-                cameraOutputFile = null
-                cameraOutputUri = null
-            }
-        )
     }
     
     // Camera launcher
@@ -990,19 +1085,15 @@ private fun MinimalPickerContent(
         val capturedUri = cameraOutputUri
         val capturedFile = cameraOutputFile
         if (captureSuccessful && capturedUri != null) {
-            if (localSettings.displaySetting.skipCropImage) {
-                importImages(
-                    uris = listOf(capturedUri),
-                    onFinally = {
-                        capturedFile?.delete()
-                        cameraOutputFile = null
-                        cameraOutputUri = null
-                    }
-                )
-            } else {
-                imageToCrop = capturedUri
-                showCropScreen = true
-            }
+            onDismiss()
+            importImages(
+                uris = listOf(capturedUri),
+                onFinally = {
+                    capturedFile?.delete()
+                    cameraOutputFile = null
+                    cameraOutputUri = null
+                }
+            )
         } else {
             cameraOutputFile?.delete()
             cameraOutputFile = null
@@ -1015,15 +1106,8 @@ private fun MinimalPickerContent(
         ActivityResultContracts.PickMultipleVisualMedia()
     ) { selectedUris ->
         if (selectedUris.isNotEmpty()) {
-            if (localSettings.displaySetting.skipCropImage || selectedUris.size > 1) {
-                importImages(
-                    uris = selectedUris,
-                    dismissOnSuccess = true
-                )
-            } else {
-                imageToCrop = selectedUris.first()
-                showCropScreen = true
-            }
+            onDismiss()
+            importImages(uris = selectedUris)
         }
     }
     
@@ -1032,8 +1116,9 @@ private fun MinimalPickerContent(
         ActivityResultContracts.GetMultipleContents()
     ) { selectedUris ->
         if (selectedUris.isNotEmpty()) {
+            onDismiss()
             val isPythonEnabled = assistant.localTools.any { it is LocalToolOption.PythonEngine }
-            scope.launch {
+            importScope.launch {
                 val importedFiles = withContext(Dispatchers.IO) {
                     context.prepareImportedPickerFiles(
                         selectedUris = selectedUris,
@@ -1059,7 +1144,6 @@ private fun MinimalPickerContent(
                 if (importedFiles.documents.isNotEmpty()) {
                     state.addFiles(importedFiles.documents)
                 }
-                onDismiss()
             }
         }
     }
@@ -1190,8 +1274,9 @@ private fun MinimalPickerContent(
             icon = {
                 // Only show provider icon when search is actually enabled
                 if (enableSearch && searchProviderName != null) {
-                    AutoAIIcon(
+                    AutoAIIconWithUrl(
                         name = searchProviderName,
+                        customIconUri = catalogSnapshot?.searchProviderIconUri(searchProviderName),
                         modifier = Modifier.size(24.dp)
                     )
                 } else {
@@ -1211,7 +1296,6 @@ private fun MinimalPickerContent(
         )
         
         // Skills - use enabledModeIds (legacy field) for per-chat overrides.
-        val availableSkills = settings.skills
         val activeSkills = availableSkills.filter { skill ->
             effectiveActiveSkillIds.contains(skill.id)
         }
@@ -1376,7 +1460,86 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
         ContextRefreshDialog(
             conversation = conversation,
             onRefresh = onRefreshContext,
+            onEditSummary = {
+                editableContextSummary = conversation.contextSummary.orEmpty()
+                showContextSummaryEditDialog = true
+            },
+            onRevertSummary = {
+                onUpdateConversation(
+                    conversation.copy(
+                        contextSummary = null,
+                        contextSummaryUpToIndex = -1,
+                        lastRefreshTime = 0L,
+                        updateAt = Instant.now()
+                    )
+                )
+            },
             onDismiss = { showContextRefreshDialog = false }
+        )
+    }
+
+    if (showContextSummaryEditDialog) {
+        AlertDialog(
+            onDismissRequest = { showContextSummaryEditDialog = false },
+            shape = RoundedCornerShape(28.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+            title = {
+                Text(
+                    text = stringResource(R.string.context_refresh_edit_summary),
+                    style = MaterialTheme.typography.headlineSmall
+                )
+            },
+            text = {
+                TextField(
+                    value = editableContextSummary,
+                    onValueChange = { editableContextSummary = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 180.dp),
+                    placeholder = {
+                        Text(stringResource(R.string.context_refresh_edit_summary_placeholder))
+                    }
+                )
+            },
+            confirmButton = {
+                IconButton(
+                    onClick = {
+                        haptics.perform(HapticPattern.Success)
+                        val trimmedSummary = editableContextSummary.trim()
+                        onUpdateConversation(
+                            conversation.copy(
+                                contextSummary = trimmedSummary.takeIf { it.isNotBlank() },
+                                contextSummaryUpToIndex = if (trimmedSummary.isBlank()) {
+                                    -1
+                                } else {
+                                    conversation.contextSummaryUpToIndex
+                                },
+                                lastRefreshTime = if (trimmedSummary.isBlank()) 0L else System.currentTimeMillis(),
+                                updateAt = Instant.now()
+                            )
+                        )
+                        showContextSummaryEditDialog = false
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Save,
+                        contentDescription = stringResource(R.string.context_refresh_save_summary)
+                    )
+                }
+            },
+            dismissButton = {
+                IconButton(
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        showContextSummaryEditDialog = false
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = stringResource(android.R.string.cancel)
+                    )
+                }
+            }
         )
     }
     
@@ -1626,52 +1789,213 @@ private fun MinimalPickerItem(
     }
 }
 
+private data class PendingImageCrop(
+    val instanceId: String,
+    val image: UIMessagePart.Image,
+)
+
+private data class IndexedAttachment<T : UIMessagePart>(
+    val id: String,
+    val part: T,
+)
+
+private fun UIMessagePart.attachmentUrl(): String? = when (this) {
+    is UIMessagePart.Image -> url
+    is UIMessagePart.Video -> url
+    is UIMessagePart.Audio -> url
+    is UIMessagePart.Document -> url
+    else -> null
+}
+
 @Composable
 private fun MediaFileInputRow(
     state: ChatInputState,
-    onDelete: (Uri) -> Unit
+    onDelete: (Uri) -> Unit,
+    onCropImage: (String, UIMessagePart.Image) -> Unit,
 ) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    val images = remember(state.pendingAttachments) {
+        state.pendingAttachments.mapNotNull { attachment ->
+            (attachment.part as? UIMessagePart.Image)?.let { image ->
+                IndexedAttachment(attachment.id, image)
+            }
+        }
+    }
+    val videos = remember(state.pendingAttachments) {
+        state.pendingAttachments.mapNotNull { attachment ->
+            (attachment.part as? UIMessagePart.Video)?.let { video ->
+                IndexedAttachment(attachment.id, video)
+            }
+        }
+    }
+    val audios = remember(state.pendingAttachments) {
+        state.pendingAttachments.mapNotNull { attachment ->
+            (attachment.part as? UIMessagePart.Audio)?.let { audio ->
+                IndexedAttachment(attachment.id, audio)
+            }
+        }
+    }
+    val documents = remember(state.pendingAttachments) {
+        state.pendingAttachments.mapNotNull { attachment ->
+            (attachment.part as? UIMessagePart.Document)?.let { document ->
+                IndexedAttachment(attachment.id, document)
+            }
+        }
+    }
+
+    fun removePart(instanceId: String): Uri? {
+        val removedPart = state.removeAttachment(instanceId) ?: return null
+        val removedUrl = removedPart.attachmentUrl() ?: return null
+        return if (state.messageContent.none { it.attachmentUrl() == removedUrl }) {
+            removedUrl.toUri()
+        } else {
+            null
+        }
+    }
+
+    val listState = rememberLazyListState()
+    val canScrollLeft by remember {
+        androidx.compose.runtime.derivedStateOf {
+            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
+        }
+    }
+    val canScrollRight by remember {
+        androidx.compose.runtime.derivedStateOf {
+            val layoutInfo = listState.layoutInfo
+            val lastVisibleItem = layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
+            lastVisibleItem.index < layoutInfo.totalItemsCount - 1 ||
+                lastVisibleItem.offset + lastVisibleItem.size > layoutInfo.viewportEndOffset
+        }
+    }
+    val leftFadeAlpha by animateFloatAsState(
+        targetValue = if (canScrollLeft) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(180),
+        label = "attachment_left_fade"
+    )
+    val rightFadeAlpha by animateFloatAsState(
+        targetValue = if (canScrollRight) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(180),
+        label = "attachment_right_fade"
+    )
+
+    LazyRow(
+        state = listState,
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            horizontal = 12.dp,
+            vertical = 12.dp,
+        ),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp)
-            .horizontalScroll(rememberScrollState())
+            .height(84.dp)
+            .graphicsLayer {
+                compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen
+            }
+            .drawWithContent {
+                drawContent()
+                if ((leftFadeAlpha > 0f || rightFadeAlpha > 0f) && size.width > 0f) {
+                    val fadeWidthPx = 22.dp.toPx()
+                    val leftEnd = (fadeWidthPx / size.width).coerceAtMost(0.35f)
+                    val rightStart = (1f - fadeWidthPx / size.width).coerceAtLeast(0.65f)
+                    drawRect(
+                        brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
+                            colorStops = arrayOf(
+                                0f to Color.Black.copy(alpha = 1f - leftFadeAlpha),
+                                leftEnd to Color.Black,
+                                rightStart to Color.Black,
+                                1f to Color.Black.copy(alpha = 1f - rightFadeAlpha),
+                            )
+                        ),
+                        blendMode = androidx.compose.ui.graphics.BlendMode.DstIn
+                    )
+                }
+            }
     ) {
-        state.messageContent.filterIsInstance<UIMessagePart.Image>().fastForEach { image ->
-            Box {
+        items(
+            items = images,
+            key = { attachment -> "image:${attachment.id}" }
+        ) { attachment ->
+            val image = attachment.part
+            val interactionSource = remember { MutableInteractionSource() }
+            val isPressed by interactionSource.collectIsPressedAsState()
+            val scale by animateFloatAsState(
+                targetValue = if (isPressed) 0.94f else 1f,
+                animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+                label = "image_attachment_scale"
+            )
+
+            Box(
+                modifier = Modifier
+                    .size(60.dp)
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                    }
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        onClick = { onCropImage(attachment.id, image) }
+                    )
+            ) {
                 Surface(
-                    modifier = Modifier.size(48.dp),
-                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .size(60.dp),
+                    shape = RoundedCornerShape(12.dp),
                     tonalElevation = 4.dp
                 ) {
                     AsyncImage(
                         model = image.url,
                         contentDescription = null,
+                        contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
-                Icon(
-                    imageVector = Icons.Rounded.Close,
-                    contentDescription = null,
+                Box(
                     modifier = Modifier
-                        .clip(CircleShape)
-                        .size(20.dp)
-                        .clickable {
-                            state.messageContent = state.messageContent.filterNot { it == image }
-                            onDelete(image.url.toUri())
-                        }
                         .align(Alignment.TopEnd)
-                        .background(MaterialTheme.colorScheme.secondary),
-                    tint = MaterialTheme.colorScheme.onSecondary
-                )
+                        .size(38.dp)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {
+                                removePart(attachment.id)?.let(onDelete)
+                            }
+                        ),
+                    contentAlignment = Alignment.TopEnd
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.94f),
+                        tonalElevation = 3.dp,
+                        modifier = Modifier
+                            .padding(4.dp)
+                            .size(22.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = stringResource(R.string.delete),
+                                modifier = Modifier.size(15.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
             }
         }
-        state.messageContent.filterIsInstance<UIMessagePart.Video>().fastForEach { video ->
-            Box {
+        items(
+            items = videos,
+            key = { attachment -> "video:${attachment.id}" }
+        ) { attachment ->
+            val video = attachment.part
+            Box(
+                modifier = Modifier
+            ) {
                 Surface(
-                    modifier = Modifier.size(48.dp),
-                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.size(60.dp),
+                    shape = RoundedCornerShape(12.dp),
                     tonalElevation = 4.dp
                 ) {
                     Box(
@@ -1686,10 +2010,9 @@ private fun MediaFileInputRow(
                     contentDescription = null,
                     modifier = Modifier
                         .clip(CircleShape)
-                        .size(20.dp)
+                        .size(24.dp)
                         .clickable {
-                            state.messageContent = state.messageContent.filterNot { it == video }
-                            onDelete(video.url.toUri())
+                            removePart(attachment.id)?.let(onDelete)
                         }
                         .align(Alignment.TopEnd)
                         .background(MaterialTheme.colorScheme.secondary),
@@ -1697,11 +2020,17 @@ private fun MediaFileInputRow(
                 )
             }
         }
-        state.messageContent.filterIsInstance<UIMessagePart.Audio>().fastForEach { audio ->
-            Box {
+        items(
+            items = audios,
+            key = { attachment -> "audio:${attachment.id}" }
+        ) { attachment ->
+            val audio = attachment.part
+            Box(
+                modifier = Modifier
+            ) {
                 Surface(
-                    modifier = Modifier.size(48.dp),
-                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.size(60.dp),
+                    shape = RoundedCornerShape(12.dp),
                     tonalElevation = 4.dp
                 ) {
                     Box(
@@ -1716,10 +2045,9 @@ private fun MediaFileInputRow(
                     contentDescription = null,
                     modifier = Modifier
                         .clip(CircleShape)
-                        .size(20.dp)
+                        .size(24.dp)
                         .clickable {
-                            state.messageContent = state.messageContent.filterNot { it == audio }
-                            onDelete(audio.url.toUri())
+                            removePart(attachment.id)?.let(onDelete)
                         }
                         .align(Alignment.TopEnd)
                         .background(MaterialTheme.colorScheme.secondary),
@@ -1727,14 +2055,64 @@ private fun MediaFileInputRow(
                 )
             }
         }
-        state.messageContent.filterIsInstance<UIMessagePart.Document>().fastForEach { document ->
+        items(
+            items = documents,
+            key = { attachment -> "document:${attachment.id}" }
+        ) { attachment ->
+            val document = attachment.part
             me.rerere.rikkahub.ui.components.ui.DocumentChip(
                 fileName = document.fileName,
                 mimeType = document.mime,
+                modifier = Modifier,
                 onRemove = {
-                    state.messageContent = state.messageContent.filterNot { it == document }
-                    onDelete(document.url.toUri())
+                    removePart(attachment.id)?.let(onDelete)
                 }
+            )
+        }
+    }
+}
+
+@Composable
+private fun ChatScrollToBottomButton(
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val haptics = rememberPremiumHaptics()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.85f else 1f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        label = "scroll_to_bottom_scale"
+    )
+
+    Surface(
+        shape = CircleShape,
+        color = blurredContainerColor(MaterialTheme.colorScheme.surfaceContainer),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
+        modifier = modifier
+            .size(36.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .lastChatBlurEffect(MaterialTheme.colorScheme.surfaceContainer, CircleShape)
+            .clip(CircleShape)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = {
+                    haptics.perform(HapticPattern.Pop)
+                    onClick()
+                },
+            )
+    ) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+            Icon(
+                imageVector = Icons.Rounded.KeyboardArrowDown,
+                contentDescription = stringResource(R.string.chat_page_scroll_to_bottom),
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
@@ -1850,9 +2228,10 @@ private fun ChatSuggestionsRow(
             }
 
             if (visible || targetAlpha > 0f) {
+                val suggestionShape = RoundedCornerShape(16.dp)
                 Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    shape = suggestionShape,
+                    color = blurredContainerColor(MaterialTheme.colorScheme.surfaceContainer),
                     border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
                     modifier = Modifier
                         .graphicsLayer {
@@ -1860,6 +2239,7 @@ private fun ChatSuggestionsRow(
                             scaleY = scale
                             this.alpha = alpha
                         }
+                        .lastChatBlurEffect(MaterialTheme.colorScheme.surfaceContainer, suggestionShape)
                         .clickable(
                             interactionSource = interactionSource,
                             indication = null

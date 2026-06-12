@@ -146,6 +146,11 @@ fun CropImageScreen(
     // Crop area
     var cropArea by remember { mutableStateOf(Rect.Zero) }
     var originalSize by remember { mutableStateOf(Size.Zero) }
+    var isCropping by remember { mutableStateOf(false) }
+    val hasValidCropGeometry = cropArea.width > 0f &&
+        cropArea.height > 0f &&
+        originalSize.width > 0f &&
+        originalSize.height > 0f
     
     Dialog(
         onDismissRequest = onCancel,
@@ -334,6 +339,8 @@ fun CropImageScreen(
                     Button(
                         onClick = {
                             val bitmap = displayBitmap ?: return@Button
+                            if (!hasValidCropGeometry || isCropping) return@Button
+                            isCropping = true
                             scope.launch {
                                 val croppedUri = cropAndSaveImage(
                                     context = context,
@@ -344,11 +351,12 @@ fun CropImageScreen(
                                 if (croppedUri != null) {
                                     onCropComplete(croppedUri)
                                 } else {
+                                    isCropping = false
                                     onCancel()
                                 }
                             }
                         },
-                        enabled = displayBitmap != null,
+                        enabled = displayBitmap != null && hasValidCropGeometry && !isCropping,
                         modifier = Modifier
                             .weight(1f)
                             .graphicsLayer {
@@ -381,6 +389,15 @@ private suspend fun cropAndSaveImage(
     originalSize: Size
 ): Uri? = withContext(Dispatchers.IO) {
     try {
+        if (
+            originalSize.width <= 0f ||
+            originalSize.height <= 0f ||
+            cropArea.width <= 0f ||
+            cropArea.height <= 0f
+        ) {
+            return@withContext null
+        }
+
         // Calculate the scale factor between displayed size and actual bitmap size
         val scaleX = sourceBitmap.width / originalSize.width
         val scaleY = sourceBitmap.height / originalSize.height
@@ -400,11 +417,19 @@ private suspend fun cropAndSaveImage(
             cropHeight
         )
         
-        // Save to temp file
-        val outputFile = File(context.appTempFolder, "cropped_${System.currentTimeMillis()}.png")
+        val preserveAlpha = croppedBitmap.hasAlpha()
+        val outputFile = File(
+            context.appTempFolder,
+            "cropped_${System.currentTimeMillis()}.${if (preserveAlpha) "png" else "jpg"}"
+        )
         FileOutputStream(outputFile).use { stream ->
-            croppedBitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+            croppedBitmap.compress(
+                if (preserveAlpha) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG,
+                if (preserveAlpha) 100 else 92,
+                stream
+            )
         }
+        croppedBitmap.recycle()
         
         Uri.fromFile(outputFile)
     } catch (e: Exception) {

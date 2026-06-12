@@ -2,6 +2,8 @@ package me.rerere.ai.ui
 
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import me.rerere.ai.core.MessageRole
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -237,6 +239,67 @@ class MessageTest {
         assertEquals("Final response", message.toContentText())
     }
 
+    @Test
+    fun `reasoning summary title is derived across streamed chunks`() {
+        val metadata = buildJsonObject {
+            put("reasoning_kind", "summary")
+        }
+        val message = UIMessage(
+            role = MessageRole.ASSISTANT,
+            parts = listOf(
+                UIMessagePart.Reasoning(
+                    reasoning = "",
+                    finishedAt = null,
+                    metadata = metadata
+                )
+            )
+        )
+
+        val withPartialTitle = message + reasoningChunk("**Checking", metadata)
+        val partialReasoning = withPartialTitle.parts.filterIsInstance<UIMessagePart.Reasoning>().single()
+        assertEquals(null, partialReasoning.title)
+
+        val withCompleteTitle = withPartialTitle + reasoningChunk(" details**\n\nLooking at the request.", metadata)
+        val reasoning = withCompleteTitle.parts.filterIsInstance<UIMessagePart.Reasoning>().single()
+        assertEquals("Checking details", reasoning.title)
+        assertEquals("**Checking details**\n\nLooking at the request.", reasoning.reasoning)
+    }
+
+    @Test
+    fun `extractReasoningSummaryTitle only extracts from valid markdown headers and bold`() {
+        // Bold title
+        assertEquals("Researching", "**Researching**\nSome context".extractReasoningSummaryTitle())
+        // Underline title
+        assertEquals("Planning", "__Planning__\nStep 1".extractReasoningSummaryTitle())
+        // Heading titles
+        assertEquals("Analyzing Constraints", "### Analyzing Constraints\nSome info".extractReasoningSummaryTitle())
+        assertEquals("Final Step", "# Final Step\nWait".extractReasoningSummaryTitle())
+
+        // Bullet lists/numbered lists containing bold/underlines
+        assertEquals("List Bold", "- **List Bold**\nDetails".extractReasoningSummaryTitle())
+        assertEquals("Num Bold", "1. **Num Bold**\nDetails".extractReasoningSummaryTitle())
+        assertEquals("Star Underline", "* __Star Underline__\nDetails".extractReasoningSummaryTitle())
+
+        // Plain text should be rejected
+        assertEquals(null, "Thinking about user request".extractReasoningSummaryTitle())
+        assertEquals(null, "Thinking about user request:".extractReasoningSummaryTitle())
+        assertEquals(null, "Thinking about user request.\nAnother line".extractReasoningSummaryTitle())
+    }
+
+    @Test
+    fun `extractLatestReasoningSummaryTitle extracts the last valid header`() {
+        val text = """
+            **Step 1: Check inputs**
+            Some logic here
+            
+            ### Step 2: Formulate plan
+            Formulating logic
+            
+            Plain text sentence at the end.
+        """.trimIndent()
+        assertEquals("Step 2: Formulate plan", text.extractLatestReasoningSummaryTitle())
+    }
+
     private fun createTestMessages(count: Int): List<UIMessage> {
         return (0 until count).map { i ->
             UIMessage(
@@ -245,4 +308,97 @@ class MessageTest {
             )
         }
     }
+
+    private fun reasoningChunk(text: String, metadata: kotlinx.serialization.json.JsonObject): MessageChunk {
+        return MessageChunk(
+            id = "chunk",
+            model = "test",
+            choices = listOf(
+                UIMessageChoice(
+                    index = 0,
+                    delta = UIMessage(
+                        role = MessageRole.ASSISTANT,
+                        parts = listOf(
+                            UIMessagePart.Reasoning(
+                                reasoning = text,
+                                finishedAt = null,
+                                metadata = metadata
+                            )
+                        )
+                    ),
+                    message = null,
+                    finishReason = null
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `appendChunk merges blank ID tool call chunks`() {
+        val initialMessage = UIMessage(
+            role = MessageRole.ASSISTANT,
+            parts = listOf(
+                UIMessagePart.ToolCall(
+                    toolCallId = "",
+                    toolName = "eval_python",
+                    arguments = ""
+                )
+            )
+        )
+
+        // Simulating streaming delta chunks with blank ID and empty tool name
+        val chunk1 = MessageChunk(
+            id = "chunk-1",
+            model = "test",
+            choices = listOf(
+                UIMessageChoice(
+                    index = 0,
+                    delta = UIMessage(
+                        role = MessageRole.ASSISTANT,
+                        parts = listOf(
+                            UIMessagePart.ToolCall(
+                                toolCallId = "",
+                                toolName = "",
+                                arguments = """{"code":"print("""
+                            )
+                        )
+                    ),
+                    message = null,
+                    finishReason = null
+                )
+            )
+        )
+
+        val chunk2 = MessageChunk(
+            id = "chunk-2",
+            model = "test",
+            choices = listOf(
+                UIMessageChoice(
+                    index = 0,
+                    delta = UIMessage(
+                        role = MessageRole.ASSISTANT,
+                        parts = listOf(
+                            UIMessagePart.ToolCall(
+                                toolCallId = "",
+                                toolName = "",
+                                arguments = """'hello')"}"""
+                            )
+                        )
+                    ),
+                    message = null,
+                    finishReason = null
+                )
+            )
+        )
+
+        val result1 = initialMessage + chunk1
+        val result2 = result1 + chunk2
+
+        assertEquals(1, result2.parts.size)
+        val toolCall = result2.parts.single() as UIMessagePart.ToolCall
+        assertEquals("eval_python", toolCall.toolName)
+        assertEquals("""{"code":"print('hello')"}""", toolCall.arguments)
+        assertEquals("", toolCall.toolCallId)
+    }
 }
+

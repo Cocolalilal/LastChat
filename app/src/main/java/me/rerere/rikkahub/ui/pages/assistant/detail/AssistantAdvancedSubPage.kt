@@ -33,8 +33,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.datastore.TtsAutoplayMode
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.SpontaneousMessageMode
+import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.Tag
@@ -62,6 +64,7 @@ fun AssistantAdvancedSubPage(
     onUpdate: (Assistant) -> Unit
 ) {
     val context = LocalContext.current
+    val settings = LocalSettings.current
     val haptics = rememberPremiumHaptics()
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -93,6 +96,38 @@ fun AssistantAdvancedSubPage(
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
+        SettingsGroup(title = "TTS") {
+            val autoplayOptions: List<TtsAutoplayMode?> = listOf(
+                null,
+                TtsAutoplayMode.WHILE_GENERATING,
+                TtsAutoplayMode.OFF,
+            )
+            SettingGroupItem(
+                title = "TTS Autoplay",
+                subtitle = "Override automatic reading for this character",
+                trailing = {
+                    Select(
+                        modifier = Modifier.width(180.dp),
+                        options = autoplayOptions,
+                        selectedOption = assistant.ttsAutoplayMode,
+                        onOptionSelected = { mode -> onUpdate(assistant.copy(ttsAutoplayMode = mode)) },
+                        optionToString = { mode ->
+                            when (mode) {
+                                null -> if (settings.ttsAutoplayMode == TtsAutoplayMode.OFF) {
+                                    "Use global: Off"
+                                } else {
+                                    "Use global: On"
+                                }
+                                TtsAutoplayMode.OFF -> "Off"
+                                TtsAutoplayMode.AFTER_GENERATION,
+                                TtsAutoplayMode.WHILE_GENERATING -> "On"
+                            }
+                        },
+                    )
+                }
+            )
+        }
+
         SettingsGroup(title = stringResource(R.string.assistant_advanced_spontaneous_messaging)) {
             SettingGroupItem(
                 title = stringResource(R.string.assistant_advanced_enable_spontaneous),

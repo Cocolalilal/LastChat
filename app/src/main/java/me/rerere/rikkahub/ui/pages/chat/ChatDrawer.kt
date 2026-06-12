@@ -18,9 +18,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -47,6 +49,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -63,6 +66,8 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.BarChart
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.ChevronLeft
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
@@ -98,6 +103,10 @@ fun ChatDrawerContent(
     inputState: ChatInputState,
     activePersistenceMode: ChatPersistenceMode,
     drawerState: androidx.compose.material3.DrawerState? = null,  // Optional for animated close
+    presentation: ChatDrawerPresentation = ChatDrawerPresentation.Modal,
+    collapsedWidth: Dp = 320.dp,
+    expandedWidth: Dp = 600.dp,
+    onCollapseRequest: (() -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -108,7 +117,7 @@ fun ChatDrawerContent(
     // Search expansion state - hoisted here so drawer width can animate
     var isSearchExpanded by remember { mutableStateOf(false) }
     val drawerWidth by animateDpAsState(
-        targetValue = if (isSearchExpanded) 600.dp else 320.dp,
+        targetValue = if (isSearchExpanded) expandedWidth else collapsedWidth,
         animationSpec = if (isSearchExpanded) {
             spring(dampingRatio = 0.8f, stiffness = 400f)
         } else {
@@ -126,6 +135,16 @@ fun ChatDrawerContent(
 
     val recentlyRestoredIds by vm.recentlyRestoredIds.collectAsStateWithLifecycle()
 
+    fun dismissDrawerAfterSelection() {
+        when (presentation) {
+            ChatDrawerPresentation.Modal -> drawerState?.let { state ->
+                scope.launch { state.close() }
+            }
+
+            ChatDrawerPresentation.PermanentPane -> onCollapseRequest?.invoke()
+        }
+    }
+
     // 昵称编辑状态
     val nicknameEditState = useEditState<String> { newNickname ->
         vm.updateSettings(
@@ -137,11 +156,7 @@ fun ChatDrawerContent(
         )
     }
 
-    ModalDrawerSheet(
-        modifier = Modifier.widthIn(max = drawerWidth),
-        drawerShape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
-        drawerContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-    ) {
+    val drawerContent: @Composable () -> Unit = {
         Column(
             modifier = Modifier.padding(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -158,6 +173,7 @@ fun ChatDrawerContent(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
+                val headerActionColor = MaterialTheme.colorScheme.surfaceContainerHighest
                 UIAvatar(
                     name = settings.displaySetting.userNickname.ifBlank { stringResource(R.string.user_default_name) },
                     value = settings.displaySetting.userAvatar,
@@ -200,6 +216,18 @@ fun ChatDrawerContent(
                         assistant = currentAssistant
                     )
                 }
+
+                if (onCollapseRequest != null) {
+                    DrawerAction(
+                        icon = {
+                            Icon(Icons.Rounded.ChevronLeft, null)
+                        },
+                        label = { Text(stringResource(R.string.activity_timeline_collapse)) },
+                        onClick = onCollapseRequest,
+                        containerColor = headerActionColor,
+                        size = 42.dp
+                    )
+                }
             }
 
             ConversationList(
@@ -219,6 +247,7 @@ fun ChatDrawerContent(
                     // This scrolls to the matching message; for title matches, just open normally
                     val titleMatches = searchQuery.isNotBlank() && it.title.contains(searchQuery, ignoreCase = true)
                     navigateToChatPage(navController, it.id, searchQuery = if (titleMatches) null else searchQuery.ifBlank { null })
+                    dismissDrawerAfterSelection()
                 },
                 onRegenerateTitle = {
                     vm.generateTitle(it, true)
@@ -242,6 +271,7 @@ fun ChatDrawerContent(
                     )
                     if (it.id == current.id) {
                         navigateToChatPage(navController)
+                        dismissDrawerAfterSelection()
                     }
                 },
                 onPin = {
@@ -266,6 +296,7 @@ fun ChatDrawerContent(
                             onClick = {
                                 haptics.perform(HapticPattern.Tick)
                                 navController.navigate(Screen.ImageGen)
+                                dismissDrawerAfterSelection()
                             },
                             color = itemColor,
                             shape = RoundedCornerShape(10.dp),
@@ -296,6 +327,7 @@ fun ChatDrawerContent(
                             onClick = {
                                 haptics.perform(HapticPattern.Tick)
                                 navController.navigate(Screen.Menu)
+                                dismissDrawerAfterSelection()
                             },
                             color = itemColor,
                             shape = RoundedCornerShape(10.dp),
@@ -319,22 +351,24 @@ fun ChatDrawerContent(
                                     style = MaterialTheme.typography.titleMedium,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
-                            }
-                        }
                     }
+                }
+            }
                 }
             )
 
             fun navigateToAssistantConversation(assistant: me.rerere.rikkahub.data.model.Assistant) {
                 scope.launch {
+                    val draft = inputState.toDraft()
                     val newConversation = vm.createConversationForAssistant(assistant.id)
+                    ChatSessionDraftStore.moveDraft(
+                        fromConversationId = current.id,
+                        toConversationId = newConversation.id,
+                        draft = draft,
+                    )
                     val draftNavigation = buildAssistantSwitchNavigation(
-                        conversation = current,
-                        inputText = inputState.textContent.text.toString(),
-                        inputFiles = extractDraftFileUrls(inputState.messageContent),
                         persistenceMode = activePersistenceMode,
                     )
-                    drawerState?.close()
                     navigateToChatPage(
                         navController = navController,
                         chatId = newConversation.id,
@@ -342,6 +376,7 @@ fun ChatDrawerContent(
                         initFiles = draftNavigation.initFiles.map(String::toUri),
                         persistenceMode = draftNavigation.persistenceMode,
                     )
+                    dismissDrawerAfterSelection()
                 }
             }
             val defaultAssistantName = stringResource(R.string.assistant_page_default_assistant)
@@ -403,6 +438,7 @@ fun ChatDrawerContent(
                                 .clickable {
                                     haptics.perform(HapticPattern.Pop)
                                     navController.navigate(Screen.AssistantDetail(id = currentAssistant.id.toString()))
+                                    dismissDrawerAfterSelection()
                                 },
                             contentAlignment = Alignment.Center
                         ) {
@@ -423,6 +459,7 @@ fun ChatDrawerContent(
                     label = { Text(stringResource(R.string.settings)) },
                     onClick = {
                         navController.navigate(Screen.Setting)
+                        dismissDrawerAfterSelection()
                     },
                     containerColor = itemColor,
                     size = actionButtonSize
@@ -450,6 +487,33 @@ fun ChatDrawerContent(
     }
 
     // 昵称编辑对话框
+    when (presentation) {
+        ChatDrawerPresentation.Modal -> {
+            ModalDrawerSheet(
+                modifier = Modifier.widthIn(max = drawerWidth),
+                drawerShape = RoundedCornerShape(topEnd = 32.dp, bottomEnd = 32.dp),
+                drawerContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            ) {
+                drawerContent()
+            }
+        }
+
+        ChatDrawerPresentation.PermanentPane -> {
+            Surface(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(drawerWidth)
+                    .statusBarsPadding()
+                    .padding(start = 8.dp, top = 8.dp, bottom = 8.dp),
+                shape = RoundedCornerShape(32.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                tonalElevation = 1.dp,
+            ) {
+                drawerContent()
+            }
+        }
+    }
+
     nicknameEditState.EditStateContent { nickname, onUpdate ->
         AlertDialog(
             onDismissRequest = {
@@ -490,6 +554,104 @@ fun ChatDrawerContent(
     }
 }
 
+enum class ChatDrawerPresentation {
+    Modal,
+    PermanentPane
+}
+
+@Composable
+fun CollapsedChatSideRail(
+    current: Conversation,
+    settings: Settings,
+    onExpand: () -> Unit,
+    onOpenImageGen: () -> Unit,
+    onOpenStatistics: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenAssistant: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val currentAssistant = settings.getAssistantById(current.assistantId) ?: settings.getCurrentAssistant()
+    val defaultAssistantName = stringResource(R.string.assistant_page_default_assistant)
+    val assistantName = currentAssistant.name.ifEmpty { defaultAssistantName }
+
+    Surface(
+        modifier = modifier
+            .fillMaxHeight()
+            .width(80.dp)
+            .statusBarsPadding()
+            .padding(start = 8.dp, top = 8.dp, bottom = 8.dp),
+        shape = me.rerere.rikkahub.ui.theme.AppShapes.ButtonPill,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 1.dp,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            DrawerAction(
+                icon = { Icon(Icons.Rounded.ChevronRight, null) },
+                label = { Text(stringResource(R.string.activity_timeline_expand)) },
+                onClick = onExpand,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                size = 48.dp
+            )
+            Column(
+                modifier = Modifier.clip(RoundedCornerShape(24.dp)),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                DrawerAction(
+                    icon = { Icon(Icons.Rounded.Image, null) },
+                    label = { Text(stringResource(R.string.chat_drawer_imagine)) },
+                    onClick = onOpenImageGen,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    shape = RoundedCornerShape(10.dp),
+                    size = 48.dp
+                )
+                DrawerAction(
+                    icon = { Icon(Icons.Rounded.BarChart, null) },
+                    label = { Text(stringResource(R.string.menu_statistics_title)) },
+                    onClick = onOpenStatistics,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    shape = RoundedCornerShape(10.dp),
+                    size = 48.dp
+                )
+            }
+
+            Spacer(Modifier.weight(1f))
+
+            Surface(
+                onClick = onOpenAssistant,
+                shape = CircleShape,
+                color = Color.Transparent,
+                modifier = Modifier.size(48.dp)
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    DrawerAvatarVisual(
+                        name = assistantName,
+                        avatar = currentAssistant.avatar,
+                        modifier = Modifier.fillMaxSize(),
+                        forceCircle = true
+                    )
+                }
+            }
+
+            DrawerAction(
+                icon = { Icon(Icons.Rounded.Settings, null) },
+                label = { Text(stringResource(R.string.settings)) },
+                onClick = onOpenSettings,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                size = 48.dp
+            )
+        }
+    }
+}
+
 @Composable
 private fun DrawerAction(
     modifier: Modifier = Modifier,
@@ -497,6 +659,7 @@ private fun DrawerAction(
     label: @Composable () -> Unit,
     onClick: () -> Unit,
     containerColor: Color = MaterialTheme.colorScheme.primaryContainer,
+    shape: Shape = CircleShape,
     size: Dp = 42.dp,
 ) {
     val containerSize = size
@@ -532,7 +695,7 @@ private fun DrawerAction(
         },
         interactionSource = interactionSource,
         color = containerColor,
-        shape = CircleShape,
+        shape = shape,
         contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
         Tooltip(
@@ -557,10 +720,11 @@ private fun DrawerAction(
 private fun DrawerAvatarVisual(
     name: String,
     avatar: Avatar,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    forceCircle: Boolean = false
 ) {
     Box(
-        modifier = modifier.clip(rememberAvatarShape(false)),
+        modifier = modifier.clip(if (forceCircle) CircleShape else rememberAvatarShape(false)),
         contentAlignment = Alignment.Center
     ) {
         when (avatar) {

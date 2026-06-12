@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Public
@@ -53,12 +54,14 @@ import kotlinx.coroutines.launch
 import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.Model
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
-import me.rerere.ai.registry.ModelRegistry
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.data.ai.models.ModelCatalogService
+import me.rerere.rikkahub.data.ai.models.ModelCatalogSnapshot
+import me.rerere.rikkahub.data.ai.models.searchProviderIconUri
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
+import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.components.ui.ToggleSurface
@@ -88,6 +91,8 @@ fun SearchPickerButton(
     onlyIcon: Boolean = false
 ) {
     val toaster = LocalToaster.current
+    val modelCatalogService: ModelCatalogService = koinInject()
+    val catalogSnapshot by modelCatalogService.snapshotFlow.collectAsStateWithLifecycle()
     var showSearchPicker by remember { mutableStateOf(false) }
     
     // Track the last valid provider index locally to persist across on/off toggles
@@ -111,10 +116,12 @@ fun SearchPickerButton(
         lastValidProviderIndex.coerceIn(0, (settings.searchServices.size - 1).coerceAtLeast(0))
     }
     val currentService = settings.searchServices.getOrNull(effectiveProviderIndex)
+    val modelSupportsBuiltInSearch = model?.tools?.contains(BuiltInTools.Search) == true
+    val builtInSearchEnabled = isBuiltInMode || (preferBuiltInSearch && modelSupportsBuiltInSearch)
 
     ToggleSurface(
         modifier = modifier,
-        checked = enableSearch || model?.tools?.contains(BuiltInTools.Search) == true,
+        checked = enableSearch || builtInSearchEnabled,
         checkedColor = Color.Transparent,
         uncheckedColor = Color.Transparent,
         contentColor = contentColor,
@@ -132,15 +139,13 @@ fun SearchPickerButton(
                 modifier = Modifier.size(24.dp),
                 contentAlignment = Alignment.Center
             ) {
-                // Determine if built-in search is effectively active
-                val modelSupportsBuiltIn = model != null && me.rerere.ai.registry.ModelRegistry.GEMINI_SERIES.match(model.modelId)
-                val isUsingBuiltIn = preferBuiltInSearch && modelSupportsBuiltIn
-                
                 // Show globe icon when: using built-in search, or no provider selected, or search is off
                 // Show provider icon only when: search is on, NOT using built-in, and has a provider
-                if (enableSearch && !isUsingBuiltIn && currentService != null) {
-                    AutoAIIcon(
-                        name = SearchServiceOptions.TYPES[currentService::class] ?: "Search",
+                if (enableSearch && !builtInSearchEnabled && currentService != null) {
+                    val searchProviderName = SearchServiceOptions.TYPES[currentService::class] ?: "Search"
+                    AutoAIIconWithUrl(
+                        name = searchProviderName,
+                        customIconUri = catalogSnapshot?.searchProviderIconUri(searchProviderName),
                         color = Color.Transparent
                     )
                 } else {
@@ -219,9 +224,10 @@ internal fun SearchPicker(
     onDismiss: () -> Unit
 ) {
     val navBackStack = LocalNavController.current
+    val modelSupportsBuiltInSearch = model?.tools?.contains(BuiltInTools.Search) == true
 
     // 模型内置搜索 (only show if model supports it)
-    if (model != null && ModelRegistry.GEMINI_SERIES.match(model.modelId)) {
+    if (modelSupportsBuiltInSearch) {
         BuiltInSearchSetting(
             preferBuiltInSearch = preferBuiltInSearch,
             onTogglePreferBuiltInSearch = onTogglePreferBuiltInSearch
@@ -254,6 +260,8 @@ private fun AppSearchSettings(
 ) {
     val amoledMode by rememberAmoledDarkMode()
     val isDarkMode = LocalDarkMode.current
+    val modelCatalogService: ModelCatalogService = koinInject()
+    val catalogSnapshot by modelCatalogService.snapshotFlow.collectAsStateWithLifecycle()
     val isAmoled = amoledMode && isDarkMode
     
     val numProviders = settings.searchServices.size
@@ -324,7 +332,8 @@ private fun AppSearchSettings(
                     isAmoled = isAmoled,
                     isDarkMode = isDarkMode,
                     index = index + 1,
-                    totalCount = totalItems
+                    totalCount = totalItems,
+                    catalogSnapshot = catalogSnapshot
                 )
             }
         }
@@ -351,7 +360,8 @@ private fun AppSearchSettings(
                     isAmoled = isAmoled,
                     isDarkMode = isDarkMode,
                     index = index + 1,
-                    totalCount = totalItems
+                    totalCount = totalItems,
+                    catalogSnapshot = catalogSnapshot
                 )
             }
         }
@@ -411,6 +421,7 @@ private fun SearchProviderItem(
     shape: RoundedCornerShape,
     isAmoled: Boolean,
     isDarkMode: Boolean,
+    catalogSnapshot: ModelCatalogSnapshot?,
     index: Int = 0,
     totalCount: Int = 1
 ) {
@@ -479,8 +490,10 @@ private fun SearchProviderItem(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AutoAIIcon(
-            name = SearchServiceOptions.TYPES[service::class] ?: "Search",
+        val searchProviderName = SearchServiceOptions.TYPES[service::class] ?: "Search"
+        AutoAIIconWithUrl(
+            name = searchProviderName,
+            customIconUri = catalogSnapshot?.searchProviderIconUri(searchProviderName),
             modifier = Modifier.size(24.dp)
         )
         Text(

@@ -62,7 +62,7 @@ import kotlinx.serialization.json.put
         AutoMigration(from = 18, to = 19),
         AutoMigration(from = 19, to = 20),
         AutoMigration(from = 20, to = 21), // Adds context_summary, context_summary_up_to_index, last_prune_time, last_prune_message_count, last_refresh_time to ConversationEntity
-        AutoMigration(from = 21, to = 22), // Adds DailyActivityEntity table for persistent streak tracking
+        AutoMigration(from = 21, to = 22), // Adds DailyActivityEntity table for activity heatmap stats
         // 22->23 is manual migration (MIGRATION_22_23)
         // 23->24 is manual migration (MIGRATION_23_24) - adds usage_stats table
         // 24->25 is manual migration (MIGRATION_24_25) - adds chat attachment catalog tables

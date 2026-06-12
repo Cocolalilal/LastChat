@@ -2,26 +2,20 @@ package me.rerere.rikkahub.web
 
 import android.content.Context
 import androidx.core.net.toUri
-import com.auth0.jwt.JWT
-import com.auth0.jwt.JWTVerifier
-import com.auth0.jwt.algorithms.Algorithm
 import io.ktor.http.ContentDisposition
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
-import io.ktor.http.auth.HttpAuthHeader
 import io.ktor.http.content.PartData
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
+import io.ktor.server.application.createRouteScopedPlugin
 import io.ktor.server.application.install
-import io.ktor.server.auth.Authentication
-import io.ktor.server.auth.authenticate
-import io.ktor.server.auth.jwt.JWTPrincipal
-import io.ktor.server.auth.jwt.jwt
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.statuspages.StatusPages
+import io.ktor.server.request.path
 import io.ktor.server.request.receive
 import io.ktor.server.request.receiveMultipart
 import io.ktor.server.response.header
@@ -43,9 +37,10 @@ import java.io.Writer
 import java.net.URLConnection
 import java.security.MessageDigest
 import java.time.Instant
-import java.util.Date
+import java.util.Base64
 import java.util.Locale
-import java.util.UUID
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
@@ -79,7 +74,8 @@ private const val WEB_JWT_AUDIENCE = "lastchat-web-client"
 private const val WEB_JWT_SUBJECT = "web-access"
 private const val WEB_JWT_TTL_MILLIS = 30L * 24 * 60 * 60 * 1000
 private const val WEB_ACCESS_TOKEN_QUERY_KEY = "access_token"
-private const val WEB_AUTH_REALM = "lastchat-web-api"
+private const val WEB_AUTH_TOKEN_VERSION = "v1"
+private const val WEB_AUTH_HMAC_ALGORITHM = "HmacSHA256"
 
 fun Application.configureWebApi(
     context: Context,
@@ -102,51 +98,6 @@ fun Application.configureWebApi(
                 HttpStatusCode.InternalServerError,
                 ErrorResponse(cause.message ?: "Internal server error", HttpStatusCode.InternalServerError.value)
             )
-        }
-    }
-
-    if (jwtEnabled) {
-        install(Authentication) {
-            jwt("auth-jwt") {
-                realm = WEB_AUTH_REALM
-                verifier {
-                    val currentPassword = settingsStore.settingsFlow.value.webServerAccessPassword
-                    val secret = currentPassword.ifBlank { "__missing_password_${UUID.randomUUID()}__" }
-                    buildWebJwtVerifier(secret)
-                }
-                authHeader { call ->
-                    extractAccessToken(
-                        authorizationHeader = call.request.headers[HttpHeaders.Authorization],
-                        queryToken = call.request.queryParameters[WEB_ACCESS_TOKEN_QUERY_KEY],
-                    )?.let { token ->
-                        HttpAuthHeader.Single("Bearer", token)
-                    }
-                }
-                validate { credential ->
-                    val currentPassword = settingsStore.settingsFlow.value.webServerAccessPassword
-                    if (currentPassword.isBlank()) {
-                        null
-                    } else {
-                        credential.payload.subject
-                            ?.takeIf { it == WEB_JWT_SUBJECT }
-                            ?.let { JWTPrincipal(credential.payload) }
-                    }
-                }
-                challenge { _, _ ->
-                    val currentPassword = settingsStore.settingsFlow.value.webServerAccessPassword
-                    if (currentPassword.isBlank()) {
-                        call.respond(
-                            HttpStatusCode.Forbidden,
-                            ErrorResponse("Access password is not configured", HttpStatusCode.Forbidden.value)
-                        )
-                    } else {
-                        call.respond(
-                            HttpStatusCode.Unauthorized,
-                            ErrorResponse("Unauthorized", HttpStatusCode.Unauthorized.value)
-                        )
-                    }
-                }
-            }
         }
     }
 
@@ -231,13 +182,13 @@ fun Application.configureWebApi(
                 )
             }
 
-            if (jwtEnabled) {
-                authenticate("auth-jwt") {
-                    webRoutes(context, chatService, conversationRepo, settingsStore)
-                }
-            } else {
-                webRoutes(context, chatService, conversationRepo, settingsStore)
-            }
+            webRoutes(
+                context = context,
+                chatService = chatService,
+                conversationRepo = conversationRepo,
+                settingsStore = settingsStore,
+                requireAuth = jwtEnabled,
+            )
         }
 
         get("/{path...}") {
@@ -260,11 +211,35 @@ private fun Route.webRoutes(
     chatService: ChatService,
     conversationRepo: ConversationRepository,
     settingsStore: SettingsStore,
+    requireAuth: Boolean,
 ) {
+    if (requireAuth) {
+        install(createRouteScopedPlugin("LastChatWebAuth") {
+            onCall { call ->
+                if (call.isPublicWebApiPath()) {
+                    return@onCall
+                }
+
+                val settings = settingsStore.settingsFlow.value
+                val accessToken = extractAccessToken(
+                    authorizationHeader = call.request.headers[HttpHeaders.Authorization],
+                    queryToken = call.request.queryParameters[WEB_ACCESS_TOKEN_QUERY_KEY],
+                )
+                val status = validateWebAccessToken(settings, accessToken)
+                if (status != null) {
+                    when (status) {
+                        HttpStatusCode.Forbidden -> throw ForbiddenException("Access password is not configured")
+                        else -> throw UnauthorizedException("Unauthorized")
+                    }
+                }
+            }
+        })
+    }
+
     route("/conversations") {
         post {
-            val request = call.receive<CreateConversationRequest>()
             val settings = settingsStore.settingsFlow.value
+            val request = call.receive<CreateConversationRequest>()
             val response = createWebConversationResponse(settings, request) { assistantId ->
                 chatService.createConversation(assistantId)
             }
@@ -444,8 +419,9 @@ private fun Route.webRoutes(
             } ?: throw NotFoundException("Conversation not found")
 
             chatService.saveConversation(
-                conversationId,
-                conversation.copy(title = nextTitle, updateAt = Instant.now()),
+                conversationId = conversationId,
+                conversation = conversation.copy(title = nextTitle, updateAt = Instant.now()),
+                preserveConsolidation = true,
             )
             call.respond(HttpStatusCode.OK, mapOf("status" to "updated"))
         }
@@ -965,6 +941,16 @@ private fun Route.webRoutes(
     }
 }
 
+private fun ApplicationCall.isPublicWebApiPath(): Boolean {
+    return isPublicWebApiPath(request.path())
+}
+
+internal fun isPublicWebApiPath(path: String): Boolean {
+    return path == "/api/auth/token" ||
+        path == "/api/bootstrap" ||
+        path == "/api/ai-icon"
+}
+
 private suspend fun ApplicationCall.respondBuiltClientAsset(
     context: Context,
     assetPath: String,
@@ -1141,11 +1127,11 @@ private fun UIMessage.toSearchableText(): String {
     return parts.joinToString("\n") { part ->
         when (part) {
             is UIMessagePart.Text -> part.text
-            is UIMessagePart.Reasoning -> part.reasoning
-            is UIMessagePart.Thinking -> part.thinking
+            is UIMessagePart.Reasoning -> ""
+            is UIMessagePart.Thinking -> ""
             is UIMessagePart.Document -> listOf(part.fileName, part.mime).joinToString(" ")
-            is UIMessagePart.ToolCall -> listOf(part.toolName, part.arguments).joinToString(" ")
-            is UIMessagePart.ToolResult -> listOf(part.toolName, part.content.toString()).joinToString(" ")
+            is UIMessagePart.ToolCall -> ""
+            is UIMessagePart.ToolResult -> ""
             is UIMessagePart.Image -> part.url
             is UIMessagePart.Video -> part.url
             is UIMessagePart.Audio -> part.url
@@ -1207,22 +1193,78 @@ private fun String?.toUuid(name: String): Uuid {
 private fun createWebJwt(secret: String): Pair<String, Long> {
     val now = System.currentTimeMillis()
     val expiresAt = now + WEB_JWT_TTL_MILLIS
-    val token = JWT.create()
-        .withIssuer(WEB_JWT_ISSUER)
-        .withAudience(WEB_JWT_AUDIENCE)
-        .withSubject(WEB_JWT_SUBJECT)
-        .withIssuedAt(Date(now))
-        .withExpiresAt(Date(expiresAt))
-        .sign(Algorithm.HMAC256(secret))
+    val payload = listOf(
+        WEB_AUTH_TOKEN_VERSION,
+        WEB_JWT_ISSUER,
+        WEB_JWT_AUDIENCE,
+        WEB_JWT_SUBJECT,
+        expiresAt.toString(),
+    ).joinToString(":")
+    val encodedPayload = base64UrlEncode(payload.toByteArray(Charsets.UTF_8))
+    val signature = base64UrlEncode(hmacSha256(secret, encodedPayload))
+    val token = "$encodedPayload.$signature"
     return token to expiresAt
 }
 
-private fun buildWebJwtVerifier(secret: String): JWTVerifier {
-    return JWT.require(Algorithm.HMAC256(secret))
-        .withIssuer(WEB_JWT_ISSUER)
-        .withAudience(WEB_JWT_AUDIENCE)
-        .withSubject(WEB_JWT_SUBJECT)
-        .build()
+internal fun validateWebAccessToken(settings: Settings, token: String?): HttpStatusCode? {
+    if (settings.webServerAccessPassword.isBlank()) {
+        return HttpStatusCode.Forbidden
+    }
+
+    if (token.isNullOrBlank()) {
+        return HttpStatusCode.Unauthorized
+    }
+
+    val parts = token.split('.')
+    if (parts.size != 2) {
+        return HttpStatusCode.Unauthorized
+    }
+
+    val payload = runCatching {
+        String(Base64.getUrlDecoder().decode(parts[0]), Charsets.UTF_8)
+    }.getOrNull() ?: return HttpStatusCode.Unauthorized
+
+    val payloadParts = payload.split(':')
+    if (payloadParts.size != 5) {
+        return HttpStatusCode.Unauthorized
+    }
+
+    val (version, issuer, audience, subject, expiresAtText) = payloadParts
+    if (
+        version != WEB_AUTH_TOKEN_VERSION ||
+        issuer != WEB_JWT_ISSUER ||
+        audience != WEB_JWT_AUDIENCE ||
+        subject != WEB_JWT_SUBJECT
+    ) {
+        return HttpStatusCode.Unauthorized
+    }
+
+    val expiresAt = expiresAtText.toLongOrNull() ?: return HttpStatusCode.Unauthorized
+    if (System.currentTimeMillis() >= expiresAt) {
+        return HttpStatusCode.Unauthorized
+    }
+
+    val expectedSignature = hmacSha256(settings.webServerAccessPassword, parts[0])
+    val actualSignature = runCatching {
+        Base64.getUrlDecoder().decode(parts[1])
+    }.getOrNull() ?: return HttpStatusCode.Unauthorized
+
+    return if (MessageDigest.isEqual(expectedSignature, actualSignature)) {
+        null
+    } else {
+        HttpStatusCode.Unauthorized
+    }
+}
+
+private fun hmacSha256(secret: String, value: String): ByteArray {
+    val mac = Mac.getInstance(WEB_AUTH_HMAC_ALGORITHM)
+    val key = SecretKeySpec(secret.toByteArray(Charsets.UTF_8), WEB_AUTH_HMAC_ALGORITHM)
+    mac.init(key)
+    return mac.doFinal(value.toByteArray(Charsets.UTF_8))
+}
+
+private fun base64UrlEncode(bytes: ByteArray): String {
+    return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
 }
 
 private fun extractBearerToken(authorizationHeader: String?): String? {
@@ -1244,34 +1286,26 @@ private fun secureEquals(left: String, right: String): Boolean {
 private fun resolveAiIconAssetPath(name: String): String? {
     val lowerName = name.lowercase(Locale.ROOT)
     return when {
-        "grok" in lowerName || "x-ai" in lowerName || "xai" in lowerName -> "xai.svg"
-        "gemini" in lowerName || "google" in lowerName -> "google-color.svg"
-        "claude" in lowerName || "anthropic" in lowerName -> "claude-color.svg"
-        "openai" in lowerName || Regex("\\bgpt[-\\d]").containsMatchIn(lowerName) -> "openai.svg"
-        "deepseek" in lowerName -> "deepseek-color.svg"
-        "qwen" in lowerName || "alibaba" in lowerName -> "qwen-color.svg"
-        "mistral" in lowerName -> "mistral-color.svg"
-        "llama" in lowerName || "meta" in lowerName -> "meta-color.svg"
-        "cohere" in lowerName -> "cohere-color.svg"
-        "perplexity" in lowerName -> "perplexity-color.svg"
-        "groq" in lowerName -> "groq.svg"
-        "openrouter" in lowerName -> "openrouter.svg"
-        "exa" in lowerName -> "exa.png"
-        "tavily" in lowerName -> "tavily.png"
+        "bing" in lowerName -> "bing.svg"
+        "bocha" in lowerName -> "bocha.svg"
         "brave" in lowerName -> "brave.svg"
-        "jina" in lowerName -> "jina.svg"
-        "linkup" in lowerName -> "linkup.png"
-        "metaso" in lowerName -> "metaso.svg"
-        "ollama" in lowerName -> "ollama.svg"
+        "elevenlabs" in lowerName || "eleven labs" in lowerName -> "elevenlabs.svg"
+        "exa" in lowerName -> "exa.svg"
         "firecrawl" in lowerName -> "firecrawl.svg"
-        "zhipu" in lowerName || "glm" in lowerName -> "zhipu-color.svg"
-        "doubao" in lowerName || "bytedance" in lowerName -> "bytedance-color.svg"
-        "minimax" in lowerName -> "minimax-color.svg"
-        "nvidia" in lowerName -> "nvidia-color.svg"
-        "cloudflare" in lowerName -> "cloudflare-color.svg"
-        "cerebras" in lowerName -> "cerebras-color.svg"
-        "siliconflow" in lowerName -> "siliconflow.svg"
-        "hunyuan" in lowerName || "tencent" in lowerName -> "hunyuan-color.svg"
+        "gemini" in lowerName || "google" in lowerName -> "gemini.svg"
+        "grok" in lowerName || "xai" in lowerName -> "grok.svg"
+        "jina" in lowerName -> "jina.svg"
+        "linkup" in lowerName -> "linkup.svg"
+        "metaso" in lowerName -> "metaso.svg"
+        "minimax" in lowerName -> "minimax.svg"
+        "nano-gpt" in lowerName || "nanogpt" in lowerName -> "nanogpt.svg"
+        "ollama" in lowerName -> "ollama.svg"
+        "openai" in lowerName -> "openai.svg"
+        "perplexity" in lowerName -> "perplexity.svg"
+        "qwen" in lowerName || "dashscope" in lowerName -> "qwen.svg"
+        "searxng" in lowerName || "searx" in lowerName -> "searxng.svg"
+        "tavily" in lowerName -> "tavily.svg"
+        "zhipu" in lowerName || "glm" in lowerName -> "zhipu.svg"
         else -> null
     }
 }

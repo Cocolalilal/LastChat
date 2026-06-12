@@ -179,6 +179,7 @@ export function SearchPickerButton({ disabled = false, className }: SearchPicker
               size={16}
               className="bg-transparent"
               imageClassName="h-full w-full"
+              allowNameIconFallback
             />
           ) : builtInSearchEnabled ? (
             <Search className="size-4" />
@@ -272,6 +273,7 @@ export function SearchPickerButton({ disabled = false, className }: SearchPicker
                               size={20}
                               className="bg-transparent"
                               imageClassName="h-full w-full"
+                              allowNameIconFallback
                             />
                             <div className="min-w-0 flex-1">
                               <div className="truncate text-sm font-medium">

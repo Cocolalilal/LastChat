@@ -2,6 +2,7 @@
 package me.rerere.rikkahub.ui.components.message
 
 import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -45,7 +47,6 @@ import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.OpenInBrowser
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.SelectAll
-import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.StopCircle
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import kotlinx.coroutines.delay
@@ -60,8 +61,12 @@ import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.context.LocalTTSState
+import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.copyMessageToClipboard
 import me.rerere.rikkahub.utils.toLocalString
+import me.rerere.tts.provider.TTSProviderSetting
 
 @Composable
 fun ColumnScope.ChatMessageActionButtons(
@@ -74,6 +79,7 @@ fun ColumnScope.ChatMessageActionButtons(
     onEditLorebookEntry: ((UsedLorebookEntry) -> Unit)? = null,
     onModeClick: ((me.rerere.ai.ui.UsedMode) -> Unit)? = null,
     onMemoryClick: ((me.rerere.ai.ui.UsedMemory) -> Unit)? = null,
+    ttsProviderOverride: TTSProviderSetting? = null,
 ) {
     val context = LocalContext.current
     val settings = LocalSettings.current
@@ -164,7 +170,10 @@ fun ColumnScope.ChatMessageActionButtons(
                         indication = LocalIndication.current,
                         onClick = {
                             if (!isSpeaking) {
-                                tts.speak(message.toContentText())
+                                tts.speak(
+                                    text = message.toContentText(),
+                                    overrideSetting = ttsProviderOverride,
+                                )
                             } else {
                                 tts.stop()
                             }
@@ -205,12 +214,21 @@ fun ChatMessageActionsSheet(
     model: Model?,
     onDelete: () -> Unit,
     onEdit: () -> Unit,
-    onShare: () -> Unit,
     onFork: () -> Unit,
     onSelectAndCopy: () -> Unit,
     onWebViewPreview: () -> Unit,
     onDismissRequest: () -> Unit
 ) {
+    val haptics = rememberPremiumHaptics()
+    val isDarkMode = LocalDarkMode.current
+    val groupContainerColor = if (isDarkMode) {
+        androidx.compose.ui.graphics.Color.Black
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerHigh
+    }
+    val hasTextContent = message.parts.filterIsInstance<UIMessagePart.Text>()
+        .any { it.text.isNotBlank() }
+
     ModalBottomSheet(
 containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
         onDismissRequest = onDismissRequest,
@@ -223,174 +241,72 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
             verticalArrangement = Arrangement.spacedBy(8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // Select and Copy
-            Card(
-                onClick = {
-                    onDismissRequest()
-                    onSelectAndCopy()
-                },
-
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
-                colors = CardDefaults.cardColors(
-                    containerColor = if(me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
-                )
+            Column(
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier
-                        .padding(16.dp)
-                        .fillMaxWidth()
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.SelectAll,
-                        contentDescription = null,
-                        modifier = Modifier.padding(4.dp)
-                    )
-                    Text(
-                        text = stringResource(R.string.select_and_copy),
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                }
-            }
-
-            // WebView Preview (only show if message has text content)
-            val hasTextContent = message.parts.filterIsInstance<UIMessagePart.Text>()
-                .any { it.text.isNotBlank() }
-
-            if (hasTextContent) {
-                Card(
+                MessageActionGroupItem(
+                    label = stringResource(R.string.select_and_copy),
+                    icon = { Icon(Icons.Rounded.SelectAll, null, modifier = Modifier.padding(4.dp)) },
+                    position = MessageActionItemPosition.FIRST,
+                    containerColor = groupContainerColor,
                     onClick = {
+                        haptics.perform(HapticPattern.Pop)
                         onDismissRequest()
-                        onWebViewPreview()
-                    },
-
-                    shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
-                    colors = CardDefaults.cardColors(
-                        containerColor = if(me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
-                    )
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        modifier = Modifier
-                            .padding(16.dp)
-                            .fillMaxWidth()
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.OpenInBrowser,
-                            contentDescription = null,
-                            modifier = Modifier.padding(4.dp)
-                        )
-                        Text(
-                            text = stringResource(R.string.render_with_webview),
-                            style = MaterialTheme.typography.titleMedium,
-                        )
+                        onSelectAndCopy()
                     }
-                }
-            }
-
-            // Edit
-            Card(
-                onClick = {
-                    onDismissRequest()
-                    onEdit()
-                },
-
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
-                colors = CardDefaults.cardColors(
-                    containerColor = if(me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
                 )
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier
-                        .padding(16.dp)
-                        .fillMaxWidth()
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Edit,
-                        contentDescription = null,
-                        modifier = Modifier.padding(4.dp)
-                    )
-                    Text(
-                        text = stringResource(R.string.edit),
-                        style = MaterialTheme.typography.titleMedium,
+                if (hasTextContent) {
+                    MessageActionGroupItem(
+                        label = stringResource(R.string.render_with_webview),
+                        icon = { Icon(Icons.Rounded.OpenInBrowser, null, modifier = Modifier.padding(4.dp)) },
+                        position = MessageActionItemPosition.MIDDLE,
+                        containerColor = groupContainerColor,
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            onDismissRequest()
+                            onWebViewPreview()
+                        }
                     )
                 }
+                MessageActionGroupItem(
+                    label = stringResource(R.string.edit),
+                    icon = { Icon(Icons.Rounded.Edit, null, modifier = Modifier.padding(4.dp)) },
+                    position = MessageActionItemPosition.MIDDLE,
+                    containerColor = groupContainerColor,
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        onDismissRequest()
+                        onEdit()
+                    }
+                )
+                MessageActionGroupItem(
+                    label = stringResource(R.string.create_fork),
+                    icon = { Icon(Icons.AutoMirrored.Rounded.CallSplit, null, modifier = Modifier.padding(4.dp)) },
+                    position = MessageActionItemPosition.LAST,
+                    containerColor = groupContainerColor,
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        onDismissRequest()
+                        onFork()
+                    }
+                )
             }
 
-            // Share
-            Card(
-                onClick = {
-                    onDismissRequest()
-                    onShare()
-                },
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
-                colors = CardDefaults.cardColors(
-                    containerColor = if(me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
-                )
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier
-                        .padding(16.dp)
-                        .fillMaxWidth()
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Share,
-                        contentDescription = null,
-                        modifier = Modifier.padding(4.dp)
-                    )
-                    Text(
-                        text = stringResource(R.string.share),
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                }
-            }
-
-            // Create a Fork
-            Card(
-                onClick = {
-                    onDismissRequest()
-                    onFork()
-                },
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
-                colors = CardDefaults.cardColors(
-                    containerColor = if(me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
-                )
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier
-                        .padding(16.dp)
-                        .fillMaxWidth()
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Rounded.CallSplit,
-                        contentDescription = null,
-                        modifier = Modifier.padding(4.dp)
-                    )
-                    Text(
-                        text = stringResource(R.string.create_fork),
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                }
-            }
+            Spacer(modifier = Modifier.size(4.dp))
 
             // Delete
             Card(
                 onClick = {
+                    haptics.perform(HapticPattern.Thud)
                     onDismissRequest()
                     onDelete()
                 },
 
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer
                 )
             ) {
                 Row(
@@ -420,5 +336,58 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 }
             }
         }
+    }
+}
+
+private enum class MessageActionItemPosition {
+    FIRST,
+    MIDDLE,
+    LAST,
+    SINGLE
+}
+
+private fun groupedMessageActionShape(position: MessageActionItemPosition): RoundedCornerShape {
+    return when (position) {
+        MessageActionItemPosition.FIRST -> RoundedCornerShape(
+            topStart = 24.dp,
+            topEnd = 24.dp,
+            bottomStart = 10.dp,
+            bottomEnd = 10.dp
+        )
+        MessageActionItemPosition.MIDDLE -> RoundedCornerShape(10.dp)
+        MessageActionItemPosition.LAST -> RoundedCornerShape(
+            topStart = 10.dp,
+            topEnd = 10.dp,
+            bottomStart = 24.dp,
+            bottomEnd = 24.dp
+        )
+        MessageActionItemPosition.SINGLE -> RoundedCornerShape(24.dp)
+    }
+}
+
+@Composable
+private fun MessageActionGroupItem(
+    label: String,
+    icon: @Composable () -> Unit,
+    position: MessageActionItemPosition,
+    containerColor: androidx.compose.ui.graphics.Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(groupedMessageActionShape(position))
+            .background(containerColor)
+            .clickable(onClick = onClick)
+            .padding(16.dp)
+    ) {
+        icon()
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleMedium,
+        )
     }
 }

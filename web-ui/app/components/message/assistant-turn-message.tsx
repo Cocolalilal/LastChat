@@ -115,7 +115,6 @@ export function AssistantTurnMessage({
   loading = false,
   assistant,
   displaySetting,
-  model,
   onEdit,
   onRegenerate,
   onSelectBranch,
@@ -188,7 +187,6 @@ export function AssistantTurnMessage({
           hasMessageContent={hasMessageContent}
           assistant={assistant}
           displaySetting={displaySetting}
-          model={model}
         />
 
         <AnimatePresence initial={false} mode="popLayout">
@@ -249,7 +247,6 @@ export function AssistantTurnMessage({
         <ActivityTimeline
           entries={timelineEntries}
           displaySetting={displaySetting}
-          model={model}
           open={timelineOpen}
           onOpenChange={setTimelineOpen}
           initialExpandedType={initialExpandedType}
@@ -268,8 +265,8 @@ export function AssistantTurnMessage({
             >
               <MessageParts
                 parts={turn.contentParts}
+                assistant={assistant}
                 displaySetting={displaySetting}
-          model={model}
                 loading={loading}
                 onToolApproval={onToolApproval}
                 onClickCitation={handleClickCitation}

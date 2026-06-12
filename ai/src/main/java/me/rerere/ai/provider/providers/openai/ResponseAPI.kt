@@ -30,6 +30,7 @@ import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageChoice
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.ui.extractReasoningSummaryTitle
 import me.rerere.ai.util.configureClientWithProxy
 import me.rerere.ai.util.configureReferHeaders
 import me.rerere.ai.util.encodeBase64
@@ -332,6 +333,7 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
             }
 
             "response.reasoning_summary_text.delta" -> {
+                val delta = jsonObject["delta"]?.jsonPrimitive?.contentOrNull ?: ""
                 return MessageChunk(
                     id = jsonObject["item_id"]?.jsonPrimitive?.contentOrNull ?: "",
                     model = "",
@@ -342,10 +344,13 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
                                 role = MessageRole.ASSISTANT,
                                 parts = listOf(
                                     UIMessagePart.Reasoning(
-                                        reasoning = jsonObject["delta"]?.jsonPrimitive?.contentOrNull
-                                            ?: "",
+                                        reasoning = delta,
                                         createdAt = Clock.System.now(),
-                                        finishedAt = null
+                                        finishedAt = null,
+                                        title = delta.extractReasoningSummaryTitle(),
+                                        metadata = buildJsonObject {
+                                            put("reasoning_kind", "summary")
+                                        }
                                     )
                                 )
                             ),
@@ -398,6 +403,9 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
                                             reasoning = "",
                                             createdAt = Clock.System.now(),
                                             finishedAt = null,
+                                            metadata = buildJsonObject {
+                                                put("reasoning_kind", "summary")
+                                            }
                                         )
                                     )
                                 ),
@@ -469,7 +477,11 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
                                     UIMessagePart.Reasoning(
                                         reasoning = text,
                                         createdAt = Clock.System.now(),
-                                        finishedAt = Clock.System.now()
+                                        finishedAt = Clock.System.now(),
+                                        title = text.extractReasoningSummaryTitle(),
+                                        metadata = buildJsonObject {
+                                            put("reasoning_kind", "summary")
+                                        }
                                     )
                                 )
                             }
@@ -532,12 +544,19 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
 
     private fun parseTokenUsage(jsonObject: JsonObject?): TokenUsage? {
         if (jsonObject == null) return null
+        val promptTokens = jsonObject["input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val completionTokens = jsonObject["output_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val cacheReadTokens = jsonObject["cache_read_input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val cacheCreationTokens = jsonObject["cache_creation_input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val effectivePromptTokens = promptTokens + cacheReadTokens + cacheCreationTokens
         return TokenUsage(
-            promptTokens = jsonObject["input_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            completionTokens = jsonObject["output_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            totalTokens = jsonObject["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
+            promptTokens = effectivePromptTokens,
+            completionTokens = completionTokens,
+            totalTokens = jsonObject["total_tokens"]?.jsonPrimitive?.intOrNull
+                ?: (effectivePromptTokens + completionTokens),
             cachedTokens = jsonObject["input_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
-                ?: 0
+                ?: jsonObject["cached_tokens"]?.jsonPrimitive?.intOrNull
+                ?: cacheReadTokens
         )
     }
 }

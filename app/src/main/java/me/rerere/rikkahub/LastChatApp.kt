@@ -26,7 +26,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.ai.models.ModelMetadataResolver
 import me.rerere.rikkahub.data.ai.models.ModelCatalogService
+import me.rerere.rikkahub.data.ai.models.mergeCatalogIntoSettings
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
@@ -163,25 +165,21 @@ class LastChatApp : Application() {
             }
         }
         
-        // One-time migration: populate DailyActivityEntity from existing conversation dates
-        // This preserves existing streaks when upgrading to the new persistent activity tracking
-        get<AppScope>().launch(Dispatchers.IO) {
-            val prefs = getSharedPreferences("app_migrations", MODE_PRIVATE)
-            if (!prefs.getBoolean("daily_activity_migrated_v1", false)) {
-                try {
-                    val conversationRepo = get<me.rerere.rikkahub.data.repository.ConversationRepository>()
-                    conversationRepo.migrateConversationDatesToActivity()
-                    prefs.edit().putBoolean("daily_activity_migrated_v1", true).apply()
-                    Log.d(TAG, "Daily activity migration completed successfully")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Daily activity migration failed", e)
-                }
-            }
-        }
-
         get<AppScope>().launch(Dispatchers.IO) {
             runCatching {
-                get<ModelCatalogService>().warmUp()
+                val catalogService = get<ModelCatalogService>()
+                catalogService.warmUp()
+                val snapshot = catalogService.snapshotOrNull() ?: return@runCatching
+                val settingsStore = get<SettingsStore>()
+                val settings = settingsStore.settingsFlow.first { !it.init }
+                settingsStore.update(
+                    mergeCatalogIntoSettings(
+                        settings = settings,
+                        snapshot = snapshot,
+                        resolver = get<ModelMetadataResolver>(),
+                        includeMissingCatalogProviders = false,
+                    )
+                )
             }.onFailure {
                 Log.w(TAG, "Model catalog warm-up failed", it)
             }

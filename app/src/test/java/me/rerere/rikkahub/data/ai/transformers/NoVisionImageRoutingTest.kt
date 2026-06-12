@@ -76,4 +76,5 @@ class NoVisionImageRoutingTest {
         assertFalse(pythonDisabled.contains("Python can use the original image"))
         assertTrue(pythonDisabled.contains("Do not infer image contents"))
     }
+
 }

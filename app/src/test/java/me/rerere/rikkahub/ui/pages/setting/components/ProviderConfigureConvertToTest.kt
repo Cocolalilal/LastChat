@@ -2,6 +2,7 @@ package me.rerere.rikkahub.ui.pages.setting.components
 
 import me.rerere.ai.provider.BalanceOption
 import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.junit.Assert.assertEquals
@@ -86,6 +87,24 @@ class ProviderConfigureConvertToTest {
     }
 
     @Test
+    fun `convertTo should update untouched default provider name`() {
+        val original = ProviderSetting.OpenAI(name = "OpenAI")
+
+        val converted = original.convertTo(ProviderSetting.Google::class) as ProviderSetting.Google
+
+        assertEquals("Google", converted.name)
+    }
+
+    @Test
+    fun `convertTo should preserve customized provider name`() {
+        val original = ProviderSetting.OpenAI(name = "My Gateway")
+
+        val converted = original.convertTo(ProviderSetting.Google::class) as ProviderSetting.Google
+
+        assertEquals("My Gateway", converted.name)
+    }
+
+    @Test
     fun `convertTo should return same instance for same type`() {
         val original = ProviderSetting.OpenAI(
             name = "Same Type",
@@ -107,5 +126,17 @@ class ProviderConfigureConvertToTest {
 
         val converted = original.convertTo(ProviderSetting.OpenAI::class) as ProviderSetting.OpenAI
         assertEquals("not-a-url", converted.baseUrl)
+    }
+
+    @Test
+    fun `comfyui preset should create image provider with local defaults`() {
+        val provider = SPECIAL_PROVIDER_PRESETS.single { it.name == "ComfyUI" }.toProviderSetting()
+
+        assertTrue(provider is ProviderSetting.ComfyUI)
+        val comfy = provider as ProviderSetting.ComfyUI
+        assertEquals("http://127.0.0.1:8188", comfy.baseUrl)
+        assertEquals("icons/comfyui.svg", comfy.customIconUri)
+        assertEquals(ModelType.IMAGE, comfy.models.single().type)
+        assertEquals("model.safetensors", comfy.models.single().modelId)
     }
 }

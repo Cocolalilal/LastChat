@@ -16,7 +16,6 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.SelectAll
-import androidx.compose.material.icons.rounded.Share
 import me.rerere.rikkahub.R
 
 /**
@@ -26,7 +25,6 @@ enum class UserMessageAction {
     COPY,
     SELECT_TEXT,
     EDIT,
-    SHARE,
     DELETE
 }
 
@@ -90,21 +88,6 @@ fun UserMessageDropdown(
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Rounded.Edit,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-        )
-        
-        DropdownMenuItem(
-            text = { Text(stringResource(R.string.share)) },
-            onClick = {
-                onAction(UserMessageAction.SHARE)
-                onDismissRequest()
-            },
-            leadingIcon = {
-                Icon(
-                    imageVector = Icons.Rounded.Share,
                     contentDescription = null,
                     modifier = Modifier.size(20.dp)
                 )

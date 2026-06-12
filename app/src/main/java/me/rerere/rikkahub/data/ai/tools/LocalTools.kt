@@ -3,6 +3,8 @@ package me.rerere.rikkahub.data.ai.tools
 import android.content.Context
 import com.whl.quickjs.wrapper.QuickJSContext
 import com.whl.quickjs.wrapper.QuickJSObject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.SerialName
@@ -13,6 +15,7 @@ import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.booleanOrNull
@@ -21,12 +24,22 @@ import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import me.rerere.ai.provider.ImageGenerationParams
+import me.rerere.ai.provider.ImageGenerationMethod
+import me.rerere.ai.provider.Modality
+import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.core.ToolApprovalMode
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.findModelById
+import me.rerere.rikkahub.data.datastore.findProvider
+import me.rerere.rikkahub.data.db.entity.GenMediaEntity
+import me.rerere.rikkahub.data.repository.GenMediaRepository
 import me.rerere.rikkahub.data.datastore.TtsFilterMode
-import me.rerere.rikkahub.data.datastore.getSelectedTTSProvider
+import me.rerere.rikkahub.data.datastore.getEffectiveTTSProvider
+import me.rerere.rikkahub.utils.createImageFileFromBase64
+import me.rerere.rikkahub.utils.getImagesDir
 import me.rerere.rikkahub.utils.stripMarkdown
 import me.rerere.tts.controller.TtsController
 import me.rerere.tts.provider.TTSManager
@@ -55,6 +68,10 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("character_questions")
     data object AskUser : LocalToolOption()
+
+    @Serializable
+    @SerialName("image_generation")
+    data object ImageGeneration : LocalToolOption()
 }
 
 object LocalToolOptionListSerializer :
@@ -159,6 +176,8 @@ class LocalTools(
     private val context: Context,
     private val settingsStore: SettingsStore,
     private val ttsManager: TTSManager,
+    private val providerManager: ProviderManager,
+    private val genMediaRepository: GenMediaRepository,
 ) {
     val askUserTool by lazy {
         Tool(
@@ -285,7 +304,7 @@ class LocalTools(
             },
             execute = {
                 val rawText = it.jsonObject["text"]?.jsonPrimitive?.contentOrNull.orEmpty()
-                val provider = settingsStore.settingsFlow.value.getSelectedTTSProvider()
+                val provider = settingsStore.settingsFlow.value.getEffectiveTTSProvider()
                 if (provider == null) {
                     buildJsonObject {
                         put("success", false)
@@ -305,6 +324,125 @@ class LocalTools(
                             put("provider", provider.name.ifBlank { "TTS" })
                         }
                     }
+                }
+            }
+        )
+    }
+
+    val imageGenerationTool by lazy {
+        Tool(
+            name = "generate_image",
+            description = "Generate an image with LastChat's selected image generation model and save it to the image gallery. Use this only when the user asks for an image. Improve vague user requests into a concrete visual prompt before calling.",
+            parameters = {
+                InputSchema.Obj(
+                    properties = buildJsonObject {
+                        put("prompt", buildJsonObject {
+                            put("type", "string")
+                            put("description", "Detailed visual prompt to generate")
+                        })
+                        put("aspect_ratio", buildJsonObject {
+                            put("type", "string")
+                            put("description", "square, landscape, or portrait")
+                        })
+                        put("count", buildJsonObject {
+                            put("type", "integer")
+                            put("description", "Number of images to generate, 1 to 4")
+                        })
+                    },
+                    required = listOf("prompt")
+                )
+            },
+            systemPrompt = { _, _ ->
+                """
+                ## Image generation tool
+                When the user asks you to create, draw, render, or generate an image, call `generate_image`.
+                - Rewrite short or vague requests into a richer visual prompt before calling the tool.
+                - After the tool returns, include each returned `markdown_image` in your reply.
+                - Do not call this tool for ordinary image analysis.
+                """.trimIndent()
+            },
+            execute = { args ->
+                val params = args.jsonObject
+                val prompt = params["prompt"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+                if (prompt.isBlank()) {
+                    error("prompt is required")
+                }
+                val aspectRatio = when (params["aspect_ratio"]?.jsonPrimitive?.contentOrNull?.lowercase()) {
+                    "landscape", "wide" -> me.rerere.ai.ui.ImageAspectRatio.LANDSCAPE
+                    "portrait", "tall" -> me.rerere.ai.ui.ImageAspectRatio.PORTRAIT
+                    else -> me.rerere.ai.ui.ImageAspectRatio.SQUARE
+                }
+                val count = params["count"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()?.coerceIn(1, 4) ?: 1
+                val settings = settingsStore.settingsFlow.value
+                val model = settings.findModelById(settings.imageGenerationModelId)
+                    ?: error("No image generation model selected")
+                val provider = model.findProvider(settings.providers)
+                    ?: error("Image generation provider not found")
+
+                val items = when (model.imageGenerationMethod ?: ImageGenerationMethod.DIFFUSION) {
+                    ImageGenerationMethod.DIFFUSION -> {
+                        val result = providerManager.getProviderByType(provider).generateImage(
+                            providerSetting = provider,
+                            params = ImageGenerationParams(
+                                model = model,
+                                prompt = prompt,
+                                numOfImages = count,
+                                aspectRatio = aspectRatio,
+                                customHeaders = model.customHeaders,
+                                customBody = model.customBodies,
+                            )
+                        )
+                        result.items
+                    }
+
+                    ImageGenerationMethod.MULTIMODAL -> {
+                        val modelWithImageOutput = model.copy(outputModalities = model.outputModalities + Modality.IMAGE)
+                        val result = providerManager.getProviderByType(provider).generateText(
+                            providerSetting = provider,
+                            messages = listOf(me.rerere.ai.ui.UIMessage.user(prompt)),
+                            params = me.rerere.ai.provider.TextGenerationParams(
+                                model = modelWithImageOutput,
+                                tools = emptyList(),
+                                customHeaders = model.customHeaders,
+                                customBody = model.customBodies,
+                            )
+                        )
+                        result.choices.flatMap { choice ->
+                            choice.message?.parts.orEmpty().filterIsInstance<me.rerere.ai.ui.UIMessagePart.Image>()
+                        }.map { part ->
+                            me.rerere.ai.ui.ImageGenerationItem(data = part.url, mimeType = "image/png")
+                        }.ifEmpty {
+                            error("No images generated")
+                        }
+                    }
+                }
+
+                val files = items.take(count).mapIndexed { index, item ->
+                    saveGeneratedImageFromTool(
+                        item = item,
+                        prompt = prompt,
+                        modelName = model.displayName.ifBlank { model.modelId },
+                        index = index,
+                    )
+                }
+
+                buildJsonObject {
+                    put("success", true)
+                    put("saved_to_gallery", true)
+                    put(
+                        "images",
+                        JsonArray(
+                            files.map { file ->
+                                val uri = "file://${file.absolutePath}"
+                                buildJsonObject {
+                                    put("uri", uri)
+                                    put("path", file.absolutePath)
+                                    put("markdown_image", "![Generated image]($uri)")
+                                }
+                            }
+                        )
+                    )
+                    put("note", "Include images[].markdown_image in your reply so the generated image appears in chat.")
                 }
             }
         )
@@ -833,7 +971,6 @@ class LocalTools(
         if (options.contains(LocalToolOption.Notifications)) {
             tools.addAll(getNotificationTools(assistantId, conversationId))
         }
-        // Find Python engine option if present - pass latest user attachments for auto-import
         if (options.contains(LocalToolOption.PythonEngine)) {
             tools.addAll(getPythonTools(conversationId, attachments))
         }
@@ -843,6 +980,31 @@ class LocalTools(
         if (options.contains(LocalToolOption.AskUser)) {
             tools.add(askUserTool)
         }
+        if (options.contains(LocalToolOption.ImageGeneration)) {
+            tools.add(imageGenerationTool)
+        }
         return tools
+    }
+
+    private suspend fun saveGeneratedImageFromTool(
+        item: me.rerere.ai.ui.ImageGenerationItem,
+        prompt: String,
+        modelName: String,
+        index: Int,
+    ): File = withContext(Dispatchers.IO) {
+        val imagesDir = context.getImagesDir()
+        val timestamp = System.currentTimeMillis()
+        val safeModelName = modelName.replace(Regex("[^A-Za-z0-9._-]+"), "_").take(48).ifBlank { "image" }
+        val imageFile = File(imagesDir, "${timestamp}_${safeModelName}_tool_$index.png")
+        val createdFile = context.createImageFileFromBase64(item.data, imageFile.absolutePath)
+        genMediaRepository.insertMedia(
+            GenMediaEntity(
+                path = "images/${imageFile.name}",
+                modelId = modelName,
+                prompt = prompt,
+                createAt = timestamp,
+            )
+        )
+        createdFile
     }
 }

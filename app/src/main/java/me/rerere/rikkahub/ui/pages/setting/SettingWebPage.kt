@@ -74,12 +74,13 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.service.WebServerService
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
+import me.rerere.rikkahub.ui.components.ui.AutoSaveIndicator
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
+import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
-import me.rerere.rikkahub.ui.pages.setting.components.SecureOutlinedTextField
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupInputItem
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
@@ -128,6 +129,8 @@ fun SettingWebPage(
     var passwordText by remember(settings.webServerAccessPassword, serverLocked) {
         mutableStateOf(settings.webServerAccessPassword)
     }
+    var portPending by remember { mutableStateOf(false) }
+    var passwordPending by remember { mutableStateOf(false) }
     var pendingStart by remember { mutableStateOf<PendingWebServerStart?>(null) }
     var showBackgroundSetupDialog by remember { mutableStateOf(false) }
 
@@ -352,8 +355,9 @@ fun SettingWebPage(
                         title = stringResource(R.string.setting_page_web_server_port),
                         subtitle = stringResource(R.string.setting_page_web_server_port_desc),
                         icon = { Icon(Icons.Rounded.Public, null) },
+                        trailing = { AutoSaveIndicator(visible = portPending) },
                     ) {
-                        OutlinedTextField(
+                        DebouncedTextField(
                             value = portText,
                             onValueChange = { value ->
                                 val digits = value.filter(Char::isDigit).take(5)
@@ -363,14 +367,15 @@ fun SettingWebPage(
                                     vm.updateSettings(settings.copy(webServerPort = port))
                                 }
                             },
+                            stateKey = "web_server_port_${serverLocked}",
                             enabled = !serverLocked,
                             singleLine = true,
                             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
                             isError = portText.toIntOrNull()?.let { it !in 1024..65535 } == true,
+                            onPendingChange = { portPending = it },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = 58.dp),
-                            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                         )
                     }
 
@@ -397,8 +402,9 @@ fun SettingWebPage(
                     SettingGroupInputItem(
                         title = stringResource(R.string.setting_page_web_server_password),
                         icon = { Icon(Icons.Rounded.Lock, null) },
+                        trailing = { AutoSaveIndicator(visible = passwordPending) },
                     ) {
-                        SecureOutlinedTextField(
+                        DebouncedTextField(
                             value = passwordText,
                             onValueChange = { value ->
                                 passwordText = value
@@ -411,12 +417,14 @@ fun SettingWebPage(
                                     )
                                 }
                             },
+                            stateKey = "web_server_password_${serverLocked}",
                             enabled = !serverLocked,
                             label = stringResource(R.string.setting_page_web_server_password),
+                            isSecure = true,
+                            onPendingChange = { passwordPending = it },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = 58.dp),
-                            maxVisibleLines = 3,
                         )
                     }
                 }

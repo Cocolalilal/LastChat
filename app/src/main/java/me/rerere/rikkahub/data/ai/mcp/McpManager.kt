@@ -84,33 +84,31 @@ class McpManager(
         return clients.entries.find { it.key.id == config.id }?.value
     }
 
-    fun getAllAvailableTools(): List<McpTool> {
+    fun getAllAvailableTools(): List<Pair<Uuid, McpTool>> {
         val settings = settingsStore.settingsFlow.value
         val assistant = settings.getCurrentAssistant()
-        val mcpServers = settings.mcpServers
+        return settings.mcpServers
             .filter {
                 it.commonOptions.enable && it.id in assistant.mcpServers
             }
-            .flatMap {
-                it.commonOptions.tools.filter { tool -> tool.enable }
+            .flatMap { server ->
+                server.commonOptions.tools
+                    .filter { tool -> tool.enable }
+                    .map { tool -> server.id to tool }
             }
-        return mcpServers
     }
 
-    suspend fun callTool(toolName: String, args: JsonObject): JsonElement {
-        val tools = getAllAvailableTools()
-        val tool = tools.find { it.name == toolName }
-            ?: return JsonPrimitive("Failed to execute tool, because no such tool")
-        val client =
-            clients.entries.find { it.key.commonOptions.tools.any { it.name == toolName } }?.value
-        if (client == null) return JsonPrimitive("Failed to execute tool, because no such mcp client for the tool")
-        val config = clients.entries.first { it.value == client }.key
-        Log.i(TAG, "callTool: $toolName / $args")
+    suspend fun callTool(serverId: Uuid, toolName: String, args: JsonObject): JsonElement {
+        val entry = clients.entries.find { it.key.id == serverId }
+        val client = entry?.value
+            ?: return JsonPrimitive("Failed to execute tool, because no such mcp client for the tool")
+        val config = entry.key
+        Log.i(TAG, "callTool: $toolName / $args (server: ${config.commonOptions.name})")
 
         if (client.transport == null) client.connect(getTransport(config))
         val result = client.callTool(
             request = CallToolRequest(
-                name = tool.name,
+                name = toolName,
                 arguments = args,
             ),
             options = RequestOptions(timeout = 60.seconds),

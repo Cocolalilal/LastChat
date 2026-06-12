@@ -85,7 +85,9 @@ import me.rerere.rikkahub.data.model.InjectionPosition
 import me.rerere.rikkahub.data.model.Skill
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
+import me.rerere.rikkahub.ui.components.ui.AutoSaveIndicator
 import me.rerere.rikkahub.ui.components.ui.FormItem
+import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.MaterialIconPickerDialog
@@ -118,6 +120,7 @@ fun SettingSkillsPage(
     val context = LocalContext.current
     val toaster = LocalToaster.current
     val listState = rememberLazyListState()
+    val useWideLayout = LocalSettingsWideLayout.current
 
     var showAddDialog by remember { mutableStateOf(false) }
     var editingSkill by remember { mutableStateOf<Skill?>(null) }
@@ -164,53 +167,55 @@ fun SettingSkillsPage(
                     .navigationBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 16.dp)
             ) {
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .offset(y = -ScreenOffset),
-                    shape = RoundedCornerShape(28.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    tonalElevation = 6.dp,
-                    shadowElevation = 8.dp
-                ) {
-                    Row(
-                        modifier = Modifier.padding(4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                if (!useWideLayout) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .offset(y = -ScreenOffset),
+                        shape = RoundedCornerShape(28.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        tonalElevation = 6.dp,
+                        shadowElevation = 8.dp
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primaryContainer)
-                                .padding(12.dp),
-                            contentAlignment = Alignment.Center
+                        Row(
+                            modifier = Modifier.padding(4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Category,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
+                            Box(
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primaryContainer)
+                                    .padding(12.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Category,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
 
-                        Box(
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .clickable {
-                                    haptics.perform(HapticPattern.Tick)
-                                    navController.navigate(Screen.SettingLorebooks) {
-                                        popUpTo(Screen.SettingSkills()) { inclusive = true }
-                                        launchSingleTop = true
+                            Box(
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .clickable {
+                                        haptics.perform(HapticPattern.Tick)
+                                        navController.navigate(Screen.SettingLorebooks) {
+                                            popUpTo(Screen.SettingSkills()) { inclusive = true }
+                                            launchSingleTop = true
+                                        }
                                     }
-                                }
-                                .padding(12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Book,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(24.dp)
-                            )
+                                    .padding(12.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Book,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -218,7 +223,7 @@ fun SettingSkillsPage(
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .offset(y = -ScreenOffset),
+                        .then(if (useWideLayout) Modifier else Modifier.offset(y = -ScreenOffset)),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
@@ -283,6 +288,15 @@ fun SettingSkillsPage(
                 }
                 showAddDialog = false
                 editingSkill = null
+            },
+            onAutoSave = { savedSkill ->
+                vm.updateSettings(
+                    settings.copy(
+                        skills = settings.skills.map {
+                            if (it.id == savedSkill.id) savedSkill else it
+                        }
+                    )
+                )
             }
         )
     }
@@ -657,11 +671,46 @@ private fun SkillCard(
 }
 
 @Composable
+private fun SkillAssistantToggleRow(
+    assistant: me.rerere.rikkahub.data.model.Assistant,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        UIAvatar(
+            value = assistant.avatar,
+            name = assistant.name.ifBlank { stringResource(R.string.text_selection_assistant) },
+            modifier = Modifier.size(32.dp),
+        )
+        Text(
+            text = assistant.name.ifBlank { stringResource(R.string.text_selection_assistant) },
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        HapticSwitch(
+            checked = checked,
+            onCheckedChange = onCheckedChange
+        )
+    }
+}
+
+@Composable
 fun SkillEditorSheet(
     skill: Skill?,
     assistants: List<me.rerere.rikkahub.data.model.Assistant>,
     onDismiss: () -> Unit,
     onSave: (Skill) -> Unit,
+    onAutoSave: ((Skill) -> Unit)? = null,
 ) {
     val isEditing = skill != null
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -672,10 +721,14 @@ fun SkillEditorSheet(
     var icon by remember { mutableStateOf(skill?.icon) }
     var instructions by remember { mutableStateOf(skill?.instructions ?: "") }
     var alwaysEnabled by remember { mutableStateOf(skill?.alwaysEnabled ?: false) }
-    var autonomousAssistantIds by remember { mutableStateOf(skill?.autonomousAssistantIds ?: emptySet()) }
-    var autonomousForAllAssistants by remember { mutableStateOf(skill?.autonomousForAllAssistants ?: false) }
+    var availableForAllAssistants by remember { mutableStateOf(skill?.availableForAllAssistants ?: true) }
+    var availableAssistantIds by remember { mutableStateOf(skill?.availableAssistantIds ?: emptySet()) }
     var showIconPicker by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
+    var namePending by remember { mutableStateOf(false) }
+    var descriptionPending by remember { mutableStateOf(false) }
+    var instructionsPending by remember { mutableStateOf(false) }
+    val isAutoSaving = isEditing && (namePending || descriptionPending || instructionsPending)
 
     ModalBottomSheet(
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -714,6 +767,7 @@ fun SkillEditorSheet(
                     ),
                     style = MaterialTheme.typography.titleLarge
                 )
+                AutoSaveIndicator(visible = isAutoSaving)
             }
 
             Column(
@@ -747,17 +801,31 @@ fun SkillEditorSheet(
                             }
                         }
 
-                        OutlinedTextField(
+                        DebouncedTextField(
                             value = name,
-                            onValueChange = {
-                                name = it.lowercase()
+                            onValueChange = { rawNewName ->
+                                val processed = rawNewName.lowercase()
                                     .filter { c -> c.isLetterOrDigit() || c == '-' || c == '_' }
                                     .take(64)
+                                name = processed
+                                if (skill != null) {
+                                    onAutoSave?.invoke(skill.copy(
+                                        name = processed,
+                                        description = description.trim(),
+                                        icon = icon,
+                                        instructions = instructions,
+                                        alwaysEnabled = alwaysEnabled,
+                                        availableForAllAssistants = availableForAllAssistants,
+                                        availableAssistantIds = if (availableForAllAssistants) emptySet() else availableAssistantIds,
+                                        updatedAt = System.currentTimeMillis()
+                                    ))
+                                }
                             },
+                            stateKey = "skill_name_${skill?.id ?: "new"}",
                             modifier = Modifier.weight(1f),
-                            placeholder = { Text(stringResource(R.string.skills_page_name_placeholder)) },
+                            placeholder = stringResource(R.string.skills_page_name_placeholder),
                             singleLine = true,
-                            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                            onPendingChange = { namePending = it },
                             textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace)
                         )
                     }
@@ -774,34 +842,63 @@ fun SkillEditorSheet(
                 }
 
                 FormItem(label = { Text(stringResource(R.string.skills_page_description)) }) {
-                    OutlinedTextField(
+                    DebouncedTextField(
                         value = description,
-                        onValueChange = { description = it.take(1024) },
+                        onValueChange = { rawVal ->
+                            val processed = rawVal.take(1024)
+                            description = processed
+                            if (skill != null) {
+                                onAutoSave?.invoke(skill.copy(
+                                    name = name.trim(),
+                                    description = processed.trim(),
+                                    icon = icon,
+                                    instructions = instructions,
+                                    alwaysEnabled = alwaysEnabled,
+                                    availableForAllAssistants = availableForAllAssistants,
+                                    availableAssistantIds = if (availableForAllAssistants) emptySet() else availableAssistantIds,
+                                    updatedAt = System.currentTimeMillis()
+                                ))
+                            }
+                        },
+                        stateKey = "skill_desc_${skill?.id ?: "new"}",
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text(stringResource(R.string.skills_page_description_placeholder)) },
+                        placeholder = stringResource(R.string.skills_page_description_placeholder),
                         minLines = 2,
                         maxLines = 4,
-                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                        onPendingChange = { descriptionPending = it },
                     )
                 }
 
                 FormItem(label = { Text(stringResource(R.string.skills_page_instructions)) }) {
-                    OutlinedTextField(
+                    DebouncedTextField(
                         value = instructions,
-                        onValueChange = { instructions = it },
+                        onValueChange = { newVal ->
+                            instructions = newVal
+                            if (skill != null) {
+                                onAutoSave?.invoke(skill.copy(
+                                    name = name.trim(),
+                                    description = description.trim(),
+                                    icon = icon,
+                                    instructions = newVal,
+                                    alwaysEnabled = alwaysEnabled,
+                                    availableForAllAssistants = availableForAllAssistants,
+                                    availableAssistantIds = if (availableForAllAssistants) emptySet() else availableAssistantIds,
+                                    updatedAt = System.currentTimeMillis()
+                                ))
+                            }
+                        },
+                        stateKey = "skill_instructions_${skill?.id ?: "new"}",
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(200.dp),
-                        placeholder = { Text(stringResource(R.string.skills_page_instructions_placeholder)) },
-                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                        placeholder = stringResource(R.string.skills_page_instructions_placeholder),
+                        onPendingChange = { instructionsPending = it },
                         textStyle = MaterialTheme.typography.bodyMedium.copy(
                             fontFamily = FontFamily.Monospace,
                             lineHeight = 20.sp
                         )
                     )
                 }
-
-                // Always-enabled toggle card
                 Card(
                     colors = CardDefaults.cardColors(
                         containerColor = if (LocalDarkMode.current) {
@@ -812,99 +909,56 @@ fun SkillEditorSheet(
                     ),
                     shape = AppShapes.CardLarge
                 ) {
-                    ListItem(
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                        headlineContent = { Text(stringResource(R.string.skills_page_always_enabled)) },
-                        supportingContent = { Text(stringResource(R.string.skills_page_always_enabled_desc)) },
-                        trailingContent = {
-                            HapticSwitch(
-                                checked = alwaysEnabled,
-                                onCheckedChange = { checked ->
-                                    alwaysEnabled = checked
-                                    if (checked) {
-                                        // Clear autonomous settings when always-enabled
-                                        autonomousForAllAssistants = false
-                                        autonomousAssistantIds = emptySet()
+                    Column {
+                        ListItem(
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            headlineContent = { Text(stringResource(R.string.skills_page_available_for_all_characters)) },
+                            supportingContent = { Text(stringResource(R.string.skills_page_available_for_all_characters_desc)) },
+                            trailingContent = {
+                                HapticSwitch(
+                                    checked = availableForAllAssistants,
+                                    onCheckedChange = { checked ->
+                                        availableForAllAssistants = checked
+                                        if (checked) {
+                                            availableAssistantIds = emptySet()
+                                        }
                                     }
-                                }
-                            )
-                        }
-                    )
-                }
-
-                // Autonomous toggle card — hidden when always-enabled
-                AnimatedVisibility(visible = !alwaysEnabled) {
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (LocalDarkMode.current) {
-                                MaterialTheme.colorScheme.surfaceContainerLow
-                            } else {
-                                MaterialTheme.colorScheme.surfaceContainerHighest
+                                )
                             }
-                        ),
-                        shape = AppShapes.CardLarge
-                    ) {
-                        Column {
-                            ListItem(
-                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                                headlineContent = { Text(stringResource(R.string.skills_page_available_for_all_characters)) },
-                                supportingContent = { Text(stringResource(R.string.skills_page_available_for_characters_desc)) },
-                                trailingContent = {
-                                    HapticSwitch(
-                                        checked = autonomousForAllAssistants,
+                        )
+                        AnimatedVisibility(visible = !availableForAllAssistants) {
+                            Column(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                assistants.forEach { assistant ->
+                                    SkillAssistantToggleRow(
+                                        assistant = assistant,
+                                        checked = availableAssistantIds.contains(assistant.id),
                                         onCheckedChange = { checked ->
-                                            autonomousForAllAssistants = checked
-                                            if (checked) autonomousAssistantIds = emptySet()
+                                            availableAssistantIds = if (checked) {
+                                                availableAssistantIds + assistant.id
+                                            } else {
+                                                availableAssistantIds - assistant.id
+                                            }
                                         }
                                     )
                                 }
-                            )
-                            AnimatedVisibility(visible = !autonomousForAllAssistants) {
-                                Column(
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
-                                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    assistants.forEach { assistant ->
-                                        val enabledForAssistant = autonomousAssistantIds.contains(assistant.id)
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clip(RoundedCornerShape(12.dp))
-                                                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            UIAvatar(
-                                                value = assistant.avatar,
-                                                name = assistant.name.ifBlank { stringResource(R.string.text_selection_assistant) },
-                                                modifier = Modifier.size(32.dp),
-                                            )
-                                            Text(
-                                                text = assistant.name.ifBlank { stringResource(R.string.text_selection_assistant) },
-                                                style = MaterialTheme.typography.bodyLarge,
-                                                modifier = Modifier.weight(1f),
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                            HapticSwitch(
-                                                checked = enabledForAssistant,
-                                                onCheckedChange = { checked ->
-                                                    autonomousAssistantIds = if (checked) {
-                                                        autonomousAssistantIds + assistant.id
-                                                    } else {
-                                                        autonomousAssistantIds - assistant.id
-                                                    }
-                                                }
-                                            )
-                                        }
-                                    }
-                                }
                             }
                         }
+                        ListItem(
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            headlineContent = { Text(stringResource(R.string.skills_page_always_enabled)) },
+                            supportingContent = { Text(stringResource(R.string.skills_page_always_enabled_desc)) },
+                            trailingContent = {
+                                HapticSwitch(
+                                    checked = alwaysEnabled,
+                                    onCheckedChange = { checked -> alwaysEnabled = checked }
+                                )
+                            }
+                        )
                     }
                 }
-
             }
 
             Row(
@@ -920,6 +974,7 @@ fun SkillEditorSheet(
                     TextButton(
                         onClick = {
                             val base = skill ?: Skill()
+                            val availableIds = if (availableForAllAssistants) emptySet() else availableAssistantIds
                             val savedSkill = base.copy(
                                 name = name.trim(),
                                 description = description.trim(),
@@ -928,13 +983,10 @@ fun SkillEditorSheet(
                                 attachments = emptyList(),
                                 enabled = true,
                                 alwaysEnabled = alwaysEnabled,
-                                availableAssistantIds = emptySet(),
-                                autonomousForAllAssistants = if (alwaysEnabled) false else autonomousForAllAssistants,
-                                autonomousAssistantIds = if (alwaysEnabled || autonomousForAllAssistants) {
-                                    emptySet()
-                                } else {
-                                    autonomousAssistantIds
-                                },
+                                availableForAllAssistants = availableForAllAssistants,
+                                availableAssistantIds = availableIds,
+                                autonomousForAllAssistants = true,
+                                autonomousAssistantIds = emptySet(),
                                 injectionPosition = InjectionPosition.AFTER_SYSTEM,
                                 depth = 0,
                                 disableModelInvocation = false,
@@ -964,13 +1016,10 @@ fun SkillEditorSheet(
                 attachments = emptyList(),
                 enabled = true,
                 alwaysEnabled = alwaysEnabled,
-                availableAssistantIds = emptySet(),
-                autonomousForAllAssistants = if (alwaysEnabled) false else autonomousForAllAssistants,
-                autonomousAssistantIds = if (alwaysEnabled || autonomousForAllAssistants) {
-                    emptySet()
-                } else {
-                    autonomousAssistantIds
-                },
+                availableForAllAssistants = availableForAllAssistants,
+                availableAssistantIds = if (availableForAllAssistants) emptySet() else availableAssistantIds,
+                autonomousForAllAssistants = true,
+                autonomousAssistantIds = emptySet(),
                 injectionPosition = InjectionPosition.AFTER_SYSTEM,
                 depth = 0,
                 disableModelInvocation = false,

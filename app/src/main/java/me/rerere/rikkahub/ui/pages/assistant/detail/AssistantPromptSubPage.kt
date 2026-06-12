@@ -141,6 +141,17 @@ fun AssistantPromptSubPage(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    // Initialize state with current system prompt. Key on assistant.id to reset when switching assistants.
+                    val systemPromptValue = androidx.compose.runtime.key(assistant.id) {
+                        rememberTextFieldState(
+                            initialText = assistant.systemPrompt,
+                        )
+                    }
+
+                    val hasUnsavedChanges = remember(systemPromptValue.text, assistant.systemPrompt) {
+                        systemPromptValue.text.toString() != assistant.systemPrompt
+                    }
+
                     // Title with token count
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -156,6 +167,13 @@ fun AssistantPromptSubPage(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.secondary
                         )
+                        if (hasUnsavedChanges) {
+                            Text(
+                                text = "Saving...",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
                         Spacer(Modifier.weight(1f))
                         IconButton(
                             onClick = {
@@ -165,13 +183,6 @@ fun AssistantPromptSubPage(
                         ) {
                             Icon(Icons.Rounded.Fullscreen, null)
                         }
-                    }
-
-                    // Initialize state with current system prompt. Key on assistant.id to reset when switching assistants.
-                    val systemPromptValue = androidx.compose.runtime.key(assistant.id) {
-                        rememberTextFieldState(
-                            initialText = assistant.systemPrompt,
-                        )
                     }
 
                     // Sync from external state ONLY when NOT focused
@@ -469,7 +480,12 @@ private fun FullScreenSystemPromptEditor(
                 modifier = Modifier
                     .widthIn(max = 800.dp)
                     .fillMaxHeight(0.9f),
-                shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.BottomSheet,
+                color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) {
+                    MaterialTheme.colorScheme.surfaceContainerLow
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainerHigh
+                },
             ) {
                 Column(
                     modifier = Modifier
@@ -505,7 +521,7 @@ private fun FullScreenSystemPromptEditor(
                         modifier = Modifier
                             .imePadding()
                             .fillMaxSize(),
-                        shape = RoundedCornerShape(16.dp),
+                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
                         placeholder = {
                             Text(stringResource(R.string.assistant_page_system_prompt))
                         },

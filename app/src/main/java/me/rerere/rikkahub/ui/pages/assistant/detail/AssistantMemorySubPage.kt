@@ -276,6 +276,27 @@ fun AssistantMemorySettings(
                 )
             }
 
+            // Memory Search Tool Toggle (when memory enabled)
+            AnimatedVisibility(
+                visible = assistant.enableMemory,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                MemorySettingsItem(
+                    title = stringResource(R.string.assistant_memory_search_tool),
+                    subtitle = stringResource(R.string.assistant_memory_search_tool_desc),
+                    position = "MIDDLE",
+                    trailing = {
+                        HapticSwitch(
+                            checked = assistant.enableMemorySearchTool,
+                            onCheckedChange = { enabled ->
+                                onUpdateAssistant(assistant.copy(enableMemorySearchTool = enabled))
+                            }
+                        )
+                    }
+                )
+            }
+
             // RAG Toggle (when memory enabled)
             AnimatedVisibility(
                 visible = assistant.enableMemory,

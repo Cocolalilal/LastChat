@@ -74,6 +74,9 @@ interface ConversationDAO {
     @Query("UPDATE conversationentity SET is_consolidated = :isConsolidated WHERE id = :id")
     suspend fun updateConsolidatedStatus(id: String, isConsolidated: Boolean)
 
+    @Query("UPDATE conversationentity SET title = :title, update_at = :updateAt WHERE id = :id")
+    suspend fun updateTitle(id: String, title: String, updateAt: Long)
+
     // Stats queries for MenuVM optimization
     @Query("SELECT COUNT(*) FROM conversationentity")
     fun getConversationCountFlow(): Flow<Int>
@@ -91,6 +94,18 @@ interface ConversationDAO {
     // Per-assistant chat count
     @Query("SELECT COUNT(*) FROM conversationentity WHERE assistant_id = :assistantId")
     fun getConversationCountByAssistantFlow(assistantId: String): Flow<Int>
+
+    @Query(
+        """
+        SELECT EXISTS(
+            SELECT 1 FROM conversationentity
+            WHERE (nodes LIKE '%"role":"USER"%' OR nodes LIKE '%"role":"user"%')
+              AND (nodes LIKE '%"role":"ASSISTANT"%' OR nodes LIKE '%"role":"assistant"%')
+            LIMIT 1
+        )
+        """
+    )
+    suspend fun hasUserAssistantConversation(): Boolean
 
     // Batch query for backfill tasks to prevent OOM
     @Query("SELECT * FROM conversationentity ORDER BY update_at DESC LIMIT :limit OFFSET :offset")

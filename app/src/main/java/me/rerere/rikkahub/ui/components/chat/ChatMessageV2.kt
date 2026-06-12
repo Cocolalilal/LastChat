@@ -73,6 +73,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.ChatAttachmentState
@@ -80,20 +81,24 @@ import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.chatAttachmentDisplayName
 import me.rerere.rikkahub.data.model.chatAttachmentMimeHint
 import me.rerere.rikkahub.data.model.chatAttachmentState
+import me.rerere.rikkahub.data.model.replacePersonaPlaceholders
 import me.rerere.rikkahub.data.model.replaceRegexes
 import me.rerere.rikkahub.data.model.versionSelectionIndices
 import me.rerere.rikkahub.ui.components.message.ChatMessageActionButtons
 import me.rerere.rikkahub.ui.components.message.ChatMessageActionsSheet
 import me.rerere.rikkahub.ui.components.message.ChatMessageCopySheet
+import me.rerere.rikkahub.ui.components.richtext.buildMarkdownPreviewHtml
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import me.rerere.rikkahub.ui.components.ui.DocumentChip
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
+import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.utils.JsonInstant
+import me.rerere.rikkahub.utils.base64Encode
 import me.rerere.rikkahub.utils.copyMessageToClipboard
 import me.rerere.rikkahub.utils.formatNumber
 import me.rerere.rikkahub.utils.getFileMimeType
@@ -101,6 +106,7 @@ import me.rerere.rikkahub.utils.getFileNameFromUri
 import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
 import me.rerere.rikkahub.utils.openAttachmentUri
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
+import me.rerere.rikkahub.data.datastore.getEffectiveTTSProvider
 import me.rerere.ai.core.MessageRole as AIMessageRole
 
 /**
@@ -130,7 +136,7 @@ data class MessageTurnGroup(
      */
     val filteredNodes: List<MessageNode> get() {
         val tag = activeVersionTag
-        return nodes.mapNotNull { node ->
+        val selectedNodes = nodes.mapNotNull { node ->
             val currentIndexMatchesTag = node.messages
                 .getOrNull(node.selectIndex)
                 ?.versionTag == tag
@@ -147,6 +153,32 @@ data class MessageTurnGroup(
             } else {
                 null
             }
+        }
+        val activeToolCallIds = selectedNodes
+            .flatMap { node -> node.currentMessage.getToolCalls() }
+            .map { it.toolCallId }
+            .toSet()
+        if (activeToolCallIds.isEmpty()) {
+            return selectedNodes
+        }
+
+        val selectedNodeIds = selectedNodes.map { it.id }.toSet()
+        val matchingToolResultNodes = nodes.mapNotNull { node ->
+            if (node.id in selectedNodeIds || node.role != MessageRole.TOOL) {
+                return@mapNotNull null
+            }
+            val matchingIndex = node.messages.indexOfLast { message ->
+                message.getToolResults().any { result -> result.toolCallId in activeToolCallIds }
+            }
+            if (matchingIndex >= 0) {
+                node.copy(selectIndex = matchingIndex)
+            } else {
+                null
+            }
+        }
+
+        return (selectedNodes + matchingToolResultNodes).sortedBy { node ->
+            nodes.indexOfFirst { it.id == node.id }.takeIf { it >= 0 } ?: Int.MAX_VALUE
         }
     }
     
@@ -458,11 +490,21 @@ internal fun buildTimelineEntries(
     val entries = mutableListOf<TimelineEntry>()
     val memoryTools = setOf("create_memory", "edit_memory", "delete_memory")
     val ocrAnnotations = annotations.filterIsInstance<UIMessageAnnotation.OcrActivity>()
+    val usedEntryIds = mutableSetOf<String>()
+
+    fun reserveEntryId(base: String): String {
+        if (usedEntryIds.add(base)) return base
+        var suffix = 2
+        while (!usedEntryIds.add("${base}_$suffix")) {
+            suffix++
+        }
+        return "${base}_$suffix"
+    }
 
     ocrAnnotations.forEachIndexed { index, annotation ->
         entries.add(
             TimelineEntry.Ocr(
-                id = "ocr_$index",
+                id = reserveEntryId("ocr_$index"),
                 source = annotation.source,
                 fileName = annotation.fileName,
                 pageNumbers = annotation.pageNumbers,
@@ -470,12 +512,10 @@ internal fun buildTimelineEntries(
             )
         )
     }
-    
-    // Find tool results to match with tool calls
-    val toolResults = parts.filterIsInstance<UIMessagePart.ToolResult>()
-        .associateBy { it.toolCallId }
-    
-    parts.forEach { part ->
+
+    val toolCallMatches = matchToolCallsToResults(parts).iterator()
+
+    parts.forEachIndexed { partIndex, part ->
         when (part) {
             is UIMessagePart.Reasoning -> {
                 val durationMs = if (part.finishedAt != null) {
@@ -483,24 +523,27 @@ internal fun buildTimelineEntries(
                 } else 0L
                 
                 entries.add(TimelineEntry.Reasoning(
-                    id = "reasoning_${entries.size}",
+                    id = reserveEntryId("reasoning_${entries.size}"),
                     content = part.reasoning,
                     durationMs = durationMs,
-                    title = null,
+                    title = part.title,
                     isInProgress = part.finishedAt == null
                 ))
             }
             is UIMessagePart.ToolCall -> {
-                val result = toolResults[part.toolCallId]
-                if (part.toolName in memoryTools) {
-                    entries.add(buildMemoryTimelineEntry(part, result))
+                val result = toolCallMatches.next().result
+                val resolvedToolName = resolveActivityToolName(part.toolName, part.arguments)
+                if (resolvedToolName in memoryTools) {
+                    val entry = buildMemoryTimelineEntry(part, result)
+                    entries.add(entry.copy(id = reserveEntryId(entry.id)))
                 } else {
                     val argumentsJson = result?.arguments ?: parseJsonObjectOrNull(part.arguments)
                     val resultJson = result?.content
+                    val rawId = part.toolCallId.takeIf { it.isNotBlank() } ?: partIndex.toString()
                     entries.add(TimelineEntry.ToolCall(
-                        id = "tool_${part.toolCallId}",
-                        toolName = part.toolName,
-                        displayName = getToolDisplayName(part.toolName),
+                        id = reserveEntryId("tool_$rawId"),
+                        toolName = resolvedToolName,
+                        displayName = getToolDisplayName(resolvedToolName),
                         argumentsText = part.arguments.take(200),
                         resultText = result?.content?.toString()?.take(500),
                         argumentsJson = argumentsJson,
@@ -520,7 +563,8 @@ private fun buildMemoryTimelineEntry(
     call: UIMessagePart.ToolCall,
     result: UIMessagePart.ToolResult?
 ): TimelineEntry.MemoryAction {
-    val operation = when (call.toolName) {
+    val toolName = resolveActivityToolName(call.toolName, call.arguments)
+    val operation = when (toolName) {
         "create_memory" -> MemoryOperation.CREATE
         "edit_memory" -> MemoryOperation.EDIT
         "delete_memory" -> MemoryOperation.DELETE
@@ -538,8 +582,8 @@ private fun buildMemoryTimelineEntry(
     val timestamp = resultObj?.get("timestamp")?.jsonPrimitiveOrNull?.longOrNull
 
     return TimelineEntry.MemoryAction(
-        id = "memory_${call.toolCallId}",
-        toolName = call.toolName,
+        id = "memory_${call.toolCallId.takeIf { it.isNotBlank() } ?: toolName}",
+        toolName = toolName,
         operation = operation,
         memoryId = memoryId,
         content = content,
@@ -554,12 +598,40 @@ private fun parseJsonObjectOrNull(raw: String): JsonObject? {
     return runCatching { JsonInstant.parseToJsonElement(raw).jsonObject }.getOrNull()
 }
 
+private data class ToolCallMatch(
+    val call: UIMessagePart.ToolCall,
+    val result: UIMessagePart.ToolResult?
+)
+
+private fun matchToolCallsToResults(parts: List<UIMessagePart>): List<ToolCallMatch> {
+    val resultQueues = parts
+        .filterIsInstance<UIMessagePart.ToolResult>()
+        .groupBy { toolResultMatchKey(it.toolCallId, it.toolName) }
+        .mapValues { (_, results) -> ArrayDeque(results) }
+
+    return parts.filterIsInstance<UIMessagePart.ToolCall>().map { call ->
+        val key = toolResultMatchKey(
+            toolCallId = call.toolCallId,
+            toolName = resolveActivityToolName(call.toolName, call.arguments)
+        )
+        ToolCallMatch(
+            call = call,
+            result = resultQueues[key]?.removeFirstOrNull()
+        )
+    }
+}
+
+private fun toolResultMatchKey(toolCallId: String, toolName: String): String {
+    return toolCallId.takeIf { it.isNotBlank() } ?: "blank:${toolName.ifBlank { "unknown" }}"
+}
+
 /**
  * Get display name for a tool.
  */
 private fun getToolDisplayName(toolName: String): String {
     return when (toolName) {
         "search_web" -> "Searching web"
+        "search_memory" -> "Recalling memories"
         "scrape_web" -> "Reading page"
         "eval_python" -> "Running Python"
         "pip_install" -> "Installing packages"
@@ -584,11 +656,9 @@ internal fun deriveActivityState(
     annotations: List<UIMessageAnnotation> = emptyList(),
     loading: Boolean
 ): ActivityState {
-    val toolResults = parts.filterIsInstance<UIMessagePart.ToolResult>()
-        .associateBy { it.toolCallId }
-    
     val reasoningParts = parts.filterIsInstance<UIMessagePart.Reasoning>()
     val toolCalls = parts.filterIsInstance<UIMessagePart.ToolCall>()
+    val toolCallMatches = matchToolCallsToResults(parts)
     val ocrAnnotations = annotations.filterIsInstance<UIMessageAnnotation.OcrActivity>()
     
     // Only count text AFTER the last tool-related part as "currently replying"
@@ -608,7 +678,9 @@ internal fun deriveActivityState(
         }
         
         // Group tools by CATEGORY (Python, Search, etc.) not individual tool names
-        val toolCategories = toolCalls.map { categorizeToolName(it.toolName) }.distinct()
+        val toolCategories = toolCalls
+            .map { categorizeToolName(resolveActivityToolName(it.toolName, it.arguments)) }
+            .distinct()
         
         val hasReasoning = totalReasoningMs > 0
         val hasTools = toolCategories.isNotEmpty()
@@ -629,8 +701,10 @@ internal fun deriveActivityState(
             )
             activityCount == 1 && hasTools -> ActivityState.CompletedSingle(
                 type = toolCategories.first(),
-                toolName = toolCalls.first().toolName,
-                displayName = getToolDisplayName(toolCalls.first().toolName),
+                toolName = resolveActivityToolName(toolCalls.first().toolName, toolCalls.first().arguments),
+                displayName = getToolDisplayName(
+                    resolveActivityToolName(toolCalls.first().toolName, toolCalls.first().arguments)
+                ),
                 count = toolCalls.size  // Pass total count of tool calls
             )
             else -> ActivityState.CompletedMultiple(
@@ -648,15 +722,19 @@ internal fun deriveActivityState(
     // Check for active reasoning
     val activeReasoning = reasoningParts.lastOrNull { it.finishedAt == null }
     if (activeReasoning != null) {
-        return ActivityState.Reasoning(startTimeMs = activeReasoning.createdAt.toEpochMilliseconds())
+        return ActivityState.Reasoning(
+            startTimeMs = activeReasoning.createdAt.toEpochMilliseconds(),
+            title = activeReasoning.title
+        )
     }
     
     // Check for active tool calls (tool call without matching result)
-    val activeTool = toolCalls.lastOrNull { toolResults[it.toolCallId] == null }
+    val activeTool = toolCallMatches.lastOrNull { it.result == null }?.call
     if (activeTool != null) {
+        val resolvedToolName = resolveActivityToolName(activeTool.toolName, activeTool.arguments)
         return ActivityState.ToolUse(
-            toolName = activeTool.toolName,
-            displayName = getToolDisplayName(activeTool.toolName),
+            toolName = resolvedToolName,
+            displayName = getToolDisplayName(resolvedToolName),
             startTimeMs = System.currentTimeMillis()
         )
     }
@@ -697,7 +775,6 @@ fun ChatMessageTurn(
     onFork: (MessageNode) -> Unit = {},
     onRegenerate: (MessageNode) -> Unit = {},
     onEdit: (MessageNode) -> Unit = {},
-    onShare: (MessageNode) -> Unit = {},
     onDelete: (MessageNode) -> Unit = {},
     onUpdate: (MessageNode) -> Unit = {},
     showRegenerate: Boolean,
@@ -707,7 +784,18 @@ fun ChatMessageTurn(
     onExpandedStreamingCodeBlockChanged: (() -> Unit)? = null,
 ) {
     val settings = LocalSettings.current
+    val context = LocalContext.current
+    val navController = LocalNavController.current
+    val colorScheme = MaterialTheme.colorScheme
     val effectiveDisplay = settings.getEffectiveDisplaySetting(assistant)
+    val ttsProviderOverride = remember(
+        settings.ttsProviders,
+        settings.selectedTTSVoiceId,
+        settings.selectedTTSProviderId,
+        assistant?.ttsVoiceId,
+    ) {
+        settings.getEffectiveTTSProvider(assistant)
+    }
     val textStyle = LocalTextStyle.current.copy(
         fontSize = LocalTextStyle.current.fontSize * effectiveDisplay.fontSizeRatio,
         lineHeight = LocalTextStyle.current.lineHeight * effectiveDisplay.fontSizeRatio
@@ -819,6 +907,7 @@ fun ChatMessageTurn(
                     onModeClick = onModeClick,
                     onMemoryClick = onMemoryClick,
                     onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
+                    ttsProviderOverride = ttsProviderOverride,
                     modifier = modifier
                 )
             }
@@ -832,11 +921,19 @@ fun ChatMessageTurn(
             message = actionTargetNode.currentMessage,
             onEdit = { onEdit(actionTargetNode) },
             onDelete = { onDelete(actionTargetNode) },
-            onShare = { onShare(actionTargetNode) },
             onFork = { onFork(actionTargetNode) },
             model = model,
             onSelectAndCopy = { showSelectCopySheet = true },
-            onWebViewPreview = { },
+            onWebViewPreview = {
+                val markdown = actionTargetNode.currentMessage.parts
+                    .filterIsInstance<UIMessagePart.Text>()
+                    .joinToString(separator = "\n\n") { it.text }
+                    .trim()
+                if (markdown.isNotEmpty()) {
+                    val html = buildMarkdownPreviewHtml(context, markdown, colorScheme)
+                    navController.navigate(Screen.WebView(content = html.base64Encode()))
+                }
+            },
             onDismissRequest = { showActionsSheet = false }
         )
     }
@@ -867,6 +964,7 @@ private fun UserMessageTurn(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val settings = LocalSettings.current
     val defaultVideoLabel = stringResource(R.string.chat_message_attachment_video)
     val defaultAudioLabel = stringResource(R.string.chat_message_attachment_audio)
     val haptics = rememberPremiumHaptics()
@@ -916,11 +1014,17 @@ private fun UserMessageTurn(
                     }
                 ) {
                     MarkdownBlock(
-                        content = part.text.replaceRegexes(
-                            assistant = assistant,
-                            scope = AssistantAffectScope.USER,
-                            visual = true,
-                        ),
+                        content = part.text
+                            .replacePersonaPlaceholders(
+                                assistant = assistant,
+                                userNickname = settings.displaySetting.userNickname,
+                            )
+                            .replaceRegexes(
+                                assistant = assistant,
+                                scope = AssistantAffectScope.USER,
+                                visual = true,
+                            ),
+                        paragraphSpacing = 12.dp,
                         onClickCitation = {}
                     )
                 }
@@ -1031,6 +1135,7 @@ private fun AssistantMessageTurn(
     onModeClick: ((me.rerere.ai.ui.UsedMode) -> Unit)?,
     onMemoryClick: ((me.rerere.ai.ui.UsedMemory) -> Unit)?,
     onExpandedStreamingCodeBlockChanged: (() -> Unit)?,
+    ttsProviderOverride: me.rerere.tts.provider.TTSProviderSetting?,
     modifier: Modifier = Modifier
 ) {
     val settings = LocalSettings.current
@@ -1220,11 +1325,18 @@ private fun AssistantMessageTurn(
                     onClick = handleBubbleClick
                 ) {
                     MarkdownBlock(
-                        content = part.text.replaceRegexes(
-                            assistant = assistant,
-                            scope = AssistantAffectScope.ASSISTANT,
-                            visual = true,
-                        ),
+                        content = part.text.trimStart()
+                            .replacePersonaPlaceholders(
+                                assistant = assistant,
+                                userNickname = settings.displaySetting.userNickname,
+                            )
+                            .replaceRegexes(
+                                assistant = assistant,
+                                scope = AssistantAffectScope.ASSISTANT,
+                                visual = true,
+                            ),
+                        paragraphSpacing = 12.dp,
+                        streamingTextReveal = loading && index == allTextBubbles.lastIndex,
                         onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
                         onClickCitation = { id -> onCitationClick(id) }
                     )
@@ -1310,13 +1422,20 @@ private fun AssistantMessageTurn(
                 alignEnd = false,
             )
 
-            allTextBubbles.forEach { (_, part) ->
+            allTextBubbles.forEachIndexed { index, (_, part) ->
                 MarkdownBlock(
-                    content = part.text.replaceRegexes(
-                        assistant = assistant,
-                        scope = AssistantAffectScope.ASSISTANT,
-                        visual = true,
-                    ),
+                    content = part.text.trimStart()
+                        .replacePersonaPlaceholders(
+                            assistant = assistant,
+                            userNickname = settings.displaySetting.userNickname,
+                        )
+                        .replaceRegexes(
+                            assistant = assistant,
+                            scope = AssistantAffectScope.ASSISTANT,
+                            visual = true,
+                        ),
+                    paragraphSpacing = 12.dp,
+                    streamingTextReveal = loading && index == allTextBubbles.lastIndex,
                     onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
                     onClickCitation = { id -> onCitationClick(id) },
                     modifier = Modifier.clickable { handleBubbleClick() }
@@ -1355,6 +1474,7 @@ private fun AssistantMessageTurn(
                 onEditLorebookEntry = onEditLorebookEntry,
                 onModeClick = onModeClick,
                 onMemoryClick = onMemoryClick,
+                ttsProviderOverride = ttsProviderOverride,
             )
         }
     }

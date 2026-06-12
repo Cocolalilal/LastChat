@@ -59,6 +59,8 @@ import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.LorebookActivationType
 import me.rerere.rikkahub.data.model.LorebookEntry
 import me.rerere.rikkahub.data.model.ModeAttachmentType
+import me.rerere.rikkahub.data.model.hasManualSkillSelectionOverride
+import me.rerere.rikkahub.data.model.withoutSkillSelectionOverride
 import me.rerere.rikkahub.data.repository.ChatAttachmentRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
@@ -68,6 +70,11 @@ import kotlin.uuid.Uuid
 
 private const val TAG = "GenerationHandler"
 private const val SKILL_MANAGEMENT_TOOL_NAME = "manage_skills"
+internal const val MEMORY_SEARCH_TOOL_NAME = "search_memory"
+
+internal fun shouldRegisterMemorySearchTool(assistant: Assistant): Boolean {
+    return assistant.enableMemory && assistant.enableMemorySearchTool
+}
 private const val SKILL_REASON_ASSISTANT = "Enabled for assistant"
 private const val SKILL_REASON_CONVERSATION = "Enabled for chat"
 private const val SKILL_REASON_TURN = "Activated for this turn"
@@ -104,8 +111,8 @@ internal fun resolveManualSkillIds(
     conversationSkillIds: Set<Uuid>,
     allSkillIds: Set<Uuid>,
 ): Set<Uuid> {
-    val baseSkillIds = if (conversationSkillIds.isNotEmpty()) {
-        conversationSkillIds
+    val baseSkillIds = if (conversationSkillIds.hasManualSkillSelectionOverride() || conversationSkillIds.isNotEmpty()) {
+        conversationSkillIds.withoutSkillSelectionOverride()
     } else {
         assistantDefaultSkillIds
     }
@@ -119,12 +126,17 @@ internal fun resolveActiveSkillIds(
     allSkillIds: Set<Uuid>,
     alwaysEnabledSkillIds: Set<Uuid> = emptySet(),
 ): Set<Uuid> {
+    val defaultEnabledSkillIds = if (conversationSkillIds.hasManualSkillSelectionOverride()) {
+        emptySet()
+    } else {
+        alwaysEnabledSkillIds
+    }
     return (
         resolveManualSkillIds(
             assistantDefaultSkillIds = assistantDefaultSkillIds,
             conversationSkillIds = conversationSkillIds,
             allSkillIds = allSkillIds,
-        ) + turnScopedSkillIds + alwaysEnabledSkillIds
+        ) + turnScopedSkillIds + defaultEnabledSkillIds
         ).intersect(allSkillIds)
 }
 
@@ -136,7 +148,7 @@ internal fun buildSkillToolState(
     turnScopedSkillIds: Set<Uuid>,
 ): SkillToolState {
     val usableSkills = skills.filter { skill ->
-        skill.instructions.isNotBlank()
+        skill.instructions.isNotBlank() && skill.isAvailableForAssistant(assistantId)
     }
     val allSkillIds = usableSkills.map { it.id }.toSet()
     val alwaysEnabledSkillIds = usableSkills.filter { it.alwaysEnabled }.map { it.id }.toSet()
@@ -149,7 +161,7 @@ internal fun buildSkillToolState(
     )
     // Always-enabled skills are invisible to the manage_skills tool:
     // they cannot be toggled by the AI so they don't appear in any tool list.
-    val toggleableSkills = usableSkills.filter { !it.alwaysEnabled }
+    val toggleableSkills = usableSkills
     val autonomousSkills = toggleableSkills.filter { skill ->
         skill.canAssistantAutonomouslyToggle(assistantId)
     }
@@ -416,6 +428,7 @@ class GenerationHandler(
     private val conversationRepo: ConversationRepository,
     private val aiLoggingManager: AILoggingManager,
     private val embeddingService: me.rerere.rikkahub.data.ai.rag.EmbeddingService,
+    private val memorySearchService: MemorySearchService,
 ) {
     fun generateText(
         settings: Settings,
@@ -429,14 +442,18 @@ class GenerationHandler(
         truncateIndex: Int = -1,
         maxSteps: Int = 256,
         enabledModeIds: Set<Uuid> = emptySet(),
+        activeConversationId: Uuid? = null,
     ): Flow<GenerationChunk> = channelFlow {
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = providerManager.getProviderByType(provider)
 
         var messages: List<UIMessage> = messages
-        val allSkillIds = settings.skills.filter { it.instructions.isNotBlank() }.map { it.id }.toSet()
+        val allSkillIds = settings.skills
+            .filter { it.instructions.isNotBlank() && it.isAvailableForAssistant(assistant.id) }
+            .map { it.id }
+            .toSet()
         val assistantDefaultSkillIds = assistant.enabledSkillIds.intersect(allSkillIds)
-        val conversationSkillIds = enabledModeIds.intersect(allSkillIds)
+        val conversationSkillIds = enabledModeIds
         var currentTurnScopedSkillIds = emptySet<Uuid>()
 
         for (stepIndex in 0 until maxSteps) {
@@ -455,6 +472,19 @@ class GenerationHandler(
                         },
                         onDelete = { id ->
                             memoryRepo.deleteMemory(id)
+                        },
+                        onSearch = if (shouldRegisterMemorySearchTool(assistant)) {
+                            { query, limit, timeRange ->
+                                memorySearchService.searchMemory(
+                                    assistant = assistant,
+                                    activeConversationId = activeConversationId,
+                                    query = query,
+                                    limit = limit,
+                                    timeRange = timeRange,
+                                )
+                            }
+                        } else {
+                            null
                         }
                     ).let(this::addAll)
                 }
@@ -702,7 +732,7 @@ class GenerationHandler(
         val recentMessagesForScan = messages.takeLast(10).map { it.toText() }
 
         val availableSkills = settings.skills.filter { skill ->
-            skill.instructions.isNotBlank()
+            skill.instructions.isNotBlank() && skill.isAvailableForAssistant(assistant.id)
         }
         val allSkillIds = availableSkills.map { it.id }.toSet()
         val alwaysEnabledSkillIds = availableSkills.filter { it.alwaysEnabled }.map { it.id }.toSet()
@@ -1334,9 +1364,10 @@ class GenerationHandler(
     private fun buildMemoryTools(
         onCreation: suspend (String) -> AssistantMemory,
         onUpdate: suspend (Int, String) -> AssistantMemory,
-        onDelete: suspend (Int) -> Unit
-    ) = listOf(
-        Tool(
+        onDelete: suspend (Int) -> Unit,
+        onSearch: (suspend (String, Int, String?) -> JsonElement)? = null,
+    ) = buildList {
+        add(Tool(
             name = "create_memory",
             description = "Create a new memory record.",
             parameters = {
@@ -1356,8 +1387,8 @@ class GenerationHandler(
                     params["content"]?.jsonPrimitive?.contentOrNull ?: error("content is required")
                 json.encodeToJsonElement(AssistantMemory.serializer(), onCreation(content))
             }
-        ),
-        Tool(
+        ))
+        add(Tool(
             name = "edit_memory",
             description = "Update an existing memory record.",
             parameters = {
@@ -1396,8 +1427,8 @@ class GenerationHandler(
                     }
                 }
             }
-        ),
-        Tool(
+        ))
+        add(Tool(
             name = "delete_memory",
             description = "Delete a memory record.",
             parameters = {
@@ -1429,8 +1460,54 @@ class GenerationHandler(
                     }
                 }
             }
-        )
-    )
+        ))
+        if (onSearch != null) {
+            add(Tool(
+                name = MEMORY_SEARCH_TOOL_NAME,
+                description = "Search this character's core memories and actually used past chat messages for a remembered topic, scene, person, feeling, or detail. The memory subagent expands the query internally and searches multiple variants.",
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject {
+                            put("query", buildJsonObject {
+                                put("type", "string")
+                                put("description", "The remembered topic, keyword, person, preference, event, or question to search for.")
+                            })
+                            put("limit", buildJsonObject {
+                                put("type", "integer")
+                                put("description", "Maximum number of memory results to return. Defaults to 5.")
+                            })
+                            put("time_range", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Optional rough time span to filter recall, such as last week, this month, last month, 4 months ago, or yesterday.")
+                            })
+                        },
+                        required = listOf("query")
+                    )
+                },
+                systemPrompt = { _, _ ->
+                    """
+                    ## Memory search tool
+                    You may call `$MEMORY_SEARCH_TOOL_NAME` when you are deliberately trying to remember something from core memories or older chats.
+                    - Use it for genuine recall, not on every turn.
+                    - It searches only this character's memories and actually used chat timeline, not other characters or discarded reply versions.
+                    - You can pass `time_range` when the user asks about a rough time span, like "last day", "last 2 days", "yesterday", "last week", "this month", "last month", or "4 months ago".
+                    - Preserve the user's recall terms, including odd meta words; the memory subagent will expand the query internally across several variants.
+                    - If the returned summary says no clear memory was found and the user keeps pressing, you may try one more narrower query.
+                    - Treat returned memories as approximate, human-like recollections.
+                    - Time labels are fuzzy on purpose; do not expose exact timestamps unless the user asks.
+                    - If confidence is low or results disagree, answer with natural uncertainty.
+                    """.trimIndent()
+                },
+                execute = {
+                    val params = it.jsonObject
+                    val query = params["query"]?.jsonPrimitive?.contentOrNull ?: error("query is required")
+                    val limit = params["limit"]?.jsonPrimitive?.intOrNull ?: 5
+                    val timeRange = params["time_range"]?.jsonPrimitive?.contentOrNull
+                    onSearch(query, limit, timeRange)
+                }
+            ))
+        }
+    }
 
     private suspend fun buildMemoryPrompt(model: Model, memories: List<AssistantMemory>): String {
         Log.d(TAG, "buildMemoryPrompt: Injecting ${memories.size} memories into prompt")
@@ -1611,6 +1688,12 @@ internal fun List<UIMessage>.upsertOcrPlaceholder(
 
     return if (lastMessage.isTrailingOcrPlaceholder()) {
         dropLast(1) + placeholder
+    } else if (
+        lastMessage?.role == MessageRole.ASSISTANT &&
+        lastMessage.parts.isEmpty() &&
+        lastMessage.annotations.isEmpty()
+    ) {
+        dropLast(1) + lastMessage.copy(annotations = annotations)
     } else {
         this + placeholder
     }

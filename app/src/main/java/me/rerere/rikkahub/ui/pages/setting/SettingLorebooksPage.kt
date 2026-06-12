@@ -114,6 +114,7 @@ fun SettingLorebooksPage(vm: SettingVM = koinViewModel()) {
     val haptics = rememberPremiumHaptics()
     val toaster = LocalToaster.current
     val context = LocalContext.current
+    val useWideLayout = LocalSettingsWideLayout.current
     
     var showAddDialog by remember { mutableStateOf(false) }
     
@@ -159,55 +160,57 @@ fun SettingLorebooksPage(vm: SettingVM = koinViewModel()) {
                     .padding(horizontal = 16.dp, vertical = 16.dp)
             ) {
                 // Centered floating tab bar
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .offset(y = -ScreenOffset),
-                    shape = RoundedCornerShape(28.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    tonalElevation = 6.dp,
-                    shadowElevation = 8.dp
-                ) {
-                    Row(
-                        modifier = Modifier.padding(4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                if (!useWideLayout) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .offset(y = -ScreenOffset),
+                        shape = RoundedCornerShape(28.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        tonalElevation = 6.dp,
+                        shadowElevation = 8.dp
                     ) {
-                        // Skills tab
-                        Box(
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .clickable {
-                                    haptics.perform(HapticPattern.Tick)
-                                    navController.navigate(Screen.SettingSkills()) {
-                                        popUpTo(Screen.SettingLorebooks) { inclusive = true }
-                                        launchSingleTop = true
+                        Row(
+                            modifier = Modifier.padding(4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            // Skills tab
+                            Box(
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .clickable {
+                                        haptics.perform(HapticPattern.Tick)
+                                        navController.navigate(Screen.SettingSkills()) {
+                                            popUpTo(Screen.SettingLorebooks) { inclusive = true }
+                                            launchSingleTop = true
+                                        }
                                     }
-                                }
-                                .padding(12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Category,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                        
-                        // Lorebooks tab (selected)
-                        Box(
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primaryContainer)
-                                .padding(12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Book,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.size(24.dp)
-                            )
+                                    .padding(12.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Category,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+
+                            // Lorebooks tab (selected)
+                            Box(
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primaryContainer)
+                                    .padding(12.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Book,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -215,7 +218,7 @@ fun SettingLorebooksPage(vm: SettingVM = koinViewModel()) {
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .offset(y = -ScreenOffset),
+                        .then(if (useWideLayout) Modifier else Modifier.offset(y = -ScreenOffset)),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {

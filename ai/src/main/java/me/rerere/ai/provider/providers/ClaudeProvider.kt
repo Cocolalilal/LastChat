@@ -53,9 +53,15 @@ import okhttp3.sse.EventSource
 import okhttp3.sse.EventSourceListener
 import okhttp3.sse.EventSources
 import kotlin.time.Clock
+import kotlin.uuid.Uuid
 
 private const val TAG = "ClaudeProvider"
 private const val ANTHROPIC_VERSION = "2023-06-01"
+
+private data class ClaudePromptCacheBreakpoints(
+    val cacheSystem: Boolean,
+    val messageIds: Set<Uuid>,
+)
 
 class ClaudeProvider(private val client: OkHttpClient) : Provider<ProviderSetting.Claude> {
     override suspend fun listModels(providerSetting: ProviderSetting.Claude): List<Model> =
@@ -260,9 +266,10 @@ class ClaudeProvider(private val client: OkHttpClient) : Provider<ProviderSettin
         params: TextGenerationParams,
         stream: Boolean = false
     ): JsonObject {
+        val promptCacheBreakpoints = messages.promptCacheBreakpoints()
         return buildJsonObject {
             put("model", params.model.modelId)
-            put("messages", buildMessages(messages))
+            put("messages", buildMessages(messages, promptCacheBreakpoints.messageIds))
             put("max_tokens", params.maxTokens ?: 64_000)
 
             if (params.temperature != null && (params.thinkingBudget ?: 0) == 0) put(
@@ -276,11 +283,20 @@ class ClaudeProvider(private val client: OkHttpClient) : Provider<ProviderSettin
             // system prompt
             val systemMessage = messages.firstOrNull { it.role == MessageRole.SYSTEM }
             if (systemMessage != null) {
+                val systemTextParts = systemMessage.parts.filterIsInstance<UIMessagePart.Text>()
+                val cacheableSystemPartIndex = if (promptCacheBreakpoints.cacheSystem) {
+                    systemTextParts.indexOfLast { it.text.isNotBlank() }
+                } else {
+                    -1
+                }
                 put("system", buildJsonArray {
-                    systemMessage.parts.filterIsInstance<UIMessagePart.Text>().forEach { part ->
+                    systemTextParts.forEachIndexed { index, part ->
                         add(buildJsonObject {
                             put("type", "text")
                             put("text", part.text)
+                            if (index == cacheableSystemPartIndex) {
+                                put("cache_control", buildPromptCacheControl())
+                            }
                         })
                     }
                 })
@@ -314,7 +330,7 @@ class ClaudeProvider(private val client: OkHttpClient) : Provider<ProviderSettin
         }.mergeCustomBody(params.customBody)
     }
 
-    private fun buildMessages(messages: List<UIMessage>) = buildJsonArray {
+    private fun buildMessages(messages: List<UIMessage>, cacheMessageIds: Set<Uuid>) = buildJsonArray {
         messages
             .filter { it.isValidToUpload() && it.role != MessageRole.SYSTEM }
             .forEach { message ->
@@ -339,13 +355,23 @@ class ClaudeProvider(private val client: OkHttpClient) : Provider<ProviderSettin
                     put("role", JsonPrimitive(message.role.name.lowercase()))
 
                     // content
+                    val cacheableTextPartIndex = if (message.id in cacheMessageIds) {
+                        message.parts.indexOfLast { part ->
+                            part is UIMessagePart.Text && part.text.isNotBlank()
+                        }
+                    } else {
+                        -1
+                    }
                     putJsonArray("content") {
-                        message.parts.forEach { part ->
+                        message.parts.forEachIndexed { index, part ->
                             when (part) {
                                 is UIMessagePart.Text -> {
                                     add(buildJsonObject {
                                         put("type", "text")
                                         put("text", part.text)
+                                        if (index == cacheableTextPartIndex) {
+                                            put("cache_control", buildPromptCacheControl())
+                                        }
                                     })
                                 }
 
@@ -404,6 +430,33 @@ class ClaudeProvider(private val client: OkHttpClient) : Provider<ProviderSettin
                     }
                 })
             }
+    }
+
+    private fun buildPromptCacheControl() = buildJsonObject {
+        put("type", "ephemeral")
+    }
+
+    private fun List<UIMessage>.promptCacheBreakpoints(): ClaudePromptCacheBreakpoints {
+        val cacheSystem = any { message ->
+            message.role == MessageRole.SYSTEM &&
+                message.parts.any { it is UIMessagePart.Text && it.text.isNotBlank() }
+        }
+        val maxMessageBreakpoints = if (cacheSystem) 3 else 4
+        val messageIds = asSequence()
+            .filter { message ->
+                message.role != MessageRole.SYSTEM &&
+                    message.role != MessageRole.TOOL &&
+                    message.parts.any { it is UIMessagePart.Text && it.text.isNotBlank() }
+            }
+            .map { it.id }
+            .toList()
+            .takeLast(maxMessageBreakpoints)
+            .toSet()
+
+        return ClaudePromptCacheBreakpoints(
+            cacheSystem = cacheSystem,
+            messageIds = messageIds
+        )
     }
 
     private fun parseMessage(content: JsonArray): UIMessage {
@@ -472,11 +525,16 @@ class ClaudeProvider(private val client: OkHttpClient) : Provider<ProviderSettin
 
     private fun parseTokenUsage(jsonObject: JsonObject?): TokenUsage? {
         if (jsonObject == null) return null
+        val inputTokens = jsonObject["input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val outputTokens = jsonObject["output_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val cacheCreationTokens = jsonObject["cache_creation_input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val cacheReadTokens = jsonObject["cache_read_input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val promptTokens = inputTokens + cacheCreationTokens + cacheReadTokens
         return TokenUsage(
-            promptTokens = jsonObject["input_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            completionTokens = jsonObject["output_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            totalTokens = (jsonObject["input_tokens"]?.jsonPrimitive?.intOrNull ?: 0) +
-                (jsonObject["output_tokens"]?.jsonPrimitive?.intOrNull ?: 0)
+            promptTokens = promptTokens,
+            completionTokens = outputTokens,
+            cachedTokens = cacheReadTokens,
+            totalTokens = promptTokens + outputTokens
         )
     }
 }

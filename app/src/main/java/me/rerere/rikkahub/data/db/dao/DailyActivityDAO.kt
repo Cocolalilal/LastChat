@@ -25,7 +25,7 @@ interface DailyActivityDAO {
     
     /**
      * Get all activity dates ordered by date descending (most recent first)
-     * Used for streak calculation
+     * Used to deduplicate historical activity backfills.
      */
     @Query("SELECT date FROM daily_activity ORDER BY date DESC")
     fun getAllDatesFlow(): Flow<List<String>>
@@ -76,15 +76,6 @@ interface DailyActivityDAO {
      */
     @Query("SELECT * FROM daily_activity WHERE date >= :startDate ORDER BY date ASC")
     fun getWeeklyActivityFlow(startDate: String): Flow<List<DailyActivityEntity>>
-    
-    /**
-     * Insert a date without incrementing count (for migration)
-     */
-    @Query("""
-        INSERT OR IGNORE INTO daily_activity (date, message_count, last_message_time)
-        VALUES (:date, 1, :timestamp)
-    """)
-    suspend fun insertDateIfNotExists(date: String, timestamp: Long)
     
     /**
      * Get all activity entries (for heatmap display)

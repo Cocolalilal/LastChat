@@ -209,7 +209,13 @@ class ChatAttachmentRepository(
     }
 
     suspend fun importChatFiles(uris: List<Uri>): List<Uri> = withContext(Dispatchers.IO) {
-        uris.mapNotNull { uri -> importChatFile(uri)?.uri }
+        uris.mapNotNull { uri ->
+            runCatching {
+                importChatFile(uri)?.uri
+            }.onFailure { error ->
+                android.util.Log.w("ChatAttachmentRepository", "Failed to import chat attachment: $uri", error)
+            }.getOrNull()
+        }
     }
 
     suspend fun importChatFile(
@@ -284,7 +290,10 @@ class ChatAttachmentRepository(
         cleanupOrphans()
     }
 
-    suspend fun ensureAttachmentOcr(attachmentId: String): String? = withContext(Dispatchers.IO) {
+    suspend fun ensureAttachmentOcr(
+        attachmentId: String,
+        onBeforeProviderCall: (suspend () -> Unit)? = null,
+    ): String? = withContext(Dispatchers.IO) {
         val attachment = chatAttachmentDao.getById(attachmentId) ?: return@withContext null
         if (attachment.deleted || attachment.kindAsEnum() != ChatAttachmentKind.IMAGE) {
             return@withContext null
@@ -308,7 +317,10 @@ class ChatAttachmentRepository(
                 updatedAt = System.currentTimeMillis(),
             )
         )
-        val result = OcrTransformer.performOcrWithMetadata(UIMessagePart.Image(file.toUri().toString()))
+        val result = OcrTransformer.performOcrWithMetadata(
+            part = UIMessagePart.Image(file.toUri().toString()),
+            onBeforeProviderCall = onBeforeProviderCall,
+        )
         val updatedAttachment = when (result.status) {
             OcrStatus.SUCCESS, OcrStatus.CACHE_HIT -> attachment.copy(
                 ocrText = result.promptText,
@@ -334,6 +346,7 @@ class ChatAttachmentRepository(
     suspend fun resolveAttachmentOcrText(
         part: UIMessagePart.Image,
         ensureAvailable: Boolean,
+        onBeforeProviderCall: (suspend () -> Unit)? = null,
     ): String? = withContext(Dispatchers.IO) {
         part.chatAttachmentOcrText()?.takeIf { it.isNotBlank() }?.let { return@withContext it }
         val attachment = resolveAttachmentForPart(part) ?: return@withContext null
@@ -343,7 +356,10 @@ class ChatAttachmentRepository(
         if (!ensureAvailable) {
             return@withContext null
         }
-        ensureAttachmentOcr(attachment.id)
+        ensureAttachmentOcr(
+            attachmentId = attachment.id,
+            onBeforeProviderCall = onBeforeProviderCall,
+        )
     }
 
     suspend fun runMaintenance() = withContext(Dispatchers.IO) {
@@ -378,8 +394,8 @@ class ChatAttachmentRepository(
         }
         val references = conversationAttachmentRefDao.getConversationIdsForAttachment(attachment.id)
         if (references.isEmpty()) {
-            markAttachmentDeleted(attachment.id)
-            cleanupOrphans()
+            file.takeIf { it.exists() && isInsideChatUploadDirectory(it) }?.delete()
+            chatAttachmentDao.deleteById(attachment.id)
         }
     }
 

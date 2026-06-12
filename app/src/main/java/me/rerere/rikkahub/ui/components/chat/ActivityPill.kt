@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.components.chat
+package me.rerere.rikkahub.ui.components.chat
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -42,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
@@ -71,7 +72,10 @@ sealed interface ActivityState {
     data object Ocr : ActivityState
 
     /** Model is reasoning/thinking - shows timer */
-    data class Reasoning(val startTimeMs: Long = System.currentTimeMillis()) : ActivityState
+    data class Reasoning(
+        val startTimeMs: Long = System.currentTimeMillis(),
+        val title: String? = null
+    ) : ActivityState
 
     /** Model is using a tool */
     data class ToolUse(
@@ -134,6 +138,7 @@ enum class ActivityType {
     REASONING,
     OCR,
     SEARCH,
+    MEMORY_RECALL,
     PYTHON,
     SKILL,
     MCP,
@@ -144,6 +149,7 @@ private fun ActivityType.toTestTag(): String = when (this) {
     ActivityType.REASONING -> "activity_pill_reasoning"
     ActivityType.OCR -> "activity_pill_ocr"
     ActivityType.SEARCH -> "activity_pill_search"
+    ActivityType.MEMORY_RECALL -> "activity_pill_memory_recall"
     ActivityType.PYTHON -> "activity_pill_python"
     ActivityType.SKILL -> "activity_pill_skill"
     ActivityType.MCP -> "activity_pill_mcp"
@@ -155,8 +161,9 @@ private fun ActivityType.toTestTag(): String = when (this) {
  */
 private fun ActivityType.getIcon(): ImageVector = when (this) {
     ActivityType.REASONING -> Icons.Rounded.Lightbulb
-            ActivityType.OCR -> Icons.Rounded.Image
+    ActivityType.OCR -> Icons.Rounded.Image
     ActivityType.SEARCH -> Icons.Rounded.Public
+    ActivityType.MEMORY_RECALL -> Icons.Rounded.Memory
     ActivityType.PYTHON -> Icons.Rounded.Terminal
     ActivityType.SKILL -> Icons.Rounded.Category
     ActivityType.MCP -> Icons.Rounded.Memory
@@ -170,6 +177,7 @@ private fun ActivityType.getDisplayText(): String = when (this) {
     ActivityType.REASONING -> "Reasoned"
     ActivityType.OCR -> "OCR"
     ActivityType.SEARCH -> "Searched"
+    ActivityType.MEMORY_RECALL -> "Recalled"
     ActivityType.PYTHON -> "Ran Python"
     ActivityType.SKILL -> "Skills"
     ActivityType.MCP -> "MCP"
@@ -181,10 +189,41 @@ private fun ActivityType.getDisplayText(): String = when (this) {
  */
 internal fun categorizeToolName(toolName: String): ActivityType = when (toolName) {
     "search_web", "scrape_web" -> ActivityType.SEARCH
+    "search_memory" -> ActivityType.MEMORY_RECALL
     "eval_python", "pip_install", "write_sandbox_file", 
     "read_sandbox_file", "list_sandbox_files", "delete_sandbox_file" -> ActivityType.PYTHON
     "manage_skills" -> ActivityType.SKILL
     else -> if (toolName.startsWith("mcp_")) ActivityType.MCP else ActivityType.TOOL_OTHER
+}
+
+private val pythonToolNames = setOf(
+    "eval_python",
+    "pip_install",
+    "write_sandbox_file",
+    "read_sandbox_file",
+    "list_sandbox_files",
+    "delete_sandbox_file"
+)
+
+internal fun resolveActivityToolName(toolName: String, arguments: String): String {
+    val normalized = toolName.trim()
+    if (normalized in pythonToolNames) {
+        return normalized
+    }
+    if (normalized.length >= 3 && pythonToolNames.any { it.startsWith(normalized) }) {
+        return "eval_python"
+    }
+    if (normalized.isBlank() && arguments.looksLikePythonToolArguments()) {
+        return "eval_python"
+    }
+    return normalized
+}
+
+private fun String.looksLikePythonToolArguments(): Boolean {
+    if (isBlank()) return false
+    return contains("\"code\"") ||
+        contains("'code'") ||
+        contains("\\\"code\\\"")
 }
 
 
@@ -385,15 +424,27 @@ private fun AnimatedSinglePill(
         label = "corner_bottom_end"
     )
     
-    Surface(
-        modifier = Modifier.height(PILL_HEIGHT),
-        shape = RoundedCornerShape(
+    val pillColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    val pillShape = RoundedCornerShape(
             topStart = topStartRadius,
             topEnd = topEndRadius,
             bottomStart = bottomStartRadius,
             bottomEnd = bottomEndRadius
-        ),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        )
+    val testTag = when (state) {
+        is ActivityState.Ocr -> ActivityType.OCR
+        is ActivityState.Reasoning -> ActivityType.REASONING
+        is ActivityState.ToolUse -> categorizeToolName(state.toolName)
+        is ActivityState.CompletedSingle -> state.type
+        else -> null
+    }?.toTestTag()
+
+    Surface(
+        modifier = Modifier
+            .height(PILL_HEIGHT)
+            .then(if (testTag != null) Modifier.testTag(testTag) else Modifier),
+        shape = pillShape,
+        color = pillColor,
         contentColor = MaterialTheme.colorScheme.onSurface,
         onClick = onClick
     ) {
@@ -434,7 +485,14 @@ private fun AnimatedSinglePill(
                     }
                     
                     is ActivityState.Reasoning -> {
-                        ReasoningContent(startTimeMs = targetState.startTimeMs, isLive = true)
+                        // Read title from the outer `state` (not `targetState`) so it updates
+                        // on every recomposition even though contentKey stays "reasoning".
+                        val liveTitle = (state as? ActivityState.Reasoning)?.title
+                        ReasoningContent(
+                            startTimeMs = targetState.startTimeMs,
+                            title = liveTitle,
+                            isLive = true
+                        )
                     }
 
                     is ActivityState.ToolUse -> {
@@ -477,7 +535,7 @@ private fun AnimatedSinglePill(
  * Content for reasoning pill (live timer).
  */
 @Composable
-private fun ReasoningContent(startTimeMs: Long, isLive: Boolean) {
+private fun ReasoningContent(startTimeMs: Long, title: String? = null, isLive: Boolean) {
     var elapsedMs by remember { mutableLongStateOf(0L) }
 
     if (isLive) {
@@ -495,12 +553,32 @@ private fun ReasoningContent(startTimeMs: Long, isLive: Boolean) {
         modifier = Modifier.size(18.dp),
         tint = MaterialTheme.colorScheme.onSurfaceVariant
     )
-    Text(
-        text = stringResource(R.string.activity_timeline_reasoning),
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = if (isLive) Modifier.shimmer(true) else Modifier
-    )
+    // Crossfade + slide up when the title changes between reasoning sections
+    val displayTitle = title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.activity_timeline_reasoning)
+    AnimatedContent(
+        targetState = displayTitle,
+        transitionSpec = {
+            (fadeIn(tween(220)) + slideInVertically(
+                animationSpec = tween(220),
+                initialOffsetY = { it / 2 }
+            )).togetherWith(
+                fadeOut(tween(150)) + slideOutVertically(
+                    animationSpec = tween(150),
+                    targetOffsetY = { -it / 2 }
+                )
+            )
+        },
+        label = "reasoning_title"
+    ) { text ->
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = if (isLive) Modifier.shimmer(true) else Modifier
+        )
+    }
     Text(
         text = formatDuration(elapsedMs),
         style = MaterialTheme.typography.labelSmall,
@@ -574,6 +652,7 @@ private fun ExpandedActivityContent(item: ActivityItem) {
             }
         }
         ActivityType.SEARCH -> "Searched the Web"
+        ActivityType.MEMORY_RECALL -> stringResource(R.string.activity_pill_memory_recalled)
         ActivityType.PYTHON -> "Ran Python"
         ActivityType.SKILL -> "Managed skills"
         ActivityType.MCP -> "MCP"
@@ -638,13 +717,16 @@ private fun SinglePill(
     isLoading: Boolean = false,
     content: @Composable () -> Unit
 ) {
+    val pillColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    val pillShape = getCornerRadii(position, connectsToBubbleBelow)
+
     Surface(
         modifier = modifier
             .height(PILL_HEIGHT)
             .then(if (testTag != null) Modifier.testTag(testTag) else Modifier)
             .animateContentSize(spring(dampingRatio = 0.7f, stiffness = 300f)),
-        shape = getCornerRadii(position, connectsToBubbleBelow),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = pillShape,
+        color = pillColor,
         contentColor = MaterialTheme.colorScheme.onSurface,
         onClick = onClick
     ) {
@@ -786,6 +868,10 @@ private fun ExpandedActivityPill(
             ActivityType.SEARCH -> {
                 if (item.count > 1) "Searched Ã—${item.count}" else "Searched the Web"
             }
+            ActivityType.MEMORY_RECALL -> {
+                if (item.count > 1) stringResource(R.string.activity_pill_memory_recalled_count, item.count)
+                else stringResource(R.string.activity_pill_memory_recalled)
+            }
             ActivityType.PYTHON -> {
                 if (item.count > 1) "Ran Python Ã—${item.count}" else "Ran Python"
             }
@@ -840,6 +926,7 @@ private fun CompactActivityPill(
                 item.durationMs?.let { formatDuration(it) }
             }
             ActivityType.OCR -> null
+            ActivityType.MEMORY_RECALL -> null
             else -> null
         }
         

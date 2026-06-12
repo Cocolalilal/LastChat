@@ -228,6 +228,7 @@ internal fun getTimelineIcon(entry: TimelineEntry): ImageVector {
         is TimelineEntry.Reasoning -> if (entry.title != null) Icons.Rounded.Memory else Icons.Rounded.Lightbulb
         is TimelineEntry.ToolCall -> when (entry.toolName) {
             "search_web", "scrape_web" -> Icons.Rounded.Public
+            "search_memory" -> Icons.Rounded.Memory
             "eval_python", "pip_install", "write_sandbox_file",
             "read_sandbox_file", "list_sandbox_files", "delete_sandbox_file" -> Icons.Rounded.Terminal
             "manage_skills" -> Icons.Rounded.Category
@@ -249,6 +250,7 @@ internal fun getTimelineIcon(entry: TimelineEntry): ImageVector {
 private fun getLocalizedToolLabel(toolName: String, fallback: String): String {
     return when (toolName) {
         "search_web" -> stringResource(R.string.activity_timeline_tool_search_web)
+        "search_memory" -> stringResource(R.string.activity_timeline_tool_search_memory)
         "scrape_web" -> stringResource(R.string.activity_timeline_tool_scrape_web)
         "eval_python" -> stringResource(R.string.chat_message_tool_python_eval)
         "pip_install" -> stringResource(R.string.chat_message_tool_python_pip)

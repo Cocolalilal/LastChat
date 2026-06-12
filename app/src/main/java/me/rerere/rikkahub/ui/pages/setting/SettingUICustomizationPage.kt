@@ -138,6 +138,18 @@ fun SettingUICustomizationPage(vm: SettingVM = koinViewModel()) {
                     title = stringResource(R.string.setting_page_chat_settings)
                 ) {
                     SettingGroupItem(
+                        title = stringResource(R.string.setting_display_page_enable_blur_effect_title),
+                        subtitle = stringResource(R.string.setting_display_page_enable_blur_effect_desc),
+                        trailing = {
+                            HapticSwitch(
+                                checked = displaySetting.enableBlurEffect,
+                                onCheckedChange = {
+                                    updateDisplaySetting(displaySetting.copy(enableBlurEffect = it))
+                                }
+                            )
+                        }
+                    )
+                    SettingGroupItem(
                         title = stringResource(R.string.setting_ui_move_toolbar_bottom_title),
                         subtitle = stringResource(R.string.setting_ui_move_toolbar_bottom_desc),
                         trailing = {
@@ -271,26 +283,6 @@ fun SettingUICustomizationPage(vm: SettingVM = koinViewModel()) {
                                 checked = displaySetting.enableUIHaptics,
                                 onCheckedChange = {
                                     updateDisplaySetting(displaySetting.copy(enableUIHaptics = it))
-                                }
-                            )
-                        }
-                    )
-                }
-            }
-
-            // Media Settings
-            item {
-                SettingsGroup(
-                    title = stringResource(R.string.setting_ui_media_group)
-                ) {
-                    SettingGroupItem(
-                        title = stringResource(R.string.setting_display_page_skip_crop_image_title),
-                        subtitle = stringResource(R.string.setting_display_page_skip_crop_image_desc),
-                        trailing = {
-                            HapticSwitch(
-                                checked = displaySetting.skipCropImage,
-                                onCheckedChange = {
-                                    updateDisplaySetting(displaySetting.copy(skipCropImage = it))
                                 }
                             )
                         }

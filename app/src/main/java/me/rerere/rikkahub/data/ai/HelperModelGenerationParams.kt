@@ -31,6 +31,17 @@ internal fun Settings.buildSummarizerGenerationParams(
     )
 }
 
+internal fun Settings.buildSubagentGenerationParams(
+    model: Model,
+    temperature: Float
+): TextGenerationParams {
+    return TextGenerationParams(
+        model = model,
+        temperature = temperature,
+        thinkingBudget = subagentThinkingBudget,
+    )
+}
+
 internal fun Settings.buildOcrGenerationParams(model: Model): TextGenerationParams {
     return TextGenerationParams(
         model = model,

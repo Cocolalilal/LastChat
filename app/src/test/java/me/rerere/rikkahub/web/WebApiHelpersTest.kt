@@ -1,8 +1,10 @@
 package me.rerere.rikkahub.web
 
+import io.ktor.http.HttpStatusCode
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.model.Conversation
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -22,6 +24,35 @@ class WebApiHelpersTest {
 
         assertTrue(response.token.isNotBlank())
         assertTrue(response.expiresAt > System.currentTimeMillis())
+    }
+
+    @Test
+    fun issuedWebAuthToken_validatesAgainstProtectedRoutes() {
+        val settings = Settings(
+            webServerJwtEnabled = true,
+            webServerAccessPassword = "secret",
+        )
+
+        val response = issueWebAuthToken(
+            settings = settings,
+            request = WebAuthTokenRequest(password = "secret"),
+        )
+
+        assertNull(validateWebAccessToken(settings, response.token))
+        assertEquals(
+            HttpStatusCode.Unauthorized,
+            validateWebAccessToken(settings.copy(webServerAccessPassword = "changed"), response.token),
+        )
+        assertEquals(HttpStatusCode.Unauthorized, validateWebAccessToken(settings, null))
+    }
+
+    @Test
+    fun publicWebApiPaths_doNotRequireExistingToken() {
+        assertTrue(isPublicWebApiPath("/api/auth/token"))
+        assertTrue(isPublicWebApiPath("/api/bootstrap"))
+        assertTrue(isPublicWebApiPath("/api/ai-icon"))
+        assertTrue(!isPublicWebApiPath("/api/conversations/paged"))
+        assertTrue(!isPublicWebApiPath("/api/settings/stream"))
     }
 
     @Test

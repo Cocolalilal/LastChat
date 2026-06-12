@@ -10,6 +10,7 @@ import me.rerere.rikkahub.ui.pages.imggen.ImgGenVM
 import me.rerere.rikkahub.ui.pages.setting.SettingVM
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerVM
 import me.rerere.rikkahub.ui.pages.menu.MenuVM
+import me.rerere.rikkahub.ui.pages.onboarding.OnboardingVM
 import org.koin.core.module.dsl.viewModel
 import org.koin.core.module.dsl.viewModelOf
 import org.koin.dsl.module
@@ -36,6 +37,7 @@ val viewModelModule = module {
             okHttpClient = get(),
             appStorageRepository = get(),
             modelCatalogService = get(),
+            modelMetadataResolver = get(),
             memoryRepository = get(),
         )
     }
@@ -62,6 +64,14 @@ val viewModelModule = module {
     viewModelOf(::ImgGenVM)
     viewModelOf(::DeveloperVM)
     viewModelOf(::MenuVM)
+    viewModel<OnboardingVM> {
+        OnboardingVM(
+            settingsStore = get(),
+            providerManager = get(),
+            modelCatalogService = get(),
+            modelMetadataResolver = get(),
+        )
+    }
     viewModel<TextSelectionVM> {
         TextSelectionVM(
             settingsStore = get(),

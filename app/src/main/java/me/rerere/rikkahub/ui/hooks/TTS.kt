@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import me.rerere.tts.model.PlaybackState
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.data.datastore.getSelectedTTSProvider
+import me.rerere.rikkahub.data.datastore.getEffectiveTTSProvider
 import me.rerere.rikkahub.utils.stripMarkdown
 import me.rerere.tts.model.TTSResponse
 import me.rerere.tts.provider.TTSManager
@@ -47,8 +47,8 @@ fun rememberCustomTtsState(): CustomTtsState {
     }
 
     // Update the provider when settings change
-    DisposableEffect(settings.selectedTTSProviderId, settings.ttsProviders) {
-        ttsState.updateProvider(settings.getSelectedTTSProvider())
+    DisposableEffect(settings.selectedTTSVoiceId, settings.selectedTTSProviderId, settings.ttsProviders) {
+        ttsState.updateProvider(settings.getEffectiveTTSProvider())
         onDispose { }
     }
 

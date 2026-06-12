@@ -54,8 +54,6 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.InvertColors
 import androidx.compose.material.icons.rounded.Language
-import androidx.compose.material.icons.rounded.Public
-import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material.icons.rounded.PhoneAndroid
@@ -220,22 +218,6 @@ fun SettingPage(
                     )
 
                     SettingGroupItem(
-                        title = stringResource(R.string.setting_page_search_service),
-                        subtitle = stringResource(R.string.setting_page_search_service_desc),
-                        icon = { Icon(Icons.Rounded.Public, null, modifier = Modifier.size(20.dp)) },
-                        contentPadding = mainSettingItemPadding,
-                        onClick = { navController.navigate(Screen.SettingSearch) }
-                    )
-
-                    SettingGroupItem(
-                        title = stringResource(R.string.setting_page_tts_service),
-                        subtitle = stringResource(R.string.setting_page_tts_service_desc),
-                        icon = { Icon(Icons.Rounded.RecordVoiceOver, null, modifier = Modifier.size(20.dp)) },
-                        contentPadding = mainSettingItemPadding,
-                        onClick = { navController.navigate(Screen.SettingTTS) }
-                    )
-
-                    SettingGroupItem(
                         title = stringResource(R.string.setting_page_mcp),
                         subtitle = stringResource(R.string.setting_page_mcp_desc),
                         icon = { Icon(Icons.Rounded.Code, null, modifier = Modifier.size(20.dp)) },
@@ -271,7 +253,7 @@ fun SettingPage(
                         subtitle = stringResource(R.string.setting_page_data_backup_desc),
                         icon = { Icon(Icons.Rounded.CloudUpload, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
-                        onClick = { navController.navigate(Screen.Backup) }
+                        onClick = { navController.navigate(Screen.Backup()) }
                     )
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_chat_storage),

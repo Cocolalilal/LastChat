@@ -53,13 +53,11 @@ class ModelMetadataResolver(
             inputModalities = inputModalities,
             outputModalities = outputModalities,
             abilities = abilities,
-            providerSlug = model.providerSlug
-                ?.takeIf { it.isNotBlank() }
-                ?.toIconProviderSlug()
-                ?: catalogEntry?.iconProviderSlug()
-                ?: model.modelId.substringBefore("/")
-                    .takeIf { model.modelId.contains("/") }
-                    ?.toIconProviderSlug(),
+            imageGenerationMethod = model.imageGenerationMethod ?: catalogEntry?.imageGenerationMethod,
+            iconUrl = catalogEntry?.iconUrl,
+            customIconUri = model.customIconUri.preserveUserModelIcon(),
+            reasoningBehavior = model.reasoningBehavior ?: catalogEntry?.reasoningBehavior,
+            providerSlug = catalogEntry?.providerSlug?.toIconProviderSlug(),
         )
     }
 
@@ -123,6 +121,13 @@ class ModelMetadataResolver(
     ): ModelCatalogEntry? {
         val snapshot = snapshotProvider() ?: return null
 
+        snapshot.resolveModelEntry(
+            modelId = model.modelId,
+            canonicalHint = model.canonicalModelId,
+            providerHint = providerHint,
+            providerSlugHint = model.providerSlug,
+        )?.let { return it }
+
         snapshot.exactEntries[model.modelId.lowercase()]?.let { return it }
 
         val storedCanonicalKey = model.canonicalModelId
@@ -140,8 +145,13 @@ class ModelMetadataResolver(
             canonicalHint = model.canonicalModelId,
         )
         snapshot.exactEntries[canonicalModelId]?.let { return it }
-        val candidates = snapshot.canonicalEntries[canonicalModelId] ?: return null
-        return selectCatalogCandidate(candidates, model, providerHint)
+        val candidates = snapshot.canonicalEntries[canonicalModelId]
+        return candidates
+            ?.let { selectCatalogCandidate(it, model, providerHint) }
+            ?: snapshot.inferFamilyEntry(
+                modelId = model.modelId,
+                canonicalHint = model.canonicalModelId,
+            )
     }
 
     private fun selectCatalogCandidate(
@@ -196,8 +206,8 @@ class ModelMetadataResolver(
         }
 
         return when (resolvedType) {
-            ModelType.CHAT -> inputs.toList()
-            ModelType.IMAGE -> inputs.toList()
+            ModelType.CHAT -> catalogEntry?.inputModalities?.takeIf { it.isNotEmpty() } ?: inputs.toList()
+            ModelType.IMAGE -> catalogEntry?.inputModalities?.takeIf { it.isNotEmpty() } ?: inputs.toList()
             ModelType.EMBEDDING -> listOf(Modality.TEXT)
         }
     }
@@ -209,14 +219,14 @@ class ModelMetadataResolver(
         options: ModelResolutionOptions,
     ): List<Modality> {
         return when (resolvedType) {
-            ModelType.CHAT -> buildList {
+            ModelType.CHAT -> catalogEntry?.outputModalities?.takeIf { it.isNotEmpty() } ?: buildList {
                 add(Modality.TEXT)
                 if (options.preserveExistingCapabilities && model.outputModalities.contains(Modality.IMAGE)) {
                     add(Modality.IMAGE)
                 }
             }.distinct()
 
-            ModelType.IMAGE -> buildList {
+            ModelType.IMAGE -> catalogEntry?.outputModalities?.takeIf { it.isNotEmpty() } ?: buildList {
                 if (options.preserveExistingCapabilities && model.outputModalities.contains(Modality.TEXT)) {
                     add(Modality.TEXT)
                 } else if (catalogEntry?.supportedModalities?.contains(Modality.TEXT) == true) {
@@ -255,6 +265,7 @@ private fun String?.toModelTypeOrNull(): ModelType? {
     return when (this?.lowercase()) {
         "embedding" -> ModelType.EMBEDDING
         "image_generation", "image" -> ModelType.IMAGE
+        "chat" -> ModelType.CHAT
         else -> null
     }
 }
@@ -262,8 +273,8 @@ private fun String?.toModelTypeOrNull(): ModelType? {
 private fun ModelCatalogEntry.matchesProviderSlug(providerSlug: String?): Boolean {
     val normalizedSlug = providerSlug?.normalizeProviderToken() ?: return false
     val keyProvider = key.substringBefore("/").takeIf { key.contains("/") }?.normalizeProviderToken()
-    val litellmProviderToken = litellmProvider?.normalizeProviderToken()
-    return keyProvider == normalizedSlug || litellmProviderToken == normalizedSlug
+    val providerToken = this.providerSlug?.normalizeProviderToken()
+    return keyProvider == normalizedSlug || providerToken == normalizedSlug
 }
 
 private fun ModelCatalogEntry.matchesProviderHint(providerHint: ProviderSetting?): Boolean {
@@ -285,22 +296,17 @@ private fun ModelCatalogEntry.matchesProviderHint(providerHint: ProviderSetting?
             }
         }
 
+        is ProviderSetting.ComfyUI -> emptySet()
+
         null -> emptySet()
     }
     if (allowedProviders.isEmpty()) return false
 
     val keyProvider = key.substringBefore("/").takeIf { key.contains("/") }?.normalizeProviderToken()
-    val litellmProviderToken = litellmProvider?.normalizeProviderToken()
+    val providerToken = providerSlug?.normalizeProviderToken()
     return allowedProviders.any { candidate ->
-        candidate == keyProvider || candidate == litellmProviderToken
+        candidate == keyProvider || candidate == providerToken
     }
-}
-
-private fun ModelCatalogEntry.iconProviderSlug(): String? {
-    return litellmProvider?.toIconProviderSlug()
-        ?: key.substringBefore("/")
-            .takeIf { key.contains("/") }
-            ?.toIconProviderSlug()
 }
 
 private fun String.toIconProviderSlug(): String {
@@ -321,4 +327,26 @@ private fun String.normalizeProviderToken(): String {
     return lowercase()
         .replace('_', '-')
         .replace('.', '-')
+}
+
+private fun String?.preserveUserModelIcon(): String? {
+    if (isNullOrBlank()) return null
+    return if (isCatalogManagedIconUri()) {
+        null
+    } else {
+        this
+    }
+}
+
+private fun String.isCatalogManagedIconUri(): Boolean {
+    val lower = lowercase()
+    return lower.contains("/catalog/icons/") ||
+        lower.contains("/catalog/refs/heads/") ||
+        lower.contains("raw.githubusercontent.com/cocolalilal/lastchat") ||
+        lower.contains("jsdelivr.net/gh/cocolalilal/lastchat") ||
+        (lower.contains("catalog") && lower.contains("icons")) ||
+        lower.startsWith("icons/") ||
+        lower.startsWith("/icons/") ||
+        lower.contains("file:///android_asset/icons/") ||
+        lower.contains("file:///android_asset/catalog/icons/")
 }

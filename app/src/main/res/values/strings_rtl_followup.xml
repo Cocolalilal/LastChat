@@ -43,8 +43,6 @@
     <string name="setting_display_rp_optimizations_desc">Custom text styling for roleplay patterns</string>
 
     <string name="menu_statistics_title">Statistics</string>
-    <string name="menu_stat_daily_streak">Daily Streak</string>
-    <string name="menu_stat_days">days</string>
     <string name="menu_stat_conversations">Conversations</string>
     <string name="menu_stat_messages">Messages</string>
     <string name="menu_stat_input_tokens">Input Tokens</string>

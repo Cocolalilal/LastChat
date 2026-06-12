@@ -22,6 +22,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.provider.withComfyDefaults
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
@@ -29,6 +30,7 @@ import me.rerere.rikkahub.data.ai.prompts.DEFAULT_OCR_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_SUGGESTION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TITLE_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TRANSLATION_PROMPT
+import me.rerere.rikkahub.data.ai.prompts.normalizeSuggestionPrompt
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV1Migration
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
@@ -44,6 +46,7 @@ import me.rerere.rikkahub.utils.toMutableStateFlow
 import me.rerere.search.SearchCommonOptions
 import me.rerere.search.SearchServiceOptions
 import me.rerere.tts.provider.TTSProviderSetting
+import me.rerere.tts.provider.withDefaultVoices
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
 import kotlin.uuid.Uuid
@@ -71,6 +74,7 @@ class SettingsStore(
 
         // UI设置
         val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
+        val SETUP_COMPLETED = booleanPreferencesKey("setup_completed")
         val THEME_ID = stringPreferencesKey("theme_id")
         val DISPLAY_SETTING = stringPreferencesKey("display_setting")
         val DEVELOPER_MODE = booleanPreferencesKey("developer_mode")
@@ -84,6 +88,8 @@ class SettingsStore(
         val TITLE_THINKING_BUDGET = intPreferencesKey("title_thinking_budget")
         val SUMMARIZER_MODEL = stringPreferencesKey("summarizer_model")
         val SUMMARIZER_THINKING_BUDGET = intPreferencesKey("summarizer_thinking_budget")
+        val SUBAGENT_MODEL = stringPreferencesKey("subagent_model")
+        val SUBAGENT_THINKING_BUDGET = intPreferencesKey("subagent_thinking_budget")
         val TRANSLATE_MODEL = stringPreferencesKey("translate_model")
         val SUGGESTION_MODEL = stringPreferencesKey("suggestion_model")
         val SUGGESTION_THINKING_BUDGET = intPreferencesKey("suggestion_thinking_budget")
@@ -121,6 +127,8 @@ class SettingsStore(
         // TTS
         val TTS_PROVIDERS = stringPreferencesKey("tts_providers")
         val SELECTED_TTS_PROVIDER = stringPreferencesKey("selected_tts_provider")
+        val SELECTED_TTS_VOICE = stringPreferencesKey("selected_tts_voice")
+        val TTS_AUTOPLAY_MODE = stringPreferencesKey("tts_autoplay_mode")
 
         // Web Server
         val WEB_SERVER_ENABLED = booleanPreferencesKey("web_server_enabled")
@@ -165,6 +173,7 @@ class SettingsStore(
         }.map { preferences ->
             runCatching {
                 Settings(
+                    setupCompleted = preferences[SETUP_COMPLETED] == true,
                     enableWebSearch = preferences[ENABLE_WEB_SEARCH] == true,
                     favoriteModels = preferences[FAVORITE_MODELS]?.let {
                         JsonInstant.decodeFromString(it)
@@ -176,6 +185,8 @@ class SettingsStore(
                     titleThinkingBudget = preferences[TITLE_THINKING_BUDGET] ?: 0,
                     summarizerModelId = preferences[SUMMARIZER_MODEL]?.let { Uuid.parse(it) },
                     summarizerThinkingBudget = preferences[SUMMARIZER_THINKING_BUDGET] ?: 0,
+                    subagentModelId = preferences[SUBAGENT_MODEL]?.let { Uuid.parse(it) },
+                    subagentThinkingBudget = preferences[SUBAGENT_THINKING_BUDGET] ?: 0,
                     translateModeId = preferences[TRANSLATE_MODEL]?.let { Uuid.parse(it) }
                         ?: GEMINI_2_5_FLASH_ID,
                     suggestionModelId = preferences[SUGGESTION_MODEL]?.let { Uuid.parse(it) }
@@ -184,7 +195,9 @@ class SettingsStore(
                     imageGenerationModelId = preferences[IMAGE_GENERATION_MODEL]?.let { Uuid.parse(it) } ?: Uuid.random(),
                     titlePrompt = preferences[TITLE_PROMPT] ?: DEFAULT_TITLE_PROMPT,
                     translatePrompt = preferences[TRANSLATION_PROMPT] ?: DEFAULT_TRANSLATION_PROMPT,
-                    suggestionPrompt = preferences[SUGGESTION_PROMPT] ?: DEFAULT_SUGGESTION_PROMPT,
+                    suggestionPrompt = normalizeSuggestionPrompt(
+                        preferences[SUGGESTION_PROMPT] ?: DEFAULT_SUGGESTION_PROMPT
+                    ),
                     learningModePrompt = preferences[LEARNING_MODE_PROMPT] ?: DEFAULT_LEARNING_MODE_PROMPT,
                     ocrModelId = preferences[OCR_MODEL]?.let { Uuid.parse(it) } ?: Uuid.random(),
                     ocrThinkingBudget = preferences[OCR_THINKING_BUDGET] ?: 0,
@@ -225,9 +238,14 @@ class SettingsStore(
                     } ?: WebDavConfig(),
                     ttsProviders = preferences[TTS_PROVIDERS]?.let {
                         JsonInstant.decodeFromString(it)
-                    } ?: emptyList(),
+                    } ?: DEFAULT_TTS_PROVIDERS,
                     selectedTTSProviderId = preferences[SELECTED_TTS_PROVIDER]?.let { Uuid.parse(it) }
                         ?: DEFAULT_SYSTEM_TTS_ID,
+                    selectedTTSVoiceId = preferences[SELECTED_TTS_VOICE]?.let { Uuid.parse(it) }
+                        ?: DEFAULT_SYSTEM_TTS_VOICE_ID,
+                    ttsAutoplayMode = preferences[TTS_AUTOPLAY_MODE]?.let {
+                        JsonInstant.decodeFromString<TtsAutoplayMode>(it)
+                    } ?: TtsAutoplayMode.OFF,
                     webServerEnabled = preferences[WEB_SERVER_ENABLED] == true,
                     webServerPort = preferences[WEB_SERVER_PORT] ?: 8080,
                     webServerJwtEnabled = preferences[WEB_SERVER_JWT_ENABLED] == true,
@@ -277,17 +295,25 @@ class SettingsStore(
                 } else provider
             }.toMutableList()
             val assistants = it.assistants.ifEmpty { DEFAULT_ASSISTANTS }.toMutableList()
-            val ttsProviders = it.ttsProviders.ifEmpty { DEFAULT_TTS_PROVIDERS }.toMutableList()
-            DEFAULT_TTS_PROVIDERS.forEach { defaultTTSProvider ->
-                if (ttsProviders.none { provider -> provider.id == defaultTTSProvider.id }) {
-                    ttsProviders.add(defaultTTSProvider.copyProvider())
-                }
-            }
+            val ttsProviders = it.ttsProviders.map { provider ->
+                val defaultVoiceId = if (provider.id == DEFAULT_SYSTEM_TTS_ID) DEFAULT_SYSTEM_TTS_VOICE_ID else null
+                provider.withDefaultVoices(defaultVoiceId)
+            }.toMutableList()
+            val selectedTtsVoiceId = ttsProviders
+                .flatMap { provider -> provider.voices }
+                .firstOrNull { voice -> voice.id == it.selectedTTSVoiceId }
+                ?.id
+                ?: ttsProviders.find { provider -> provider.id == it.selectedTTSProviderId }
+                    ?.voices
+                    ?.firstOrNull()
+                    ?.id
+                ?: DEFAULT_SYSTEM_TTS_VOICE_ID
             it.copy(
                 providers = providers,
                 assistants = assistants,
                 ttsProviders = ttsProviders,
-            ).normalizeWebServerSettings().normalizeFontSettings()
+                selectedTTSVoiceId = selectedTtsVoiceId,
+            ).normalizeWebServerSettings().normalizeFontSettings().normalizeTtsSettings()
         }
         .map { settings ->
             // 去重并清理无效引用
@@ -306,6 +332,11 @@ class SettingsStore(
                         is ProviderSetting.Claude -> provider.copy(
                             models = provider.models.distinctBy { model -> model.id }
                         )
+
+                        is ProviderSetting.ComfyUI -> provider.copy(
+                            models = provider.models.distinctBy { model -> model.id }
+                                .map { model -> model.withComfyDefaults() }
+                        )
                     }
                 },
                 assistants = settings.assistants.distinctBy { it.id }.map { assistant ->
@@ -316,7 +347,21 @@ class SettingsStore(
                         }.toSet()
                     )
                 },
-                ttsProviders = settings.ttsProviders.distinctBy { it.id },
+                ttsProviders = settings.ttsProviders.distinctBy { it.id }.map { provider ->
+                    val defaultVoiceId = if (provider.id == DEFAULT_SYSTEM_TTS_ID) DEFAULT_SYSTEM_TTS_VOICE_ID else null
+                    provider.copyProvider(
+                        voices = provider.withDefaultVoices(defaultVoiceId).voices.distinctBy { voice -> voice.id }
+                    )
+                },
+                selectedTTSVoiceId = settings.ttsProviders
+                    .flatMap { it.voices }
+                    .firstOrNull { it.id == settings.selectedTTSVoiceId }
+                    ?.id
+                    ?: settings.ttsProviders.find { it.id == settings.selectedTTSProviderId }
+                        ?.voices
+                        ?.firstOrNull()
+                        ?.id
+                    ?: DEFAULT_SYSTEM_TTS_VOICE_ID,
                 favoriteModels = settings.favoriteModels.filter { uuid ->
                     settings.providers.flatMap { it.models }.any { it.id == uuid }
                 }
@@ -442,6 +487,7 @@ class SettingsStore(
             .migrateLegacyModesToSkills()
             .normalizeFontSettings()
             .normalizeThemeId()
+            .normalizeTtsSettings()
 
         // Handle explicit secret deletions (user cleared a field that had a value)
         // This must be called BEFORE migration to remove deleted secrets from SecureStore
@@ -453,8 +499,10 @@ class SettingsStore(
 
         settingsFlow.value = secretKeyManager.populateSecretsForExport(migratedSettings)
             .normalizeFontSettings()
+            .normalizeTtsSettings()
         dataStore.edit { preferences ->
             preferences[DYNAMIC_COLOR] = normalizedSettings.dynamicColor
+            preferences[SETUP_COMPLETED] = normalizedSettings.setupCompleted
             preferences[THEME_ID] = normalizedSettings.themeId
             preferences[DEVELOPER_MODE] = normalizedSettings.developerMode
             preferences[ENABLE_RAG_LOGGING] = normalizedSettings.enableRagLogging
@@ -469,6 +517,10 @@ class SettingsStore(
                 preferences[SUMMARIZER_MODEL] = it.toString()
             } ?: preferences.remove(SUMMARIZER_MODEL)
             preferences[SUMMARIZER_THINKING_BUDGET] = normalizedSettings.summarizerThinkingBudget
+            normalizedSettings.subagentModelId?.let {
+                preferences[SUBAGENT_MODEL] = it.toString()
+            } ?: preferences.remove(SUBAGENT_MODEL)
+            preferences[SUBAGENT_THINKING_BUDGET] = normalizedSettings.subagentThinkingBudget
             preferences[TRANSLATE_MODEL] = normalizedSettings.translateModeId.toString()
             preferences[SUGGESTION_MODEL] = normalizedSettings.suggestionModelId.toString()
             preferences[SUGGESTION_THINKING_BUDGET] = normalizedSettings.suggestionThinkingBudget
@@ -500,6 +552,8 @@ class SettingsStore(
             normalizedSettings.selectedTTSProviderId?.let {
                 preferences[SELECTED_TTS_PROVIDER] = it.toString()
             } ?: preferences.remove(SELECTED_TTS_PROVIDER)
+            preferences[SELECTED_TTS_VOICE] = normalizedSettings.selectedTTSVoiceId.toString()
+            preferences[TTS_AUTOPLAY_MODE] = JsonInstant.encodeToString(normalizedSettings.ttsAutoplayMode)
             preferences[WEB_SERVER_ENABLED] = normalizedSettings.webServerEnabled
             preferences[WEB_SERVER_PORT] = normalizedSettings.webServerPort
             preferences[WEB_SERVER_JWT_ENABLED] = normalizedSettings.webServerJwtEnabled

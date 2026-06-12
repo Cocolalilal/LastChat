@@ -574,6 +574,7 @@ export const ChatMessage = React.memo(({
           >
             <MessageParts
               parts={message.parts}
+              assistant={assistant}
               displaySetting={displaySetting}
               loading={loading}
               onToolApproval={onToolApproval}

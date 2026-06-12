@@ -1,7 +1,8 @@
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 
-import type { DisplaySetting, ReasoningPart, ToolPart, UIMessagePart } from "~/types";
+import type { AssistantProfile, DisplaySetting, ReasoningPart, ToolPart, UIMessagePart } from "~/types";
+import { replacePersonaPlaceholders } from "~/lib/persona-placeholders";
 
 import { ChainOfThought } from "./chain-of-thought";
 import { AudioPart } from "./parts/audio-part";
@@ -65,6 +66,7 @@ export function groupMessageParts(parts: UIMessagePart[]): MessagePartBlock[] {
 
 interface MessagePartsProps {
   parts: UIMessagePart[];
+  assistant?: AssistantProfile | null;
   displaySetting?: DisplaySetting | null;
   loading?: boolean;
   onToolApproval?: (toolCallId: string, approved: boolean, reason: string, answer?: string) => void | Promise<void>;
@@ -73,6 +75,7 @@ interface MessagePartsProps {
 
 function renderContentPart(
   part: UIMessagePart,
+  assistant: AssistantProfile | null | undefined,
   displaySetting: DisplaySetting | null | undefined,
   t: (key: string, options?: Record<string, unknown>) => string,
   loading?: boolean,
@@ -82,7 +85,7 @@ function renderContentPart(
     case "text":
       return (
         <TextPart
-          text={part.text}
+          text={replacePersonaPlaceholders(part.text, assistant, displaySetting)}
           displaySetting={displaySetting}
           isAnimating={loading}
           onClickCitation={onClickCitation}
@@ -113,6 +116,7 @@ function renderContentPart(
 
 export const MessageParts = React.memo(({
   parts,
+  assistant,
   displaySetting,
   loading = false,
   onToolApproval,
@@ -169,7 +173,7 @@ export const MessageParts = React.memo(({
 
         return (
           <React.Fragment key={`content-${block.index}`}>
-            {renderContentPart(block.part, displaySetting, t, loading, onClickCitation)}
+            {renderContentPart(block.part, assistant, displaySetting, t, loading, onClickCitation)}
           </React.Fragment>
         );
       })}
@@ -179,6 +183,7 @@ export const MessageParts = React.memo(({
 
 interface MessagePartProps {
   part: UIMessagePart;
+  assistant?: AssistantProfile | null;
   displaySetting?: DisplaySetting | null;
   loading?: boolean;
   onToolApproval?: (toolCallId: string, approved: boolean, reason: string, answer?: string) => void | Promise<void>;
@@ -187,6 +192,7 @@ interface MessagePartProps {
 
 export function MessagePart({
   part,
+  assistant,
   displaySetting,
   loading,
   onToolApproval,
@@ -195,6 +201,7 @@ export function MessagePart({
   return (
     <MessageParts
       parts={[part]}
+      assistant={assistant}
       displaySetting={displaySetting}
       loading={loading}
       onToolApproval={onToolApproval}

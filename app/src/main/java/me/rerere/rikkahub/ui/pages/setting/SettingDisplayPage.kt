@@ -51,11 +51,13 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.DisplaySetting
+import me.rerere.rikkahub.data.datastore.TtsAutoplayMode
 import me.rerere.rikkahub.data.ai.models.ModelCatalogSource
 import me.rerere.rikkahub.data.ai.models.ModelCatalogStatus
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
+import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionManager
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionNotification
@@ -291,6 +293,26 @@ fun SettingDisplayPage(vm: SettingVM = koinViewModel()) {
                 SettingsGroup(
                     title = stringResource(R.string.setting_display_advanced)
                 ) {
+                    SettingGroupItem(
+                        title = "TTS Autoplay",
+                        subtitle = "Read assistant replies automatically",
+                        trailing = {
+                            HapticSwitch(
+                                checked = settings.ttsAutoplayMode != TtsAutoplayMode.OFF,
+                                onCheckedChange = { enabled ->
+                                    vm.updateSettings(
+                                        settings.copy(
+                                            ttsAutoplayMode = if (enabled) {
+                                                TtsAutoplayMode.WHILE_GENERATING
+                                            } else {
+                                                TtsAutoplayMode.OFF
+                                            }
+                                        )
+                                    )
+                                }
+                            )
+                        }
+                    )
                     SettingGroupItem(
                         title = stringResource(R.string.setting_rp_optimizations_title),
                         subtitle = stringResource(R.string.setting_display_rp_optimizations_desc),

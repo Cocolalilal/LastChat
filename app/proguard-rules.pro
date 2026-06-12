@@ -31,4 +31,10 @@
 -dontwarn java.lang.management.ManagementFactory
 -dontwarn java.lang.management.RuntimeMXBean
 
+# The embedded web UI is runtime-only: Android starts a foreground service,
+# Ktor serves bundled assets from AssetManager, and the browser talks to
+# kotlinx-serialized DTOs over local HTTP/SSE. Keep this path intact under R8.
+-keep class me.rerere.rikkahub.web.** { *; }
+-keep class me.rerere.rikkahub.service.WebServerService { *; }
+
 -dontobfuscate

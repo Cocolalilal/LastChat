@@ -65,6 +65,7 @@ import me.rerere.rikkahub.ui.motion.hierarchicalEnterTransition
 import me.rerere.rikkahub.ui.motion.hierarchicalExitTransition
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
+import me.rerere.rikkahub.ui.pages.setting.LocalSettingsWideLayout
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.material3.IconButton
 import androidx.compose.ui.platform.LocalContext
@@ -392,6 +393,7 @@ fun AssistantDetailPage(
                 AssistantModelSubPage(
                     assistant = assistant,
                     providers = providers,
+                    ttsProviders = settings.ttsProviders,
                     onUpdate = { onUpdate(it) }
                 )
             }
@@ -540,6 +542,7 @@ private fun AssistantDetailHome(
     onNavigateToUI: () -> Unit,
     onNavigateToAdvanced: () -> Unit
 ) {
+    val useWideSettingsLayout = LocalSettingsWideLayout.current
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -563,7 +566,13 @@ private fun AssistantDetailHome(
                 onUpdate = null, // Read-only in home view
                 modifier = Modifier
                     .size(96.dp)
-                    .heroAnimation(key = "assistant_avatar_${assistant.id}")
+                    .let { modifier ->
+                        if (useWideSettingsLayout) {
+                            modifier
+                        } else {
+                            modifier.heroAnimation(key = "assistant_avatar_${assistant.id}")
+                        }
+                    }
             )
             
             Text(

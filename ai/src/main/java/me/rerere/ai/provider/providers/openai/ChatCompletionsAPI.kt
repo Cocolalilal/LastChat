@@ -27,6 +27,7 @@ import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
+import me.rerere.ai.provider.OpenAICompatibilityMode
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.registry.ModelRegistry
@@ -59,6 +60,16 @@ import okhttp3.sse.EventSources
 import kotlin.time.Clock
 
 private const val TAG = "ChatCompletionsAPI"
+private const val LEADING_ASSISTANT_COMPATIBILITY_USER_PROMPT =
+    "Provider compatibility marker: the conversation begins with the assistant's next message. " +
+        "This is not a real user message. Do not answer, quote, or infer user intent from this marker; " +
+        "use the later USER messages as the user's words."
+
+private data class PromptCachePolicy(
+    val explicitBreakpoints: Boolean,
+    val topLevelCacheControl: Boolean,
+    val useSingleStableBreakpoint: Boolean = false,
+)
 
 class ChatCompletionsAPI(
     private val client: OkHttpClient,
@@ -278,7 +289,7 @@ class ChatCompletionsAPI(
                     safeMessages.add(
                         UIMessage(
                             role = MessageRole.USER,
-                            parts = listOf(UIMessagePart.Text("..."))
+                            parts = listOf(UIMessagePart.Text(LEADING_ASSISTANT_COMPATIBILITY_USER_PROMPT))
                         )
                     )
                     lastNonSystemRole = MessageRole.USER
@@ -289,7 +300,21 @@ class ChatCompletionsAPI(
                 }
             }
 
-            put("messages", buildMessages(safeMessages, host, params.model.modelId))
+            val promptCachePolicy = providerSetting.promptCachePolicy(host, params.model.modelId)
+            if (promptCachePolicy.topLevelCacheControl) {
+                put("cache_control", buildPromptCacheControl())
+            }
+
+            put(
+                "messages",
+                buildMessages(
+                    messages = safeMessages,
+                    providerSetting = providerSetting,
+                    host = host,
+                    modelId = params.model.modelId,
+                    promptCachePolicy = promptCachePolicy
+                )
+            )
 
             if (isModelAllowTemperature(params.model)) {
                 if (params.temperature != null) put("temperature", params.temperature)
@@ -300,7 +325,7 @@ class ChatCompletionsAPI(
             put("stream", stream)
             if (stream) {
                 // Some providers don't support stream_options
-                if (host != "api.mistral.ai" && host != "open.bigmodel.cn") {
+                if (providerSetting.shouldIncludeStreamOptions(host)) {
                     put("stream_options", buildJsonObject {
                         put("include_usage", true)
                     })
@@ -308,7 +333,7 @@ class ChatCompletionsAPI(
             }
 
             // open router适配
-            if(host == "openrouter.ai") {
+            if(providerSetting.shouldIncludeImageModalities(host)) {
                 if(params.model.outputModalities.contains(Modality.IMAGE)) {
                     put("modalities", buildJsonArray {
                         add("image")
@@ -319,7 +344,17 @@ class ChatCompletionsAPI(
 
             if (params.model.abilities.contains(ModelAbility.REASONING)) {
                 val level = ReasoningLevel.fromBudgetTokens(params.thinkingBudget)
-                when (host) {
+                val catalogBodies = params.model.reasoningBehavior?.bodiesFor(level)
+                    ?.takeIf { it.isNotEmpty() }
+                    ?: providerSetting.reasoningBehavior?.bodiesFor(level)?.takeIf { it.isNotEmpty() }
+
+                if (catalogBodies != null) {
+                    catalogBodies.forEach { body ->
+                        if (body.key.isNotBlank()) {
+                            put(body.key, body.value)
+                        }
+                    }
+                } else when (host) {
                     "openrouter.ai" -> {
                         // https://openrouter.ai/docs/use-cases/reasoning-tokens
                         put("reasoning", buildJsonObject {
@@ -410,12 +445,17 @@ class ChatCompletionsAPI(
         return !ModelRegistry.OPENAI_O_MODELS.match(model.modelId) && !ModelRegistry.GPT_5.match(model.modelId)
     }
 
-    private fun buildMessages(messages: List<UIMessage>, host: String, modelId: String) = buildJsonArray {
-        val shouldReplayDeepSeekReasoning = isDeepSeekCompatible(host, modelId)
-        messages
-            .filter {
-                it.isValidToUpload()
-            }
+    private fun buildMessages(
+        messages: List<UIMessage>,
+        providerSetting: ProviderSetting.OpenAI,
+        host: String,
+        modelId: String,
+        promptCachePolicy: PromptCachePolicy
+    ) = buildJsonArray {
+        val shouldReplayDeepSeekReasoning = providerSetting.shouldReplayReasoningContent(host, modelId)
+        val uploadableMessages = messages.filter { it.isValidToUpload() }
+        val cacheBreakpointIndices = uploadableMessages.cacheBreakpointIndices(promptCachePolicy)
+        uploadableMessages
             .forEachIndexed { index, message ->
                 if (message.role == MessageRole.TOOL) {
                     message.getToolResults().forEach { result ->
@@ -438,7 +478,8 @@ class ChatCompletionsAPI(
                     put("role", JsonPrimitive(message.role.name.lowercase()))
 
                     // content
-                    if (message.parts.isOnlyTextPart()) {
+                    val shouldCacheMessage = index in cacheBreakpointIndices
+                    if (message.parts.isOnlyTextPart() && !shouldCacheMessage) {
                         // 如果只是纯文本，直接赋值给content
                         put(
                             "content",
@@ -446,15 +487,25 @@ class ChatCompletionsAPI(
                         )
                     } else {
                         // 否则，使用parts构建
+                        val uploadableParts = message.parts
+                            .filter { it is UIMessagePart.Text || it is UIMessagePart.Image }
+                        val cacheableTextPartIndex = if (shouldCacheMessage) {
+                            uploadableParts.indexOfLast { part ->
+                                part is UIMessagePart.Text && part.text.isNotBlank()
+                            }
+                        } else {
+                            -1
+                        }
                         putJsonArray("content") {
-                            message.parts
-                                .filter { it is UIMessagePart.Text || it is UIMessagePart.Image }
-                                .forEach { part ->
+                            uploadableParts.forEachIndexed { partIndex, part ->
                                 when (part) {
                                     is UIMessagePart.Text -> {
                                         add(buildJsonObject {
                                             put("type", "text")
                                             put("text", part.text)
+                                            if (partIndex == cacheableTextPartIndex) {
+                                                put("cache_control", buildPromptCacheControl())
+                                            }
                                         })
                                     }
 
@@ -536,6 +587,88 @@ class ChatCompletionsAPI(
             normalizedModelId.contains("deepseek")
     }
 
+    private fun ProviderSetting.OpenAI.shouldIncludeStreamOptions(host: String): Boolean {
+        return when (streamOptionsMode) {
+            OpenAICompatibilityMode.ENABLED -> true
+            OpenAICompatibilityMode.DISABLED -> false
+            OpenAICompatibilityMode.AUTO -> host != "api.mistral.ai" && host != "open.bigmodel.cn"
+        }
+    }
+
+    private fun ProviderSetting.OpenAI.shouldIncludeImageModalities(host: String): Boolean {
+        return when (imageResponseModalitiesMode) {
+            OpenAICompatibilityMode.ENABLED -> true
+            OpenAICompatibilityMode.DISABLED -> false
+            OpenAICompatibilityMode.AUTO -> host == "openrouter.ai"
+        }
+    }
+
+    private fun ProviderSetting.OpenAI.shouldReplayReasoningContent(host: String, modelId: String): Boolean {
+        return when (reasoningContentReplayMode) {
+            OpenAICompatibilityMode.ENABLED -> true
+            OpenAICompatibilityMode.DISABLED -> false
+            OpenAICompatibilityMode.AUTO -> isDeepSeekCompatible(host, modelId)
+        }
+    }
+
+    private fun ProviderSetting.OpenAI.promptCachePolicy(host: String, modelId: String): PromptCachePolicy {
+        val normalizedHost = host.lowercase()
+        val normalizedModelId = modelId.lowercase()
+        val isOpenRouterCacheControlModel = normalizedModelId.contains("anthropic") ||
+            normalizedModelId.contains("claude") ||
+            normalizedModelId.contains("gemini") ||
+            normalizedModelId.contains("qwen") ||
+            normalizedModelId.contains("deepseek")
+        return when {
+            normalizedHost == "openrouter.ai" && isOpenRouterCacheControlModel -> PromptCachePolicy(
+                explicitBreakpoints = true,
+                topLevelCacheControl = false,
+                useSingleStableBreakpoint = normalizedModelId.contains("gemini")
+            )
+
+            normalizedHost == "opencode.ai" ||
+                normalizedHost.endsWith(".opencode.ai") ||
+                normalizedModelId.startsWith("opencode-go/") -> PromptCachePolicy(
+                explicitBreakpoints = true,
+                topLevelCacheControl = false
+            )
+
+            else -> PromptCachePolicy(
+                explicitBreakpoints = false,
+                topLevelCacheControl = false
+            )
+        }
+    }
+
+    private fun buildPromptCacheControl() = buildJsonObject {
+        put("type", "ephemeral")
+    }
+
+    private fun List<UIMessage>.cacheBreakpointIndices(policy: PromptCachePolicy): Set<Int> {
+        if (!policy.explicitBreakpoints) return emptySet()
+
+        val eligibleIndices = mapIndexedNotNull { index, message ->
+            val hasCacheableText = message.parts.any { part ->
+                part is UIMessagePart.Text &&
+                    part.text.isNotBlank() &&
+                    part.text != LEADING_ASSISTANT_COMPATIBILITY_USER_PROMPT
+            }
+            if (message.role != MessageRole.TOOL && hasCacheableText) index else null
+        }
+        if (eligibleIndices.isEmpty()) return emptySet()
+
+        if (policy.useSingleStableBreakpoint) {
+            val lastUserIndex = indexOfLast { it.role == MessageRole.USER }
+            return eligibleIndices
+                .filter { it < lastUserIndex }
+                .lastOrNull()
+                ?.let { setOf(it) }
+                ?: setOf(eligibleIndices.last())
+        }
+
+        return eligibleIndices.takeLast(4).toSet()
+    }
+
     private fun parseMessage(jsonObject: JsonObject): UIMessage {
         val role = MessageRole.valueOf(
             jsonObject["role"]?.jsonPrimitive?.contentOrNull?.uppercase() ?: "ASSISTANT"
@@ -545,6 +678,7 @@ class ChatCompletionsAPI(
         val content = jsonObject["content"]?.jsonPrimitive?.contentOrNull ?: ""
         val reasoning = jsonObject["reasoning_content"]?.jsonPrimitive?.contentOrNull
             ?: jsonObject["reasoning"]?.jsonPrimitive?.contentOrNull
+            ?: jsonObject["thinking"]?.jsonPrimitive?.contentOrNull
         val toolCalls = jsonObject["tool_calls"] as? JsonArray ?: JsonArray(emptyList())
         val images = jsonObject["images"] as? JsonArray ?: JsonArray(emptyList())
 
@@ -615,12 +749,23 @@ class ChatCompletionsAPI(
 
     private fun parseTokenUsage(jsonObject: JsonObject?): TokenUsage? {
         if (jsonObject == null) return null
+        val promptTokens = jsonObject["prompt_tokens"]?.jsonPrimitive?.intOrNull
+        val completionTokens = jsonObject["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val cacheCreationTokens = jsonObject["cache_creation_input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val cacheReadTokens = jsonObject["cache_read_input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val inputTokens = jsonObject["input_tokens"]?.jsonPrimitive?.intOrNull
+        val effectivePromptTokens = promptTokens
+            ?: inputTokens?.let { it + cacheCreationTokens + cacheReadTokens }
+            ?: 0
         return TokenUsage(
-            promptTokens = jsonObject["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            completionTokens = jsonObject["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            totalTokens = jsonObject["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
+            promptTokens = effectivePromptTokens,
+            completionTokens = completionTokens,
+            totalTokens = jsonObject["total_tokens"]?.jsonPrimitive?.intOrNull
+                ?: (effectivePromptTokens + completionTokens),
             cachedTokens = jsonObject["prompt_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
-                ?: 0
+                ?: jsonObject["input_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
+                ?: jsonObject["cached_tokens"]?.jsonPrimitive?.intOrNull
+                ?: cacheReadTokens
         )
     }
 

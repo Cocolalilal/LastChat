@@ -109,6 +109,7 @@ import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.heroAnimation
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.pages.setting.LocalSettingsWideLayout
 import me.rerere.rikkahub.utils.AssistantExportImport
 import kotlinx.coroutines.launch
 import androidx.compose.material.icons.rounded.Upload
@@ -117,6 +118,7 @@ import androidx.compose.material.icons.rounded.Upload
 @Composable
 fun AssistantPage(vm: AssistantVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val useWideSettingsLayout = LocalSettingsWideLayout.current
     val createState = useEditState<Assistant> {
         vm.addAssistant(it)
     }
@@ -181,14 +183,6 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
     
     // Move lazyListState outside for canScroll detection
     val lazyListState = rememberLazyListState()
-    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        if (!isFiltering) {
-            val newAssistants = settings.assistants.toMutableList().apply {
-                add(to.index, removeAt(from.index))
-            }
-            vm.updateSettings(settings.copy(assistants = newAssistants))
-        }
-    }
 
     Scaffold(
         topBar = {
@@ -249,27 +243,83 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                 )
             }
             
-            // State for swipe neighbor tracking
-            var draggingIndex by remember { mutableStateOf(-1) }
-            var dragOffset by remember { mutableFloatStateOf(0f) }
-            var isUnlocked by remember { mutableStateOf(false) }
-            var neighborsUnlocked by remember { mutableStateOf(false) }
-            
-            
-            val density = androidx.compose.ui.platform.LocalDensity.current
             val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
-            
-            // Check if delete is allowed (more than 1 assistant)
-            val canDelete = settings.assistants.size > 1
-            
-            // Reset neighborsUnlocked when offset returns to 0
-            if (dragOffset == 0f && neighborsUnlocked) {
-                neighborsUnlocked = false
-            }
-            
 
-            
-            LazyColumn(
+            androidx.compose.runtime.key(useWideSettingsLayout) {
+                if (useWideSettingsLayout) {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .imePadding(),
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        state = lazyListState,
+                    ) {
+                        itemsIndexed(filteredAssistants, key = { _, assistant -> assistant.id }) { index, assistant ->
+                            val position = when {
+                                filteredAssistants.size == 1 -> ItemPosition.ONLY
+                                index == 0 -> ItemPosition.FIRST
+                                index == filteredAssistants.lastIndex -> ItemPosition.LAST
+                                else -> ItemPosition.MIDDLE
+                            }
+                            val memories by vm.getMemories(assistant).collectAsStateWithLifecycle(
+                                initialValue = emptyList(),
+                            )
+
+                            AssistantItemContent(
+                                assistant = assistant,
+                                settings = settings,
+                                memories = memories,
+                                position = position,
+                                haptics = haptics,
+                                onClick = {
+                                    navController.navigate(Screen.AssistantDetail(id = assistant.id.toString()))
+                                },
+                                onCopy = {
+                                    vm.copyAssistant(assistant)
+                                },
+                                dragHandle = {
+                                    IconButton(
+                                        onClick = {
+                                            haptics.perform(HapticPattern.Pop)
+                                            navController.navigate(Screen.AssistantDetail(id = assistant.id.toString()))
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Settings,
+                                            contentDescription = stringResource(R.string.settings)
+                                        )
+                                    }
+                                }
+                            )
+                        }
+                    }
+                } else {
+                    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
+                        if (!isFiltering) {
+                            val newAssistants = settings.assistants.toMutableList().apply {
+                                add(to.index, removeAt(from.index))
+                            }
+                            vm.updateSettings(settings.copy(assistants = newAssistants))
+                        }
+                    }
+
+                // State for swipe neighbor tracking. Keep this out of the tablet branch,
+                // where drag and swipe controls are intentionally disabled.
+                var draggingIndex by remember { mutableStateOf(-1) }
+                var dragOffset by remember { mutableFloatStateOf(0f) }
+                var isUnlocked by remember { mutableStateOf(false) }
+                var neighborsUnlocked by remember { mutableStateOf(false) }
+                val density = androidx.compose.ui.platform.LocalDensity.current
+                val canDelete = settings.assistants.size > 1
+
+                androidx.compose.runtime.LaunchedEffect(dragOffset, neighborsUnlocked) {
+                    if (dragOffset == 0f && neighborsUnlocked) {
+                        neighborsUnlocked = false
+                    }
+                }
+
+                LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .imePadding(),
@@ -314,7 +364,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                     )
 
                     ReorderableItem(
-                        state = reorderableState, 
+                        state = reorderableState,
                         key = assistant.id
                     ) { isDragging ->
                         // Key on canDelete to force complete PhysicsSwipeToDelete recreation when list size changes
@@ -386,6 +436,8 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                         }  // key(canDelete)
                     }  // ReorderableItem
                 }
+            }
+            }
             }
             
         }
@@ -508,15 +560,17 @@ private fun AssistantItemContent(
     assistant: Assistant,
     settings: Settings,
     memories: List<AssistantMemory>,
+    position: ItemPosition = ItemPosition.ONLY,
     haptics: me.rerere.rikkahub.ui.hooks.PremiumHaptics,
     onClick: () -> Unit,
     onCopy: () -> Unit,
     dragHandle: @Composable () -> Unit
 ) {
+    val useWideSettingsLayout = LocalSettingsWideLayout.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(0.dp))
+            .clip(if (useWideSettingsLayout) assistantItemShape(position) else RoundedCornerShape(0.dp))
             .background(if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh)
             .clickable {
                 haptics.perform(HapticPattern.Pop)
@@ -531,7 +585,13 @@ private fun AssistantItemContent(
             value = assistant.avatar,
             modifier = Modifier
                 .size(40.dp)
-                .heroAnimation(key = "assistant_avatar_${assistant.id}")
+                .let { modifier ->
+                    if (useWideSettingsLayout) {
+                        modifier
+                    } else {
+                        modifier.heroAnimation(key = "assistant_avatar_${assistant.id}")
+                    }
+                }
         )
         Column(
             modifier = Modifier.weight(1f),
@@ -609,6 +669,25 @@ private fun AssistantItemContent(
             tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)
         )
         dragHandle()
+    }
+}
+
+private fun assistantItemShape(position: ItemPosition): RoundedCornerShape {
+    return when (position) {
+        ItemPosition.ONLY -> RoundedCornerShape(24.dp)
+        ItemPosition.FIRST -> RoundedCornerShape(
+            topStart = 24.dp,
+            topEnd = 24.dp,
+            bottomStart = 10.dp,
+            bottomEnd = 10.dp,
+        )
+        ItemPosition.MIDDLE -> RoundedCornerShape(10.dp)
+        ItemPosition.LAST -> RoundedCornerShape(
+            topStart = 10.dp,
+            topEnd = 10.dp,
+            bottomStart = 24.dp,
+            bottomEnd = 24.dp,
+        )
     }
 }
 

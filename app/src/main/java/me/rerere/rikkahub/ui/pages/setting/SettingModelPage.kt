@@ -22,6 +22,7 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -44,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Chat
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.DocumentScanner
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Refresh
@@ -74,8 +76,10 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 
 import me.rerere.rikkahub.ui.components.ai.ReasoningButton
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
+import me.rerere.rikkahub.ui.components.ai.VoiceSelector
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
+import me.rerere.rikkahub.ui.components.ui.AutoSaveIndicator
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.context.LocalToaster
@@ -110,14 +114,17 @@ fun SettingModelPage(vm: SettingVM = koinViewModel()) {
             item {
                 SettingsGroup(title = stringResource(R.string.setting_model_page_group_conversation)) {
                     DefaultChatModelSetting(settings = settings, vm = vm)
+                    DefaultTtsVoiceSetting(settings = settings, vm = vm)
                     DefaultTitleModelSetting(settings = settings, vm = vm)
                     DefaultSummarizerModelSetting(settings = settings, vm = vm)
+                    DefaultSubagentModelSetting(settings = settings, vm = vm)
                     DefaultSuggestionModelSetting(settings = settings, vm = vm)
                 }
             }
 
             item {
                 SettingsGroup(title = stringResource(R.string.setting_model_page_group_processing)) {
+                    DefaultImageGenerationModelSetting(settings = settings, vm = vm)
                     DefaultOcrModelSetting(settings = settings, vm = vm)
                     DefaultEmbeddingModelSetting(settings = settings, vm = vm)
                 }
@@ -127,11 +134,44 @@ fun SettingModelPage(vm: SettingVM = koinViewModel()) {
 }
 
 @Composable
+private fun DefaultTtsVoiceSetting(
+    settings: Settings,
+    vm: SettingVM
+) {
+    ModelFeatureCard(
+        title = { Text("Default Voice", maxLines = 1) },
+        description = { Text("Voice used for manual and automatic TTS") },
+        icon = { Icon(Icons.AutoMirrored.Rounded.VolumeUp, null) },
+        actions = {
+            Box(modifier = Modifier.weight(1f)) {
+                VoiceSelector(
+                    voiceId = settings.selectedTTSVoiceId,
+                    providers = settings.ttsProviders,
+                    modifier = Modifier.wrapContentWidth(),
+                    onSelect = { voice ->
+                        val provider = settings.ttsProviders.firstOrNull { provider ->
+                            provider.voices.any { it.id == voice.id }
+                        }
+                        vm.updateSettings(
+                            settings.copy(
+                                selectedTTSVoiceId = voice.id,
+                                selectedTTSProviderId = provider?.id ?: settings.selectedTTSProviderId,
+                            )
+                        )
+                    }
+                )
+            }
+        }
+    )
+}
+
+@Composable
 private fun DefaultTranslationModelSetting(
     settings: Settings,
     vm: SettingVM
 ) {
     var showModal by remember { mutableStateOf(false) }
+    var promptPending by remember { mutableStateOf(false) }
     ModelFeatureCard(
         title = {
             Text(
@@ -191,9 +231,10 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     },
                     description = {
                         Text(stringResource(R.string.setting_model_page_translate_prompt_vars))
-                    }
+                    },
+                    tail = { AutoSaveIndicator(visible = promptPending) }
                 ) {
-                    OutlinedTextField(
+                    DebouncedTextField(
                         value = settings.translatePrompt,
                         onValueChange = {
                             vm.updateSettings(
@@ -202,9 +243,10 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 )
                             )
                         },
+                        stateKey = "translate_prompt",
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 10,
-                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                        onPendingChange = { promptPending = it },
                     )
                     TextButton(
                         onClick = {
@@ -229,6 +271,7 @@ private fun DefaultSuggestionModelSetting(
     vm: SettingVM
 ) {
     var showModal by remember { mutableStateOf(false) }
+    var promptPending by remember { mutableStateOf(false) }
     ModelFeatureCard(
         title = {
             Text(
@@ -296,9 +339,10 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     },
                     description = {
                         Text(stringResource(R.string.setting_model_page_suggestion_prompt_vars))
-                    }
+                    },
+                    tail = { AutoSaveIndicator(visible = promptPending) }
                 ) {
-                    OutlinedTextField(
+                    DebouncedTextField(
                         value = settings.suggestionPrompt,
                         onValueChange = {
                             vm.updateSettings(
@@ -307,9 +351,10 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 )
                             )
                         },
+                        stateKey = "suggestion_prompt",
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 8,
-                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                        onPendingChange = { promptPending = it },
                     )
                     TextButton(
                         onClick = {
@@ -344,6 +389,7 @@ private fun DefaultTitleModelSetting(
     vm: SettingVM
 ) {
     var showModal by remember { mutableStateOf(false) }
+    var promptPending by remember { mutableStateOf(false) }
     ModelFeatureCard(
         title = {
             Text(stringResource(R.string.setting_model_page_title_model), maxLines = 1)
@@ -400,9 +446,10 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     },
                     description = {
                         Text(stringResource(R.string.setting_model_page_suggestion_prompt_vars))
-                    }
+                    },
+                    tail = { AutoSaveIndicator(visible = promptPending) }
                 ) {
-                    OutlinedTextField(
+                    DebouncedTextField(
                         value = settings.titlePrompt,
                         onValueChange = {
                             vm.updateSettings(
@@ -411,9 +458,10 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 )
                             )
                         },
+                        stateKey = "title_prompt",
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 8,
-                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                        onPendingChange = { promptPending = it },
                     )
                     TextButton(
                         onClick = {
@@ -522,6 +570,85 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
 }
 
 @Composable
+private fun DefaultSubagentModelSetting(
+    settings: Settings,
+    vm: SettingVM
+) {
+    var showModal by remember { mutableStateOf(false) }
+    ModelFeatureCard(
+        title = {
+            Text(stringResource(R.string.setting_model_page_subagent_model), maxLines = 1)
+        },
+        description = {
+            Text(stringResource(R.string.setting_model_page_subagent_model_desc))
+        },
+        icon = {
+            Icon(Icons.Rounded.Psychology, null)
+        },
+        actions = {
+            Box(modifier = Modifier.weight(1f)) {
+                ModelSelector(
+                    modelId = settings.subagentModelId,
+                    type = ModelType.CHAT,
+                    onSelect = { selectedModel ->
+                        vm.updateSettings(
+                            settings.copy(
+                                subagentModelId = settings.findModelById(selectedModel.id)?.id
+                            )
+                        )
+                    },
+                    providers = settings.providers,
+                    allowClear = true,
+                    onClear = {
+                        vm.updateSettings(
+                            settings.copy(
+                                subagentModelId = null
+                            )
+                        )
+                    },
+                    modifier = Modifier.wrapContentWidth()
+                )
+            }
+            IconButton(
+                onClick = {
+                    showModal = true
+                }
+            ) {
+                Icon(Icons.Rounded.Settings, null)
+            }
+        }
+    )
+
+    if (showModal) {
+        ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+            onDismissRequest = {
+                showModal = false
+            },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                HelperReasoningSettings(
+                    reasoningTokens = settings.subagentThinkingBudget,
+                    onUpdateReasoningTokens = { tokens ->
+                        vm.updateSettings(
+                            settings.copy(
+                                subagentThinkingBudget = tokens
+                            )
+                        )
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun DefaultChatModelSetting(
     settings: Settings,
     vm: SettingVM
@@ -562,6 +689,7 @@ private fun DefaultOcrModelSetting(
     vm: SettingVM
 ) {
     var showModal by remember { mutableStateOf(false) }
+    var promptPending by remember { mutableStateOf(false) }
     ModelFeatureCard(
         title = {
             Text(
@@ -622,9 +750,10 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     },
                     description = {
                         Text(stringResource(R.string.setting_model_page_ocr_prompt_vars))
-                    }
+                    },
+                    tail = { AutoSaveIndicator(visible = promptPending) }
                 ) {
-                    OutlinedTextField(
+                    DebouncedTextField(
                         value = settings.ocrPrompt,
                         onValueChange = {
                             vm.updateSettings(
@@ -633,9 +762,10 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 )
                             )
                         },
+                        stateKey = "ocr_prompt",
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 10,
-                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                        onPendingChange = { promptPending = it },
                     )
                     TextButton(
                         onClick = {
@@ -662,6 +792,44 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
             }
         }
     }
+}
+
+@Composable
+private fun DefaultImageGenerationModelSetting(
+    settings: Settings,
+    vm: SettingVM
+) {
+    ModelFeatureCard(
+        title = {
+            Text(
+                stringResource(R.string.setting_model_page_image_generation_model),
+                maxLines = 1
+            )
+        },
+        description = {
+            Text(stringResource(R.string.setting_model_page_image_generation_model_desc))
+        },
+        icon = {
+            Icon(Icons.Rounded.AutoAwesome, null)
+        },
+        actions = {
+            Box(modifier = Modifier.weight(1f)) {
+                ModelSelector(
+                    modelId = settings.imageGenerationModelId,
+                    type = ModelType.IMAGE,
+                    onSelect = {
+                        vm.updateSettings(
+                            settings.copy(
+                                imageGenerationModelId = it.id
+                            )
+                        )
+                    },
+                    providers = settings.providers,
+                    modifier = Modifier.wrapContentWidth()
+                )
+            }
+        }
+    )
 }
 
 @Composable

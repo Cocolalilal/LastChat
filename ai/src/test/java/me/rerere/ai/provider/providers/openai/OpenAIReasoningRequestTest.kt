@@ -1,13 +1,18 @@
 package me.rerere.ai.provider.providers.openai
 
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import me.rerere.ai.provider.CustomBody
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.provider.ReasoningRequestBehavior
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
@@ -63,6 +68,25 @@ class OpenAIReasoningRequestTest {
             val body = chatCompletionsBody(thinkingBudget = budget)
             assertEquals(effort, body["reasoning_effort"]?.jsonPrimitive?.contentOrNull)
         }
+    }
+
+    @Test
+    fun chatCompletionsUsesProviderCustomReasoningPayloadBeforeHostDefaults() {
+        val body = chatCompletionsBody(
+            messages = messages,
+            model = reasoningModel,
+            providerSetting = providerSetting.copy(
+                baseUrl = "https://openrouter.ai/api/v1",
+                reasoningBehavior = ReasoningRequestBehavior(
+                    low = listOf(CustomBody("enable_thinking", JsonPrimitive(true)))
+                )
+            ),
+            thinkingBudget = 1_024,
+        )
+
+        assertEquals("true", body["enable_thinking"]?.jsonPrimitive?.contentOrNull)
+        assertFalse(body.containsKey("reasoning"))
+        assertNull(body["reasoning_effort"])
     }
 
     @Test
@@ -188,6 +212,164 @@ class OpenAIReasoningRequestTest {
         assertFalse(assistantMessage.containsKey("reasoning_content"))
     }
 
+    @Test
+    fun chatCompletionsUsesExplicitMarkerBeforeLeadingAssistantMessage() {
+        val body = chatCompletionsBody(
+            messages = listOf(
+                UIMessage.assistant("Hey, I was thinking about you."),
+                UIMessage.user("oh?")
+            ),
+            model = reasoningModel,
+            providerSetting = providerSetting
+        )
+
+        val messages = body["messages"]?.jsonArray ?: error("messages are missing")
+        val marker = messages[0].jsonObject
+        val opening = messages[1].jsonObject
+        val realUser = messages[2].jsonObject
+
+        assertEquals("user", marker["role"]?.jsonPrimitive?.contentOrNull)
+        assertTrue(marker["content"]?.jsonPrimitive?.contentOrNull?.contains("not a real user message") == true)
+        assertFalse(marker["content"]?.jsonPrimitive?.contentOrNull == "...")
+        assertEquals("assistant", opening["role"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("Hey, I was thinking about you.", opening["content"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("user", realUser["role"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("oh?", realUser["content"]?.jsonPrimitive?.contentOrNull)
+    }
+
+    @Test
+    fun chatCompletionsAddsOpenRouterPromptCacheBreakpoints() {
+        val body = chatCompletionsBody(
+            messages = listOf(
+                UIMessage.system("Stable system prompt"),
+                UIMessage.user("First user turn"),
+                UIMessage.assistant("First answer"),
+                UIMessage.user("Current user turn")
+            ),
+            model = reasoningModel.copy(modelId = "anthropic/claude-sonnet-4.5"),
+            providerSetting = providerSetting.copy(baseUrl = "https://openrouter.ai/api/v1")
+        )
+
+        assertFalse(body.containsKey("cache_control"))
+
+        val messages = body["messages"]?.jsonArray ?: error("messages are missing")
+        val systemContent = messages[0].jsonObject["content"]?.jsonArray ?: error("system content is missing")
+        assertEquals(
+            "ephemeral",
+            systemContent[0].jsonObject["cache_control"]?.jsonObject?.get("type")?.jsonPrimitive?.contentOrNull
+        )
+    }
+
+    @Test
+    fun chatCompletionsUsesStableBreakpointForOpenRouterGemini() {
+        val body = chatCompletionsBody(
+            messages = listOf(
+                UIMessage.system("Stable system prompt"),
+                UIMessage.user("Current question")
+            ),
+            model = reasoningModel.copy(modelId = "google/gemini-2.5-pro"),
+            providerSetting = providerSetting.copy(baseUrl = "https://openrouter.ai/api/v1")
+        )
+
+        assertFalse(body.containsKey("cache_control"))
+
+        val messages = body["messages"]?.jsonArray ?: error("messages are missing")
+        val systemContent = messages[0].jsonObject["content"]?.jsonArray ?: error("system content is missing")
+        assertEquals(
+            "ephemeral",
+            systemContent[0].jsonObject["cache_control"]?.jsonObject?.get("type")?.jsonPrimitive?.contentOrNull
+        )
+        assertEquals("Current question", messages[1].jsonObject["content"]?.jsonPrimitive?.contentOrNull)
+    }
+
+    @Test
+    fun chatCompletionsAddsOpenCodeGoPromptCacheControlsWithoutTopLevelCacheControl() {
+        val body = chatCompletionsBody(
+            messages = listOf(UIMessage.system("Stable system prompt"), UIMessage.user("Hello")),
+            model = reasoningModel.copy(modelId = "opencode-go/qwen3.7-plus"),
+            providerSetting = providerSetting.copy(baseUrl = "https://opencode.ai/zen/go/v1")
+        )
+
+        assertFalse(body.containsKey("cache_control"))
+
+        val messages = body["messages"]?.jsonArray ?: error("messages are missing")
+        val userContent = messages[1].jsonObject["content"]?.jsonArray ?: error("user content is missing")
+        assertEquals(
+            "ephemeral",
+            userContent[0].jsonObject["cache_control"]?.jsonObject?.get("type")?.jsonPrimitive?.contentOrNull
+        )
+    }
+
+    @Test
+    fun chatCompletionsLeavesGenericProviderPromptShapeUnchanged() {
+        val body = chatCompletionsBody(
+            messages = listOf(UIMessage.system("Stable system prompt"), UIMessage.user("Hello")),
+            model = reasoningModel,
+            providerSetting = providerSetting
+        )
+
+        assertFalse(body.containsKey("cache_control"))
+
+        val messages = body["messages"]?.jsonArray ?: error("messages are missing")
+        assertEquals("Stable system prompt", messages[0].jsonObject["content"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("Hello", messages[1].jsonObject["content"]?.jsonPrimitive?.contentOrNull)
+    }
+
+    @Test
+    fun parseChatCompletionsUsageReadsAnthropicStyleCacheFields() {
+        val usage = parseChatCompletionsUsage(
+            buildJsonObject {
+                put("input_tokens", 100)
+                put("cache_creation_input_tokens", 200)
+                put("cache_read_input_tokens", 300)
+                put("completion_tokens", 50)
+            }
+        ) ?: error("usage is missing")
+
+        assertEquals(600, usage.promptTokens)
+        assertEquals(50, usage.completionTokens)
+        assertEquals(300, usage.cachedTokens)
+        assertEquals(650, usage.totalTokens)
+    }
+
+    @Test
+    fun parseMessageTreatsThinkingFieldAsReasoning() {
+        val message = parseOpenAIMessage(
+            JsonObject(
+                mapOf(
+                    "role" to JsonPrimitive("assistant"),
+                    "thinking" to JsonPrimitive("NVIDIA streamed reasoning"),
+                    "content" to JsonPrimitive("Final answer")
+                )
+            )
+        )
+
+        val reasoning = message.parts.filterIsInstance<UIMessagePart.Reasoning>().single()
+        val text = message.parts.filterIsInstance<UIMessagePart.Text>().single()
+        assertEquals("NVIDIA streamed reasoning", reasoning.reasoning)
+        assertEquals("Final answer", text.text)
+    }
+
+    @Test
+    fun responseApiReasoningSummaryDeltaExtractsTitle() {
+        val chunk = parseResponseDelta(
+            buildJsonObject {
+                put("type", "response.reasoning_summary_text.delta")
+                put("item_id", "rs_123")
+                put("delta", "**Responding to a greeting**\n\nThe user said hello.")
+            }
+        ) ?: error("chunk is missing")
+
+        val reasoning = chunk.choices.single().delta
+            ?.parts
+            ?.filterIsInstance<UIMessagePart.Reasoning>()
+            ?.single()
+            ?: error("reasoning is missing")
+
+        assertEquals("Responding to a greeting", reasoning.title)
+        assertEquals("**Responding to a greeting**\n\nThe user said hello.", reasoning.reasoning)
+    }
+
     private fun chatCompletionsBody(thinkingBudget: Int?): JsonObject {
         return chatCompletionsBody(
             messages = messages,
@@ -226,6 +408,36 @@ class OpenAIReasoningRequestTest {
         ) as JsonObject
     }
 
+    private fun parseOpenAIMessage(message: JsonObject): UIMessage {
+        val api = ChatCompletionsAPI(
+            client = OkHttpClient(),
+            keyRoulette = object : KeyRoulette {
+                override fun next(keys: String): String = keys
+            }
+        )
+        val method = ChatCompletionsAPI::class.java.getDeclaredMethod(
+            "parseMessage",
+            JsonObject::class.java,
+        )
+        method.isAccessible = true
+        return method.invoke(api, message) as UIMessage
+    }
+
+    private fun parseChatCompletionsUsage(usage: JsonObject): me.rerere.ai.core.TokenUsage? {
+        val api = ChatCompletionsAPI(
+            client = OkHttpClient(),
+            keyRoulette = object : KeyRoulette {
+                override fun next(keys: String): String = keys
+            }
+        )
+        val method = ChatCompletionsAPI::class.java.getDeclaredMethod(
+            "parseTokenUsage",
+            JsonObject::class.java,
+        )
+        method.isAccessible = true
+        return method.invoke(api, usage) as me.rerere.ai.core.TokenUsage?
+    }
+
     private fun responseApiBody(thinkingBudget: Int?): JsonObject {
         val api = ResponseAPI(OkHttpClient())
         val method = ResponseAPI::class.java.getDeclaredMethod(
@@ -258,5 +470,15 @@ class OpenAIReasoningRequestTest {
             TextGenerationParams(model = reasoningModel),
             false,
         ) as JsonObject
+    }
+
+    private fun parseResponseDelta(delta: JsonObject): me.rerere.ai.ui.MessageChunk? {
+        val api = ResponseAPI(OkHttpClient())
+        val method = ResponseAPI::class.java.getDeclaredMethod(
+            "parseResponseDelta",
+            JsonObject::class.java,
+        )
+        method.isAccessible = true
+        return method.invoke(api, delta) as me.rerere.ai.ui.MessageChunk?
     }
 }

@@ -18,10 +18,29 @@ plugins {
 
 val enableReleaseShrinker = providers.gradleProperty("lastchat.release.minify")
     .map(String::toBoolean)
-    .orElse(false)
+    .orElse(true)
 
 val webUiDir = rootProject.file("web-ui")
 val webUiBuildDir = File(webUiDir, "build/client")
+val catalogDir = rootProject.file("catalog")
+val generatedCatalogAssetsDir = layout.buildDirectory.dir("generated/assets/catalog")
+
+val prepareBundledCatalogAssets by tasks.registering(Sync::class) {
+    group = "build"
+    description = "Copies the bundled model catalog into app assets without shadowing existing assets."
+
+    from(catalogDir) {
+        include("lastchat_catalog.json")
+        include("icons/**")
+        eachFile {
+            val appAsset = layout.projectDirectory.file("src/main/assets/$path").asFile
+            if (appAsset.exists()) {
+                exclude()
+            }
+        }
+    }
+    into(generatedCatalogAssetsDir)
+}
 
 val buildWebUi by tasks.registering(Exec::class) {
     group = "build"
@@ -53,6 +72,7 @@ android {
     sourceSets {
         getByName("main") {
             assets.srcDir("../web-ui/build/client")
+            assets.srcDir(prepareBundledCatalogAssets.map { it.destinationDir })
         }
     }
 
@@ -60,8 +80,8 @@ android {
         applicationId = "lastchat.rikkafork.cocolal"
         minSdk = 28
         targetSdk = 36
-        versionCode = 32
-        versionName = "1.4.2"
+        versionCode = 33
+        versionName = "1.4.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -162,6 +182,9 @@ android {
                 "META-INF/*.kotlin_module"
             )
         }
+        jniLibs {
+            useLegacyPackaging = true
+        }
     }
     androidResources {
         generateLocaleConfig = true
@@ -197,6 +220,14 @@ tasks.register("buildAll") {
 
 tasks.named("preBuild") {
     dependsOn(buildWebUi)
+}
+
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
+    dependsOn(prepareBundledCatalogAssets)
+}
+
+tasks.matching { it.name.contains("Lint", ignoreCase = true) }.configureEach {
+    dependsOn(prepareBundledCatalogAssets)
 }
 
 ksp {
@@ -286,6 +317,11 @@ dependencies {
     // Image metadata extractor
     // https://github.com/drewnoakes/metadata-extractor
     implementation(libs.metadata.extractor)
+
+    // Haze (background blur for glassy floating controls)
+    implementation(libs.haze)
+    implementation(libs.haze.blur)
+    implementation(libs.haze.blur.materials)
 
     // koin
     implementation(platform(libs.koin.bom))

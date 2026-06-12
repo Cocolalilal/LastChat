@@ -10,8 +10,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import me.rerere.rikkahub.data.ai.models.ModelCatalogSnapshot
 import me.rerere.rikkahub.data.ai.models.ModelCatalogService
 import me.rerere.rikkahub.data.ai.models.ModelCatalogStatus
+import me.rerere.rikkahub.data.ai.models.ModelMetadataResolver
+import me.rerere.rikkahub.data.ai.models.mergeCatalogIntoSettings
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.ai.mcp.McpManager
@@ -27,12 +30,14 @@ class SettingVM(
     private val okHttpClient: OkHttpClient,
     private val appStorageRepository: AppStorageRepository,
     private val modelCatalogService: ModelCatalogService,
+    private val modelMetadataResolver: ModelMetadataResolver,
     private val memoryRepository: MemoryRepository,
 ) :
     ViewModel() {
     val settings: StateFlow<Settings> = settingsStore.settingsFlow
         .stateIn(viewModelScope, SharingStarted.Lazily, Settings(init = true, providers = emptyList()))
     val modelCatalogStatus: StateFlow<ModelCatalogStatus> = modelCatalogService.status
+    val modelCatalogSnapshot: StateFlow<ModelCatalogSnapshot?> = modelCatalogService.snapshotFlow
 
     fun updateSettings(
         newSettings: Settings,
@@ -109,7 +114,17 @@ class SettingVM(
     ) {
         viewModelScope.launch {
             runCatching {
-                modelCatalogService.refreshCatalog()
+                val status = modelCatalogService.refreshCatalog()
+                modelCatalogService.snapshotOrNull()?.let { snapshot ->
+                    settingsStore.update(
+                        mergeCatalogIntoSettings(
+                            settings = settings.value,
+                            snapshot = snapshot,
+                            resolver = modelMetadataResolver,
+                        )
+                    )
+                }
+                status
             }.onSuccess {
                 onSuccess()
             }.onFailure {

@@ -8,10 +8,13 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -21,6 +24,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -51,6 +55,8 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.horizontalScroll
@@ -72,6 +78,7 @@ import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.ViewList
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetDefaults
@@ -79,6 +86,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -139,34 +147,60 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.ProviderViewMode
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
-import me.rerere.rikkahub.ui.components.ui.AutoProviderIcon
+import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
 import me.rerere.rikkahub.ui.components.ui.ProviderIcon
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
-import me.rerere.rikkahub.ui.components.ui.decodeProviderSetting
+import me.rerere.rikkahub.ui.components.ui.ProviderShareQrContent
+import me.rerere.rikkahub.ui.components.ui.ProviderShareQrPart
+import me.rerere.rikkahub.ui.components.ui.computeAIIconByName
+import me.rerere.rikkahub.ui.components.ui.decodeProviderSettingParts
+import me.rerere.rikkahub.ui.components.ui.getProviderSlugFromName
+import me.rerere.rikkahub.ui.components.ui.parseProviderShareQrContent
+import me.rerere.rikkahub.ui.components.ui.searchLobeHubIcon
+import me.rerere.rikkahub.ui.components.ui.lobeHubIconUri
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.useEditState
-import me.rerere.rikkahub.ui.pages.setting.components.PROVIDER_PRESETS
+import me.rerere.rikkahub.ui.pages.setting.components.FALLBACK_PROVIDER_PRESETS
 import me.rerere.rikkahub.ui.pages.setting.components.ProviderConfigure
 import me.rerere.rikkahub.ui.pages.setting.components.toProviderSetting
+import me.rerere.rikkahub.ui.pages.setting.components.toProviderPresets
+import me.rerere.rikkahub.ui.pages.setting.components.withSpecialProviderPresets
 import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.tts.provider.withDefaultVoices
 import me.rerere.rikkahub.utils.ImageUtils
+import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import me.rerere.rikkahub.data.model.Tag as DataTag
+import kotlin.uuid.Uuid
 
 
 @Composable
-fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
+fun SettingProviderPage(
+    initialTab: ProvidersTab = ProvidersTab.Models,
+    vm: SettingVM = koinViewModel()
+) {
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val catalogSnapshot by vm.modelCatalogSnapshot.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
     val scope = rememberCoroutineScope()
+    val useWideLayout = LocalSettingsWideLayout.current
+    val pager = rememberPagerState(initialPage = initialTab.ordinal) { ProvidersTab.entries.size }
+    val currentTab = ProvidersTab.entries[pager.currentPage]
+    var showSearchCommonOptions by remember { mutableStateOf(false) }
+    var showTtsFilterSettings by remember { mutableStateOf(false) }
+    val providerPresets = remember(catalogSnapshot) {
+        (catalogSnapshot?.toProviderPresets()?.takeIf { it.isNotEmpty() }
+            ?: FALLBACK_PROVIDER_PRESETS
+        ).withSpecialProviderPresets()
+    }
     
     // Search query state
     var searchQuery by remember { mutableStateOf("") }
@@ -200,42 +234,143 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
     
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
+    fun addProvider(provider: ProviderSetting) {
+        val providerToAdd = provider.withUniqueId(settings.providers)
+        vm.updateSettings(
+            settings.copy(
+                providers = listOf(providerToAdd) + settings.providers
+            )
+        )
+        
+        // Asynchronously check if we can query LobeHub for a monochrome icon
+        if (providerToAdd.customIconUri.isNullOrBlank()) {
+            val providerName = providerToAdd.name
+            val hasLocalIcon = computeAIIconByName(providerName) != null || 
+                    getProviderSlugFromName(providerName) != null
+            if (!hasLocalIcon) {
+                scope.launch {
+                    val okHttpClient = org.koin.java.KoinJavaComponent.get<okhttp3.OkHttpClient>(okhttp3.OkHttpClient::class.java)
+                    val slug = searchLobeHubIcon(okHttpClient, providerName)
+                    if (slug != null) {
+                        val latestSettings = vm.settings.value
+                        val updatedProviders = latestSettings.providers.map { p ->
+                            if (p.id == providerToAdd.id) {
+                                p.copyProvider(customIconUri = lobeHubIconUri(slug))
+                            } else p
+                        }
+                        vm.updateSettings(latestSettings.copy(providers = updatedProviders))
+                    }
+                }
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
             OneUITopAppBar(
-                title = stringResource(R.string.setting_provider_page_title),
+                title = stringResource(currentTab.titleRes),
                 scrollBehavior = scrollBehavior,
                 navigationIcon = {
                     BackButton()
-                },
-                actions = {
-                    ImportProviderButton {
+                }
+            )
+        },
+        bottomBar = {
+            ProvidersBottomBar(
+                selectedTab = currentTab,
+                onTabSelected = { tab ->
+                    scope.launch {
+                        pager.animateScrollToPage(tab.ordinal)
+                    }
+                }
+            ) {
+                if (useWideLayout) {
+                    when (currentTab) {
+                        ProvidersTab.Models -> ImportProviderButton(
+                            asFab = true,
+                            enableHaptics = settings.displaySetting.enableUIHaptics,
+                            onAdd = { addProvider(it) }
+                        )
+
+                        ProvidersTab.Search,
+                        ProvidersTab.Tts -> FloatingActionButton(
+                            onClick = {
+                                haptics.perform(HapticPattern.Pop)
+                                if (currentTab == ProvidersTab.Search) {
+                                    showSearchCommonOptions = true
+                                } else {
+                                    showTtsFilterSettings = true
+                                }
+                            },
+                            shape = AppShapes.CardLarge,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        ) {
+                            Icon(
+                                Icons.Rounded.Settings,
+                                contentDescription = if (currentTab == ProvidersTab.Search) {
+                                    stringResource(R.string.setting_page_search_common_options)
+                                } else {
+                                    stringResource(R.string.setting_tts_settings_title)
+                                }
+                            )
+                        }
+                    }
+                }
+                when (currentTab) {
+                    ProvidersTab.Models -> AddButton(
+                        enableHaptics = settings.displaySetting.enableUIHaptics,
+                        providerPresets = providerPresets,
+                        asFab = true,
+                        onAdd = { addProvider(it) }
+                    )
+
+                    ProvidersTab.Search -> AddSearchServiceButton(
+                        enableHaptics = settings.displaySetting.enableUIHaptics,
+                        catalogSnapshot = catalogSnapshot,
+                        asFab = true
+                    ) { newService ->
                         vm.updateSettings(
                             settings.copy(
-                                providers = listOf(it) + settings.providers
+                                searchServices = listOf(newService) + settings.searchServices
                             )
                         )
                     }
-                    AddButton(
-                        enableHaptics = settings.displaySetting.enableUIHaptics
-                    ) {
+
+                    ProvidersTab.Tts -> AddTTSProviderButton(
+                        catalogSnapshot = catalogSnapshot,
+                        enableHaptics = settings.displaySetting.enableUIHaptics,
+                        asFab = true
+                    ) { newProvider ->
+                        val providerToAdd = newProvider.withDefaultVoices()
                         vm.updateSettings(
                             settings.copy(
-                                providers = listOf(it) + settings.providers
+                                ttsProviders = listOf(providerToAdd) + settings.ttsProviders
                             )
                         )
                     }
                 }
-            )
+            }
         },
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { innerPadding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .consumeWindowInsets(innerPadding)
         ) {
+            HorizontalPager(
+                state = pager,
+                modifier = Modifier.fillMaxSize(),
+                userScrollEnabled = !useWideLayout,
+            ) { page ->
+            when (ProvidersTab.entries[page]) {
+                ProvidersTab.Models -> Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(top = innerPadding.calculateTopPadding())
+                ) {
+                    Column(modifier = Modifier.fillMaxSize()) {
             // Delete confirmation dialog state
             var showDeleteDialog by remember { mutableStateOf(false) }
             var providerToDelete by remember { mutableStateOf<ProviderSetting?>(null) }
@@ -274,9 +409,9 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
             // Provider list view
             ProviderListView(
                 providers = filteredProviders,
-                allProviders = settings.providers,
                 settings = settings,
                 haptics = haptics,
+                contentPadding = PaddingValues(bottom = innerPadding.calculateBottomPadding()),
                 searchQuery = searchQuery,
                 onNavigateToDetail = { provider ->
                     navController.navigate(Screen.SettingProviderDetail(providerId = provider.id.toString()))
@@ -295,12 +430,9 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
                     }
                 },
                 onAddProvider = { provider ->
-                    vm.updateSettings(
-                        settings.copy(
-                            providers = listOf(provider) + settings.providers
-                        )
-                    )
-                }
+                    addProvider(provider)
+                },
+                providerPresets = providerPresets
             )
             
             // Delete confirmation dialog
@@ -343,7 +475,89 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
                     }
                 )
             }
+                    }
+                    if (!useWideLayout) {
+                        ProvidersSecondaryActionSlot(modifier = Modifier.fillMaxSize()) {
+                            ImportProviderButton(
+                                asFab = true,
+                                enableHaptics = settings.displaySetting.enableUIHaptics,
+                                onAdd = { addProvider(it) }
+                            )
+                        }
+                    }
+                }
+
+                ProvidersTab.Search -> SearchProvidersContent(vm = vm, contentPadding = innerPadding)
+                ProvidersTab.Tts -> TtsProvidersContent(vm = vm, contentPadding = innerPadding)
+            }
         }
+            AnimatedVisibility(
+                visible = !useWideLayout && currentTab != ProvidersTab.Models,
+                enter = slideInHorizontally(
+                    animationSpec = tween(120),
+                    initialOffsetX = { it }
+                ) + fadeIn(animationSpec = tween(90)),
+                exit = slideOutHorizontally(
+                    animationSpec = tween(120),
+                    targetOffsetX = { it }
+                ) + fadeOut(animationSpec = tween(70))
+            ) {
+                ProvidersSecondaryActionSlot(modifier = Modifier.fillMaxSize()) {
+                    FloatingActionButton(
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            if (currentTab == ProvidersTab.Search) {
+                                showSearchCommonOptions = true
+                            } else {
+                                showTtsFilterSettings = true
+                            }
+                        },
+                        shape = AppShapes.CardLarge,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    ) {
+                        Icon(
+                            Icons.Rounded.Settings,
+                            contentDescription = if (currentTab == ProvidersTab.Search) {
+                                stringResource(R.string.setting_page_search_common_options)
+                            } else {
+                                stringResource(R.string.setting_tts_settings_title)
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (showSearchCommonOptions) {
+        CommonOptionsDialog(
+            settings = settings,
+            onDismissRequest = { showSearchCommonOptions = false },
+            onUpdate = { options ->
+                vm.updateSettings(
+                    settings.copy(
+                        searchCommonOptions = options
+                    )
+                )
+            }
+        )
+    }
+
+    if (showTtsFilterSettings) {
+        TtsTextFilterSettingsDialog(
+            rules = settings.displaySetting.ttsTextFilterRules,
+            onDismiss = { showTtsFilterSettings = false },
+            onUpdateRules = { newRules ->
+                vm.updateSettings(
+                    settings.copy(
+                        displaySetting = settings.displaySetting.copy(
+                            ttsTextFilterRules = newRules
+                        )
+                    )
+                )
+            }
+        )
     }
 }
 
@@ -388,10 +602,11 @@ private fun SearchBarWithToggle(
 @Composable
 private fun ProviderListView(
     providers: List<ProviderSetting>,
-    allProviders: List<ProviderSetting>,
     settings: me.rerere.rikkahub.data.datastore.Settings,
     haptics: me.rerere.rikkahub.ui.hooks.PremiumHaptics,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
     searchQuery: String,
+    providerPresets: List<me.rerere.rikkahub.ui.pages.setting.components.ProviderPreset>,
     onNavigateToDetail: (ProviderSetting) -> Unit,
     onDeleteRequest: (ProviderSetting) -> Unit,
     onReorder: (ProviderSetting, ProviderSetting) -> Unit,
@@ -413,10 +628,6 @@ private fun ProviderListView(
     var dragOffset by remember { mutableFloatStateOf(0f) }
     var isUnlocked by remember { mutableStateOf(false) }
     var neighborsUnlocked by remember { mutableStateOf(false) }
-    
-    
-    val canDelete = allProviders.size > 1
-    
     // Reset neighborsUnlocked when offset returns to 0
     if (dragOffset == 0f && neighborsUnlocked) {
         neighborsUnlocked = false
@@ -425,31 +636,32 @@ private fun ProviderListView(
     // Check for matching preset when no providers found
     val matchingPreset = remember(searchQuery, providers) {
         if (providers.isEmpty() && searchQuery.isNotBlank()) {
-            PROVIDER_PRESETS.find { preset ->
+            providerPresets.find { preset ->
                 preset.name.contains(searchQuery, ignoreCase = true) ||
                 preset.description.contains(searchQuery, ignoreCase = true)
             }
         } else null
     }
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .imePadding(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-        state = lazyListState,
-    ) {
-        // Show preset suggestion if no providers match but preset exists
-        if (matchingPreset != null) {
-            item {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding(),
+            contentPadding = contentPadding + PaddingValues(horizontal = 16.dp, vertical = 8.dp) + PaddingValues(bottom = 104.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            state = lazyListState,
+        ) {
+            // Show preset suggestion if no providers match but preset exists
+            if (matchingPreset != null) {
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
                     Text(
                         text = stringResource(R.string.setting_provider_page_no_providers_but_preset),
                         style = MaterialTheme.typography.bodyMedium,
@@ -474,9 +686,9 @@ private fun ProviderListView(
                             horizontalArrangement = Arrangement.spacedBy(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            AutoProviderIcon(
+                            AutoAIIconWithUrl(
                                 name = matchingPreset.name,
-                                baseUrl = matchingPreset.baseUrl,
+                                customIconUri = matchingPreset.customIconUri,
                                 modifier = Modifier.size(40.dp)
                             )
                             Column(modifier = Modifier.weight(1f)) {
@@ -495,10 +707,10 @@ private fun ProviderListView(
                         }
                     }
                 }
+                }
             }
-        }
-        
-        itemsIndexed(providers, key = { _, it -> it.id }) { index, provider ->
+
+            itemsIndexed(providers, key = { _, it -> it.id }) { index, provider ->
                 val position = when {
                     providers.size == 1 -> ItemPosition.ONLY
                     index == 0 -> ItemPosition.FIRST
@@ -533,90 +745,140 @@ private fun ProviderListView(
                     state = reorderableState,
                     key = provider.id
                 ) { isDragging ->
-                    androidx.compose.runtime.key(canDelete) {
-                        PhysicsSwipeToDelete(
-                            position = position,
-                            deleteEnabled = canDelete,
-                            neighborOffset = neighborOffset,
-                            onDragProgress = { offset, unlocked ->
-                                draggingIndex = index
-                                dragOffset = offset
-                                isUnlocked = unlocked
-                            },
-                            onDragEnd = {
-                                if (draggingIndex == index) {
-                                    draggingIndex = -1
-                                    dragOffset = 0f
-                                }
-                            },
-                            onDelete = {
-                                onDeleteRequest(provider)
-                            },
-                            modifier = Modifier
-                                .scale(if (isDragging) 0.95f else 1f)
-                                .fillMaxWidth()
-                        ) { animatedShape ->
-                            ProviderItemContent(
-                                provider = provider,
-                                animatedShape = animatedShape,
-                                providerTags = settings.providerTags,
-                                haptics = haptics,
-                                dragHandle = {
-                                    IconButton(
-                                        onClick = {},
-                                        modifier = Modifier
-                                            .longPressDraggableHandle(
-                                                onDragStarted = {
-                                                    haptics.perform(HapticPattern.Pop)
-                                                },
-                                                onDragStopped = {
-                                                    haptics.perform(HapticPattern.Thud)
-                                                }
-                                            )
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.DragIndicator,
-                                            contentDescription = null
+                    PhysicsSwipeToDelete(
+                        position = position,
+                        deleteEnabled = true,
+                        neighborOffset = neighborOffset,
+                        onDragProgress = { offset, unlocked ->
+                            draggingIndex = index
+                            dragOffset = offset
+                            isUnlocked = unlocked
+                        },
+                        onDragEnd = {
+                            if (draggingIndex == index) {
+                                draggingIndex = -1
+                                dragOffset = 0f
+                            }
+                        },
+                        onDelete = {
+                            onDeleteRequest(provider)
+                        },
+                        modifier = Modifier
+                            .scale(if (isDragging) 0.95f else 1f)
+                            .fillMaxWidth()
+                    ) { animatedShape ->
+                        ProviderItemContent(
+                            provider = provider,
+                            animatedShape = animatedShape,
+                            providerTags = settings.providerTags,
+                            haptics = haptics,
+                            dragHandle = {
+                                IconButton(
+                                    onClick = {},
+                                    modifier = Modifier
+                                        .longPressDraggableHandle(
+                                            onDragStarted = {
+                                                haptics.perform(HapticPattern.Pop)
+                                            },
+                                            onDragStopped = {
+                                                haptics.perform(HapticPattern.Thud)
+                                            }
                                         )
-                                    }
-                                },
-                                onClick = {
-                                    onNavigateToDetail(provider)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.DragIndicator,
+                                        contentDescription = null
+                                    )
                                 }
-                            )
-                        }
+                            },
+                            onClick = {
+                                onNavigateToDetail(provider)
+                            }
+                        )
                     }
+                }
             }
         }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(120.dp)
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            MaterialTheme.colorScheme.background
+                        )
+                    )
+                )
+        )
     }
 }
 
 @Composable
 private fun ImportProviderButton(
+    asFab: Boolean = false,
+    enableHaptics: Boolean,
     onAdd: (ProviderSetting) -> Unit
 ) {
     val toaster = LocalToaster.current
     val context = LocalContext.current
+    val haptics = rememberPremiumHaptics(enabled = enableHaptics)
     var showImportDialog by remember { mutableStateOf(false) }
+    var importSession by remember { mutableStateOf<ProviderQrImportSession?>(null) }
 
     val scanQrCodeLauncher = rememberLauncherForActivityResult(ScanQRCode()) { result ->
-        handleQRResult(result, onAdd, toaster, context)
+        handleQRResult(
+            result = result,
+            onAdd = onAdd,
+            toaster = toaster,
+            context = context,
+            importSession = importSession,
+            onImportSessionChange = { importSession = it },
+            onSuccess = { haptics.perform(HapticPattern.Success) },
+            onProgress = { haptics.perform(HapticPattern.Pop) },
+            onError = { haptics.perform(HapticPattern.Error) }
+        )
     }
 
     val pickImageLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         uri?.let {
-            handleImageQRCode(it, onAdd, toaster, context)
+            handleImageQRCode(
+                uri = it,
+                onAdd = onAdd,
+                toaster = toaster,
+                context = context,
+                importSession = importSession,
+                onImportSessionChange = { session -> importSession = session },
+                onSuccess = { haptics.perform(HapticPattern.Success) },
+                onProgress = { haptics.perform(HapticPattern.Pop) },
+                onError = { haptics.perform(HapticPattern.Error) }
+            )
         }
     }
 
-    IconButton(
-        onClick = {
-            showImportDialog = true
+    val openImportDialog = {
+        haptics.perform(HapticPattern.Pop)
+        showImportDialog = true
+    }
+
+    if (asFab) {
+        FloatingActionButton(
+            onClick = openImportDialog,
+            shape = AppShapes.CardLarge,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            contentColor = MaterialTheme.colorScheme.onSurface
+        ) {
+            Icon(Icons.AutoMirrored.Rounded.Input, stringResource(R.string.import_label))
         }
-    ) {
-        Icon(Icons.AutoMirrored.Rounded.Input, null)
+    } else {
+        IconButton(onClick = openImportDialog) {
+            Icon(Icons.AutoMirrored.Rounded.Input, null)
+        }
     }
 
     if (showImportDialog) {
@@ -644,6 +906,7 @@ private fun ImportProviderButton(
                     ) {
                         Button(
                             onClick = {
+                                haptics.perform(HapticPattern.Pop)
                                 showImportDialog = false
                                 scanQrCodeLauncher.launch(null)
                             },
@@ -672,6 +935,7 @@ private fun ImportProviderButton(
 
                         OutlinedButton(
                             onClick = {
+                                haptics.perform(HapticPattern.Pop)
                                 showImportDialog = false
                                 pickImageLauncher.launch(
                                     androidx.activity.result.PickVisualMediaRequest(
@@ -707,7 +971,10 @@ private fun ImportProviderButton(
             confirmButton = {},
             dismissButton = {
                 TextButton(
-                    onClick = { showImportDialog = false },
+                    onClick = {
+                        haptics.perform(HapticPattern.Cancel)
+                        showImportDialog = false
+                    },
                     shape = MaterialTheme.shapes.large
                 ) {
                     Text(
@@ -718,17 +985,117 @@ private fun ImportProviderButton(
             }
         )
     }
+
+    importSession?.let { session ->
+        AlertDialog(
+            onDismissRequest = {},
+            title = {
+                Text(
+                    text = stringResource(R.string.setting_provider_page_multi_qr_title),
+                    style = MaterialTheme.typography.headlineSmall
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = stringResource(
+                            R.string.setting_provider_page_multi_qr_message,
+                            session.scannedCount,
+                            session.total
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.setting_provider_page_multi_qr_parts,
+                            session.scannedIndexes
+                        ),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        scanQrCodeLauncher.launch(null)
+                    },
+                    shape = MaterialTheme.shapes.large
+                ) {
+                    Text(stringResource(R.string.setting_provider_page_scan_next_qr))
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            importSession = session.removeLastScannedPart()
+                        },
+                        shape = MaterialTheme.shapes.large
+                    ) {
+                        Text(stringResource(R.string.setting_provider_page_back_step))
+                    }
+                    TextButton(
+                        onClick = {
+                            haptics.perform(HapticPattern.Cancel)
+                            importSession = null
+                        },
+                        shape = MaterialTheme.shapes.large
+                    ) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                }
+            }
+        )
+    }
+}
+
+private fun ProviderSetting.withUniqueId(existingProviders: List<ProviderSetting>): ProviderSetting {
+    if (existingProviders.none { it.id == id }) {
+        return this
+    }
+    return copyProvider(id = Uuid.random())
+}
+
+private data class ProviderQrImportSession(
+    val transferId: String,
+    val total: Int,
+    val parts: Map<Int, ProviderShareQrPart>,
+    val scanOrder: List<Int>
+) {
+    val scannedCount: Int get() = parts.size
+    val scannedIndexes: String get() = parts.keys.sorted().joinToString(", ")
+
+    fun removeLastScannedPart(): ProviderQrImportSession? {
+        val lastIndex = scanOrder.lastOrNull() ?: return null
+        val nextParts = parts - lastIndex
+        val nextScanOrder = scanOrder.dropLast(1)
+        return if (nextParts.isEmpty()) {
+            null
+        } else {
+            copy(parts = nextParts, scanOrder = nextScanOrder)
+        }
+    }
 }
 
 private fun handleQRResult(
     result: QRResult,
     onAdd: (ProviderSetting) -> Unit,
     toaster: AppToasterState,
-    context: android.content.Context
+    context: android.content.Context,
+    importSession: ProviderQrImportSession?,
+    onImportSessionChange: (ProviderQrImportSession?) -> Unit,
+    onSuccess: () -> Unit,
+    onProgress: () -> Unit,
+    onError: () -> Unit
 ) {
     runCatching {
         when (result) {
             is QRResult.QRError -> {
+                onError()
                 toaster.show(
                     context.getString(
                         R.string.setting_provider_page_scan_error,
@@ -738,6 +1105,7 @@ private fun handleQRResult(
             }
 
             QRResult.QRMissingPermission -> {
+                onError()
                 toaster.show(
                     context.getString(R.string.setting_provider_page_no_permission),
                     type = ToastType.Error
@@ -745,17 +1113,23 @@ private fun handleQRResult(
             }
 
             is QRResult.QRSuccess -> {
-                val setting = decodeProviderSetting(result.content.rawValue ?: "")
-                onAdd(setting)
-                toaster.show(
-                    context.getString(R.string.setting_provider_page_import_success),
-                    type = ToastType.Success
+                handleProviderShareQrValue(
+                    value = result.content.rawValue ?: "",
+                    onAdd = onAdd,
+                    toaster = toaster,
+                    context = context,
+                    importSession = importSession,
+                    onImportSessionChange = onImportSessionChange,
+                    onSuccess = onSuccess,
+                    onProgress = onProgress,
+                    onError = onError
                 )
             }
 
             QRResult.QRUserCanceled -> {}
         }
     }.onFailure { error ->
+        onError()
         toaster.show(
             context.getString(R.string.setting_provider_page_qr_decode_failed, error.message ?: ""),
             type = ToastType.Error
@@ -767,12 +1141,18 @@ private fun handleImageQRCode(
     uri: Uri,
     onAdd: (ProviderSetting) -> Unit,
     toaster: AppToasterState,
-    context: android.content.Context
+    context: android.content.Context,
+    importSession: ProviderQrImportSession?,
+    onImportSessionChange: (ProviderQrImportSession?) -> Unit,
+    onSuccess: () -> Unit,
+    onProgress: () -> Unit,
+    onError: () -> Unit
 ) {
     runCatching {
         val qrContent = ImageUtils.decodeQRCodeFromUri(context, uri)
 
         if (qrContent.isNullOrEmpty()) {
+            onError()
             toaster.show(
                 context.getString(R.string.setting_provider_page_no_qr_found),
                 type = ToastType.Error
@@ -780,13 +1160,19 @@ private fun handleImageQRCode(
             return
         }
 
-        val setting = decodeProviderSetting(qrContent)
-        onAdd(setting)
-        toaster.show(
-            context.getString(R.string.setting_provider_page_import_success),
-            type = ToastType.Success
+        handleProviderShareQrValue(
+            value = qrContent,
+            onAdd = onAdd,
+            toaster = toaster,
+            context = context,
+            importSession = importSession,
+            onImportSessionChange = onImportSessionChange,
+            onSuccess = onSuccess,
+            onProgress = onProgress,
+            onError = onError
         )
     }.onFailure { error ->
+        onError()
         toaster.show(
             context.getString(R.string.setting_provider_page_image_qr_decode_failed, error.message ?: ""),
             type = ToastType.Error
@@ -794,10 +1180,92 @@ private fun handleImageQRCode(
     }
 }
 
+private fun handleProviderShareQrValue(
+    value: String,
+    onAdd: (ProviderSetting) -> Unit,
+    toaster: AppToasterState,
+    context: android.content.Context,
+    importSession: ProviderQrImportSession?,
+    onImportSessionChange: (ProviderQrImportSession?) -> Unit,
+    onSuccess: () -> Unit,
+    onProgress: () -> Unit,
+    onError: () -> Unit
+) {
+    when (val content = parseProviderShareQrContent(value)) {
+        is ProviderShareQrContent.Single -> {
+            onImportSessionChange(null)
+            onAdd(content.provider)
+            onSuccess()
+            toaster.show(
+                context.getString(R.string.setting_provider_page_import_success),
+                type = ToastType.Success
+            )
+        }
+
+        is ProviderShareQrContent.Part -> {
+            val part = content.part
+            val currentSession = importSession ?: ProviderQrImportSession(
+                transferId = part.transferId,
+                total = part.total,
+                parts = emptyMap(),
+                scanOrder = emptyList()
+            )
+
+            if (currentSession.transferId != part.transferId || currentSession.total != part.total) {
+                onError()
+                toaster.show(
+                    context.getString(R.string.setting_provider_page_multi_qr_wrong_transfer),
+                    type = ToastType.Error
+                )
+                return
+            }
+
+            if (currentSession.parts[part.index]?.data == part.data) {
+                onProgress()
+                toaster.show(
+                    context.getString(R.string.setting_provider_page_multi_qr_duplicate),
+                    type = ToastType.Info
+                )
+                onImportSessionChange(currentSession)
+                return
+            }
+
+            val updatedSession = currentSession.copy(
+                parts = currentSession.parts + (part.index to part),
+                scanOrder = currentSession.scanOrder + part.index
+            )
+
+            if (updatedSession.scannedCount == updatedSession.total) {
+                val setting = decodeProviderSettingParts(updatedSession.parts.values)
+                onImportSessionChange(null)
+                onAdd(setting)
+                onSuccess()
+                toaster.show(
+                    context.getString(R.string.setting_provider_page_import_success),
+                    type = ToastType.Success
+                )
+            } else {
+                onImportSessionChange(updatedSession)
+                onProgress()
+                toaster.show(
+                    context.getString(
+                        R.string.setting_provider_page_multi_qr_progress,
+                        updatedSession.scannedCount,
+                        updatedSession.total
+                    ),
+                    type = ToastType.Info
+                )
+            }
+        }
+    }
+}
+
 
 @Composable
 private fun AddButton(
     enableHaptics: Boolean,
+    providerPresets: List<me.rerere.rikkahub.ui.pages.setting.components.ProviderPreset>,
+    asFab: Boolean = false,
     onAdd: (ProviderSetting) -> Unit
 ) {
     var showBottomSheet by remember { mutableStateOf(false) }
@@ -809,16 +1277,25 @@ private fun AddButton(
         onAdd(it)
     }
 
-    IconButton(
-        onClick = {
-            searchQuery = ""
-            showBottomSheet = true
-        }
-    ) {
-        Icon(Icons.Rounded.Add, stringResource(R.string.add))
+    val haptics = rememberPremiumHaptics(enabled = enableHaptics)
+    val openProviderSheet = {
+        haptics.perform(HapticPattern.Pop)
+        searchQuery = ""
+        showBottomSheet = true
     }
 
-    val haptics = rememberPremiumHaptics(enabled = enableHaptics)
+    if (asFab) {
+        FloatingActionButton(
+            onClick = openProviderSheet,
+            shape = AppShapes.CardLarge
+        ) {
+            Icon(Icons.Rounded.Add, stringResource(R.string.add))
+        }
+    } else {
+        IconButton(onClick = openProviderSheet) {
+            Icon(Icons.Rounded.Add, stringResource(R.string.add))
+        }
+    }
 
     // Provider selection bottom sheet
     if (showBottomSheet) {
@@ -883,11 +1360,11 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 Spacer(modifier = Modifier.height(16.dp))
                 
                 // Filter presets based on search
-                val filteredPresets = remember(searchQuery) {
+                val filteredPresets = remember(searchQuery, providerPresets) {
                     if (searchQuery.isBlank()) {
-                        PROVIDER_PRESETS
+                        providerPresets
                     } else {
-                        PROVIDER_PRESETS.filter { preset ->
+                        providerPresets.filter { preset ->
                             preset.name.contains(searchQuery, ignoreCase = true) ||
                             preset.description.contains(searchQuery, ignoreCase = true)
                         }
@@ -997,9 +1474,9 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                AutoProviderIcon(
+                                AutoAIIconWithUrl(
                                     name = preset.name,
-                                    baseUrl = preset.baseUrl,
+                                    customIconUri = preset.customIconUri,
                                     modifier = Modifier.size(40.dp)
                                 )
                                 Column(modifier = Modifier.weight(1f)) {
@@ -1039,9 +1516,13 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
             },
             text = {
                 customDialogState.currentState?.let {
-                    ProviderConfigure(it) { newState ->
-                        customDialogState.currentState = newState
-                    }
+                    ProviderConfigure(
+                        provider = it,
+                        showEnabledToggle = false,
+                        onEdit = { newState ->
+                            customDialogState.currentState = newState
+                        }
+                    )
                 }
             },
             confirmButton = {

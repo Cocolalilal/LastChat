@@ -12,16 +12,20 @@ internal fun resolveActiveBuiltInTools(
     val activeTools = model.tools
         .filterNotTo(mutableSetOf()) { it is BuiltInTools.Search }
 
-    val useBuiltInSearch =
-        BuiltInTools.Search in model.tools &&
-            (
-                assistant.preferBuiltInSearch ||
-                    assistant.searchMode is AssistantSearchMode.BuiltIn
-                )
-
-    if (useBuiltInSearch) {
+    if (shouldUseBuiltInSearch(model, assistant)) {
         activeTools += BuiltInTools.Search
     }
 
     return activeTools
+}
+
+internal fun shouldUseBuiltInSearch(
+    model: Model,
+    assistant: Assistant,
+): Boolean {
+    return BuiltInTools.Search in model.tools &&
+        (
+            assistant.preferBuiltInSearch ||
+                assistant.searchMode is AssistantSearchMode.BuiltIn
+            )
 }

@@ -22,8 +22,13 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
+import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -35,12 +40,15 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.ai.ReasoningButton
+import me.rerere.rikkahub.ui.components.ai.VoiceSelector
+import me.rerere.rikkahub.ui.components.ui.AutoSaveIndicator
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.toFixed
+import me.rerere.tts.provider.TTSProviderSetting
 
 /**
  * Model tab - All model and generation-related settings.
@@ -50,8 +58,11 @@ import me.rerere.rikkahub.utils.toFixed
 fun AssistantModelSubPage(
     assistant: Assistant,
     providers: List<ProviderSetting>,
+    ttsProviders: List<TTSProviderSetting>,
     onUpdate: (Assistant) -> Unit
 ) {
+    var maxTokensPending by remember { mutableStateOf(false) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -91,6 +102,39 @@ fun AssistantModelSubPage(
                         providers = providers,
                         type = ModelType.CHAT,
                         onSelect = { onUpdate(assistant.copy(chatModelId = it.id)) },
+                    )
+                }
+            }
+
+            // Voice
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = if (LocalDarkMode.current)
+                    MaterialTheme.colorScheme.surfaceContainerLow
+                else
+                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Voice",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Character voice for TTS. Leave empty to use the global default.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    VoiceSelector(
+                        voiceId = assistant.ttsVoiceId,
+                        providers = ttsProviders,
+                        allowClear = true,
+                        onClear = { onUpdate(assistant.copy(ttsVoiceId = null)) },
+                        onSelect = { onUpdate(assistant.copy(ttsVoiceId = it.id)) },
                     )
                 }
             }
@@ -290,18 +334,26 @@ fun AssistantModelSubPage(
                 else 
                     stringResource(R.string.assistant_page_max_tokens_no_token_limit),
                 trailing = {
-                    OutlinedTextField(
-                        value = assistant.maxTokens?.toString() ?: "",
-                        onValueChange = { text ->
-                            val tokens = if (text.isBlank()) null else text.toIntOrNull()?.takeIf { it > 0 }
-                            onUpdate(assistant.copy(maxTokens = tokens))
-                        },
-                        modifier = Modifier.width(100.dp),
-                        placeholder = { Text(stringResource(R.string.assistant_model_auto)) },
-                        singleLine = true,
-                        textStyle = MaterialTheme.typography.bodySmall,
-                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
-                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        AutoSaveIndicator(visible = maxTokensPending)
+                        DebouncedTextField(
+                            value = assistant.maxTokens?.toString() ?: "",
+                            onValueChange = { text ->
+                                val tokens = if (text.isBlank()) null else text.filter { it.isDigit() }.toIntOrNull()?.takeIf { it > 0 }
+                                onUpdate(assistant.copy(maxTokens = tokens))
+                            },
+                            stateKey = "assistant_max_tokens_${assistant.id}",
+                            modifier = Modifier.width(100.dp),
+                            placeholder = stringResource(R.string.assistant_model_auto),
+                            singleLine = true,
+                            onPendingChange = { maxTokensPending = it },
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                            textStyle = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                 }
             )
         }

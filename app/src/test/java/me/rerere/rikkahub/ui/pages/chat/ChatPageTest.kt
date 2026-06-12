@@ -5,6 +5,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.datastore.DisplaySetting
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.service.ChatPersistenceMode
@@ -23,6 +24,54 @@ class ChatPageTest {
         )
 
         assertTrue(hasConversationMessages(conversation))
+    }
+
+    @Test
+    fun presetAssistantMessageKeepsStableTurnKeyInsteadOfPendingPlaceholderKey() {
+        val node = MessageNode.of(UIMessage.assistant("Hey there"))
+        val group = me.rerere.rikkahub.ui.components.chat.MessageTurnGroup(
+            nodes = listOf(node),
+            role = me.rerere.ai.core.MessageRole.ASSISTANT,
+        )
+
+        assertEquals(
+            "turn:${node.id}:0",
+            chatListTurnKey(
+                group = group,
+                index = 0,
+                isPendingAssistantTurn = false,
+            )
+        )
+        assertEquals(
+            PendingAssistantTurnKey,
+            chatListTurnKey(
+                group = group,
+                index = 0,
+                isPendingAssistantTurn = true,
+            )
+        )
+    }
+
+    @Test
+    fun assistantPresetDefinitionAloneDoesNotCountAsVisibleConversationPreset() {
+        val preset = UIMessage.assistant("Hey there")
+        val assistant = Assistant(presetMessages = listOf(preset))
+
+        assertFalse(
+            hasConversationPresetMessages(
+                conversation = Conversation.ofId(Uuid.random()),
+                assistant = assistant,
+            )
+        )
+        assertTrue(
+            hasConversationPresetMessages(
+                conversation = Conversation.ofId(
+                    id = Uuid.random(),
+                    messages = listOf(MessageNode.of(preset)),
+                ),
+                assistant = assistant,
+            )
+        )
     }
 
     @Test
@@ -83,52 +132,25 @@ class ChatPageTest {
     }
 
     @Test
-    fun canPreserveAssistantSwitchDraftOnlyForAssistantSeededDrafts() {
-        val presetOnlyConversation = Conversation.ofId(
-            id = Uuid.random(),
-            messages = listOf(MessageNode.of(UIMessage.assistant("Preset"))),
-        )
-        val activeConversation = Conversation.ofId(
-            id = Uuid.random(),
-            messages = listOf(
-                MessageNode.of(UIMessage.assistant("Preset")),
-                MessageNode.of(UIMessage.user("Hello")),
-            ),
-        )
-
-        assertTrue(canPreserveAssistantSwitchDraft(presetOnlyConversation))
-        assertFalse(canPreserveAssistantSwitchDraft(activeConversation))
+    fun wideChatLayoutRequiresTabletHeight() {
+        assertFalse(shouldUseWideChatLayout(windowWidth = 920.dp, windowHeight = 430.dp))
+        assertTrue(shouldUseWideChatLayout(windowWidth = 900.dp, windowHeight = 600.dp))
     }
 
     @Test
-    fun buildAssistantSwitchNavigationCarriesDraftOnlyForPresetOnlyConversation() {
+    fun buildAssistantSwitchNavigationKeepsDraftOutOfRoute() {
         val navigation = buildAssistantSwitchNavigation(
-            conversation = Conversation.ofId(
-                id = Uuid.random(),
-                messages = listOf(MessageNode.of(UIMessage.assistant("Preset"))),
-            ),
-            inputText = "draft text",
-            inputFiles = listOf("file:///tmp/image.png"),
             persistenceMode = ChatPersistenceMode.TEMPORARY,
         )
 
-        assertEquals("draft text", navigation.initText)
-        assertEquals(listOf("file:///tmp/image.png"), navigation.initFiles)
+        assertEquals(null, navigation.initText)
+        assertTrue(navigation.initFiles.isEmpty())
         assertEquals(ChatPersistenceMode.TEMPORARY.routeValue, navigation.persistenceMode)
     }
 
     @Test
-    fun buildAssistantSwitchNavigationDropsDraftForActiveConversation() {
+    fun buildAssistantSwitchNavigationDropsNormalPersistenceMode() {
         val navigation = buildAssistantSwitchNavigation(
-            conversation = Conversation.ofId(
-                id = Uuid.random(),
-                messages = listOf(
-                    MessageNode.of(UIMessage.assistant("Preset")),
-                    MessageNode.of(UIMessage.user("Hello")),
-                ),
-            ),
-            inputText = "draft text",
-            inputFiles = listOf("file:///tmp/image.png"),
             persistenceMode = ChatPersistenceMode.NORMAL,
         )
 
@@ -138,21 +160,30 @@ class ChatPageTest {
     }
 
     @Test
-    fun extractDraftFileUrlsKeepsMediaPartsOnly() {
-        val urls = extractDraftFileUrls(
-            listOf(
-                UIMessagePart.Text("ignore me"),
-                UIMessagePart.Image("file:///tmp/image.png"),
-                UIMessagePart.Document("file:///tmp/file.pdf", "file.pdf", "application/pdf"),
-            )
+    fun decodeChatRouteTextIgnoresInvalidBase64() {
+        assertEquals("", decodeChatRouteText("draft text"))
+    }
+
+    @Test
+    fun chatSessionDraftStoreMovesDraftWithoutEditingState() {
+        ChatSessionDraftStore.clear()
+        val fromId = Uuid.random()
+        val toId = Uuid.random()
+        val editingMessageId = Uuid.random()
+        val draft = ChatInputDraft(
+            text = "draft text",
+            messageContent = listOf(UIMessagePart.Image("file:///tmp/image.png")),
+            editingMessage = editingMessageId,
         )
 
+        ChatSessionDraftStore.put(fromId, draft)
+        ChatSessionDraftStore.moveDraft(fromId, toId, draft)
+
+        assertEquals(null, ChatSessionDraftStore.get(fromId))
         assertEquals(
-            listOf(
-                "file:///tmp/image.png",
-                "file:///tmp/file.pdf",
-            ),
-            urls
+            draft.copy(editingMessage = null),
+            ChatSessionDraftStore.get(toId)
         )
+        ChatSessionDraftStore.clear()
     }
 }

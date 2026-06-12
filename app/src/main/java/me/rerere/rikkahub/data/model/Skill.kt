@@ -19,8 +19,10 @@ data class Skill(
     val attachments: List<ModeAttachment> = emptyList(), // Optional multimedia context attachments
     val enabled: Boolean = true,
     @SerialName("always_enabled")
-    val alwaysEnabled: Boolean = false,              // When true, skill is always active in every chat
-    val availableAssistantIds: Set<Uuid> = emptySet(), // Legacy field retained for backward compatibility
+    val alwaysEnabled: Boolean = false,              // When true, skill is enabled by default for available assistants
+    @SerialName("available_for_all_assistants")
+    val availableForAllAssistants: Boolean = true,
+    val availableAssistantIds: Set<Uuid> = emptySet(),
     @SerialName("autonomous_for_all_assistants")
     val autonomousForAllAssistants: Boolean = false,
     @SerialName("autonomous_assistant_ids")
@@ -37,9 +39,23 @@ data class Skill(
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 ) {
-    fun canAssistantAutonomouslyToggle(assistantId: Uuid): Boolean {
-        return autonomousForAllAssistants || autonomousAssistantIds.contains(assistantId)
+    fun isAvailableForAssistant(assistantId: Uuid): Boolean {
+        return availableForAllAssistants || availableAssistantIds.contains(assistantId)
     }
+
+    fun canAssistantAutonomouslyToggle(assistantId: Uuid): Boolean {
+        return isAvailableForAssistant(assistantId)
+    }
+}
+
+val SKILL_SELECTION_OVERRIDE_ID: Uuid = Uuid.parse("00000000-0000-0000-0000-000000000001")
+
+fun Set<Uuid>.hasManualSkillSelectionOverride(): Boolean {
+    return contains(SKILL_SELECTION_OVERRIDE_ID)
+}
+
+fun Set<Uuid>.withoutSkillSelectionOverride(): Set<Uuid> {
+    return this - SKILL_SELECTION_OVERRIDE_ID
 }
 
 /**

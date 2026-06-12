@@ -46,6 +46,21 @@ class AssistantSerializationTest {
     }
 
     @Test
+    fun olderAssistantJsonDefaultsMemorySearchToolOff() {
+        val assistant = Json.decodeFromString<Assistant>(
+            """
+            {
+              "id": "00000000-0000-0000-0000-000000000014",
+              "name": "Legacy Memory Assistant",
+              "enableMemory": true
+            }
+            """.trimIndent()
+        )
+
+        assertFalse(assistant.enableMemorySearchTool)
+    }
+
+    @Test
     fun spontaneousMessagingFieldsRoundTrip() {
         val assistant = Assistant(
             id = Uuid.parse("00000000-0000-0000-0000-000000000010"),
@@ -122,4 +137,5 @@ class AssistantSerializationTest {
         assertTrue(encoded.contains("\"character_questions\""))
         assertTrue(decoded.localTools.contains(LocalToolOption.AskUser))
     }
+
 }

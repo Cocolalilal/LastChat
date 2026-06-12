@@ -10,22 +10,15 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import me.rerere.ai.provider.Modality
-import me.rerere.ai.provider.Model
-import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.data.ai.models.ModelMetadataResolver
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.sync.WebDavBackupItem
+import me.rerere.rikkahub.data.sync.importer.ChatboxImporter
 import me.rerere.rikkahub.data.sync.importer.CherryStudioProviderImporter
 import me.rerere.rikkahub.data.sync.WebdavSync
-import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.UiState
 import java.io.File
 
@@ -35,6 +28,7 @@ class BackupVM(
     private val settingsStore: SettingsStore,
     private val webdavSync: WebdavSync,
     private val modelMetadataResolver: ModelMetadataResolver,
+    private val conversationRepository: me.rerere.rikkahub.data.repository.ConversationRepository,
 ) : ViewModel() {
     val settings = settingsStore.settingsFlow.stateIn(
         scope = viewModelScope,
@@ -109,88 +103,35 @@ class BackupVM(
     }
 
     suspend fun restoreFromChatBox(file: File) {
-        val importedProviders = withContext(Dispatchers.IO) {
-            val importProviders = arrayListOf<ProviderSetting>()
-
-            val jsonElements = JsonInstant.parseToJsonElement(file.readText()).jsonObject
-            val settingsObj = jsonElements["settings"]?.jsonObject
-            if (settingsObj != null) {
-                settingsObj["providers"]?.jsonObject?.let { providers ->
-                    providers["openai"]?.jsonObject?.let { openai ->
-                        val apiHost = openai["apiHost"]?.jsonPrimitive?.contentOrNull ?: "https://api.openai.com"
-                        val apiKey = openai["apiKey"]?.jsonPrimitive?.contentOrNull ?: ""
-                        val models = openai["models"]?.jsonArray?.map { element ->
-                            val modelId = element.jsonObject["modelId"]?.jsonPrimitive?.contentOrNull ?: ""
-                            val capabilities = element.jsonObject["capabilities"]?.jsonArray
-                                ?.mapNotNull { it.jsonPrimitive.contentOrNull }
-                                ?: emptyList()
-                            Model(
-                                modelId = modelId,
-                                displayName = modelId,
-                                inputModalities = buildList {
-                                    if (capabilities.contains("vision")) add(Modality.IMAGE)
-                                },
-                                abilities = buildList {
-                                    if (capabilities.contains("tool_use")) add(ModelAbility.TOOL)
-                                    if (capabilities.contains("reasoning")) add(ModelAbility.REASONING)
-                                }
-                            )
-                        } ?: emptyList()
-                        if (apiKey.isNotBlank()) {
-                            importProviders.add(
-                                ProviderSetting.OpenAI(
-                                    name = "OpenAI",
-                                    baseUrl = "$apiHost/v1",
-                                    apiKey = apiKey,
-                                    models = models,
-                                )
-                            )
-                        }
-                    }
-                    providers["claude"]?.jsonObject?.let { claude ->
-                        val apiHost =
-                            claude["apiHost"]?.jsonPrimitive?.contentOrNull ?: "https://api.anthropic.com"
-                        val apiKey = claude["apiKey"]?.jsonPrimitive?.contentOrNull ?: ""
-                        if (apiKey.isNotBlank()) {
-                            importProviders.add(
-                                ProviderSetting.Claude(
-                                    name = "Claude",
-                                    baseUrl = "$apiHost/v1",
-                                    apiKey = apiKey,
-                                )
-                            )
-                        }
-                    }
-                    providers["gemini"]?.jsonObject?.let { gemini ->
-                        val apiHost = gemini["apiHost"]?.jsonPrimitive?.contentOrNull
-                            ?: "https://generativelanguage.googleapis.com"
-                        val apiKey = gemini["apiKey"]?.jsonPrimitive?.contentOrNull ?: ""
-                        if (apiKey.isNotBlank()) {
-                            importProviders.add(
-                                ProviderSetting.Google(
-                                    name = "Gemini",
-                                    baseUrl = "$apiHost/v1beta",
-                                    apiKey = apiKey,
-                                )
-                            )
-                        }
-                    }
-                }
-            }
-            importProviders.toList()
+        val imported = withContext(Dispatchers.IO) {
+            ChatboxImporter.import(file)
         }
 
-        val resolvedProviders = importedProviders.map(modelMetadataResolver::applyToProvider)
+        val resolvedProviders = imported.providers.map(modelMetadataResolver::applyToProvider)
 
-        if (resolvedProviders.isEmpty()) {
-            throw IllegalArgumentException("No importable providers found in ChatBox export")
+        if (resolvedProviders.isEmpty() && imported.conversations.isEmpty() && imported.assistants.isEmpty()) {
+            throw IllegalArgumentException("No importable data found in ChatBox export")
         }
 
-        Log.i(TAG, "restoreFromChatBox: import ${resolvedProviders.size} providers: $resolvedProviders")
+        imported.conversations.forEach { conversation ->
+            conversationRepository.insertConversation(conversation)
+        }
+
+        Log.i(TAG, "restoreFromChatBox: import ${resolvedProviders.size} providers, ${imported.conversations.size} conversations, ${imported.assistants.size} assistants")
+        
         settingsStore.update { current ->
-            current.copy(
-                providers = mergeImportedProviders(current.providers, resolvedProviders)
-            )
+            var updated = current
+            if (resolvedProviders.isNotEmpty()) {
+                updated = updated.copy(
+                    providers = mergeImportedProviders(current.providers, resolvedProviders)
+                )
+            }
+            if (imported.assistants.isNotEmpty()) {
+                updated = updated.copy(
+                    assistants = current.assistants + imported.assistants
+                )
+            }
+            updated
         }
     }
 
@@ -227,6 +168,7 @@ class BackupVM(
             is ProviderSetting.OpenAI -> "openai|${provider.baseUrl}|${provider.apiKey}"
             is ProviderSetting.Google -> "google|${provider.baseUrl}|${provider.apiKey}"
             is ProviderSetting.Claude -> "claude|${provider.baseUrl}|${provider.apiKey}"
+            is ProviderSetting.ComfyUI -> "comfyui|${provider.baseUrl}|${provider.workflowJson.hashCode()}"
         }
     }
 }

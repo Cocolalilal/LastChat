@@ -38,6 +38,8 @@ data class AssistantUISettings(
 data class Assistant(
     val id: Uuid = Uuid.random(),
     val chatModelId: Uuid? = null, // 如果为null, 使用全局默认模型
+    val ttsVoiceId: Uuid? = null,
+    val ttsAutoplayMode: me.rerere.rikkahub.data.datastore.TtsAutoplayMode? = null,
     val backgroundModelId: Uuid? = null, // 用于后台检查的模型
     val searchMode: AssistantSearchMode = AssistantSearchMode.Off, // Search mode for this assistant
     val preferBuiltInSearch: Boolean = false, // If true, use built-in search when model supports it, otherwise fall back to searchMode
@@ -54,6 +56,7 @@ data class Assistant(
     val summarizerModelId: Uuid? = null, // Legacy import field; global summarizer lives in Settings
     val streamOutput: Boolean = true,
     val enableMemory: Boolean = false,
+    val enableMemorySearchTool: Boolean = false, // Allow the assistant to deliberately search memories and past chats
     val useRagMemoryRetrieval: Boolean = true, // If true, use vector-based RAG. If false, inject all memories
     val ragSimilarityThreshold: Float = 0.45f, // Similarity threshold for RAG (0.0 = include all, 1.0 = only perfect matches)
     val ragLimit: Int = 5, // Maximum number of memories to retrieve via RAG
@@ -218,6 +221,19 @@ fun String.replaceRegexes(
             acc
         }
     }
+}
+
+fun String.replacePersonaPlaceholders(
+    assistant: Assistant?,
+    userNickname: String,
+): String {
+    val charName = assistant?.name?.ifBlank { null } ?: "assistant"
+    val userName = userNickname.ifBlank { "user" }
+    return this
+        .replace(oldValue = "{{char}}", newValue = charName, ignoreCase = true)
+        .replace(oldValue = "{char}", newValue = charName, ignoreCase = true)
+        .replace(oldValue = "{{user}}", newValue = userName, ignoreCase = true)
+        .replace(oldValue = "{user}", newValue = userName, ignoreCase = true)
 }
 
 @Serializable

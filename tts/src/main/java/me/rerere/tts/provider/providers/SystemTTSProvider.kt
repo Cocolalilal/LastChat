@@ -30,7 +30,13 @@ class SystemTTSProvider : TTSProvider<TTSProviderSetting.SystemTTS> {
             var tts: TextToSpeech? = null
             val listener = TextToSpeech.OnInitListener { status ->
                 if (status == TextToSpeech.SUCCESS) {
-                    val ttsInstance = tts ?: error("TextToSpeech instance is null")
+                    val ttsInstance = tts
+                    if (ttsInstance == null) {
+                        if (continuation.isActive) continuation.resumeWithException(
+                            Exception("TextToSpeech instance is null")
+                        )
+                        return@OnInitListener
+                    }
 
                 // Set language
                 val locale = Locale.getDefault()
@@ -40,6 +46,16 @@ class SystemTTSProvider : TTSProvider<TTSProviderSetting.SystemTTS> {
                     langResult == TextToSpeech.LANG_NOT_SUPPORTED
                 ) {
                     Log.w(TAG, "generateSpeech: Language $locale not supported")
+                }
+
+                val voiceName = providerSetting.voiceName?.takeIf { it.isNotBlank() }
+                if (voiceName != null) {
+                    val voice = ttsInstance.voices?.firstOrNull { it.name == voiceName }
+                    if (voice == null) {
+                        Log.w(TAG, "generateSpeech: Voice $voiceName not found")
+                    } else if (ttsInstance.setVoice(voice) != TextToSpeech.SUCCESS) {
+                        Log.w(TAG, "generateSpeech: Failed to select voice $voiceName")
+                    }
                 }
 
                 // Set speech parameters
@@ -107,7 +123,12 @@ class SystemTTSProvider : TTSProvider<TTSProviderSetting.SystemTTS> {
                 )
             }
         }
-        tts = TextToSpeech(context, listener)
+        val enginePackageName = providerSetting.enginePackageName?.takeIf { it.isNotBlank() }
+        tts = if (enginePackageName == null) {
+            TextToSpeech(context, listener)
+        } else {
+            TextToSpeech(context, listener, enginePackageName)
+        }
 
         continuation.invokeOnCancellation {
             tts?.shutdown()
@@ -122,7 +143,9 @@ class SystemTTSProvider : TTSProvider<TTSProviderSetting.SystemTTS> {
                 metadata = mapOf(
                     "provider" to "system",
                     "speechRate" to providerSetting.speechRate.toString(),
-                    "pitch" to providerSetting.pitch.toString()
+                    "pitch" to providerSetting.pitch.toString(),
+                    "enginePackageName" to (providerSetting.enginePackageName ?: ""),
+                    "voiceName" to (providerSetting.voiceName ?: "")
                 )
             )
         )

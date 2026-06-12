@@ -58,6 +58,11 @@ import kotlin.uuid.Uuid
 
 private const val TAG = "ChatVM"
 
+internal data class ChatListScrollPosition(
+    val firstVisibleItemIndex: Int = 0,
+    val firstVisibleItemScrollOffset: Int = 0,
+)
+
 class ChatVM(
     id: String,
     private val context: Application,
@@ -71,6 +76,20 @@ class ChatVM(
 ) : ViewModel() {
     private val _conversationId: Uuid = Uuid.parse(id)
     val conversation: StateFlow<Conversation> = chatService.getConversationFlow(_conversationId)
+    private val _conversationInitialized = MutableStateFlow(false)
+    val conversationInitialized: StateFlow<Boolean> = _conversationInitialized
+    internal var chatListScrollPosition: ChatListScrollPosition? = null
+        private set
+
+    fun updateChatListScrollPosition(
+        firstVisibleItemIndex: Int,
+        firstVisibleItemScrollOffset: Int,
+    ) {
+        chatListScrollPosition = ChatListScrollPosition(
+            firstVisibleItemIndex = firstVisibleItemIndex,
+            firstVisibleItemScrollOffset = firstVisibleItemScrollOffset,
+        )
+    }
     var chatListInitialized by mutableStateOf(false) // 聊天列表是否已经滚动到底部
 
     // 异步任务 (从ChatService获取，响应式)
@@ -109,7 +128,11 @@ class ChatVM(
 
         // 初始化对话
         viewModelScope.launch {
-            chatService.initializeConversation(_conversationId)
+            try {
+                chatService.initializeConversation(_conversationId)
+            } finally {
+                _conversationInitialized.value = true
+            }
         }
 
         // 记住对话ID, 方便下次启动恢复
@@ -509,7 +532,11 @@ class ChatVM(
     fun updateTitle(title: String) {
         viewModelScope.launch {
             val updatedConversation = conversation.value.copy(title = title)
-            chatService.saveConversation(_conversationId, updatedConversation)
+            chatService.saveConversation(
+                conversationId = _conversationId,
+                conversation = updatedConversation,
+                preserveConsolidation = true,
+            )
         }
     }
 
@@ -529,7 +556,11 @@ class ChatVM(
 
     fun updateConversationTitle(conversation: Conversation, title: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            conversationRepo.updateConversation(conversation.copy(title = title))
+            conversationRepo.updateTitle(
+                conversationId = conversation.id,
+                title = title,
+                updateAt = conversation.updateAt,
+            )
         }
     }
 

@@ -7,8 +7,11 @@ import android.util.Log
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
+import androidx.paging.filter
 import androidx.paging.map
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -105,9 +108,14 @@ class ConversationRepository(
     fun searchConversations(titleKeyword: String): Flow<List<Conversation>> {
         return conversationDAO
             .searchConversations(titleKeyword)
-            .map { flow ->
-                flow.map { entity ->
+            .map { list ->
+                list.map { entity ->
                     conversationEntityToConversation(entity)
+                }.filter { conversation ->
+                    conversation.title.contains(titleKeyword, ignoreCase = true) ||
+                        conversation.messageNodes.any { node ->
+                            node.currentMessage.toText().contains(titleKeyword, ignoreCase = true)
+                        }
                 }
             }
     }
@@ -122,15 +130,39 @@ class ConversationRepository(
     ).flow.map { pagingData ->
         pagingData.map { entity ->
             conversationSummaryToConversation(entity)
+        }.filter { conversation ->
+            if (conversation.title.contains(titleKeyword, ignoreCase = true)) {
+                true
+            } else {
+                val fullEntity = withContext(Dispatchers.IO) {
+                    conversationDAO.getConversationById(conversation.id.toString())
+                }
+                if (fullEntity != null) {
+                    val messageNodes = runCatching {
+                        JsonInstant.decodeFromString<List<MessageNode>>(fullEntity.nodes)
+                    }.getOrNull() ?: emptyList()
+                    
+                    messageNodes.any { node ->
+                        node.currentMessage.toText().contains(titleKeyword, ignoreCase = true)
+                    }
+                } else {
+                    false
+                }
+            }
         }
     }
 
     fun searchConversationsOfAssistant(assistantId: Uuid, titleKeyword: String): Flow<List<Conversation>> {
         return conversationDAO
             .searchConversationsOfAssistant(assistantId.toString(), titleKeyword)
-            .map { flow ->
-                flow.map { entity ->
+            .map { list ->
+                list.map { entity ->
                     conversationEntityToConversation(entity)
+                }.filter { conversation ->
+                    conversation.title.contains(titleKeyword, ignoreCase = true) ||
+                        conversation.messageNodes.any { node ->
+                            node.currentMessage.toText().contains(titleKeyword, ignoreCase = true)
+                        }
                 }
             }
     }
@@ -145,6 +177,25 @@ class ConversationRepository(
     ).flow.map { pagingData ->
         pagingData.map { entity ->
             conversationSummaryToConversation(entity)
+        }.filter { conversation ->
+            if (conversation.title.contains(titleKeyword, ignoreCase = true)) {
+                true
+            } else {
+                val fullEntity = withContext(Dispatchers.IO) {
+                    conversationDAO.getConversationById(conversation.id.toString())
+                }
+                if (fullEntity != null) {
+                    val messageNodes = runCatching {
+                        JsonInstant.decodeFromString<List<MessageNode>>(fullEntity.nodes)
+                    }.getOrNull() ?: emptyList()
+                    
+                    messageNodes.any { node ->
+                        node.currentMessage.toText().contains(titleKeyword, ignoreCase = true)
+                    }
+                } else {
+                    false
+                }
+            }
         }
     }
 
@@ -164,11 +215,11 @@ class ConversationRepository(
         try { usageStatsDAO.incrementConversations() } catch (_: Exception) {}
     }
 
-    suspend fun updateConversation(conversation: Conversation) {
+    suspend fun updateConversation(conversation: Conversation, preserveConsolidation: Boolean = false) {
         val syncedConversation = chatAttachmentRepository.syncConversationAttachments(conversation)
         // Invalidation Logic: If a consolidated conversation is updated (e.g. new message),
         // we must invalidate the old memory episode to allow re-consolidation.
-        if (syncedConversation.isConsolidated) {
+        if (shouldInvalidateConsolidation(syncedConversation, preserveConsolidation)) {
             val updatedConversation = syncedConversation.copy(isConsolidated = false)
 
             conversationDAO.update(
@@ -292,6 +343,14 @@ class ConversationRepository(
         )
     }
 
+    suspend fun updateTitle(conversationId: Uuid, title: String, updateAt: Instant) {
+        conversationDAO.updateTitle(
+            id = conversationId.toString(),
+            title = title,
+            updateAt = updateAt.toEpochMilli(),
+        )
+    }
+
     suspend fun getEpisodeCount(): Int {
         return chatEpisodeDAO.getCount()
     }
@@ -319,6 +378,10 @@ class ConversationRepository(
 
     fun getConversationCountByAssistantFlow(assistantId: String): Flow<Int> = 
         conversationDAO.getConversationCountByAssistantFlow(assistantId)
+
+    suspend fun hasSuccessfulAssistantReply(): Boolean = withContext(Dispatchers.IO) {
+        conversationDAO.hasUserAssistantConversation()
+    }
 
     /**
      * Get the most frequently used model ID for an assistant by analyzing message nodes.
@@ -356,12 +419,12 @@ class ConversationRepository(
                 modelCounts.maxByOrNull { it.value }?.key
             }
 
-    // ===== Daily Activity Tracking (for persistent streaks) =====
+    // ===== Daily Activity Tracking (for the activity heatmap) =====
     
     /**
      * Record that the user was active today (sent a message).
-     * This persists independently of conversations, so streak data
-     * is preserved even when chats are deleted.
+     * This persists independently of conversations so the activity
+     * heatmap can stay useful even when chats are deleted.
      */
     suspend fun recordDailyActivity() {
         val today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
@@ -382,12 +445,6 @@ class ConversationRepository(
         }
     }
     
-    /**
-     * Get all activity dates for streak calculation.
-     * Returns dates in ISO format (YYYY-MM-DD), ordered most recent first.
-     */
-    fun getDailyActivityDatesFlow(): Flow<List<String>> = dailyActivityDAO.getAllDatesFlow()
-    
     fun getWeeklyActivityFlow(startDate: String): Flow<List<me.rerere.rikkahub.data.db.entity.DailyActivityEntity>> =
         dailyActivityDAO.getWeeklyActivityFlow(startDate)
     
@@ -399,26 +456,6 @@ class ConversationRepository(
         return dailyActivityDAO.hasActivityForDateFlow(today)
     }
     
-    /**
-     * Migrate existing conversation dates to the daily activity table.
-     * Called once during app initialization to preserve existing streaks.
-     */
-    suspend fun migrateConversationDatesToActivity() {
-        val existingDates = conversationDAO.getDistinctCreateDatesFlow().first()
-        for (dateStr in existingDates) {
-            try {
-                // Parse and re-format to ensure ISO format
-                val date = LocalDate.parse(dateStr, DateTimeFormatter.ISO_LOCAL_DATE)
-                val isoDate = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
-                // Use a timestamp in the middle of that day for migration
-                val timestamp = date.atStartOfDay().toEpochSecond(java.time.ZoneOffset.UTC) * 1000
-                dailyActivityDAO.insertDateIfNotExists(isoDate, timestamp)
-            } catch (e: Exception) {
-                // Skip invalid dates
-            }
-        }
-    }
-
     /**
      * Reconstruct missing historical activity days from conversation history.
      * This is safe to run repeatedly and fills gaps caused by imports/restores.
@@ -752,6 +789,11 @@ class ConversationRepository(
             "os error - 11" in text
     }
 }
+
+internal fun shouldInvalidateConsolidation(
+    conversation: Conversation,
+    preserveConsolidation: Boolean,
+): Boolean = conversation.isConsolidated && !preserveConsolidation
 
 /**
  * 轻量级的会话查询结果，不包含 nodes 和 suggestions 字段
