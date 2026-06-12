@@ -409,7 +409,6 @@ fun SettingProviderPage(
             // Provider list view
             ProviderListView(
                 providers = filteredProviders,
-                allProviders = settings.providers,
                 settings = settings,
                 haptics = haptics,
                 contentPadding = PaddingValues(bottom = innerPadding.calculateBottomPadding()),
@@ -603,7 +602,6 @@ private fun SearchBarWithToggle(
 @Composable
 private fun ProviderListView(
     providers: List<ProviderSetting>,
-    allProviders: List<ProviderSetting>,
     settings: me.rerere.rikkahub.data.datastore.Settings,
     haptics: me.rerere.rikkahub.ui.hooks.PremiumHaptics,
     contentPadding: PaddingValues = PaddingValues(0.dp),
@@ -630,10 +628,6 @@ private fun ProviderListView(
     var dragOffset by remember { mutableFloatStateOf(0f) }
     var isUnlocked by remember { mutableStateOf(false) }
     var neighborsUnlocked by remember { mutableStateOf(false) }
-    
-    
-    val canDelete = allProviders.size > 1
-    
     // Reset neighborsUnlocked when offset returns to 0
     if (dragOffset == 0f && neighborsUnlocked) {
         neighborsUnlocked = false
@@ -751,60 +745,58 @@ private fun ProviderListView(
                     state = reorderableState,
                     key = provider.id
                 ) { isDragging ->
-                    androidx.compose.runtime.key(canDelete) {
-                        PhysicsSwipeToDelete(
-                            position = position,
-                            deleteEnabled = canDelete,
-                            neighborOffset = neighborOffset,
-                            onDragProgress = { offset, unlocked ->
-                                draggingIndex = index
-                                dragOffset = offset
-                                isUnlocked = unlocked
-                            },
-                            onDragEnd = {
-                                if (draggingIndex == index) {
-                                    draggingIndex = -1
-                                    dragOffset = 0f
-                                }
-                            },
-                            onDelete = {
-                                onDeleteRequest(provider)
-                            },
-                            modifier = Modifier
-                                .scale(if (isDragging) 0.95f else 1f)
-                                .fillMaxWidth()
-                        ) { animatedShape ->
-                            ProviderItemContent(
-                                provider = provider,
-                                animatedShape = animatedShape,
-                                providerTags = settings.providerTags,
-                                haptics = haptics,
-                                dragHandle = {
-                                    IconButton(
-                                        onClick = {},
-                                        modifier = Modifier
-                                            .longPressDraggableHandle(
-                                                onDragStarted = {
-                                                    haptics.perform(HapticPattern.Pop)
-                                                },
-                                                onDragStopped = {
-                                                    haptics.perform(HapticPattern.Thud)
-                                                }
-                                            )
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.DragIndicator,
-                                            contentDescription = null
+                    PhysicsSwipeToDelete(
+                        position = position,
+                        deleteEnabled = true,
+                        neighborOffset = neighborOffset,
+                        onDragProgress = { offset, unlocked ->
+                            draggingIndex = index
+                            dragOffset = offset
+                            isUnlocked = unlocked
+                        },
+                        onDragEnd = {
+                            if (draggingIndex == index) {
+                                draggingIndex = -1
+                                dragOffset = 0f
+                            }
+                        },
+                        onDelete = {
+                            onDeleteRequest(provider)
+                        },
+                        modifier = Modifier
+                            .scale(if (isDragging) 0.95f else 1f)
+                            .fillMaxWidth()
+                    ) { animatedShape ->
+                        ProviderItemContent(
+                            provider = provider,
+                            animatedShape = animatedShape,
+                            providerTags = settings.providerTags,
+                            haptics = haptics,
+                            dragHandle = {
+                                IconButton(
+                                    onClick = {},
+                                    modifier = Modifier
+                                        .longPressDraggableHandle(
+                                            onDragStarted = {
+                                                haptics.perform(HapticPattern.Pop)
+                                            },
+                                            onDragStopped = {
+                                                haptics.perform(HapticPattern.Thud)
+                                            }
                                         )
-                                    }
-                                },
-                                onClick = {
-                                    onNavigateToDetail(provider)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.DragIndicator,
+                                        contentDescription = null
+                                    )
                                 }
-                            )
-                        }
+                            },
+                            onClick = {
+                                onNavigateToDetail(provider)
+                            }
+                        )
                     }
-            }
+                }
             }
         }
 

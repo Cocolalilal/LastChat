@@ -110,7 +110,6 @@ import org.koin.androidx.compose.koinViewModel
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import kotlinx.coroutines.launch
-import kotlin.reflect.full.primaryConstructor
 
 /**
  * Data class representing a search service preset for quick setup
@@ -118,7 +117,7 @@ import kotlin.reflect.full.primaryConstructor
 data class SearchServicePreset(
     val name: String,
     @StringRes val descriptionRes: Int,
-    val optionsClass: kotlin.reflect.KClass<out SearchServiceOptions>,
+    val createOptions: () -> SearchServiceOptions,
     val hasScraping: Boolean = false
 )
 
@@ -129,91 +128,91 @@ val SEARCH_SERVICE_PRESETS = listOf(
     SearchServicePreset(
         name = "Bing",
         descriptionRes = R.string.setting_search_preset_bing_desc,
-        optionsClass = SearchServiceOptions.BingLocalOptions::class,
+        createOptions = { SearchServiceOptions.BingLocalOptions() },
         hasScraping = false
     ),
     SearchServicePreset(
         name = "Perplexity",
         descriptionRes = R.string.setting_search_preset_perplexity_desc,
-        optionsClass = SearchServiceOptions.PerplexityOptions::class,
+        createOptions = { SearchServiceOptions.PerplexityOptions() },
         hasScraping = false
     ),
     SearchServicePreset(
         name = "Ollama",
         descriptionRes = R.string.setting_search_preset_ollama_desc,
-        optionsClass = SearchServiceOptions.OllamaOptions::class,
+        createOptions = { SearchServiceOptions.OllamaOptions() },
         hasScraping = false
     ),
     SearchServicePreset(
         name = "Brave",
         descriptionRes = R.string.setting_search_preset_brave_desc,
-        optionsClass = SearchServiceOptions.BraveOptions::class,
+        createOptions = { SearchServiceOptions.BraveOptions() },
         hasScraping = false
     ),
     SearchServicePreset(
         name = "Grok",
         descriptionRes = R.string.setting_search_preset_grok_desc,
-        optionsClass = SearchServiceOptions.GrokOptions::class,
+        createOptions = { SearchServiceOptions.GrokOptions() },
         hasScraping = false
     ),
     SearchServicePreset(
         name = "NanoGPT",
         descriptionRes = R.string.setting_search_preset_nanogpt_desc,
-        optionsClass = SearchServiceOptions.NanoGPTOptions::class,
+        createOptions = { SearchServiceOptions.NanoGPTOptions() },
         hasScraping = true
     ),
     SearchServicePreset(
         name = "Tavily",
         descriptionRes = R.string.setting_search_preset_tavily_desc,
-        optionsClass = SearchServiceOptions.TavilyOptions::class,
+        createOptions = { SearchServiceOptions.TavilyOptions() },
         hasScraping = true
     ),
     SearchServicePreset(
         name = "Exa",
         descriptionRes = R.string.setting_search_preset_exa_desc,
-        optionsClass = SearchServiceOptions.ExaOptions::class,
+        createOptions = { SearchServiceOptions.ExaOptions() },
         hasScraping = false
     ),
     SearchServicePreset(
         name = "Jina",
         descriptionRes = R.string.setting_search_preset_jina_desc,
-        optionsClass = SearchServiceOptions.JinaOptions::class,
+        createOptions = { SearchServiceOptions.JinaOptions() },
         hasScraping = true
     ),
     SearchServicePreset(
         name = "Firecrawl",
         descriptionRes = R.string.setting_search_preset_firecrawl_desc,
-        optionsClass = SearchServiceOptions.FirecrawlOptions::class,
+        createOptions = { SearchServiceOptions.FirecrawlOptions() },
         hasScraping = true
     ),
     SearchServicePreset(
         name = "SearXNG",
         descriptionRes = R.string.setting_search_preset_searxng_desc,
-        optionsClass = SearchServiceOptions.SearXNGOptions::class,
+        createOptions = { SearchServiceOptions.SearXNGOptions() },
         hasScraping = false
     ),
     SearchServicePreset(
         name = "LinkUp",
         descriptionRes = R.string.setting_search_preset_linkup_desc,
-        optionsClass = SearchServiceOptions.LinkUpOptions::class,
+        createOptions = { SearchServiceOptions.LinkUpOptions() },
         hasScraping = true
     ),
     SearchServicePreset(
         name = "智谱",
         descriptionRes = R.string.setting_search_preset_zhipu_desc,
-        optionsClass = SearchServiceOptions.ZhipuOptions::class,
+        createOptions = { SearchServiceOptions.ZhipuOptions() },
         hasScraping = false
     ),
     SearchServicePreset(
         name = "秘塔",
         descriptionRes = R.string.setting_search_preset_metaso_desc,
-        optionsClass = SearchServiceOptions.MetasoOptions::class,
+        createOptions = { SearchServiceOptions.MetasoOptions() },
         hasScraping = false
     ),
     SearchServicePreset(
         name = "博查",
         descriptionRes = R.string.setting_search_preset_bocha_desc,
-        optionsClass = SearchServiceOptions.BochaOptions::class,
+        createOptions = { SearchServiceOptions.BochaOptions() },
         hasScraping = false
     ),
 )
@@ -300,9 +299,6 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
         var neighborsUnlocked by remember { mutableStateOf(false) }
         
         
-        // Check if delete is allowed (more than 1 service)
-        val canDelete = settings.searchServices.size > 1
-        
         // Reset neighborsUnlocked when offset returns to 0
         if (dragOffset == 0f && neighborsUnlocked) {
             neighborsUnlocked = false
@@ -358,58 +354,55 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
                     state = reorderableState,
                     key = service.id
                 ) { isDragging ->
-                    // Key on canDelete to force complete PhysicsSwipeToDelete recreation when list size changes
-                    androidx.compose.runtime.key(canDelete) {
-                        PhysicsSwipeToDelete(
-                            position = position,
-                            deleteEnabled = canDelete,
-                            neighborOffset = neighborOffset,
-                            onDragProgress = { offset, unlocked ->
-                                draggingIndex = index
-                                dragOffset = offset
-                                isUnlocked = unlocked
+                    PhysicsSwipeToDelete(
+                        position = position,
+                        deleteEnabled = true,
+                        neighborOffset = neighborOffset,
+                        onDragProgress = { offset, unlocked ->
+                            draggingIndex = index
+                            dragOffset = offset
+                            isUnlocked = unlocked
+                        },
+                        onDragEnd = {
+                            if (draggingIndex == index) {
+                                draggingIndex = -1
+                                dragOffset = 0f
+                            }
+                        },
+                        onDelete = {
+                            serviceToDelete = service
+                            showDeleteDialog = true
+                        },
+                        modifier = Modifier
+                            .scale(if (isDragging) 0.95f else 1f)
+                            .fillMaxWidth()
+                    ) { _ ->
+                        SearchServiceItemContent(
+                            service = service,
+                            catalogSnapshot = catalogSnapshot,
+                            haptics = haptics,
+                            onClick = {
+                                editingService = service
                             },
-                            onDragEnd = {
-                                if (draggingIndex == index) {
-                                    draggingIndex = -1
-                                    dragOffset = 0f
+                            dragHandle = {
+                                IconButton(
+                                    onClick = {},
+                                    modifier = Modifier.longPressDraggableHandle(
+                                        onDragStarted = {
+                                            haptics.perform(HapticPattern.Pop)
+                                        },
+                                        onDragStopped = {
+                                            haptics.perform(HapticPattern.Thud)
+                                        }
+                                    )
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.DragIndicator,
+                                        contentDescription = null
+                                    )
                                 }
-                            },
-                            onDelete = {
-                                serviceToDelete = service
-                                showDeleteDialog = true
-                            },
-                            modifier = Modifier
-                                .scale(if (isDragging) 0.95f else 1f)
-                                .fillMaxWidth()
-                        ) { _ ->
-                            SearchServiceItemContent(
-                                service = service,
-                                catalogSnapshot = catalogSnapshot,
-                                haptics = haptics,
-                                onClick = {
-                                    editingService = service
-                                },
-                                dragHandle = {
-                                    IconButton(
-                                        onClick = {},
-                                        modifier = Modifier.longPressDraggableHandle(
-                                            onDragStarted = {
-                                                haptics.perform(HapticPattern.Pop)
-                                            },
-                                            onDragStopped = {
-                                                haptics.perform(HapticPattern.Thud)
-                                            }
-                                        )
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.DragIndicator,
-                                            contentDescription = null
-                                        )
-                                    }
-                                }
-                            )
-                        }
+                            }
+                        )
                     }
                 }
                 }
@@ -682,7 +675,6 @@ internal fun SearchProvidersContent(
     var neighborsUnlocked by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var serviceToDelete by remember { mutableStateOf<SearchServiceOptions?>(null) }
-    val canDelete = settings.searchServices.size > 1
 
     if (dragOffset == 0f && neighborsUnlocked) {
         neighborsUnlocked = false
@@ -729,55 +721,53 @@ internal fun SearchProvidersContent(
                     state = reorderableState,
                     key = service.id
                 ) { isDragging ->
-                    androidx.compose.runtime.key(canDelete) {
-                        PhysicsSwipeToDelete(
-                            position = position,
-                            deleteEnabled = canDelete,
-                            neighborOffset = neighborOffset,
-                            onDragProgress = { offset, unlocked ->
-                                draggingIndex = index
-                                dragOffset = offset
-                                isUnlocked = unlocked
-                            },
-                            onDragEnd = {
-                                if (draggingIndex == index) {
-                                    draggingIndex = -1
-                                    dragOffset = 0f
+                    PhysicsSwipeToDelete(
+                        position = position,
+                        deleteEnabled = true,
+                        neighborOffset = neighborOffset,
+                        onDragProgress = { offset, unlocked ->
+                            draggingIndex = index
+                            dragOffset = offset
+                            isUnlocked = unlocked
+                        },
+                        onDragEnd = {
+                            if (draggingIndex == index) {
+                                draggingIndex = -1
+                                dragOffset = 0f
+                            }
+                        },
+                        onDelete = {
+                            serviceToDelete = service
+                            showDeleteDialog = true
+                        },
+                        modifier = Modifier
+                            .scale(if (isDragging) 0.95f else 1f)
+                            .fillMaxWidth()
+                    ) { _ ->
+                        SearchServiceItemContent(
+                            service = service,
+                            catalogSnapshot = catalogSnapshot,
+                            haptics = haptics,
+                            onClick = { editingService = service },
+                            dragHandle = {
+                                IconButton(
+                                    onClick = {},
+                                    modifier = Modifier.longPressDraggableHandle(
+                                        onDragStarted = {
+                                            haptics.perform(HapticPattern.Pop)
+                                        },
+                                        onDragStopped = {
+                                            haptics.perform(HapticPattern.Thud)
+                                        }
+                                    )
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.DragIndicator,
+                                        contentDescription = null
+                                    )
                                 }
-                            },
-                            onDelete = {
-                                serviceToDelete = service
-                                showDeleteDialog = true
-                            },
-                            modifier = Modifier
-                                .scale(if (isDragging) 0.95f else 1f)
-                                .fillMaxWidth()
-                        ) { _ ->
-                            SearchServiceItemContent(
-                                service = service,
-                                catalogSnapshot = catalogSnapshot,
-                                haptics = haptics,
-                                onClick = { editingService = service },
-                                dragHandle = {
-                                    IconButton(
-                                        onClick = {},
-                                        modifier = Modifier.longPressDraggableHandle(
-                                            onDragStarted = {
-                                                haptics.perform(HapticPattern.Pop)
-                                            },
-                                            onDragStopped = {
-                                                haptics.perform(HapticPattern.Thud)
-                                            }
-                                        )
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.DragIndicator,
-                                            contentDescription = null
-                                        )
-                                    }
-                                }
-                            )
-                        }
+                            }
+                        )
                     }
                 }
             }
@@ -1101,7 +1091,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                             Surface(
                                 onClick = {
                                     haptics.perform(HapticPattern.Pop)
-                                    val newService = preset.optionsClass.primaryConstructor!!.callBy(mapOf())
+                                    val newService = preset.createOptions()
                                     onAdd(newService)
                                     showBottomSheet = false
                                 },

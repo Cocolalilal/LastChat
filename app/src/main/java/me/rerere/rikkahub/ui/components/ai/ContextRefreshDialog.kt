@@ -28,11 +28,11 @@ import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -376,7 +376,7 @@ fun ContextRefreshDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         if (hasPreviousSummary) {
-                            FilledTonalIconButton(
+                            OutlinedIconButton(
                                 onClick = {
                                     haptics.perform(HapticPattern.Pop)
                                     onEditSummary()
@@ -390,7 +390,7 @@ fun ContextRefreshDialog(
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
-                            FilledTonalIconButton(
+                            OutlinedIconButton(
                                 onClick = {
                                     haptics.perform(HapticPattern.Thud)
                                     onRevertSummary()

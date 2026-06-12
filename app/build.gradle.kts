@@ -18,7 +18,7 @@ plugins {
 
 val enableReleaseShrinker = providers.gradleProperty("lastchat.release.minify")
     .map(String::toBoolean)
-    .orElse(false)
+    .orElse(true)
 
 val webUiDir = rootProject.file("web-ui")
 val webUiBuildDir = File(webUiDir, "build/client")

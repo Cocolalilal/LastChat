@@ -194,9 +194,6 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
         
         val density = androidx.compose.ui.platform.LocalDensity.current
         
-        // Check if delete is allowed (more than 1 provider)
-        val canDelete = settings.ttsProviders.size > 1
-        
         // Reset neighborsUnlocked when offset returns to 0
         if (dragOffset == 0f && neighborsUnlocked) {
             neighborsUnlocked = false
@@ -266,13 +263,18 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                 ReorderableItem(
                     state = reorderableState,
                     key = provider.id,
-                    animateItemModifier = Modifier
+                    animateItemModifier = Modifier.animateItem()
                 ) { isDragging ->
+                    val dragScale by animateFloatAsState(
+                        targetValue = if (isDragging) 0.95f else 1f,
+                        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+                        label = "tts_provider_drag_scale"
+                    )
                     key(provider.id) {
                         PhysicsSwipeToDelete(
                             position = position,
                             groupCornerRadius = 24.dp,
-                            deleteEnabled = canDelete || provider is TTSProviderSetting.SystemTTS,
+                            deleteEnabled = true,
                             neighborOffset = neighborOffset,
                             onDragProgress = { offset, unlocked ->
                                 draggingIndex = index
@@ -290,7 +292,7 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                                 showDeleteDialog = true
                             },
                             modifier = Modifier
-                                .scale(if (isDragging) 0.95f else 1f)
+                                .scale(dragScale)
                                 .fillMaxWidth()
                         ) { _ ->
                         TTSProviderItemContent(
@@ -535,7 +537,6 @@ internal fun TtsProvidersContent(
     var neighborsUnlocked by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var providerToDelete by remember { mutableStateOf<TTSProviderSetting?>(null) }
-    val canDelete = settings.ttsProviders.size > 1
 
     if (dragOffset == 0f && neighborsUnlocked) {
         neighborsUnlocked = false
@@ -594,13 +595,18 @@ internal fun TtsProvidersContent(
                 ReorderableItem(
                     state = reorderableState,
                     key = provider.id,
-                    animateItemModifier = Modifier
+                    animateItemModifier = Modifier.animateItem()
                 ) { isDragging ->
+                    val dragScale by animateFloatAsState(
+                        targetValue = if (isDragging) 0.95f else 1f,
+                        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+                        label = "tts_provider_drag_scale"
+                    )
                     key(provider.id) {
                         PhysicsSwipeToDelete(
                             position = position,
                             groupCornerRadius = 24.dp,
-                            deleteEnabled = canDelete || provider is TTSProviderSetting.SystemTTS,
+                            deleteEnabled = true,
                             neighborOffset = neighborOffset,
                             onDragProgress = { offset, unlocked ->
                                 draggingIndex = index
@@ -618,7 +624,7 @@ internal fun TtsProvidersContent(
                                 showDeleteDialog = true
                             },
                             modifier = Modifier
-                                .scale(if (isDragging) 0.95f else 1f)
+                                .scale(dragScale)
                                 .fillMaxWidth()
                         ) { _ ->
                             TTSProviderItemContent(
