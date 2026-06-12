@@ -1579,6 +1579,7 @@ private fun CustomProviderKeyPage(
             SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                 apiTypes.forEachIndexed { index, type ->
                     SegmentedButton(
+                        modifier = Modifier.weight(1f),
                         selected = selectedType == type,
                         onClick = {
                             val newProvider = when (type) {

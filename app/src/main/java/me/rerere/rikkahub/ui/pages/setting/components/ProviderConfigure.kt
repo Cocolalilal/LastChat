@@ -222,7 +222,6 @@ private fun ProviderTypeSelector(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
             .selectableGroup(),
         horizontalArrangement = Arrangement.spacedBy((-1).dp)
     ) {
@@ -255,6 +254,7 @@ private fun ProviderTypeSelector(
             )
             Surface(
                 modifier = Modifier
+                    .weight(1f)
                     .zIndex(if (selected) 1f else 0f)
                     .graphicsLayer {
                         scaleX = scale
