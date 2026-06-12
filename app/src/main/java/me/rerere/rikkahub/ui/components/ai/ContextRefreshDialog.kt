@@ -9,6 +9,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -29,6 +30,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -375,6 +377,11 @@ fun ContextRefreshDialog(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        val outlinedActionBorder = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                        val outlinedActionColors = IconButtonDefaults.outlinedIconButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary
+                        )
+
                         if (hasPreviousSummary) {
                             OutlinedIconButton(
                                 onClick = {
@@ -382,7 +389,9 @@ fun ContextRefreshDialog(
                                     onEditSummary()
                                 },
                                 modifier = Modifier.size(40.dp),
-                                shape = CircleShape
+                                shape = CircleShape,
+                                colors = outlinedActionColors,
+                                border = outlinedActionBorder
                             ) {
                                 Icon(
                                     imageVector = Icons.Rounded.Edit,
@@ -396,7 +405,9 @@ fun ContextRefreshDialog(
                                     onRevertSummary()
                                 },
                                 modifier = Modifier.size(40.dp),
-                                shape = CircleShape
+                                shape = CircleShape,
+                                colors = outlinedActionColors,
+                                border = outlinedActionBorder
                             ) {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Rounded.Undo,
