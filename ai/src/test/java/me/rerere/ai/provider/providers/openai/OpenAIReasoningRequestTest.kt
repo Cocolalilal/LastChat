@@ -367,6 +367,22 @@ class OpenAIReasoningRequestTest {
     }
 
     @Test
+    fun chatCompletionsAddsOpenRouterPromptCacheBreakpointsForAnyModel() {
+        val body = chatCompletionsBody(
+            messages = listOf(UIMessage.system("Stable system prompt"), UIMessage.user("Hello")),
+            model = reasoningModel.copy(modelId = "new-provider/new-model-family:free"),
+            providerSetting = providerSetting.copy(baseUrl = "https://openrouter.ai/api/v1")
+        )
+
+        val messages = body["messages"]?.jsonArray ?: error("messages are missing")
+        val userContent = messages[1].jsonObject["content"]?.jsonArray ?: error("user content is missing")
+        assertEquals(
+            "ephemeral",
+            userContent[0].jsonObject["cache_control"]?.jsonObject?.get("type")?.jsonPrimitive?.contentOrNull
+        )
+    }
+
+    @Test
     fun chatCompletionsLeavesGenericProviderPromptShapeUnchanged() {
         val body = chatCompletionsBody(
             messages = listOf(UIMessage.system("Stable system prompt"), UIMessage.user("Hello")),

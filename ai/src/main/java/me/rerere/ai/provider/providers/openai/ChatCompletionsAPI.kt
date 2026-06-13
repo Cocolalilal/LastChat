@@ -625,13 +625,8 @@ class ChatCompletionsAPI(
     private fun ProviderSetting.OpenAI.promptCachePolicy(host: String, modelId: String): PromptCachePolicy {
         val normalizedHost = host.lowercase()
         val normalizedModelId = modelId.lowercase()
-        val isOpenRouterCacheControlModel = normalizedModelId.contains("anthropic") ||
-            normalizedModelId.contains("claude") ||
-            normalizedModelId.contains("gemini") ||
-            normalizedModelId.contains("qwen") ||
-            normalizedModelId.contains("deepseek")
         return when {
-            normalizedHost == "openrouter.ai" && isOpenRouterCacheControlModel -> PromptCachePolicy(
+            normalizedHost == "openrouter.ai" -> PromptCachePolicy(
                 explicitBreakpoints = true,
                 topLevelCacheControl = false,
                 useSingleStableBreakpoint = normalizedModelId.contains("gemini")
