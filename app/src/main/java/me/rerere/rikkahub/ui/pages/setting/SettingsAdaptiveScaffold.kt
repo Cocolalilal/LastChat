@@ -43,7 +43,6 @@ import androidx.compose.material.icons.rounded.Brush
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Code
-import androidx.compose.material.icons.rounded.DesktopWindows
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.FileUpload
 import androidx.compose.material.icons.rounded.Folder
@@ -53,7 +52,6 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Public
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Icon
@@ -436,7 +434,7 @@ private fun SettingsPaneEntryGroup(
             entry = entry,
             selected = selectedInGroup,
             expanded = expanded,
-            showDescription = selectedInGroup,
+            showDescription = false,
             isChild = false,
             topRadius = topRadius,
             bottomRadius = bottomRadius,
@@ -685,32 +683,32 @@ private fun settingsPaneGroups(): List<SettingsPaneGroup> {
         SettingsPaneGroup(
             titleRes = R.string.setting_page_general_settings,
             entries = listOf(
-                SettingsPaneEntry(SettingsDestination.Display, R.string.setting_page_display_setting, R.string.setting_page_display_setting_desc, Icons.Rounded.DesktopWindows, Screen.SettingDisplay, displayChildren),
-                SettingsPaneEntry(SettingsDestination.Assistants, R.string.setting_page_assistant, R.string.setting_page_assistant_desc, Icons.Rounded.Group, Screen.Assistant),
-                SettingsPaneEntry(SettingsDestination.PromptInjections, R.string.setting_page_prompt_injections, R.string.setting_page_prompt_injections_desc, Icons.Rounded.Extension, Screen.SettingPromptInjections, promptChildren),
+                SettingsPaneEntry(SettingsDestination.Display, R.string.setting_page_display_setting, null, Icons.Rounded.Tune, Screen.SettingDisplay, displayChildren),
+                SettingsPaneEntry(SettingsDestination.Assistants, R.string.setting_page_assistant, null, Icons.Rounded.Group, Screen.Assistant),
+                SettingsPaneEntry(SettingsDestination.PromptInjections, R.string.setting_page_prompt_injections, null, Icons.Rounded.Extension, Screen.SettingPromptInjections, promptChildren),
             )
         ),
         SettingsPaneGroup(
             titleRes = R.string.setting_page_model_and_services,
             entries = listOf(
-                SettingsPaneEntry(SettingsDestination.Models, R.string.setting_page_default_model, R.string.setting_page_default_model_desc, Icons.Rounded.AccountTree, Screen.SettingModels),
-                SettingsPaneEntry(SettingsDestination.Providers, R.string.setting_page_providers, R.string.setting_page_providers_desc, Icons.Rounded.Cloud, Screen.SettingProvider, providerChildren),
-                SettingsPaneEntry(SettingsDestination.Mcp, R.string.setting_page_mcp, R.string.setting_page_mcp_desc, Icons.Rounded.Settings, Screen.SettingMcp),
-                SettingsPaneEntry(SettingsDestination.Web, R.string.setting_page_web_server, R.string.setting_page_web_server_desc, Icons.Rounded.Language, Screen.SettingWeb),
-                SettingsPaneEntry(SettingsDestination.AndroidIntegration, R.string.setting_android_integration, R.string.setting_android_integration_desc, Icons.Rounded.PhoneAndroid, Screen.SettingAndroidIntegration),
+                SettingsPaneEntry(SettingsDestination.Models, R.string.setting_page_default_model, null, Icons.Rounded.AccountTree, Screen.SettingModels),
+                SettingsPaneEntry(SettingsDestination.Providers, R.string.setting_page_providers, null, Icons.Rounded.Cloud, Screen.SettingProvider, providerChildren),
+                SettingsPaneEntry(SettingsDestination.Mcp, R.string.setting_page_mcp, null, Icons.Rounded.Code, Screen.SettingMcp),
+                SettingsPaneEntry(SettingsDestination.Web, R.string.setting_page_web_server, null, Icons.Rounded.Language, Screen.SettingWeb),
+                SettingsPaneEntry(SettingsDestination.AndroidIntegration, R.string.setting_android_integration, null, Icons.Rounded.PhoneAndroid, Screen.SettingAndroidIntegration),
             )
         ),
         SettingsPaneGroup(
             titleRes = R.string.setting_page_data_settings,
             entries = listOf(
-                SettingsPaneEntry(SettingsDestination.Backup, R.string.setting_page_data_backup, R.string.setting_page_data_backup_desc, Icons.Rounded.CloudUpload, Screen.BackupWebDav, backupChildren),
+                SettingsPaneEntry(SettingsDestination.Backup, R.string.setting_page_data_backup, null, Icons.Rounded.CloudUpload, Screen.BackupWebDav, backupChildren),
                 SettingsPaneEntry(SettingsDestination.ChatStorage, R.string.setting_page_chat_storage, null, Icons.Rounded.Storage, Screen.SettingChatStorage),
             )
         ),
         SettingsPaneGroup(
             titleRes = R.string.setting_page_about,
             entries = listOf(
-                SettingsPaneEntry(SettingsDestination.About, R.string.setting_page_about, R.string.setting_page_about_desc, Icons.Rounded.Info, Screen.SettingAbout),
+                SettingsPaneEntry(SettingsDestination.About, R.string.setting_page_about, null, Icons.Rounded.Info, Screen.SettingAbout),
             )
         ),
     )
