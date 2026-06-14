@@ -130,17 +130,30 @@ import me.rerere.rikkahub.ui.modifier.lastChatBlurSource
 private const val TAG = "ChatList"
 private const val LoadingIndicatorKey = "LoadingIndicator"
 private const val ScrollBottomKey = "ScrollBottomKey"
-internal const val PendingAssistantTurnKey = "pending_assistant"
+private const val AssistantInitialTurnKey = "assistant_initial"
+private const val AssistantResponseTurnKey = "assistant_response"
 
 internal fun chatListTurnKey(
     group: MessageTurnGroup,
     index: Int,
+    previousGroup: MessageTurnGroup? = null,
     isPendingAssistantTurn: Boolean,
 ): String {
-    return if (isPendingAssistantTurn) {
-        PendingAssistantTurnKey
-    } else {
-        "turn:${group.firstNode.id}:$index"
+    val previousUserId = previousGroup
+        ?.takeIf { it.role == me.rerere.ai.core.MessageRole.USER }
+        ?.lastNode
+        ?.id
+
+    return when {
+        isPendingAssistantTurn && previousUserId != null -> "$AssistantResponseTurnKey:$previousUserId"
+        isPendingAssistantTurn -> "$AssistantInitialTurnKey:$index"
+        group.role == me.rerere.ai.core.MessageRole.ASSISTANT && previousUserId != null -> {
+            "$AssistantResponseTurnKey:$previousUserId"
+        }
+        group.role == me.rerere.ai.core.MessageRole.ASSISTANT && previousGroup == null -> {
+            "$AssistantInitialTurnKey:$index"
+        }
+        else -> "turn:${group.firstNode.id}:$index"
     }
 }
 
@@ -355,14 +368,6 @@ private fun SharedTransitionScope.ChatListNormal(
         // Computed fresh on each recomposition to ensure up-to-date data
         val turnGroups = conversation.messageNodes.groupIntoTurns()
 
-        // Index helpers for regen visibility
-        val lastUserIndex = remember(conversation.messageNodes) {
-            conversation.messageNodes.indexOfLast { it.currentMessage.role == me.rerere.ai.core.MessageRole.USER }
-        }
-        val nodeIndexById = remember(conversation.messageNodes) {
-            conversation.messageNodes.mapIndexed { index, node -> node.id to index }.toMap()
-        }
-        
         // Check if we need a phantom loading turn (loading but no assistant response yet)
         val needsPhantomLoadingTurn = loading && (
             turnGroups.isEmpty() || 
@@ -419,6 +424,7 @@ private fun SharedTransitionScope.ChatListNormal(
                         chatListTurnKey(
                             group = group,
                             index = index,
+                            previousGroup = displayGroups.getOrNull(index - 1),
                             isPendingAssistantTurn = needsPhantomLoadingTurn && index == displayGroups.lastIndex,
                         )
                     },
