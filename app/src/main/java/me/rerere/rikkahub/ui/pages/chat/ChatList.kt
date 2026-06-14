@@ -106,7 +106,9 @@ import me.rerere.rikkahub.ui.components.chat.ChatMessageTurn
 import me.rerere.rikkahub.ui.components.chat.MessageTurnGroup
 import me.rerere.rikkahub.ui.components.chat.groupIntoTurns
 import me.rerere.rikkahub.ui.components.ui.ListSelectableItem
+import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.ImeLazyListAutoScroller
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.utils.plus
 import kotlin.uuid.Uuid
 import androidx.compose.ui.platform.LocalContext
@@ -283,6 +285,36 @@ private fun SharedTransitionScope.ChatListNormal(
                 }
             }
             Unit
+        }
+    }
+    val generationHaptics = rememberPremiumHaptics(
+        enabled = settings.displaySetting.enableMessageGenerationHapticEffect
+    )
+
+    LaunchedEffect(conversation.id, settings.displaySetting.enableMessageGenerationHapticEffect) {
+        var previousLength = 0
+        snapshotFlow {
+            if (!loadingState) {
+                0
+            } else {
+                conversationUpdated.currentMessages
+                    .asReversed()
+                    .firstOrNull { it.role == me.rerere.ai.core.MessageRole.ASSISTANT }
+                    ?.parts
+                    ?.filterIsInstance<UIMessagePart.Text>()
+                    ?.sumOf { it.text.length }
+                    ?: 0
+            }
+        }.collect { length ->
+            if (length == 0) {
+                previousLength = 0
+            } else if (length > previousLength + 24) {
+                generationHaptics.perform(HapticPattern.ScrollEdge)
+                previousLength = length
+                delay(120)
+            } else if (length < previousLength) {
+                previousLength = length
+            }
         }
     }
 

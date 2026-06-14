@@ -172,7 +172,6 @@ fun SettingPage(
                     )
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_display_setting),
-                        subtitle = stringResource(R.string.setting_page_display_setting_desc),
                         icon = { Icon(Icons.Rounded.DesktopWindows, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingDisplay) }

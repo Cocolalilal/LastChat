@@ -107,7 +107,6 @@ fun AssistantAdvancedSubPage(
                 subtitle = "Override automatic reading for this character",
                 trailing = {
                     Select(
-                        modifier = Modifier.width(180.dp),
                         options = autoplayOptions,
                         selectedOption = assistant.ttsAutoplayMode,
                         onOptionSelected = { mode -> onUpdate(assistant.copy(ttsAutoplayMode = mode)) },
