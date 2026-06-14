@@ -294,7 +294,7 @@ fun LorebooksPageContent(
     var orderedLorebooks by remember { mutableStateOf(settings.lorebooks) }
     var isReordering by remember { mutableStateOf(false) }
     var awaitingPersistedOrder by remember { mutableStateOf(false) }
-    val canDelete = orderedLorebooks.size > 1
+    val canDelete = true
 
     LaunchedEffect(settings.lorebooks, isReordering) {
         if (!isReordering) {

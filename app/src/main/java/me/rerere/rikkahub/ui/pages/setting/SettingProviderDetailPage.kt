@@ -852,7 +852,7 @@ private fun ModelList(
     var neighborsUnlocked by remember { mutableStateOf(false) }
     
     
-    val canDelete = providerSetting.models.size > 1
+    val canDelete = true
     
     // Reset neighborsUnlocked when offset returns to 0
     if (dragOffset == 0f && neighborsUnlocked) {
