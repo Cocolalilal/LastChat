@@ -1,7 +1,6 @@
 package me.rerere.rikkahub.ui.components.richtext
 
 import android.content.Intent
-import android.os.SystemClock
 import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -21,9 +20,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearOutSlowInEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material.icons.rounded.Download
@@ -46,6 +42,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -99,6 +96,7 @@ import me.rerere.rikkahub.utils.toDp
 import me.rerere.rikkahub.utils.saveToDownloads
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
+import kotlin.math.floor
 import org.intellij.markdown.IElementType
 import org.intellij.markdown.MarkdownElementTypes
 import org.intellij.markdown.MarkdownTokenTypes
@@ -136,10 +134,15 @@ private const val POP_DIRECTIONAL_ISOLATE = '\u2069'
 val LocalRpStyleRules = compositionLocalOf<List<RpStyleRule>> { emptyList() }
 
 private data class StreamingTextReveal(
+    val ranges: List<StreamingSettleRange>,
+    val nowMillis: Long,
+    val color: Color
+)
+
+internal data class StreamingSettleRange(
     val startOffset: Int,
     val endOffset: Int,
-    val alpha: Float,
-    val color: Color
+    val revealedAtMillis: Long
 )
 
 private val LocalStreamingTextReveal = compositionLocalOf<StreamingTextReveal?> { null }
@@ -368,13 +371,13 @@ fun MarkdownBlock(
     val settings = LocalSettings.current
     val rpStyleRules = settings.displaySetting.rpStyleRules
     val contentColor = style.color.takeOrElse { LocalContentColor.current }
-    val revealAlpha = remember { Animatable(1f) }
-    var revealStartOffset by remember { mutableStateOf(0) }
-    var previousStreamingContent by remember { mutableStateOf(preProcess(content)) }
-    var lastStreamUpdateMillis by remember { mutableStateOf(0L) }
+    val streamingPresentation = remember { StreamingTextPresentationState(content) }
+    var displayContent by remember { mutableStateOf(content) }
+    var settleRanges by remember { mutableStateOf(emptyList<StreamingSettleRange>()) }
+    var streamingFrameMillis by remember { mutableStateOf(0L) }
     
     var (data, setData) = remember {
-        val preprocessed = preProcess(content)
+        val preprocessed = preProcess(displayContent)
         val astTree = parser.buildMarkdownTreeFromString(preprocessed)
         mutableStateOf(
             value = preprocessed to astTree,
@@ -384,9 +387,9 @@ fun MarkdownBlock(
 
     // 监听内容变化，重新解析AST树
     // 这里在后台线程解析AST树, 防止频繁更新的时候掉帧
-    val updatedContent by rememberUpdatedState(content)
+    val updatedDisplayContent by rememberUpdatedState(displayContent)
     LaunchedEffect(Unit) {
-        snapshotFlow { updatedContent }.distinctUntilChanged().mapLatest {
+        snapshotFlow { updatedDisplayContent }.distinctUntilChanged().mapLatest {
             val preprocessed = preProcess(it)
             val astTree = parser.buildMarkdownTreeFromString(preprocessed)
             preprocessed to astTree
@@ -399,42 +402,41 @@ fun MarkdownBlock(
     val (preprocessed, astTree) = data
     val blockDirection = rememberContentDirection(preprocessed)
     LaunchedEffect(content, streamingTextReveal) {
-        val nextContent = preProcess(content)
         if (!streamingTextReveal) {
-            previousStreamingContent = nextContent
-            revealAlpha.snapTo(1f)
+            streamingPresentation.snapTo(content)
+            displayContent = streamingPresentation.displayContent
+            settleRanges = emptyList()
             return@LaunchedEffect
         }
 
-        val previousContent = previousStreamingContent
-        previousStreamingContent = nextContent
+        val now = withFrameMillis { it }
+        streamingPresentation.acceptRawContent(content, now)
+        displayContent = streamingPresentation.displayContent
+        settleRanges = streamingPresentation.settleRanges
+        streamingFrameMillis = now
+    }
+    LaunchedEffect(streamingTextReveal) {
+        if (!streamingTextReveal) return@LaunchedEffect
 
-        if (nextContent.length > previousContent.length) {
-            val now = SystemClock.uptimeMillis()
-            val elapsedMillis = if (lastStreamUpdateMillis == 0L) Long.MAX_VALUE else now - lastStreamUpdateMillis
-            val appendedLength = nextContent.length - previousContent.length
-            revealStartOffset = streamingRevealWordStart(
-                content = nextContent,
-                offset = commonPrefixLength(previousContent, nextContent)
+        var previousFrameMillis = withFrameMillis { it }
+        while (true) {
+            val now = withFrameMillis { it }
+            val changed = streamingPresentation.step(
+                nowMillis = now,
+                elapsedMillis = (now - previousFrameMillis).coerceAtLeast(0L)
             )
-            lastStreamUpdateMillis = now
-            revealAlpha.snapTo(streamingRevealInitialAlpha(elapsedMillis, appendedLength))
-            revealAlpha.animateTo(
-                targetValue = 1f,
-                animationSpec = tween(
-                    durationMillis = 360,
-                    easing = LinearOutSlowInEasing
-                )
-            )
-        } else if (nextContent != previousContent) {
-            revealAlpha.snapTo(1f)
+            previousFrameMillis = now
+            streamingFrameMillis = now
+            if (changed) {
+                displayContent = streamingPresentation.displayContent
+            }
+            settleRanges = streamingPresentation.settleRanges
         }
     }
-    val streamingReveal = if (streamingTextReveal && revealAlpha.value < 0.995f) {
+    val streamingReveal = if (streamingTextReveal && settleRanges.isNotEmpty()) {
         StreamingTextReveal(
-            startOffset = revealStartOffset.coerceIn(0, preprocessed.length),
-            endOffset = preprocessed.length,
-            alpha = revealAlpha.value.coerceIn(0f, 1f),
+            ranges = settleRanges,
+            nowMillis = streamingFrameMillis,
             color = contentColor
         )
     } else {
@@ -465,41 +467,267 @@ fun MarkdownBlock(
     }
 }
 
-private fun commonPrefixLength(left: String, right: String): Int {
-    val limit = minOf(left.length, right.length)
-    for (index in 0 until limit) {
-        if (left[index] != right[index]) return index
+internal class StreamingTextPresentationState(
+    initialRawContent: String,
+    nowMillis: Long = 0L
+) {
+    var rawContent: String = initialRawContent
+        private set
+    var displayContent: String = initialRawContent
+        private set
+    var settleRanges: List<StreamingSettleRange> = emptyList()
+        private set
+
+    private var smoothedCharsPerSecond = STREAMING_DEFAULT_CHARS_PER_SECOND
+    private var lastRawUpdateMillis = nowMillis
+    private var firstPendingSinceMillis = 0L
+    private var revealCarry = 0f
+    private var lastRevealMillis = nowMillis
+
+    fun acceptRawContent(nextRawContent: String, nowMillis: Long): Boolean {
+        if (nextRawContent == rawContent) {
+            settleRanges = settleRanges.pruneStreamingSettleRanges(nowMillis)
+            return false
+        }
+
+        if (!nextRawContent.startsWith(displayContent)) {
+            snapTo(nextRawContent)
+            lastRawUpdateMillis = nowMillis
+            lastRevealMillis = nowMillis
+            return true
+        }
+
+        val previousRawContent = rawContent
+        rawContent = nextRawContent
+
+        if (nextRawContent.length > previousRawContent.length && nextRawContent.startsWith(previousRawContent)) {
+            val elapsedMillis = (nowMillis - lastRawUpdateMillis).coerceAtLeast(1L)
+            val appendedLength = nextRawContent.length - previousRawContent.length
+            val instantCharsPerSecond = appendedLength * 1000f / elapsedMillis
+            smoothedCharsPerSecond = smoothStreamingRate(
+                previousCharsPerSecond = smoothedCharsPerSecond,
+                instantCharsPerSecond = instantCharsPerSecond
+            )
+            if (firstPendingSinceMillis == 0L && displayContent.length < rawContent.length) {
+                firstPendingSinceMillis = nowMillis
+            }
+        } else if (!nextRawContent.startsWith(previousRawContent)) {
+            snapTo(nextRawContent)
+            lastRawUpdateMillis = nowMillis
+            lastRevealMillis = nowMillis
+            return true
+        }
+
+        lastRawUpdateMillis = nowMillis
+        settleRanges = settleRanges.pruneStreamingSettleRanges(nowMillis)
+        return false
     }
-    return limit
+
+    fun step(nowMillis: Long, elapsedMillis: Long): Boolean {
+        settleRanges = settleRanges.pruneStreamingSettleRanges(nowMillis)
+        if (displayContent == rawContent) {
+            firstPendingSinceMillis = 0L
+            revealCarry = 0f
+            return false
+        }
+
+        val pendingLength = rawContent.length - displayContent.length
+        val pendingAgeMillis = if (firstPendingSinceMillis == 0L) 0L else nowMillis - firstPendingSinceMillis
+        if (pendingAgeMillis < STREAMING_INITIAL_BUFFER_MILLIS && pendingLength < STREAMING_TINY_PENDING_LENGTH) {
+            return false
+        }
+
+        val backlogMillis = pendingLength * 1000f / smoothedCharsPerSecond.coerceAtLeast(1f)
+        val catchUpMultiplier = when {
+            backlogMillis <= STREAMING_CATCH_UP_AFTER_MILLIS -> 1f
+            else -> (backlogMillis / STREAMING_SMOOTHING_WINDOW_MILLIS).coerceIn(1f, STREAMING_MAX_CATCH_UP_MULTIPLIER)
+        }
+        val revealChars = smoothedCharsPerSecond
+            .coerceIn(STREAMING_MIN_CHARS_PER_SECOND, STREAMING_MAX_CHARS_PER_SECOND) * catchUpMultiplier
+
+        revealCarry += revealChars * elapsedMillis.coerceAtLeast(1L) / 1000f
+        val revealBudget = floor(revealCarry).toInt().coerceAtMost(pendingLength)
+        val starved = nowMillis - lastRevealMillis >= STREAMING_STARVED_REVEAL_MILLIS
+        if (revealBudget <= 0 && !starved) {
+            return false
+        }
+
+        val count = chooseStreamingRevealCount(
+            pending = rawContent.substring(displayContent.length),
+            budget = revealBudget.coerceAtLeast(if (starved) 1 else 0),
+            starved = starved
+        )
+        if (count <= 0) {
+            return false
+        }
+
+        val start = displayContent.length
+        displayContent = rawContent.substring(0, start + count)
+        revealCarry = (revealCarry - count).coerceAtLeast(0f)
+        lastRevealMillis = nowMillis
+        if (displayContent == rawContent) {
+            firstPendingSinceMillis = 0L
+        }
+        val settledRanges = streamingSettleRangesForReveal(
+            content = displayContent,
+            revealStart = start,
+            revealEnd = displayContent.length,
+            nowMillis = nowMillis
+        )
+        settleRanges = (settleRanges + settledRanges)
+            .mergeAdjacentStreamingSettleRanges()
+            .pruneStreamingSettleRanges(nowMillis)
+            .takeLast(STREAMING_MAX_SETTLE_RANGES)
+        return true
+    }
+
+    fun snapTo(content: String) {
+        rawContent = content
+        displayContent = content
+        settleRanges = emptyList()
+        firstPendingSinceMillis = 0L
+        revealCarry = 0f
+    }
 }
 
-private fun streamingRevealInitialAlpha(elapsedMillis: Long, appendedLength: Int): Float {
-    val cadenceAlpha = when {
-        elapsedMillis < 90L -> 0.22f
-        elapsedMillis < 180L -> 0.30f
-        elapsedMillis < 420L -> 0.42f
-        elapsedMillis < 900L -> 0.58f
-        else -> 0.76f
-    }
-    val tinyDeltaLift = when {
-        appendedLength <= 1 -> 0.16f
-        appendedLength <= 3 -> 0.08f
-        else -> 0f
-    }
-    return (cadenceAlpha + tinyDeltaLift).coerceAtMost(0.82f)
+internal fun smoothStreamingRate(
+    previousCharsPerSecond: Float,
+    instantCharsPerSecond: Float
+): Float {
+    val target = instantCharsPerSecond.coerceIn(STREAMING_MIN_CHARS_PER_SECOND, STREAMING_MAX_CHARS_PER_SECOND)
+    return (previousCharsPerSecond * STREAMING_RATE_KEEP_WEIGHT + target * (1f - STREAMING_RATE_KEEP_WEIGHT))
+        .coerceIn(STREAMING_MIN_CHARS_PER_SECOND, STREAMING_MAX_CHARS_PER_SECOND)
 }
 
-private fun streamingRevealWordStart(content: String, offset: Int): Int {
-    var index = offset.coerceIn(0, content.length)
-    while (index > 0 && content[index - 1].isStreamingWordCharacter()) {
-        index--
+internal fun chooseStreamingRevealCount(
+    pending: String,
+    budget: Int,
+    starved: Boolean
+): Int {
+    if (pending.isEmpty() || budget <= 0) return 0
+    if (budget >= pending.length) return pending.length
+
+    val cappedBudget = budget.coerceIn(1, pending.length)
+    if (pending[cappedBudget - 1].isWhitespace()) {
+        return cappedBudget
     }
-    return index
+
+    val previousBoundary = pending.streamingBoundaryAtOrBefore(cappedBudget)
+    if (previousBoundary > 0 && previousBoundary >= cappedBudget - STREAMING_BOUNDARY_BACKTRACK) {
+        return previousBoundary
+    }
+
+    val nextBoundary = pending.streamingBoundaryAfter(cappedBudget)
+    if (nextBoundary in 1..(cappedBudget + STREAMING_BOUNDARY_LOOKAHEAD) && nextBoundary <= pending.length) {
+        return nextBoundary
+    }
+
+    val firstWordEnd = pending.indexOfFirst { !it.isStreamingWordCharacter() }.let { if (it == -1) pending.length else it }
+    return when {
+        firstWordEnd <= STREAMING_SHORT_WORD_LENGTH && !starved -> 0
+        firstWordEnd <= STREAMING_MEDIUM_WORD_LENGTH &&
+            cappedBudget >= firstWordEnd - STREAMING_BOUNDARY_LOOKAHEAD -> firstWordEnd
+        firstWordEnd > STREAMING_LONG_WORD_LENGTH -> cappedBudget
+        starved -> cappedBudget
+        else -> 0
+    }
+}
+
+internal fun streamingSettleRangesForReveal(
+    content: String,
+    revealStart: Int,
+    revealEnd: Int,
+    nowMillis: Long
+): List<StreamingSettleRange> {
+    if (revealEnd <= revealStart) return emptyList()
+    val safeStart = revealStart.coerceIn(0, content.length)
+    val safeEnd = revealEnd.coerceIn(safeStart, content.length)
+    val ranges = mutableListOf<StreamingSettleRange>()
+    var index = safeStart
+
+    while (index < safeEnd) {
+        while (index < safeEnd && content[index].isWhitespace()) {
+            index++
+        }
+        if (index >= safeEnd) break
+
+        val start = index
+        while (index < safeEnd && !content[index].isWhitespace()) {
+            index++
+        }
+        ranges.add(StreamingSettleRange(start, index, nowMillis))
+    }
+
+    return ranges
+}
+
+private fun String.streamingBoundaryAtOrBefore(limit: Int): Int {
+    val cappedLimit = limit.coerceIn(1, length)
+    for (index in cappedLimit downTo 1) {
+        if (this[index - 1].isStreamingBoundaryCharacter()) {
+            return index
+        }
+    }
+    return 0
+}
+
+private fun String.streamingBoundaryAfter(offset: Int): Int {
+    val start = offset.coerceIn(1, length)
+    for (index in start..length) {
+        if (this[index - 1].isStreamingBoundaryCharacter()) {
+            return index
+        }
+    }
+    return 0
+}
+
+private fun List<StreamingSettleRange>.pruneStreamingSettleRanges(nowMillis: Long): List<StreamingSettleRange> {
+    return filter { range -> nowMillis - range.revealedAtMillis < STREAMING_SETTLE_DURATION_MILLIS }
+}
+
+private fun List<StreamingSettleRange>.mergeAdjacentStreamingSettleRanges(): List<StreamingSettleRange> {
+    if (isEmpty()) return emptyList()
+    return sortedWith(compareBy<StreamingSettleRange> { it.revealedAtMillis }.thenBy { it.startOffset })
+        .fold(mutableListOf()) { merged, range ->
+            val previous = merged.lastOrNull()
+            if (previous != null &&
+                previous.revealedAtMillis == range.revealedAtMillis &&
+                previous.endOffset == range.startOffset
+            ) {
+                merged[merged.lastIndex] = previous.copy(endOffset = range.endOffset)
+            } else {
+                merged.add(range)
+            }
+            merged
+        }
 }
 
 private fun Char.isStreamingWordCharacter(): Boolean {
     return isLetterOrDigit() || this == '_' || this == '-' || this == '\''
 }
+
+private fun Char.isStreamingBoundaryCharacter(): Boolean {
+    return isWhitespace() || this in ".,;:!?)]}\"'"
+}
+
+private const val STREAMING_INITIAL_BUFFER_MILLIS = 64L
+private const val STREAMING_SMOOTHING_WINDOW_MILLIS = 220f
+private const val STREAMING_CATCH_UP_AFTER_MILLIS = 420f
+private const val STREAMING_SETTLE_DURATION_MILLIS = 220L
+private const val STREAMING_SETTLE_START_ALPHA = 0.58f
+private const val STREAMING_STARVED_REVEAL_MILLIS = 110L
+private const val STREAMING_MIN_CHARS_PER_SECOND = 18f
+private const val STREAMING_DEFAULT_CHARS_PER_SECOND = 44f
+private const val STREAMING_MAX_CHARS_PER_SECOND = 220f
+private const val STREAMING_MAX_CATCH_UP_MULTIPLIER = 3.2f
+private const val STREAMING_RATE_KEEP_WEIGHT = 0.78f
+private const val STREAMING_TINY_PENDING_LENGTH = 4
+private const val STREAMING_SHORT_WORD_LENGTH = 7
+private const val STREAMING_MEDIUM_WORD_LENGTH = 10
+private const val STREAMING_LONG_WORD_LENGTH = 12
+private const val STREAMING_BOUNDARY_LOOKAHEAD = 3
+private const val STREAMING_BOUNDARY_BACKTRACK = 2
+private const val STREAMING_MAX_SETTLE_RANGES = 8
 
 // for debug
 private fun dumpAst(node: ASTNode, text: String, indent: String = "") {
@@ -1528,22 +1756,33 @@ private fun AnnotatedString.Builder.applyStreamingRevealStyle(
     outputStart: Int,
     outputEnd: Int
 ) {
-    if (reveal == null || reveal.alpha >= 0.995f || sourceEnd <= sourceStart || outputEnd <= outputStart) return
-    val overlapStart = maxOf(sourceStart, reveal.startOffset)
-    val overlapEnd = minOf(sourceEnd, reveal.endOffset)
-    if (overlapEnd <= overlapStart) return
+    if (reveal == null || reveal.ranges.isEmpty() || sourceEnd <= sourceStart || outputEnd <= outputStart) return
 
     val sourceLength = sourceEnd - sourceStart
     val outputLength = outputEnd - outputStart
-    val rangeStart = outputStart + ((overlapStart - sourceStart) * outputLength / sourceLength)
-    val rangeEnd = outputStart + ((overlapEnd - sourceStart) * outputLength / sourceLength)
-    if (rangeEnd <= rangeStart) return
+    reveal.ranges.fastForEach { settleRange ->
+        val ageMillis = reveal.nowMillis - settleRange.revealedAtMillis
+        if (ageMillis !in 0 until STREAMING_SETTLE_DURATION_MILLIS) return@fastForEach
 
-    addStyle(
-        style = SpanStyle(color = reveal.color.copy(alpha = reveal.alpha)),
-        start = rangeStart.coerceIn(outputStart, outputEnd),
-        end = rangeEnd.coerceIn(outputStart, outputEnd)
-    )
+        val overlapStart = maxOf(sourceStart, settleRange.startOffset)
+        val overlapEnd = minOf(sourceEnd, settleRange.endOffset)
+        if (overlapEnd <= overlapStart) return@fastForEach
+
+        val progress = (ageMillis / STREAMING_SETTLE_DURATION_MILLIS.toFloat()).coerceIn(0f, 1f)
+        val easedProgress = 1f - (1f - progress) * (1f - progress)
+        val alpha = STREAMING_SETTLE_START_ALPHA + (1f - STREAMING_SETTLE_START_ALPHA) * easedProgress
+        if (alpha >= 0.995f) return@fastForEach
+
+        val rangeStart = outputStart + ((overlapStart - sourceStart) * outputLength / sourceLength)
+        val rangeEnd = outputStart + ((overlapEnd - sourceStart) * outputLength / sourceLength)
+        if (rangeEnd <= rangeStart) return@fastForEach
+
+        addStyle(
+            style = SpanStyle(color = reveal.color.copy(alpha = alpha)),
+            start = rangeStart.coerceIn(outputStart, outputEnd),
+            end = rangeEnd.coerceIn(outputStart, outputEnd)
+        )
+    }
 }
 
 private fun ASTNode.getTextInNode(text: String): String {
