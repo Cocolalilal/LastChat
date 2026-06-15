@@ -30,6 +30,7 @@ These packages are the safest places to extract first:
 - `me.rerere.ai.util`
 - `me.rerere.common.cache`
 - `me.rerere.common.http`
+- `me.rerere.highlight`
 - `me.rerere.search`
 - `me.rerere.tts.model`
 - `me.rerere.tts.provider`
@@ -43,9 +44,13 @@ All concrete `:search` providers now call through `PlatformHttpClient`: Bing is 
 
 Shared-candidate networking in `:common` has been cleared from the portability report. The legacy OkHttp `Call.await()` and SSE helpers now live under `me.rerere.common.platform.android`, beside `OkHttpPlatformHttpClient`, so Android-only callers keep the same behavior. `Base64JsonKeyCodec` now uses Kotlin UTF-8/Base64 APIs instead of JVM charset/Base64 helpers. The file-backed cache stores (`FileIO`, `PerKeyFileCacheStore`, and `SingleFileCacheStore`) now live under `me.rerere.common.platform.android.cache`; the portable cache surface in `me.rerere.common.cache` is limited to cache entries, cache store contracts, key codecs, and the in-memory LRU wrapper.
 
+The portability report now flags `java.util.concurrent` and `java.util.Base64` imports as JVM-only runtime findings. `common.cache.LruCache` uses a Kotlin atomic copy-on-write state instead of JVM `ReentrantLock`/`LinkedHashMap`, and the Vertex service-account token cache uses a Kotlin atomic map instead of `ConcurrentHashMap`, keeping shared candidates free of JVM concurrency APIs. ComfyUI image generation, SearXNG basic auth, and Vertex JWT encoding now use Kotlin Base64 APIs so shared candidates do not depend on JVM Base64.
+
+`:highlight` now separates the portable highlighter contract, token model, serializer, and Compose rendering from the Android QuickJS runtime. Android DI binds `Highlighter` to `AndroidHighlighter`, which owns `Context`, Prism raw-resource loading, QuickJS initialization, and the single-threaded runtime. The portability report treats `me.rerere.highlight` as a shared candidate and excludes only `me.rerere.highlight.android`.
+
 Cloud TTS provider transport is now platform-ready. OpenAI, Gemini, MiniMax, ElevenLabs, and Qwen TTS providers call through `PlatformHttpClient`; the Android `TTSManager` is the remaining OkHttp composition boundary and preserves the existing provider-specific timeouts. Gemini and Qwen audio decoding now use Kotlin Base64 APIs, and cloud TTS diagnostics use `PlatformLog` instead of Android `Log`. The `TTSProvider` contract no longer accepts Android `Context`; Android `TTSManager` and local TTS discovery now live in `me.rerere.tts.provider.android`, while Android system synthesis lives in `me.rerere.tts.provider.providers.android`. `TtsSynthesizer` now combines streamed audio chunks without `java.io.ByteArrayOutputStream`, leaving that JVM helper only in Android playback WAV wrapping. The portability report now treats `me.rerere.tts.model`, `me.rerere.tts.provider`, and cloud `me.rerere.tts.provider.providers` as shared candidates, with Android adapter subpackages explicitly excluded. The remaining `:tts` portability findings are Android-boundary playback and platform integration: system `TextToSpeech`, Media3 audio playback/controller code, temp-file handling for system synthesis, and the Android HTTP adapter construction in `TTSManager`.
 
-As of the latest report, `iosPortabilityReport` finds no Android/JVM-only imports in the configured shared-candidate packages (`:ai`, `:common`, `:search`, and the portable `:tts` model/provider surface). The remaining Android/JVM findings are Android-boundary code in app/common/tts/highlight/document modules that still need platform abstractions before a full iOS target can compile the whole product.
+As of the latest report, `iosPortabilityReport` finds no Android/JVM-only imports in the configured shared-candidate packages (`:ai`, `:common`, `:search`, portable `:highlight`, and the portable `:tts` model/provider surface). The remaining Android/JVM findings are Android-boundary code in app/common/tts/highlight/document modules that still need platform abstractions before a full iOS target can compile the whole product.
 
 Current blockers in those packages should be tracked with:
 

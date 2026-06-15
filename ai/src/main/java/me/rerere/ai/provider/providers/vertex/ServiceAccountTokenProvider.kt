@@ -13,20 +13,23 @@ import java.security.PrivateKey
 import java.security.Signature
 import java.security.spec.PKCS8EncodedKeySpec
 import java.time.Instant
-import java.util.Base64
-import java.util.concurrent.ConcurrentHashMap
+import kotlin.concurrent.atomics.AtomicReference
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 /**
  * 使用服务账号（email + private key PEM）换取 Google OAuth2 Access Token。
  * 构造时传入 OkHttpClient；调用时传 email、私钥 PEM 与 scopes。
  */
+@OptIn(ExperimentalAtomicApi::class, ExperimentalEncodingApi::class)
 class ServiceAccountTokenProvider(
     private val http: PlatformHttpClient
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
     // Token cache to avoid frequent token requests
-    private val tokenCache = ConcurrentHashMap<String, CachedToken>()
+    private val tokenCache = AtomicReference<Map<String, CachedToken>>(emptyMap())
 
     @Serializable
     private data class CachedToken(
@@ -64,7 +67,7 @@ class ServiceAccountTokenProvider(
         val cacheKey = generateCacheKey(serviceAccountEmail, scopes)
 
         // Check cache first
-        tokenCache[cacheKey]?.let { cachedToken ->
+        tokenCache.load()[cacheKey]?.let { cachedToken ->
             if (isCachedTokenValid(cachedToken)) {
                 return@withContext cachedToken.token
             }
@@ -113,7 +116,7 @@ class ServiceAccountTokenProvider(
         // Cache the token with expiration time
         val expiresIn = tokenResp.expiresIn ?: 3600 // Default 1 hour if not provided
         val expiresAt = now + expiresIn
-        tokenCache[cacheKey] = CachedToken(accessToken, expiresAt)
+        cacheToken(cacheKey, CachedToken(accessToken, expiresAt))
 
         accessToken
     }
@@ -129,14 +132,14 @@ class ServiceAccountTokenProvider(
     )
 
     private fun base64UrlNoPad(bytes: ByteArray): String =
-        Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+        Base64.UrlSafe.encode(bytes).trimEnd('=')
 
     private fun parsePkcs8PrivateKey(pem: String): PrivateKey {
         val normalized = pem
             .replace("-----BEGIN PRIVATE KEY-----", "")
             .replace("-----END PRIVATE KEY-----", "")
             .replace("\\s".toRegex(), "")
-        val der = Base64.getDecoder().decode(normalized)
+        val der = Base64.Default.decode(normalized)
         val keySpec = PKCS8EncodedKeySpec(der)
         return KeyFactory.getInstance("RSA").generatePrivate(keySpec)
     }
@@ -155,4 +158,12 @@ class ServiceAccountTokenProvider(
     }
 
     private fun String.urlEncode(): String = URLEncoder.encode(this, "UTF-8")
+
+    private fun cacheToken(cacheKey: String, token: CachedToken) {
+        while (true) {
+            val current = tokenCache.load()
+            val next = current + (cacheKey to token)
+            if (tokenCache.compareAndSet(current, next)) return
+        }
+    }
 }

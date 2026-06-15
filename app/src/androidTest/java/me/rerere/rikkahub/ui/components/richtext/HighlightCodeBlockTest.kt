@@ -10,8 +10,8 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
-import me.rerere.highlight.Highlighter
 import me.rerere.highlight.LocalHighlighter
+import me.rerere.highlight.android.AndroidHighlighter
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.ui.context.LocalSettings
@@ -25,7 +25,7 @@ class HighlightCodeBlockTest {
     @Test
     fun streamingPreviewUsesCollapsedHeightAndExpandAffordance() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
-        val highlighter = Highlighter(context)
+        val highlighter = AndroidHighlighter(context)
         val expandLabel = context.getString(R.string.code_block_expand)
         val longCode = (1..40).joinToString("\n") { "println($it)" }
 
@@ -58,7 +58,7 @@ class HighlightCodeBlockTest {
     @Test
     fun expandedStreamingCodeBlockRequestsParentFollowWhenContentGrows() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
-        val highlighter = Highlighter(context)
+        val highlighter = AndroidHighlighter(context)
         val collapseLabel = context.getString(R.string.code_block_collapse)
         var code by mutableStateOf("println(1)")
         var followRequests = 0

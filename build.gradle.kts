@@ -33,6 +33,7 @@ val iosSharedCandidatePackages = listOf(
     "me.rerere.ai.util",
     "me.rerere.common.cache",
     "me.rerere.common.http",
+    "me.rerere.highlight",
     "me.rerere.search",
     "me.rerere.tts.model",
     "me.rerere.tts.provider",
@@ -41,6 +42,7 @@ val iosSharedCandidatePackages = listOf(
 
 val iosSharedCandidateExclusions = listOf(
     "me.rerere.common.platform.android",
+    "me.rerere.highlight.android",
     "me.rerere.tts.provider.android",
     "me.rerere.tts.provider.providers.android"
 )
@@ -71,7 +73,9 @@ val iosPortabilityBlockers = linkedMapOf(
         "java.awt.",
         "javax.",
         "org.w3c.dom.",
-        "org.xml."
+        "org.xml.",
+        "java.util.concurrent.",
+        "java.util.Base64"
     ),
     "Android/JVM networking" to listOf(
         "okhttp3.",

@@ -32,9 +32,11 @@ import me.rerere.common.platform.PlatformHttpProxy
 import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.common.platform.PlatformHttpResponse
 import java.net.URLEncoder
-import java.util.Base64
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.uuid.Uuid
 
+@OptIn(ExperimentalEncodingApi::class)
 class ComfyUIProvider(
     private val httpClient: PlatformHttpClient
 ) : Provider<ProviderSetting.ComfyUI> {
@@ -242,7 +244,7 @@ class ComfyUIProvider(
         }
         val mime = response.header("Content-Type")?.substringBefore(";") ?: "image/png"
         return ImageGenerationItem(
-            data = Base64.getEncoder().encodeToString(response.body),
+            data = Base64.Default.encode(response.body),
             mimeType = mime,
         )
     }

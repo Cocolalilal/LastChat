@@ -17,10 +17,12 @@ import me.rerere.search.SearchResult.SearchResultItem
 import me.rerere.search.SearchService.Companion.json
 import me.rerere.search.SearchService.Companion.platformHttpClient
 import java.net.URLEncoder
-import java.util.Base64
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 private const val TAG = "SearXNGService"
 
+@OptIn(ExperimentalEncodingApi::class)
 object SearXNGService : SearchService<SearchServiceOptions.SearXNGOptions> {
     override val name: String = "SearXNG"
 
@@ -186,6 +188,6 @@ object SearXNGService : SearchService<SearchServiceOptions.SearXNGOptions> {
 
     private fun basicAuth(username: String, password: String): String {
         val credentials = "$username:$password".toByteArray(Charsets.ISO_8859_1)
-        return "Basic ${Base64.getEncoder().encodeToString(credentials)}"
+        return "Basic ${Base64.Default.encode(credentials)}"
     }
 }
