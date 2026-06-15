@@ -42,7 +42,7 @@ import me.rerere.rikkahub.utils.createImageFileFromBase64
 import me.rerere.rikkahub.utils.getImagesDir
 import me.rerere.rikkahub.utils.stripMarkdown
 import me.rerere.tts.controller.TtsController
-import me.rerere.tts.provider.TTSManager
+import me.rerere.tts.provider.android.TTSManager
 import java.io.File
 import java.security.MessageDigest
 import kotlin.uuid.Uuid

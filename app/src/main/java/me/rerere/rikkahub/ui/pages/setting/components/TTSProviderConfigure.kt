@@ -34,9 +34,9 @@ import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.OutlinedNumberInput
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
-import me.rerere.tts.provider.LocalTtsVoice
 import me.rerere.tts.provider.TTSProviderSetting
-import me.rerere.tts.provider.discoverLocalTtsVoices
+import me.rerere.tts.provider.android.LocalTtsVoice
+import me.rerere.tts.provider.android.discoverLocalTtsVoices
 
 @Composable
 private fun visibilityToggleDescription(isVisible: Boolean): String {

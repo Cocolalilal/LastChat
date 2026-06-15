@@ -1,16 +1,17 @@
-package me.rerere.tts.provider
+package me.rerere.tts.provider.android
 
 import android.content.Context
 import kotlinx.coroutines.flow.Flow
 import me.rerere.common.platform.android.OkHttpPlatformHttpClient
 import me.rerere.tts.model.AudioChunk
 import me.rerere.tts.model.TTSRequest
+import me.rerere.tts.provider.TTSProviderSetting
 import me.rerere.tts.provider.providers.ElevenLabsTTSProvider
 import me.rerere.tts.provider.providers.GeminiTTSProvider
 import me.rerere.tts.provider.providers.MiniMaxTTSProvider
 import me.rerere.tts.provider.providers.OpenAITTSProvider
 import me.rerere.tts.provider.providers.QwenTTSProvider
-import me.rerere.tts.provider.providers.SystemTTSProvider
+import me.rerere.tts.provider.providers.android.SystemTTSProvider
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 

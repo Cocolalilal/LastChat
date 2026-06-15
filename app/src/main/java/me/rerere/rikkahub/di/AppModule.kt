@@ -14,7 +14,7 @@ import me.rerere.rikkahub.utils.EmojiUtils
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.UpdateChecker
 import me.rerere.rikkahub.web.WebServerManager
-import me.rerere.tts.provider.TTSManager
+import me.rerere.tts.provider.android.TTSManager
 import org.koin.dsl.module
 
 val appModule = module {

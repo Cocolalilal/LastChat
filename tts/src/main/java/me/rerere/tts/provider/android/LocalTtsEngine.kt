@@ -1,4 +1,4 @@
-package me.rerere.tts.provider
+package me.rerere.tts.provider.android
 
 import android.content.Context
 import android.content.Intent

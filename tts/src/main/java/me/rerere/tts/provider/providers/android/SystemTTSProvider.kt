@@ -1,4 +1,4 @@
-package me.rerere.tts.provider.providers
+package me.rerere.tts.provider.providers.android
 
 import android.content.Context
 import android.speech.tts.TextToSpeech

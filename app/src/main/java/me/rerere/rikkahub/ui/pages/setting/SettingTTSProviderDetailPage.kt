@@ -106,8 +106,8 @@ import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.tts.provider.TTSProviderSetting
 import me.rerere.tts.provider.TTSVoice
-import me.rerere.tts.provider.discoverLocalTtsEngines
-import me.rerere.tts.provider.discoverLocalTtsVoices
+import me.rerere.tts.provider.android.discoverLocalTtsEngines
+import me.rerere.tts.provider.android.discoverLocalTtsVoices
 import me.rerere.tts.provider.withVoiceApplied
 import me.rerere.rikkahub.utils.plus
 import okhttp3.OkHttpClient
