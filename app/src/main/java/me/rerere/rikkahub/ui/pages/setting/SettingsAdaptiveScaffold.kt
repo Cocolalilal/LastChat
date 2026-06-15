@@ -36,7 +36,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Brush
@@ -631,13 +630,13 @@ private fun SettingsPaneItem(
                 }
             }
             if (entry.children.isNotEmpty()) {
-                Icon(
-                    if (expanded) Icons.Rounded.KeyboardArrowDown else Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                    null,
-                    modifier = Modifier.size(20.dp)
-                )
-            } else if (selected && !isChild) {
-                Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, modifier = Modifier.size(20.dp))
+                if (expanded) {
+                    Icon(
+                        Icons.Rounded.KeyboardArrowDown,
+                        null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
         }
     }

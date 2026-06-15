@@ -35,18 +35,24 @@ import me.rerere.common.http.jsonPrimitiveOrNull
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpProxy
 import me.rerere.common.platform.PlatformHttpRequest
+import me.rerere.common.platform.PlatformMediaEncoder
 import java.net.URI
 
 class OpenAIProvider(
-    private val platformHttpClient: PlatformHttpClient
+    private val platformHttpClient: PlatformHttpClient,
+    private val platformMediaEncoder: PlatformMediaEncoder,
 ) : Provider<ProviderSetting.OpenAI> {
     private val keyRoulette = KeyRoulette.default()
 
     private val chatCompletionsAPI = ChatCompletionsAPI(
         httpClient = platformHttpClient,
-        keyRoulette = keyRoulette
+        keyRoulette = keyRoulette,
+        mediaEncoder = platformMediaEncoder,
     )
-    private val responseAPI = ResponseAPI(httpClient = platformHttpClient)
+    private val responseAPI = ResponseAPI(
+        httpClient = platformHttpClient,
+        mediaEncoder = platformMediaEncoder,
+    )
 
 
     override suspend fun listModels(providerSetting: ProviderSetting.OpenAI): List<Model> =

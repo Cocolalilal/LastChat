@@ -4,9 +4,7 @@ import androidx.compose.runtime.Composable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import me.rerere.ai.core.InputSchema
-import me.rerere.common.platform.android.OkHttpPlatformHttpClient
-import okhttp3.OkHttpClient
-import java.util.concurrent.TimeUnit
+import me.rerere.common.platform.PlatformHttpClient
 
 interface SearchService<T : SearchServiceOptions> {
     val name: String
@@ -52,18 +50,24 @@ interface SearchService<T : SearchServiceOptions> {
             } as SearchService<T>
         }
 
-        internal val httpClient by lazy {
-            OkHttpClient.Builder()
-                .retryOnConnectionFailure(true)
-                .followRedirects(true)
-                .followSslRedirects(true)
-                .readTimeout(30, TimeUnit.SECONDS)
-                .build()
+        private var installedPlatformHttpClient: PlatformHttpClient? = null
+        private var installedBingSearchClient: BingSearchClient? = null
+
+        fun installPlatformHttpClient(client: PlatformHttpClient) {
+            installedPlatformHttpClient = client
         }
 
-        internal val platformHttpClient by lazy {
-            OkHttpPlatformHttpClient(httpClient)
+        fun installBingSearchClient(client: BingSearchClient) {
+            installedBingSearchClient = client
         }
+
+        internal val platformHttpClient: PlatformHttpClient
+            get() = installedPlatformHttpClient
+                ?: error("SearchService PlatformHttpClient has not been installed")
+
+        internal val bingSearchClient: BingSearchClient
+            get() = installedBingSearchClient
+                ?: error("SearchService BingSearchClient has not been installed")
 
         internal val json by lazy {
             Json {

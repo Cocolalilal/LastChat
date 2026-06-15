@@ -37,7 +37,6 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageChoice
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.registry.ModelIdNormalizer
-import me.rerere.ai.util.encodeBase64
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.parseErrorDetail
@@ -45,6 +44,7 @@ import me.rerere.common.platform.PlatformLog
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpProxy
 import me.rerere.common.platform.PlatformHttpRequest
+import me.rerere.common.platform.PlatformMediaEncoder
 import me.rerere.common.platform.PlatformServerEvent
 import java.net.URI
 import kotlin.time.Clock
@@ -59,7 +59,8 @@ private data class ClaudePromptCacheBreakpoints(
 )
 
 class ClaudeProvider(
-    private val platformHttpClient: PlatformHttpClient
+    private val platformHttpClient: PlatformHttpClient,
+    private val mediaEncoder: PlatformMediaEncoder,
 ) : Provider<ProviderSetting.Claude> {
     override suspend fun listModels(providerSetting: ProviderSetting.Claude): List<Model> =
         withContext(Dispatchers.IO) {
@@ -326,7 +327,7 @@ class ClaudeProvider(
 
                                 is UIMessagePart.Image -> {
                                     add(buildJsonObject {
-                                        part.encodeBase64().onSuccess { base64Data ->
+                                        mediaEncoder.encodeImage(part.url).onSuccess { base64Data ->
                                             put("type", "image")
                                             put("source", buildJsonObject {
                                                 put("type", "base64")

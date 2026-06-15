@@ -39,7 +39,6 @@ import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessageChoice
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.util.KeyRoulette
-import me.rerere.ai.util.encodeBase64
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.parseErrorDetail
@@ -50,6 +49,7 @@ import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpProxy
 import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.common.platform.PlatformServerEvent
+import me.rerere.common.platform.PlatformMediaEncoder
 import java.net.URI
 import kotlin.time.Clock
 
@@ -67,7 +67,8 @@ private data class PromptCachePolicy(
 
 class ChatCompletionsAPI(
     private val httpClient: PlatformHttpClient,
-    private val keyRoulette: KeyRoulette
+    private val keyRoulette: KeyRoulette,
+    private val mediaEncoder: PlatformMediaEncoder,
 ) : OpenAIImpl {
     override suspend fun generateText(
         providerSetting: ProviderSetting.OpenAI,
@@ -510,7 +511,7 @@ class ChatCompletionsAPI(
 
                                     is UIMessagePart.Image -> {
                                         add(buildJsonObject {
-                                            part.encodeBase64().onSuccess {
+                                            mediaEncoder.encodeImage(part.url).onSuccess {
                                                 put("type", "image_url")
                                                 put("image_url", buildJsonObject {
                                                     put("url", it)

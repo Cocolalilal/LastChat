@@ -42,11 +42,15 @@ import me.rerere.rikkahub.service.SPONTANEOUS_WORK_INTERVAL_MINUTES
 import me.rerere.rikkahub.service.SPONTANEOUS_WORK_NAME
 import me.rerere.rikkahub.service.SpontaneousWorker
 import me.rerere.rikkahub.service.WebServerService
+import me.rerere.rikkahub.data.search.AndroidBingSearchClient
 import java.util.concurrent.TimeUnit
 import org.koin.androidx.workmanager.koin.workManagerFactory
 import org.koin.core.context.startKoin
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
+import me.rerere.common.platform.android.OkHttpPlatformHttpClient
+import me.rerere.search.SearchService
+import okhttp3.OkHttpClient
 
 private const val TAG = "LastChatApp"
 
@@ -68,6 +72,17 @@ class LastChatApp : Application() {
             workManagerFactory()
             modules(appModule, viewModelModule, dataSourceModule, repositoryModule)
         }
+        SearchService.installPlatformHttpClient(
+            OkHttpPlatformHttpClient(
+                OkHttpClient.Builder()
+                    .retryOnConnectionFailure(true)
+                    .followRedirects(true)
+                    .followSslRedirects(true)
+                    .readTimeout(30, TimeUnit.SECONDS)
+                    .build()
+            )
+        )
+        SearchService.installBingSearchClient(AndroidBingSearchClient())
         this.createNotificationChannel()
 
         // Initialize Python runtime (Chaquopy)

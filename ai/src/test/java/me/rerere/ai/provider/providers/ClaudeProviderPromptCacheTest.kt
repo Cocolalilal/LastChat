@@ -15,6 +15,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.common.platform.PlatformHttpResponse
+import me.rerere.common.platform.PlatformMediaEncoder
 import me.rerere.common.platform.PlatformServerEvent
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -26,6 +27,13 @@ class ClaudeProviderPromptCacheTest {
         }
 
         override fun streamEvents(request: PlatformHttpRequest): Flow<PlatformServerEvent> = emptyFlow()
+    }
+    private val mediaEncoder = object : PlatformMediaEncoder {
+        override fun encodeImage(url: String, withPrefix: Boolean): Result<String> = Result.success(url)
+
+        override fun encodeVideo(url: String, withPrefix: Boolean): Result<String> = Result.success(url)
+
+        override fun encodeAudio(url: String, withPrefix: Boolean): Result<String> = Result.success(url)
     }
 
     @Test
@@ -71,7 +79,7 @@ class ClaudeProviderPromptCacheTest {
     }
 
     private fun buildClaudeMessageRequest(messages: List<UIMessage>): JsonObject {
-        val provider = ClaudeProvider(httpClient)
+        val provider = ClaudeProvider(httpClient, mediaEncoder)
         val method = ClaudeProvider::class.java.getDeclaredMethod(
             "buildMessageRequest",
             List::class.java,
@@ -88,7 +96,7 @@ class ClaudeProviderPromptCacheTest {
     }
 
     private fun parseClaudeUsage(usage: JsonObject): me.rerere.ai.core.TokenUsage? {
-        val provider = ClaudeProvider(httpClient)
+        val provider = ClaudeProvider(httpClient, mediaEncoder)
         val method = ClaudeProvider::class.java.getDeclaredMethod(
             "parseTokenUsage",
             JsonObject::class.java,

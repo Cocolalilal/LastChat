@@ -33,7 +33,6 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageChoice
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.extractReasoningSummaryTitle
-import me.rerere.ai.util.encodeBase64
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.parseErrorDetail
@@ -43,6 +42,7 @@ import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpProxy
 import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.common.platform.PlatformServerEvent
+import me.rerere.common.platform.PlatformMediaEncoder
 import java.net.URI
 import kotlin.time.Clock
 
@@ -50,6 +50,7 @@ private const val TAG = "ResponseAPI"
 
 class ResponseAPI(
     private val httpClient: PlatformHttpClient,
+    private val mediaEncoder: PlatformMediaEncoder,
 ) : OpenAIImpl {
     override suspend fun generateText(
         providerSetting: ProviderSetting.OpenAI,
@@ -286,7 +287,7 @@ class ResponseAPI(
 
                 is UIMessagePart.Image -> {
                     add(buildJsonObject {
-                        part.encodeBase64().onSuccess {
+                        mediaEncoder.encodeImage(part.url).onSuccess {
                             put(
                                 "type",
                                 if (message.role == MessageRole.USER) "input_image" else "output_image"

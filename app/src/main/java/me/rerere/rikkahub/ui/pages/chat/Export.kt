@@ -79,8 +79,8 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.isEmptyUIMessage
 import me.rerere.ai.ui.toSortedMessageParts
-import me.rerere.ai.util.encodeBase64
 import me.rerere.common.android.appTempFolder
+import me.rerere.common.platform.android.AndroidPlatformMediaEncoder
 import me.rerere.highlight.Highlighter
 import me.rerere.highlight.LocalHighlighter
 import me.rerere.rikkahub.R
@@ -366,6 +366,7 @@ private fun buildMarkdownExportText(
     conversation: Conversation,
     messages: List<UIMessage>
 ): String = buildString {
+    val mediaEncoder = AndroidPlatformMediaEncoder()
     append("# ${conversation.title}\n\n")
     append("*Exported on ${LocalDateTime.now().toLocalString()}*\n\n")
 
@@ -380,7 +381,7 @@ private fun buildMarkdownExportText(
                 }
 
                 is UIMessagePart.Image -> {
-                    append("![Image](${part.encodeBase64().getOrNull()})")
+                    append("![Image](${mediaEncoder.encodeImage(part.url).getOrNull()})")
                     appendLine()
                 }
 

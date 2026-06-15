@@ -23,6 +23,7 @@ import me.rerere.ai.util.KeyRoulette
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.common.platform.PlatformHttpResponse
+import me.rerere.common.platform.PlatformMediaEncoder
 import me.rerere.common.platform.PlatformServerEvent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -37,6 +38,13 @@ class OpenAIReasoningRequestTest {
         }
 
         override fun streamEvents(request: PlatformHttpRequest): Flow<PlatformServerEvent> = emptyFlow()
+    }
+    private val mediaEncoder = object : PlatformMediaEncoder {
+        override fun encodeImage(url: String, withPrefix: Boolean): Result<String> = Result.success(url)
+
+        override fun encodeVideo(url: String, withPrefix: Boolean): Result<String> = Result.success(url)
+
+        override fun encodeAudio(url: String, withPrefix: Boolean): Result<String> = Result.success(url)
     }
     private val providerSetting = ProviderSetting.OpenAI(
         apiKey = "test-key",
@@ -549,7 +557,8 @@ class OpenAIReasoningRequestTest {
             httpClient = responseHttpClient,
             keyRoulette = object : KeyRoulette {
                 override fun next(keys: String): String = keys
-            }
+            },
+            mediaEncoder = mediaEncoder,
         )
         val method = ChatCompletionsAPI::class.java.getDeclaredMethod(
             "buildChatCompletionRequest",
@@ -573,7 +582,8 @@ class OpenAIReasoningRequestTest {
             httpClient = responseHttpClient,
             keyRoulette = object : KeyRoulette {
                 override fun next(keys: String): String = keys
-            }
+            },
+            mediaEncoder = mediaEncoder,
         )
         val method = ChatCompletionsAPI::class.java.getDeclaredMethod(
             "parseMessage",
@@ -588,7 +598,8 @@ class OpenAIReasoningRequestTest {
             httpClient = responseHttpClient,
             keyRoulette = object : KeyRoulette {
                 override fun next(keys: String): String = keys
-            }
+            },
+            mediaEncoder = mediaEncoder,
         )
         val method = ChatCompletionsAPI::class.java.getDeclaredMethod(
             "parseTokenUsage",
@@ -598,7 +609,7 @@ class OpenAIReasoningRequestTest {
         return method.invoke(api, usage) as me.rerere.ai.core.TokenUsage?
     }
 
-    private fun responseApi(): ResponseAPI = ResponseAPI(responseHttpClient)
+    private fun responseApi(): ResponseAPI = ResponseAPI(responseHttpClient, mediaEncoder)
 
     private fun parseResponseUsage(usage: JsonObject): me.rerere.ai.core.TokenUsage? {
         val api = responseApi()

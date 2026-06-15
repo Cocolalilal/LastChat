@@ -1,31 +1,23 @@
 package me.rerere.tts.provider.providers
 
-import android.content.Context
-import android.util.Log
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import kotlinx.serialization.json.Json
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpRequest
+import me.rerere.common.platform.PlatformLog
 import me.rerere.tts.model.AudioChunk
 import me.rerere.tts.model.AudioFormat
 import me.rerere.tts.model.TTSRequest
 import me.rerere.tts.provider.TTSProvider
 import me.rerere.tts.provider.TTSProviderSetting
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import java.util.concurrent.TimeUnit
 
 private const val TAG = "OpenAITTSProvider"
 
-class OpenAITTSProvider : TTSProvider<TTSProviderSetting.OpenAI> {
-    private val httpClient = OkHttpClient.Builder()
-        .readTimeout(30, TimeUnit.SECONDS)
-        .build()
-
+class OpenAITTSProvider(
+    private val httpClient: PlatformHttpClient,
+) : TTSProvider<TTSProviderSetting.OpenAI> {
     override fun generateSpeech(
-        context: Context,
         providerSetting: TTSProviderSetting.OpenAI,
         request: TTSRequest
     ): Flow<AudioChunk> = flow {
@@ -36,28 +28,32 @@ class OpenAITTSProvider : TTSProvider<TTSProviderSetting.OpenAI> {
             put("response_format", "mp3") // Default to MP3
         }
 
-        Log.i(
+        PlatformLog.i(
             TAG,
             "generateSpeech: model=${providerSetting.model}, " +
                 "voice=${providerSetting.voice}, textLength=${request.text.length}"
         )
 
-        val httpRequest = Request.Builder()
-            .url("${providerSetting.baseUrl}/audio/speech")
-            .addHeader("Authorization", "Bearer ${providerSetting.apiKey}")
-            .addHeader("Content-Type", "application/json")
-            .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
-            .build()
+        val response = httpClient.execute(
+            PlatformHttpRequest(
+                method = "POST",
+                url = "${providerSetting.baseUrl}/audio/speech",
+                headers = mapOf(
+                    "Authorization" to "Bearer ${providerSetting.apiKey}",
+                    "Content-Type" to "application/json",
+                ),
+                body = requestBody.toString().encodeToByteArray(),
+                mediaType = "application/json",
+            )
+        )
 
-        val response = httpClient.newCall(httpRequest).execute()
-
-        if (!response.isSuccessful) {
-            val errorBody = response.body.string()
-            Log.e(TAG, "TTS request failed: ${response.code} $errorBody")
+        if (response.statusCode !in 200..299) {
+            val errorBody = response.body.decodeToString()
+            PlatformLog.e(TAG, "TTS request failed: ${response.statusCode} $errorBody")
             throw Exception("OpenAI TTS failed: $errorBody")
         }
 
-        val audioData = response.body.bytes()
+        val audioData = response.body
 
         emit(
             AudioChunk(

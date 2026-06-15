@@ -8,6 +8,8 @@ import io.pebbletemplates.pebble.PebbleEngine
 import kotlinx.serialization.json.Json
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.common.http.AcceptLanguageBuilder
+import me.rerere.common.platform.android.AndroidPlatformMediaEncoder
+import me.rerere.common.platform.android.OkHttpPlatformHttpClient
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.data.ai.AIRequestInterceptor
 import me.rerere.rikkahub.data.ai.transformers.AssistantTemplateLoader
@@ -167,7 +169,12 @@ val dataSourceModule = module {
         SponsorAPI.create(get())
     }
 
-    single { ProviderManager(client = get()) }
+    single {
+        ProviderManager(
+            platformHttpClient = OkHttpPlatformHttpClient(get()),
+            platformMediaEncoder = AndroidPlatformMediaEncoder(),
+        )
+    }
 
     single {
         ModelCatalogService(

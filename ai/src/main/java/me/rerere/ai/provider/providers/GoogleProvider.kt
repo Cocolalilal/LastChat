@@ -47,7 +47,6 @@ import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessageChoice
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.util.KeyRoulette
-import me.rerere.ai.util.encodeBase64
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.removeElements
@@ -58,6 +57,7 @@ import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpProxy
 import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.common.platform.PlatformServerEvent
+import me.rerere.common.platform.PlatformMediaEncoder
 import org.apache.commons.text.StringEscapeUtils
 import java.net.URI
 import java.net.URLEncoder
@@ -118,7 +118,8 @@ internal fun buildGoogleToolsPayload(params: TextGenerationParams): JsonArray? {
 }
 
 class GoogleProvider(
-    private val platformHttpClient: PlatformHttpClient
+    private val platformHttpClient: PlatformHttpClient,
+    private val mediaEncoder: PlatformMediaEncoder,
 ) : Provider<ProviderSetting.Google> {
     private val keyRoulette = KeyRoulette.default()
     private val serviceAccountTokenProvider by lazy {
@@ -591,7 +592,7 @@ class GoogleProvider(
                                     }
 
                                     is UIMessagePart.Image -> {
-                                        part.encodeBase64(false).onSuccess { base64Data ->
+                                        mediaEncoder.encodeImage(part.url, withPrefix = false).onSuccess { base64Data ->
                                             add(buildJsonObject {
                                                 put("inline_data", buildJsonObject {
                                                     put("mime_type", "image/png")
@@ -602,7 +603,7 @@ class GoogleProvider(
                                     }
 
                                     is UIMessagePart.Video -> {
-                                        part.encodeBase64(false).onSuccess { base64Data ->
+                                        mediaEncoder.encodeVideo(part.url, withPrefix = false).onSuccess { base64Data ->
                                             add(buildJsonObject {
                                                 put("inline_data", buildJsonObject {
                                                     put("mime_type", "video/mp4")
@@ -613,7 +614,7 @@ class GoogleProvider(
                                     }
 
                                     is UIMessagePart.Audio -> {
-                                        part.encodeBase64(false).onSuccess { base64Data ->
+                                        mediaEncoder.encodeAudio(part.url, withPrefix = false).onSuccess { base64Data ->
                                             add(buildJsonObject {
                                                 put("inline_data", buildJsonObject {
                                                     put("mime_type", "audio/mp3")
