@@ -5,9 +5,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import okhttp3.FormBody
-import okhttp3.OkHttpClient
-import okhttp3.Request
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpRequest
+import java.net.URLEncoder
 import java.security.KeyFactory
 import java.security.PrivateKey
 import java.security.Signature
@@ -21,7 +21,7 @@ import java.util.concurrent.ConcurrentHashMap
  * 构造时传入 OkHttpClient；调用时传 email、私钥 PEM 与 scopes。
  */
 class ServiceAccountTokenProvider(
-    private val http: OkHttpClient
+    private val http: PlatformHttpClient
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -89,33 +89,33 @@ class ServiceAccountTokenProvider(
         val signature = signRs256(signingInput.toByteArray(Charsets.UTF_8), privateKey)
         val assertion = "$signingInput.${base64UrlNoPad(signature)}"
 
-        val form = FormBody.Builder()
-            .add("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer")
-            .add("assertion", assertion)
-            .build()
+        val form = formUrlEncode(
+            "grant_type" to "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            "assertion" to assertion
+        )
 
-        val req = Request.Builder()
-            .url("https://oauth2.googleapis.com/token")
-            .post(form)
-            .header("Content-Type", "application/x-www-form-urlencoded")
-            .build()
-
-        http.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) {
-                val body = resp.body.string()
-                throw IllegalStateException("Token endpoint ${resp.code}: $body")
-            }
-            val body = resp.body.string()
-            val tokenResp = json.decodeFromString(TokenResponse.serializer(), body)
-            val accessToken = tokenResp.accessToken ?: error("No access_token in response")
-
-            // Cache the token with expiration time
-            val expiresIn = tokenResp.expiresIn ?: 3600 // Default 1 hour if not provided
-            val expiresAt = now + expiresIn
-            tokenCache[cacheKey] = CachedToken(accessToken, expiresAt)
-
-            accessToken
+        val resp = http.execute(
+            PlatformHttpRequest(
+                method = "POST",
+                url = "https://oauth2.googleapis.com/token",
+                headers = mapOf("Content-Type" to "application/x-www-form-urlencoded"),
+                body = form.encodeToByteArray(),
+                mediaType = "application/x-www-form-urlencoded"
+            )
+        )
+        val body = resp.body.decodeToString()
+        if (resp.statusCode !in 200..299) {
+            throw IllegalStateException("Token endpoint ${resp.statusCode}: $body")
         }
+        val tokenResp = json.decodeFromString(TokenResponse.serializer(), body)
+        val accessToken = tokenResp.accessToken ?: error("No access_token in response")
+
+        // Cache the token with expiration time
+        val expiresIn = tokenResp.expiresIn ?: 3600 // Default 1 hour if not provided
+        val expiresAt = now + expiresIn
+        tokenCache[cacheKey] = CachedToken(accessToken, expiresAt)
+
+        accessToken
     }
 
     @Serializable
@@ -147,4 +147,12 @@ class ServiceAccountTokenProvider(
         sig.update(data)
         return sig.sign()
     }
+
+    private fun formUrlEncode(vararg params: Pair<String, String>): String {
+        return params.joinToString("&") { (name, value) ->
+            "${name.urlEncode()}=${value.urlEncode()}"
+        }
+    }
+
+    private fun String.urlEncode(): String = URLEncoder.encode(this, "UTF-8")
 }

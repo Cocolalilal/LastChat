@@ -38,8 +38,8 @@ object ModelRegistry {
     private val STEP_3 = ModelMatcher.containsRegex("step-3")
     private val INTERN_S1 = ModelMatcher.containsRegex("intern-s1")
     private val GLM_4_5 = ModelMatcher.containsRegex("glm-4.5")
-    private val GLM_4_6V = ModelMatcher.containsRegex("glm-4\\.6v")  // Vision models (e.g., glm-4.6v-flash)
-    private val GLM_4_6 = ModelMatcher.containsRegex("glm-4\\.6(?!v)")  // Text-only models (excludes vision)
+    private val GLM_4_6V = ModelMatcher.containsRegex("glm-4\\.6v")
+    private val GLM_4_6 = ModelMatcher.containsRegex("glm-4\\.6(?!v)")
     private val MINIMAX_M2 = ModelMatcher.containsRegex("minimax-m2")
     val QWEN_MT = ModelMatcher.containsRegex("qwen-mt")
 
@@ -51,3 +51,4 @@ object ModelRegistry {
         GPT_OSS + GPT_5 + OPENAI_O_MODELS + GEMINI_2_5_FLASH + GEMINI_2_5_PRO + GEMINI_3_SERIES + GEMINI_LATEST + CLAUDE_SERIES + QWEN_3 + DOUBAO_1_6 + GROK_4 + KIMI_K2 + STEP_3 + INTERN_S1 + GLM_4_5 + DEEPSEEK_R1 + DEEPSEEK_V3_1 + DEEPSEEK_V3_2 + DEEPSEEK_V4 + GLM_4_6 + MINIMAX_M2
     val CHAT_IMAGE_GEN_MODELS = GEMINI_2_5_IMAGE
 }
+

@@ -1,4 +1,4 @@
-package me.rerere.common.http
+package me.rerere.common.platform.android
 
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
@@ -18,7 +18,7 @@ suspend fun Call.await(): Response {
             }
 
             override fun onResponse(call: Call, response: Response) {
-                continuation.resume(response) { cause, _, _ ->
+                continuation.resume(response) { _, _, _ ->
                     response.closeQuietly()
                 }
             }

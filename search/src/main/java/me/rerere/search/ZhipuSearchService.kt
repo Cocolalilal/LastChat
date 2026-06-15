@@ -15,12 +15,10 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
+import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.search.SearchResult.SearchResultItem
-import me.rerere.search.SearchService.Companion.httpClient
 import me.rerere.search.SearchService.Companion.json
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
+import me.rerere.search.SearchService.Companion.platformHttpClient
 
 object ZhipuSearchService : SearchService<SearchServiceOptions.ZhipuOptions> {
     override val name: String = "Zhipu"
@@ -64,15 +62,17 @@ object ZhipuSearchService : SearchService<SearchServiceOptions.ZhipuOptions> {
                 put("count", JsonPrimitive(commonOptions.resultSize))
             }
 
-            val request = Request.Builder()
-                .url("https://open.bigmodel.cn/api/paas/v4/web_search")
-                .post(json.encodeToString(body).toRequestBody("application/json".toMediaType()))
-                .addHeader("Authorization", "Bearer ${serviceOptions.apiKey}")
-                .build()
-
-            val response = httpClient.newCall(request).execute()
-            if (response.isSuccessful) {
-                val bodyRaw = response.body?.string() ?: error("Failed to get response body")
+            val response = platformHttpClient.execute(
+                PlatformHttpRequest(
+                    method = "POST",
+                    url = "https://open.bigmodel.cn/api/paas/v4/web_search",
+                    headers = mapOf("Authorization" to "Bearer ${serviceOptions.apiKey}"),
+                    body = json.encodeToString(body).encodeToByteArray(),
+                    mediaType = "application/json"
+                )
+            )
+            if (response.statusCode in 200..299) {
+                val bodyRaw = response.body.decodeToString()
                 val response = runCatching {
                     json.decodeFromString<ZhipuDto>(bodyRaw)
                 }.onFailure {
@@ -92,8 +92,8 @@ object ZhipuSearchService : SearchService<SearchServiceOptions.ZhipuOptions> {
                         }
                     ))
             } else {
-                println(response.body?.string())
-                error("response failed #${response.code}")
+                println(response.body.decodeToString())
+                error("response failed #${response.statusCode}")
             }
         }
     }

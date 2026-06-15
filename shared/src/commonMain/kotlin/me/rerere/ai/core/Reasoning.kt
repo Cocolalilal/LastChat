@@ -1,5 +1,7 @@
 package me.rerere.ai.core
 
+import kotlin.math.abs
+
 enum class ReasoningLevel(
     val budgetTokens: Int,
     val effort: String
@@ -15,7 +17,8 @@ enum class ReasoningLevel(
 
     companion object {
         fun fromBudgetTokens(budgetTokens: Int?): ReasoningLevel {
-            return entries.minByOrNull { kotlin.math.abs(it.budgetTokens - (budgetTokens ?: AUTO.budgetTokens)) } ?: AUTO
+            return entries.minByOrNull { abs(it.budgetTokens - (budgetTokens ?: AUTO.budgetTokens)) } ?: AUTO
         }
     }
 }
+

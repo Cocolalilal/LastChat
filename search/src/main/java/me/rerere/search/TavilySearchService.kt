@@ -18,11 +18,10 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
+import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.search.SearchResult.SearchResultItem
-import me.rerere.search.SearchService.Companion.httpClient
 import me.rerere.search.SearchService.Companion.json
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
+import me.rerere.search.SearchService.Companion.platformHttpClient
 
 private const val TAG = "TavilySearchService"
 
@@ -93,16 +92,16 @@ object TavilySearchService : SearchService<SearchServiceOptions.TavilyOptions> {
                 put("topic", topic)
             }
 
-            val request = Request.Builder()
-                .url("https://api.tavily.com/search")
-                .post(body.toString().toRequestBody())
-                .addHeader("Authorization", "Bearer ${serviceOptions.apiKey}")
-                .build()
-            val response = httpClient.newCall(request).await()
-            if (response.isSuccessful) {
-                val response = response.body.string().let {
-                    json.decodeFromString<SearchResponse>(it)
-                }
+            val response = platformHttpClient.execute(
+                PlatformHttpRequest(
+                    method = "POST",
+                    url = "https://api.tavily.com/search",
+                    headers = mapOf("Authorization" to "Bearer ${serviceOptions.apiKey}"),
+                    body = body.toString().encodeToByteArray()
+                )
+            )
+            if (response.statusCode in 200..299) {
+                val response = json.decodeFromString<SearchResponse>(response.body.decodeToString())
 
                 return@withContext Result.success(
                     SearchResult(
@@ -115,7 +114,7 @@ object TavilySearchService : SearchService<SearchServiceOptions.TavilyOptions> {
                         }
                     ))
             } else {
-                error("response failed #${response.code}")
+                error("response failed #${response.statusCode}")
             }
         }
     }
@@ -132,16 +131,16 @@ object TavilySearchService : SearchService<SearchServiceOptions.TavilyOptions> {
                     add(url)
                 })
             }
-            val request = Request.Builder()
-                .url("https://api.tavily.com/extract")
-                .post(body.toString().toRequestBody())
-                .addHeader("Authorization", "Bearer ${serviceOptions.apiKey}")
-                .build()
-            val response = httpClient.newCall(request).await()
-            if (response.isSuccessful) {
-                val response = response.body.string().let {
-                    json.decodeFromString<ScrapeResponse>(it)
-                }
+            val response = platformHttpClient.execute(
+                PlatformHttpRequest(
+                    method = "POST",
+                    url = "https://api.tavily.com/extract",
+                    headers = mapOf("Authorization" to "Bearer ${serviceOptions.apiKey}"),
+                    body = body.toString().encodeToByteArray()
+                )
+            )
+            if (response.statusCode in 200..299) {
+                val response = json.decodeFromString<ScrapeResponse>(response.body.decodeToString())
                 return@withContext Result.success(
                     ScrapedResult(
                         urls = response.results.map {
@@ -153,7 +152,7 @@ object TavilySearchService : SearchService<SearchServiceOptions.TavilyOptions> {
                     )
                 )
             } else {
-                error("response failed #${response.code}")
+                error("response failed #${response.statusCode}")
             }
         }
     }

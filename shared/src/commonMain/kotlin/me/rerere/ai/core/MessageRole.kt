@@ -17,3 +17,4 @@ enum class MessageRole {
     @SerialName("tool")
     TOOL,
 }
+

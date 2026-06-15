@@ -1,6 +1,5 @@
 package me.rerere.search
 
-import android.util.Log
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
@@ -13,13 +12,12 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
+import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.search.SearchResult.SearchResultItem
-import me.rerere.search.SearchService.Companion.httpClient
 import me.rerere.search.SearchService.Companion.json
-import okhttp3.Credentials
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.Request
+import me.rerere.search.SearchService.Companion.platformHttpClient
 import java.net.URLEncoder
+import java.util.Base64
 
 private const val TAG = "SearXNGService"
 
@@ -56,40 +54,29 @@ object SearXNGService : SearchService<SearchServiceOptions.SearXNGOptions> {
             }
 
             val query = params["query"]?.jsonPrimitive?.content ?: error("query is required")
-
-            // 构建查询URL
-            val baseUrl = serviceOptions.url.trimEnd('/')
-            val encodedQuery = URLEncoder.encode(query, "UTF-8")
-            val url = "$baseUrl/search?q=$encodedQuery&format=json"
-                .toHttpUrl()
-                .newBuilder()
-                .apply {
-                    if (serviceOptions.engines.isNotBlank()) {
-                        addQueryParameter("engines", serviceOptions.engines)
-                    }
-                    if (serviceOptions.language.isNotBlank()) {
-                        addQueryParameter("language", serviceOptions.language)
-                    }
+            val url = buildSearchUrl(
+                baseUrl = serviceOptions.url,
+                query = query,
+                engines = serviceOptions.engines,
+                language = serviceOptions.language
+            )
+            val headers = buildMap {
+                if (serviceOptions.username.isNotBlank() && serviceOptions.password.isNotBlank()) {
+                    put("Authorization", basicAuth(serviceOptions.username, serviceOptions.password))
                 }
-                .build()
+            }
 
-            // 发送请求
-            val request = Request.Builder()
-                .url(url)
-                .get()
-                .apply {
-                    // 添加HTTP Basic Auth支持
-                    if (serviceOptions.username.isNotBlank() && serviceOptions.password.isNotBlank()) {
-                        header("Authorization", Credentials.basic(serviceOptions.username, serviceOptions.password))
-                    }
-                }
-                .build()
+            println("$TAG search: $url")
 
-            Log.i(TAG, "search: $url")
-
-            val response = httpClient.newCall(request).await()
-            if (response.isSuccessful) {
-                val bodyRaw = response.body.string()
+            val response = platformHttpClient.execute(
+                PlatformHttpRequest(
+                    method = "GET",
+                    url = url,
+                    headers = headers
+                )
+            )
+            if (response.statusCode in 200..299) {
+                val bodyRaw = response.body.decodeToString()
                 val searchResponse = runCatching {
                     json.decodeFromString<SearXNGResponse>(bodyRaw)
                 }.onFailure {
@@ -98,7 +85,6 @@ object SearXNGService : SearchService<SearchServiceOptions.SearXNGOptions> {
                     error("Failed to decode SearXNG response: ${it.message}")
                 }.getOrThrow()
 
-                // 转换为标准格式，取前 N 个结果
                 val items = searchResponse.results
                     .take(commonOptions.resultSize)
                     .map { result ->
@@ -111,9 +97,9 @@ object SearXNGService : SearchService<SearchServiceOptions.SearXNGOptions> {
 
                 return@withContext Result.success(SearchResult(items = items))
             } else {
-                val errorBody = response.body?.string()
-                println("SearXNG API error: ${response.code} - $errorBody")
-                error("SearXNG request failed with status ${response.code}")
+                val errorBody = response.body.decodeToString()
+                println("SearXNG API error: ${response.statusCode} - $errorBody")
+                error("SearXNG request failed with status ${response.statusCode}")
             }
         }
     }
@@ -125,7 +111,6 @@ object SearXNGService : SearchService<SearchServiceOptions.SearXNGOptions> {
     ): Result<ScrapedResult> {
         return Result.failure(Exception("Scraping is not supported for SearXNG"))
     }
-
 
     @Serializable
     data class SearXNGResponse(
@@ -170,4 +155,37 @@ object SearXNGService : SearchService<SearchServiceOptions.SearXNGOptions> {
         @SerialName("iframe_src")
         val iframeSrc: String? = null
     )
+
+    private fun buildSearchUrl(
+        baseUrl: String,
+        query: String,
+        engines: String,
+        language: String
+    ): String {
+        val extraParams = buildList {
+            if (engines.isNotBlank()) {
+                add("engines=${engines.urlEncode()}")
+            }
+            if (language.isNotBlank()) {
+                add("language=${language.urlEncode()}")
+            }
+        }
+        return buildString {
+            append(baseUrl.trimEnd('/'))
+            append("/search?q=")
+            append(query.urlEncode())
+            append("&format=json")
+            extraParams.forEach { param ->
+                append('&')
+                append(param)
+            }
+        }
+    }
+
+    private fun String.urlEncode(): String = URLEncoder.encode(this, "UTF-8")
+
+    private fun basicAuth(username: String, password: String): String {
+        val credentials = "$username:$password".toByteArray(Charsets.ISO_8859_1)
+        return "Basic ${Base64.getEncoder().encodeToString(credentials)}"
+    }
 }

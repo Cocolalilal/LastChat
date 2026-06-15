@@ -8,8 +8,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import me.rerere.common.http.SseEvent
-import me.rerere.common.http.sseFlow
+import me.rerere.common.platform.android.SseEvent
+import me.rerere.common.platform.android.sseFlow
 import me.rerere.tts.model.AudioChunk
 import me.rerere.tts.model.AudioFormat
 import me.rerere.tts.model.TTSRequest

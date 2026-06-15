@@ -4,21 +4,24 @@ import me.rerere.ai.provider.providers.ClaudeProvider
 import me.rerere.ai.provider.providers.ComfyUIProvider
 import me.rerere.ai.provider.providers.GoogleProvider
 import me.rerere.ai.provider.providers.OpenAIProvider
+import me.rerere.common.platform.android.OkHttpPlatformHttpClient
 import okhttp3.OkHttpClient
 
 /**
  * Provider管理器，负责注册和获取Provider实例
  */
 class ProviderManager(client: OkHttpClient) {
+    private val platformHttpClient = OkHttpPlatformHttpClient(client)
+
     // 存储已注册的Provider实例
     private val providers = mutableMapOf<String, Provider<*>>()
 
     init {
         // 注册默认Provider
-        registerProvider("openai", OpenAIProvider(client))
-        registerProvider("google", GoogleProvider(client))
-        registerProvider("claude", ClaudeProvider(client))
-        registerProvider("comfyui", ComfyUIProvider(client))
+        registerProvider("openai", OpenAIProvider(platformHttpClient))
+        registerProvider("google", GoogleProvider(platformHttpClient))
+        registerProvider("claude", ClaudeProvider(platformHttpClient))
+        registerProvider("comfyui", ComfyUIProvider(platformHttpClient))
     }
 
     /**

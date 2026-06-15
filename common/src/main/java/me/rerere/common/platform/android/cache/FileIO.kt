@@ -1,4 +1,4 @@
-package me.rerere.common.cache
+package me.rerere.common.platform.android.cache
 
 import java.io.File
 import java.io.IOException
@@ -32,4 +32,3 @@ internal fun atomicWrite(file: File, content: String) {
         }
     }
 }
-

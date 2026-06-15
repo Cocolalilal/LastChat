@@ -14,9 +14,11 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.rerere.ai.provider.CustomBody
+import me.rerere.ai.provider.CustomHeader
 import me.rerere.ai.provider.ImageGenerationParams
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.Provider
+import me.rerere.ai.provider.ProviderProxy
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.provider.withDefaultSafetensorsExtension
@@ -25,19 +27,16 @@ import me.rerere.ai.ui.ImageGenerationItem
 import me.rerere.ai.ui.ImageGenerationResult
 import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.UIMessage
-import me.rerere.ai.util.configureClientWithProxy
-import me.rerere.ai.util.toHeaders
-import me.rerere.common.http.await
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpProxy
+import me.rerere.common.platform.PlatformHttpRequest
+import me.rerere.common.platform.PlatformHttpResponse
+import java.net.URLEncoder
 import java.util.Base64
 import kotlin.uuid.Uuid
 
 class ComfyUIProvider(
-    private val client: OkHttpClient
+    private val httpClient: PlatformHttpClient
 ) : Provider<ProviderSetting.ComfyUI> {
     private val json = Json {
         ignoreUnknownKeys = true
@@ -140,7 +139,7 @@ class ComfyUIProvider(
     private suspend fun queuePrompt(
         providerSetting: ProviderSetting.ComfyUI,
         workflow: JsonObject,
-        customHeaders: List<me.rerere.ai.provider.CustomHeader>,
+        customHeaders: List<CustomHeader>,
     ): String {
         val body = json.encodeToString(
             JsonObject(
@@ -150,29 +149,30 @@ class ComfyUIProvider(
                 )
             )
         )
-        val request = Request.Builder()
-            .url(providerSetting.endpoint("prompt"))
-            .headers(customHeaders.toHeaders())
-            .addHeader("Content-Type", "application/json")
-            .post(body.toRequestBody("application/json".toMediaType()))
-            .build()
-
-        client.configureClientWithProxy(providerSetting.proxy).newCall(request).await().use { response ->
-            val responseBody = response.body?.string().orEmpty()
-            if (!response.isSuccessful) {
-                error("ComfyUI prompt failed: ${response.code} $responseBody")
-            }
-            val responseJson = json.parseToJsonElement(responseBody) as? JsonObject
-                ?: error("Invalid ComfyUI prompt response")
-            return responseJson["prompt_id"]?.jsonPrimitive?.contentOrNull
-                ?: error("ComfyUI response did not include prompt_id")
+        val response = httpClient.execute(
+            PlatformHttpRequest(
+                method = "POST",
+                url = providerSetting.endpoint("prompt"),
+                headers = customHeaders.toHeaderMap() + ("Content-Type" to "application/json"),
+                body = body.encodeToByteArray(),
+                mediaType = "application/json",
+                proxy = providerSetting.proxy.toPlatformProxy()
+            )
+        )
+        val responseBody = response.body.decodeToString()
+        if (response.statusCode !in 200..299) {
+            error("ComfyUI prompt failed: ${response.statusCode} $responseBody")
         }
+        val responseJson = json.parseToJsonElement(responseBody) as? JsonObject
+            ?: error("Invalid ComfyUI prompt response")
+        return responseJson["prompt_id"]?.jsonPrimitive?.contentOrNull
+            ?: error("ComfyUI response did not include prompt_id")
     }
 
     private suspend fun waitForImages(
         providerSetting: ProviderSetting.ComfyUI,
         promptId: String,
-        customHeaders: List<me.rerere.ai.provider.CustomHeader>,
+        customHeaders: List<CustomHeader>,
     ): List<ImageGenerationItem> {
         repeat(HISTORY_POLL_ATTEMPTS) {
             val images = fetchHistoryImages(providerSetting, promptId, customHeaders)
@@ -187,71 +187,104 @@ class ComfyUIProvider(
     private suspend fun fetchHistoryImages(
         providerSetting: ProviderSetting.ComfyUI,
         promptId: String,
-        customHeaders: List<me.rerere.ai.provider.CustomHeader>,
+        customHeaders: List<CustomHeader>,
     ): List<ImageGenerationItem> {
-        val request = Request.Builder()
-            .url(providerSetting.endpoint("history/$promptId"))
-            .headers(customHeaders.toHeaders())
-            .get()
-            .build()
+        val response = httpClient.execute(
+            PlatformHttpRequest(
+                method = "GET",
+                url = providerSetting.endpoint("history/$promptId"),
+                headers = customHeaders.toHeaderMap(),
+                proxy = providerSetting.proxy.toPlatformProxy()
+            )
+        )
+        val responseBody = response.body.decodeToString()
+        if (response.statusCode !in 200..299) {
+            error("ComfyUI history failed: ${response.statusCode} $responseBody")
+        }
+        val history = json.parseToJsonElement(responseBody) as? JsonObject ?: return emptyList()
+        val promptHistory = history[promptId] as? JsonObject ?: return emptyList()
+        val outputs = promptHistory["outputs"] as? JsonObject ?: return emptyList()
+        val imageRefs = outputs.values.flatMap { output ->
+            val outputObject = output as? JsonObject ?: return@flatMap emptyList()
+            val images = outputObject["images"] as? JsonArray ?: return@flatMap emptyList()
+            images.mapNotNull { it as? JsonObject }
+        }
 
-        client.configureClientWithProxy(providerSetting.proxy).newCall(request).await().use { response ->
-            val responseBody = response.body?.string().orEmpty()
-            if (!response.isSuccessful) {
-                error("ComfyUI history failed: ${response.code} $responseBody")
-            }
-            val history = json.parseToJsonElement(responseBody) as? JsonObject ?: return emptyList()
-            val promptHistory = history[promptId] as? JsonObject ?: return emptyList()
-            val outputs = promptHistory["outputs"] as? JsonObject ?: return emptyList()
-            val imageRefs = outputs.values.flatMap { output ->
-                val outputObject = output as? JsonObject ?: return@flatMap emptyList()
-                val images = outputObject["images"] as? JsonArray ?: return@flatMap emptyList()
-                images.mapNotNull { it as? JsonObject }
-            }
-
-            return imageRefs.mapNotNull { imageObject ->
-                fetchImage(providerSetting, imageObject, customHeaders)
-            }
+        return imageRefs.mapNotNull { imageObject ->
+            fetchImage(providerSetting, imageObject, customHeaders)
         }
     }
 
     private suspend fun fetchImage(
         providerSetting: ProviderSetting.ComfyUI,
         imageObject: JsonObject,
-        customHeaders: List<me.rerere.ai.provider.CustomHeader>,
+        customHeaders: List<CustomHeader>,
     ): ImageGenerationItem? {
         val filename = imageObject["filename"]?.jsonPrimitive?.contentOrNull ?: return null
         val subfolder = imageObject["subfolder"]?.jsonPrimitive?.contentOrNull.orEmpty()
         val type = imageObject["type"]?.jsonPrimitive?.contentOrNull ?: "output"
-        val url = providerSetting.endpoint("view").toHttpUrlOrNull()
-            ?.newBuilder()
-            ?.addQueryParameter("filename", filename)
-            ?.addQueryParameter("subfolder", subfolder)
-            ?.addQueryParameter("type", type)
-            ?.build()
-            ?: error("Invalid ComfyUI view URL")
+        val url = providerSetting.endpoint("view").withQueryParameters(
+            "filename" to filename,
+            "subfolder" to subfolder,
+            "type" to type
+        )
 
-        val request = Request.Builder()
-            .url(url)
-            .headers(customHeaders.toHeaders())
-            .get()
-            .build()
-
-        client.configureClientWithProxy(providerSetting.proxy).newCall(request).await().use { response ->
-            if (!response.isSuccessful) {
-                error("ComfyUI image download failed: ${response.code} ${response.body?.string().orEmpty()}")
-            }
-            val bytes = response.body?.bytes() ?: return null
-            val mime = response.header("Content-Type")?.substringBefore(";") ?: "image/png"
-            return ImageGenerationItem(
-                data = Base64.getEncoder().encodeToString(bytes),
-                mimeType = mime,
+        val response = httpClient.execute(
+            PlatformHttpRequest(
+                method = "GET",
+                url = url,
+                headers = customHeaders.toHeaderMap(),
+                proxy = providerSetting.proxy.toPlatformProxy()
             )
+        )
+        if (response.statusCode !in 200..299) {
+            error("ComfyUI image download failed: ${response.statusCode} ${response.body.decodeToString()}")
         }
+        val mime = response.header("Content-Type")?.substringBefore(";") ?: "image/png"
+        return ImageGenerationItem(
+            data = Base64.getEncoder().encodeToString(response.body),
+            mimeType = mime,
+        )
     }
 
     private fun ProviderSetting.ComfyUI.endpoint(path: String): String {
         return "${baseUrl.trimEnd('/')}/${path.trimStart('/')}"
+    }
+
+    private fun List<CustomHeader>.toHeaderMap(): Map<String, String> {
+        return associate { it.name to it.value }
+    }
+
+    private fun ProviderProxy.toPlatformProxy(): PlatformHttpProxy? {
+        return when (this) {
+            ProviderProxy.None -> null
+            is ProviderProxy.Http -> PlatformHttpProxy(
+                host = address,
+                port = port,
+                username = username,
+                password = password
+            )
+        }
+    }
+
+    private fun String.withQueryParameters(vararg params: Pair<String, String>): String {
+        return buildString {
+            append(this@withQueryParameters)
+            params.forEachIndexed { index, (name, value) ->
+                append(if (index == 0) '?' else '&')
+                append(name.urlEncode())
+                append('=')
+                append(value.urlEncode())
+            }
+        }
+    }
+
+    private fun String.urlEncode(): String = URLEncoder.encode(this, "UTF-8")
+
+    private fun PlatformHttpResponse.header(name: String): String? {
+        return headers.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }
+            ?.value
+            ?.firstOrNull()
     }
 
     private fun JsonObject.findModelNodeId(): String? {

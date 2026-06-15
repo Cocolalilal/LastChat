@@ -25,28 +25,28 @@ import me.rerere.ai.ui.ImageGenerationItem
 import me.rerere.ai.ui.ImageGenerationResult
 import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.provider.CustomHeader
+import me.rerere.ai.provider.ProviderProxy
 import me.rerere.ai.util.KeyRoulette
-import me.rerere.ai.util.configureClientWithProxy
-import me.rerere.ai.util.configureReferHeaders
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
-import me.rerere.ai.util.toHeaders
-import me.rerere.common.http.await
 import me.rerere.common.http.getByKey
 import me.rerere.common.http.jsonPrimitiveOrNull
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import java.math.BigDecimal
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpProxy
+import me.rerere.common.platform.PlatformHttpRequest
+import java.net.URI
 
 class OpenAIProvider(
-    private val client: OkHttpClient
+    private val platformHttpClient: PlatformHttpClient
 ) : Provider<ProviderSetting.OpenAI> {
     private val keyRoulette = KeyRoulette.default()
 
-    private val chatCompletionsAPI = ChatCompletionsAPI(client = client, keyRoulette = keyRoulette)
-    private val responseAPI = ResponseAPI(client = client)
+    private val chatCompletionsAPI = ChatCompletionsAPI(
+        httpClient = platformHttpClient,
+        keyRoulette = keyRoulette
+    )
+    private val responseAPI = ResponseAPI(httpClient = platformHttpClient)
 
 
     override suspend fun listModels(providerSetting: ProviderSetting.OpenAI): List<Model> =
@@ -87,23 +87,24 @@ class OpenAIProvider(
         providerSetting: ProviderSetting.OpenAI,
         forceEmbeddingType: Boolean = false
     ): List<Model> {
-        val request = Request.Builder()
-            .url(url)
-            .addHeader("Authorization", "Bearer $key")
-            .configureReferHeaders(providerSetting.baseUrl)
-            .get()
-            .build()
-
-        val response = client.configureClientWithProxy(providerSetting.proxy).newCall(request).await()
-        if (!response.isSuccessful) {
+        val response = platformHttpClient.execute(
+            PlatformHttpRequest(
+                method = "GET",
+                url = url,
+                headers = mapOf("Authorization" to "Bearer $key")
+                    .withReferHeaders(providerSetting.baseUrl),
+                proxy = providerSetting.proxy.toPlatformProxy()
+            )
+        )
+        if (response.statusCode !in 200..299) {
             // Don't fail completely if embedding endpoint fails, just return empty
             if (forceEmbeddingType) {
                 return emptyList()
             }
-            error("Failed to get models: ${response.code} ${response.body?.string()}")
+            error("Failed to get models: ${response.statusCode} ${response.body.decodeToString()}")
         }
 
-        val bodyStr = response.body?.string() ?: ""
+        val bodyStr = response.body.decodeToString()
         val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
         val data = bodyJson["data"]?.jsonArray ?: return emptyList()
 
@@ -173,18 +174,20 @@ class OpenAIProvider(
         } else {
             "${providerSetting.baseUrl}${providerSetting.balanceOption.apiPath}"
         }
-        val request = Request.Builder()
-            .url(url)
-            .addHeader("Authorization", "Bearer $key")
-            .configureReferHeaders(providerSetting.baseUrl)
-            .get()
-            .build()
-        val response = client.configureClientWithProxy(providerSetting.proxy).newCall(request).await()
-        if (!response.isSuccessful) {
-            error("Failed to get balance: ${response.code} ${response.body?.string()}")
+        val response = platformHttpClient.execute(
+            PlatformHttpRequest(
+                method = "GET",
+                url = url,
+                headers = mapOf("Authorization" to "Bearer $key")
+                    .withReferHeaders(providerSetting.baseUrl),
+                proxy = providerSetting.proxy.toPlatformProxy()
+            )
+        )
+        if (response.statusCode !in 200..299) {
+            error("Failed to get balance: ${response.statusCode} ${response.body.decodeToString()}")
         }
 
-        val bodyStr = response.body.string()
+        val bodyStr = response.body.decodeToString()
         val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
         val value = bodyJson.getByKey(providerSetting.balanceOption.resultPath)
         val digitalValue = value.toFloatOrNull()
@@ -264,21 +267,23 @@ class OpenAIProvider(
             }.mergeCustomBody(params.customBody)
         )
 
-        val request = Request.Builder()
-            .url("${providerSetting.baseUrl}/images/generations")
-            .headers(params.customHeaders.toHeaders())
-            .addHeader("Authorization", "Bearer $key")
-            .addHeader("Content-Type", "application/json")
-            .post(requestBody.toRequestBody("application/json".toMediaType()))
-            .configureReferHeaders(providerSetting.baseUrl)
-            .build()
-
-        val response = client.configureClientWithProxy(providerSetting.proxy).newCall(request).await()
-        if (!response.isSuccessful) {
-            error("Failed to generate image: ${response.code} ${response.body?.string()}")
+        val response = platformHttpClient.execute(
+            PlatformHttpRequest(
+                method = "POST",
+                url = "${providerSetting.baseUrl}/images/generations",
+                headers = params.customHeaders.toHeaderMap()
+                    .withReferHeaders(providerSetting.baseUrl)
+                    .withAuthAndJson(key),
+                body = requestBody.encodeToByteArray(),
+                mediaType = "application/json",
+                proxy = providerSetting.proxy.toPlatformProxy()
+            )
+        )
+        if (response.statusCode !in 200..299) {
+            error("Failed to generate image: ${response.statusCode} ${response.body.decodeToString()}")
         }
 
-        val bodyStr = response.body?.string() ?: ""
+        val bodyStr = response.body.decodeToString()
         val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
         val data = bodyJson["data"]?.jsonArray ?: error("No data in response")
 
@@ -311,21 +316,23 @@ class OpenAIProvider(
             }
         )
 
-        val request = Request.Builder()
-            .url("${providerSetting.baseUrl}/embeddings")
-            .addHeader("Authorization", "Bearer $key")
-            .addHeader("Content-Type", "application/json")
-            .post(requestBody.toRequestBody("application/json".toMediaType()))
-            .configureReferHeaders(providerSetting.baseUrl)
-            .build()
-
-        val response =
-            client.configureClientWithProxy(providerSetting.proxy).newCall(request).await()
-        if (!response.isSuccessful) {
-            error("Failed to create embedding: ${response.code} ${response.body?.string()}")
+        val response = platformHttpClient.execute(
+            PlatformHttpRequest(
+                method = "POST",
+                url = "${providerSetting.baseUrl}/embeddings",
+                headers = mapOf<String, String>()
+                    .withReferHeaders(providerSetting.baseUrl)
+                    .withAuthAndJson(key),
+                body = requestBody.encodeToByteArray(),
+                mediaType = "application/json",
+                proxy = providerSetting.proxy.toPlatformProxy()
+            )
+        )
+        if (response.statusCode !in 200..299) {
+            error("Failed to create embedding: ${response.statusCode} ${response.body.decodeToString()}")
         }
 
-        val bodyStr = response.body?.string() ?: ""
+        val bodyStr = response.body.decodeToString()
         val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
         val data = bodyJson["data"]?.jsonArray ?: error("No data in response")
 
@@ -345,4 +352,38 @@ private fun List<String>.toModalities(): List<Modality> {
         }
     }
     return modalities.toList()
+}
+
+private fun List<CustomHeader>.toHeaderMap(): Map<String, String> {
+    return filter { it.name.isNotBlank() }.associate { it.name to it.value }
+}
+
+private fun Map<String, String>.withAuthAndJson(key: String): Map<String, String> {
+    return this + mapOf(
+        "Authorization" to "Bearer $key",
+        "Content-Type" to "application/json"
+    )
+}
+
+private fun Map<String, String>.withReferHeaders(baseUrl: String): Map<String, String> {
+    return when (runCatching { URI(baseUrl).host }.getOrNull()) {
+        "aihubmix.com" -> this + ("APP-Code" to "DKHA9468")
+        "openrouter.ai" -> this + mapOf(
+            "X-Title" to "LastChat",
+            "HTTP-Referer" to "https://github.com/Cocolalilal/LastChat"
+        )
+        else -> this
+    }
+}
+
+private fun ProviderProxy.toPlatformProxy(): PlatformHttpProxy? {
+    return when (this) {
+        ProviderProxy.None -> null
+        is ProviderProxy.Http -> PlatformHttpProxy(
+            host = address,
+            port = port,
+            username = username,
+            password = password
+        )
+    }
 }

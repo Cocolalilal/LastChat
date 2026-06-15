@@ -14,7 +14,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
-import me.rerere.common.http.await
+import me.rerere.common.platform.android.await
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.data.ai.mcp.McpJson
 import okhttp3.Headers

@@ -1,9 +1,9 @@
 package me.rerere.ai.provider.providers.openai
 
-import android.util.Log
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -21,8 +21,10 @@ import kotlinx.serialization.json.putJsonArray
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.TokenUsage
+import me.rerere.ai.provider.CustomHeader
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
+import me.rerere.ai.provider.ProviderProxy
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.registry.ModelRegistry
@@ -31,29 +33,24 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageChoice
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.extractReasoningSummaryTitle
-import me.rerere.ai.util.configureClientWithProxy
-import me.rerere.ai.util.configureReferHeaders
 import me.rerere.ai.util.encodeBase64
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.parseErrorDetail
-import me.rerere.ai.util.stringSafe
-import me.rerere.ai.util.toHeaders
-import me.rerere.common.http.await
 import me.rerere.common.http.jsonObjectOrNull
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.Response
-import okhttp3.sse.EventSource
-import okhttp3.sse.EventSourceListener
-import okhttp3.sse.EventSources
+import me.rerere.common.platform.PlatformLog
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpProxy
+import me.rerere.common.platform.PlatformHttpRequest
+import me.rerere.common.platform.PlatformServerEvent
+import java.net.URI
 import kotlin.time.Clock
 
 private const val TAG = "ResponseAPI"
 
-class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
+class ResponseAPI(
+    private val httpClient: PlatformHttpClient,
+) : OpenAIImpl {
     override suspend fun generateText(
         providerSetting: ProviderSetting.OpenAI,
         messages: List<UIMessage>,
@@ -65,24 +62,28 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
             stream = false,
             providerSetting = providerSetting,
         )
-        val request = Request.Builder()
-            .url("${providerSetting.baseUrl}/responses")
-            .headers(params.customHeaders.toHeaders())
-            .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
-            .addHeader("Authorization", "Bearer ${providerSetting.apiKey}")
-            .addHeader("Content-Type", "application/json")
-            .configureReferHeaders(providerSetting.baseUrl)
-            .build()
+        val encodedRequestBody = json.encodeToString(requestBody)
 
-        Log.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
+        PlatformLog.i(TAG, "generateText: $encodedRequestBody")
 
-        val response = client.configureClientWithProxy(providerSetting.proxy).newCall(request).await()
-        if (!response.isSuccessful) {
-            throw Exception("Failed to get response: ${response.code} ${response.body.string()}")
+        val response = httpClient.execute(
+            PlatformHttpRequest(
+                method = "POST",
+                url = "${providerSetting.baseUrl}/responses",
+                headers = params.customHeaders.toHeaderMap()
+                    .withReferHeaders(providerSetting.baseUrl)
+                    .withAuthAndJson(providerSetting.apiKey),
+                body = encodedRequestBody.encodeToByteArray(),
+                mediaType = "application/json",
+                proxy = providerSetting.proxy.toPlatformProxy()
+            )
+        )
+        val bodyStr = response.body.decodeToString()
+        if (response.statusCode !in 200..299) {
+            throw Exception("Failed to get response: ${response.statusCode} $bodyStr")
         }
 
-        val bodyStr = response.body?.string() ?: ""
-        Log.i(TAG, "generateText: $bodyStr")
+        PlatformLog.i(TAG, "generateText: $bodyStr")
         val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
         val output = parseResponseOutput(bodyJson)
 
@@ -100,69 +101,45 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
             stream = true,
             providerSetting = providerSetting,
         )
-        val request = Request.Builder()
-            .url("${providerSetting.baseUrl}/responses")
-            .headers(params.customHeaders.toHeaders())
-            .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
-            .addHeader("Authorization", "Bearer ${providerSetting.apiKey}")
-            .addHeader("Content-Type", "application/json")
-            .configureReferHeaders(providerSetting.baseUrl)
-            .build()
+        val encodedRequestBody = json.encodeToString(requestBody)
+        val request = PlatformHttpRequest(
+            method = "POST",
+            url = "${providerSetting.baseUrl}/responses",
+            headers = params.customHeaders.toHeaderMap()
+                .withReferHeaders(providerSetting.baseUrl)
+                .withAuthAndJson(providerSetting.apiKey),
+            body = encodedRequestBody.encodeToByteArray(),
+            mediaType = "application/json",
+            proxy = providerSetting.proxy.toPlatformProxy()
+        )
 
-        Log.i(TAG, "streamText: ${json.encodeToString(requestBody)}")
+        PlatformLog.i(TAG, "streamText: $encodedRequestBody")
 
-        val listener = object : EventSourceListener() {
-            override fun onEvent(
-                eventSource: EventSource,
-                id: String?,
-                type: String?,
-                data: String
-            ) {
-                Log.d(TAG, "onEvent: $id/$type $data")
-                val json = json.parseToJsonElement(data).jsonObject
-                val chunk = parseResponseDelta(json)
-                if (chunk != null) {
-                    trySend(chunk)
-                }
-                if (type == "response.completed") {
-                    close()
-                }
-            }
-
-            override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
-                var exception = t
-
-                t?.printStackTrace()
-                println("[onFailure] 发生错误: ${t?.javaClass?.name} ${t?.message} / $response")
-
-                val bodyRaw = response?.body?.stringSafe()
-                try {
-                    if (!bodyRaw.isNullOrBlank()) {
-                        val bodyElement = Json.parseToJsonElement(bodyRaw)
-                        println(bodyElement)
-                        exception = bodyElement.parseErrorDetail()
-                        Log.i(TAG, "onFailure: $exception")
+        val job = launch {
+            httpClient.streamEvents(request).collect { event ->
+                when (event) {
+                    PlatformServerEvent.Open -> Unit
+                    PlatformServerEvent.Closed -> close()
+                    is PlatformServerEvent.Failure -> close(parseStreamFailure(event))
+                    is PlatformServerEvent.Event -> {
+                        PlatformLog.d(TAG, "onEvent: ${event.id}/${event.event} ${event.data}")
+                        if (event.data.isNotBlank()) {
+                            val eventJson = json.parseToJsonElement(event.data).jsonObject
+                            val chunk = parseResponseDelta(eventJson)
+                            if (chunk != null) {
+                                trySend(chunk)
+                            }
+                        }
+                        if (event.event == "response.completed") {
+                            close()
+                        }
                     }
-                } catch (e: Throwable) {
-                    Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
-                    e.printStackTrace()
-                } finally {
-                    close(exception)
                 }
-            }
-
-            override fun onClosed(eventSource: EventSource) {
-                close()
             }
         }
 
-        val eventSource =
-            EventSources.createFactory(client.configureClientWithProxy(providerSetting.proxy))
-                .newEventSource(request, listener)
-
         awaitClose {
-            println("[awaitClose] 关闭eventSource ")
-            eventSource.cancel()
+            job.cancel()
         }
     }
 
@@ -629,6 +606,26 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
         }
         return null
     }
+
+    private fun parseStreamFailure(event: PlatformServerEvent.Failure): Throwable {
+        val fallback = RuntimeException(
+            "Stream failed${event.statusCode?.let { " #$it" }.orEmpty()}: ${event.message.orEmpty()}"
+        )
+        val bodyRaw = event.body
+        return try {
+            if (!bodyRaw.isNullOrBlank()) {
+                val bodyElement = Json.parseToJsonElement(bodyRaw)
+                println(bodyElement)
+                bodyElement.parseErrorDetail()
+            } else {
+                fallback
+            }
+        } catch (e: Throwable) {
+            PlatformLog.w(TAG, "onFailure: failed to parse from $bodyRaw")
+            e.printStackTrace()
+            e
+        }
+    }
 }
 
 private fun isModelAllowTemperature(model: Model): Boolean {
@@ -637,7 +634,7 @@ private fun isModelAllowTemperature(model: Model): Boolean {
 
 private fun logWarning(message: String) {
     runCatching {
-        Log.w(TAG, message)
+        PlatformLog.w(TAG, message)
     }.onFailure {
         println(message)
     }
@@ -647,4 +644,38 @@ private fun List<UIMessagePart>.isOnlyTextPart(): Boolean {
     val gonnaSend = filter { it is UIMessagePart.Text || it is UIMessagePart.Image }.size
     val texts = filter { it is UIMessagePart.Text }.size
     return gonnaSend == texts && texts == 1
+}
+
+private fun List<CustomHeader>.toHeaderMap(): Map<String, String> {
+    return filter { it.name.isNotBlank() }.associate { it.name to it.value }
+}
+
+private fun Map<String, String>.withAuthAndJson(apiKey: String): Map<String, String> {
+    return this + mapOf(
+        "Authorization" to "Bearer $apiKey",
+        "Content-Type" to "application/json"
+    )
+}
+
+private fun Map<String, String>.withReferHeaders(baseUrl: String): Map<String, String> {
+    return when (runCatching { URI(baseUrl).host }.getOrNull()) {
+        "aihubmix.com" -> this + ("APP-Code" to "DKHA9468")
+        "openrouter.ai" -> this + mapOf(
+            "X-Title" to "LastChat",
+            "HTTP-Referer" to "https://github.com/Cocolalilal/LastChat"
+        )
+        else -> this
+    }
+}
+
+private fun ProviderProxy.toPlatformProxy(): PlatformHttpProxy? {
+    return when (this) {
+        ProviderProxy.None -> null
+        is ProviderProxy.Http -> PlatformHttpProxy(
+            host = address,
+            port = port,
+            username = username,
+            password = password
+        )
+    }
 }

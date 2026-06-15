@@ -13,11 +13,10 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
+import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.search.SearchResult.SearchResultItem
-import me.rerere.search.SearchService.Companion.httpClient
 import me.rerere.search.SearchService.Companion.json
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
+import me.rerere.search.SearchService.Companion.platformHttpClient
 
 object JinaSearchService : SearchService<SearchServiceOptions.JinaOptions> {
     override val name: String = "Jina"
@@ -68,17 +67,21 @@ object JinaSearchService : SearchService<SearchServiceOptions.JinaOptions> {
                 put("q", query)
             }
 
-            val request = Request.Builder()
-                .url("https://s.jina.ai/")
-                .post(body.toString().toRequestBody())
-                .addHeader("Authorization", "Bearer ${serviceOptions.apiKey}")
-                .addHeader("Accept", "application/json")
-                .addHeader("Content-Type", "application/json")
-                .build()
-
-            val response = httpClient.newCall(request).await()
-            if (response.isSuccessful) {
-                val responseData = response.body.string().let {
+            val response = platformHttpClient.execute(
+                PlatformHttpRequest(
+                    method = "POST",
+                    url = "https://s.jina.ai/",
+                    headers = mapOf(
+                        "Authorization" to "Bearer ${serviceOptions.apiKey}",
+                        "Accept" to "application/json",
+                        "Content-Type" to "application/json"
+                    ),
+                    body = body.toString().encodeToByteArray(),
+                    mediaType = "application/json"
+                )
+            )
+            if (response.statusCode in 200..299) {
+                val responseData = response.body.decodeToString().let {
                     json.decodeFromString<JinaSearchResponse>(it)
                 }
 
@@ -94,7 +97,7 @@ object JinaSearchService : SearchService<SearchServiceOptions.JinaOptions> {
                     )
                 )
             } else {
-                error("response failed #${response.code}")
+                error("response failed #${response.statusCode}")
             }
         }
     }
@@ -111,20 +114,24 @@ object JinaSearchService : SearchService<SearchServiceOptions.JinaOptions> {
                 put("url", url)
             }
 
-            val request = Request.Builder()
-                .url("https://r.jina.ai/")
-                .post(body.toString().toRequestBody())
-                .addHeader("Authorization", "Bearer ${serviceOptions.apiKey}")
-                .addHeader("Accept", "application/json")
-                .addHeader("Content-Type", "application/json")
-                .addHeader("X-Return-Format", "markdown")
-                .build()
-
-            val response = httpClient.newCall(request).await()
-            if (!response.isSuccessful) {
-                error("response failed for url $url #${response.code}")
+            val response = platformHttpClient.execute(
+                PlatformHttpRequest(
+                    method = "POST",
+                    url = "https://r.jina.ai/",
+                    headers = mapOf(
+                        "Authorization" to "Bearer ${serviceOptions.apiKey}",
+                        "Accept" to "application/json",
+                        "Content-Type" to "application/json",
+                        "X-Return-Format" to "markdown"
+                    ),
+                    body = body.toString().encodeToByteArray(),
+                    mediaType = "application/json"
+                )
+            )
+            if (response.statusCode !in 200..299) {
+                error("response failed for url $url #${response.statusCode}")
             }
-            val responseData = response.body.string().let {
+            val responseData = response.body.decodeToString().let {
                 json.decodeFromString<JinaScrapeResponse>(it)
             }
 

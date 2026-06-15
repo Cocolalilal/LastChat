@@ -18,11 +18,10 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
+import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.search.SearchResult.SearchResultItem
-import me.rerere.search.SearchService.Companion.httpClient
 import me.rerere.search.SearchService.Companion.json
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
+import me.rerere.search.SearchService.Companion.platformHttpClient
 
 private const val TAG = "NanoGPTSearchService"
 
@@ -152,16 +151,20 @@ object NanoGPTSearchService : SearchService<SearchServiceOptions.NanoGPTOptions>
                 }
             }
 
-            val request = Request.Builder()
-                .url("https://nano-gpt.com/api/web")
-                .post(body.toString().toRequestBody())
-                .addHeader("Content-Type", "application/json")
-                .addHeader("x-api-key", serviceOptions.apiKey)
-                .build()
-
-            val response = httpClient.newCall(request).await()
-            if (response.isSuccessful) {
-                val responseBody = response.body.string()
+            val response = platformHttpClient.execute(
+                PlatformHttpRequest(
+                    method = "POST",
+                    url = "https://nano-gpt.com/api/web",
+                    headers = mapOf(
+                        "Content-Type" to "application/json",
+                        "x-api-key" to serviceOptions.apiKey
+                    ),
+                    body = body.toString().encodeToByteArray(),
+                    mediaType = "application/json"
+                )
+            )
+            if (response.statusCode in 200..299) {
+                val responseBody = response.body.decodeToString()
                 
                 // Handle different output types
                 when (serviceOptions.outputType) {
@@ -199,8 +202,8 @@ object NanoGPTSearchService : SearchService<SearchServiceOptions.NanoGPTOptions>
                     }
                 }
             } else {
-                val errorBody = response.body.string()
-                error("NanoGPT search failed #${response.code}: $errorBody")
+                val errorBody = response.body.decodeToString()
+                error("NanoGPT search failed #${response.statusCode}: $errorBody")
             }
         }
     }
@@ -227,16 +230,20 @@ object NanoGPTSearchService : SearchService<SearchServiceOptions.NanoGPTOptions>
                 put("stealthMode", serviceOptions.stealthMode)
             }
 
-            val request = Request.Builder()
-                .url("https://nano-gpt.com/api/scrape-urls")
-                .post(body.toString().toRequestBody())
-                .addHeader("Content-Type", "application/json")
-                .addHeader("x-api-key", serviceOptions.apiKey)
-                .build()
-
-            val response = httpClient.newCall(request).await()
-            if (response.isSuccessful) {
-                val parsed = json.decodeFromString<ScrapeResponse>(response.body.string())
+            val response = platformHttpClient.execute(
+                PlatformHttpRequest(
+                    method = "POST",
+                    url = "https://nano-gpt.com/api/scrape-urls",
+                    headers = mapOf(
+                        "Content-Type" to "application/json",
+                        "x-api-key" to serviceOptions.apiKey
+                    ),
+                    body = body.toString().encodeToByteArray(),
+                    mediaType = "application/json"
+                )
+            )
+            if (response.statusCode in 200..299) {
+                val parsed = json.decodeFromString<ScrapeResponse>(response.body.decodeToString())
                 return@withContext Result.success(
                     ScrapedResult(
                         urls = parsed.results
@@ -253,8 +260,8 @@ object NanoGPTSearchService : SearchService<SearchServiceOptions.NanoGPTOptions>
                     )
                 )
             } else {
-                val errorBody = response.body.string()
-                error("NanoGPT scrape failed #${response.code}: $errorBody")
+                val errorBody = response.body.decodeToString()
+                error("NanoGPT scrape failed #${response.statusCode}: $errorBody")
             }
         }
     }

@@ -1,5 +1,7 @@
 package me.rerere.ai.provider.providers
 
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -10,11 +12,22 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.UIMessage
-import okhttp3.OkHttpClient
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpRequest
+import me.rerere.common.platform.PlatformHttpResponse
+import me.rerere.common.platform.PlatformServerEvent
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ClaudeProviderPromptCacheTest {
+    private val httpClient = object : PlatformHttpClient {
+        override suspend fun execute(request: PlatformHttpRequest): PlatformHttpResponse {
+            error("Network is not used by these reflection tests")
+        }
+
+        override fun streamEvents(request: PlatformHttpRequest): Flow<PlatformServerEvent> = emptyFlow()
+    }
+
     @Test
     fun buildMessageRequestAddsPromptCacheBreakpoints() {
         val body = buildClaudeMessageRequest(
@@ -58,7 +71,7 @@ class ClaudeProviderPromptCacheTest {
     }
 
     private fun buildClaudeMessageRequest(messages: List<UIMessage>): JsonObject {
-        val provider = ClaudeProvider(OkHttpClient())
+        val provider = ClaudeProvider(httpClient)
         val method = ClaudeProvider::class.java.getDeclaredMethod(
             "buildMessageRequest",
             List::class.java,
@@ -75,7 +88,7 @@ class ClaudeProviderPromptCacheTest {
     }
 
     private fun parseClaudeUsage(usage: JsonObject): me.rerere.ai.core.TokenUsage? {
-        val provider = ClaudeProvider(OkHttpClient())
+        val provider = ClaudeProvider(httpClient)
         val method = ClaudeProvider::class.java.getDeclaredMethod(
             "parseTokenUsage",
             JsonObject::class.java,

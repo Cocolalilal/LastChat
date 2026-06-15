@@ -30,7 +30,7 @@ import me.rerere.ai.registry.ModelIdNormalizer
 import me.rerere.rikkahub.utils.JsonInstant
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import me.rerere.common.http.await
+import me.rerere.common.platform.android.await
 
 private const val TAG = "ModelCatalogService"
 private const val MODEL_CATALOG_DIR_NAME = "model_catalog"

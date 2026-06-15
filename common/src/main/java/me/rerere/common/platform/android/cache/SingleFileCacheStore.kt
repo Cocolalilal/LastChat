@@ -1,9 +1,12 @@
-package me.rerere.common.cache
+package me.rerere.common.platform.android.cache
 
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
+import me.rerere.common.cache.CacheEntry
+import me.rerere.common.cache.CacheStore
+import me.rerere.common.cache.cacheEntrySerializer
 import java.io.File
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -70,4 +73,3 @@ class SingleFileCacheStore<K : Any, V : Any>(
         atomicWrite(file, text)
     }
 }
-

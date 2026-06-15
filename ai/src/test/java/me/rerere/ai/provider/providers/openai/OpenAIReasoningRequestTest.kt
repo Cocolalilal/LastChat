@@ -1,5 +1,7 @@
 package me.rerere.ai.provider.providers.openai
 
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -18,7 +20,10 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.util.KeyRoulette
-import okhttp3.OkHttpClient
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpRequest
+import me.rerere.common.platform.PlatformHttpResponse
+import me.rerere.common.platform.PlatformServerEvent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -26,6 +31,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class OpenAIReasoningRequestTest {
+    private val responseHttpClient = object : PlatformHttpClient {
+        override suspend fun execute(request: PlatformHttpRequest): PlatformHttpResponse {
+            error("Network is not used by these reflection tests")
+        }
+
+        override fun streamEvents(request: PlatformHttpRequest): Flow<PlatformServerEvent> = emptyFlow()
+    }
     private val providerSetting = ProviderSetting.OpenAI(
         apiKey = "test-key",
         baseUrl = "https://example.com/v1",
@@ -534,7 +546,7 @@ class OpenAIReasoningRequestTest {
         sessionId: String? = null,
     ): JsonObject {
         val api = ChatCompletionsAPI(
-            client = OkHttpClient(),
+            httpClient = responseHttpClient,
             keyRoulette = object : KeyRoulette {
                 override fun next(keys: String): String = keys
             }
@@ -558,7 +570,7 @@ class OpenAIReasoningRequestTest {
 
     private fun parseOpenAIMessage(message: JsonObject): UIMessage {
         val api = ChatCompletionsAPI(
-            client = OkHttpClient(),
+            httpClient = responseHttpClient,
             keyRoulette = object : KeyRoulette {
                 override fun next(keys: String): String = keys
             }
@@ -573,7 +585,7 @@ class OpenAIReasoningRequestTest {
 
     private fun parseChatCompletionsUsage(usage: JsonObject): me.rerere.ai.core.TokenUsage? {
         val api = ChatCompletionsAPI(
-            client = OkHttpClient(),
+            httpClient = responseHttpClient,
             keyRoulette = object : KeyRoulette {
                 override fun next(keys: String): String = keys
             }
@@ -586,8 +598,10 @@ class OpenAIReasoningRequestTest {
         return method.invoke(api, usage) as me.rerere.ai.core.TokenUsage?
     }
 
+    private fun responseApi(): ResponseAPI = ResponseAPI(responseHttpClient)
+
     private fun parseResponseUsage(usage: JsonObject): me.rerere.ai.core.TokenUsage? {
-        val api = ResponseAPI(OkHttpClient())
+        val api = responseApi()
         val method = ResponseAPI::class.java.getDeclaredMethod(
             "parseTokenUsage",
             JsonObject::class.java,
@@ -597,7 +611,7 @@ class OpenAIReasoningRequestTest {
     }
 
     private fun responseApiBody(thinkingBudget: Int?): JsonObject {
-        val api = ResponseAPI(OkHttpClient())
+        val api = responseApi()
         val method = ResponseAPI::class.java.getDeclaredMethod(
             "buildRequestBody",
             List::class.java,
@@ -618,7 +632,7 @@ class OpenAIReasoningRequestTest {
         providerSetting: ProviderSetting.OpenAI,
         sessionId: String?,
     ): JsonObject {
-        val api = ResponseAPI(OkHttpClient())
+        val api = responseApi()
         val method = ResponseAPI::class.java.getDeclaredMethod(
             "buildRequestBody",
             List::class.java,
@@ -641,7 +655,7 @@ class OpenAIReasoningRequestTest {
     }
 
     private fun responseApiBody(messages: List<UIMessage>): JsonObject {
-        val api = ResponseAPI(OkHttpClient())
+        val api = responseApi()
         val method = ResponseAPI::class.java.getDeclaredMethod(
             "buildRequestBody",
             List::class.java,
@@ -658,7 +672,7 @@ class OpenAIReasoningRequestTest {
     }
 
     private fun parseResponseDelta(delta: JsonObject): me.rerere.ai.ui.MessageChunk? {
-        val api = ResponseAPI(OkHttpClient())
+        val api = responseApi()
         val method = ResponseAPI::class.java.getDeclaredMethod(
             "parseResponseDelta",
             JsonObject::class.java,

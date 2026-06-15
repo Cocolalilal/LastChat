@@ -1,10 +1,10 @@
 package me.rerere.ai.provider.providers.openai
 
-import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -24,10 +24,12 @@ import kotlinx.serialization.json.putJsonArray
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.TokenUsage
+import me.rerere.ai.provider.CustomHeader
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.OpenAICompatibilityMode
+import me.rerere.ai.provider.ProviderProxy
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.registry.ModelRegistry
@@ -37,26 +39,18 @@ import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessageChoice
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.util.KeyRoulette
-import me.rerere.ai.util.configureClientWithProxy
-import me.rerere.ai.util.configureReferHeaders
 import me.rerere.ai.util.encodeBase64
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.parseErrorDetail
-import me.rerere.ai.util.stringSafe
-import me.rerere.ai.util.toHeaders
-import me.rerere.common.http.await
 import me.rerere.common.http.jsonArrayOrNull
 import me.rerere.common.http.jsonObjectOrNull
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.Response
-import okhttp3.sse.EventSource
-import okhttp3.sse.EventSourceListener
-import okhttp3.sse.EventSources
+import me.rerere.common.platform.PlatformLog
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpProxy
+import me.rerere.common.platform.PlatformHttpRequest
+import me.rerere.common.platform.PlatformServerEvent
+import java.net.URI
 import kotlin.time.Clock
 
 private const val TAG = "ChatCompletionsAPI"
@@ -72,7 +66,7 @@ private data class PromptCachePolicy(
 )
 
 class ChatCompletionsAPI(
-    private val client: OkHttpClient,
+    private val httpClient: PlatformHttpClient,
     private val keyRoulette: KeyRoulette
 ) : OpenAIImpl {
     override suspend fun generateText(
@@ -87,24 +81,27 @@ class ChatCompletionsAPI(
                 providerSetting = providerSetting
             )
 
-        val proxyClient = client.configureClientWithProxy(providerSetting.proxy)
+        val encodedRequestBody = json.encodeToString(requestBody)
 
-        val request = Request.Builder()
-            .url("${providerSetting.baseUrl}${providerSetting.chatCompletionsPath}")
-            .headers(params.customHeaders.toHeaders())
-            .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
-            .addHeader("Authorization", "Bearer ${keyRoulette.next(providerSetting.apiKey)}")
-            .configureReferHeaders(providerSetting.baseUrl)
-            .build()
+        PlatformLog.i(TAG, "generateText: $encodedRequestBody")
 
-        Log.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
-
-        val response = proxyClient.newCall(request).await()
-        if (!response.isSuccessful) {
-            throw Exception("Failed to get response: ${response.code} ${response.body?.string()}")
+        val response = httpClient.execute(
+            PlatformHttpRequest(
+                method = "POST",
+                url = "${providerSetting.baseUrl}${providerSetting.chatCompletionsPath}",
+                headers = params.customHeaders.toHeaderMap()
+                    .withReferHeaders(providerSetting.baseUrl)
+                    .withAuthAndJson(keyRoulette.next(providerSetting.apiKey)),
+                body = encodedRequestBody.encodeToByteArray(),
+                mediaType = "application/json",
+                proxy = providerSetting.proxy.toPlatformProxy()
+            )
+        )
+        if (response.statusCode !in 200..299) {
+            throw Exception("Failed to get response: ${response.statusCode} ${response.body.decodeToString()}")
         }
 
-        val bodyStr = response.body?.string() ?: ""
+        val bodyStr = response.body.decodeToString()
         val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
 
         // 从 JsonObject 中提取必要的信息
@@ -145,116 +142,112 @@ class ChatCompletionsAPI(
             providerSetting = providerSetting,
             stream = true,
         )
+        val encodedRequestBody = json.encodeToString(requestBody)
+        val request = PlatformHttpRequest(
+            method = "POST",
+            url = "${providerSetting.baseUrl}${providerSetting.chatCompletionsPath}",
+            headers = params.customHeaders.toHeaderMap()
+                .withReferHeaders(providerSetting.baseUrl)
+                .withAuthAndJson(keyRoulette.next(providerSetting.apiKey)),
+            body = encodedRequestBody.encodeToByteArray(),
+            mediaType = "application/json",
+            proxy = providerSetting.proxy.toPlatformProxy()
+        )
 
-        val proxyClient = client.configureClientWithProxy(providerSetting.proxy)
+        PlatformLog.i(TAG, "streamText: $encodedRequestBody")
 
-        val request = Request.Builder()
-            .url("${providerSetting.baseUrl}${providerSetting.chatCompletionsPath}")
-            .headers(params.customHeaders.toHeaders())
-            .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
-            .addHeader("Authorization", "Bearer ${keyRoulette.next(providerSetting.apiKey)}")
-            .addHeader("Content-Type", "application/json")
-            .configureReferHeaders(providerSetting.baseUrl)
-            .build()
-
-        Log.i(TAG, "streamText: ${json.encodeToString(requestBody)}")
-
-        // just for debugging response body
-        // println(client.newCall(request).await().body?.string())
-
-        val listener = object : EventSourceListener() {
-            override fun onEvent(
-                eventSource: EventSource,
-                id: String?,
-                type: String?,
-                data: String
-            ) {
-                if (data == "[DONE]") {
-                    println("[onEvent] (done) 结束流: $data")
-                    close()
-                    return
-                }
-                Log.d(TAG, "onEvent: $data")
-                data
-                    .trim()
-                    .split("\n")
-                    .filter { it.isNotBlank() }
-                    .map { json.parseToJsonElement(it).jsonObject }
-                    .forEach {
-                        if (it["error"] != null) {
-                            val error = it["error"]!!.parseErrorDetail()
-                            throw error
+        val job = launch {
+            httpClient.streamEvents(request).collect { event ->
+                when (event) {
+                    PlatformServerEvent.Open -> Unit
+                    PlatformServerEvent.Closed -> close()
+                    is PlatformServerEvent.Failure -> close(parseStreamFailure(event))
+                    is PlatformServerEvent.Event -> {
+                        if (event.data == "[DONE]") {
+                            close()
+                            return@collect
                         }
-                        val id = it["id"]?.jsonPrimitive?.contentOrNull ?: ""
-                        val model = it["model"]?.jsonPrimitive?.contentOrNull ?: ""
-
-                        val choices = it["choices"]?.jsonArray ?: JsonArray(emptyList())
-                        val choiceList = buildList {
-                            if (choices.isNotEmpty()) {
-                                val choice = choices[0].jsonObject
-                                val message =
-                                    choice["delta"]?.jsonObject ?: choice["message"]?.jsonObject
-                                    ?: throw Exception("delta/message is null")
-                                val finishReason =
-                                    choice["finish_reason"]?.jsonPrimitive?.contentOrNull
-                                        ?: "unknown"
-                                add(
-                                    UIMessageChoice(
-                                        index = 0,
-                                        delta = parseMessage(message),
-                                        message = null,
-                                        finishReason = finishReason,
-                                    )
-                                )
+                        PlatformLog.d(TAG, "onEvent: ${event.data}")
+                        try {
+                            parseStreamData(event.data).forEach { chunk ->
+                                trySend(chunk)
                             }
+                        } catch (e: Throwable) {
+                            close(e)
                         }
-                        val usage = parseTokenUsage(it["usage"] as? JsonObject)
-
-                        val messageChunk = MessageChunk(
-                            id = id,
-                            model = model,
-                            choices = choiceList,
-                            usage = usage
-                        )
-                        trySend(messageChunk)
                     }
-            }
-
-            override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
-                var exception = t
-
-                t?.printStackTrace()
-                println("[onFailure] 发生错误: ${t?.javaClass?.name} ${t?.message} / $response")
-
-                val bodyRaw = response?.body?.stringSafe()
-                try {
-                    if (!bodyRaw.isNullOrBlank()) {
-                        val bodyElement = Json.parseToJsonElement(bodyRaw)
-                        println(bodyElement)
-                        exception = bodyElement.parseErrorDetail()
-                        Log.i(TAG, "onFailure: $exception")
-                    }
-                } catch (e: Throwable) {
-                    Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
-                    e.printStackTrace()
-                    exception = e
-                } finally {
-                    close(exception)
                 }
-            }
-
-            override fun onClosed(eventSource: EventSource) {
-                close()
             }
         }
-
-        val eventSource = EventSources.createFactory(proxyClient).newEventSource(request, listener)
 
         awaitClose {
-            println("[awaitClose] 关闭eventSource ")
-            eventSource.cancel()
+            job.cancel()
         }
     }
+
+    private fun parseStreamData(data: String): List<MessageChunk> {
+        return data
+            .trim()
+            .split("\n")
+            .filter { it.isNotBlank() }
+            .map { json.parseToJsonElement(it).jsonObject }
+            .map { jsonObject ->
+                val error = jsonObject["error"]
+                if (error != null) {
+                    throw error.parseErrorDetail()
+                }
+                val id = jsonObject["id"]?.jsonPrimitive?.contentOrNull ?: ""
+                val model = jsonObject["model"]?.jsonPrimitive?.contentOrNull ?: ""
+
+                val choices = jsonObject["choices"]?.jsonArray ?: JsonArray(emptyList())
+                val choiceList = buildList {
+                    if (choices.isNotEmpty()) {
+                        val choice = choices[0].jsonObject
+                        val message = choice["delta"]?.jsonObject ?: choice["message"]?.jsonObject
+                            ?: throw Exception("delta/message is null")
+                        val finishReason = choice["finish_reason"]?.jsonPrimitive?.contentOrNull
+                            ?: "unknown"
+                        add(
+                            UIMessageChoice(
+                                index = 0,
+                                delta = parseMessage(message),
+                                message = null,
+                                finishReason = finishReason,
+                            )
+                        )
+                    }
+                }
+                val usage = parseTokenUsage(jsonObject["usage"] as? JsonObject)
+
+                MessageChunk(
+                    id = id,
+                    model = model,
+                    choices = choiceList,
+                    usage = usage
+                )
+            }
+    }
+
+    private fun parseStreamFailure(event: PlatformServerEvent.Failure): Throwable {
+        val fallback = RuntimeException(
+            "Stream failed${event.statusCode?.let { " #$it" }.orEmpty()}: ${event.message.orEmpty()}"
+        )
+        val bodyRaw = event.body
+        return try {
+            if (!bodyRaw.isNullOrBlank()) {
+                val bodyElement = Json.parseToJsonElement(bodyRaw)
+                println(bodyElement)
+                bodyElement.parseErrorDetail()
+            } else {
+                fallback
+            }
+        } catch (e: Throwable) {
+            PlatformLog.w(TAG, "onFailure: failed to parse from $bodyRaw")
+            e.printStackTrace()
+            e
+        }
+    }
+
 
 
     private fun buildChatCompletionRequest(
@@ -263,7 +256,7 @@ class ChatCompletionsAPI(
         providerSetting: ProviderSetting.OpenAI,
         stream: Boolean = false,
     ): JsonObject {
-        val host = providerSetting.baseUrl.toHttpUrl().host
+        val host = URI(providerSetting.baseUrl).host.orEmpty()
         return buildJsonObject {
             put("model", params.model.modelId)
             if (host == "openrouter.ai" && !params.sessionId.isNullOrBlank()) {
@@ -538,7 +531,7 @@ class ChatCompletionsAPI(
                                     }
 
                                     else -> {
-                                        Log.w(
+                                        PlatformLog.w(
                                             TAG,
                                             "buildMessages: message part not supported: $part"
                                         )
@@ -826,9 +819,43 @@ class ChatCompletionsAPI(
         return null
     }
 
-    private fun List<UIMessagePart>.isOnlyTextPart(): Boolean {
-        val gonnaSend = filter { it is UIMessagePart.Text || it is UIMessagePart.Image }.size
-        val texts = filter { it is UIMessagePart.Text }.size
-        return gonnaSend == texts && texts == 1
+private fun List<UIMessagePart>.isOnlyTextPart(): Boolean {
+    val gonnaSend = filter { it is UIMessagePart.Text || it is UIMessagePart.Image }.size
+    val texts = filter { it is UIMessagePart.Text }.size
+    return gonnaSend == texts && texts == 1
+}
+
+private fun List<CustomHeader>.toHeaderMap(): Map<String, String> {
+    return filter { it.name.isNotBlank() }.associate { it.name to it.value }
+}
+
+private fun Map<String, String>.withAuthAndJson(apiKey: String): Map<String, String> {
+    return this + mapOf(
+        "Authorization" to "Bearer $apiKey",
+        "Content-Type" to "application/json"
+    )
+}
+
+private fun Map<String, String>.withReferHeaders(baseUrl: String): Map<String, String> {
+    return when (runCatching { URI(baseUrl).host }.getOrNull()) {
+        "aihubmix.com" -> this + ("APP-Code" to "DKHA9468")
+        "openrouter.ai" -> this + mapOf(
+            "X-Title" to "LastChat",
+            "HTTP-Referer" to "https://github.com/Cocolalilal/LastChat"
+        )
+        else -> this
     }
+}
+
+private fun ProviderProxy.toPlatformProxy(): PlatformHttpProxy? {
+    return when (this) {
+        ProviderProxy.None -> null
+        is ProviderProxy.Http -> PlatformHttpProxy(
+            host = address,
+            port = port,
+            username = username,
+            password = password
+        )
+    }
+}
 }

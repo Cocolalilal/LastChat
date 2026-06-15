@@ -13,12 +13,10 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
+import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.search.SearchResult.SearchResultItem
-import me.rerere.search.SearchService.Companion.httpClient
 import me.rerere.search.SearchService.Companion.json
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
+import me.rerere.search.SearchService.Companion.platformHttpClient
 
 private const val TAG = "OllamaSearchService"
 
@@ -59,15 +57,19 @@ object OllamaSearchService : SearchService<SearchServiceOptions.OllamaOptions> {
                 put("max_results", commonOptions.resultSize.coerceIn(5..10))
             }
 
-            val request = Request.Builder()
-                .url("https://ollama.com/api/web_search")
-                .post(body.toString().toRequestBody("application/json".toMediaType()))
-                .addHeader("Authorization", "Bearer ${serviceOptions.apiKey}")
-                .build()
-
-            val response = httpClient.newCall(request).await()
-            if (response.isSuccessful) {
-                val responseBody = response.body.string()
+            val response = platformHttpClient.execute(
+                PlatformHttpRequest(
+                    method = "POST",
+                    url = "https://ollama.com/api/web_search",
+                    headers = mapOf(
+                        "Authorization" to "Bearer ${serviceOptions.apiKey}"
+                    ),
+                    body = body.toString().encodeToByteArray(),
+                    mediaType = "application/json"
+                )
+            )
+            if (response.statusCode in 200..299) {
+                val responseBody = response.body.decodeToString()
                 val searchResponse = json.decodeFromString<OllamaSearchResponse>(responseBody)
 
                 return@withContext Result.success(
@@ -82,7 +84,7 @@ object OllamaSearchService : SearchService<SearchServiceOptions.OllamaOptions> {
                     )
                 )
             } else {
-                error("Ollama search failed with code ${response.code}: ${response.message}")
+                error("Ollama search failed with code ${response.statusCode}")
             }
         }
     }

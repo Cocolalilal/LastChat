@@ -33,6 +33,8 @@ android {
 }
 
 dependencies {
+    api(project(":shared"))
+
     // okhttp
     api(libs.okhttp)
     api(libs.okhttp.sse)

@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import me.rerere.common.http.await
+import me.rerere.common.platform.android.await
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
 import okhttp3.OkHttpClient

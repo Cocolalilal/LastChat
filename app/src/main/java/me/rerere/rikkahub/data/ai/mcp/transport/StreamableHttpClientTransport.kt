@@ -19,8 +19,8 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
-import me.rerere.common.http.SseEvent
-import me.rerere.common.http.sseFlow
+import me.rerere.common.platform.android.SseEvent
+import me.rerere.common.platform.android.sseFlow
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
