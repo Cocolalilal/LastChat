@@ -136,7 +136,8 @@ val LocalRpStyleRules = compositionLocalOf<List<RpStyleRule>> { emptyList() }
 private data class StreamingTextReveal(
     val ranges: List<StreamingSettleRange>,
     val nowMillis: Long,
-    val color: Color
+    val color: Color,
+    val smoothedCharsPerSecond: Float
 )
 
 internal data class StreamingSettleRange(
@@ -437,7 +438,8 @@ fun MarkdownBlock(
         StreamingTextReveal(
             ranges = settleRanges,
             nowMillis = streamingFrameMillis,
-            color = contentColor
+            color = contentColor,
+            smoothedCharsPerSecond = streamingPresentation.smoothedCharsPerSecond
         )
     } else {
         null
@@ -478,7 +480,8 @@ internal class StreamingTextPresentationState(
     var settleRanges: List<StreamingSettleRange> = emptyList()
         private set
 
-    private var smoothedCharsPerSecond = STREAMING_DEFAULT_CHARS_PER_SECOND
+    var smoothedCharsPerSecond = STREAMING_DEFAULT_CHARS_PER_SECOND
+        private set
     private var lastRawUpdateMillis = nowMillis
     private var firstPendingSinceMillis = 0L
     private var revealCarry = 0f
@@ -682,7 +685,7 @@ private fun String.streamingBoundaryAfter(offset: Int): Int {
 }
 
 private fun List<StreamingSettleRange>.pruneStreamingSettleRanges(nowMillis: Long): List<StreamingSettleRange> {
-    return filter { range -> nowMillis - range.revealedAtMillis < STREAMING_SETTLE_DURATION_MILLIS }
+    return filter { range -> nowMillis - range.revealedAtMillis < STREAMING_SETTLE_MAX_MILLIS }
 }
 
 private fun List<StreamingSettleRange>.mergeAdjacentStreamingSettleRanges(): List<StreamingSettleRange> {
@@ -713,21 +716,25 @@ private fun Char.isStreamingBoundaryCharacter(): Boolean {
 private const val STREAMING_INITIAL_BUFFER_MILLIS = 64L
 private const val STREAMING_SMOOTHING_WINDOW_MILLIS = 220f
 private const val STREAMING_CATCH_UP_AFTER_MILLIS = 420f
-private const val STREAMING_SETTLE_DURATION_MILLIS = 220L
-private const val STREAMING_SETTLE_START_ALPHA = 0.58f
+private const val STREAMING_SETTLE_MIN_MILLIS = 180L
+private const val STREAMING_SETTLE_MAX_MILLIS = 360L
+private const val STREAMING_SETTLE_ALPHA_FAST = 0.42f
+private const val STREAMING_SETTLE_ALPHA_SLOW = 0.65f
+private const val STREAMING_SPEED_SLOW_THRESHOLD = 30f
+private const val STREAMING_SPEED_FAST_THRESHOLD = 150f
 private const val STREAMING_STARVED_REVEAL_MILLIS = 110L
 private const val STREAMING_MIN_CHARS_PER_SECOND = 18f
 private const val STREAMING_DEFAULT_CHARS_PER_SECOND = 44f
 private const val STREAMING_MAX_CHARS_PER_SECOND = 220f
 private const val STREAMING_MAX_CATCH_UP_MULTIPLIER = 3.2f
-private const val STREAMING_RATE_KEEP_WEIGHT = 0.78f
+private const val STREAMING_RATE_KEEP_WEIGHT = 0.82f
 private const val STREAMING_TINY_PENDING_LENGTH = 4
 private const val STREAMING_SHORT_WORD_LENGTH = 7
 private const val STREAMING_MEDIUM_WORD_LENGTH = 10
 private const val STREAMING_LONG_WORD_LENGTH = 12
 private const val STREAMING_BOUNDARY_LOOKAHEAD = 3
 private const val STREAMING_BOUNDARY_BACKTRACK = 2
-private const val STREAMING_MAX_SETTLE_RANGES = 8
+private const val STREAMING_MAX_SETTLE_RANGES = 12
 
 // for debug
 private fun dumpAst(node: ASTNode, text: String, indent: String = "") {
@@ -1760,17 +1767,31 @@ private fun AnnotatedString.Builder.applyStreamingRevealStyle(
 
     val sourceLength = sourceEnd - sourceStart
     val outputLength = outputEnd - outputStart
+    
+    // Compute speed-adaptive constants
+    val speedProgress = ((reveal.smoothedCharsPerSecond - STREAMING_SPEED_SLOW_THRESHOLD) / 
+        (STREAMING_SPEED_FAST_THRESHOLD - STREAMING_SPEED_SLOW_THRESHOLD)).coerceIn(0f, 1f)
+    
+    // Faster speed = longer settle duration (for softer fade during bursts)
+    val settleDurationMillis = STREAMING_SETTLE_MIN_MILLIS + 
+        (STREAMING_SETTLE_MAX_MILLIS - STREAMING_SETTLE_MIN_MILLIS) * speedProgress
+        
+    // Faster speed = lower start alpha (for more visible "wave" effect)
+    val startAlpha = STREAMING_SETTLE_ALPHA_SLOW + 
+        (STREAMING_SETTLE_ALPHA_FAST - STREAMING_SETTLE_ALPHA_SLOW) * speedProgress
+
     reveal.ranges.fastForEach { settleRange ->
         val ageMillis = reveal.nowMillis - settleRange.revealedAtMillis
-        if (ageMillis !in 0 until STREAMING_SETTLE_DURATION_MILLIS) return@fastForEach
+        if (ageMillis < 0 || ageMillis >= settleDurationMillis) return@fastForEach
 
         val overlapStart = maxOf(sourceStart, settleRange.startOffset)
         val overlapEnd = minOf(sourceEnd, settleRange.endOffset)
         if (overlapEnd <= overlapStart) return@fastForEach
 
-        val progress = (ageMillis / STREAMING_SETTLE_DURATION_MILLIS.toFloat()).coerceIn(0f, 1f)
-        val easedProgress = 1f - (1f - progress) * (1f - progress)
-        val alpha = STREAMING_SETTLE_START_ALPHA + (1f - STREAMING_SETTLE_START_ALPHA) * easedProgress
+        val progress = (ageMillis / settleDurationMillis).coerceIn(0f, 1f)
+        // Smooth-step curve: 3t^2 - 2t^3
+        val easedProgress = progress * progress * (3f - 2f * progress)
+        val alpha = startAlpha + (1f - startAlpha) * easedProgress
         if (alpha >= 0.995f) return@fastForEach
 
         val rangeStart = outputStart + ((overlapStart - sourceStart) * outputLength / sourceLength)

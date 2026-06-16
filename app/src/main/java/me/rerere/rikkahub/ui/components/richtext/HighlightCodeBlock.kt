@@ -242,8 +242,21 @@ fun HighlightCodeBlock(
         }
     }
 
+    var pulseTrigger by remember { mutableIntStateOf(0) }
+    val pulseAlpha by animateFloatAsState(
+        targetValue = if (pulseTrigger > 0) 0.88f else 1f,
+        animationSpec = tween(durationMillis = 110, easing = LinearOutSlowInEasing),
+        finishedListener = {
+            if (it == 0.88f) pulseTrigger = 0
+        },
+        label = "code_block_pulse_alpha"
+    )
+
     LaunchedEffect(code, completeCodeBlock, expandState, previewAutoFollowPaused) {
         val codeGrew = code.length > previousCodeLength
+        if (codeGrew && !completeCodeBlock) {
+            pulseTrigger = 1
+        }
         previousCodeLength = code.length
         if (!codeGrew || completeCodeBlock) {
             return@LaunchedEffect
@@ -347,6 +360,7 @@ fun HighlightCodeBlock(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .graphicsLayer { alpha = pulseAlpha }
                     .background(bodyColor)
                     .padding(horizontal = 14.dp, vertical = 12.dp)
             ) {
@@ -466,10 +480,10 @@ private fun CodeBlockHeaderActions(
 }
 
 @Composable
-private fun CodeBlockActionButton(
+internal fun CodeBlockActionButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     onClick: () -> Unit,
-    contentDescription: String,
+    contentDescription: String?,
     tint: Color,
     hapticsEnabled: Boolean,
 ) {
@@ -569,7 +583,7 @@ private fun CodeBlockText(
 }
 
 @Composable
-private fun CodeBlockFooter(
+internal fun CodeBlockFooter(
     expanded: Boolean,
     footerText: String,
     footerAction: CodeBlockFooterAction,

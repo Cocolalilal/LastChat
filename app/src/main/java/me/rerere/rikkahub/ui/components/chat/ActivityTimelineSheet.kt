@@ -62,6 +62,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -104,6 +105,7 @@ import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import org.koin.compose.koinInject
 
 private const val TIMELINE_PANEL_ANIMATION_MS = 220
@@ -785,7 +787,8 @@ private fun TimelineEntryItem(
                                     onDeleteMemory = onDeleteMemory,
                                     onRestoreMemory = onRestoreMemory,
                                     onRevertMemory = onRevertMemory,
-                                    canRestore = canRestore
+                                    canRestore = canRestore,
+                                    followLiveContent = followLiveContent
                                 )
                                 Spacer(
                                     modifier = Modifier
@@ -795,11 +798,11 @@ private fun TimelineEntryItem(
                                 )
                             }
                         } else {
-                            TimelinePreview(entry = entry)
+                            TimelinePreview(entry = entry, followLiveContent = followLiveContent)
                         }
                     }
                 } else {
-                    TimelinePreview(entry = entry)
+                    TimelinePreview(entry = entry, followLiveContent = followLiveContent)
                 }
             }
         }
@@ -813,7 +816,10 @@ private fun TimelineEntryItem(
 }
 
 @Composable
-private fun TimelinePreview(entry: TimelineEntry) {
+private fun TimelinePreview(entry: TimelineEntry, followLiveContent: Boolean = false) {
+    var pulseTrigger by remember { mutableIntStateOf(0) }
+    var previousLength by remember { mutableIntStateOf(0) }
+    
     val previewText = when (entry) {
         is TimelineEntry.Reasoning -> entry.content.take(160)
         is TimelineEntry.ToolCall -> {
@@ -872,13 +878,31 @@ private fun TimelinePreview(entry: TimelineEntry) {
         is TimelineEntry.Reply -> entry.content.take(160)
     }
 
+    LaunchedEffect(previewText, followLiveContent) {
+        val grew = previewText.length > previousLength
+        if (grew && followLiveContent) {
+            pulseTrigger = 1
+        }
+        previousLength = previewText.length
+    }
+
+    val pulseAlpha by animateFloatAsState(
+        targetValue = if (pulseTrigger > 0) 0.85f else 1f,
+        animationSpec = tween(durationMillis = 110, easing = LinearOutSlowInEasing),
+        finishedListener = {
+            if (it == 0.85f) pulseTrigger = 0
+        },
+        label = "preview_pulse"
+    )
+
     if (previewText.isNotBlank()) {
         Text(
             text = previewText,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 2,
-            overflow = TextOverflow.Ellipsis
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.graphicsLayer { alpha = pulseAlpha }
         )
     }
 }
@@ -1078,14 +1102,15 @@ private fun TimelineExpandedContent(
     onDeleteMemory: (Int, String?) -> Unit,
     onRestoreMemory: (String) -> Unit,
     onRevertMemory: (Int, String) -> Unit,
-    canRestore: Boolean
+    canRestore: Boolean,
+    followLiveContent: Boolean = false
 ) {
     when (entry) {
         is TimelineEntry.Reasoning -> {
-            Text(
-                text = entry.content,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+            MarkdownBlock(
+                content = entry.content,
+                style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                streamingTextReveal = followLiveContent
             )
         }
 
@@ -1110,10 +1135,10 @@ private fun TimelineExpandedContent(
         }
 
         is TimelineEntry.Reply -> {
-            Text(
-                text = entry.content,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+            MarkdownBlock(
+                content = entry.content,
+                style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                streamingTextReveal = followLiveContent
             )
         }
     }
