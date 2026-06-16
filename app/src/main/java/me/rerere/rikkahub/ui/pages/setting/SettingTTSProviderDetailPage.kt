@@ -90,6 +90,8 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
@@ -110,8 +112,6 @@ import me.rerere.tts.provider.android.discoverLocalTtsEngines
 import me.rerere.tts.provider.android.discoverLocalTtsVoices
 import me.rerere.tts.provider.withVoiceApplied
 import me.rerere.rikkahub.utils.plus
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableItem
@@ -733,7 +733,7 @@ private fun ProviderVoicesFab(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val okHttpClient = koinInject<OkHttpClient>()
+    val httpClient = koinInject<PlatformHttpClient>()
     val haptics = rememberPremiumHaptics()
     val tts = LocalTTSState.current
     var discovered by remember(provider.id) { mutableStateOf(providerPresetVoices(provider)) }
@@ -760,7 +760,7 @@ private fun ProviderVoicesFab(
         if (isFetching) return
         scope.launch {
             isFetching = true
-            discovered = fetchProviderVoices(context, okHttpClient, provider).ifEmpty { discovered }
+            discovered = fetchProviderVoices(context, httpClient, provider).ifEmpty { discovered }
             isFetching = false
         }
     }
@@ -1124,7 +1124,7 @@ private fun voicesReferToSameProviderVoice(a: TTSVoice, b: TTSVoice): Boolean {
 
 private suspend fun fetchProviderVoices(
     context: android.content.Context,
-    okHttpClient: OkHttpClient,
+    httpClient: PlatformHttpClient,
     provider: TTSProviderSetting,
 ): List<TTSVoice> = withContext(Dispatchers.IO) {
     when (provider) {
@@ -1143,21 +1143,22 @@ private suspend fun fetchProviderVoices(
         }
 
         is TTSProviderSetting.ElevenLabs -> runCatching {
-            val request = Request.Builder()
-                .url("https://api.elevenlabs.io/v1/voices")
-                .addHeader("xi-api-key", provider.apiKey)
-                .build()
-            okHttpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@runCatching emptyList()
-                val body = response.body.string()
-                val root = Json.parseToJsonElement(body) as? JsonObject ?: return@runCatching emptyList()
-                val voices = root["voices"] as? JsonArray ?: return@runCatching emptyList()
-                voices.mapNotNull { item ->
-                    val obj = item as? JsonObject ?: return@mapNotNull null
-                    val voiceId = (obj["voice_id"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
-                    val name = (obj["name"] as? JsonPrimitive)?.contentOrNull ?: voiceId
-                    TTSVoice(name = name, providerVoiceId = voiceId, model = provider.modelId)
-                }
+            val response = httpClient.execute(
+                PlatformHttpRequest(
+                    method = "GET",
+                    url = "https://api.elevenlabs.io/v1/voices",
+                    headers = mapOf("xi-api-key" to provider.apiKey),
+                )
+            )
+            if (response.statusCode !in 200..299) return@runCatching emptyList()
+            val root = Json.parseToJsonElement(response.body.decodeToString()) as? JsonObject
+                ?: return@runCatching emptyList()
+            val voices = root["voices"] as? JsonArray ?: return@runCatching emptyList()
+            voices.mapNotNull { item ->
+                val obj = item as? JsonObject ?: return@mapNotNull null
+                val voiceId = (obj["voice_id"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+                val name = (obj["name"] as? JsonPrimitive)?.contentOrNull ?: voiceId
+                TTSVoice(name = name, providerVoiceId = voiceId, model = provider.modelId)
             }
         }.getOrElse { emptyList() }
 

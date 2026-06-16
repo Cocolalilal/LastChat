@@ -233,9 +233,9 @@ internal fun buildUsedModes(
     assistantDefaultSkillIds: Set<Uuid>,
     conversationSkillIds: Set<Uuid>,
     turnScopedSkillIds: Set<Uuid>,
+    alwaysEnabledSkillIds: Set<Uuid> = availableSkills.filter { it.alwaysEnabled }.map { it.id }.toSet(),
 ): List<me.rerere.ai.ui.UsedMode> {
     val allSkillIds = availableSkills.map { it.id }.toSet()
-    val alwaysEnabledSkillIds = availableSkills.filter { it.alwaysEnabled }.map { it.id }.toSet()
     val activeSkillIds = resolveActiveSkillIds(
         assistantDefaultSkillIds = assistantDefaultSkillIds,
         conversationSkillIds = conversationSkillIds,
@@ -442,6 +442,7 @@ class GenerationHandler(
         truncateIndex: Int = -1,
         maxSteps: Int = 256,
         enabledModeIds: Set<Uuid> = emptySet(),
+        enabledLorebookIds: Set<Uuid>? = null,
         activeConversationId: Uuid? = null,
     ): Flow<GenerationChunk> = channelFlow {
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
@@ -449,10 +450,14 @@ class GenerationHandler(
 
         var messages: List<UIMessage> = messages
         val allSkillIds = settings.skills
+            .filter { it.instructions.isNotBlank() }
+            .map { it.id }
+            .toSet()
+        val assistantDefaultSkillIds = settings.skills
             .filter { it.instructions.isNotBlank() && it.isAvailableForAssistant(assistant.id) }
             .map { it.id }
             .toSet()
-        val assistantDefaultSkillIds = assistant.enabledSkillIds.intersect(allSkillIds)
+            .let { assistant.enabledSkillIds.intersect(it) }
         val conversationSkillIds = enabledModeIds
         var currentTurnScopedSkillIds = emptySet<Uuid>()
 
@@ -536,6 +541,7 @@ class GenerationHandler(
                 stream = assistant.streamOutput,
                 conversationEnabledModeIds = conversationSkillIds,
                 turnScopedEnabledModeIds = currentTurnScopedSkillIds,
+                conversationEnabledLorebookIds = enabledLorebookIds,
                 activeConversationId = activeConversationId,
             )
             messages = messages.visualTransforms(
@@ -649,6 +655,7 @@ class GenerationHandler(
         truncateIndex: Int,
         conversationEnabledModeIds: Set<Uuid> = emptySet(),
         turnScopedEnabledModeIds: Set<Uuid> = emptySet(),
+        conversationEnabledLorebookIds: Set<Uuid>? = null,
     ): BuildMessagesResult {
         // Token estimator (rough estimate: 4 chars per token)
         fun estimateTokens(text: String) = text.length / 4
@@ -733,11 +740,22 @@ class GenerationHandler(
         val recentMessagesForScan = messages.takeLast(10).map { it.toText() }
 
         val availableSkills = settings.skills.filter { skill ->
-            skill.instructions.isNotBlank() && skill.isAvailableForAssistant(assistant.id)
+            skill.instructions.isNotBlank()
         }
         val allSkillIds = availableSkills.map { it.id }.toSet()
-        val alwaysEnabledSkillIds = availableSkills.filter { it.alwaysEnabled }.map { it.id }.toSet()
-        val assistantDefaultSkillIds = assistant.enabledSkillIds.intersect(allSkillIds)
+        val assistantAvailableSkillIds = settings.skills
+            .filter { it.instructions.isNotBlank() && it.isAvailableForAssistant(assistant.id) }
+            .map { it.id }
+            .toSet()
+        val alwaysEnabledSkillIds = availableSkills
+            .filter { it.alwaysEnabled && assistantAvailableSkillIds.contains(it.id) }
+            .map { it.id }
+            .toSet()
+        val assistantDefaultSkillIds = settings.skills
+            .filter { it.instructions.isNotBlank() && it.isAvailableForAssistant(assistant.id) }
+            .map { it.id }
+            .toSet()
+            .let { assistant.enabledSkillIds.intersect(it) }
         val activeSkillIds = resolveActiveSkillIds(
             assistantDefaultSkillIds = assistantDefaultSkillIds,
             conversationSkillIds = conversationEnabledModeIds,
@@ -751,11 +769,13 @@ class GenerationHandler(
             assistantDefaultSkillIds = assistantDefaultSkillIds,
             conversationSkillIds = conversationEnabledModeIds,
             turnScopedSkillIds = turnScopedEnabledModeIds,
+            alwaysEnabledSkillIds = alwaysEnabledSkillIds,
         )
 
         // Check if any lorebook entries use RAG activation
+        val activeLorebookIds = conversationEnabledLorebookIds ?: assistant.enabledLorebookIds
         val lorebooksForAssistant = settings.lorebooks
-            .filter { it.enabled && assistant.enabledLorebookIds.contains(it.id) }
+            .filter { it.enabled && activeLorebookIds.contains(it.id) }
         val hasRagEntries = lorebooksForAssistant.any { lorebook ->
             lorebook.entries.any { it.activationType == LorebookActivationType.RAG && it.enabled }
         }
@@ -1202,6 +1222,7 @@ class GenerationHandler(
         stream: Boolean,
         conversationEnabledModeIds: Set<Uuid> = emptySet(),
         turnScopedEnabledModeIds: Set<Uuid> = emptySet(),
+        conversationEnabledLorebookIds: Set<Uuid>? = null,
         activeConversationId: Uuid? = null,
     ) {
         val buildResult = buildMessages(
@@ -1214,6 +1235,7 @@ class GenerationHandler(
             truncateIndex = truncateIndex,
             conversationEnabledModeIds = conversationEnabledModeIds,
             turnScopedEnabledModeIds = turnScopedEnabledModeIds,
+            conversationEnabledLorebookIds = conversationEnabledLorebookIds,
         )
         var uiMessages = messages
         val transformedInput = buildResult.messages.transformInput(

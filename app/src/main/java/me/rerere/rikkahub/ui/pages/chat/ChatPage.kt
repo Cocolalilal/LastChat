@@ -388,6 +388,14 @@ internal fun chatListBottomPadding(placement: ChatToolbarPlacement): androidx.co
     return if (placement == ChatToolbarPlacement.Bottom) 204.dp else 140.dp
 }
 
+private fun chatToolbarOverflowMenuTransformOrigin(placement: ChatToolbarPlacement): TransformOrigin {
+    return if (placement == ChatToolbarPlacement.Bottom) {
+        TransformOrigin(1f, 1f)
+    } else {
+        TransformOrigin(1f, 0f)
+    }
+}
+
 private fun latestAssistantSpeechMessage(conversation: Conversation): UIMessage? {
     return conversation.currentMessages.lastOrNull { message ->
         message.role == MessageRole.ASSISTANT && message.toContentText().isNotBlank()
@@ -1862,7 +1870,7 @@ private fun ChatPageContent(
                             )
                         ) + scaleIn(
                             initialScale = 0.96f,
-                            transformOrigin = TransformOrigin(1f, 0f),
+                            transformOrigin = chatToolbarOverflowMenuTransformOrigin(toolbarPlacement),
                             animationSpec = androidx.compose.animation.core.spring(
                                 dampingRatio = 0.75f,
                                 stiffness = 360f
@@ -1875,7 +1883,7 @@ private fun ChatPageContent(
                             )
                         ) + scaleOut(
                             targetScale = 0.96f,
-                            transformOrigin = TransformOrigin(1f, 0f),
+                            transformOrigin = chatToolbarOverflowMenuTransformOrigin(toolbarPlacement),
                             animationSpec = androidx.compose.animation.core.spring(
                                 dampingRatio = 0.85f,
                                 stiffness = 420f
@@ -2183,6 +2191,7 @@ private fun ChatToolbarOverflowMenu(
     val containerColor = MaterialTheme.colorScheme.surfaceContainer
     val border = BorderStroke(1.dp, MaterialTheme.colorScheme.background)
     val menuTopPadding = if (placement == ChatToolbarPlacement.Top) 64.dp else 0.dp
+    val menuBottomPadding = if (placement == ChatToolbarPlacement.Bottom) 72.dp else 0.dp
     val scrimAlpha by androidx.compose.animation.core.animateFloatAsState(
         targetValue = if (dragDismissInProgress) 0f else 0.16f,
         animationSpec = androidx.compose.animation.core.spring(
@@ -2227,15 +2236,21 @@ private fun ChatToolbarOverflowMenu(
                 color = blurredContainerColor(containerColor),
                 border = border,
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
+                    .align(
+                        if (placement == ChatToolbarPlacement.Top) {
+                            Alignment.TopEnd
+                        } else {
+                            Alignment.BottomEnd
+                        }
+                    )
                     .then(
                         if (placement == ChatToolbarPlacement.Top) {
                             Modifier.statusBarsPadding()
                         } else {
-                            Modifier
+                            Modifier.navigationBarsPadding()
                         }
                     )
-                    .padding(top = menuTopPadding, end = 16.dp)
+                    .padding(top = menuTopPadding, bottom = menuBottomPadding, end = 16.dp)
                     .widthIn(min = 196.dp, max = 260.dp)
                     .lastChatBlurEffect(containerColor, menuShape)
                     .clickable(

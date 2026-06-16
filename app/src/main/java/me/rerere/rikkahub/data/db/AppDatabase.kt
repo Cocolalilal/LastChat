@@ -43,7 +43,7 @@ import kotlinx.serialization.json.put
 
 @Database(
     entities = [ConversationEntity::class, MemoryEntity::class, GenMediaEntity::class, ChatEpisodeEntity::class, EmbeddingCacheEntity::class, DailyActivityEntity::class, UsageStatsEntity::class, ChatAttachmentEntity::class, ConversationAttachmentRefEntity::class],
-    version = 29,
+    version = 30,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -70,6 +70,7 @@ import kotlinx.serialization.json.put
         // 26->27 is manual migration (MIGRATION_26_27) - adds local model install registry
         // 27->28 is manual migration (MIGRATION_27_28) - adds local model progress and metadata fields
         // 28->29 is manual migration (MIGRATION_28_29) - drops removed local model install registry
+        // 29->30 is manual migration (MIGRATION_29_30) - adds per-chat lorebook overrides
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -459,6 +460,14 @@ abstract class AppDatabase : RoomDatabase() {
                 Log.i(TAG, "migrate: start migrate from 28 to 29")
                 db.execSQL("DROP TABLE IF EXISTS `local_model_install`")
                 Log.i(TAG, "migrate: migrate from 28 to 29 success")
+            }
+        }
+
+        val MIGRATION_29_30 = object : Migration(29, 30) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "migrate: start migrate from 29 to 30")
+                db.execSQL("ALTER TABLE ConversationEntity ADD COLUMN enabled_lorebook_ids TEXT NOT NULL DEFAULT ''")
+                Log.i(TAG, "migrate: migrate from 29 to 30 success")
             }
         }
     }

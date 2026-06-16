@@ -73,7 +73,8 @@ import me.rerere.rikkahub.ui.components.ui.lobeHubIconUri
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.utils.ImageUtils
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import me.rerere.common.http.replaceUrlEncodedPathOrNull
+import me.rerere.common.http.urlPartsOrNull
 import java.nio.charset.Charset
 import kotlin.reflect.KClass
 
@@ -435,18 +436,15 @@ private fun KClass<out ProviderSetting>.defaultProviderName(): String {
 }
 
 private fun String.convertToTargetBaseUrl(targetDefaultBaseUrl: String): String {
-    val sourceUrl = this.toHttpUrlOrNull() ?: return this
-    val sourceHost = sourceUrl.host.lowercase()
+    val sourceUrl = this.urlPartsOrNull() ?: return this
+    val sourceHost = sourceUrl.host
     if (sourceHost in OFFICIAL_PROVIDER_HOSTS) {
         return targetDefaultBaseUrl
     }
 
-    val targetUrl = targetDefaultBaseUrl.toHttpUrlOrNull() ?: return this
+    val targetUrl = targetDefaultBaseUrl.urlPartsOrNull() ?: return this
     val convertedPath = sourceUrl.encodedPath.convertToTargetPath(targetUrl.encodedPath)
-    return sourceUrl.newBuilder()
-        .encodedPath(convertedPath)
-        .build()
-        .toString()
+    return this.replaceUrlEncodedPathOrNull(convertedPath) ?: this
 }
 
 private fun String.convertToTargetPath(targetPath: String): String {
@@ -681,7 +679,7 @@ private fun ColumnScope.ProviderConfigureOpenAI(
             onCheckedChange = {
                 onEdit(provider.copy(useResponseApi = it))
 
-                if(it && provider.baseUrl.toHttpUrlOrNull()?.host != "api.openai.com") {
+                if(it && provider.baseUrl.urlPartsOrNull()?.host != "api.openai.com") {
                     toaster.show(
                         message = responseAPIWarning,
                         type = ToastType.Warning

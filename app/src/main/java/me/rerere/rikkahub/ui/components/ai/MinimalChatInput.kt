@@ -217,10 +217,13 @@ fun MinimalChatInput(
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
     val keyboardController = LocalSoftwareKeyboardController.current
     val scope = rememberCoroutineScope()
-    val availableSkills = remember(settings.skills, assistant.id) {
-        settings.skills.filter { it.isAvailableForAssistant(assistant.id) }
+    val availableSkills = remember(settings.skills) {
+        settings.skills
     }
     val availableSkillIds = remember(availableSkills) { availableSkills.map { it.id }.toSet() }
+    val assistantAvailableSkillIds = remember(settings.skills, assistant.id) {
+        settings.skills.filter { it.isAvailableForAssistant(assistant.id) }.map { it.id }.toSet()
+    }
     val pendingQuestionnaire = remember(conversation.messageNodes) {
         conversation.currentMessages.findPendingAskUserToolCall()
     }
@@ -988,10 +991,13 @@ private fun MinimalPickerContent(
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
-    val availableSkills = remember(settings.skills, assistant.id) {
-        settings.skills.filter { it.isAvailableForAssistant(assistant.id) }
+    val availableSkills = remember(settings.skills) {
+        settings.skills
     }
     val availableSkillIds = remember(availableSkills) { availableSkills.map { it.id }.toSet() }
+    val assistantAvailableSkillIds = remember(settings.skills, assistant.id) {
+        settings.skills.filter { it.isAvailableForAssistant(assistant.id) }.map { it.id }.toSet()
+    }
     
     // OLED dark mode detection for buttons (not sheet backgrounds)
     val amoledMode by me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode()
@@ -1017,8 +1023,11 @@ private fun MinimalPickerContent(
     var showSearchPicker by remember { mutableStateOf(false) }
     val modelCatalogService: ModelCatalogService = koinInject()
     val catalogSnapshot by modelCatalogService.snapshotFlow.collectAsStateWithLifecycle()
-    val assistantDefaultSkillIds = assistant.enabledSkillIds.intersect(availableSkillIds)
-    val alwaysEnabledSkillIds = availableSkills.filter { it.alwaysEnabled }.map { it.id }.toSet()
+    val assistantDefaultSkillIds = assistant.enabledSkillIds.intersect(assistantAvailableSkillIds)
+    val alwaysEnabledSkillIds = availableSkills
+        .filter { it.alwaysEnabled && assistantAvailableSkillIds.contains(it.id) }
+        .map { it.id }
+        .toSet()
     val effectiveActiveSkillIds = if (conversation.enabledModeIds.hasManualSkillSelectionOverride() || conversation.enabledModeIds.isNotEmpty()) {
         conversation.enabledModeIds.withoutSkillSelectionOverride()
     } else {
@@ -1295,55 +1304,61 @@ private fun MinimalPickerContent(
             }
         )
         
-        // Skills - use enabledModeIds (legacy field) for per-chat overrides.
-        val activeSkills = availableSkills.filter { skill ->
-            effectiveActiveSkillIds.contains(skill.id)
+        if (settings.skills.isNotEmpty()) {
+            // Skills - use enabledModeIds (legacy field) for per-chat overrides.
+            val activeSkills = availableSkills.filter { skill ->
+                effectiveActiveSkillIds.contains(skill.id)
+            }
+            val activeSkillsCount = activeSkills.size
+            val skillsActive = activeSkillsCount > 0
+            val singleActiveSkillIcon = activeSkills.singleOrNull()?.icon
+            MinimalPickerItem(
+                icon = {
+                    Icon(
+                        imageVector = if (singleActiveSkillIcon != null) {
+                            ModeIcons.getIcon(singleActiveSkillIcon)
+                        } else {
+                            Icons.Rounded.Category
+                        },
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = if (skillsActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                title = stringResource(R.string.minimal_input_skills),
+                subtitle = if (activeSkillsCount > 0) {
+                    stringResource(R.string.skills_picker_active_count, activeSkillsCount)
+                } else {
+                    stringResource(R.string.minimal_input_skills_desc)
+                },
+                onClick = {
+                    showSkillsPicker = true
+                }
+            )
         }
-        val activeSkillsCount = activeSkills.size
-        val skillsActive = activeSkillsCount > 0
-        val singleActiveSkillIcon = activeSkills.singleOrNull()?.icon
-        MinimalPickerItem(
-            icon = {
-                Icon(
-                    imageVector = if (singleActiveSkillIcon != null) {
-                        ModeIcons.getIcon(singleActiveSkillIcon)
-                    } else {
-                        Icons.Rounded.Category
-                    },
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    tint = if (skillsActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            title = stringResource(R.string.minimal_input_skills),
-            subtitle = if (activeSkillsCount > 0) {
-                stringResource(R.string.skills_picker_active_count, activeSkillsCount)
-            } else {
-                stringResource(R.string.minimal_input_skills_desc)
-            },
-            onClick = { 
-                showSkillsPicker = true
-            }
-        )
         
-        // Lorebooks - show active count and blue icon when enabled
-        val activeLorebooksCount = assistant.enabledLorebookIds.size
-        val lorebooksActive = activeLorebooksCount > 0
-        MinimalPickerItem(
-            icon = {
-                Icon(
-                    imageVector = Icons.Rounded.Book,
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    tint = if (lorebooksActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            title = stringResource(R.string.minimal_input_lorebooks),
-            subtitle = if (activeLorebooksCount > 0) "$activeLorebooksCount active" else stringResource(R.string.minimal_input_lorebooks_desc),
-            onClick = { 
-                showLorebooksPicker = true
-            }
-        )
+        if (settings.lorebooks.isNotEmpty()) {
+            // Lorebooks - show active count and blue icon when enabled
+            val lorebookIds = settings.lorebooks.map { it.id }.toSet()
+            val activeLorebookIds = (conversation.enabledLorebookIds ?: assistant.enabledLorebookIds).intersect(lorebookIds)
+            val activeLorebooksCount = activeLorebookIds.size
+            val lorebooksActive = activeLorebooksCount > 0
+            MinimalPickerItem(
+                icon = {
+                    Icon(
+                        imageVector = Icons.Rounded.Book,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = if (lorebooksActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                title = stringResource(R.string.minimal_input_lorebooks),
+                subtitle = if (activeLorebooksCount > 0) "$activeLorebooksCount active" else stringResource(R.string.minimal_input_lorebooks_desc),
+                onClick = {
+                    showLorebooksPicker = true
+                }
+            )
+        }
         
         // Summarize button - show whenever there is enough history to summarize
         if (assistant.canManuallySummarizeConversation(conversation.currentMessages.size)) {
@@ -1446,7 +1461,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
         LorebooksPickerSheet(
             settings = settings,
             assistant = assistant,
-            onUpdateAssistant = onUpdateAssistant,
+            conversation = conversation,
+            onUpdateConversation = onUpdateConversation,
             onNavigateToLorebook = { lorebookId ->
                 showLorebooksPicker = false
                 onNavigateToLorebook(lorebookId)

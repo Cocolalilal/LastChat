@@ -1031,6 +1031,13 @@ private fun ConversationEntity.toConversation(): Conversation {
         enabledModeIds = runCatching {
             JsonInstant.decodeFromString<List<String>>(enabledModeIds).map(Uuid::parse).toSet()
         }.getOrDefault(emptySet()),
+        enabledLorebookIds = if (enabledLorebookIds.isBlank()) {
+            null
+        } else {
+            runCatching {
+                JsonInstant.decodeFromString<List<String>>(enabledLorebookIds).map(Uuid::parse).toSet()
+            }.getOrNull()
+        },
         contextSummary = contextSummary.takeIf { it.isNotBlank() },
         contextSummaryUpToIndex = contextSummaryUpToIndex,
         lastPruneTime = lastPruneTime,
@@ -1052,6 +1059,9 @@ private fun Conversation.toEntity(): ConversationEntity {
         isPinned = isPinned,
         isConsolidated = isConsolidated,
         enabledModeIds = JsonInstant.encodeToString(enabledModeIds.map { it.toString() }),
+        enabledLorebookIds = enabledLorebookIds
+            ?.let { JsonInstant.encodeToString(it.map { id -> id.toString() }) }
+            .orEmpty(),
         contextSummary = contextSummary ?: "",
         contextSummaryUpToIndex = contextSummaryUpToIndex,
         lastPruneTime = lastPruneTime,

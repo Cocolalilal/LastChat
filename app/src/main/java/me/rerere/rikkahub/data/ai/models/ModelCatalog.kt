@@ -27,10 +27,9 @@ import me.rerere.ai.provider.OpenAICompatibilityMode
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.ReasoningRequestBehavior
 import me.rerere.ai.registry.ModelIdNormalizer
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.rikkahub.utils.JsonInstant
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import me.rerere.common.platform.android.await
 
 private const val TAG = "ModelCatalogService"
 private const val MODEL_CATALOG_DIR_NAME = "model_catalog"
@@ -760,7 +759,7 @@ private class ModelCatalogEntryBuilder(
 
 class ModelCatalogService(
     private val context: Context,
-    private val client: OkHttpClient,
+    private val httpClient: PlatformHttpClient,
 ) {
     @Volatile
     private var snapshot: ModelCatalogSnapshot? = null
@@ -860,15 +859,16 @@ class ModelCatalogService(
     }
 
     private suspend fun downloadCatalogJson(): String = withContext(Dispatchers.IO) {
-        val request = Request.Builder()
-            .url(MODEL_CATALOG_URL)
-            .get()
-            .build()
-        val response = client.newCall(request).await()
-        if (!response.isSuccessful) {
-            throw IOException("Failed to download LastChat catalog: ${response.code}")
+        val response = httpClient.execute(
+            PlatformHttpRequest(
+                method = "GET",
+                url = MODEL_CATALOG_URL,
+            )
+        )
+        if (response.statusCode !in 200..299) {
+            throw IOException("Failed to download LastChat catalog: ${response.statusCode}")
         }
-        response.body?.string()?.takeIf { it.isNotBlank() }
+        response.body.decodeToString().takeIf { it.isNotBlank() }
             ?: throw IOException("Downloaded LastChat catalog was empty")
     }
 

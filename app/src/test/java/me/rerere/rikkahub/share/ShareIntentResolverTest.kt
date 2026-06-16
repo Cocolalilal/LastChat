@@ -76,4 +76,32 @@ class ShareIntentResolverTest {
         assertNull(payload.mimeType)
         assertEquals(emptyList<String>(), payload.streamUris)
     }
+
+    @Test
+    fun `fallback html extraction keeps page title description and readable text`() {
+        val html = """
+            <html>
+              <head>
+                <title>Example &amp; Test</title>
+                <meta property="og:description" content="A &lt;useful&gt; summary">
+                <style>.hidden { display: none; }</style>
+              </head>
+              <body>
+                <main>
+                  <h1>Heading</h1>
+                  <p>First paragraph&nbsp;here.</p>
+                  <script>ignored()</script>
+                  <blockquote>Quoted text</blockquote>
+                </main>
+              </body>
+            </html>
+        """.trimIndent()
+
+        assertEquals("Example & Test", extractHtmlTitle(html))
+        assertEquals("A <useful> summary", extractHtmlMetaContent(html, setOf("og:description")))
+        assertEquals(
+            listOf("Heading", "First paragraph here.", "Quoted text").joinToString("\n\n"),
+            extractReadableHtmlText(html)
+        )
+    }
 }

@@ -249,8 +249,10 @@ fun SettingProviderPage(
                     getProviderSlugFromName(providerName) != null
             if (!hasLocalIcon) {
                 scope.launch {
-                    val okHttpClient = org.koin.java.KoinJavaComponent.get<okhttp3.OkHttpClient>(okhttp3.OkHttpClient::class.java)
-                    val slug = searchLobeHubIcon(okHttpClient, providerName)
+                    val httpClient = org.koin.java.KoinJavaComponent.get<me.rerere.common.platform.PlatformHttpClient>(
+                        me.rerere.common.platform.PlatformHttpClient::class.java
+                    )
+                    val slug = searchLobeHubIcon(httpClient, providerName)
                     if (slug != null) {
                         val latestSettings = vm.settings.value
                         val updatedProviders = latestSettings.providers.map { p ->

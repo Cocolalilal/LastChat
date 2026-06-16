@@ -461,6 +461,7 @@ internal fun mergeLiveMessagesIfIncomingIsStale(
         chatSuggestions = incomingConversation.chatSuggestions,
         isPinned = incomingConversation.isPinned,
         enabledModeIds = incomingConversation.enabledModeIds,
+        enabledLorebookIds = incomingConversation.enabledLorebookIds,
         updateAt = liveConversation.updateAt,
         isConsolidated = incomingConversation.isConsolidated,
         contextSummary = incomingConversation.contextSummary,
@@ -1471,6 +1472,7 @@ class ChatService(
                 tools = tools,
                 truncateIndex = conversation.truncateIndex,
                 enabledModeIds = conversation.enabledModeIds,
+                enabledLorebookIds = conversation.enabledLorebookIds,
                 activeConversationId = conversation.id,
             ).onCompletion { cause ->
                 // Calculate generation duration from first token (excludes TTFT)
