@@ -731,7 +731,7 @@ private const val STREAMING_MAX_SETTLE_RANGES = 8
 
 // for debug
 private fun dumpAst(node: ASTNode, text: String, indent: String = "") {
-    println("$indent${node.type} ${if (node.children.isEmpty()) node.getTextInNode(text) else ""} | ${node.javaClass.simpleName}")
+    println("$indent${node.type} ${if (node.children.isEmpty()) node.getTextInNode(text) else ""} | ${node::class.simpleName}")
     node.children.fastForEach {
         dumpAst(it, text, "$indent  ")
     }

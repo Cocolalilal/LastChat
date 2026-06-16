@@ -1,10 +1,5 @@
 package me.rerere.search
 
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.text.LinkAnnotation
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withLink
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -22,16 +17,6 @@ import me.rerere.search.SearchService.Companion.platformHttpClient
 
 object MetasoSearchService : SearchService<SearchServiceOptions.MetasoOptions> {
     override val name: String = "Metaso"
-
-    @Composable
-    override fun Description() {
-        Text(buildAnnotatedString {
-            append("秘塔搜索: ")
-            withLink(LinkAnnotation.Url("https://metaso.cn/")) {
-                append("https://metaso.cn/")
-            }
-        })
-    }
 
     override val parameters: InputSchema?
         get() = InputSchema.Obj(

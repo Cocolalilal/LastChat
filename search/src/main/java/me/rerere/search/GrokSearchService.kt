@@ -1,10 +1,5 @@
 package me.rerere.search
 
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -27,18 +22,6 @@ private const val GROK_ENDPOINT = "https://api.x.ai/v1/responses"
 
 object GrokSearchService : SearchService<SearchServiceOptions.GrokOptions> {
     override val name: String = "Grok"
-
-    @Composable
-    override fun Description() {
-        val uriHandler = LocalUriHandler.current
-        TextButton(
-            onClick = {
-                uriHandler.openUri("https://console.x.ai/")
-            }
-        ) {
-            Text(stringResource(R.string.click_to_get_api_key))
-        }
-    }
 
     override val parameters: InputSchema?
         get() = InputSchema.Obj(

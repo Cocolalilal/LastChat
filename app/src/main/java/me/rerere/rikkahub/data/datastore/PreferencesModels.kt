@@ -505,8 +505,6 @@ internal fun Settings.ensureBuiltInProviders(): Settings {
             provider.copyProvider(
                 id = defaultProvider.id,
                 builtIn = defaultProvider.builtIn,
-                description = defaultProvider.description,
-                shortDescription = defaultProvider.shortDescription,
             )
         } ?: provider
     }

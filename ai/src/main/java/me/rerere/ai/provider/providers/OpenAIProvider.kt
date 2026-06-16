@@ -32,11 +32,11 @@ import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.common.http.getByKey
 import me.rerere.common.http.jsonPrimitiveOrNull
+import me.rerere.common.http.urlHostOrNull
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpProxy
 import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.common.platform.PlatformMediaEncoder
-import java.net.URI
 
 class OpenAIProvider(
     private val platformHttpClient: PlatformHttpClient,
@@ -372,7 +372,7 @@ private fun Map<String, String>.withAuthAndJson(key: String): Map<String, String
 }
 
 private fun Map<String, String>.withReferHeaders(baseUrl: String): Map<String, String> {
-    return when (runCatching { URI(baseUrl).host }.getOrNull()) {
+    return when (baseUrl.urlHostOrNull()) {
         "aihubmix.com" -> this + ("APP-Code" to "DKHA9468")
         "openrouter.ai" -> this + mapOf(
             "X-Title" to "LastChat",

@@ -2,7 +2,6 @@ package me.rerere.rikkahub.utils
 
 import android.content.Context
 import android.net.Uri
-import android.util.Base64
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import me.rerere.rikkahub.data.model.ChubCharacterV2
@@ -19,6 +18,8 @@ import me.rerere.rikkahub.data.model.toTavernCharacterBook
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 /**
  * Embedded attachment for export - contains base64 encoded file content.
@@ -119,7 +120,7 @@ object LorebookExportImport {
                 type = attachment.type,
                 fileName = attachment.fileName,
                 mime = attachment.mime,
-                content = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                content = base64Encode(bytes)
             )
         } catch (e: Exception) {
             null
@@ -252,7 +253,7 @@ object LorebookExportImport {
      */
     private fun restoreEmbeddedAttachment(context: Context, embedded: EmbeddedAttachment): ModeAttachment? {
         return try {
-            val bytes = Base64.decode(embedded.content, Base64.NO_WRAP)
+            val bytes = base64Decode(embedded.content)
             val extension = embedded.fileName.substringAfterLast('.', "bin")
             val file = File(context.filesDir, "chat_files/${System.currentTimeMillis()}_${embedded.fileName}")
             file.parentFile?.mkdirs()
@@ -301,3 +302,9 @@ object LorebookExportImport {
         }
     }
 }
+
+@OptIn(ExperimentalEncodingApi::class)
+private fun base64Encode(bytes: ByteArray): String = Base64.encode(bytes)
+
+@OptIn(ExperimentalEncodingApi::class)
+private fun base64Decode(value: String): ByteArray = Base64.decode(value)

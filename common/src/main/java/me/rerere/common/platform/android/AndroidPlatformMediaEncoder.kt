@@ -2,11 +2,12 @@ package me.rerere.common.platform.android
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.util.Base64
 import androidx.core.net.toUri
 import me.rerere.common.platform.PlatformMediaEncoder
 import java.io.File
 import java.io.FileOutputStream
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 class AndroidPlatformMediaEncoder : PlatformMediaEncoder {
     override fun encodeImage(url: String, withPrefix: Boolean): Result<String> = runCatching {
@@ -21,7 +22,7 @@ class AndroidPlatformMediaEncoder : PlatformMediaEncoder {
                     convertToJpeg(file)
                     println("File converted to JPEG format: ${file.absolutePath}")
                 }
-                val encoded = Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
+                val encoded = base64Encode(file.readBytes())
                 if (withPrefix) "data:${file.guessMimeType().getOrThrow()};base64,$encoded" else encoded
             }
 
@@ -33,13 +34,13 @@ class AndroidPlatformMediaEncoder : PlatformMediaEncoder {
 
     override fun encodeVideo(url: String, withPrefix: Boolean): Result<String> = runCatching {
         val file = url.toFile()
-        val encoded = Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
+        val encoded = base64Encode(file.readBytes())
         if (withPrefix) "data:video/mp4;base64,$encoded" else encoded
     }
 
     override fun encodeAudio(url: String, withPrefix: Boolean): Result<String> = runCatching {
         val file = url.toFile()
-        val encoded = Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
+        val encoded = base64Encode(file.readBytes())
         if (withPrefix) "data:audio/mp3;base64,$encoded" else encoded
     }
 
@@ -138,3 +139,6 @@ class AndroidPlatformMediaEncoder : PlatformMediaEncoder {
         )
     }
 }
+
+@OptIn(ExperimentalEncodingApi::class)
+private fun base64Encode(bytes: ByteArray): String = Base64.encode(bytes)

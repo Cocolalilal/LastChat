@@ -70,17 +70,36 @@ val iosPortabilityBlockers = linkedMapOf(
     "JVM-only I/O/runtime" to listOf(
         "java.io.",
         "java.nio.",
+        "java.math.",
         "java.awt.",
         "javax.",
         "org.w3c.dom.",
         "org.xml.",
+        "java.time.",
         "java.util.concurrent.",
-        "java.util.Base64"
+        "java.util.Locale",
+        "java.util.Base64",
+        "java.net.URI",
+        "java.net.URLEncoder",
+        "java.security."
     ),
     "Android/JVM networking" to listOf(
         "okhttp3.",
         "retrofit2.",
         "org.jsoup."
+    ),
+    "Android resource UI" to listOf(
+        "androidx.compose.ui.res."
+    ),
+    "JVM-only helper libraries" to listOf(
+        "org.apache.commons."
+    )
+)
+
+val iosPortabilityLineBlockers = linkedMapOf(
+    "JVM-only reflection/runtime usage" to listOf(
+        "::class.java",
+        "javaClass"
     )
 )
 
@@ -119,15 +138,29 @@ tasks.register("iosPortabilityReport") {
                             iosSharedCandidateExclusions.none { packageName == it || packageName.startsWith("$it.") }
 
                         lines.forEachIndexed { index, line ->
-                            val imported = importRegex.find(line)?.groupValues?.get(1) ?: return@forEachIndexed
-                            iosPortabilityBlockers.forEach { (category, prefixes) ->
-                                if (prefixes.any { imported.startsWith(it) }) {
+                            importRegex.find(line)?.groupValues?.get(1)?.let { imported ->
+                                iosPortabilityBlockers.forEach { (category, prefixes) ->
+                                    if (prefixes.any { imported.startsWith(it) }) {
+                                        findings += PortabilityFinding(
+                                            module = moduleName,
+                                            file = file.relativeTo(rootDir).invariantSeparatorsPath,
+                                            line = index + 1,
+                                            category = category,
+                                            symbol = imported,
+                                            sharedCandidate = sharedCandidate
+                                        )
+                                    }
+                                }
+                            }
+
+                            iosPortabilityLineBlockers.forEach { (category, patterns) ->
+                                patterns.filter { pattern -> line.contains(pattern) }.forEach { pattern ->
                                     findings += PortabilityFinding(
                                         module = moduleName,
                                         file = file.relativeTo(rootDir).invariantSeparatorsPath,
                                         line = index + 1,
                                         category = category,
-                                        symbol = imported,
+                                        symbol = pattern,
                                         sharedCandidate = sharedCandidate
                                     )
                                 }
@@ -149,7 +182,7 @@ tasks.register("iosPortabilityReport") {
             appendLine("## Shared Candidate Hotspots")
             appendLine()
             if (sharedFindings.isEmpty()) {
-                appendLine("No Android/JVM-only imports were found in shared candidate packages.")
+                appendLine("No Android/JVM-only imports or runtime usages were found in shared candidate packages.")
             } else {
                 sharedFindings
                     .groupBy { it.module }

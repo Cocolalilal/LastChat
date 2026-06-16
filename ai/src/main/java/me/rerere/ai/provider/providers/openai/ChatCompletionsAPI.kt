@@ -44,13 +44,13 @@ import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.parseErrorDetail
 import me.rerere.common.http.jsonArrayOrNull
 import me.rerere.common.http.jsonObjectOrNull
+import me.rerere.common.http.urlHostOrNull
 import me.rerere.common.platform.PlatformLog
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpProxy
 import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.common.platform.PlatformServerEvent
 import me.rerere.common.platform.PlatformMediaEncoder
-import java.net.URI
 import kotlin.time.Clock
 
 private const val TAG = "ChatCompletionsAPI"
@@ -257,7 +257,7 @@ class ChatCompletionsAPI(
         providerSetting: ProviderSetting.OpenAI,
         stream: Boolean = false,
     ): JsonObject {
-        val host = URI(providerSetting.baseUrl).host.orEmpty()
+        val host = providerSetting.baseUrl.urlHostOrNull().orEmpty()
         return buildJsonObject {
             put("model", params.model.modelId)
             if (host == "openrouter.ai" && !params.sessionId.isNullOrBlank()) {
@@ -838,7 +838,7 @@ private fun Map<String, String>.withAuthAndJson(apiKey: String): Map<String, Str
 }
 
 private fun Map<String, String>.withReferHeaders(baseUrl: String): Map<String, String> {
-    return when (runCatching { URI(baseUrl).host }.getOrNull()) {
+    return when (baseUrl.urlHostOrNull()) {
         "aihubmix.com" -> this + ("APP-Code" to "DKHA9468")
         "openrouter.ai" -> this + mapOf(
             "X-Title" to "LastChat",

@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
-import android.util.Base64
 import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -34,6 +33,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.data.model.Assistant
@@ -259,7 +260,7 @@ private suspend fun importAssistantFromUri(
                 "image/png" -> {
                     val result = ImageUtils.getTavernCharacterMeta(context, uri)
                     result.map { base64Data ->
-                        val json = String(Base64.decode(base64Data, Base64.DEFAULT))
+                        val json = String(base64Decode(base64Data))
                         val bg = context.importOwnedFile(
                             sourceUri = uri,
                             directory = OwnedFileDirectory.ASSISTANT_BACKGROUND,
@@ -289,3 +290,6 @@ private suspend fun importAssistantFromUri(
         )
     }
 }
+
+@OptIn(ExperimentalEncodingApi::class)
+private fun base64Decode(value: String): ByteArray = Base64.decode(value)

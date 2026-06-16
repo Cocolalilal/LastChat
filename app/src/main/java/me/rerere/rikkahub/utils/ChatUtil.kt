@@ -20,9 +20,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.navigation.CHAT_ROUTE_TARGET_KEY
 import me.rerere.rikkahub.navigation.ChatRouteTarget
+import org.koin.core.context.GlobalContext
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
@@ -136,17 +139,21 @@ suspend fun Context.saveMessageImage(image: String) = withContext(Dispatchers.IO
 
         image.startsWith("http") -> {
             kotlin.runCatching { // Use runCatching to handle potential network exceptions
-                val url = java.net.URL(image)
-                val connection = url.openConnection() as java.net.HttpURLConnection
-                connection.connect()
+                val client = GlobalContext.get().get<PlatformHttpClient>()
+                val response = client.execute(
+                    PlatformHttpRequest(
+                        method = "GET",
+                        url = image,
+                    )
+                )
 
-                if (connection.responseCode == java.net.HttpURLConnection.HTTP_OK) {
-                    val bitmap = BitmapFactory.decodeStream(connection.inputStream)
+                if (response.statusCode == 200) {
+                    val bitmap = BitmapFactory.decodeByteArray(response.body, 0, response.body.size)
                     exportImage(this@saveMessageImage.getActivity()!!, bitmap)
                 } else {
                     Log.e(
                         TAG,
-                        "saveMessageImage: Failed to download image from $image, response code: ${connection.responseCode}"
+                        "saveMessageImage: Failed to download image from $image, response code: ${response.statusCode}"
                     )
                     null // Return null on failure
                 }

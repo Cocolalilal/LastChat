@@ -589,7 +589,7 @@ class GenerationHandler(
                             put(
                                 "error",
                                 JsonPrimitive(buildString {
-                                    append("[${it.javaClass.name}] ${it.message}")
+                                    append("[${it::class.qualifiedName ?: it::class.simpleName ?: "Throwable"}] ${it.message}")
                                     append("\n${it.stackTraceToString()}")
                                 })
                             )

@@ -2636,7 +2636,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     if (model.providerOverwrite != null) {
                         Tag(type = TagType.INFO) {
                             Text(
-                                model.providerOverwrite?.javaClass?.simpleName ?: model.providerOverwrite?.name
+                                model.providerOverwrite?.let { it::class.simpleName } ?: model.providerOverwrite?.name
                                 ?: "ProviderOverwrite"
                             )
                         }
@@ -2809,7 +2809,6 @@ private fun ProviderOverrideSettings(
                         id = Uuid.random(),
                         builtIn = false,
                         models = emptyList(), // 这里必须设置为空，不然会导致循环依赖JSON
-                        description = {},
                     )
                     showProviderConfig = true
                 },

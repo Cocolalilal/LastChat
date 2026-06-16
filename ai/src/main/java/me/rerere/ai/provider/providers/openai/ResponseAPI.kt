@@ -37,13 +37,13 @@ import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.parseErrorDetail
 import me.rerere.common.http.jsonObjectOrNull
+import me.rerere.common.http.urlHostOrNull
 import me.rerere.common.platform.PlatformLog
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpProxy
 import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.common.platform.PlatformServerEvent
 import me.rerere.common.platform.PlatformMediaEncoder
-import java.net.URI
 import kotlin.time.Clock
 
 private const val TAG = "ResponseAPI"
@@ -659,7 +659,7 @@ private fun Map<String, String>.withAuthAndJson(apiKey: String): Map<String, Str
 }
 
 private fun Map<String, String>.withReferHeaders(baseUrl: String): Map<String, String> {
-    return when (runCatching { URI(baseUrl).host }.getOrNull()) {
+    return when (baseUrl.urlHostOrNull()) {
         "aihubmix.com" -> this + ("APP-Code" to "DKHA9468")
         "openrouter.ai" -> this + mapOf(
             "X-Title" to "LastChat",

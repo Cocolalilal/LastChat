@@ -349,8 +349,6 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
             tags = this.tags,
             customIconUri = this.customIconUri,
             builtIn = this.builtIn,
-            description = this.description,
-            shortDescription = this.shortDescription,
             apiKey = apiKey,
             baseUrl = convertedBaseUrl,
             chatCompletionsPath = if (this is ProviderSetting.OpenAI) this.chatCompletionsPath else ProviderSetting.OpenAI().chatCompletionsPath,
@@ -371,8 +369,6 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
             tags = this.tags,
             customIconUri = this.customIconUri,
             builtIn = this.builtIn,
-            description = this.description,
-            shortDescription = this.shortDescription,
             apiKey = apiKey,
             baseUrl = convertedBaseUrl,
             vertexAI = if (this is ProviderSetting.Google) this.vertexAI else false,
@@ -392,8 +388,6 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
             tags = this.tags,
             customIconUri = this.customIconUri,
             builtIn = this.builtIn,
-            description = this.description,
-            shortDescription = this.shortDescription,
             apiKey = apiKey,
             baseUrl = convertedBaseUrl
         )
@@ -408,8 +402,6 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
             tags = this.tags,
             customIconUri = this.customIconUri,
             builtIn = this.builtIn,
-            description = this.description,
-            shortDescription = this.shortDescription,
             baseUrl = if (this is ProviderSetting.ComfyUI) this.baseUrl else convertedBaseUrl,
             workflowJson = if (this is ProviderSetting.ComfyUI) this.workflowJson else "",
             promptNodeId = if (this is ProviderSetting.ComfyUI) this.promptNodeId else "",
@@ -519,8 +511,6 @@ private fun ColumnScope.ProviderConfigureComfyUI(
             }
         }
     }
-
-    provider.description()
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -652,8 +642,6 @@ private fun ColumnScope.ProviderConfigureOpenAI(
 ) {
     val latestProvider by rememberUpdatedState(provider)
     val toaster = LocalToaster.current
-
-    provider.description()
 
     DebouncedTextField(
         value = provider.apiKey,
@@ -819,7 +807,6 @@ private fun ColumnScope.ProviderConfigureClaude(
     onEdit: (provider: ProviderSetting.Claude) -> Unit
 ) {
     val latestProvider by rememberUpdatedState(provider)
-    provider.description()
 
     DebouncedTextField(
         value = provider.apiKey,
@@ -845,7 +832,6 @@ private fun ColumnScope.ProviderConfigureGoogle(
     onEdit: (provider: ProviderSetting.Google) -> Unit
 ) {
     val latestProvider by rememberUpdatedState(provider)
-    provider.description()
 
     Row(
         verticalAlignment = Alignment.CenterVertically

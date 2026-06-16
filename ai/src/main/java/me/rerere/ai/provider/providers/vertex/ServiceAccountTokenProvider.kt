@@ -5,18 +5,15 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import me.rerere.common.http.urlEncode
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpRequest
-import java.net.URLEncoder
-import java.security.KeyFactory
-import java.security.PrivateKey
-import java.security.Signature
-import java.security.spec.PKCS8EncodedKeySpec
-import java.time.Instant
+import me.rerere.common.platform.PlatformJwtSigner
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
+import kotlin.time.Clock
 
 /**
  * 使用服务账号（email + private key PEM）换取 Google OAuth2 Access Token。
@@ -24,7 +21,8 @@ import kotlin.io.encoding.ExperimentalEncodingApi
  */
 @OptIn(ExperimentalAtomicApi::class, ExperimentalEncodingApi::class)
 class ServiceAccountTokenProvider(
-    private val http: PlatformHttpClient
+    private val http: PlatformHttpClient,
+    private val jwtSigner: PlatformJwtSigner,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -48,7 +46,7 @@ class ServiceAccountTokenProvider(
      * Check if cached token is still valid (not expired with 5 minutes buffer)
      */
     private fun isCachedTokenValid(cachedToken: CachedToken): Boolean {
-        val now = Instant.now().epochSecond
+        val now = Clock.System.now().epochSeconds
         val bufferSeconds = 300 // 5 minutes buffer before actual expiration
         return cachedToken.expiresAt > (now + bufferSeconds)
     }
@@ -72,7 +70,7 @@ class ServiceAccountTokenProvider(
                 return@withContext cachedToken.token
             }
         }
-        val now = Instant.now().epochSecond
+        val now = Clock.System.now().epochSeconds
         val exp = now + 3600 // 最长 1h
 
         val headerJson = """{"alg":"RS256","typ":"JWT"}"""
@@ -88,8 +86,7 @@ class ServiceAccountTokenProvider(
         val claimB64 = base64UrlNoPad(claimJson.toByteArray(Charsets.UTF_8))
         val signingInput = "$headerB64.$claimB64"
 
-        val privateKey = parsePkcs8PrivateKey(privateKeyPem)
-        val signature = signRs256(signingInput.toByteArray(Charsets.UTF_8), privateKey)
+        val signature = jwtSigner.signRs256(signingInput.toByteArray(Charsets.UTF_8), privateKeyPem)
         val assertion = "$signingInput.${base64UrlNoPad(signature)}"
 
         val form = formUrlEncode(
@@ -134,30 +131,11 @@ class ServiceAccountTokenProvider(
     private fun base64UrlNoPad(bytes: ByteArray): String =
         Base64.UrlSafe.encode(bytes).trimEnd('=')
 
-    private fun parsePkcs8PrivateKey(pem: String): PrivateKey {
-        val normalized = pem
-            .replace("-----BEGIN PRIVATE KEY-----", "")
-            .replace("-----END PRIVATE KEY-----", "")
-            .replace("\\s".toRegex(), "")
-        val der = Base64.Default.decode(normalized)
-        val keySpec = PKCS8EncodedKeySpec(der)
-        return KeyFactory.getInstance("RSA").generatePrivate(keySpec)
-    }
-
-    private fun signRs256(data: ByteArray, privateKey: PrivateKey): ByteArray {
-        val sig = Signature.getInstance("SHA256withRSA")
-        sig.initSign(privateKey)
-        sig.update(data)
-        return sig.sign()
-    }
-
     private fun formUrlEncode(vararg params: Pair<String, String>): String {
         return params.joinToString("&") { (name, value) ->
-            "${name.urlEncode()}=${value.urlEncode()}"
+            "${name.urlEncode(spaceAsPlus = true)}=${value.urlEncode(spaceAsPlus = true)}"
         }
     }
-
-    private fun String.urlEncode(): String = URLEncoder.encode(this, "UTF-8")
 
     private fun cacheToken(cacheKey: String, token: CachedToken) {
         while (true) {

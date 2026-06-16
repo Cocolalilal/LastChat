@@ -1,7 +1,6 @@
 package me.rerere.rikkahub.ui.components.richtext
 
 import android.graphics.BitmapFactory
-import android.util.Base64
 import android.webkit.JavascriptInterface
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.animateContentSize
@@ -63,6 +62,8 @@ import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.exportImage
 import me.rerere.rikkahub.utils.toCssHex
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 private const val EXPORT_WATERMARK = "LastChat"
 
@@ -127,7 +128,7 @@ fun Mermaid(
                     check(base64Image.isNotBlank()) { "Exported image was empty" }
                     activity?.let {
                         // 解码Base64图像并保存
-                        val imageBytes = Base64.decode(base64Image, Base64.DEFAULT)
+                        val imageBytes = base64Decode(base64Image)
                         val bitmap =
                             BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
                         checkNotNull(bitmap) { "Could not decode exported image" }
@@ -585,3 +586,6 @@ enum class MermaidTheme(val value: String) {
     DEFAULT("default"),
     DARK("dark"),
 }
+
+@OptIn(ExperimentalEncodingApi::class)
+private fun base64Decode(value: String): ByteArray = Base64.decode(value)

@@ -27,11 +27,11 @@ import me.rerere.ai.ui.ImageGenerationItem
 import me.rerere.ai.ui.ImageGenerationResult
 import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.UIMessage
+import me.rerere.common.http.urlEncode
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpProxy
 import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.common.platform.PlatformHttpResponse
-import java.net.URLEncoder
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.uuid.Uuid
@@ -280,8 +280,6 @@ class ComfyUIProvider(
             }
         }
     }
-
-    private fun String.urlEncode(): String = URLEncoder.encode(this, "UTF-8")
 
     private fun PlatformHttpResponse.header(name: String): String? {
         return headers.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }

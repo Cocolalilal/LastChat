@@ -1,4 +1,4 @@
-package me.rerere.ai.util
+package me.rerere.rikkahub.utils
 
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.descriptors.PrimitiveKind
@@ -13,12 +13,10 @@ object InstantSerializer : KSerializer<Instant> {
         get() = PrimitiveSerialDescriptor("Instant", PrimitiveKind.STRING)
 
     override fun deserialize(decoder: Decoder): Instant {
-        val isoString = decoder.decodeString()
-        return Instant.parse(isoString)
+        return Instant.parse(decoder.decodeString())
     }
 
     override fun serialize(encoder: Encoder, value: Instant) {
-        val isoString = value.toString()
-        encoder.encodeString(isoString)
+        encoder.encodeString(value.toString())
     }
 }

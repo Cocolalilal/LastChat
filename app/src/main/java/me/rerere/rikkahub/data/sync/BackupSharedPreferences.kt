@@ -93,7 +93,9 @@ internal fun buildSharedPreferencesSnapshot(
                 }
 
                 else -> {
-                    throw IllegalArgumentException("Unsupported SharedPreferences type for key $key: ${value::class.java.name}")
+                    throw IllegalArgumentException(
+                        "Unsupported SharedPreferences type for key $key: ${value::class.qualifiedName ?: value::class.simpleName ?: "Unknown"}"
+                    )
                 }
             }
         }

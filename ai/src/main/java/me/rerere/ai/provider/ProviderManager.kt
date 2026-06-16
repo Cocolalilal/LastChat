@@ -5,6 +5,7 @@ import me.rerere.ai.provider.providers.ComfyUIProvider
 import me.rerere.ai.provider.providers.GoogleProvider
 import me.rerere.ai.provider.providers.OpenAIProvider
 import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformJwtSigner
 import me.rerere.common.platform.PlatformMediaEncoder
 
 /**
@@ -13,6 +14,7 @@ import me.rerere.common.platform.PlatformMediaEncoder
 class ProviderManager(
     platformHttpClient: PlatformHttpClient,
     platformMediaEncoder: PlatformMediaEncoder,
+    platformJwtSigner: PlatformJwtSigner,
 ) {
     // 存储已注册的Provider实例
     private val providers = mutableMapOf<String, Provider<*>>()
@@ -20,7 +22,7 @@ class ProviderManager(
     init {
         // 注册默认Provider
         registerProvider("openai", OpenAIProvider(platformHttpClient, platformMediaEncoder))
-        registerProvider("google", GoogleProvider(platformHttpClient, platformMediaEncoder))
+        registerProvider("google", GoogleProvider(platformHttpClient, platformMediaEncoder, platformJwtSigner))
         registerProvider("claude", ClaudeProvider(platformHttpClient, platformMediaEncoder))
         registerProvider("comfyui", ComfyUIProvider(platformHttpClient))
     }

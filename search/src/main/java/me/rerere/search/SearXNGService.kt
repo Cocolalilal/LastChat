@@ -1,8 +1,5 @@
 package me.rerere.search
 
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -12,11 +9,11 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
+import me.rerere.common.http.urlEncode
 import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.search.SearchResult.SearchResultItem
 import me.rerere.search.SearchService.Companion.json
 import me.rerere.search.SearchService.Companion.platformHttpClient
-import java.net.URLEncoder
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
@@ -25,12 +22,6 @@ private const val TAG = "SearXNGService"
 @OptIn(ExperimentalEncodingApi::class)
 object SearXNGService : SearchService<SearchServiceOptions.SearXNGOptions> {
     override val name: String = "SearXNG"
-
-    @Composable
-    override fun Description() {
-        Text(stringResource(R.string.searxng_desc_1))
-        Text(stringResource(R.string.searxng_desc_2))
-    }
 
     override val parameters: InputSchema?
         get() = InputSchema.Obj(
@@ -183,8 +174,6 @@ object SearXNGService : SearchService<SearchServiceOptions.SearXNGOptions> {
             }
         }
     }
-
-    private fun String.urlEncode(): String = URLEncoder.encode(this, "UTF-8")
 
     private fun basicAuth(username: String, password: String): String {
         val credentials = "$username:$password".toByteArray(Charsets.ISO_8859_1)

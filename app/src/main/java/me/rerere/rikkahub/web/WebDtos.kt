@@ -39,12 +39,12 @@ import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.withoutSkillSelectionOverride
 import me.rerere.rikkahub.data.model.QuickMessage
 import me.rerere.rikkahub.data.model.Skill
+import me.rerere.common.http.urlEncode
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.JsonInstantPretty
 import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.uuid.Uuid
-import java.net.URLEncoder
 
 // Requests
 
@@ -1270,14 +1270,14 @@ private fun String.toWebAssetUrl(
     if (uri != null && uri.isAllowedWebMediaUri(context)) {
         return buildString {
             append("/api/files/content?uri=")
-            append(URLEncoder.encode(this@toWebAssetUrl, Charsets.UTF_8.name()))
+            append(this@toWebAssetUrl.urlEncode(spaceAsPlus = true))
             if (!mimeOverride.isNullOrBlank()) {
                 append("&mime=")
-                append(URLEncoder.encode(mimeOverride, Charsets.UTF_8.name()))
+                append(mimeOverride.urlEncode(spaceAsPlus = true))
             }
             if (!fileName.isNullOrBlank()) {
                 append("&name=")
-                append(URLEncoder.encode(fileName, Charsets.UTF_8.name()))
+                append(fileName.urlEncode(spaceAsPlus = true))
             }
         }
     }

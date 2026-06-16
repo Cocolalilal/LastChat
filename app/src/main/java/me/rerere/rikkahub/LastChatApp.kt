@@ -49,6 +49,7 @@ import org.koin.core.context.startKoin
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import me.rerere.common.platform.android.OkHttpPlatformHttpClient
+import me.rerere.rikkahub.utils.acceptLanguageHeader
 import me.rerere.search.SearchService
 import okhttp3.OkHttpClient
 
@@ -83,6 +84,7 @@ class LastChatApp : Application() {
             )
         )
         SearchService.installBingSearchClient(AndroidBingSearchClient())
+        SearchService.installAcceptLanguageProvider { acceptLanguageHeader() }
         this.createNotificationChannel()
 
         // Initialize Python runtime (Chaquopy)

@@ -1789,7 +1789,7 @@ class ChatService(
             buildJsonObject {
                 put(
                     "error",
-                    "[${throwable.javaClass.simpleName}] ${throwable.message.orEmpty()}".trim()
+                    "[${throwable::class.simpleName ?: "Throwable"}] ${throwable.message.orEmpty()}".trim()
                 )
             }
         }

@@ -15,12 +15,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.graphics.ColorUtils
 import androidx.palette.graphics.Palette
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withContext
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
+import org.koin.core.context.GlobalContext
 import java.io.File
 import java.io.InputStream
-import java.net.URL
 
 private const val PALETTE_TARGET_SIZE = 128
 private val AMOLED_DARK_BACKGROUND = Color(0xFF000000)
@@ -80,7 +83,7 @@ fun AssistantChatTheme(
     )
 }
 
-private fun extractSeedColor(
+private suspend fun extractSeedColor(
     context: Context,
     assistant: Assistant,
     colorIndex: Int = 0
@@ -98,7 +101,7 @@ private fun extractSeedColor(
  * behavior: background takes priority, falls back to avatar. The remaining
  * slots (up to 6 total) are filled from both sources (if available) to give variety.
  */
-fun extractColorCandidates(
+suspend fun extractColorCandidates(
     context: Context,
     assistant: Assistant
 ): List<Color> {
@@ -374,7 +377,7 @@ private fun scaleBitmap(bitmap: Bitmap, targetSize: Int): Bitmap {
     return Bitmap.createScaledBitmap(bitmap, scaledWidth, scaledHeight, true)
 }
 
-private fun loadBitmap(context: Context, source: String): Bitmap? {
+private suspend fun loadBitmap(context: Context, source: String): Bitmap? {
     return runCatching {
         val uri = Uri.parse(source)
         when (uri.scheme) {
@@ -384,13 +387,7 @@ private fun loadBitmap(context: Context, source: String): Bitmap? {
                 }
             }
             "http", "https" -> {
-                decodeBitmap {
-                    val connection = URL(source).openConnection().apply {
-                        connectTimeout = 5000
-                        readTimeout = 5000
-                    }
-                    connection.getInputStream()
-                }
+                loadRemoteBitmap(source)
             }
             null -> {
                 File(source).takeIf { it.exists() }?.let { file ->
@@ -402,6 +399,19 @@ private fun loadBitmap(context: Context, source: String): Bitmap? {
             else -> null
         }
     }.getOrNull()
+}
+
+private suspend fun loadRemoteBitmap(source: String): Bitmap? {
+    val response = withTimeout(5_000L) {
+        GlobalContext.get().get<PlatformHttpClient>().execute(
+            PlatformHttpRequest(
+                method = "GET",
+                url = source,
+            )
+        )
+    }
+    if (response.statusCode != 200) return null
+    return decodeBitmap(response.body)
 }
 
 private fun decodeBitmap(openStream: () -> InputStream?): Bitmap? {
@@ -421,6 +431,21 @@ private fun decodeBitmap(openStream: () -> InputStream?): Bitmap? {
     return openStream()?.use { stream ->
         BitmapFactory.decodeStream(stream, null, options)
     }
+}
+
+private fun decodeBitmap(bytes: ByteArray): Bitmap? {
+    val bounds = BitmapFactory.Options().apply {
+        inJustDecodeBounds = true
+    }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+        return null
+    }
+    val sampleSize = calculateInSampleSize(bounds.outWidth, bounds.outHeight, PALETTE_TARGET_SIZE)
+    val options = BitmapFactory.Options().apply {
+        inSampleSize = sampleSize
+    }
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
 }
 
 private fun calculateInSampleSize(width: Int, height: Int, targetSize: Int): Int {

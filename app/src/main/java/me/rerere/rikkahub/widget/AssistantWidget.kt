@@ -34,10 +34,14 @@ import androidx.glance.layout.padding
 import androidx.glance.state.GlanceStateDefinition
 import androidx.glance.state.PreferencesGlanceStateDefinition
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withContext
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.activity.ShortcutHandlerActivity
-import java.net.URL
+import org.koin.core.context.GlobalContext
 import kotlin.uuid.Uuid
 
 private const val TAG = "AssistantWidget"
@@ -262,12 +266,18 @@ class AssistantWidget : GlanceAppWidget() {
     
     private fun loadImageBitmapSync(url: String): Bitmap? {
         return try {
-            val connection = URL(url).openConnection()
-            connection.connectTimeout = 5000
-            connection.readTimeout = 5000
-            val inputStream = connection.getInputStream()
-            val bitmap = BitmapFactory.decodeStream(inputStream)
-            inputStream.close()
+            val response = runBlocking(Dispatchers.IO) {
+                withTimeout(5_000L) {
+                    GlobalContext.get().get<PlatformHttpClient>().execute(
+                        PlatformHttpRequest(
+                            method = "GET",
+                            url = url,
+                        )
+                    )
+                }
+            }
+            if (response.statusCode != 200) return null
+            val bitmap = BitmapFactory.decodeByteArray(response.body, 0, response.body.size)
             bitmap?.let { makeCircular(it).also { bitmap.recycle() } }
         } catch (e: Exception) {
             Log.e(TAG, "Error loading image", e)

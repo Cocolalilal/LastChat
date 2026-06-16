@@ -52,15 +52,16 @@ import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.removeElements
 import me.rerere.common.http.jsonObjectOrNull
 import me.rerere.common.http.jsonPrimitiveOrNull
+import me.rerere.common.http.unescapeJsonStringContent
+import me.rerere.common.http.urlEncode
+import me.rerere.common.http.urlHostOrNull
 import me.rerere.common.platform.PlatformLog
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpProxy
 import me.rerere.common.platform.PlatformHttpRequest
+import me.rerere.common.platform.PlatformJwtSigner
 import me.rerere.common.platform.PlatformServerEvent
 import me.rerere.common.platform.PlatformMediaEncoder
-import org.apache.commons.text.StringEscapeUtils
-import java.net.URI
-import java.net.URLEncoder
 import kotlin.time.Clock
 import kotlin.uuid.Uuid
 
@@ -120,10 +121,11 @@ internal fun buildGoogleToolsPayload(params: TextGenerationParams): JsonArray? {
 class GoogleProvider(
     private val platformHttpClient: PlatformHttpClient,
     private val mediaEncoder: PlatformMediaEncoder,
+    platformJwtSigner: PlatformJwtSigner,
 ) : Provider<ProviderSetting.Google> {
     private val keyRoulette = KeyRoulette.default()
     private val serviceAccountTokenProvider by lazy {
-        ServiceAccountTokenProvider(platformHttpClient)
+        ServiceAccountTokenProvider(platformHttpClient, platformJwtSigner)
     }
 
     private fun buildUrl(providerSetting: ProviderSetting.Google, path: String): String {
@@ -153,7 +155,7 @@ class GoogleProvider(
     private suspend fun fetchVertexAccessToken(providerSetting: ProviderSetting.Google): String {
         return serviceAccountTokenProvider.fetchAccessToken(
             serviceAccountEmail = providerSetting.serviceAccountEmail.trim(),
-            privateKeyPem = StringEscapeUtils.unescapeJson(providerSetting.privateKey.trim()),
+            privateKeyPem = providerSetting.privateKey.unescapeJsonStringContent(),
         )
     }
 
@@ -884,8 +886,8 @@ class GoogleProvider(
 
 private fun String.appendQueryParameter(name: String, value: String): String {
     val separator = if (contains("?")) "&" else "?"
-    val encodedName = URLEncoder.encode(name, "UTF-8")
-    val encodedValue = URLEncoder.encode(value, "UTF-8")
+    val encodedName = name.urlEncode(spaceAsPlus = true)
+    val encodedValue = value.urlEncode(spaceAsPlus = true)
     return "$this$separator$encodedName=$encodedValue"
 }
 
@@ -894,7 +896,7 @@ private fun List<CustomHeader>.toHeaderMap(): Map<String, String> {
 }
 
 private fun Map<String, String>.withReferHeaders(baseUrl: String): Map<String, String> {
-    return when (runCatching { URI(baseUrl).host }.getOrNull()) {
+    return when (baseUrl.urlHostOrNull()) {
         "aihubmix.com" -> this + ("APP-Code" to "DKHA9468")
         "openrouter.ai" -> this + mapOf(
             "X-Title" to "LastChat",

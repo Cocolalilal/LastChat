@@ -7,7 +7,8 @@ import io.ktor.http.HttpHeaders
 import io.pebbletemplates.pebble.PebbleEngine
 import kotlinx.serialization.json.Json
 import me.rerere.ai.provider.ProviderManager
-import me.rerere.common.http.AcceptLanguageBuilder
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.android.AndroidPlatformJwtSigner
 import me.rerere.common.platform.android.AndroidPlatformMediaEncoder
 import me.rerere.common.platform.android.OkHttpPlatformHttpClient
 import me.rerere.rikkahub.BuildConfig
@@ -28,6 +29,7 @@ import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.Migration_6_7
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.sync.WebdavSync
+import me.rerere.rikkahub.utils.acceptLanguageHeader
 import me.rerere.rikkahub.utils.appLocale
 import androidx.work.WorkManager
 import okhttp3.MediaType.Companion.toMediaType
@@ -142,8 +144,7 @@ val dataSourceModule = module {
     }
 
     single<OkHttpClient> {
-        val acceptLang = AcceptLanguageBuilder.fromAndroid(get())
-            .build()
+        val acceptLang = get<android.content.Context>().acceptLanguageHeader()
         OkHttpClient.Builder()
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.MINUTES)
@@ -169,10 +170,15 @@ val dataSourceModule = module {
         SponsorAPI.create(get())
     }
 
+    single<PlatformHttpClient> {
+        OkHttpPlatformHttpClient(get())
+    }
+
     single {
         ProviderManager(
-            platformHttpClient = OkHttpPlatformHttpClient(get()),
+            platformHttpClient = get(),
             platformMediaEncoder = AndroidPlatformMediaEncoder(),
+            platformJwtSigner = AndroidPlatformJwtSigner(),
         )
     }
 

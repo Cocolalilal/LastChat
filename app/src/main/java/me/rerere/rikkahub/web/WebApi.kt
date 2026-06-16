@@ -34,13 +34,13 @@ import io.ktor.utils.io.readAvailable
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.Writer
-import java.net.URLConnection
 import java.security.MessageDigest
 import java.time.Instant
-import java.util.Base64
 import java.util.Locale
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
@@ -901,7 +901,7 @@ private fun Route.webRoutes(
             }
 
             val mime = WebUploadRegistry.getByRelativePath(relativePath)?.mime
-                ?: URLConnection.guessContentTypeFromName(file.name)
+                ?: guessWebMediaMimeTypeFromName(file.name)
                 ?: "application/octet-stream"
             call.response.header(HttpHeaders.ContentType, mime)
             call.respondOutputStream(contentType = ContentType.parse(mime)) {
@@ -1221,7 +1221,7 @@ internal fun validateWebAccessToken(settings: Settings, token: String?): HttpSta
     }
 
     val payload = runCatching {
-        String(Base64.getUrlDecoder().decode(parts[0]), Charsets.UTF_8)
+        String(base64UrlDecode(parts[0]), Charsets.UTF_8)
     }.getOrNull() ?: return HttpStatusCode.Unauthorized
 
     val payloadParts = payload.split(':')
@@ -1246,7 +1246,7 @@ internal fun validateWebAccessToken(settings: Settings, token: String?): HttpSta
 
     val expectedSignature = hmacSha256(settings.webServerAccessPassword, parts[0])
     val actualSignature = runCatching {
-        Base64.getUrlDecoder().decode(parts[1])
+        base64UrlDecode(parts[1])
     }.getOrNull() ?: return HttpStatusCode.Unauthorized
 
     return if (MessageDigest.isEqual(expectedSignature, actualSignature)) {
@@ -1263,8 +1263,14 @@ private fun hmacSha256(secret: String, value: String): ByteArray {
     return mac.doFinal(value.toByteArray(Charsets.UTF_8))
 }
 
+@OptIn(ExperimentalEncodingApi::class)
 private fun base64UrlEncode(bytes: ByteArray): String {
-    return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+    return Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT).encode(bytes)
+}
+
+@OptIn(ExperimentalEncodingApi::class)
+private fun base64UrlDecode(value: String): ByteArray {
+    return Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT_OPTIONAL).decode(value)
 }
 
 private fun extractBearerToken(authorizationHeader: String?): String? {

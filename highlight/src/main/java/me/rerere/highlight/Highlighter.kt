@@ -115,7 +115,7 @@ object HighlightTokenSerializer : KSerializer<HighlightToken.Token> {
                 )
             }
 
-            else -> error("Unknown content type: ${content::class.java.name}")
+            else -> error("Unknown content type")
         }
     }
 }

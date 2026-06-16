@@ -1,6 +1,5 @@
 package me.rerere.search
 
-import androidx.compose.runtime.Composable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import me.rerere.ai.core.InputSchema
@@ -12,9 +11,6 @@ interface SearchService<T : SearchServiceOptions> {
     val parameters: InputSchema?
 
     val scrapingParameters: InputSchema?
-
-    @Composable
-    fun Description()
 
     suspend fun search(
         params: JsonObject,
@@ -52,6 +48,7 @@ interface SearchService<T : SearchServiceOptions> {
 
         private var installedPlatformHttpClient: PlatformHttpClient? = null
         private var installedBingSearchClient: BingSearchClient? = null
+        private var installedAcceptLanguageProvider: (() -> String)? = null
 
         fun installPlatformHttpClient(client: PlatformHttpClient) {
             installedPlatformHttpClient = client
@@ -61,6 +58,10 @@ interface SearchService<T : SearchServiceOptions> {
             installedBingSearchClient = client
         }
 
+        fun installAcceptLanguageProvider(provider: () -> String) {
+            installedAcceptLanguageProvider = provider
+        }
+
         internal val platformHttpClient: PlatformHttpClient
             get() = installedPlatformHttpClient
                 ?: error("SearchService PlatformHttpClient has not been installed")
@@ -68,6 +69,9 @@ interface SearchService<T : SearchServiceOptions> {
         internal val bingSearchClient: BingSearchClient
             get() = installedBingSearchClient
                 ?: error("SearchService BingSearchClient has not been installed")
+
+        internal val acceptLanguage: String
+            get() = installedAcceptLanguageProvider?.invoke() ?: "en-US,en"
 
         internal val json by lazy {
             Json {

@@ -14,12 +14,15 @@ import android.util.Log
 import androidx.core.graphics.createBitmap
 import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withContext
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.ui.activity.ShortcutHandlerActivity
-import java.net.URL
+import org.koin.core.context.GlobalContext
 import kotlin.uuid.Uuid
 
 private const val TAG = "AppShortcutManager"
@@ -235,12 +238,16 @@ class AppShortcutManager(
      */
     private suspend fun loadImageIcon(url: String): Icon? = withContext(Dispatchers.IO) {
         try {
-            val connection = URL(url).openConnection()
-            connection.connectTimeout = 5000
-            connection.readTimeout = 5000
-            val inputStream = connection.getInputStream()
-            val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
-            inputStream.close()
+            val response = withTimeout(5_000L) {
+                GlobalContext.get().get<PlatformHttpClient>().execute(
+                    PlatformHttpRequest(
+                        method = "GET",
+                        url = url,
+                    )
+                )
+            }
+            if (response.statusCode != 200) return@withContext null
+            val bitmap = android.graphics.BitmapFactory.decodeByteArray(response.body, 0, response.body.size)
             
             if (bitmap != null) {
                 // Create circular adaptive icon

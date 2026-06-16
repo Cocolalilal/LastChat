@@ -21,11 +21,11 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.net.toFile
 import androidx.core.net.toUri
+import me.rerere.common.http.urlDecode
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.io.OutputStream
-import java.net.URLDecoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.R
@@ -309,7 +309,7 @@ internal fun resolveAppOwnedFileProviderFile(
         "external_files" -> externalFilesDir ?: return null
         else -> return null
     }
-    val relativePath = URLDecoder.decode(encodedRelativePath, Charsets.UTF_8.name())
+    val relativePath = encodedRelativePath.urlDecode(plusAsSpace = true)
     val candidate = if (relativePath.isBlank()) rootDir else File(rootDir, relativePath)
     val canonicalRoot = rootDir.canonicalFile
     val canonicalCandidate = candidate.canonicalFile

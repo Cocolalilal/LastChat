@@ -156,7 +156,10 @@ class McpManager(
             Log.i(TAG, "addClient: connected ${config.commonOptions.name}")
         }.onFailure {
             it.printStackTrace()
-            setStatus(config = config, status = McpStatus.Error(it.message ?: it.javaClass.name))
+            setStatus(
+                config = config,
+                status = McpStatus.Error(it.message ?: it::class.qualifiedName ?: it::class.simpleName ?: "Throwable")
+            )
         }
     }
 

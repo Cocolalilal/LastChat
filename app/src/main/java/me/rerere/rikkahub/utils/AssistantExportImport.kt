@@ -4,7 +4,6 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
-import android.util.Base64
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -29,6 +28,8 @@ import org.koin.core.component.inject
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.zip.Inflater
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.flow.first
 import me.rerere.rikkahub.data.model.AssistantMemory
@@ -77,7 +78,7 @@ object AssistantExportImport : KoinComponent {
             try {
                 val bytes = readUriBytes(context, url)
                 if (bytes != null) {
-                    avatarContent = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                    avatarContent = base64Encode(bytes)
                     avatarMime = "image/*" // Simplified, can detect if needed
                 }
             } catch (e: Exception) {
@@ -169,7 +170,7 @@ object AssistantExportImport : KoinComponent {
             val file = File(context.filesDir, "avatars/$fileName") 
             file.parentFile?.mkdirs()
             try {
-                val bytes = Base64.decode(export.avatarContent, Base64.NO_WRAP)
+                val bytes = base64Decode(export.avatarContent)
                 file.writeBytes(bytes)
                 assistant = assistant.copy(avatar = Avatar.Image(url = Uri.fromFile(file).toString()))
             } catch (e: Exception) {
@@ -194,7 +195,7 @@ object AssistantExportImport : KoinComponent {
                             val fileName = "lb_${lorebook.id}_${System.currentTimeMillis()}_${att.fileName}"
                             val file = File(context.filesDir, "lorebook_attachments/$fileName")
                             file.parentFile?.mkdirs()
-                            file.writeBytes(Base64.decode(att.content, Base64.NO_WRAP))
+                            file.writeBytes(base64Decode(att.content))
                             ModeAttachment(
                                 url = Uri.fromFile(file).toString(),
                                 type = att.type,
@@ -327,7 +328,7 @@ object AssistantExportImport : KoinComponent {
              type = me.rerere.rikkahub.data.model.ModeAttachmentType.valueOf(typeName),
              fileName = fileName,
              mime = mime,
-             content = Base64.encodeToString(bytes, Base64.NO_WRAP)
+             content = base64Encode(bytes)
          )
     }
     
@@ -371,7 +372,7 @@ object AssistantExportImport : KoinComponent {
         val cardJson = exportToCharacterCardV2(assistant, context)
         
         // Base64 encode the JSON (as per spec)
-        val base64Data = Base64.encodeToString(cardJson.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+        val base64Data = base64Encode(cardJson.toByteArray(Charsets.UTF_8))
         
         // Embed the data into the PNG
         return embedTextChunkInPng(avatarBytes, "chara", base64Data)
@@ -585,7 +586,7 @@ object AssistantExportImport : KoinComponent {
                 // Look for 'chara' (Tavern) or 'ccv3' (V3 spec)
                 val characterData = chunks["chara"] ?: chunks["ccv3"]
                 if (characterData != null) {
-                     jsonContent = String(Base64.decode(characterData, Base64.NO_WRAP))
+                     jsonContent = String(base64Decode(characterData))
                      avatarBytes = contentBytes // The whole PNG is the avatar
                 } else {
                     return ImportResult.Error("No character data found in PNG")
@@ -925,3 +926,9 @@ object AssistantExportImport : KoinComponent {
         )
     }
 }
+
+@OptIn(ExperimentalEncodingApi::class)
+private fun base64Encode(bytes: ByteArray): String = Base64.encode(bytes)
+
+@OptIn(ExperimentalEncodingApi::class)
+private fun base64Decode(value: String): ByteArray = Base64.decode(value)
