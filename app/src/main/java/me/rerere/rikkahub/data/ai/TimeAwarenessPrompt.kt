@@ -1,21 +1,24 @@
 package me.rerere.rikkahub.data.ai
 
+import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toKotlinLocalDateTime
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.isEmptyUIMessage
 import me.rerere.ai.util.buildTimeAwarenessPromptBlock
-import java.time.ZonedDateTime
-import java.time.format.TextStyle
-import java.util.Locale
+
+internal data class TimeAwarenessRuntimeInfo(
+    val now: LocalDateTime,
+    val timeZone: TimeZone,
+    val timeZoneId: String,
+    val timeZoneShortName: String,
+)
 
 internal fun buildTimeAwarenessBlock(
     enabled: Boolean,
     fullMessages: List<UIMessage>,
     retainedMessages: List<UIMessage>,
-    now: ZonedDateTime = ZonedDateTime.now(),
+    runtimeInfo: TimeAwarenessRuntimeInfo = AndroidTimeAwarenessRuntimeInfo.now(),
 ): String? {
-    val zoneId = now.zone
     return buildTimeAwarenessPromptBlock(
         enabled = enabled,
         fullMessageTimes = fullMessages
@@ -24,10 +27,10 @@ internal fun buildTimeAwarenessBlock(
         retainedMessageTimes = retainedMessages
             .filter(UIMessage::isConversationalMessage)
             .map { it.createdAt },
-        now = now.toLocalDateTime().toKotlinLocalDateTime(),
-        timeZone = TimeZone.of(zoneId.id),
-        timeZoneId = zoneId.id,
-        timeZoneShortName = zoneId.getDisplayName(TextStyle.SHORT, Locale.ENGLISH)
+        now = runtimeInfo.now,
+        timeZone = runtimeInfo.timeZone,
+        timeZoneId = runtimeInfo.timeZoneId,
+        timeZoneShortName = runtimeInfo.timeZoneShortName,
     )
 }
 
