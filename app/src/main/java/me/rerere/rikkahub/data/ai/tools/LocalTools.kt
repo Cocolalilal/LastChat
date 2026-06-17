@@ -195,6 +195,7 @@ class LocalTools(
     private val providerManager: ProviderManager,
     genMediaRepository: GenMediaRepository,
     private val notificationPlatform: LocalToolNotificationPlatform = AndroidLocalToolNotificationPlatform(context),
+    private val pythonSandbox: LocalToolPythonSandbox = AndroidLocalToolPythonSandbox(context),
     private val generatedToolImageSaver: GeneratedToolImageSaver = AndroidGeneratedToolImageSaver(
         context = context,
         genMediaRepository = genMediaRepository,
@@ -305,7 +306,6 @@ class LocalTools(
         )
     }
 
-    private val pythonSandbox by lazy { PythonSandbox(context) }
     private val ttsController by lazy { TtsController(context, ttsManager) }
 
     val ttsTool by lazy {
@@ -477,7 +477,7 @@ class LocalTools(
         conversationId: Uuid,
         attachments: List<PythonAttachmentReference> = emptyList(),
     ): List<Tool> {
-        val workingDir = pythonSandbox.getConversationDir(conversationId).absolutePath
+        val workingDir = pythonSandbox.getConversationDirPath(conversationId)
 
         val preloadedFiles = mutableListOf<PreloadedSandboxAttachment>()
         attachments.forEachIndexed { index, attachment ->
@@ -487,9 +487,9 @@ class LocalTools(
                     originalName = originalFileName,
                     sourceUrl = attachment.url,
                 )
-                pythonSandbox.importFile(
+                pythonSandbox.importFileUrl(
                     conversationId = conversationId,
-                    sourceUri = android.net.Uri.parse(attachment.url),
+                    sourceUrl = attachment.url,
                     filename = filename,
                 )
                 preloadedFiles.add(
@@ -502,7 +502,7 @@ class LocalTools(
                     )
                 )
             }.onFailure { e ->
-                android.util.Log.w("LocalTools", "Failed to auto-import attachment $index: ${e.message}")
+                pythonSandbox.logAttachmentImportFailure(index, e)
             }
         }
 
@@ -544,7 +544,7 @@ class LocalTools(
                                     put("size", file.size)
                                     put("is_image", file.isImage)
                                     put("mime", file.mimeType)
-                                    put("uri", uri.toString())
+                                    put("uri", uri)
                                     put("markdown_link", if (file.isImage) "![${file.name}]($uri)" else "[${file.name}]($uri)")
                                 }
                             }
@@ -609,7 +609,7 @@ class LocalTools(
                                         put("size", file.size)
                                         put("is_image", file.isImage)
                                         put("mime", file.mimeType)
-                                        put("uri", uri.toString())
+                                        put("uri", uri)
                                         put("markdown_link", if (file.isImage) "![${file.name}]($uri)" else "[${file.name}]($uri)")
                                     }
                                 }
@@ -678,7 +678,7 @@ class LocalTools(
                             val uri = pythonSandbox.getFileUri(conversationId, path)
                             kotlinx.serialization.json.buildJsonObject {
                                 resultObj.forEach { (k, v) -> put(k, v) }
-                                put("uri", uri.toString())
+                                put("uri", uri)
                                 put("markdown_link", "[$path]($uri)")
                             }
                         } else {
@@ -750,14 +750,13 @@ class LocalTools(
                                 put("sandbox_filename", pseudoSandboxFile)
                             }
                         } else {
-                            val uriArg = android.net.Uri.parse(url)
-                            val savedPath = pythonSandbox.importFile(conversationId, uriArg, filename)
+                            val savedPath = pythonSandbox.importFileUrl(conversationId, url, filename)
                             val fileUri = pythonSandbox.getFileUri(conversationId, filename)
                             buildJsonObject {
                                 put("success", true)
                                 put("path", savedPath)
                                 put("filename", filename)
-                                put("uri", fileUri.toString())
+                                put("uri", fileUri)
                                 put("markdown_link", "[$filename]($fileUri)")
                             }
                         }

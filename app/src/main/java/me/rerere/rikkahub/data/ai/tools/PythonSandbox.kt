@@ -2,9 +2,80 @@ package me.rerere.rikkahub.data.ai.tools
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.core.content.FileProvider
 import java.io.File
 import kotlin.uuid.Uuid
+
+data class LocalToolSandboxFile(
+    val name: String,
+    val size: Long,
+    val isImage: Boolean,
+    val mimeType: String,
+)
+
+interface LocalToolPythonSandbox {
+    fun getConversationDirPath(conversationId: Uuid): String
+
+    fun importFileUrl(
+        conversationId: Uuid,
+        sourceUrl: String,
+        filename: String,
+    ): String
+
+    fun listFiles(conversationId: Uuid): List<LocalToolSandboxFile>
+
+    fun getFileUri(conversationId: Uuid, relativePath: String): String
+
+    fun deleteFile(conversationId: Uuid, relativePath: String): Boolean
+
+    fun logAttachmentImportFailure(index: Int, error: Throwable)
+}
+
+class AndroidLocalToolPythonSandbox(
+    context: Context,
+) : LocalToolPythonSandbox {
+    private val sandbox = PythonSandbox(context)
+
+    override fun getConversationDirPath(conversationId: Uuid): String {
+        return sandbox.getConversationDir(conversationId).absolutePath
+    }
+
+    override fun importFileUrl(
+        conversationId: Uuid,
+        sourceUrl: String,
+        filename: String,
+    ): String {
+        return sandbox.importFile(
+            conversationId = conversationId,
+            sourceUri = Uri.parse(sourceUrl),
+            filename = filename,
+        )
+    }
+
+    override fun listFiles(conversationId: Uuid): List<LocalToolSandboxFile> {
+        return sandbox.listFiles(conversationId).map { file ->
+            LocalToolSandboxFile(
+                name = file.name,
+                size = file.size,
+                isImage = file.isImage,
+                mimeType = file.mimeType,
+            )
+        }
+    }
+
+    override fun getFileUri(conversationId: Uuid, relativePath: String): String {
+        return sandbox.getFileUri(conversationId, relativePath).toString()
+    }
+
+    override fun deleteFile(conversationId: Uuid, relativePath: String): Boolean {
+        return sandbox.deleteFile(conversationId, relativePath)
+    }
+
+    override fun logAttachmentImportFailure(index: Int, error: Throwable) {
+        Log.w("LocalTools", "Failed to auto-import attachment $index: ${error.message}")
+    }
+}
 
 /**
  * Manages sandboxed directories for Python execution.
