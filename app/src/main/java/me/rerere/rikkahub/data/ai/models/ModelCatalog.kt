@@ -2,11 +2,7 @@ package me.rerere.rikkahub.data.ai.models
 
 import android.content.Context
 import android.util.Log
-import java.io.File
 import java.io.IOException
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,6 +23,7 @@ import me.rerere.ai.provider.OpenAICompatibilityMode
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.ReasoningRequestBehavior
 import me.rerere.ai.registry.ModelIdNormalizer
+import me.rerere.common.platform.PlatformFileStore
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.rikkahub.utils.JsonInstant
@@ -34,6 +31,7 @@ import me.rerere.rikkahub.utils.JsonInstant
 private const val TAG = "ModelCatalogService"
 private const val MODEL_CATALOG_DIR_NAME = "model_catalog"
 private const val MODEL_CATALOG_FILE_NAME = "lastchat_catalog.json"
+private const val MODEL_CATALOG_FILE_PATH = "$MODEL_CATALOG_DIR_NAME/$MODEL_CATALOG_FILE_NAME"
 private const val MODEL_CATALOG_ASSET_NAME = "lastchat_catalog.json"
 private const val MODEL_CATALOG_URL =
     "https://raw.githubusercontent.com/Cocolalilal/LastChat/main/catalog/lastchat_catalog.json"
@@ -760,6 +758,7 @@ private class ModelCatalogEntryBuilder(
 class ModelCatalogService(
     private val context: Context,
     private val httpClient: PlatformHttpClient,
+    private val fileStore: PlatformFileStore,
 ) {
     @Volatile
     private var snapshot: ModelCatalogSnapshot? = null
@@ -829,16 +828,15 @@ class ModelCatalogService(
         return readBundledCatalog()
     }
 
-    private suspend fun readDownloadedCatalogOrNull(): LoadedCatalog? = withContext(Dispatchers.IO) {
-        val file = downloadedCatalogFile()
-        if (!file.exists()) return@withContext null
+    private suspend fun readDownloadedCatalogOrNull(): LoadedCatalog? {
+        val rawJson = fileStore.readBytes(MODEL_CATALOG_FILE_PATH)?.decodeToString() ?: return null
 
-        runCatching {
-            val snapshot = ModelCatalogParser.parse(file.readText())
+        return runCatching {
+            val snapshot = ModelCatalogParser.parse(rawJson)
             LoadedCatalog(
                 snapshot = snapshot,
                 source = ModelCatalogSource.DOWNLOADED,
-                lastSuccessfulRefreshAt = file.lastModified().takeIf { it > 0L },
+                lastSuccessfulRefreshAt = fileStore.lastModified(MODEL_CATALOG_FILE_PATH),
             )
         }.onFailure {
             Log.w(TAG, "Downloaded LastChat catalog is invalid; falling back to bundled snapshot", it)
@@ -872,37 +870,8 @@ class ModelCatalogService(
             ?: throw IOException("Downloaded LastChat catalog was empty")
     }
 
-    private suspend fun writeDownloadedCatalog(rawJson: String) = withContext(Dispatchers.IO) {
-        val directory = downloadedCatalogDirectory()
-        if (!directory.exists()) {
-            directory.mkdirs()
-        }
-
-        val target = downloadedCatalogFile()
-        val temp = File(directory, "$MODEL_CATALOG_FILE_NAME.tmp")
-        temp.writeText(rawJson)
-        try {
-            Files.move(
-                temp.toPath(),
-                target.toPath(),
-                StandardCopyOption.REPLACE_EXISTING,
-                StandardCopyOption.ATOMIC_MOVE,
-            )
-        } catch (_: AtomicMoveNotSupportedException) {
-            Files.move(
-                temp.toPath(),
-                target.toPath(),
-                StandardCopyOption.REPLACE_EXISTING,
-            )
-        }
-    }
-
-    private fun downloadedCatalogDirectory(): File {
-        return File(context.filesDir, MODEL_CATALOG_DIR_NAME)
-    }
-
-    private fun downloadedCatalogFile(): File {
-        return File(downloadedCatalogDirectory(), MODEL_CATALOG_FILE_NAME)
+    private suspend fun writeDownloadedCatalog(rawJson: String) {
+        fileStore.writeBytes(MODEL_CATALOG_FILE_PATH, rawJson.encodeToByteArray())
     }
 }
 
@@ -1038,6 +1007,7 @@ private fun ProviderSetting.catalogBaseUrl(): String {
         is ProviderSetting.Google -> baseUrl
         is ProviderSetting.OpenAI -> baseUrl
         is ProviderSetting.ComfyUI -> baseUrl
+        is ProviderSetting.LiteRtLocal -> ""
     }
 }
 
@@ -1062,6 +1032,7 @@ private fun ProviderSetting.catalogProviderTokens(): Set<String> {
         }
 
         is ProviderSetting.ComfyUI -> setOf("comfyui")
+        is ProviderSetting.LiteRtLocal -> setOf("comfyui")
     }.map { it.normalizeCatalogToken() }.toSet()
 }
 

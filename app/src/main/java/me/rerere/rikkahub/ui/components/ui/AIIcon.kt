@@ -3,6 +3,8 @@ package me.rerere.rikkahub.ui.components.ui
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material3.Icon
@@ -13,6 +15,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -68,6 +71,21 @@ fun ProviderIcon(
         contentColor
     } else {
         contentColor.copy(alpha = 0.38f)
+    }
+
+    if (provider is ProviderSetting.LiteRtLocal) {
+        Box(
+            modifier = modifier.padding(padding),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.PhoneAndroid,
+                contentDescription = provider.name,
+                tint = effectiveContentColor,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        return
     }
     
     AutoAIIconWithUrl(

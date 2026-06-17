@@ -14,7 +14,9 @@ import coil3.svg.SvgDecoder
 import io.ktor.http.HttpHeaders
 import io.pebbletemplates.pebble.PebbleEngine
 import me.rerere.ai.provider.ProviderManager
+import me.rerere.common.platform.PlatformFileStore
 import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.android.AndroidFileStore
 import me.rerere.common.platform.android.AndroidPlatformJwtSigner
 import me.rerere.common.platform.android.AndroidPlatformMediaEncoder
 import me.rerere.common.platform.android.OkHttpPlatformHttpClient
@@ -73,6 +75,10 @@ val dataSourceModule = module {
 
     single {
         SettingsStore(context = get(), scope = get(), quickCache = get(), secretKeyManager = get())
+    }
+
+    single<PlatformFileStore> {
+        AndroidFileStore(rootDir = get<android.content.Context>().filesDir)
     }
 
     single {
@@ -317,17 +323,29 @@ val dataSourceModule = module {
     }
 
     single {
+        val settingsStore: me.rerere.rikkahub.data.datastore.SettingsStore = get()
         ProviderManager(
             platformHttpClient = get(),
             platformMediaEncoder = AndroidPlatformMediaEncoder(),
             platformJwtSigner = AndroidPlatformJwtSigner(),
-        )
+        ).also { pm ->
+            pm.registerProvider(
+                "local_litert",
+                me.rerere.locallm.litert.LiteRtProvider(
+                    context = get(),
+                    runtime = get(),
+                    prefs = get(),
+                    settingsUpdater = { fn -> settingsStore.update { old -> old.copy(providers = fn(old.providers)) } }
+                )
+            )
+        }
     }
 
     single {
         ModelCatalogService(
             context = get(),
             httpClient = get(),
+            fileStore = get(),
         )
     }
 

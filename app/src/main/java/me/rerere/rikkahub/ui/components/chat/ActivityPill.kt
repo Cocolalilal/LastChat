@@ -84,6 +84,11 @@ sealed interface ActivityState {
         val startTimeMs: Long = System.currentTimeMillis()
     ) : ActivityState
     
+    /** Local model is being loaded into memory */
+    data class LoadingModel(
+        val modelName: String? = null
+    ) : ActivityState
+    
     /** Model is generating text reply */
     data object Replying : ActivityState
     
@@ -118,6 +123,7 @@ private fun stateToKey(state: ActivityState): Any = when (state) {
     is ActivityState.Ocr -> "ocr"
     is ActivityState.Reasoning -> "reasoning"
     is ActivityState.ToolUse -> "tool_${categorizeToolName(state.toolName)}"
+    is ActivityState.LoadingModel -> "loading_model"
     is ActivityState.Replying -> "replying"
     is ActivityState.Hidden -> "hidden"
     is ActivityState.CompletedSingle -> "completed_single_${state.type}"
@@ -142,6 +148,7 @@ enum class ActivityType {
     PYTHON,
     SKILL,
     MCP,
+    LOADING_MODEL,
     TOOL_OTHER
 }
 
@@ -153,6 +160,7 @@ private fun ActivityType.toTestTag(): String = when (this) {
     ActivityType.PYTHON -> "activity_pill_python"
     ActivityType.SKILL -> "activity_pill_skill"
     ActivityType.MCP -> "activity_pill_mcp"
+    ActivityType.LOADING_MODEL -> "activity_pill_loading_model"
     ActivityType.TOOL_OTHER -> "activity_pill_tool_other"
 }
 
@@ -167,6 +175,7 @@ private fun ActivityType.getIcon(): ImageVector = when (this) {
     ActivityType.PYTHON -> Icons.Rounded.Terminal
     ActivityType.SKILL -> Icons.Rounded.Category
     ActivityType.MCP -> Icons.Rounded.Memory
+    ActivityType.LOADING_MODEL -> Icons.Rounded.Memory
     ActivityType.TOOL_OTHER -> Icons.Rounded.Build
 }
 
@@ -181,6 +190,7 @@ private fun ActivityType.getDisplayText(): String = when (this) {
     ActivityType.PYTHON -> "Ran Python"
     ActivityType.SKILL -> "Skills"
     ActivityType.MCP -> "MCP"
+    ActivityType.LOADING_MODEL -> "Loaded model"
     ActivityType.TOOL_OTHER -> "Used tools"
 }
 
@@ -512,6 +522,21 @@ private fun AnimatedSinglePill(
                         )
                     }
                     
+                    is ActivityState.LoadingModel -> {
+                        Icon(
+                            imageVector = Icons.Rounded.Memory,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = targetState.modelName?.let { "Loading $it..." } ?: "Loading model...",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.shimmer(isLoading = true)
+                        )
+                    }
+                    
                     is ActivityState.CompletedSingle -> {
                         // Show expanded content for the single activity
                         val item = ActivityItem(
@@ -657,6 +682,7 @@ private fun ExpandedActivityContent(item: ActivityItem) {
         ActivityType.SKILL -> "Managed skills"
         ActivityType.MCP -> "MCP"
         ActivityType.TOOL_OTHER -> "Used tool"
+        ActivityType.LOADING_MODEL -> "Loading model"
     }
 
     Text(
@@ -880,6 +906,9 @@ private fun ExpandedActivityPill(
             }
             ActivityType.MCP -> {
                 if (item.count > 1) "MCP calls Ã—${item.count}" else "MCP"
+            }
+            ActivityType.LOADING_MODEL -> {
+                "Loading model..."
             }
             ActivityType.TOOL_OTHER -> {
                 if (item.count > 1) "Used tools Ã—${item.count}" else "Used tool"

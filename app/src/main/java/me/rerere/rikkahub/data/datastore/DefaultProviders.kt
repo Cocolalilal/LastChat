@@ -5,6 +5,10 @@ import me.rerere.ai.provider.ProviderSetting
 import kotlin.uuid.Uuid
 
 val DEFAULT_PROVIDERS = listOf(
+    ProviderSetting.LiteRtLocal(
+        enabled = true,
+        name = "Local · LiteRT"
+    ),
     ProviderSetting.OpenAI(
         id = Uuid.parse("d5734028-d39b-4d41-9841-fd648d65440e"),
         name = "OpenRouter",

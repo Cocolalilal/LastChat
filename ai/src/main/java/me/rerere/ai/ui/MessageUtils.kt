@@ -12,7 +12,7 @@ import me.rerere.common.http.jsonPrimitiveOrNull
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.Model
-import me.rerere.ai.util.json
+
 import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlin.uuid.Uuid
@@ -96,7 +96,7 @@ data class UIMessage(
                                     ).also {
                                         if (deltaPart.metadata != null) {
                                             it.metadata = deltaPart.metadata // 更新metadata
-                                            println("更新metadata: ${json.encodeToString(deltaPart)}")
+                                            println("更新metadata: ${kotlinx.serialization.json.Json { ignoreUnknownKeys = true; encodeDefaults = true; explicitNulls = false }.encodeToString(deltaPart)}")
                                         }
                                     }
                                 } else part

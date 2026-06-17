@@ -253,6 +253,7 @@ class SecretKeyManager(
             }
 
             is ProviderSetting.ComfyUI -> provider
+            is ProviderSetting.LiteRtLocal -> provider
         }
     }
 
@@ -342,6 +343,7 @@ class SecretKeyManager(
             }
 
             is ProviderSetting.ComfyUI -> provider
+            is ProviderSetting.LiteRtLocal -> provider
         }
     }
 

@@ -1,4 +1,9 @@
 package me.rerere.rikkahub.ui.pages.chat
+import me.rerere.ai.ui.*
+
+
+
+
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -77,8 +82,8 @@ import kotlinx.serialization.json.jsonObject
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
-import me.rerere.ai.ui.isEmptyUIMessage
-import me.rerere.ai.ui.toSortedMessageParts
+
+
 import me.rerere.common.android.appTempFolder
 import me.rerere.common.platform.android.AndroidPlatformMediaEncoder
 import me.rerere.highlight.Highlighter

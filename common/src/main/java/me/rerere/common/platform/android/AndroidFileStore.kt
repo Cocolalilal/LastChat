@@ -41,6 +41,13 @@ class AndroidFileStore(
         resolvePath(path).exists()
     }
 
+    override suspend fun lastModified(path: String): Long? = withContext(Dispatchers.IO) {
+        resolvePath(path)
+            .takeIf { it.exists() }
+            ?.lastModified()
+            ?.takeIf { it > 0L }
+    }
+
     private fun resolvePath(path: String): File {
         val root = rootDir.canonicalFile
         val file = File(root, path).canonicalFile
@@ -50,4 +57,3 @@ class AndroidFileStore(
         return file
     }
 }
-

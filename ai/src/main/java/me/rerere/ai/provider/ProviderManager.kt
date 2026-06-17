@@ -60,6 +60,7 @@ class ProviderManager(
             is ProviderSetting.Google -> getProvider("google")
             is ProviderSetting.Claude -> getProvider("claude")
             is ProviderSetting.ComfyUI -> getProvider("comfyui")
+            is ProviderSetting.LiteRtLocal -> getProvider("local_litert")
         } as Provider<T>
     }
 }

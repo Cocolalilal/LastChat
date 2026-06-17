@@ -1,17 +1,10 @@
 package me.rerere.rikkahub.data.ai.transformers
 
-import androidx.core.net.toFile
-import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
-import me.rerere.document.DocxParser
-import me.rerere.document.PdfPageContent
-import me.rerere.document.PdfParser
-import java.io.File
-import java.security.MessageDigest
 
 internal const val PDF_PAGE_OCR_TEXT_THRESHOLD = 32
 
@@ -26,9 +19,9 @@ internal fun shouldUsePdfPageOcr(text: String, threshold: Int = PDF_PAGE_OCR_TEX
 
 internal suspend fun buildPdfPrompt(
     fileName: String,
-    pages: List<PdfPageContent>,
-    renderPage: (Int) -> File,
-    ocrPage: suspend (Int, File) -> OcrExecutionResult,
+    pages: List<DocumentTextPage>,
+    renderPage: (Int) -> String,
+    ocrPage: suspend (Int, String) -> OcrExecutionResult,
 ): PdfPromptBuildResult {
     val ocrPageNumbers = mutableListOf<Int>()
     val content = buildString {
@@ -39,7 +32,7 @@ internal suspend fun buildPdfPrompt(
                 val ocrResult = ocrPage(page.pageNumber, renderedPage)
                 if (ocrResult.consumesImageInput()) {
                     ocrPageNumbers += page.pageNumber
-                    ocrResult.promptText!!
+                    ocrResult.promptText.orEmpty()
                 } else {
                     page.text.trimEnd().ifBlank { "[No readable content found on this page]" }
                 }
@@ -68,6 +61,7 @@ object DocumentAsPromptTransformer : InputMessageTransformer {
         messages: List<UIMessage>,
     ): List<UIMessage> {
         return withContext(Dispatchers.IO) {
+            val parser = AndroidDocumentPromptParser(ctx.context)
             messages.map { message ->
                 message.copy(
                     parts = message.parts.toMutableList().apply {
@@ -75,12 +69,11 @@ object DocumentAsPromptTransformer : InputMessageTransformer {
                         if (documents.isNotEmpty()) {
                             documents.forEach { document ->
                                 val liveOcrPageNumbers = mutableListOf<Int>()
-                                val file = document.url.toUri().toFile()
                                 val prompt = when (document.mime) {
                                     "application/pdf" -> parsePdfPrompt(
-                                        file = file,
+                                        parser = parser,
+                                        documentUrl = document.url,
                                         fileName = document.fileName,
-                                        cacheDir = ctx.context.cacheDir,
                                         onLiveOcrPage = { pageNumber ->
                                             if (!liveOcrPageNumbers.contains(pageNumber)) {
                                                 liveOcrPageNumbers += pageNumber
@@ -110,11 +103,12 @@ object DocumentAsPromptTransformer : InputMessageTransformer {
                                         }
                                     }.prompt
                                     "application/vnd.openxmlformats-officedocument.wordprocessingml.document" -> parseDocxAsText(
-                                        file
+                                        parser = parser,
+                                        documentUrl = document.url,
                                     )
                                         .let { buildTextDocumentPrompt(document.fileName, it) }
 
-                                    else -> buildTextDocumentPrompt(document.fileName, file.readText())
+                                    else -> buildTextDocumentPrompt(document.fileName, parser.readText(document.url))
                                 }
                                 add(0, UIMessagePart.Text(prompt))
                             }
@@ -126,33 +120,32 @@ object DocumentAsPromptTransformer : InputMessageTransformer {
     }
 
     private suspend fun parsePdfPrompt(
-        file: File,
+        parser: DocumentPromptParser,
+        documentUrl: String,
         fileName: String,
-        cacheDir: File,
         onLiveOcrPage: suspend (Int) -> Unit = {},
     ): PdfPromptBuildResult {
-        val pages = PdfParser.extractPages(file)
+        val pages = parser.extractPdfPages(documentUrl)
         return buildPdfPrompt(
             fileName = fileName,
             pages = pages,
             renderPage = { pageIndex ->
-                renderPdfPageToCache(
-                    pdfFile = file,
-                    pageIndex = pageIndex,
-                    cacheDir = cacheDir,
-                )
+                parser.renderPdfPageAsImageUrl(documentUrl, pageIndex)
             },
-            ocrPage = { pageNumber, renderedFile ->
+            ocrPage = { pageNumber, renderedImageUrl ->
                 OcrTransformer.performOcrWithMetadata(
-                    UIMessagePart.Image(renderedFile.toUri().toString()),
+                    UIMessagePart.Image(renderedImageUrl),
                     onBeforeProviderCall = { onLiveOcrPage(pageNumber) },
                 )
             }
         )
     }
 
-    private fun parseDocxAsText(file: File): String {
-        return DocxParser.parse(file)
+    private fun parseDocxAsText(
+        parser: DocumentPromptParser,
+        documentUrl: String,
+    ): String {
+        return parser.parseDocx(documentUrl)
     }
 
     private fun buildTextDocumentPrompt(fileName: String, content: String): String {
@@ -164,32 +157,5 @@ object DocumentAsPromptTransformer : InputMessageTransformer {
             ```
             </content>
         """.trimIndent()
-    }
-
-    private fun renderPdfPageToCache(
-        pdfFile: File,
-        pageIndex: Int,
-        cacheDir: File,
-    ): File {
-        val cacheKey = buildPdfRenderCacheKey(pdfFile)
-        val outputFile = File(
-            File(cacheDir, "pdf_ocr/$cacheKey"),
-            "page-${pageIndex + 1}.png"
-        )
-        if (!outputFile.exists()) {
-            PdfParser.renderPageAsPng(
-                file = pdfFile,
-                pageIndex = pageIndex,
-                outputFile = outputFile,
-            )
-        }
-        return outputFile
-    }
-
-    private fun buildPdfRenderCacheKey(file: File): String {
-        val input = "${file.absolutePath}:${file.length()}:${file.lastModified()}"
-        return MessageDigest.getInstance("SHA-256")
-            .digest(input.toByteArray())
-            .joinToString(separator = "") { byte -> "%02x".format(byte) }
     }
 }

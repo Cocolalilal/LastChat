@@ -279,11 +279,9 @@ class SettingsStore(
         }
         .map {
             var providers = it.providers.ifEmpty { DEFAULT_PROVIDERS }.toMutableList()
-            // DEFAULT_PROVIDERS.forEach { defaultProvider ->
-            //     if (providers.none { it.id == defaultProvider.id }) {
-            //         providers.add(defaultProvider.copyProvider())
-            //     }
-            // }
+            if (providers.none { p -> p is ProviderSetting.LiteRtLocal }) {
+                providers.add(0, ProviderSetting.LiteRtLocal(enabled = true))
+            }
             providers = providers.map { provider ->
                 val defaultProvider = DEFAULT_PROVIDERS.find { it.id == provider.id }
                 if (defaultProvider != null) {
@@ -334,6 +332,9 @@ class SettingsStore(
                         is ProviderSetting.ComfyUI -> provider.copy(
                             models = provider.models.distinctBy { model -> model.id }
                                 .map { model -> model.withComfyDefaults() }
+                        )
+                        is ProviderSetting.LiteRtLocal -> provider.copy(
+                            models = provider.models.distinctBy { model -> model.id }
                         )
                     }
                 },

@@ -423,6 +423,7 @@ dependencies {
     implementation(project(":search"))
     implementation(project(":tts"))
     implementation(project(":common"))
+    implementation(project(":local-llm"))
     implementation(libs.jsoup)
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
     implementation(kotlin("reflect"))

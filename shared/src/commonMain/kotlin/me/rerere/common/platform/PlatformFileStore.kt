@@ -8,5 +8,6 @@ interface PlatformFileStore {
     suspend fun delete(path: String): Boolean
 
     suspend fun exists(path: String): Boolean
-}
 
+    suspend fun lastModified(path: String): Long?
+}
