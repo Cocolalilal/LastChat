@@ -3,8 +3,6 @@ package me.rerere.rikkahub.data.ai.tools
 import android.content.Context
 import com.whl.quickjs.wrapper.QuickJSContext
 import com.whl.quickjs.wrapper.QuickJSObject
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.SerialName
@@ -34,17 +32,12 @@ import me.rerere.ai.core.ToolApprovalMode
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
-import me.rerere.rikkahub.data.db.entity.GenMediaEntity
 import me.rerere.rikkahub.data.repository.GenMediaRepository
 import me.rerere.rikkahub.data.datastore.TtsFilterMode
 import me.rerere.rikkahub.data.datastore.getEffectiveTTSProvider
-import me.rerere.rikkahub.utils.createImageFileFromBase64
-import me.rerere.rikkahub.utils.getImagesDir
 import me.rerere.rikkahub.utils.stripMarkdown
 import me.rerere.tts.controller.TtsController
 import me.rerere.tts.provider.android.TTSManager
-import java.io.File
-import java.security.MessageDigest
 import kotlin.uuid.Uuid
 
 @Serializable
@@ -113,13 +106,17 @@ internal data class PreloadedSandboxAttachment(
     val promptVisible: Boolean,
 )
 
-internal fun buildSandboxAttachmentFilename(originalName: String, sourceUrl: String): String {
+internal fun buildSandboxAttachmentFilename(
+    originalName: String,
+    sourceUrl: String,
+    stableHash: (String) -> String = AndroidLocalToolPlatform::shortStableHash,
+): String {
     val extension = originalName
         .substringAfterLast('.', "")
         .takeIf { it.isNotBlank() && it != originalName }
         ?.lowercase()
     val baseName = sanitizeSandboxBaseName(originalName.substringBeforeLast('.', originalName))
-    val hash = shortStableHash(sourceUrl)
+    val hash = stableHash(sourceUrl)
 
     return buildString {
         append(baseName)
@@ -148,7 +145,7 @@ internal fun visiblePreloadedSandboxAttachments(
 internal fun detectSandboxPseudoImportFilename(
     url: String,
     sandboxFileNames: Set<String>,
-    pathExists: (String) -> Boolean = { path -> File(path).exists() },
+    pathExists: (String) -> Boolean = AndroidLocalToolPlatform::pathExists,
 ): String? {
     if (!url.startsWith("file:///")) return null
     val path = url.removePrefix("file:///")
@@ -165,19 +162,16 @@ private fun sanitizeSandboxBaseName(rawName: String): String {
     return cleaned.ifBlank { "attachment" }
 }
 
-private fun shortStableHash(value: String): String {
-    return MessageDigest.getInstance("SHA-256")
-        .digest(value.toByteArray())
-        .joinToString(separator = "") { byte -> "%02x".format(byte) }
-        .take(8)
-}
-
 class LocalTools(
     private val context: Context,
     private val settingsStore: SettingsStore,
     private val ttsManager: TTSManager,
     private val providerManager: ProviderManager,
-    private val genMediaRepository: GenMediaRepository,
+    genMediaRepository: GenMediaRepository,
+    private val generatedToolImageSaver: GeneratedToolImageSaver = AndroidGeneratedToolImageSaver(
+        context = context,
+        genMediaRepository = genMediaRepository,
+    ),
 ) {
     val askUserTool by lazy {
         Tool(
@@ -418,7 +412,7 @@ class LocalTools(
                 }
 
                 val files = items.take(count).mapIndexed { index, item ->
-                    saveGeneratedImageFromTool(
+                    generatedToolImageSaver.save(
                         item = item,
                         prompt = prompt,
                         modelName = model.displayName.ifBlank { model.modelId },
@@ -433,11 +427,10 @@ class LocalTools(
                         "images",
                         JsonArray(
                             files.map { file ->
-                                val uri = "file://${file.absolutePath}"
                                 buildJsonObject {
-                                    put("uri", uri)
-                                    put("path", file.absolutePath)
-                                    put("markdown_image", "![Generated image]($uri)")
+                                    put("uri", file.uri)
+                                    put("path", file.path)
+                                    put("markdown_image", file.markdownImage)
                                 }
                             }
                         )
@@ -984,27 +977,5 @@ class LocalTools(
             tools.add(imageGenerationTool)
         }
         return tools
-    }
-
-    private suspend fun saveGeneratedImageFromTool(
-        item: me.rerere.ai.ui.ImageGenerationItem,
-        prompt: String,
-        modelName: String,
-        index: Int,
-    ): File = withContext(Dispatchers.IO) {
-        val imagesDir = context.getImagesDir()
-        val timestamp = System.currentTimeMillis()
-        val safeModelName = modelName.replace(Regex("[^A-Za-z0-9._-]+"), "_").take(48).ifBlank { "image" }
-        val imageFile = File(imagesDir, "${timestamp}_${safeModelName}_tool_$index.png")
-        val createdFile = context.createImageFileFromBase64(item.data, imageFile.absolutePath)
-        genMediaRepository.insertMedia(
-            GenMediaEntity(
-                path = "images/${imageFile.name}",
-                modelId = modelName,
-                prompt = prompt,
-                createAt = timestamp,
-            )
-        )
-        createdFile
     }
 }

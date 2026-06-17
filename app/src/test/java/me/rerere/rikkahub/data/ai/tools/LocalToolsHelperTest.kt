@@ -20,6 +20,17 @@ class LocalToolsHelperTest {
     }
 
     @Test
+    fun `buildSandboxAttachmentFilename can use platform supplied stable hash`() {
+        val filename = buildSandboxAttachmentFilename(
+            originalName = "photo.png",
+            sourceUrl = "content://images/photo",
+            stableHash = { "abcdef12" },
+        )
+
+        assertEquals("photo-abcdef12.png", filename)
+    }
+
+    @Test
     fun `buildPreloadedPythonDescription lists sandbox filenames without eval_python attachments hint`() {
         val description = buildPreloadedPythonDescription(
             listOf(
