@@ -10,7 +10,6 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import io.pebbletemplates.pebble.PebbleEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.catch
@@ -24,6 +23,7 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.withComfyDefaults
 import me.rerere.rikkahub.AppScope
+import me.rerere.rikkahub.data.ai.transformers.MessageTemplateCache
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_OCR_PROMPT
@@ -391,7 +391,7 @@ class SettingsStore(
             migrated.normalizeFontSettings()
         }
         .onEach {
-            get<PebbleEngine>().templateCache.invalidateAll()
+            get<MessageTemplateCache>().invalidateAll()
         }
         .flowOn(Dispatchers.Default)
 

@@ -1,45 +1,39 @@
 package me.rerere.rikkahub.data.ai.transformers
 
-import io.pebbletemplates.pebble.PebbleEngine
-import io.pebbletemplates.pebble.loader.Loader
+import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
-import me.rerere.ai.util.MessageTemplateContext
-import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.utils.toLocalDate
-import me.rerere.rikkahub.utils.toLocalTime
-import java.io.Reader
-import java.io.StringReader
-import java.io.StringWriter
-import java.time.Instant
+
+interface MessageTemplateRenderer {
+    fun render(templateId: String, context: Map<String, Any?>): String
+}
+
+interface MessageTemplateContextFactory {
+    fun build(message: String, role: MessageRole): Map<String, Any?>
+}
 
 class TemplateTransformer(
-    private val engine: PebbleEngine,
-    private val settingsStore: SettingsStore
+    private val renderer: MessageTemplateRenderer,
+    private val contextFactory: MessageTemplateContextFactory,
 ) : InputMessageTransformer {
     override suspend fun transform(
         ctx: TransformerContext,
         messages: List<UIMessage>,
     ): List<UIMessage> {
-        val template = engine.getTemplate(ctx.assistant.id.toString())
+        val templateId = ctx.assistant.id.toString()
         return messages.map { message ->
             message.copy(
                 parts = message.parts.map { part ->
                     when (part) {
                         is UIMessagePart.Text -> {
-                            val result = StringWriter()
-                            val now = Instant.now()
-                            template.evaluate(
-                                result,
-                                MessageTemplateContext.build(
-                                    message = part.text,
-                                    role = message.role,
-                                    time = now.toLocalTime(),
-                                    date = now.toLocalDate(),
-                                ).asMap()
-                            )
                             part.copy(
-                                text = result.toString()
+                                text = renderer.render(
+                                    templateId = templateId,
+                                    context = contextFactory.build(
+                                        message = part.text,
+                                        role = message.role,
+                                    )
+                                )
                             )
                         }
 
@@ -48,35 +42,5 @@ class TemplateTransformer(
                 }
             )
         }
-    }
-}
-
-class AssistantTemplateLoader(private val settingsStore: SettingsStore) : Loader<String> {
-    override fun getReader(cacheKey: String?): Reader? {
-        val content = settingsStore.settingsFlow.value.assistants
-            .find { it.id.toString() == cacheKey }?.messageTemplate
-            ?: return null
-        return StringReader(content)
-    }
-
-    override fun setCharset(charset: String?) {}
-
-    override fun setPrefix(prefix: String?) {}
-
-    override fun setSuffix(suffix: String?) {}
-
-    override fun resolveRelativePath(
-        relativePath: String?,
-        anchorPath: String?
-    ): String? {
-        return relativePath
-    }
-
-    override fun createCacheKey(templateName: String?): String? {
-        return templateName
-    }
-
-    override fun resourceExists(templateName: String?): Boolean {
-        return settingsStore.settingsFlow.value.assistants.any { it.id.toString() == templateName }
     }
 }

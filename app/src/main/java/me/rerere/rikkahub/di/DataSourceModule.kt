@@ -22,10 +22,15 @@ import me.rerere.common.platform.android.AndroidPlatformMediaEncoder
 import me.rerere.common.platform.android.OkHttpPlatformHttpClient
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.data.ai.AIRequestInterceptor
-import me.rerere.rikkahub.data.ai.transformers.AssistantTemplateLoader
 import me.rerere.rikkahub.data.ai.GenerationHandler
 import me.rerere.rikkahub.data.ai.models.ModelCatalogService
 import me.rerere.rikkahub.data.ai.models.ModelMetadataResolver
+import me.rerere.rikkahub.data.ai.transformers.AndroidMessageTemplateContextFactory
+import me.rerere.rikkahub.data.ai.transformers.AssistantTemplateLoader
+import me.rerere.rikkahub.data.ai.transformers.MessageTemplateCache
+import me.rerere.rikkahub.data.ai.transformers.MessageTemplateContextFactory
+import me.rerere.rikkahub.data.ai.transformers.MessageTemplateRenderer
+import me.rerere.rikkahub.data.ai.transformers.PebbleMessageTemplateRenderer
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
 import me.rerere.rikkahub.data.api.SponsorAPI
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -113,7 +118,17 @@ val dataSourceModule = module {
             .build()
     }
 
-    single { TemplateTransformer(engine = get(), settingsStore = get()) }
+    single {
+        PebbleMessageTemplateRenderer(engine = get())
+    }
+
+    single<MessageTemplateRenderer> { get<PebbleMessageTemplateRenderer>() }
+
+    single<MessageTemplateCache> { get<PebbleMessageTemplateRenderer>() }
+
+    single<MessageTemplateContextFactory> { AndroidMessageTemplateContextFactory() }
+
+    single { TemplateTransformer(renderer = get(), contextFactory = get()) }
 
     single {
         get<AppDatabase>().conversationDao()
