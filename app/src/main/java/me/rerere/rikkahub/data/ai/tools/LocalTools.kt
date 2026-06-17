@@ -154,6 +154,32 @@ internal fun detectSandboxPseudoImportFilename(
     return path.takeUnless { pathExists("/$it") }
 }
 
+internal fun scheduledMessageToolJson(result: ScheduledLocalToolMessage): JsonObject {
+    return buildJsonObject {
+        put("status", result.status)
+        result.scheduledAt?.let { put("scheduled_at", it) }
+        result.workName?.let { put("work_name", it) }
+    }
+}
+
+internal fun notificationsToolJson(notifications: List<LocalToolNotificationSnapshot>): JsonObject {
+    return buildJsonObject {
+        put(
+            "notifications",
+            JsonArray(
+                notifications.map { notification ->
+                    buildJsonObject {
+                        put("package", notification.packageName)
+                        put("title", notification.title)
+                        put("content", notification.content)
+                        put("time", notification.postTime)
+                    }
+                }
+            )
+        )
+    }
+}
+
 private fun sanitizeSandboxBaseName(rawName: String): String {
     val cleaned = rawName
         .replace(Regex("[^A-Za-z0-9._-]+"), "-")
@@ -168,6 +194,7 @@ class LocalTools(
     private val ttsManager: TTSManager,
     private val providerManager: ProviderManager,
     genMediaRepository: GenMediaRepository,
+    private val notificationPlatform: LocalToolNotificationPlatform = AndroidLocalToolNotificationPlatform(context),
     private val generatedToolImageSaver: GeneratedToolImageSaver = AndroidGeneratedToolImageSaver(
         context = context,
         genMediaRepository = genMediaRepository,
@@ -768,46 +795,16 @@ class LocalTools(
                 execute = {
                     val title = it.jsonObject["title"]?.jsonPrimitive?.contentOrNull ?: "Notification"
                     val content = it.jsonObject["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                    
-                    val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-                    val channelId = "assistant_notification"
-                    val channel = android.app.NotificationChannel(
-                        channelId,
-                        "Assistant Notification",
-                        android.app.NotificationManager.IMPORTANCE_DEFAULT
-                    )
-                    notificationManager.createNotificationChannel(channel)
-                    
-                    // Create pending intent to open the conversation when notification is clicked
-                    val intent = android.content.Intent(context, me.rerere.rikkahub.RouteActivity::class.java).apply {
-                        flags = android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP
-                        putExtra("conversationId", conversationId.toString())
-                    }
-                    val pendingIntent = android.app.PendingIntent.getActivity(
-                        context,
-                        conversationId.hashCode(),
-                        intent,
-                        android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
-                    )
 
-                    val notification = androidx.core.app.NotificationCompat.Builder(context, channelId)
-                        .setSmallIcon(me.rerere.rikkahub.R.drawable.ic_notification)
-                        .setContentTitle(title)
-                        .setContentText(content)
-                        .setPriority(androidx.core.app.NotificationCompat.PRIORITY_DEFAULT)
-                        .setContentIntent(pendingIntent)
-                        .setAutoCancel(true)
-                        .build()
-                        
-                    if (androidx.core.app.ActivityCompat.checkSelfPermission(
-                            context,
-                            android.Manifest.permission.POST_NOTIFICATIONS
-                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                    ) {
-                        notificationManager.notify(System.currentTimeMillis().toInt(), notification)
-                        buildJsonObject { put("status", "success") }
-                    } else {
-                        buildJsonObject { put("status", "error: permission denied") }
+                    buildJsonObject {
+                        put(
+                            "status",
+                            notificationPlatform.sendNotification(
+                                conversationId = conversationId,
+                                title = title,
+                                content = content,
+                            )
+                        )
                     }
                 }
             ),
@@ -833,53 +830,15 @@ class LocalTools(
                     val reason = it.jsonObject["reason"]?.jsonPrimitive?.contentOrNull ?: ""
                     val delayMinutes = (it.jsonObject["delay_minutes"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 1L)
                         .coerceAtLeast(0L)
-                    
-                    try {
-                        val createdAt = System.currentTimeMillis()
-                        val scheduledAt = createdAt + (delayMinutes * 60 * 1000)
-                        val uniqueWorkName = me.rerere.rikkahub.service.ScheduledMessageWorkSpec.buildUniqueWorkName(
-                            assistantId = assistantId.toString(),
-                            conversationId = conversationId.toString(),
-                            reason = reason,
-                            scheduledAtMillis = scheduledAt
-                        )
-                        val workRequest = androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.ScheduledMessageWorker>()
-                            .setInitialDelay(delayMinutes, java.util.concurrent.TimeUnit.MINUTES)
-                            .setBackoffCriteria(
-                                androidx.work.BackoffPolicy.EXPONENTIAL,
-                                30,
-                                java.util.concurrent.TimeUnit.SECONDS
-                            )
-                            .setConstraints(
-                                androidx.work.Constraints.Builder()
-                                    .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
-                                    .build()
-                            )
-                            .setInputData(
-                                me.rerere.rikkahub.service.ScheduledMessageWorkSpec.buildInputData(
-                                    assistantId = assistantId.toString(),
-                                    conversationId = conversationId.toString(),
-                                    reason = reason,
-                                    createdAtMillis = createdAt,
-                                    scheduledAtMillis = scheduledAt
-                                )
-                            )
-                            .build()
 
-                        androidx.work.WorkManager.getInstance(context).enqueueUniqueWork(
-                            uniqueWorkName,
-                            androidx.work.ExistingWorkPolicy.KEEP,
-                            workRequest
+                    scheduledMessageToolJson(
+                        notificationPlatform.scheduleMessage(
+                            assistantId = assistantId,
+                            conversationId = conversationId,
+                            reason = reason,
+                            delayMinutes = delayMinutes,
                         )
-                        
-                        buildJsonObject { 
-                            put("status", "success")
-                            put("scheduled_at", java.time.Instant.ofEpochMilli(scheduledAt).toString())
-                            put("work_name", uniqueWorkName)
-                        }
-                    } catch (e: Exception) {
-                        buildJsonObject { put("status", "error: ${e.message}") }
-                    }
+                    )
                 }
             ),
             Tool(
@@ -897,18 +856,7 @@ class LocalTools(
                 },
                 execute = {
                     val limit = it.jsonObject["limit"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 10
-                    val notifications = me.rerere.rikkahub.service.AssistantNotificationListener.notifications.value.take(limit)
-                    
-                    buildJsonObject {
-                        put("notifications", kotlinx.serialization.json.JsonArray(notifications.map { notification ->
-                            buildJsonObject {
-                                put("package", notification.packageName)
-                                put("title", notification.title)
-                                put("content", notification.content)
-                                put("time", notification.postTime)
-                            }
-                        }))
-                    }
+                    notificationsToolJson(notificationPlatform.getRecentNotifications(limit))
                 }
             )
         )
