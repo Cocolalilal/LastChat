@@ -25,7 +25,10 @@ data class PlatformHttpProxy(
 )
 
 sealed class PlatformServerEvent {
-    data object Open : PlatformServerEvent()
+    data class Open(
+        val statusCode: Int? = null,
+        val headers: Map<String, List<String>> = emptyMap()
+    ) : PlatformServerEvent()
 
     data class Event(
         val id: String? = null,

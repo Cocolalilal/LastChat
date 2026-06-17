@@ -67,6 +67,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -112,6 +113,7 @@ private const val TIMELINE_PANEL_ANIMATION_MS = 220
 private const val TIMELINE_ENTRY_ANIMATION_MS = 180
 private const val TIMELINE_MAX_HEIGHT_DP = 360
 private const val TIMELINE_GESTURE_IDLE_TIMEOUT_MS = 120L
+private const val TIMELINE_FOLLOW_BOTTOM_KEY = "timeline_follow_bottom"
 
 internal enum class TimelineScrollHandoffMode {
     LockedToPanel,
@@ -263,6 +265,7 @@ internal fun ActivityTimelinePanel(
     val scope = rememberCoroutineScope()
     val haptics = rememberPremiumHaptics()
     var autoFollowCurrentEntry by remember { mutableStateOf(false) }
+    val bottomFollowRequester = remember { BringIntoViewRequester() }
     var handoffState by remember(scrollHandoffMode) { mutableStateOf(TimelineScrollHandoffState()) }
     var gestureEndJob by remember { mutableStateOf<Job?>(null) }
     val timelineScrollLock = remember(scrollHandoffMode, listState) {
@@ -406,8 +409,14 @@ internal fun ActivityTimelinePanel(
     var deleteTarget by remember { mutableStateOf<MemoryDeleteTarget?>(null) }
     var deletedMemoryIds by remember { mutableStateOf(setOf<Int>()) }
     val entryIds = remember(entries) { entries.map { it.id } }
-    val currentEntryId = remember(entries) {
-        findCurrentEntryIndex(entries)?.let { entries[it].id }
+    val currentEntryIndex = remember(entries) {
+        findCurrentEntryIndex(entries)
+    }
+    val currentEntryId = remember(entries, currentEntryIndex) {
+        currentEntryIndex?.let { entries[it].id }
+    }
+    val currentEntryFollowSignature = remember(entries, currentEntryIndex) {
+        currentEntryIndex?.let { buildEntryFollowSignature(entries[it]) }.orEmpty()
     }
 
     LaunchedEffect(entryIds) {
@@ -430,6 +439,27 @@ internal fun ActivityTimelinePanel(
         val scrollIndex = initialFocus.scrollIndex
         if (scrollIndex != null) {
             listState.scrollToItem(scrollIndex)
+        }
+    }
+
+    LaunchedEffect(listState, currentEntryId) {
+        snapshotFlow { !listState.canScrollForward }
+            .collect { isAtBottom ->
+                if (isAtBottom && currentEntryId != null) {
+                    autoFollowCurrentEntry = true
+                }
+            }
+    }
+
+    LaunchedEffect(autoFollowCurrentEntry, currentEntryId, currentEntryFollowSignature) {
+        val followIndex = currentEntryIndex ?: return@LaunchedEffect
+        if (!autoFollowCurrentEntry) return@LaunchedEffect
+
+        expandedEntryIds = expandedEntryIds + entries[followIndex].id
+        if (followIndex == entries.lastIndex) {
+            bottomFollowRequester.bringIntoView()
+        } else {
+            listState.scrollToItem(followIndex)
         }
     }
 
@@ -527,6 +557,14 @@ internal fun ActivityTimelinePanel(
                             followLiveContent = autoFollowCurrentEntry &&
                                 currentEntryId != null &&
                                 currentEntryId == entry.id
+                        )
+                    }
+                    item(key = TIMELINE_FOLLOW_BOTTOM_KEY) {
+                        Spacer(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .bringIntoViewRequester(bottomFollowRequester)
                         )
                     }
                 }

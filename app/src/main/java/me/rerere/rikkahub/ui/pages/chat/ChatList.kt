@@ -41,6 +41,8 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
@@ -159,6 +161,33 @@ internal fun chatListTurnKey(
     }
 }
 
+private fun buildChatStreamingFollowSignature(
+    conversation: Conversation,
+    loading: Boolean
+): String {
+    if (!loading) return "idle:${conversation.messageNodes.size}"
+    val latestAssistant = conversation.currentMessages
+        .asReversed()
+        .firstOrNull { it.role == me.rerere.ai.core.MessageRole.ASSISTANT }
+    val textLength = latestAssistant
+        ?.parts
+        ?.filterIsInstance<UIMessagePart.Text>()
+        ?.sumOf { it.text.length }
+        ?: 0
+    val activityLength = latestAssistant
+        ?.parts
+        ?.sumOf { part ->
+            when (part) {
+                is UIMessagePart.Text -> part.text.length
+                is UIMessagePart.Reasoning -> part.reasoning.length
+                is UIMessagePart.ToolCall -> part.arguments.length
+                else -> 0
+            }
+        }
+        ?: 0
+    return "${conversation.messageNodes.size}:$textLength:$activityLength"
+}
+
 private fun BidiDirection.toLayoutDirection(): LayoutDirection {
     return if (this == BidiDirection.Rtl) LayoutDirection.Rtl else LayoutDirection.Ltr
 }
@@ -263,6 +292,7 @@ private fun SharedTransitionScope.ChatListNormal(
     val conversationUpdated by rememberUpdatedState(conversation)
     val context = LocalContext.current
     val navController = LocalNavController.current
+    val bottomFollowRequester = remember { BringIntoViewRequester() }
 
     val currentConversationState = rememberUpdatedState(conversation)
     val onCitationClick = remember {
@@ -373,13 +403,22 @@ private fun SharedTransitionScope.ChatListNormal(
 
         // Auto-scroll to bottom during generation
         LaunchedEffect(state) {
-            snapshotFlow { state.layoutInfo.visibleItemsInfo }.collect { visibleItemsInfo ->
+            snapshotFlow { state.layoutInfo.visibleItemsInfo }.collect {
                 if (!state.isScrollInProgress && loadingState && !userScrolledUp) {
-                    // Scroll to the very last item in the list (ScrollBottomKey spacer)
-                    val targetIndex = state.layoutInfo.totalItemsCount - 1
-                    if (targetIndex >= 0) {
-                        state.animateScrollToItem(targetIndex)
-                    }
+                    bottomFollowRequester.bringIntoView()
+                }
+            }
+        }
+
+        LaunchedEffect(state, bottomFollowRequester) {
+            snapshotFlow {
+                buildChatStreamingFollowSignature(
+                    conversation = conversationUpdated,
+                    loading = loadingState
+                )
+            }.collect {
+                if (loadingState && !userScrolledUp) {
+                    bottomFollowRequester.bringIntoView()
                 }
             }
         }
@@ -530,10 +569,7 @@ private fun SharedTransitionScope.ChatListNormal(
                                     {
                                         if (!userScrolledUp) {
                                             scope.launch {
-                                                val targetIndex = state.layoutInfo.totalItemsCount - 1
-                                                if (targetIndex >= 0) {
-                                                    state.animateScrollToItem(targetIndex)
-                                                }
+                                                bottomFollowRequester.bringIntoView()
                                             }
                                         }
                                     }
@@ -573,6 +609,7 @@ private fun SharedTransitionScope.ChatListNormal(
                         Modifier
                             .fillMaxWidth()
                             .height(5.dp)
+                            .bringIntoViewRequester(bottomFollowRequester)
                     )
                 }
             }

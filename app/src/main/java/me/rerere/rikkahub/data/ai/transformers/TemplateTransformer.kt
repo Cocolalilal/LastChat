@@ -4,6 +4,7 @@ import io.pebbletemplates.pebble.PebbleEngine
 import io.pebbletemplates.pebble.loader.Loader
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.util.MessageTemplateContext
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.utils.toLocalDate
 import me.rerere.rikkahub.utils.toLocalTime
@@ -27,13 +28,15 @@ class TemplateTransformer(
                     when (part) {
                         is UIMessagePart.Text -> {
                             val result = StringWriter()
+                            val now = Instant.now()
                             template.evaluate(
-                                result, mapOf(
-                                    "message" to part.text,
-                                    "role" to message.role.name.lowercase(),
-                                    "time" to Instant.now().toLocalTime(),
-                                    "date" to Instant.now().toLocalDate(),
-                                )
+                                result,
+                                MessageTemplateContext.build(
+                                    message = part.text,
+                                    role = message.role,
+                                    time = now.toLocalTime(),
+                                    date = now.toLocalDate(),
+                                ).asMap()
                             )
                             part.copy(
                                 text = result.toString()

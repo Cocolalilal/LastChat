@@ -37,7 +37,10 @@ class OkHttpPlatformHttpClient(
                     event = event.type,
                     data = event.data
                 )
-                SseEvent.Open -> PlatformServerEvent.Open
+                is SseEvent.Open -> PlatformServerEvent.Open(
+                    statusCode = event.statusCode,
+                    headers = event.headers
+                )
                 SseEvent.Closed -> PlatformServerEvent.Closed
                 is SseEvent.Failure -> PlatformServerEvent.Failure(
                     message = event.throwable?.message,

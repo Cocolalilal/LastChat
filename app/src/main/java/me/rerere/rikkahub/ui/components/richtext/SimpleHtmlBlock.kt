@@ -41,15 +41,13 @@ import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.core.graphics.toColorInt
+import me.rerere.common.html.SimpleHtmlElement
+import me.rerere.common.html.SimpleHtmlNode
+import me.rerere.common.html.SimpleHtmlText
 import me.rerere.rikkahub.ui.components.table.DataTable
 import me.rerere.rikkahub.utils.BidiDirection
 import me.rerere.rikkahub.utils.appLocale
 import me.rerere.rikkahub.utils.resolveBidiDirection
-import org.jsoup.Jsoup
-import org.jsoup.nodes.Element
-import org.jsoup.nodes.Node
-import org.jsoup.nodes.TextNode
 
 private const val LTR_ISOLATE = '\u2066'
 private const val POP_DIRECTIONAL_ISOLATE = '\u2069'
@@ -75,18 +73,17 @@ fun SimpleHtmlBlock(
     html: String,
     modifier: Modifier = Modifier
 ) {
-    val document = remember(html) {
-        runCatching { Jsoup.parse(html) }.getOrElse {
-            Jsoup.parse("<p>Error parsing HTML: ${it.message}</p>")
-        }
+    val htmlParser = LocalSimpleHtmlParser.current
+    val document = remember(html, htmlParser) {
+        htmlParser.parse(html)
     }
 
     val uriHandler = LocalUriHandler.current
-    val blockDirection = rememberElementDirection(document.body().text())
+    val blockDirection = rememberElementDirection(document.body.text)
 
     CompositionLocalProvider(LocalLayoutDirection provides blockDirection.toLayoutDirection()) {
         Column(modifier = modifier) {
-            document.body().childNodes().forEach { node ->
+            document.body.children.forEach { node ->
                 RenderNode(
                     node = node,
                     onLinkClick = { url ->
@@ -104,16 +101,16 @@ fun SimpleHtmlBlock(
 
 @Composable
 private fun RenderNode(
-    node: Node,
+    node: SimpleHtmlNode,
     onLinkClick: (String) -> Unit
 ) {
     when (node) {
-        is TextNode -> {
-            if (node.text().isNotBlank()) {
-                val direction = rememberElementDirection(node.text())
+        is SimpleHtmlText -> {
+            if (node.text.isNotBlank()) {
+                val direction = rememberElementDirection(node.text)
                 CompositionLocalProvider(LocalLayoutDirection provides direction.toLayoutDirection()) {
                     Text(
-                        text = node.text(),
+                        text = node.text,
                         style = MaterialTheme.typography.bodyMedium.copy(
                             color = LocalContentColor.current,
                             textDirection = direction.toComposeTextDirection()
@@ -123,8 +120,8 @@ private fun RenderNode(
             }
         }
 
-        is Element -> {
-            when (node.tagName().lowercase()) {
+        is SimpleHtmlElement -> {
+            when (node.tagName) {
                 "p" -> {
                     val annotatedString = buildAnnotatedStringFromElement(node, onLinkClick)
                     if (annotatedString.text.isNotBlank()) {
@@ -148,7 +145,7 @@ private fun RenderNode(
                 }
 
                 "h1", "h2", "h3", "h4", "h5", "h6" -> {
-                    val headingLevel = node.tagName().substring(1).toIntOrNull() ?: 1
+                    val headingLevel = node.tagName.substring(1).toIntOrNull() ?: 1
                     val textStyle = when (headingLevel) {
                         1 -> MaterialTheme.typography.headlineLarge
                         2 -> MaterialTheme.typography.headlineMedium
@@ -180,7 +177,7 @@ private fun RenderNode(
                 }
 
                 "ul", "ol" -> {
-                    RenderList(node, node.tagName() == "ol", onLinkClick)
+                    RenderList(node, node.tagName == "ol", onLinkClick)
                 }
 
                 "details" -> {
@@ -205,7 +202,7 @@ private fun RenderNode(
 
                 "div" -> {
                     Column(modifier = Modifier.fillMaxWidth()) {
-                        node.childNodes().forEach { childNode ->
+                        node.children.forEach { childNode ->
                             RenderNode(childNode, onLinkClick)
                         }
                     }
@@ -239,13 +236,13 @@ private fun RenderNode(
 
 @Composable
 private fun RenderList(
-    listElement: Element,
+    listElement: SimpleHtmlElement,
     isOrdered: Boolean,
     onLinkClick: (String) -> Unit
 ) {
-    val listDirection = rememberElementDirection(listElement.text())
+    val listDirection = rememberElementDirection(listElement.text)
     val listItems = remember(listElement) {
-        listElement.children().filter { it.tagName().lowercase() == "li" }
+        listElement.childElements().filter { it.tagName == "li" }
     }
     val maxMarkerLength = if (isOrdered) {
         listItems.size.toString().length + 1
@@ -256,7 +253,7 @@ private fun RenderList(
     CompositionLocalProvider(LocalLayoutDirection provides listDirection.toLayoutDirection()) {
         Column(modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)) {
             listItems.forEachIndexed { index, item ->
-                val itemDirection = rememberElementDirection(item.text())
+                val itemDirection = rememberElementDirection(item.text)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -295,16 +292,16 @@ private fun RenderList(
 
 @Composable
 private fun RenderDetails(
-    detailsElement: Element,
+    detailsElement: SimpleHtmlElement,
     onLinkClick: (String) -> Unit
 ) {
     val isOpenByDefault = detailsElement.hasAttr("open")
     var isExpanded by remember { mutableStateOf(isOpenByDefault) }
 
-    val summaryElement = detailsElement.children().find {
-        it.tagName().lowercase() == "summary"
+    val summaryElement = detailsElement.childElements().find {
+        it.tagName == "summary"
     }
-    val summaryText = summaryElement?.text() ?: "Details"
+    val summaryText = summaryElement?.text ?: "Details"
     val summaryDirection = rememberElementDirection(summaryText)
 
     Column(modifier = Modifier.padding(vertical = 4.dp)) {
@@ -358,8 +355,8 @@ private fun RenderDetails(
                         .fillMaxWidth()
                         .padding(start = 16.dp, top = 4.dp)
                 ) {
-                    detailsElement.children().forEach { child ->
-                        if (child.tagName().lowercase() != "summary") {
+                    detailsElement.childElements().forEach { child ->
+                        if (child.tagName != "summary") {
                             RenderNode(child, onLinkClick)
                         }
                     }
@@ -371,7 +368,7 @@ private fun RenderDetails(
 
 @Composable
 private fun RenderImage(
-    imgElement: Element
+    imgElement: SimpleHtmlElement
 ) {
     val src = imgElement.attr("src")
     val alt = imgElement.attr("alt")
@@ -396,7 +393,7 @@ private fun RenderImage(
 }
 
 private fun buildAnnotatedStringFromElement(
-    element: Element,
+    element: SimpleHtmlElement,
     onLinkClick: (String) -> Unit
 ): AnnotatedString {
     return buildAnnotatedString {
@@ -405,18 +402,18 @@ private fun buildAnnotatedStringFromElement(
 }
 
 private fun processElementNodes(
-    element: Element,
+    element: SimpleHtmlElement,
     builder: AnnotatedString.Builder,
     onLinkClick: (String) -> Unit
 ) {
-    element.childNodes().forEach { node ->
+    element.children.forEach { node ->
         when (node) {
-            is TextNode -> {
-                builder.append(node.text())
+            is SimpleHtmlText -> {
+                builder.append(node.text)
             }
 
-            is Element -> {
-                when (node.tagName().lowercase()) {
+            is SimpleHtmlElement -> {
+                when (node.tagName) {
                     "b", "strong" -> {
                         val start = builder.length
                         processElementNodes(node, builder, onLinkClick)
@@ -569,13 +566,13 @@ private fun parseColor(colorString: String): Color? {
                 // Hex color
                 val hex = colorString.removePrefix("#")
                 when (hex.length) {
-                    6 -> Color("#$hex".toColorInt())
+                    6 -> hex.toLongOrNull(16)?.let { rgb -> Color(0xFF000000L or rgb) }
                     3 -> {
                         // Convert 3-digit hex to 6-digit
                         val r = hex[0].toString().repeat(2)
                         val g = hex[1].toString().repeat(2)
                         val b = hex[2].toString().repeat(2)
-                        Color("#$r$g$b".toColorInt())
+                        parseColor("#$r$g$b")
                     }
 
                     else -> null
@@ -654,7 +651,7 @@ private fun parseFontWeight(weightString: String): FontWeight? {
 
 @Composable
 private fun RenderProgress(
-    progressElement: Element
+    progressElement: SimpleHtmlElement
 ) {
     val value = progressElement.attr("value").toFloatOrNull() ?: 0f
     val max = progressElement.attr("max").toFloatOrNull() ?: 100f
@@ -719,18 +716,18 @@ private fun RenderProgress(
 
 @Composable
 private fun RenderTable(
-    tableElement: Element,
+    tableElement: SimpleHtmlElement,
     onLinkClick: (String) -> Unit
 ) {
     val rows = mutableListOf<List<@Composable () -> Unit>>()
     var headers = emptyList<@Composable () -> Unit>()
-    val tableDirection = rememberElementDirection(tableElement.text())
+    val tableDirection = rememberElementDirection(tableElement.text)
 
     // Extract table headers and rows
-    tableElement.select("tr").forEach { tr ->
+    tableElement.descendantElementsByTags("tr").forEach { tr ->
         val cells = mutableListOf<@Composable () -> Unit>()
 
-        tr.select("th, td").forEach { cell ->
+        tr.descendantElementsByTags("th", "td").forEach { cell ->
             cells.add {
                 val annotatedString = buildAnnotatedStringFromElement(cell, onLinkClick)
                 if (annotatedString.text.isNotBlank()) {
@@ -750,7 +747,7 @@ private fun RenderTable(
 
         if (cells.isNotEmpty()) {
             // Check if this row contains header cells (th)
-            val isHeaderRow = tr.select("th").isNotEmpty()
+            val isHeaderRow = tr.descendantElementsByTags("th").isNotEmpty()
             if (isHeaderRow && headers.isEmpty()) {
                 headers = cells
             } else {

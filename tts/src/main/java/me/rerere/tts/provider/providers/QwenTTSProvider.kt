@@ -50,7 +50,7 @@ class QwenTTSProvider(
             )
         ).collect { event ->
             when (event) {
-                PlatformServerEvent.Open -> Unit
+                is PlatformServerEvent.Open -> Unit
                 PlatformServerEvent.Closed -> Unit
                 is PlatformServerEvent.Event -> {
                     val result = parseSseData(event.data)

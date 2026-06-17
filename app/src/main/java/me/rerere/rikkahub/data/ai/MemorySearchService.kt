@@ -12,6 +12,7 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.util.MemorySearchTimeRange
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
@@ -22,11 +23,6 @@ import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
-import java.time.Instant
-import java.time.DayOfWeek
-import java.time.ZoneId
-import java.time.ZonedDateTime
-import java.time.temporal.ChronoUnit
 import kotlinx.datetime.toInstant
 import kotlin.math.min
 import kotlin.uuid.Uuid
@@ -34,9 +30,6 @@ import kotlin.uuid.Uuid
 private const val MEMORY_SEARCH_MAX_LIMIT = 8
 private const val MEMORY_SEARCH_CHAT_SUMMARY_LIMIT = 2
 private const val MEMORY_SEARCH_MAX_QUERIES = 8
-private const val MEMORY_SEARCH_EARLY_MORNING_CUTOFF_HOUR = 7
-private const val MEMORY_SEARCH_WEEK_EDGE_GRACE_HOURS = 12L
-private const val MEMORY_SEARCH_MONTH_EDGE_GRACE_DAYS = 2L
 
 internal data class ConversationRecallSpan(
     val conversationId: Uuid,
@@ -48,16 +41,6 @@ internal data class ConversationRecallSpan(
     val matchedText: String? = null,
 )
 
-internal data class MemorySearchTimeRange(
-    val startMillis: Long,
-    val endMillis: Long,
-    val label: String,
-) {
-    fun contains(timestampMillis: Long): Boolean {
-        return timestampMillis in startMillis until endMillis
-    }
-}
-
 internal data class MemoryRecallSearchQuery(
     val text: String,
     val source: String,
@@ -67,23 +50,10 @@ internal fun fuzzyMemoryAgeLabel(
     timestampMillis: Long,
     nowMillis: Long = System.currentTimeMillis(),
 ): String {
-    if (timestampMillis <= 0L) return "some time ago"
-    val now = Instant.ofEpochMilli(nowMillis).atZone(ZoneId.systemDefault())
-    val then = Instant.ofEpochMilli(timestampMillis.coerceAtMost(nowMillis)).atZone(ZoneId.systemDefault())
-    val days = ChronoUnit.DAYS.between(then.toLocalDate(), now.toLocalDate())
-    val months = ChronoUnit.MONTHS.between(then.toLocalDate().withDayOfMonth(1), now.toLocalDate().withDayOfMonth(1))
-
-    return when {
-        days <= 0L -> "earlier today"
-        days == 1L -> "yesterday"
-        days <= 3L -> "a few days ago"
-        days <= 10L -> "about a week ago"
-        days <= 21L -> "a couple weeks ago"
-        months <= 1L -> "about a month ago"
-        months <= 3L -> "a couple months ago"
-        months <= 11L -> "months ago"
-        else -> "a long time ago"
-    }
+    return me.rerere.ai.util.fuzzyMemoryAgeLabel(
+        timestampMillis = timestampMillis,
+        nowMillis = nowMillis,
+    )
 }
 
 internal fun findConversationRecallSpans(
@@ -293,105 +263,11 @@ internal fun parseMemorySearchTimeRange(
     raw: String?,
     nowMillis: Long = System.currentTimeMillis(),
 ): MemorySearchTimeRange? {
-    val text = raw?.lowercase()?.trim().orEmpty()
-    if (text.isBlank()) return null
-    val zone = ZoneId.systemDefault()
-    val now = Instant.ofEpochMilli(nowMillis).atZone(zone)
-
-    fun range(start: ZonedDateTime, end: ZonedDateTime, label: String): MemorySearchTimeRange {
-        return MemorySearchTimeRange(
-            startMillis = start.toInstant().toEpochMilli(),
-            endMillis = end.toInstant().toEpochMilli(),
-            label = label,
-        )
-    }
-
-    fun startOfDay(value: ZonedDateTime) = value.toLocalDate().atStartOfDay(zone)
-    fun startOfMonth(value: ZonedDateTime) = value.withDayOfMonth(1).toLocalDate().atStartOfDay(zone)
-    fun morningAfter(value: ZonedDateTime) = startOfDay(value).plusDays(1).plusHours(MEMORY_SEARCH_EARLY_MORNING_CUTOFF_HOUR.toLong())
-    fun startOfWeek(value: ZonedDateTime): ZonedDateTime {
-        val delta = (value.dayOfWeek.value - DayOfWeek.MONDAY.value).floorMod(7)
-        return startOfDay(value.minusDays(delta.toLong()))
-    }
-
-    Regex("""(?:last|past|previous)\s+(\d+)\s+hours?""").find(text)?.groupValues?.getOrNull(1)?.toLongOrNull()?.let { hours ->
-        return range(now.minusHours(hours), now, "last $hours hours")
-    }
-    Regex("""(?:last|past|previous)\s+(\d+)\s+days?""").find(text)?.groupValues?.getOrNull(1)?.toLongOrNull()?.let { days ->
-        return range(startOfDay(now.minusDays(days)), now, "last $days days")
-    }
-    Regex("""(?:last|past|previous)\s+(\d+)\s+weeks?""").find(text)?.groupValues?.getOrNull(1)?.toLongOrNull()?.let { weeks ->
-        val start = startOfWeek(now).minusWeeks(weeks)
-        return range(start.minusHours(MEMORY_SEARCH_WEEK_EDGE_GRACE_HOURS), now, "last $weeks weeks")
-    }
-    Regex("""(?:last|past|previous)\s+(\d+)\s+months?""").find(text)?.groupValues?.getOrNull(1)?.toLongOrNull()?.let { months ->
-        val start = startOfMonth(now).minusMonths(months)
-        return range(start.minusDays(MEMORY_SEARCH_MONTH_EDGE_GRACE_DAYS), now, "last $months months")
-    }
-    Regex("""(\d+)\s+months?\s+ago""").find(text)?.groupValues?.getOrNull(1)?.toLongOrNull()?.let { months ->
-        val start = startOfMonth(now.minusMonths(months))
-        return range(
-            start.minusDays(MEMORY_SEARCH_MONTH_EDGE_GRACE_DAYS),
-            start.plusMonths(1).plusDays(MEMORY_SEARCH_MONTH_EDGE_GRACE_DAYS),
-            "$months months ago"
-        )
-    }
-    Regex("""(\d+)\s+weeks?\s+ago""").find(text)?.groupValues?.getOrNull(1)?.toLongOrNull()?.let { weeks ->
-        val start = startOfWeek(now).minusWeeks(weeks)
-        return range(
-            start.minusHours(MEMORY_SEARCH_WEEK_EDGE_GRACE_HOURS),
-            start.plusWeeks(1).plusHours(MEMORY_SEARCH_WEEK_EDGE_GRACE_HOURS),
-            "$weeks weeks ago"
-        )
-    }
-    Regex("""(\d+)\s+days?\s+ago""").find(text)?.groupValues?.getOrNull(1)?.toLongOrNull()?.let { days ->
-        val start = startOfDay(now.minusDays(days))
-        return range(start, morningAfter(now.minusDays(days)), "$days days ago")
-    }
-
-    return when {
-        "last day" in text || "past day" in text || "previous day" in text -> {
-            val start = startOfDay(now.minusDays(1))
-            val end = morningAfter(now.minusDays(1)).coerceAtMost(now)
-            range(start, end, "last day")
-        }
-        "last week" in text -> {
-            val start = startOfWeek(now).minusWeeks(1)
-            range(
-                start.minusHours(MEMORY_SEARCH_WEEK_EDGE_GRACE_HOURS),
-                start.plusWeeks(1).plusHours(MEMORY_SEARCH_WEEK_EDGE_GRACE_HOURS),
-                "last week"
-            )
-        }
-        "this week" in text -> {
-            val start = startOfWeek(now)
-            range(start.minusHours(MEMORY_SEARCH_WEEK_EDGE_GRACE_HOURS), start.plusWeeks(1), "this week")
-        }
-        "last month" in text -> {
-            val start = startOfMonth(now).minusMonths(1)
-            range(
-                start.minusDays(MEMORY_SEARCH_MONTH_EDGE_GRACE_DAYS),
-                start.plusMonths(1).plusDays(MEMORY_SEARCH_MONTH_EDGE_GRACE_DAYS),
-                "last month"
-            )
-        }
-        "this month" in text -> {
-            val start = startOfMonth(now)
-            range(start.minusDays(MEMORY_SEARCH_MONTH_EDGE_GRACE_DAYS), start.plusMonths(1), "this month")
-        }
-        "yesterday" in text -> {
-            val start = startOfDay(now.minusDays(1))
-            range(start, morningAfter(now.minusDays(1)).coerceAtMost(now), "yesterday")
-        }
-        "today" in text || "earlier today" in text -> {
-            val start = startOfDay(now)
-            range(start, morningAfter(now), "today")
-        }
-        else -> null
-    }
+    return me.rerere.ai.util.parseMemorySearchTimeRange(
+        raw = raw,
+        nowMillis = nowMillis,
+    )
 }
-
-private fun Int.floorMod(other: Int): Int = Math.floorMod(this, other)
 
 private data class MemoryRecallQueryPlan(
     val originalTokens: List<String>,

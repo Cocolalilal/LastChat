@@ -32,6 +32,8 @@ val iosSharedCandidatePackages = listOf(
     "me.rerere.ai.ui",
     "me.rerere.ai.util",
     "me.rerere.common.cache",
+    "me.rerere.common.calendar",
+    "me.rerere.common.html",
     "me.rerere.common.http",
     "me.rerere.highlight",
     "me.rerere.search",

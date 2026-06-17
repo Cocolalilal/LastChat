@@ -11,7 +11,10 @@ import okhttp3.sse.EventSourceListener
 import okhttp3.sse.EventSources
 
 sealed class SseEvent {
-    data object Open : SseEvent()
+    data class Open(
+        val statusCode: Int,
+        val headers: Map<String, List<String>>
+    ) : SseEvent()
 
     data class Event(
         val id: String?,
@@ -31,7 +34,7 @@ fun OkHttpClient.sseFlow(request: Request): Flow<SseEvent> {
     return callbackFlow {
         val listener = object : EventSourceListener() {
             override fun onOpen(eventSource: EventSource, response: Response) {
-                trySend(SseEvent.Open)
+                trySend(SseEvent.Open(response.code, response.headers.toMultimap()))
             }
 
             override fun onEvent(eventSource: EventSource, id: String?, type: String?, data: String) {

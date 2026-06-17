@@ -264,6 +264,37 @@ class ChatServiceTest {
     }
 
     @Test
+    fun canAutoResumeAssistantReplyAllowsVisiblePartialReply() {
+        val conversation = Conversation.ofId(
+            id = Uuid.random(),
+            messages = listOf(
+                MessageNode.of(UIMessage.user("hi")),
+                MessageNode.of(UIMessage.assistant("partial reply")),
+            ),
+        )
+
+        assertTrue(conversation.canAutoResumeAssistantReply())
+    }
+
+    @Test
+    fun canAutoResumeAssistantReplyAllowsReasoningOnlyStall() {
+        val conversation = Conversation.ofId(
+            id = Uuid.random(),
+            messages = listOf(
+                MessageNode.of(UIMessage.user("hi")),
+                MessageNode.of(
+                    UIMessage(
+                        role = MessageRole.ASSISTANT,
+                        parts = listOf(UIMessagePart.Reasoning("thinking hard")),
+                    )
+                ),
+            ),
+        )
+
+        assertTrue(conversation.canAutoResumeAssistantReply())
+    }
+
+    @Test
     fun mergeLiveMessagesIfIncomingIsStaleKeepsGeneratedAssistantReply() {
         val conversationId = Uuid.parse("00000000-0000-0000-0000-000000000501")
         val userMessage = UIMessage.user("hi").copy(
@@ -473,41 +504,4 @@ class ChatServiceTest {
         assertEquals("file:///tmp/image.png-copy", image.url)
     }
 
-    @Test
-    fun resetTrailingAssistantForResume_clearsReasoningOnlyLastMessage() {
-        val conversation = Conversation.ofId(
-            id = Uuid.random(),
-            messages = listOf(
-                MessageNode.of(UIMessage.user("hi")),
-                MessageNode.of(
-                    UIMessage(
-                        role = MessageRole.ASSISTANT,
-                        parts = listOf(UIMessagePart.Reasoning("thinking hard")),
-                    )
-                ),
-            ),
-        )
-
-        val reset = conversation.resetTrailingAssistantForResume()
-
-        assertEquals(2, reset.messageNodes.size)
-        assertTrue(reset.currentMessages.last().parts.isEmpty())
-        assertEquals("hi", reset.currentMessages.first().toContentText())
-    }
-
-    @Test
-    fun resetTrailingAssistantForResume_clearsLastMessageEvenIfItHasText() {
-        val conversation = Conversation.ofId(
-            id = Uuid.random(),
-            messages = listOf(
-                MessageNode.of(UIMessage.user("hi")),
-                MessageNode.of(UIMessage.assistant("full reply")),
-            ),
-        )
-
-        val reset = conversation.resetTrailingAssistantForResume()
-
-        assertEquals(2, reset.messageNodes.size)
-        assertTrue(reset.currentMessages.last().parts.isEmpty())
-    }
 }

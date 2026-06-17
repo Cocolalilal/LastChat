@@ -34,12 +34,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import coil3.ImageLoader
 import coil3.compose.setSingletonImageLoaderFactory
-import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
-import coil3.svg.SvgDecoder
-import coil3.disk.DiskCache
-import coil3.memory.MemoryCache
-import okio.Path.Companion.toOkioPath
 import me.rerere.rikkahub.ui.components.ui.AppToasterHost
 import me.rerere.rikkahub.ui.components.ui.rememberAppToasterState
 import kotlinx.serialization.Serializable
@@ -61,6 +56,7 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.readBooleanPreference
 import me.rerere.rikkahub.ui.hooks.readStringPreference
 import me.rerere.rikkahub.ui.hooks.rememberCustomTtsState
+import me.rerere.rikkahub.ui.image.AppImageLoaderFactory
 import me.rerere.rikkahub.ui.motion.LocalMotionPolicy
 import me.rerere.rikkahub.ui.motion.rememberSystemMotionPolicy
 import me.rerere.rikkahub.ui.motion.rootEnterTransition
@@ -118,7 +114,6 @@ import me.rerere.rikkahub.ui.activity.QuickAskContinuationData
 import me.rerere.rikkahub.ui.activity.buildQuickAskMessageParts
 import me.rerere.rikkahub.ui.activity.readQuickAskContinuationData
 import me.rerere.rikkahub.utils.navigateToChatPage
-import okhttp3.OkHttpClient
 import org.koin.android.ext.android.inject
 import me.rerere.rikkahub.utils.fileSizeToString
 import kotlin.uuid.Uuid
@@ -287,7 +282,7 @@ private fun me.rerere.rikkahub.data.datastore.ConsumedSpontaneousEventRecord.toR
 
 class RouteActivity : ComponentActivity() {
     private val highlighter by inject<Highlighter>()
-    private val okHttpClient by inject<OkHttpClient>()
+    private val imageLoaderFactory by inject<AppImageLoaderFactory>()
     private val settingsStore by inject<SettingsStore>()
     private val spontaneousMessagingStateStore by inject<SpontaneousMessagingStateStore>()
     private val chatService by inject<me.rerere.rikkahub.service.ChatService>()
@@ -344,26 +339,7 @@ class RouteActivity : ComponentActivity() {
                 this.navStack = navStack
                 RikkahubTheme {
                     val startScreen = initialChatScreen
-                    setSingletonImageLoaderFactory { context ->
-                        ImageLoader.Builder(context)
-                            .crossfade(true)
-                            .memoryCache {
-                                MemoryCache.Builder()
-                                    .maxSizePercent(context, 0.25) // Use 25% of app's memory for image cache
-                                    .build()
-                            }
-                            .diskCache {
-                                DiskCache.Builder()
-                                    .directory(context.filesDir.resolve("icon_cache").toOkioPath())
-                                    .maxSizeBytes(50 * 1024 * 1024) // 50 MB persistent disk cache for icons
-                                    .build()
-                            }
-                            .components {
-                                add(OkHttpNetworkFetcherFactory(callFactory = { okHttpClient }))
-                                add(SvgDecoder.Factory(scaleToDensity = true))
-                            }
-                            .build()
-                    }
+                    setSingletonImageLoaderFactory(imageLoaderFactory::create)
                     if (startScreen == null) {
                         Box(
                             modifier = Modifier

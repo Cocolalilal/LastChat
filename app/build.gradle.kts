@@ -416,12 +416,14 @@ dependencies {
     implementation(libs.modelcontextprotocol.kotlin.sdk)
 
     // modules
+    implementation(project(":shared"))
     implementation(project(":ai"))
     implementation(project(":document"))
     implementation(project(":highlight"))
     implementation(project(":search"))
     implementation(project(":tts"))
     implementation(project(":common"))
+    implementation(libs.jsoup)
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
     implementation(kotlin("reflect"))
 

@@ -181,7 +181,7 @@ class ClaudeProvider(
         val job = launch {
             platformHttpClient.streamEvents(request).collect { event ->
                 when (event) {
-                    PlatformServerEvent.Open -> Unit
+                    is PlatformServerEvent.Open -> Unit
                     PlatformServerEvent.Closed -> close()
                     is PlatformServerEvent.Failure -> close(parseStreamFailure(event))
                     is PlatformServerEvent.Event -> {

@@ -48,10 +48,11 @@ import org.koin.androidx.workmanager.koin.workManagerFactory
 import org.koin.core.context.startKoin
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
-import me.rerere.common.platform.android.OkHttpPlatformHttpClient
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.rikkahub.di.SEARCH_PLATFORM_HTTP_CLIENT
 import me.rerere.rikkahub.utils.acceptLanguageHeader
 import me.rerere.search.SearchService
-import okhttp3.OkHttpClient
+import org.koin.core.qualifier.named
 
 private const val TAG = "LastChatApp"
 
@@ -73,17 +74,9 @@ class LastChatApp : Application() {
             workManagerFactory()
             modules(appModule, viewModelModule, dataSourceModule, repositoryModule)
         }
-        SearchService.installPlatformHttpClient(
-            OkHttpPlatformHttpClient(
-                OkHttpClient.Builder()
-                    .retryOnConnectionFailure(true)
-                    .followRedirects(true)
-                    .followSslRedirects(true)
-                    .readTimeout(30, TimeUnit.SECONDS)
-                    .build()
-            )
-        )
-        SearchService.installBingSearchClient(AndroidBingSearchClient())
+        val searchHttpClient = get<PlatformHttpClient>(named(SEARCH_PLATFORM_HTTP_CLIENT))
+        SearchService.installPlatformHttpClient(searchHttpClient)
+        SearchService.installBingSearchClient(AndroidBingSearchClient(searchHttpClient))
         SearchService.installAcceptLanguageProvider { acceptLanguageHeader() }
         this.createNotificationChannel()
 

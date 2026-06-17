@@ -356,6 +356,10 @@ internal fun findCurrentEntryIndex(entries: List<TimelineEntry>): Int? {
         entry is TimelineEntry.Ocr && entry.isInProgress
     }
     if (ocrIndex >= 0) return ocrIndex
+    val replyIndex = entries.indexOfLast { entry ->
+        entry is TimelineEntry.Reply && entry.isInProgress
+    }
+    if (replyIndex >= 0) return replyIndex
     return null
 }
 
