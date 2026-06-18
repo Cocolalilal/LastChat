@@ -3,20 +3,20 @@ package me.rerere.tts.provider.providers.android
 import android.content.Context
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
-import android.util.Log
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import me.rerere.common.android.appTempFolder
+import me.rerere.common.platform.PlatformLog
 import me.rerere.tts.model.AudioChunk
 import me.rerere.tts.model.TTSRequest
 import me.rerere.tts.provider.TTSProvider
 import me.rerere.tts.provider.TTSProviderSetting
 import java.io.File
 import java.util.Locale
-import java.util.UUID
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlin.uuid.Uuid
 
 private const val TAG = "SystemTTSProvider"
 
@@ -46,16 +46,16 @@ class SystemTTSProvider(
                 if (langResult == TextToSpeech.LANG_MISSING_DATA ||
                     langResult == TextToSpeech.LANG_NOT_SUPPORTED
                 ) {
-                    Log.w(TAG, "generateSpeech: Language $locale not supported")
+                    PlatformLog.w(TAG, "generateSpeech: Language $locale not supported")
                 }
 
                 val voiceName = providerSetting.voiceName?.takeIf { it.isNotBlank() }
                 if (voiceName != null) {
                     val voice = ttsInstance.voices?.firstOrNull { it.name == voiceName }
                     if (voice == null) {
-                        Log.w(TAG, "generateSpeech: Voice $voiceName not found")
+                        PlatformLog.w(TAG, "generateSpeech: Voice $voiceName not found")
                     } else if (ttsInstance.setVoice(voice) != TextToSpeech.SUCCESS) {
-                        Log.w(TAG, "generateSpeech: Failed to select voice $voiceName")
+                        PlatformLog.w(TAG, "generateSpeech: Failed to select voice $voiceName")
                     }
                 }
 
@@ -67,11 +67,11 @@ class SystemTTSProvider(
                 val tempDir = context.appTempFolder
                 val audioFile = File(tempDir, "tts_${System.currentTimeMillis()}.wav")
 
-                val utteranceId = UUID.randomUUID().toString()
+                val utteranceId = Uuid.random().toString()
 
                 ttsInstance.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {
-                        Log.i(TAG, "onStart: TTS engine started!")
+                        PlatformLog.i(TAG, "onStart: TTS engine started!")
                     }
 
                     override fun onDone(utteranceId: String?) {
@@ -95,7 +95,7 @@ class SystemTTSProvider(
 
                     @Deprecated("Deprecated in Java")
                     override fun onError(utteranceId: String?) {
-                        Log.e(TAG, "onError: TTS synthesis failed!")
+                        PlatformLog.e(TAG, "onError: TTS synthesis failed!")
                         audioFile.delete()
                         if (continuation.isActive) continuation.resumeWithException(
                             Exception("TTS synthesis failed")
