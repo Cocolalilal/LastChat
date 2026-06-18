@@ -8,8 +8,6 @@ import me.rerere.common.cache.CacheEntry
 import me.rerere.common.cache.CacheStore
 import me.rerere.common.cache.cacheEntrySerializer
 import java.io.File
-import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
 
 class SingleFileCacheStore<K : Any, V : Any>(
     private val file: File,
@@ -17,29 +15,29 @@ class SingleFileCacheStore<K : Any, V : Any>(
     private val valueSerializer: KSerializer<V>,
     private val json: Json = Json { prettyPrint = false; ignoreUnknownKeys = true; allowStructuredMapKeys = true }
 ) : CacheStore<K, V> {
-    private val lock = ReentrantLock()
+    private val lock = Any()
     private val entrySerializer = cacheEntrySerializer(valueSerializer)
     private val mapEntrySerializer = MapSerializer(keySerializer, entrySerializer)
 
-    override fun loadEntry(key: K): CacheEntry<V>? = lock.withLock {
+    override fun loadEntry(key: K): CacheEntry<V>? = locked {
         val all = safeReadMap()
         all[key]
     }
 
-    override fun saveEntry(key: K, entry: CacheEntry<V>) = lock.withLock {
+    override fun saveEntry(key: K, entry: CacheEntry<V>) = locked {
         val all = safeReadMap().toMutableMap()
         all[key] = entry
         safeWriteMap(all)
     }
 
-    override fun remove(key: K) = lock.withLock {
+    override fun remove(key: K) = locked {
         val all = safeReadMap().toMutableMap()
         if (all.remove(key) != null) {
             safeWriteMap(all)
         }
     }
 
-    override fun clear() = lock.withLock {
+    override fun clear() = locked {
         if (file.exists()) {
             if (!file.delete()) {
                 safeWriteMap(emptyMap())
@@ -47,9 +45,9 @@ class SingleFileCacheStore<K : Any, V : Any>(
         }
     }
 
-    override fun loadAllEntries(): Map<K, CacheEntry<V>> = lock.withLock { safeReadMap() }
+    override fun loadAllEntries(): Map<K, CacheEntry<V>> = locked { safeReadMap() }
 
-    override fun keys(): Set<K> = lock.withLock { safeReadMap().keys }
+    override fun keys(): Set<K> = locked { safeReadMap().keys }
 
     private fun safeReadMap(): Map<K, CacheEntry<V>> {
         try {
@@ -72,4 +70,6 @@ class SingleFileCacheStore<K : Any, V : Any>(
         val text = json.encodeToString(mapEntrySerializer, map)
         atomicWrite(file, text)
     }
+
+    private inline fun <T> locked(block: () -> T): T = synchronized(lock, block)
 }

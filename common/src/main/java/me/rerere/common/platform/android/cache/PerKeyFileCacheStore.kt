@@ -9,8 +9,6 @@ import me.rerere.common.cache.KeyCodec
 import me.rerere.common.cache.cacheEntrySerializer
 import java.io.File
 import java.util.LinkedHashMap
-import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
 
 class PerKeyFileCacheStore<K : Any, V : Any>(
     private val dir: File,
@@ -18,41 +16,41 @@ class PerKeyFileCacheStore<K : Any, V : Any>(
     private val valueSerializer: KSerializer<V>,
     private val json: Json = Json { prettyPrint = false; ignoreUnknownKeys = true }
 ) : CacheStore<K, V> {
-    private val lock = ReentrantLock()
+    private val lock = Any()
     private val ext = ".json"
     private val entrySerializer = cacheEntrySerializer(valueSerializer)
 
-    override fun loadEntry(key: K): CacheEntry<V>? = lock.withLock {
+    override fun loadEntry(key: K): CacheEntry<V>? = locked {
         val f = fileFor(key)
-        if (!f.exists()) return@withLock null
-        return@withLock runCatching { json.decodeFromString(entrySerializer, f.readText()) }
+        if (!f.exists()) return@locked null
+        return@locked runCatching { json.decodeFromString(entrySerializer, f.readText()) }
             .getOrElse {
                 runCatching { json.decodeFromString(valueSerializer, f.readText()) }
                     .getOrNull()?.let { CacheEntry(value = it, expiresAt = null) }
             }
     }
 
-    override fun saveEntry(key: K, entry: CacheEntry<V>) = lock.withLock {
+    override fun saveEntry(key: K, entry: CacheEntry<V>) = locked {
         val f = fileFor(key)
         ensureParentDir(f)
         val text = json.encodeToString(entrySerializer, entry)
         atomicWrite(f, text)
     }
 
-    override fun remove(key: K) = lock.withLock {
+    override fun remove(key: K) = locked {
         val f = fileFor(key)
         if (f.exists()) {
             runCatching { f.delete() }
         }
     }
 
-    override fun clear() = lock.withLock {
-        if (!dir.exists()) return@withLock
+    override fun clear() = locked {
+        if (!dir.exists()) return@locked
         dir.listFiles { file -> file.isFile && file.name.endsWith(ext) }?.forEach { runCatching { it.delete() } }
     }
 
-    override fun loadAllEntries(): Map<K, CacheEntry<V>> = lock.withLock {
-        if (!dir.exists()) return@withLock emptyMap()
+    override fun loadAllEntries(): Map<K, CacheEntry<V>> = locked {
+        if (!dir.exists()) return@locked emptyMap()
         val result = LinkedHashMap<K, CacheEntry<V>>()
         dir.listFiles { file -> file.isFile && file.name.endsWith(ext) }?.forEach { file ->
             val base = file.name.removeSuffix(ext)
@@ -67,8 +65,8 @@ class PerKeyFileCacheStore<K : Any, V : Any>(
         result
     }
 
-    override fun keys(): Set<K> = lock.withLock {
-        if (!dir.exists()) return@withLock emptySet()
+    override fun keys(): Set<K> = locked {
+        if (!dir.exists()) return@locked emptySet()
         buildSet {
             dir.listFiles { file -> file.isFile && file.name.endsWith(ext) }?.forEach { file ->
                 val base = file.name.removeSuffix(ext)
@@ -81,4 +79,6 @@ class PerKeyFileCacheStore<K : Any, V : Any>(
         val name = keyCodec.toFileName(key) + ext
         return File(dir, name)
     }
+
+    private inline fun <T> locked(block: () -> T): T = synchronized(lock, block)
 }
