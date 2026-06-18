@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -48,9 +49,9 @@ class TtsController(
     private var isPaused = false
 
     // 队列与缓存（基于稳定 ID）
-    private val queue: java.util.concurrent.ConcurrentLinkedQueue<TtsChunk> = java.util.concurrent.ConcurrentLinkedQueue()
+    private val queue = ArrayDeque<TtsChunk>()
     private val allChunks: MutableList<TtsChunk> = mutableListOf()
-    private val cache = java.util.concurrent.ConcurrentHashMap<TtsCacheKey, kotlinx.coroutines.Deferred<TTSResponse>>()
+    private val cache = mutableMapOf<TtsCacheKey, Deferred<TTSResponse>>()
     private var lastPrefetchedIndex: Int = -1
 
     // 行为参数
@@ -225,7 +226,7 @@ class TtsController(
     /** 跳过下一段（不打断当前正在播放） */
     fun skipNext() {
         if (queue.isNotEmpty()) {
-            queue.poll()
+            queue.removeFirstOrNull()
             _totalChunks.update { queue.size }
         }
     }
@@ -272,7 +273,7 @@ class TtsController(
                         continue
                     }
 
-                    val chunk = queue.poll() ?: break
+                    val chunk = queue.removeFirstOrNull() ?: break
 
                     // 更新状态（1-based）
                     _currentChunk.update { processedCount + 1 }
@@ -375,17 +376,13 @@ class TtsController(
 
         for (i in begin until endExclusive) {
             val chunk = allChunks.getOrNull(i) ?: continue
-            cache.computeIfAbsent(TtsCacheKey(chunk.text, provider)) {
-                scope.async(Dispatchers.IO) { synthesizer.synthesize(provider, chunk) }
-            }
+            getOrCreateCachedSynthesis(chunk, provider)
         }
         lastPrefetchedIndex = endExclusive - 1
     }
 
     private suspend fun awaitOrCreate(chunk: TtsChunk, provider: TTSProviderSetting): TTSResponse {
-        val deferred = cache.computeIfAbsent(TtsCacheKey(chunk.text, provider)) {
-            scope.async(Dispatchers.IO) { synthesizer.synthesize(provider, chunk) }
-        }
+        val deferred = getOrCreateCachedSynthesis(chunk, provider)
         return try {
             deferred.await()
         } finally {
@@ -405,7 +402,7 @@ class TtsController(
                         continue
                     }
 
-                    val chunk = queue.poll() ?: break
+                    val chunk = queue.removeFirstOrNull() ?: break
 
                     _currentChunk.update { processedCount + 1 }
                     _totalChunks.update { queue.size + 1 }
@@ -500,11 +497,18 @@ class TtsController(
 
         for (i in begin until endExclusive) {
             val chunk = allChunks.getOrNull(i) ?: continue
-            cache.computeIfAbsent(TtsCacheKey(chunk.text, provider)) {
-                scope.async(Dispatchers.IO) { synthesizer.synthesize(provider, chunk) }
-            }
+            getOrCreateCachedSynthesis(chunk, provider)
         }
         lastPrefetchedIndex = endExclusive - 1
+    }
+
+    private fun getOrCreateCachedSynthesis(
+        chunk: TtsChunk,
+        provider: TTSProviderSetting,
+    ): Deferred<TTSResponse> {
+        return cache.getOrPut(TtsCacheKey(chunk.text, provider)) {
+            scope.async(Dispatchers.IO) { synthesizer.synthesize(provider, chunk) }
+        }
     }
     // endregion
 }
