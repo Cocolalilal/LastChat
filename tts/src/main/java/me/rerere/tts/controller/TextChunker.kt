@@ -1,5 +1,7 @@
 package me.rerere.tts.controller
 
+import kotlin.uuid.Uuid
+
 /**
  * Split long text into speakable chunks with basic punctuation-aware grouping.
  */
@@ -38,7 +40,7 @@ class TextChunker(
 }
 
 data class TtsChunk(
-    val id: java.util.UUID = java.util.UUID.randomUUID(),
+    val id: Uuid = Uuid.random(),
     val index: Int,
     val text: String
 )
