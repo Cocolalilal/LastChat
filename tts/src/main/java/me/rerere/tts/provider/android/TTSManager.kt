@@ -13,20 +13,20 @@ import me.rerere.tts.provider.providers.OpenAITTSProvider
 import me.rerere.tts.provider.providers.QwenTTSProvider
 import me.rerere.tts.provider.providers.android.SystemTTSProvider
 import okhttp3.OkHttpClient
-import java.util.concurrent.TimeUnit
+import kotlin.time.Duration.Companion.seconds
 
 class TTSManager(private val context: Context) {
     private val openAIProvider = OpenAITTSProvider(
         httpClient = OkHttpPlatformHttpClient(
             OkHttpClient.Builder()
-                .readTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(30.seconds)
                 .build()
         )
     )
     private val geminiProvider = GeminiTTSProvider(
         httpClient = OkHttpPlatformHttpClient(
             OkHttpClient.Builder()
-                .readTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(30.seconds)
                 .build()
         )
     )
@@ -34,21 +34,21 @@ class TTSManager(private val context: Context) {
     private val miniMaxProvider = MiniMaxTTSProvider(
         httpClient = OkHttpPlatformHttpClient(
             OkHttpClient.Builder()
-                .readTimeout(60, TimeUnit.SECONDS)
+                .readTimeout(60.seconds)
                 .build()
         )
     )
     private val elevenLabsProvider = ElevenLabsTTSProvider(
         httpClient = OkHttpPlatformHttpClient(
             OkHttpClient.Builder()
-                .readTimeout(60, TimeUnit.SECONDS)
+                .readTimeout(60.seconds)
                 .build()
         )
     )
     private val qwenProvider = QwenTTSProvider(
         httpClient = OkHttpPlatformHttpClient(
             OkHttpClient.Builder()
-                .readTimeout(120, TimeUnit.SECONDS)
+                .readTimeout(120.seconds)
                 .build()
         )
     )
