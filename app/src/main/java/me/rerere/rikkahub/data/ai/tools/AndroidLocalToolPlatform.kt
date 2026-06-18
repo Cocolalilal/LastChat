@@ -24,7 +24,9 @@ import me.rerere.rikkahub.utils.getImagesDir
 import java.time.Instant
 import java.io.File
 import java.security.MessageDigest
-import java.util.concurrent.TimeUnit
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.toJavaDuration
 import kotlin.uuid.Uuid
 
 data class SavedGeneratedToolImage(
@@ -150,11 +152,10 @@ class AndroidLocalToolNotificationPlatform(
                 scheduledAtMillis = scheduledAt,
             )
             val workRequest = androidx.work.OneTimeWorkRequestBuilder<ScheduledMessageWorker>()
-                .setInitialDelay(delayMinutes, TimeUnit.MINUTES)
+                .setInitialDelay(delayMinutes.minutes.toJavaDuration())
                 .setBackoffCriteria(
                     androidx.work.BackoffPolicy.EXPONENTIAL,
-                    30,
-                    TimeUnit.SECONDS,
+                    30.seconds.toJavaDuration(),
                 )
                 .setConstraints(
                     androidx.work.Constraints.Builder()
