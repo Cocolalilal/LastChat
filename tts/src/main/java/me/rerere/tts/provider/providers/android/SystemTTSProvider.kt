@@ -12,8 +12,6 @@ import me.rerere.tts.model.AudioChunk
 import me.rerere.tts.model.TTSRequest
 import me.rerere.tts.provider.TTSProvider
 import me.rerere.tts.provider.TTSProviderSetting
-import java.io.File
-import java.util.Locale
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.uuid.Uuid
@@ -40,7 +38,7 @@ class SystemTTSProvider(
                     }
 
                 // Set language
-                val locale = Locale.getDefault()
+                val locale = java.util.Locale.getDefault()
                 val langResult = ttsInstance.setLanguage(locale)
 
                 if (langResult == TextToSpeech.LANG_MISSING_DATA ||
@@ -65,7 +63,7 @@ class SystemTTSProvider(
 
                 // Create temporary file for audio output using temp directory like LastChatApp
                 val tempDir = context.appTempFolder
-                val audioFile = File(tempDir, "tts_${System.currentTimeMillis()}.wav")
+                val audioFile = tempDir.resolve("tts_${System.currentTimeMillis()}.wav")
 
                 val utteranceId = Uuid.random().toString()
 
