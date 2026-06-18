@@ -132,12 +132,18 @@ class LiteRtProvider(
 
     override suspend fun listModels(providerSetting: ProviderSetting.LiteRtLocal): List<Model> {
         val installed = prefs.installedModels(LocalRuntime.LiteRT)
-        return installed.map { (fileName, _) ->
-            Model(
-                modelId = fileName,
-                displayName = fileName,
-            )
+        val installedModels = installed.keys.map { fileName ->
+            LiteRtModelMetadata.modelForFile(fileName)
         }
+        val catalogModels = LiteRtCatalog.ENTRIES.map { entry ->
+            LiteRtModelMetadata.modelForCatalogEntry(entry)
+        }
+        return (installedModels + catalogModels)
+            .distinctBy { it.modelId }
+            .sortedWith(
+                compareBy<Model> { model -> model.modelId !in installed.keys }
+                    .thenBy { model -> model.displayName.lowercase() }
+            )
     }
 
     override suspend fun generateText(

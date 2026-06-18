@@ -53,6 +53,7 @@ import androidx.compose.material3.FloatingToolbarDefaults.ScreenOffset
 import androidx.compose.material3.FloatingToolbarDefaults.floatingToolbarVerticalNestedScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.FloatingActionButton
@@ -141,6 +142,8 @@ import me.rerere.ai.registry.ModelIdNormalizer
 import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.locallm.LocalRuntime
+import me.rerere.locallm.litert.LiteRtCatalog
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.models.ModelMetadataResolver
 import me.rerere.rikkahub.data.ai.models.ModelResolutionOptions
@@ -169,6 +172,7 @@ import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.ui.components.ui.lobeHubIconUri
 import me.rerere.rikkahub.ui.pages.assistant.detail.CustomBodies
 import me.rerere.rikkahub.ui.pages.assistant.detail.CustomHeaders
+import me.rerere.rikkahub.ui.pages.setting.locallm.SettingLocalLlmViewModel
 import me.rerere.rikkahub.ui.pages.setting.components.CustomIconSelector
 import me.rerere.rikkahub.ui.pages.setting.components.ProviderConfigure
 import me.rerere.rikkahub.ui.pages.setting.components.SettingProviderBalanceOption
@@ -178,6 +182,7 @@ import me.rerere.rikkahub.utils.ImageUtils
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
+import org.koin.core.parameter.parametersOf
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import java.util.concurrent.ConcurrentHashMap
@@ -345,7 +350,8 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
     val provider = settings.providers.find { it.id == id } ?: return
-    val pager = rememberPagerState { 2 }
+    val isLocalLiteRt = provider is ProviderSetting.LiteRtLocal
+    val pager = rememberPagerState { if (isLocalLiteRt) 1 else 2 }
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val context = LocalContext.current
@@ -413,76 +419,73 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
             )
         },
         bottomBar = {
-            val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
-            // Floating tab bar overlay
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 16.dp)
-            ) {
-                // Centered floating tab bar
-                Surface(
-                    modifier = Modifier.align(Alignment.Center),
-                    shape = RoundedCornerShape(28.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    tonalElevation = 6.dp,
-                    shadowElevation = 8.dp
+            if (!isLocalLiteRt) {
+                val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 16.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    Surface(
+                        modifier = Modifier.align(Alignment.Center),
+                        shape = RoundedCornerShape(28.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        tonalElevation = 6.dp,
+                        shadowElevation = 8.dp
                     ) {
-                        // Configuration tab
-                        Box(
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .then(
-                                    if (pager.currentPage == 0) 
-                                        Modifier.background(MaterialTheme.colorScheme.primaryContainer)
-                                    else Modifier.clickable {
-                                        haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Tick)
-                                        scope.launch { pager.animateScrollToPage(0) }
-                                    }
-                                )
-                                .padding(12.dp),
-                            contentAlignment = Alignment.Center
+                        Row(
+                            modifier = Modifier.padding(4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Settings,
-                                contentDescription = stringResource(R.string.setting_provider_page_configuration),
-                                tint = if (pager.currentPage == 0) 
-                                    MaterialTheme.colorScheme.onPrimaryContainer 
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                        
-                        // Models tab
-                        Box(
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .then(
-                                    if (pager.currentPage == 1) 
-                                        Modifier.background(MaterialTheme.colorScheme.primaryContainer)
-                                    else Modifier.clickable {
-                                        haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Tick)
-                                        scope.launch { pager.animateScrollToPage(1) }
-                                    }
+                            Box(
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .then(
+                                        if (pager.currentPage == 0)
+                                            Modifier.background(MaterialTheme.colorScheme.primaryContainer)
+                                        else Modifier.clickable {
+                                            haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Tick)
+                                            scope.launch { pager.animateScrollToPage(0) }
+                                        }
+                                    )
+                                    .padding(12.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Settings,
+                                    contentDescription = stringResource(R.string.setting_provider_page_configuration),
+                                    tint = if (pager.currentPage == 0)
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(24.dp)
                                 )
-                                .padding(12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.ViewModule,
-                                contentDescription = stringResource(R.string.setting_provider_page_models),
-                                tint = if (pager.currentPage == 1) 
-                                    MaterialTheme.colorScheme.onPrimaryContainer 
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(24.dp)
-                            )
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .then(
+                                        if (pager.currentPage == 1)
+                                            Modifier.background(MaterialTheme.colorScheme.primaryContainer)
+                                        else Modifier.clickable {
+                                            haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Tick)
+                                            scope.launch { pager.animateScrollToPage(1) }
+                                        }
+                                    )
+                                    .padding(12.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.ViewModule,
+                                    contentDescription = stringResource(R.string.setting_provider_page_models),
+                                    tint = if (pager.currentPage == 1)
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
                         }
-                        
                     }
                 }
             }
@@ -491,12 +494,20 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
         Box(modifier = Modifier.fillMaxSize()) {
             HorizontalPager(
                 state = pager,
+                userScrollEnabled = !isLocalLiteRt,
                 modifier = Modifier
                     .fillMaxSize()
                     .consumeWindowInsets(contentPadding)
             ) { page ->
-                when (page) {
-                    0 -> {
+                when {
+                    isLocalLiteRt -> {
+                        SettingProviderModelPage(
+                            provider = provider,
+                            onEdit = onEdit,
+                            contentPadding = contentPadding,
+                        )
+                    }
+                    page == 0 -> {
                         SettingProviderConfigPage(
                             provider = provider,
                             providerTags = settings.providerTags,
@@ -524,7 +535,7 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                         )
                     }
 
-                    1 -> {
+                    page == 1 -> {
                         SettingProviderModelPage(
                             provider = provider,
                             onEdit = onEdit,
@@ -771,12 +782,34 @@ private fun ModelList(
     val scope = rememberCoroutineScope()
     var expanded by rememberSaveable { mutableStateOf(true) }
     val lazyListState = rememberLazyListState()
+    val modelItemIndexOffset = if (providerSetting is ProviderSetting.LiteRtLocal) 1 else 0
     val reorderableLazyListState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        onUpdateProvider(providerSetting.moveMove(from.index, to.index))
+        val fromModelIndex = from.index - modelItemIndexOffset
+        val toModelIndex = to.index - modelItemIndexOffset
+        if (
+            fromModelIndex in providerSetting.models.indices &&
+            toModelIndex in providerSetting.models.indices
+        ) {
+            onUpdateProvider(providerSetting.moveMove(fromModelIndex, toModelIndex))
+        }
     }
     val density = LocalDensity.current
     val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
     val modelMetadataResolver = koinInject<ModelMetadataResolver>()
+    val localLlmVm = if (providerSetting is ProviderSetting.LiteRtLocal) {
+        koinViewModel<SettingLocalLlmViewModel>(
+            key = "models-${LocalRuntime.LiteRT.displayName}",
+            parameters = { parametersOf(LocalRuntime.LiteRT) },
+        )
+    } else {
+        null
+    }
+    val localDownloadProgress = localLlmVm?.downloadProgress?.collectAsStateWithLifecycle()?.value
+    val localErrorMessage = localLlmVm?.errorMessage?.collectAsStateWithLifecycle()?.value
+    val localAccelerator = localLlmVm?.accelerator?.collectAsStateWithLifecycle()?.value
+    val localForceCpu = localLlmVm?.forceCpu?.collectAsStateWithLifecycle()?.value ?: true
+    val localMaxNumTokensOverride = localLlmVm?.maxNumTokensOverride?.collectAsStateWithLifecycle()?.value
+    val localCrashRecoveryAccel = localLlmVm?.crashRecoveryAccelerator?.collectAsStateWithLifecycle()?.value
     val apiModelCacheKey = remember(providerSetting) { providerSetting.apiModelCacheKey() }
     var modelList by remember(apiModelCacheKey) { mutableStateOf(ApiModelListCache.get(apiModelCacheKey)) }
     var isReloadingModels by remember(apiModelCacheKey) { mutableStateOf(false) }
@@ -878,6 +911,24 @@ private fun ModelList(
             verticalArrangement = Arrangement.spacedBy(4.dp),
             state = lazyListState
         ) {
+            if (providerSetting is ProviderSetting.LiteRtLocal && localLlmVm != null) {
+                item(key = "local-litert-controls") {
+                    LocalLiteRtModelControls(
+                        downloadProgress = localDownloadProgress,
+                        errorMessage = localErrorMessage,
+                        accelerator = localAccelerator,
+                        forceCpu = localForceCpu,
+                        maxNumTokensOverride = localMaxNumTokensOverride,
+                        crashRecoveryAccel = localCrashRecoveryAccel,
+                        onDismissCrashRecovery = localLlmVm::dismissCrashRecovery,
+                        onClearError = localLlmVm::clearError,
+                        onReDetectAccelerator = localLlmVm::reDetectAccelerator,
+                        onForceCpuChange = localLlmVm::setForceCpu,
+                        onMaxNumTokensOverrideChange = localLlmVm::setMaxNumTokensOverride,
+                    )
+                }
+            }
+
             // 模型列表
             itemsIndexed(providerSetting.models, key = { _, item -> item.id }) { index, item ->
                 val position = when {
@@ -932,7 +983,11 @@ private fun ModelList(
                                 }
                             },
                             onDelete = {
-                                onUpdateProvider(providerSetting.delModel(item))
+                                if (localLlmVm != null && providerSetting is ProviderSetting.LiteRtLocal) {
+                                    localLlmVm.deleteModel(item.modelId)
+                                } else {
+                                    onUpdateProvider(providerSetting.delModel(item))
+                                }
                             },
                             onEdit = { editedModel ->
                                 onUpdateProvider(providerSetting.editModel(editedModel))
@@ -1027,14 +1082,18 @@ private fun ModelList(
             ModelPickerFab(
                 models = modelList,
                 selectedModels = providerSetting.models,
-                isLoading = isReloadingModels,
+                isLoading = isReloadingModels || localDownloadProgress != null,
                 reloadError = reloadModelsError,
                 onReload = ::reloadApiModels,
                 onAddModel = {
                     onUpdateProvider(providerSetting.addModel(it))
                 },
                 onRemoveModel = {
-                    onUpdateProvider(providerSetting.delModel(it))
+                    if (localLlmVm != null && providerSetting is ProviderSetting.LiteRtLocal) {
+                        localLlmVm.deleteModel(it.modelId)
+                    } else {
+                        onUpdateProvider(providerSetting.delModel(it))
+                    }
                 },
                 onAddModels = { models ->
                     var updated = providerSetting
@@ -1044,22 +1103,291 @@ private fun ModelList(
                     onUpdateProvider(updated)
                 },
                 onRemoveModels = { models ->
-                    var updated = providerSetting
-                    models.forEach { model ->
-                        updated = updated.delModel(model)
+                    if (localLlmVm != null && providerSetting is ProviderSetting.LiteRtLocal) {
+                        models.forEach { model -> localLlmVm.deleteModel(model.modelId) }
+                    } else {
+                        var updated = providerSetting
+                        models.forEach { model ->
+                            updated = updated.delModel(model)
+                        }
+                        onUpdateProvider(updated)
                     }
-                    onUpdateProvider(updated)
                 },
-                parentProvider = providerSetting
+                parentProvider = providerSetting,
+                onInstallModel = localLlmVm?.let { vm ->
+                    { model ->
+                        LiteRtCatalog.findByModelFile(model.modelId)?.let { entry ->
+                            vm.startManualDownload(entry.resolveUrl())
+                        }
+                    }
+                },
             )
             
-            // Main FAB for add new custom model
-            AddNewModelFab(
-                onAddModel = {
-                    onUpdateProvider(providerSetting.addModel(it))
-                },
-                parentProvider = providerSetting
-            )
+            if (providerSetting is ProviderSetting.LiteRtLocal && localLlmVm != null) {
+                LocalHuggingFaceInstallFab(
+                    isDownloading = localDownloadProgress != null,
+                    onInstallUrl = localLlmVm::startManualDownload,
+                )
+            } else {
+                AddNewModelFab(
+                    onAddModel = {
+                        onUpdateProvider(providerSetting.addModel(it))
+                    },
+                    parentProvider = providerSetting
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocalLiteRtModelControls(
+    downloadProgress: SettingLocalLlmViewModel.Progress?,
+    errorMessage: String?,
+    accelerator: String?,
+    forceCpu: Boolean,
+    maxNumTokensOverride: Int?,
+    crashRecoveryAccel: String?,
+    onDismissCrashRecovery: () -> Unit,
+    onClearError: () -> Unit,
+    onReDetectAccelerator: () -> Unit,
+    onForceCpuChange: (Boolean) -> Unit,
+    onMaxNumTokensOverrideChange: (Int?) -> Unit,
+) {
+    var maxTokensInput by remember(maxNumTokensOverride) {
+        mutableStateOf(maxNumTokensOverride?.toString() ?: "")
+    }
+    Card(
+        shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
+        colors = CardDefaults.cardColors(
+            containerColor = if (LocalDarkMode.current) {
+                MaterialTheme.colorScheme.surfaceContainerLow
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHighest
+            },
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                ProviderIcon(
+                    provider = ProviderSetting.LiteRtLocal(),
+                    modifier = Modifier.size(40.dp),
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.local_llm_litert_name),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        text = stringResource(R.string.local_llm_tool_calling_litert),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            crashRecoveryAccel?.let { accel ->
+                Text(
+                    text = stringResource(R.string.local_llm_crash_recovery_format, accel),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    modifier = Modifier
+                        .clip(me.rerere.rikkahub.ui.theme.AppShapes.CardMedium)
+                        .background(MaterialTheme.colorScheme.tertiaryContainer)
+                        .clickable { onDismissCrashRecovery() }
+                        .padding(12.dp),
+                )
+            }
+
+            downloadProgress?.let { progress ->
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (progress.totalBytes != null && progress.totalBytes > 0) {
+                        LinearProgressIndicator(
+                            progress = { progress.percent / 100f },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    } else {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
+                    Text(
+                        text = stringResource(R.string.local_llm_download_progress, progress.percent),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            errorMessage?.let { message ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(me.rerere.rikkahub.ui.theme.AppShapes.CardMedium)
+                        .background(MaterialTheme.colorScheme.errorContainer)
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.local_llm_status_error_format, message),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = onClearError) {
+                        Text(stringResource(R.string.clear_search))
+                    }
+                }
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.local_llm_accelerator_label, accelerator ?: "auto"),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        text = stringResource(R.string.local_llm_try_gpu_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                OutlinedButton(onClick = onReDetectAccelerator) {
+                    Text(stringResource(R.string.local_llm_re_detect))
+                }
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.local_llm_try_gpu_label),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                HapticSwitch(
+                    checked = !forceCpu,
+                    onCheckedChange = { wantGpu -> onForceCpuChange(!wantGpu) },
+                )
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = stringResource(R.string.local_llm_max_tokens_label),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedTextField(
+                        value = maxTokensInput,
+                        onValueChange = { newValue ->
+                            if (newValue.isEmpty() || newValue.all { it.isDigit() }) {
+                                maxTokensInput = newValue
+                                onMaxNumTokensOverrideChange(newValue.toIntOrNull()?.takeIf { it in 1..131072 })
+                            }
+                        },
+                        placeholder = { Text(stringResource(R.string.local_llm_max_tokens_placeholder)) },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            maxTokensInput = ""
+                            onMaxNumTokensOverrideChange(null)
+                        },
+                        enabled = maxNumTokensOverride != null,
+                    ) {
+                        Text(stringResource(R.string.local_llm_max_tokens_reset))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocalHuggingFaceInstallFab(
+    isDownloading: Boolean,
+    onInstallUrl: (String) -> Unit,
+) {
+    var showSheet by remember { mutableStateOf(false) }
+    var url by remember { mutableStateOf("") }
+    val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
+
+    FloatingActionButton(
+        onClick = {
+            haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
+            showSheet = true
+        },
+        shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
+        containerColor = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+    ) {
+        Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.local_llm_install_url_action))
+    }
+
+    if (showSheet) {
+        ModalBottomSheet(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            onDismissRequest = { showSheet = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .imePadding()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.local_llm_install_url_action),
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it },
+                    label = { Text(stringResource(R.string.local_llm_install_url_label)) },
+                    supportingText = { Text(stringResource(R.string.local_llm_install_url_hint)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                ) {
+                    OutlinedButton(
+                        onClick = { showSheet = false },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                    Button(
+                        onClick = {
+                            onInstallUrl(url)
+                            url = ""
+                            showSheet = false
+                        },
+                        enabled = url.isNotBlank() && !isDownloading,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(stringResource(R.string.local_llm_install_url_action))
+                    }
+                }
+            }
         }
     }
 }
@@ -1351,11 +1679,13 @@ private fun ModelPickerFab(
     onRemoveModel: (Model) -> Unit,
     onAddModels: (List<Model>) -> Unit,
     onRemoveModels: (List<Model>) -> Unit,
-    parentProvider: ProviderSetting
+    parentProvider: ProviderSetting,
+    onInstallModel: ((Model) -> Unit)? = null,
 ) {
     var showPicker by remember { mutableStateOf(false) }
     val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
     val modelMetadataResolver = koinInject<ModelMetadataResolver>()
+    val isLocalInstallPicker = parentProvider is ProviderSetting.LiteRtLocal && onInstallModel != null
     
     FloatingActionButton(
         onClick = { 
@@ -1414,28 +1744,32 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    TextButton(
-                        onClick = {
-                            haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
-                            if (allFilteredSelected) {
-                                val modelsToRemove = filteredModels.mapNotNull { model ->
-                                    selectedModels.firstOrNull { selected -> modelsReferToSameApiModel(selected, model) }
+                    if (!isLocalInstallPicker) {
+                        TextButton(
+                            onClick = {
+                                haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
+                                if (allFilteredSelected) {
+                                    val modelsToRemove = filteredModels.mapNotNull { model ->
+                                        selectedModels.firstOrNull { selected -> modelsReferToSameApiModel(selected, model) }
+                                    }
+                                    if (modelsToRemove.isNotEmpty()) {
+                                        onRemoveModels(modelsToRemove)
+                                    }
+                                } else {
+                                    val modelsToAdd = filteredModels.filter { model ->
+                                        !selectedModels.any { selected -> modelsReferToSameApiModel(selected, model) }
+                                    }
+                                    if (modelsToAdd.isNotEmpty()) {
+                                        onAddModels(modelsToAdd)
+                                    }
                                 }
-                                if (modelsToRemove.isNotEmpty()) {
-                                    onRemoveModels(modelsToRemove)
-                                }
-                            } else {
-                                val modelsToAdd = filteredModels.filter { model ->
-                                    !selectedModels.any { selected -> modelsReferToSameApiModel(selected, model) }
-                                }
-                                if (modelsToAdd.isNotEmpty()) {
-                                    onAddModels(modelsToAdd)
-                                }
-                            }
-                        },
-                        modifier = Modifier.height(40.dp),
-                    ) {
-                        Text(stringResource(if (allFilteredSelected) R.string.deselect_all else R.string.select_all))
+                            },
+                            modifier = Modifier.height(40.dp),
+                        ) {
+                            Text(stringResource(if (allFilteredSelected) R.string.deselect_all else R.string.select_all))
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.height(40.dp))
                     }
                     if (isLoading) {
                         LinearWavyProgressIndicator(modifier = Modifier.weight(1f))
@@ -1517,12 +1851,17 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 .clickable(
                                     interactionSource = interactionSource,
                                     indication = null,
+                                    enabled = !(isLocalInstallPicker && isLoading && !isSelected),
                                 ) {
                                     haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
                                     if (isSelected) {
                                         onRemoveModel(selectedModel ?: model)
                                     } else {
-                                        onAddModel(model)
+                                        if (onInstallModel != null && parentProvider is ProviderSetting.LiteRtLocal) {
+                                            onInstallModel(model)
+                                        } else {
+                                            onAddModel(model)
+                                        }
                                     }
                                 },
                             shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,

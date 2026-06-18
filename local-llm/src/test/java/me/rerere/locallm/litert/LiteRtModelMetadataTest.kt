@@ -43,6 +43,25 @@ class LiteRtModelMetadataTest {
     }
 
     @Test
+    fun `Qwen LiteRT package name standardizes to model family name`() {
+        val model = LiteRtModelMetadata.modelForFile(
+            "Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm",
+        )
+        assertEquals("Qwen2.5 1.5B Instruct", model.displayName)
+        assertEquals("qwen2.5-1.5b-instruct", model.canonicalModelId)
+        assertEquals("qwen", model.providerSlug)
+    }
+
+    @Test
+    fun `Gemma catalog entry standardizes name and keeps catalog filename id`() {
+        val model = LiteRtModelMetadata.modelForCatalogEntry(LiteRtCatalog.ENTRIES.first())
+        assertEquals("gemma-4-E2B-it.litertlm", model.modelId)
+        assertEquals("Gemma 4 E2B IT", model.displayName)
+        assertEquals("gemma-4-e2b-it", model.canonicalModelId)
+        assertEquals("google", model.providerSlug)
+    }
+
+    @Test
     fun `Gemma-3n-E2B-it derives multimodal + tool (Gallery-parity, no thinking)`() {
         val caps = LiteRtModelMetadata.deriveCapabilities("gemma-3n-E2B-it-int4.litertlm")
         assertEquals(

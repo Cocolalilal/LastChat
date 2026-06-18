@@ -234,13 +234,11 @@ class SettingLocalLlmViewModel(
             val missing = finalInstalled.keys.filter { it !in knownModelIds }
             for (fileName in missing) {
                 val caps = LiteRtModelMetadata.deriveCapabilities(fileName)
-                val model = Model(
-                    modelId = fileName,
-                    displayName = fileName,
+                val model = LiteRtModelMetadata.modelForFile(fileName).copy(
                     inputModalities = caps.inputModalities,
                     abilities = caps.abilities,
                 )
-                updateMyProvider { provider -> provider.addModel(model) }
+                updateMyProvider { provider -> provider.addOrReplaceLocalModel(model) }
             }
         }
 
@@ -384,13 +382,11 @@ class SettingLocalLlmViewModel(
                     _downloadProgress.value = null
                     prefs.addInstalledModel(runtime, fileName, p.file.absolutePath)
                     val caps = LiteRtModelMetadata.deriveCapabilities(fileName)
-                    val model = Model(
-                        modelId = fileName,
-                        displayName = fileName,
+                    val model = LiteRtModelMetadata.modelForFile(fileName).copy(
                         inputModalities = caps.inputModalities,
                         abilities = caps.abilities,
                     )
-                    updateMyProvider { provider -> provider.addModel(model) }
+                    updateMyProvider { provider -> provider.addOrReplaceLocalModel(model) }
                     // Enable the provider automatically after the first successful download.
                     updateMyProvider { provider ->
                         when (provider) {
@@ -452,5 +448,20 @@ class SettingLocalLlmViewModel(
     private fun estimatedSize(rt: LocalRuntime): Long = when (rt) {
         // Gallery allowlist sizeInBytes = 1_597_931_520 (~1.49 GB) + 200 MB safety pad.
         LocalRuntime.LiteRT -> 1_800_000_000L
+    }
+
+    private fun ProviderSetting.addOrReplaceLocalModel(model: Model): ProviderSetting {
+        val existing = models.firstOrNull { it.modelId == model.modelId }
+        return if (existing == null) {
+            addModel(model)
+        } else {
+            editModel(
+                model.copy(
+                    id = existing.id,
+                    displayName = existing.displayName.takeIf { it.isNotBlank() } ?: model.displayName,
+                    customIconUri = existing.customIconUri,
+                )
+            )
+        }
     }
 }

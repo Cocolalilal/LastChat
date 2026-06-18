@@ -1,7 +1,11 @@
 package me.rerere.locallm.litert
 
 import me.rerere.ai.provider.Modality
+import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
+import me.rerere.ai.provider.ModelType
+import me.rerere.ai.registry.ModelDisplayNameGenerator
+import me.rerere.ai.registry.ModelIdNormalizer
 
 /**
  * Derives `Model.inputModalities` + `Model.abilities` for a LiteRT model file from the
@@ -62,5 +66,88 @@ object LiteRtModelMetadata {
             inputModalities = listOf(Modality.TEXT, Modality.IMAGE).filter { it in modalitySet },
             abilities = listOf(ModelAbility.TOOL, ModelAbility.REASONING).filter { it in abilitySet },
         )
+    }
+
+    fun modelForCatalogEntry(entry: LiteRtCatalogEntry): Model {
+        return modelForFile(
+            modelFile = entry.modelFile,
+            displayNameHint = entry.displayName,
+        )
+    }
+
+    fun modelForFile(
+        modelFile: String,
+        displayNameHint: String? = null,
+    ): Model {
+        val capabilities = deriveCapabilities(modelFile)
+        val canonicalModelId = canonicalLocalModelId(displayNameHint ?: modelFile)
+        return Model(
+            modelId = modelFile,
+            displayName = standardizeLocalDisplayName(displayNameHint ?: modelFile),
+            canonicalModelId = canonicalModelId,
+            type = ModelType.CHAT,
+            inputModalities = capabilities.inputModalities,
+            outputModalities = listOf(Modality.TEXT),
+            abilities = capabilities.abilities,
+            providerSlug = providerSlugFor(canonicalModelId),
+        )
+    }
+
+    fun standardizeLocalDisplayName(rawName: String): String {
+        val cleaned = cleanLiteRtModelName(rawName)
+        val generated = ModelDisplayNameGenerator.generate(cleaned)
+        return generated
+            .replace(Regex("""\bIt\b"""), "IT")
+            .replace(Regex("""\bE(\d+)b\b"""), "E$1B")
+            .replace(Regex("""\b(\d+(?:\.\d+)?)b\b"""), "$1B")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+            .ifBlank { rawName.trim() }
+    }
+
+    private fun canonicalLocalModelId(rawName: String): String {
+        return ModelIdNormalizer.canonicalize(cleanLiteRtModelName(rawName))
+    }
+
+    private fun cleanLiteRtModelName(rawName: String): String {
+        val withoutUrl = rawName.substringBefore('?')
+            .substringBefore('#')
+            .substringAfterLast('/')
+            .removeSuffix(".litertlm")
+            .removeSuffix(".task")
+            .removeSuffix(".tflite")
+            .replace('_', '-')
+        val packagingTokens = setOf(
+            "multi",
+            "prefill",
+            "seq",
+            "litert",
+            "litertlm",
+            "lite",
+            "rt",
+            "lm",
+        )
+        return withoutUrl
+            .split('-')
+            .filter { token ->
+                val lower = token.lowercase()
+                lower.isNotBlank() &&
+                    lower !in packagingTokens &&
+                    !lower.matches(Regex("""q\d+""")) &&
+                    !lower.matches(Regex("""ekv\d+"""))
+            }
+            .joinToString("-")
+            .ifBlank { withoutUrl }
+    }
+
+    private fun providerSlugFor(canonicalModelId: String): String? {
+        return when {
+            canonicalModelId.contains("qwen", ignoreCase = true) -> "qwen"
+            canonicalModelId.contains("gemma", ignoreCase = true) -> "google"
+            canonicalModelId.contains("llama", ignoreCase = true) -> "meta"
+            canonicalModelId.contains("mistral", ignoreCase = true) -> "mistral"
+            canonicalModelId.contains("deepseek", ignoreCase = true) -> "deepseek"
+            else -> null
+        }
     }
 }
