@@ -429,6 +429,7 @@ class GenerationHandler(
     private val aiLoggingManager: AILoggingManager,
     private val embeddingService: me.rerere.rikkahub.data.ai.rag.EmbeddingService,
     private val memorySearchService: MemorySearchService,
+    private val runtimeInfo: GenerationRuntimeInfo = AndroidGenerationRuntimeInfo(),
 ) {
     fun generateText(
         settings: Settings,
@@ -935,12 +936,11 @@ class GenerationHandler(
         // Memories (Prepare effective memories including recent chats if enabled)
         val effectiveMemoriesCandidates = if (assistant.enableMemory) {
             val recentChatMemories = if (assistant.enableRecentChatsReference && messages.size <= 2) {
-                val today = java.time.LocalDate.now()
                 val recentConversations = conversationRepo.getRecentConversations(
                     assistantId = assistant.id,
                     limit = 3,
                 ).filter { 
-                    java.time.LocalDateTime.ofInstant(it.updateAt, java.time.ZoneId.systemDefault()).toLocalDate() == today 
+                    runtimeInfo.isToday(it.updateAt)
                 }
                 recentConversations.map { conversation ->
                     AssistantMemory(
@@ -1557,22 +1557,9 @@ class GenerationHandler(
 
             if (episodicMemories.isNotEmpty()) {
                 append("### Episodic Memories\n")
-                
-                val now = java.time.LocalDate.now()
-                val yesterday = now.minusDays(1)
-                val lastWeek = now.minusWeeks(1)
-                
+
                 val groupedEpisodes = episodicMemories.groupBy { memory ->
-                    val date = java.time.Instant.ofEpochMilli(memory.timestamp)
-                        .atZone(java.time.ZoneId.systemDefault())
-                        .toLocalDate()
-                    
-                    when {
-                        date.isEqual(now) -> "Today"
-                        date.isEqual(yesterday) -> "Yesterday"
-                        date.isAfter(lastWeek) -> "This Week"
-                        else -> "Older"
-                    }
+                    runtimeInfo.episodicMemoryGroup(memory.timestamp)
                 }
                 
                 // Order: Today -> Yesterday -> This Week -> Older
