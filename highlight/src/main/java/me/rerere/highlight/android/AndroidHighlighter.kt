@@ -66,7 +66,7 @@ class AndroidHighlighter(ctx: Context) : Highlighter {
                                 tokens.add(token)
                             }
 
-                            else -> error("Unknown type: ${element::class.java.name}")
+                            else -> error("Unknown type: ${element?.let { it::class.qualifiedName } ?: "null"}")
                         }
                     }
                     result.release()
