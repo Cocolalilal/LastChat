@@ -1,7 +1,6 @@
 package me.rerere.tts.controller
 
 import android.content.Context
-import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -18,6 +17,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import me.rerere.common.platform.PlatformLog
 import me.rerere.tts.model.PlaybackState
 import me.rerere.tts.model.PlaybackStatus
 import me.rerere.tts.model.TTSResponse
@@ -304,7 +304,7 @@ class TtsController(
                             } catch (e: Exception) {
                                 if (e is CancellationException) throw e
                                 lastError = e
-                                Log.w(TAG, "Synthesis attempt $attempt/$maxRetries failed for chunk ${chunk.index}", e)
+                                PlatformLog.w(TAG, "Synthesis attempt $attempt/$maxRetries failed for chunk ${chunk.index}: ${e.logSummary()}")
                                 
                                 if (attempt < maxRetries) {
                                     // Exponential backoff: 500ms, 1s, 2s, 4s, 8s
@@ -316,14 +316,14 @@ class TtsController(
                         // If still no response after max retries, wait longer and try again
                         if (response == null) {
                             val errorMsg = lastError?.message ?: "Unknown error"
-                            Log.w(TAG, "Retrying chunk ${chunk.index} after extended delay (total attempts: $totalAttempts): $errorMsg")
+                            PlatformLog.w(TAG, "Retrying chunk ${chunk.index} after extended delay (total attempts: $totalAttempts): $errorMsg")
                             _error.update { "TTS Error: $errorMsg" }
                             delay(5000L) // Wait 5 seconds before retrying the whole loop
                             
                             // After too many overall attempts, give up on this chunk
                             if (totalAttempts >= 15) {
                                 val errorMsg = lastError?.message ?: "Unknown error"
-                                Log.e(TAG, "Giving up on chunk ${chunk.index} after $totalAttempts attempts: $errorMsg", lastError)
+                                PlatformLog.e(TAG, "Giving up on chunk ${chunk.index} after $totalAttempts attempts: ${lastError?.logSummary() ?: errorMsg}")
                                 _error.update { "TTS failed after $totalAttempts attempts: $errorMsg" }
                                 break
                             }
@@ -345,9 +345,9 @@ class TtsController(
                             break
                         } catch (e: Exception) {
                             if (e is CancellationException) throw e
-                            Log.w(TAG, "Playback attempt $attempt failed", e)
+                            PlatformLog.w(TAG, "Playback attempt $attempt failed: ${e.logSummary()}")
                             if (attempt == 3) {
-                                Log.e(TAG, "All playback retries failed", e)
+                                PlatformLog.e(TAG, "All playback retries failed: ${e.logSummary()}")
                                 _error.update { e.message ?: "Audio playback error" }
                             } else {
                                 delay(500)
@@ -431,7 +431,7 @@ class TtsController(
                             } catch (e: Exception) {
                                 if (e is CancellationException) throw e
                                 lastError = e
-                                Log.w(TAG, "Synthesis attempt $attempt/$maxRetries failed for chunk ${chunk.index}", e)
+                                PlatformLog.w(TAG, "Synthesis attempt $attempt/$maxRetries failed for chunk ${chunk.index}: ${e.logSummary()}")
                                 
                                 if (attempt < maxRetries) {
                                     delay((500L * (1 shl (attempt - 1))).coerceAtMost(8000L))
@@ -441,13 +441,13 @@ class TtsController(
                         
                         if (response == null) {
                             val errorMsg = lastError?.message ?: "Unknown error"
-                            Log.w(TAG, "Retrying chunk ${chunk.index} after extended delay (total attempts: $totalAttempts): $errorMsg")
+                            PlatformLog.w(TAG, "Retrying chunk ${chunk.index} after extended delay (total attempts: $totalAttempts): $errorMsg")
                             _error.update { "TTS Error: $errorMsg" }
                             delay(5000L)
                             
                             if (totalAttempts >= 15) {
                                 val errorMsg = lastError?.message ?: "Unknown error"
-                                Log.e(TAG, "Giving up on chunk ${chunk.index} after $totalAttempts attempts: $errorMsg", lastError)
+                                PlatformLog.e(TAG, "Giving up on chunk ${chunk.index} after $totalAttempts attempts: ${lastError?.logSummary() ?: errorMsg}")
                                 _error.update { "TTS failed after $totalAttempts attempts: $errorMsg" }
                                 break
                             }
@@ -468,9 +468,9 @@ class TtsController(
                             break
                         } catch (e: Exception) {
                             if (e is CancellationException) throw e
-                            Log.w(TAG, "Playback attempt $attempt failed", e)
+                            PlatformLog.w(TAG, "Playback attempt $attempt failed: ${e.logSummary()}")
                             if (attempt == 3) {
-                                Log.e(TAG, "All playback retries failed", e)
+                                PlatformLog.e(TAG, "All playback retries failed: ${e.logSummary()}")
                                 _error.update { e.message ?: "Audio playback error" }
                             } else {
                                 delay(500)
@@ -517,3 +517,9 @@ private data class TtsCacheKey(
     val text: String,
     val provider: TTSProviderSetting,
 )
+
+private fun Throwable.logSummary(): String {
+    val type = this::class.simpleName ?: "Throwable"
+    val message = this.message
+    return if (message.isNullOrBlank()) type else "$type: $message"
+}
