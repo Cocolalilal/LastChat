@@ -193,6 +193,13 @@ fun SettingPage(
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingAndroidIntegration) }
                     )
+
+                    SettingGroupItem(
+                        title = stringResource(R.string.extensions_page_workspace),
+                        icon = { Icon(Icons.Rounded.Code, null, modifier = Modifier.size(20.dp)) },
+                        contentPadding = mainSettingItemPadding,
+                        onClick = { navController.navigate(Screen.Workspaces) }
+                    )
                 }
             }
 

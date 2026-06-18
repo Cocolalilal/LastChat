@@ -90,5 +90,12 @@ val viewModelModule = module {
             templateTransformer = get(),
         )
     }
+    viewModel { me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceVM(get()) }
+    viewModel<me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceDetailVM> { params ->
+        me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceDetailVM(
+            id = params.get(),
+            repository = get(),
+        )
+    }
 }
 

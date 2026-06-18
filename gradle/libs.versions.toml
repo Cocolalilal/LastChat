@@ -43,6 +43,7 @@ jsoup = "1.21.2"
 zxing = "3.5.4"
 quickie-bundled = "1.11.0"
 sonner = "0.4.0"
+termux = "0.118.0"
 leakcanary = "2.14"
 workmanager = "2.11.0"
 reorderable = "3.0.0"
@@ -166,6 +167,10 @@ ktor-server-status-pages = { module = "io.ktor:ktor-server-status-pages", versio
 jmdns = { module = "org.jmdns:jmdns", version.ref = "jmdns" }
 androidx-glance = { group = "androidx.glance", name = "glance-appwidget", version.ref = "glance" }
 androidx-glance-material3 = { group = "androidx.glance", name = "glance-material3", version.ref = "glance" }
+xz = { module = "org.tukaani:xz", version = "1.12" }
+termux-terminal-view = { module = "com.termux.termux-app:terminal-view", version.ref = "termux" }
+termux-terminal-emulator = { module = "com.termux.termux-app:terminal-emulator", version.ref = "termux" }
+
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }

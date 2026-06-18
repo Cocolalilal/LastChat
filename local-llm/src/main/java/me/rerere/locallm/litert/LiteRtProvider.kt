@@ -274,7 +274,7 @@ class LiteRtProvider(
         // Populate the snapshot before handing the engine the call, clear it in the
         // finally below so concurrent requests cannot see each other's tools.
         LiteRtToolBridgeRegistry.setForRequest(params.tools)
-        val nativeTools = if (params.tools.isNotEmpty()) listOf(toolProvider) else emptyList()
+        val nativeTools = if (config.supportsTools && params.tools.isNotEmpty()) listOf(toolProvider) else emptyList()
         Log.i(
             TAG,
             "tool bridge: ${params.tools.size} tool(s) registered for this request " +
@@ -285,7 +285,7 @@ class LiteRtProvider(
         // SDK tool registration), build a compact reference block. This is descriptive
         // text only; the model invokes tools through the bridge, NOT by emitting
         // <tool_call> blocks.
-        val toolReference = if (params.tools.isNotEmpty()) {
+        val toolReference = if (config.supportsTools && params.tools.isNotEmpty()) {
             buildString {
                 append("You have ${params.tools.size} tools available. ")
                 append("Call runTool(name, argsJson) with one of these names to use them:\n")
@@ -378,8 +378,9 @@ class LiteRtProvider(
                 // tool-task behaviour. The SDK projects the model's output into the @Tool
                 // call grammar so Gemma actually invokes runTool(...) via the bridge
                 // instead of producing free-form "I can't do that" text. OFF for plain
-                // chat turns to avoid biasing normal language.
-                constrainedDecoding = params.tools.isNotEmpty(),
+                // chat turns to avoid biasing normal language. OFF for models like Qwen 1.5b
+                // that crash during LiteRT FSM generation when tools are provided.
+                constrainedDecoding = config.supportsTools && params.tools.isNotEmpty(),
                 topK = config.topK,
                 topP = config.topP,
                 temperature = config.temperature,

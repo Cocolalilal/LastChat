@@ -184,6 +184,7 @@ android {
         }
         jniLibs {
             useLegacyPackaging = true
+            pickFirsts += "lib/*/libtermux.so"
         }
     }
     androidResources {
@@ -424,9 +425,12 @@ dependencies {
     implementation(project(":tts"))
     implementation(project(":common"))
     implementation(project(":local-llm"))
+    implementation(project(":workspace"))
     implementation(libs.jsoup)
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
     implementation(kotlin("reflect"))
+    implementation(libs.termux.terminal.view)
+    implementation(libs.termux.terminal.emulator)
 
     // Glance (Widgets)
     implementation(libs.androidx.glance)

@@ -37,6 +37,7 @@ data class AssistantUISettings(
 @Serializable
 data class Assistant(
     val id: Uuid = Uuid.random(),
+    val workspaceId: Uuid? = null,
     val chatModelId: Uuid? = null, // 如果为null, 使用全局默认模型
     val ttsVoiceId: Uuid? = null,
     val ttsAutoplayMode: me.rerere.rikkahub.data.datastore.TtsAutoplayMode? = null,

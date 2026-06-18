@@ -16,6 +16,7 @@ data class LiteRtModelConfig(
     val supportsAudio: Boolean = false,
     val supportsThinking: Boolean = false,
     val supportsSpeculativeDecoding: Boolean = false,
+    val supportsTools: Boolean = true,
     val minDeviceMemoryGb: Int = 6,
     val sizeBytes: Long,
 )
@@ -133,6 +134,7 @@ object LiteRtModelDefaults {
             supportsAudio = false,
             supportsThinking = false,
             supportsSpeculativeDecoding = false,
+            supportsTools = false,
             minDeviceMemoryGb = 6,
             sizeBytes = 1597931520L,
         ),

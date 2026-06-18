@@ -81,6 +81,10 @@ import me.rerere.rikkahub.ui.pages.setting.SettingChatStoragePage
 import me.rerere.rikkahub.ui.pages.setting.SettingDisplayPage
 
 import me.rerere.rikkahub.ui.pages.setting.SettingMcpPage
+// import me.rerere.rikkahub.ui.pages.setting.locallm.SettingLocalLlmPage
+import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspacePage
+import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceDetailPage
+import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceTerminalPage
 import me.rerere.rikkahub.ui.pages.setting.SettingModelPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPage
 import me.rerere.rikkahub.ui.pages.setting.SettingProviderDetailPage
@@ -868,6 +872,10 @@ class RouteActivity : ComponentActivity() {
                         }
                     }
 
+                    // // composable(Route.SETTING_LOCAL_LLM) {
+                    // //     SettingLocalLlmPage(navBackStack)
+                    // // }
+
                     composable<Screen.ImageGen> {
                         ImageGenPage()
                     }
@@ -1242,6 +1250,19 @@ class RouteActivity : ComponentActivity() {
                         }
                     }
 
+                    composable<Screen.Workspaces> {
+                        WorkspacePage()
+                    }
+
+                    composable<Screen.WorkspaceDetail> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.WorkspaceDetail>()
+                        WorkspaceDetailPage(route.id)
+                    }
+
+                    composable<Screen.WorkspaceTerminal> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.WorkspaceTerminal>()
+                        WorkspaceTerminalPage(route.id)
+                    }
                 }
                 // Toast host must be last so it renders on top of all content
                 AppToasterHost(state = toastState)
@@ -1361,4 +1382,12 @@ sealed interface Screen {
     @Serializable
     data object SettingFonts : Screen
 
+    @Serializable
+    data object Workspaces : Screen
+
+    @Serializable
+    data class WorkspaceDetail(val id: String) : Screen
+
+    @Serializable
+    data class WorkspaceTerminal(val id: String) : Screen
 }

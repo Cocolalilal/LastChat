@@ -49,4 +49,13 @@ val repositoryModule = module {
     single {
         GenMediaRepository(get())
     }
+
+    single {
+        me.rerere.rikkahub.data.repository.WorkspaceRepository(
+            dao = get(),
+            settingsStore = get(),
+            manager = get(),
+            rootfsInstaller = get(),
+        )
+    }
 }

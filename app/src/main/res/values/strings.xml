@@ -1293,4 +1293,79 @@
   <string name="local_llm_catalog_tag_multimodal">Multimodal</string>
   <string name="local_llm_catalog_tag_thinking">Thinking</string>
   <string name="local_llm_catalog_tag_speculative">Speculative decoding</string>
+  <string name="workspace_detail_reinstall_rootfs">Reinstall Rootfs</string>
+  <string name="workspace_detail_install_rootfs">Install Rootfs</string>
+  <string name="workspace_detail_workspace_info">Workspace</string>
+  <string name="workspace_detail_name">Name</string>
+  <string name="workspace_detail_shell_status">Shell Status</string>
+  <string name="workspace_detail_loading">Loading</string>
+  <string name="workspace_detail_enable_shell">Enable Shell</string>
+  <string name="workspace_detail_enable_shell_desc">Allow this workspace to run a terminal environment using local Rootfs</string>
+  <string name="workspace_detail_tool_approval">Tool Approval</string>
+  <string name="workspace_detail_tool_approval_desc">When enabled, user confirmation is required before AI calls this tool</string>
+  <string name="workspace_detail_tool_list_files">List Files</string>
+  <string name="workspace_detail_tool_read_file">Read File</string>
+  <string name="workspace_detail_tool_write_file">Write File</string>
+  <string name="workspace_detail_tool_edit_file">Edit File</string>
+  <string name="workspace_detail_tool_delete_file">Delete File</string>
+  <string name="workspace_detail_tool_move_file">Move File</string>
+  <string name="workspace_detail_tool_shell">Execute Command</string>
+  <string name="workspace_detail_install_rootfs_desc">Will download tar.gz and extract to the linux directory of %s.</string>
+  <string name="workspace_detail_download_url">tar.gz download URL</string>
+  <string name="workspace_detail_area_files">Files</string>
+  <string name="workspace_detail_area_rootfs">Rootfs</string>
+  <string name="workspace_detail_empty_directory">Empty directory</string>
+  <string name="workspace_detail_shell_disabled">Disabled</string>
+  <string name="workspace_detail_shell_installing">Installing</string>
+  <string name="workspace_detail_shell_ready">Ready</string>
+  <string name="workspace_detail_shell_broken">Error</string>
+  <string name="workspace_detail_downloading">Downloading %1$s%2$s</string>
+  <string name="workspace_detail_extracting">Extracting %1$d items%2$s</string>
+  <string name="workspace_detail_install_complete">Installation complete</string>
+  <string name="workspace_terminal_title">Terminal</string>
+  <string name="workspace_terminal_title_with_name">%s · Terminal</string>
+  <string name="workspace_terminal_not_installed">Please install Rootfs first</string>
+  <string name="workspace_terminal_loading">Loading workspace.</string>
+  <string name="workspace_terminal_exited">Terminal exited</string>
+  <string name="extensions_page_workspace">Workspace</string>
+  <string name="extensions_page_workspace_desc">Manage local working directories accessible by Agent</string>
+  <string name="workspace_select">Select Workspace</string>
+  <string name="workspace_no_binding">No binding</string>
+  <string name="workspace_manage">Manage Workspaces</string>
+  <string name="workspace_detail">Workspace Details</string>
+  <string name="workspace_terminal">Workspace Terminal</string>
+  <string name="workspace_cwd_select_directory">Select Working Directory</string>
+  <string name="workspace_cwd_select_desc">Set the working directory for the current session</string>
+  <string name="workspace_cwd_no_subdirectories">No subdirectories</string>
+  <string name="workspace_cwd_reset">Reset</string>
+  <string name="workspace_cwd_set">Set as CWD</string>
+  <string name="workspace_page_name_duplicate">Name already exists</string>
+
+    <!-- New Chat Settings -->
+    
+    <!-- New Chat Actions -->
+    
+    <!-- UI Customization -->
+    
+    <!-- Minimal Input Picker -->
+  <string name="workspace_page_title">Workspaces</string>
+  <string name="workspace_page_create">Create Workspace</string>
+  <string name="workspace_page_rename">Rename Workspace</string>
+  <string name="workspace_page_delete">Delete Workspace</string>
+  <string name="workspace_page_delete_confirm">Are you sure you want to delete this workspace? This cannot be undone.</string>
+  <string name="workspace_page_empty">No workspaces found</string>
+  <string name="workspace_page_empty_desc">Click + to create your first workspace</string>
+  <string name="workspace_page_name">Workspace Name</string>
+  <string name="common_delete">Delete</string>
+  <string name="common_cancel">Cancel</string>
+  <string name="common_confirm">Confirm</string>
+  <string name="common_save">Save</string>
+  <string name="common_rename">Rename</string>
+  <string name="common_install">Install</string>
+  <string name="common_export">Export</string>
+  <string name="common_share">Share</string>
+  <string name="workspace_detail_will_delete">Delete %s?</string>
+  <string name="workspace_detail_installing">Installing…</string>
+  <string name="workspace_detail_rootfs_install_failed">Rootfs install failed</string>
+  <string name="workspace_detail_import_file">Import File</string>
 </resources>
