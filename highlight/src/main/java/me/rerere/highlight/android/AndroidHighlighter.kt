@@ -5,25 +5,19 @@ import com.whl.quickjs.android.QuickJSLoader
 import com.whl.quickjs.wrapper.QuickJSArray
 import com.whl.quickjs.wrapper.QuickJSContext
 import com.whl.quickjs.wrapper.QuickJSObject
-import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import me.rerere.highlight.Highlighter
 import me.rerere.highlight.HighlightToken
 import me.rerere.highlight.HighlightTokenSerializer
 import me.rerere.highlight.R
-import java.util.concurrent.Executors
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class AndroidHighlighter(ctx: Context) : Highlighter {
-    private val executor = Executors.newSingleThreadExecutor()
-
-    init {
-        executor.submit {
-            QuickJSLoader.init()
-            context
-        }
-    }
+    private val dispatcher = Dispatchers.Default.limitedParallelism(1)
 
     private val script: String by lazy {
         ctx.resources.openRawResource(R.raw.prism).use {
@@ -31,24 +25,26 @@ class AndroidHighlighter(ctx: Context) : Highlighter {
         }
     }
 
-    private val context: QuickJSContext by lazy {
+    private val contextLazy = lazy {
+        QuickJSLoader.init()
         QuickJSContext.create().also {
             it.evaluate(script)
         }
     }
+    private val context: QuickJSContext by contextLazy
 
     private val highlightFn by lazy {
         context.globalObject.getJSFunction("highlight")
     }
 
     override suspend fun highlight(code: String, language: String): List<HighlightToken> =
-        suspendCancellableCoroutine { continuation ->
-            executor.submit {
-                runCatching {
-                    val result = highlightFn.call(code, language)
-                    require(result is QuickJSArray) {
-                        "highlight result must be an array"
-                    }
+        withContext(dispatcher) {
+            runCatching {
+                val result = highlightFn.call(code, language)
+                require(result is QuickJSArray) {
+                    "highlight result must be an array"
+                }
+                try {
                     val tokens = arrayListOf<HighlightToken>()
                     for (i in 0 until result.length()) {
                         when (val element = result[i]) {
@@ -69,19 +65,21 @@ class AndroidHighlighter(ctx: Context) : Highlighter {
                             else -> error("Unknown type: ${element?.let { it::class.qualifiedName } ?: "null"}")
                         }
                     }
+                    tokens
+                } finally {
                     result.release()
-                    continuation.resume(tokens)
-                }.onFailure {
-                    it.printStackTrace()
-                    if (continuation.isActive) {
-                        continuation.resumeWithException(it)
-                    }
                 }
-            }
+            }.onFailure {
+                it.printStackTrace()
+            }.getOrThrow()
         }
 
     override fun destroy() {
-        context.destroy()
+        runBlocking(dispatcher) {
+            if (contextLazy.isInitialized()) {
+                context.destroy()
+            }
+        }
     }
 
     private companion object {
