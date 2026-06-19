@@ -31,7 +31,6 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import io.ktor.utils.io.readAvailable
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.Writer
 import java.security.MessageDigest
@@ -54,6 +53,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okio.Buffer
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -1096,7 +1096,7 @@ private fun guessAssetContentType(path: String): ContentType {
 
 private suspend fun readPartBytes(part: PartData.FileItem, maxBytes: Int): ByteArray {
     val input = part.provider()
-    val output = ByteArrayOutputStream()
+    val output = Buffer()
     val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
     var totalBytes = 0
 
@@ -1110,7 +1110,7 @@ private suspend fun readPartBytes(part: PartData.FileItem, maxBytes: Int): ByteA
         output.write(buffer, 0, read)
     }
 
-    return output.toByteArray()
+    return output.readByteArray()
 }
 
 private fun List<Conversation>.sortedForWeb(): List<Conversation> {
