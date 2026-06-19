@@ -68,7 +68,11 @@ class ExampleUnitTest {
         val installer = RootfsInstaller(manager)
         val archive = tarGz(
             TarTestEntry("bin/", type = '5'),
+            TarTestEntry("bin/bash", content = "#!/bin/bash\n".toByteArray(), mode = 493),
             TarTestEntry("bin/hello", content = "echo hello\n".toByteArray(), mode = 493),
+            TarTestEntry("usr/", type = '5'),
+            TarTestEntry("usr/bin/", type = '5'),
+            TarTestEntry("usr/bin/env", content = "#!/bin/sh\n".toByteArray(), mode = 493),
             TarTestEntry("usr/bin/hello-link", type = '2', linkName = "../../bin/hello"),
         )
         SingleResponseHttpServer(archive).use { server ->
@@ -131,6 +135,22 @@ class ExampleUnitTest {
     }
 
     @Test
+    fun detectsRootfsArchitectureFromElfHeader() {
+        val linuxDir = Files.createTempDirectory("rootfs-arch-test").toFile()
+        val bash = File(linuxDir, "usr/bin/bash").apply {
+            parentFile?.mkdirs()
+            writeBytes(elfHeader(machine = 183))
+        }
+
+        assertTrue(bash.isFile)
+        assertEquals(WorkspaceRootfsArchitecture.ARM64, linuxDir.detectRootfsArchitecture())
+        assertEquals(
+            WorkspaceRootfsArchitecture.AMD64,
+            WorkspaceRootfsArchitecture.fromNativeLibraryDir(File("/data/app/pkg/lib/x86_64")),
+        )
+    }
+
+    @Test
     fun commandOutputIsTruncatedAtLimit() {
         val baseDir = Files.createTempDirectory("workspace-truncate-test").toFile()
         val manager = WorkspaceManager(baseDir, shellRunner = TestShellRunner())
@@ -153,6 +173,11 @@ class ExampleUnitTest {
         File(linuxDir, "etc").mkdirs()
         File(linuxDir, "etc/resolv.conf").writeText("nameserver 127.0.0.53\n")
         File(linuxDir, "etc/group").writeText("root:x:0:\n")
+        File(linuxDir, "usr/bin").mkdirs()
+        File(linuxDir, "usr/bin/bash").writeText("#!/bin/bash\n")
+        File(linuxDir, "usr/bin/env").writeText("#!/bin/sh\n")
+        File(linuxDir, "usr/sbin").mkdirs()
+        File(linuxDir, "usr/lib").mkdirs()
 
         RootfsPatcher().patch(
             linuxDir,
@@ -181,6 +206,10 @@ class ExampleUnitTest {
         assertTrue(File(linuxDir, "tmp").canWrite())
         assertTrue(File(linuxDir, "var/tmp").canWrite())
         assertTrue(File(linuxDir, "root").isDirectory)
+        assertTrue(File(linuxDir, "bin").exists())
+        assertTrue(File(linuxDir, "bin/sh").exists())
+        assertTrue(File(linuxDir, "sbin").exists())
+        assertTrue(File(linuxDir, "lib").exists())
     }
 
     private fun tarGz(vararg entries: TarTestEntry): ByteArray {
@@ -215,6 +244,18 @@ class ExampleUnitTest {
         header.writeOctal(148, 8, checksum.toLong())
         return header
     }
+
+    private fun elfHeader(machine: Int): ByteArray =
+        ByteArray(20).also { header ->
+            header[0] = 0x7f.toByte()
+            header[1] = 'E'.code.toByte()
+            header[2] = 'L'.code.toByte()
+            header[3] = 'F'.code.toByte()
+            header[4] = 2
+            header[5] = 1
+            header[18] = (machine and 0xff).toByte()
+            header[19] = ((machine shr 8) and 0xff).toByte()
+        }
 
     private fun ByteArray.writeString(offset: Int, length: Int, value: String) {
         val bytes = value.toByteArray()

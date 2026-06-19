@@ -17,6 +17,7 @@ class RootfsPatcher {
             ensureGroupNames(etcDir, options.groupIds.ifEmpty { currentSupplementaryGroupIds() })
         }
         ensureTempDirs(linuxDir)
+        ensureMergedUsrLinks(linuxDir)
         ensureShellEntrypoints(linuxDir)
     }
 
@@ -158,14 +159,6 @@ class RootfsPatcher {
     private fun ensureShellEntrypoints(linuxDir: File) {
         val usrBinDir = File(linuxDir, "usr/bin")
         val binDir = File(linuxDir, "bin")
-        if (!binDir.exists() && usrBinDir.isDirectory) {
-            runCatching {
-                Files.createSymbolicLink(binDir.toPath(), File("usr/bin").toPath())
-            }.recoverCatching {
-                binDir.mkdirs()
-            }.getOrNull()
-        }
-
         val sh = File(binDir, "sh")
         if (sh.exists()) return
 
@@ -185,6 +178,37 @@ class RootfsPatcher {
             sh.setReadable(source.canRead(), false)
             sh.setWritable(source.canWrite(), true)
             sh.setExecutable(source.canExecute(), false)
+        }.getOrNull()
+    }
+
+    private fun ensureMergedUsrLinks(linuxDir: File) {
+        ensureMergedUsrLink(linuxDir, "bin", "usr/bin")
+        ensureMergedUsrLink(linuxDir, "sbin", "usr/sbin")
+        ensureMergedUsrLink(linuxDir, "lib", "usr/lib")
+        ensureMergedUsrLink(linuxDir, "lib64", "usr/lib64")
+    }
+
+    private fun ensureMergedUsrLink(
+        linuxDir: File,
+        linkPath: String,
+        targetPath: String,
+    ) {
+        val link = File(linuxDir, linkPath)
+        val target = File(linuxDir, targetPath)
+        if (link.exists() || Files.isSymbolicLink(link.toPath()) || !target.exists()) return
+
+        link.parentFile?.mkdirs()
+        runCatching {
+            Files.createSymbolicLink(link.toPath(), File(targetPath).toPath())
+        }.recoverCatching {
+            if (target.isDirectory) {
+                target.copyRecursively(link, overwrite = true)
+            } else {
+                target.copyTo(link, overwrite = true)
+                link.setReadable(target.canRead(), false)
+                link.setWritable(target.canWrite(), true)
+                link.setExecutable(target.canExecute(), false)
+            }
         }.getOrNull()
     }
 

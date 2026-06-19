@@ -180,7 +180,7 @@ class WorkspaceManager(
     }
 }
 
-internal fun File.hasUsableRootfs(): Boolean {
+fun File.hasUsableRootfs(): Boolean {
     if (!isDirectory) return false
     val hasEnv = File(this, "usr/bin/env").isFile || File(this, "bin/env").isFile
     val hasShell = listOf(
@@ -190,4 +190,57 @@ internal fun File.hasUsableRootfs(): Boolean {
         "usr/bin/sh",
     ).any { File(this, it).isFile }
     return hasEnv && hasShell
+}
+
+enum class WorkspaceRootfsArchitecture(
+    val displayName: String,
+    val ubuntuArch: String,
+    private val elfMachine: Int,
+) {
+    ARM64("arm64", "arm64", 183),
+    AMD64("amd64", "amd64", 62),
+    ARMHF("armhf", "armhf", 40);
+
+    companion object {
+        fun fromElfMachine(machine: Int): WorkspaceRootfsArchitecture? =
+            entries.firstOrNull { it.elfMachine == machine }
+
+        fun fromNativeLibraryDir(nativeLibraryDir: File): WorkspaceRootfsArchitecture? {
+            val path = nativeLibraryDir.absolutePath.lowercase()
+            return when {
+                "x86_64" in path -> AMD64
+                "arm64" in path || "aarch64" in path -> ARM64
+                "armeabi" in path || "/arm" in path || "\\arm" in path -> ARMHF
+                else -> null
+            }
+        }
+    }
+}
+
+fun File.detectRootfsArchitecture(): WorkspaceRootfsArchitecture? {
+    val candidate = listOf(
+        "bin/bash",
+        "usr/bin/bash",
+        "bin/sh",
+        "usr/bin/sh",
+        "usr/bin/env",
+        "bin/env",
+    ).map { File(this, it) }.firstOrNull { it.isFile } ?: return null
+
+    candidate.inputStream().use { input ->
+        val header = ByteArray(20)
+        if (input.read(header) != header.size) return null
+        if (header[0] != 0x7f.toByte() || header[1] != 'E'.code.toByte() ||
+            header[2] != 'L'.code.toByte() || header[3] != 'F'.code.toByte()
+        ) {
+            return null
+        }
+        val littleEndian = header[5].toInt() == 1
+        val machine = if (littleEndian) {
+            (header[18].toInt() and 0xff) or ((header[19].toInt() and 0xff) shl 8)
+        } else {
+            ((header[18].toInt() and 0xff) shl 8) or (header[19].toInt() and 0xff)
+        }
+        return WorkspaceRootfsArchitecture.fromElfMachine(machine)
+    }
 }

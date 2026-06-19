@@ -41,8 +41,6 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
@@ -63,6 +61,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -73,6 +72,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalScrollCaptureInProgress
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -132,7 +132,6 @@ import me.rerere.rikkahub.ui.modifier.lastChatBlurEffect
 import me.rerere.rikkahub.ui.modifier.lastChatBlurSource
 
 private const val TAG = "ChatList"
-private const val LoadingIndicatorKey = "LoadingIndicator"
 private const val ScrollBottomKey = "ScrollBottomKey"
 private const val AssistantInitialTurnKey = "assistant_initial"
 private const val AssistantResponseTurnKey = "assistant_response"
@@ -186,6 +185,13 @@ private fun buildChatStreamingFollowSignature(
         }
         ?: 0
     return "${conversation.messageNodes.size}:$textLength:$activityLength"
+}
+
+internal fun isChatListAtStreamingBottom(
+    visibleItems: List<LazyListItemInfo>,
+    canScrollForward: Boolean,
+): Boolean {
+    return visibleItems.isNotEmpty() && !canScrollForward
 }
 
 private fun BidiDirection.toLayoutDirection(): LayoutDirection {
@@ -288,11 +294,21 @@ private fun SharedTransitionScope.ChatListNormal(
     val scope = rememberCoroutineScope()
     val loadingState by rememberUpdatedState(loading)
     var isRecentScroll by remember { mutableStateOf(false) }
-    var userScrolledUp by remember { mutableStateOf(false) }
+    var followStreamingBottom by remember { mutableStateOf(true) }
+    var forceBottomAttachPending by remember(conversation.id) { mutableStateOf(false) }
     val conversationUpdated by rememberUpdatedState(conversation)
     val context = LocalContext.current
     val navController = LocalNavController.current
-    val bottomFollowRequester = remember { BringIntoViewRequester() }
+
+    suspend fun snapToStreamingBottom() {
+        val targetIndex = (state.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
+        if (targetIndex <= 0) return
+        try {
+            state.scrollToItem(targetIndex)
+        } catch (_: IllegalStateException) {
+            // The lazy list can be between measure passes while a streaming turn morphs.
+        }
+    }
 
     val currentConversationState = rememberUpdatedState(conversation)
     val onCitationClick = remember {
@@ -348,18 +364,6 @@ private fun SharedTransitionScope.ChatListNormal(
         }
     }
 
-    fun List<LazyListItemInfo>.isAtBottom(): Boolean {
-        val lastItem = lastOrNull() ?: return false
-        if (lastItem.key == LoadingIndicatorKey || lastItem.key == ScrollBottomKey) {
-            return true
-        }
-        // Check if we can see the bottom spacer or the last real item
-        val hasScrollBottom = any { it.key == ScrollBottomKey }
-        if (hasScrollBottom) return true
-        // Fallback: check if the last visible item is near the end
-        return !state.canScrollForward || (lastItem.offset + lastItem.size <= state.layoutInfo.viewportEndOffset + lastItem.size * 0.15 + 32)
-    }
-
     // 聊天选择
     // 自动跟随键盘滚动
     ImeLazyListAutoScroller(lazyListState = state)
@@ -370,7 +374,7 @@ private fun SharedTransitionScope.ChatListNormal(
     ) {
         // Empty chat state removed - assistant icon now shown in TopBar
 
-        // Detect user scrolling up to suppress auto-scroll
+        // User scrolls detach live following; reaching the bottom reattaches it.
         LaunchedEffect(state) {
             var previousFirstIndex = state.firstVisibleItemIndex
             var previousFirstOffset = state.firstVisibleItemScrollOffset
@@ -378,15 +382,18 @@ private fun SharedTransitionScope.ChatListNormal(
                 Triple(state.isScrollInProgress, state.firstVisibleItemIndex, state.firstVisibleItemScrollOffset)
             }.collect { (isScrolling, firstIndex, firstOffset) ->
                 if (isScrolling && loadingState) {
-                    // User is actively scrolling during generation
                     val scrolledUp = firstIndex < previousFirstIndex ||
                         (firstIndex == previousFirstIndex && firstOffset < previousFirstOffset)
                     if (scrolledUp) {
-                        userScrolledUp = true
+                        followStreamingBottom = false
                     }
-                    // If user scrolls back to bottom, resume auto-scroll
-                    if (state.layoutInfo.visibleItemsInfo.isAtBottom()) {
-                        userScrolledUp = false
+                    if (
+                        isChatListAtStreamingBottom(
+                            visibleItems = state.layoutInfo.visibleItemsInfo,
+                            canScrollForward = state.canScrollForward,
+                        )
+                    ) {
+                        followStreamingBottom = true
                     }
                 }
                 previousFirstIndex = firstIndex
@@ -394,31 +401,38 @@ private fun SharedTransitionScope.ChatListNormal(
             }
         }
 
-        // Reset userScrolledUp when loading stops
+        // New generations start attached unless the user scrolls away.
         LaunchedEffect(loading) {
-            if (!loading) {
-                userScrolledUp = false
+            if (loading) {
+                followStreamingBottom = true
+                forceBottomAttachPending = true
+            } else {
+                forceBottomAttachPending = false
             }
         }
 
-        // Auto-scroll to bottom during generation
         LaunchedEffect(state) {
-            snapshotFlow { state.layoutInfo.visibleItemsInfo }.collect {
-                if (!state.isScrollInProgress && loadingState && !userScrolledUp) {
-                    bottomFollowRequester.bringIntoView()
+            snapshotFlow {
+                isChatListAtStreamingBottom(
+                    visibleItems = state.layoutInfo.visibleItemsInfo,
+                    canScrollForward = state.canScrollForward,
+                )
+            }.collect { isAtBottom ->
+                if (loadingState && isAtBottom) {
+                    followStreamingBottom = true
                 }
             }
         }
 
-        LaunchedEffect(state, bottomFollowRequester) {
+        LaunchedEffect(state) {
             snapshotFlow {
                 buildChatStreamingFollowSignature(
                     conversation = conversationUpdated,
                     loading = loadingState
                 )
             }.collect {
-                if (loadingState && !userScrolledUp) {
-                    bottomFollowRequester.bringIntoView()
+                if (loadingState && followStreamingBottom) {
+                    snapToStreamingBottom()
                 }
             }
         }
@@ -456,6 +470,18 @@ private fun SharedTransitionScope.ChatListNormal(
         } else {
             turnGroups
         }
+
+        LaunchedEffect(loading, displayGroups.size, state) {
+            if (!loading || !forceBottomAttachPending) return@LaunchedEffect
+
+            withFrameNanos { }
+            snapToStreamingBottom()
+            withFrameNanos { }
+            snapToStreamingBottom()
+            followStreamingBottom = true
+            forceBottomAttachPending = false
+        }
+
         val assistant = remember(settings.assistants, conversation.assistantId) {
             settings.getAssistantById(conversation.assistantId)
         }
@@ -567,14 +593,25 @@ private fun SharedTransitionScope.ChatListNormal(
                                 showRegenerate = showRegenerate,
                                 onExpandedStreamingCodeBlockChanged = if (loading && isLastTurn) {
                                     {
-                                        if (!userScrolledUp) {
+                                        if (followStreamingBottom && !state.isScrollInProgress) {
                                             scope.launch {
-                                                bottomFollowRequester.bringIntoView()
+                                                snapToStreamingBottom()
                                             }
                                         }
                                     }
                                 } else {
                                     null
+                                },
+                                modifier = if (loading && isLastTurn) {
+                                    Modifier.onSizeChanged {
+                                        if (followStreamingBottom && !state.isScrollInProgress) {
+                                            scope.launch {
+                                                snapToStreamingBottom()
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    Modifier
                                 },
                             )
                         }
@@ -609,7 +646,6 @@ private fun SharedTransitionScope.ChatListNormal(
                         Modifier
                             .fillMaxWidth()
                             .height(5.dp)
-                            .bringIntoViewRequester(bottomFollowRequester)
                     )
                 }
             }

@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyListItemInfo
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -215,6 +216,19 @@ internal fun timelineScrollEdgeFor(
         deltaY < 0f && !listState.canScrollForward -> TimelineScrollEdge.Bottom
         else -> null
     }
+}
+
+internal fun isTimelineAtFollowBottom(
+    visibleItems: List<LazyListItemInfo>,
+    canScrollForward: Boolean,
+    viewportEndOffset: Int,
+): Boolean {
+    if (visibleItems.any { it.key == TIMELINE_FOLLOW_BOTTOM_KEY }) {
+        return true
+    }
+    val lastItem = visibleItems.lastOrNull() ?: return false
+    return !canScrollForward ||
+        lastItem.offset + lastItem.size <= viewportEndOffset + lastItem.size * 0.15f + 24f
 }
 
 /**
@@ -443,7 +457,13 @@ internal fun ActivityTimelinePanel(
     }
 
     LaunchedEffect(listState, currentEntryId) {
-        snapshotFlow { !listState.canScrollForward }
+        snapshotFlow {
+            isTimelineAtFollowBottom(
+                visibleItems = listState.layoutInfo.visibleItemsInfo,
+                canScrollForward = listState.canScrollForward,
+                viewportEndOffset = listState.layoutInfo.viewportEndOffset,
+            )
+        }
             .collect { isAtBottom ->
                 if (isAtBottom && currentEntryId != null) {
                     autoFollowCurrentEntry = true
@@ -457,7 +477,11 @@ internal fun ActivityTimelinePanel(
 
         expandedEntryIds = expandedEntryIds + entries[followIndex].id
         if (followIndex == entries.lastIndex) {
-            bottomFollowRequester.bringIntoView()
+            try {
+                bottomFollowRequester.bringIntoView()
+            } catch (_: IllegalStateException) {
+                // Animated visibility can briefly detach the follow anchor during live updates.
+            }
         } else {
             listState.scrollToItem(followIndex)
         }
@@ -848,7 +872,11 @@ private fun TimelineEntryItem(
 
     LaunchedEffect(expanded, followLiveContent, followSignature) {
         if (expanded && followLiveContent) {
-            bringIntoViewRequester.bringIntoView()
+            try {
+                bringIntoViewRequester.bringIntoView()
+            } catch (_: IllegalStateException) {
+                // The expanded row may be leaving composition while live content is still updating.
+            }
         }
     }
 }

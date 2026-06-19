@@ -112,6 +112,9 @@ fun WorkspaceDetailPage(id: String) {
     var deleteTarget by remember { mutableStateOf<WorkspaceFileEntry?>(null) }
     var showInstallDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val runtimeSupport = remember(context.applicationInfo.nativeLibraryDir) {
+        workspaceRuntimeSupport(context.applicationInfo.nativeLibraryDir)
+    }
     val filePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
     ) { uri ->
@@ -185,6 +188,7 @@ fun WorkspaceDetailPage(id: String) {
                     onInstallRootfs = { showInstallDialog = true },
                     onRename = vm::rename,
                     onToolApprovalChange = vm::setToolApproval,
+                    runtimeSupport = runtimeSupport,
                 )
 
                 1 -> WorkspaceFilesPage(
@@ -222,6 +226,7 @@ fun WorkspaceDetailPage(id: String) {
         if (showInstallDialog) {
             InstallRootfsDialog(
                 workspace = workspace,
+                runtimeSupport = runtimeSupport,
                 onDismiss = { showInstallDialog = false },
                 onConfirm = { url ->
                     vm.installRootfs(url)
@@ -355,6 +360,7 @@ private fun WorkspaceBasicPage(
     onInstallRootfs: () -> Unit,
     onRename: (String) -> Unit,
     onToolApprovalChange: (String, Boolean) -> Unit,
+    runtimeSupport: WorkspaceRuntimeSupport,
 ) {
     var nameDraft by rememberSaveable(workspace?.id, workspace?.name) { mutableStateOf(workspace?.name.orEmpty()) }
     val canRename = workspace != null && nameDraft.isNotBlank() && nameDraft.trim() != workspace.name
@@ -431,10 +437,17 @@ private fun WorkspaceBasicPage(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (!runtimeSupport.supported) {
+                        Text(
+                            text = runtimeSupport.message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
 
                     Button(
                         onClick = onInstallRootfs,
-                        enabled = workspace != null && !installing,
+                        enabled = workspace != null && !installing && runtimeSupport.supported,
                         modifier = Modifier.fillMaxWidth(),
                         shape = AppShapes.ButtonPill,
                     ) {
@@ -602,10 +615,14 @@ private fun RootfsProgress(progress: RootfsInstallProgress) {
 @Composable
 private fun InstallRootfsDialog(
     workspace: WorkspaceEntity,
+    runtimeSupport: WorkspaceRuntimeSupport,
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
 ) {
-    var url by rememberSaveable(workspace.id) { mutableStateOf(defaultRootfsUrl()) }
+    val context = LocalContext.current
+    var url by rememberSaveable(workspace.id) {
+        mutableStateOf(defaultRootfsUrl(runtimeSupport.abi ?: context.applicationInfo.nativeLibraryDir))
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -912,10 +929,50 @@ internal fun String.toShellStatusLabel(): String = when (this) {
     else -> lowercase()
 }
 
-private fun defaultRootfsUrl(): String {
-    val abi = Build.SUPPORTED_64_BIT_ABIS.firstOrNull()
-        ?: Build.SUPPORTED_ABIS.firstOrNull()
-        ?: "arm64-v8a"
+private data class WorkspaceRuntimeSupport(
+    val supported: Boolean,
+    val abi: String?,
+    val message: String,
+)
+
+private fun workspaceRuntimeSupport(nativeLibraryDir: String): WorkspaceRuntimeSupport {
+    val nativePath = nativeLibraryDir.lowercase()
+    val abi = when {
+        "x86_64" in nativePath -> "x86_64"
+        "arm64" in nativePath || "aarch64" in nativePath -> "arm64-v8a"
+        "armeabi" in nativePath || "/arm" in nativePath || "\\arm" in nativePath -> "armeabi-v7a"
+        else -> Build.SUPPORTED_64_BIT_ABIS.firstOrNull()
+            ?: Build.SUPPORTED_ABIS.firstOrNull()
+    }
+    return when (abi) {
+        "arm64-v8a", "x86_64" -> WorkspaceRuntimeSupport(
+            supported = true,
+            abi = abi,
+            message = "",
+        )
+        "armeabi-v7a", "armeabi" -> WorkspaceRuntimeSupport(
+            supported = false,
+            abi = abi,
+            message = "Linux workspaces need a 64-bit Android runtime. This device is running the app as ARMv7, and no compatible proot runtime is bundled.",
+        )
+        else -> WorkspaceRuntimeSupport(
+            supported = false,
+            abi = abi,
+            message = "Linux workspaces are not available for this device ABI: ${abi ?: "unknown"}.",
+        )
+    }
+}
+
+private fun defaultRootfsUrl(nativeLibraryDir: String): String {
+    val nativePath = nativeLibraryDir.lowercase()
+    val abi = when {
+        "x86_64" in nativePath -> "x86_64"
+        "arm64" in nativePath || "aarch64" in nativePath -> "arm64-v8a"
+        "armeabi" in nativePath || "/arm" in nativePath || "\\arm" in nativePath -> "armeabi-v7a"
+        else -> Build.SUPPORTED_64_BIT_ABIS.firstOrNull()
+            ?: Build.SUPPORTED_ABIS.firstOrNull()
+            ?: "arm64-v8a"
+    }
     val arch = when (abi) {
         "x86_64" -> "amd64"
         "arm64-v8a" -> "arm64"

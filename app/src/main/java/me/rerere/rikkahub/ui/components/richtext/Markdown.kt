@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.ui.components.richtext
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.spring
 import android.content.Intent
 import android.util.Log
 import androidx.compose.foundation.background
@@ -415,6 +417,7 @@ fun MarkdownBlock(
         displayContent = streamingPresentation.displayContent
         settleRanges = streamingPresentation.settleRanges
         streamingFrameMillis = now
+        onExpandedStreamingCodeBlockChanged?.invoke()
     }
     LaunchedEffect(streamingTextReveal) {
         if (!streamingTextReveal) return@LaunchedEffect
@@ -430,6 +433,7 @@ fun MarkdownBlock(
             streamingFrameMillis = now
             if (changed) {
                 displayContent = streamingPresentation.displayContent
+                onExpandedStreamingCodeBlockChanged?.invoke()
             }
             settleRanges = streamingPresentation.settleRanges
         }
@@ -454,7 +458,20 @@ fun MarkdownBlock(
     ) {
         ProvideTextStyle(style) {
             Column(
-                modifier = modifier.padding(start = 4.dp)
+                modifier = modifier
+                    .then(
+                        if (streamingTextReveal) {
+                            Modifier.animateContentSize(
+                                animationSpec = spring(
+                                    dampingRatio = 0.82f,
+                                    stiffness = 420f
+                                )
+                            )
+                        } else {
+                            Modifier
+                        }
+                    )
+                    .padding(start = 4.dp)
             ) {
                 astTree.children.fastForEach { child ->
                     MarkdownNode(
@@ -486,6 +503,7 @@ internal class StreamingTextPresentationState(
     private var firstPendingSinceMillis = 0L
     private var revealCarry = 0f
     private var lastRevealMillis = nowMillis
+    private var currentRevealCharsPerSecond = STREAMING_DEFAULT_CHARS_PER_SECOND
 
     fun acceptRawContent(nextRawContent: String, nowMillis: Long): Boolean {
         if (nextRawContent == rawContent) {
@@ -497,6 +515,7 @@ internal class StreamingTextPresentationState(
             snapTo(nextRawContent)
             lastRawUpdateMillis = nowMillis
             lastRevealMillis = nowMillis
+            currentRevealCharsPerSecond = STREAMING_DEFAULT_CHARS_PER_SECOND
             return true
         }
 
@@ -518,6 +537,7 @@ internal class StreamingTextPresentationState(
             snapTo(nextRawContent)
             lastRawUpdateMillis = nowMillis
             lastRevealMillis = nowMillis
+            currentRevealCharsPerSecond = STREAMING_DEFAULT_CHARS_PER_SECOND
             return true
         }
 
@@ -531,6 +551,12 @@ internal class StreamingTextPresentationState(
         if (displayContent == rawContent) {
             firstPendingSinceMillis = 0L
             revealCarry = 0f
+            currentRevealCharsPerSecond = approachStreamingRate(
+                current = currentRevealCharsPerSecond,
+                target = 0f,
+                elapsedMillis = elapsedMillis,
+                timeConstantMillis = STREAMING_DECEL_TIME_CONSTANT_MILLIS
+            )
             return false
         }
 
@@ -545,10 +571,25 @@ internal class StreamingTextPresentationState(
             backlogMillis <= STREAMING_CATCH_UP_AFTER_MILLIS -> 1f
             else -> (backlogMillis / STREAMING_SMOOTHING_WINDOW_MILLIS).coerceIn(1f, STREAMING_MAX_CATCH_UP_MULTIPLIER)
         }
-        val revealChars = smoothedCharsPerSecond
+        val baseRevealChars = smoothedCharsPerSecond
             .coerceIn(STREAMING_MIN_CHARS_PER_SECOND, STREAMING_MAX_CHARS_PER_SECOND) * catchUpMultiplier
 
-        revealCarry += revealChars * elapsedMillis.coerceAtLeast(1L) / 1000f
+        val stalledMillis = (nowMillis - lastRawUpdateMillis - STREAMING_STALL_GRACE_MILLIS).coerceAtLeast(0L)
+        val stallProgress = (stalledMillis / STREAMING_STALL_DECEL_MILLIS.toFloat()).coerceIn(0f, 1f)
+        val stallEase = stallProgress * stallProgress * (3f - 2f * stallProgress)
+        val targetRevealChars = baseRevealChars * (1f - (1f - STREAMING_STALL_MIN_MULTIPLIER) * stallEase)
+        currentRevealCharsPerSecond = approachStreamingRate(
+            current = currentRevealCharsPerSecond,
+            target = targetRevealChars,
+            elapsedMillis = elapsedMillis,
+            timeConstantMillis = if (targetRevealChars > currentRevealCharsPerSecond) {
+                STREAMING_ACCEL_TIME_CONSTANT_MILLIS
+            } else {
+                STREAMING_DECEL_TIME_CONSTANT_MILLIS
+            }
+        ).coerceIn(STREAMING_MIN_CHARS_PER_SECOND * STREAMING_STALL_MIN_MULTIPLIER, STREAMING_MAX_CHARS_PER_SECOND)
+
+        revealCarry += currentRevealCharsPerSecond * elapsedMillis.coerceAtLeast(1L) / 1000f
         val revealBudget = floor(revealCarry).toInt().coerceAtMost(pendingLength)
         val starved = nowMillis - lastRevealMillis >= STREAMING_STARVED_REVEAL_MILLIS
         if (revealBudget <= 0 && !starved) {
@@ -590,7 +631,19 @@ internal class StreamingTextPresentationState(
         settleRanges = emptyList()
         firstPendingSinceMillis = 0L
         revealCarry = 0f
+        currentRevealCharsPerSecond = STREAMING_DEFAULT_CHARS_PER_SECOND
     }
+}
+
+private fun approachStreamingRate(
+    current: Float,
+    target: Float,
+    elapsedMillis: Long,
+    timeConstantMillis: Long,
+): Float {
+    if (timeConstantMillis <= 0L) return target
+    val progress = (elapsedMillis.coerceAtLeast(1L) / timeConstantMillis.toFloat()).coerceIn(0f, 1f)
+    return current + (target - current) * progress
 }
 
 internal fun smoothStreamingRate(
@@ -722,12 +775,17 @@ private const val STREAMING_SETTLE_ALPHA_FAST = 0.42f
 private const val STREAMING_SETTLE_ALPHA_SLOW = 0.65f
 private const val STREAMING_SPEED_SLOW_THRESHOLD = 30f
 private const val STREAMING_SPEED_FAST_THRESHOLD = 150f
-private const val STREAMING_STARVED_REVEAL_MILLIS = 110L
+private const val STREAMING_STARVED_REVEAL_MILLIS = 180L
 private const val STREAMING_MIN_CHARS_PER_SECOND = 18f
 private const val STREAMING_DEFAULT_CHARS_PER_SECOND = 44f
 private const val STREAMING_MAX_CHARS_PER_SECOND = 220f
 private const val STREAMING_MAX_CATCH_UP_MULTIPLIER = 3.2f
 private const val STREAMING_RATE_KEEP_WEIGHT = 0.82f
+private const val STREAMING_ACCEL_TIME_CONSTANT_MILLIS = 140L
+private const val STREAMING_DECEL_TIME_CONSTANT_MILLIS = 620L
+private const val STREAMING_STALL_GRACE_MILLIS = 140L
+private const val STREAMING_STALL_DECEL_MILLIS = 900L
+private const val STREAMING_STALL_MIN_MULTIPLIER = 0.18f
 private const val STREAMING_TINY_PENDING_LENGTH = 4
 private const val STREAMING_SHORT_WORD_LENGTH = 7
 private const val STREAMING_MEDIUM_WORD_LENGTH = 10

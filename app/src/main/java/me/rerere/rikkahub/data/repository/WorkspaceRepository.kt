@@ -12,7 +12,6 @@ import me.rerere.rikkahub.data.db.dao.WorkspaceDAO
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.workspace.RootfsInstallProgress
-import me.rerere.workspace.RootfsInstallStage
 import me.rerere.workspace.RootfsInstaller
 import me.rerere.workspace.WorkspaceCommandResult
 import me.rerere.workspace.WorkspaceFileEntry
@@ -117,13 +116,6 @@ class WorkspaceRepository(
             // runInterruptible 让协程取消转成线程中断, 打断 install 内阻塞的下载/解压循环
             runInterruptible(Dispatchers.IO) {
                 rootfsInstaller.install(workspace.root, url, onProgress)
-                onProgress(
-                    RootfsInstallProgress(
-                        stage = RootfsInstallStage.EXTRACTING,
-                        currentEntry = "Installing python3, pip, and certificates",
-                    )
-                )
-                ensurePythonToolchain(workspace.root)
             }
             updateShellState(workspace, WorkspaceShellStatus.READY.name)
             return true
@@ -268,33 +260,6 @@ class WorkspaceRepository(
         }
     }
 
-    private fun ensurePythonToolchain(root: String) {
-        val result = manager.executeCommand(
-            root = root,
-            command = """
-                set -eu
-                export DEBIAN_FRONTEND=noninteractive
-                if ! command -v python3 >/dev/null 2>&1 || ! command -v pip3 >/dev/null 2>&1; then
-                  apt-get update
-                  apt-get install -y --no-install-recommends python3 python3-pip python3-venv ca-certificates
-                fi
-                if ! command -v python >/dev/null 2>&1 && [ -x /usr/bin/python3 ]; then
-                  ln -sf /usr/bin/python3 /usr/local/bin/python
-                fi
-                if ! command -v pip >/dev/null 2>&1 && [ -x /usr/bin/pip3 ]; then
-                  ln -sf /usr/bin/pip3 /usr/local/bin/pip
-                fi
-                python3 --version
-                pip3 --version
-            """.trimIndent(),
-            timeoutMillis = PYTHON_BOOTSTRAP_TIMEOUT_MS,
-        )
-        if (result.timedOut || result.exitCode != 0) {
-            val message = result.stderr.ifBlank { result.stdout }.trim()
-            error(if (message.isBlank()) "Python and pip bootstrap failed" else message)
-        }
-    }
-
     private suspend fun restoreShellState(workspace: WorkspaceEntity) {
         updateShellState(workspace.id, workspace.shellStatus)
     }
@@ -317,6 +282,5 @@ class WorkspaceRepository(
 
     companion object {
         private const val TAG = "WorkspaceRepository"
-        private const val PYTHON_BOOTSTRAP_TIMEOUT_MS = 10 * 60 * 1_000L
     }
 }

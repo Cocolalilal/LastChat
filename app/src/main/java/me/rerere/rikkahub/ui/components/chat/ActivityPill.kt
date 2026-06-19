@@ -2,8 +2,11 @@ package me.rerere.rikkahub.ui.components.chat
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.expandVertically
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -13,7 +16,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
@@ -44,6 +46,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -53,6 +56,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Lightbulb
@@ -67,6 +71,7 @@ import me.rerere.rikkahub.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
+import me.rerere.rikkahub.ui.components.richtext.updatePreviewAutoFollowPaused
 import me.rerere.rikkahub.ui.modifier.fadeEdges
 import me.rerere.rikkahub.ui.modifier.shimmer
 import kotlin.time.Duration.Companion.seconds
@@ -276,6 +281,10 @@ fun buildActivityItemsFromMultiple(state: ActivityState.CompletedMultiple): List
 private val LARGE_RADIUS = 20.dp
 private val SMALL_RADIUS = 6.dp
 private val PILL_HEIGHT = 36.dp
+private val PILL_MORPH_SPEC = tween<IntSize>(durationMillis = 220, easing = FastOutSlowInEasing)
+private val PILL_CORNER_SPEC = tween<Dp>(durationMillis = 220, easing = FastOutSlowInEasing)
+private const val PILL_MORPH_SETTLE_MILLIS = 230L
+private const val PILL_EXPAND_STAGING_MILLIS = 70L
 
 /**
  * Position of a pill in a row of pills.
@@ -436,40 +445,70 @@ private fun AnimatedSinglePill(
     maxBubbleWidth: Dp,
 ) {
     val isExpandedReasoning = reasoningPreviewEnabled && state is ActivityState.Reasoning
-    val contentState = if (isExpandedReasoning) {
+    val requestedContentState = if (isExpandedReasoning) {
         SinglePillContentState.ExpandedReasoning(state as ActivityState.Reasoning)
     } else {
         SinglePillContentState.Compact(state)
     }
+    var surfaceExpanded by remember {
+        mutableStateOf(requestedContentState is SinglePillContentState.ExpandedReasoning)
+    }
+    var renderedContentState by remember { mutableStateOf(requestedContentState) }
+    val latestRequestedState by rememberUpdatedState(requestedContentState)
     val expandedRadius = 24.dp
+
+    LaunchedEffect(
+        isExpandedReasoning,
+        (state as? ActivityState.Reasoning)?.startTimeMs,
+        if (state is ActivityState.Reasoning) "reasoning" else stateToKey(state)
+    ) {
+        val requested = latestRequestedState
+        when (requested) {
+            is SinglePillContentState.ExpandedReasoning -> {
+                if (renderedContentState is SinglePillContentState.Compact) {
+                    renderedContentState = SinglePillContentState.Compact(requested.state)
+                    delay(PILL_EXPAND_STAGING_MILLIS)
+                }
+                surfaceExpanded = true
+                renderedContentState = requested
+            }
+            is SinglePillContentState.Compact -> {
+                if (surfaceExpanded || renderedContentState is SinglePillContentState.ExpandedReasoning) {
+                    surfaceExpanded = false
+                    delay(PILL_MORPH_SETTLE_MILLIS)
+                }
+                renderedContentState = requested
+            }
+        }
+    }
 
     // Animate corner radii for smooth transitions
     val topStartRadius by animateDpAsState(
-        targetValue = if (isExpandedReasoning) expandedRadius else LARGE_RADIUS,
-        animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
+        targetValue = if (surfaceExpanded) expandedRadius else LARGE_RADIUS,
+        animationSpec = PILL_CORNER_SPEC,
         label = "corner_top_start"
     )
     val topEndRadius by animateDpAsState(
-        targetValue = if (isExpandedReasoning) expandedRadius else LARGE_RADIUS,
-        animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
+        targetValue = if (surfaceExpanded) expandedRadius else LARGE_RADIUS,
+        animationSpec = PILL_CORNER_SPEC,
         label = "corner_top_end"
     )
     val bottomStartRadius by animateDpAsState(
         targetValue = when {
-            isExpandedReasoning -> expandedRadius
+            surfaceExpanded -> expandedRadius
             connectsToBubbleBelow -> SMALL_RADIUS
             else -> LARGE_RADIUS
         },
-        animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
+        animationSpec = PILL_CORNER_SPEC,
         label = "corner_bottom_start"
     )
     val bottomEndRadius by animateDpAsState(
         targetValue = when {
-            isExpandedReasoning -> expandedRadius
+            surfaceExpanded -> expandedRadius
             connectsToBubbleBelow -> SMALL_RADIUS
             else -> LARGE_RADIUS
         },
-        animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
+        animationSpec = PILL_CORNER_SPEC,
         label = "corner_bottom_end"
     )
     
@@ -490,11 +529,12 @@ private fun AnimatedSinglePill(
 
     Surface(
         modifier = Modifier
+            .animateContentSize(
+                animationSpec = PILL_MORPH_SPEC
+            )
             .then(
-                if (isExpandedReasoning) {
-                    Modifier
-                        .widthIn(max = maxBubbleWidth)
-                        .fillMaxWidth()
+                if (surfaceExpanded) {
+                    Modifier.widthIn(max = maxBubbleWidth)
                 } else {
                     Modifier.height(PILL_HEIGHT)
                 }
@@ -506,42 +546,30 @@ private fun AnimatedSinglePill(
         onClick = onClick
     ) {
         AnimatedContent(
-            targetState = contentState,
+            targetState = renderedContentState,
             transitionSpec = {
-                val enter = fadeIn(tween(220, easing = LinearOutSlowInEasing)) +
-                    expandVertically(
-                        animationSpec = spring(dampingRatio = 0.75f, stiffness = 360f),
-                        expandFrom = Alignment.Top
-                    ) +
-                    scaleIn(
-                        initialScale = 0.92f,
-                        animationSpec = spring(dampingRatio = 0.75f, stiffness = 360f)
-                    )
-                val exit = fadeOut(tween(150)) +
-                    shrinkVertically(
-                        animationSpec = spring(dampingRatio = 0.85f, stiffness = 420f),
-                        shrinkTowards = Alignment.Top
-                    ) +
-                    scaleOut(
-                        targetScale = 0.96f,
-                        animationSpec = tween(150)
-                    )
-                enter.togetherWith(exit)
+                (EnterTransition.None togetherWith ExitTransition.None) using SizeTransform(clip = true) { _, _ ->
+                    PILL_MORPH_SPEC
+                }
             },
             contentKey = { it is SinglePillContentState.ExpandedReasoning },
             label = "pill_reasoning_preview",
             modifier = Modifier.animateContentSize(
-                animationSpec = spring(dampingRatio = 0.75f, stiffness = 350f)
+                animationSpec = PILL_MORPH_SPEC
             )
         ) { targetContentState ->
             when (targetContentState) {
                 is SinglePillContentState.ExpandedReasoning -> {
-                    ReasoningPreviewCard(state = targetContentState.state)
+                    ReasoningPreviewCard(
+                        state = (state as? ActivityState.Reasoning) ?: targetContentState.state,
+                        active = surfaceExpanded
+                    )
                 }
                 is SinglePillContentState.Compact -> {
+                    val compactState = if (!surfaceExpanded && !isExpandedReasoning) state else targetContentState.state
                     // AnimatedContent for smooth crossfade between different compact activity types.
                     AnimatedContent(
-                        targetState = targetContentState.state,
+                        targetState = compactState,
                         transitionSpec = {
                             (fadeIn(animationSpec = tween(200)) +
                                 scaleIn(initialScale = 0.92f, animationSpec = tween(200)))
@@ -637,17 +665,13 @@ private fun AnimatedSinglePill(
 @Composable
 private fun ReasoningPreviewCard(
     state: ActivityState.Reasoning,
+    active: Boolean,
 ) {
     var elapsedMs by remember { mutableLongStateOf(0L) }
     val scrollState = rememberScrollState()
-    var autoFollowPaused by remember { mutableStateOf(false) }
-    var lastObservedMax by remember { mutableIntStateOf(0) }
-    var pulseDimmed by remember { mutableStateOf(false) }
-    val previewAlpha by animateFloatAsState(
-        targetValue = if (pulseDimmed) 0.88f else 1f,
-        animationSpec = tween(durationMillis = 110, easing = LinearOutSlowInEasing),
-        label = "reasoning_preview_stream_alpha"
-    )
+    var previewAutoFollowPaused by remember(state.startTimeMs) { mutableStateOf(false) }
+    var programmaticScrollInProgress by remember { mutableStateOf(false) }
+    var previousScrollValue by remember(state.startTimeMs) { mutableIntStateOf(0) }
 
     LaunchedEffect(state.startTimeMs) {
         while (isActive) {
@@ -656,31 +680,51 @@ private fun ReasoningPreviewCard(
         }
     }
 
-    LaunchedEffect(state.reasoningText) {
-        if (state.reasoningText.isNotEmpty()) {
-            pulseDimmed = true
-            delay(110)
-            pulseDimmed = false
+    LaunchedEffect(scrollState, active) {
+        if (!active) return@LaunchedEffect
+        snapshotFlow {
+            Triple(
+                scrollState.value,
+                scrollState.maxValue,
+                scrollState.isScrollInProgress
+            )
+        }.collect { (scrollValue, maxValue, isScrollInProgress) ->
+            val isAtBottom = scrollValue >= maxValue
+            previewAutoFollowPaused = updatePreviewAutoFollowPaused(
+                currentlyPaused = previewAutoFollowPaused,
+                isAtBottom = isAtBottom,
+                scrollDelta = scrollValue - previousScrollValue,
+                userScrollInProgress = isScrollInProgress,
+                programmaticScrollInProgress = programmaticScrollInProgress
+            )
+            previousScrollValue = scrollValue
         }
     }
 
-    LaunchedEffect(scrollState) {
-        snapshotFlow { scrollState.value to scrollState.maxValue }.collect { (value, maxValue) ->
-            if (maxValue == lastObservedMax) {
-                autoFollowPaused = value < maxValue - 8
-            } else {
-                if (value >= lastObservedMax - 8) {
-                    autoFollowPaused = false
+    LaunchedEffect(scrollState, previewAutoFollowPaused, active) {
+        if (!active) return@LaunchedEffect
+        snapshotFlow { scrollState.maxValue }.collect { maxValue ->
+            if (!previewAutoFollowPaused) {
+                programmaticScrollInProgress = true
+                try {
+                    scrollState.scrollTo(maxValue)
+                } finally {
+                    programmaticScrollInProgress = false
                 }
-                lastObservedMax = maxValue
             }
         }
     }
 
-    LaunchedEffect(state.reasoningText, autoFollowPaused) {
-        if (!autoFollowPaused) {
-            delay(16)
-            scrollState.animateScrollTo(scrollState.maxValue)
+    var streamingLayoutTick by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(streamingLayoutTick, previewAutoFollowPaused, active) {
+        if (!active || previewAutoFollowPaused) return@LaunchedEffect
+        delay(16)
+        programmaticScrollInProgress = true
+        try {
+            scrollState.scrollTo(scrollState.maxValue)
+        } finally {
+            programmaticScrollInProgress = false
         }
     }
 
@@ -739,7 +783,6 @@ private fun ReasoningPreviewCard(
             content = previewText,
             modifier = Modifier
                 .fillMaxWidth()
-                .graphicsLayer { alpha = previewAlpha }
                 .fadeEdges(fadeTop = true, fadeBottom = true)
                 .heightIn(max = 120.dp)
                 .verticalScroll(scrollState),
@@ -747,7 +790,10 @@ private fun ReasoningPreviewCard(
                 color = MaterialTheme.colorScheme.onSurface
             ),
             paragraphSpacing = 8.dp,
-            streamingTextReveal = false
+            streamingTextReveal = active,
+            onExpandedStreamingCodeBlockChanged = {
+                streamingLayoutTick++
+            }
         )
     }
 }

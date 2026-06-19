@@ -64,6 +64,39 @@ class StreamingTextPresentationStateTest {
     }
 
     @Test
+    fun stalledApiDeceleratesInsteadOfDrainingAllPendingText() {
+        val state = StreamingTextPresentationState("", nowMillis = 0L)
+        val raw = "x".repeat(180)
+
+        state.acceptRawContent(raw, nowMillis = 16L)
+        assertTrue(state.step(nowMillis = 80L, elapsedMillis = 64L))
+        val earlyLength = state.displayContent.length
+
+        assertTrue(state.step(nowMillis = 980L, elapsedMillis = 900L))
+
+        assertTrue(state.displayContent.length > earlyLength)
+        assertTrue(state.displayContent.length < raw.length)
+    }
+
+    @Test
+    fun resumedApiDoesNotSnapBackToFullSpeedInOneFrame() {
+        val state = StreamingTextPresentationState("", nowMillis = 0L)
+        val firstRaw = "x".repeat(120)
+        val resumedRaw = firstRaw + "y".repeat(120)
+
+        state.acceptRawContent(firstRaw, nowMillis = 16L)
+        assertTrue(state.step(nowMillis = 80L, elapsedMillis = 64L))
+        assertTrue(state.step(nowMillis = 980L, elapsedMillis = 900L))
+        val stalledLength = state.displayContent.length
+
+        state.acceptRawContent(resumedRaw, nowMillis = 1_000L)
+        assertTrue(state.step(nowMillis = 1_016L, elapsedMillis = 16L))
+
+        val resumedDelta = state.displayContent.length - stalledLength
+        assertTrue(resumedDelta in 1..12)
+    }
+
+    @Test
     fun nonAppendEditSnapsToRawContent() {
         val state = StreamingTextPresentationState("The old answer", nowMillis = 0L)
 

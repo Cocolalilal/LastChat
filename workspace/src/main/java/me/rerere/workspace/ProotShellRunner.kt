@@ -24,6 +24,17 @@ class ProotShellRunner(
                 stderr = "Rootfs is not installed",
             )
         }
+        val expectedArchitecture = WorkspaceRootfsArchitecture.fromNativeLibraryDir(nativeLibraryDir)
+        val actualArchitecture = context.linuxDir.detectRootfsArchitecture()
+        if (expectedArchitecture != null && actualArchitecture != null && expectedArchitecture != actualArchitecture) {
+            return WorkspaceCommandResult(
+                exitCode = 126,
+                stdout = "",
+                stderr = "Rootfs architecture mismatch: installed ${actualArchitecture.displayName}, " +
+                    "but this app is running ${expectedArchitecture.displayName} native proot. " +
+                    "Reinstall rootfs using the ${expectedArchitecture.ubuntuArch} Ubuntu base archive.",
+            )
+        }
 
         val proot = File(nativeLibraryDir, PROOT_EXEC)
         val loader = File(nativeLibraryDir, PROOT_LOADER)
@@ -96,10 +107,9 @@ class ProotShellRunner(
             "TERM=xterm-256color",
             "LANG=C.UTF-8",
             "LC_ALL=C.UTF-8",
-            "bash",
+            "/bin/bash",
             "-l",
             "-c",
-            // 命令通过位置参数传入, 避免任何转义; eval "$2" 对命令文本只求值一次, 等价于 bash -c "$cmd"
             "cd -- \"\$1\" && eval \"\$2\"",
             "rikkahub",
             context.prootCwd(),

@@ -39,6 +39,9 @@ class RootfsInstaller(
                 "Failed to move rootfs into workspace"
             }
             patcher.patch(linuxDir)
+            require(linuxDir.hasUsableRootfs()) {
+                "Rootfs does not contain a usable shell environment"
+            }
             onProgress(RootfsInstallProgress(stage = RootfsInstallStage.INSTALLED))
         } finally {
             archive.delete()

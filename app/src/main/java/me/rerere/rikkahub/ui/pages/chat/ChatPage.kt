@@ -676,6 +676,7 @@ fun ChatPage(
         )
     }
     var chatListReady by remember(conversation.id) { mutableStateOf(false) }
+    var consumedFocusLatestMessageKey by remember(conversation.id) { mutableStateOf<String?>(null) }
     LaunchedEffect(
         conversation.id,
         conversationInitialized,
@@ -712,8 +713,13 @@ fun ChatPage(
         }
     }
 
-    LaunchedEffect(focusLatestMessageKey, conversation.id, conversation.messageNodes.size) {
-        if (focusLatestMessageKey != null && conversation.messageNodes.isNotEmpty()) {
+    LaunchedEffect(focusLatestMessageKey, conversation.id, conversation.messageNodes.isNotEmpty()) {
+        if (
+            focusLatestMessageKey != null &&
+            consumedFocusLatestMessageKey != focusLatestMessageKey &&
+            conversation.messageNodes.isNotEmpty()
+        ) {
+            consumedFocusLatestMessageKey = focusLatestMessageKey
             chatListState.animateScrollToItem(conversation.messageNodes.lastIndex)
         }
     }
@@ -1058,6 +1064,7 @@ private fun ChatPageContent(
     var selectedChatShareItems by remember(conversation.id) { mutableStateOf<Set<Uuid>>(emptySet()) }
     var showExportSheet by remember { mutableStateOf(false) }
     var chatSearchQuery by rememberSaveable(conversation.id) { mutableStateOf(initialSearchQuery.orEmpty()) }
+    var consumedInitialSearchQuery by remember(conversation.id) { mutableStateOf<String?>(null) }
     val toolbarPlacement = chatTopBarPlacement(setting)
     val isGenerating = loadingJob != null
     val density = LocalDensity.current
@@ -1086,8 +1093,13 @@ private fun ChatPageContent(
     }
     
     // Auto-scroll to first matching message when opened from search
-    LaunchedEffect(initialSearchQuery, conversation.messageNodes) {
-        if (!initialSearchQuery.isNullOrBlank() && conversation.messageNodes.isNotEmpty()) {
+    LaunchedEffect(initialSearchQuery, conversation.id, conversation.messageNodes.isNotEmpty()) {
+        if (
+            !initialSearchQuery.isNullOrBlank() &&
+            consumedInitialSearchQuery != initialSearchQuery &&
+            conversation.messageNodes.isNotEmpty()
+        ) {
+            consumedInitialSearchQuery = initialSearchQuery
             // Find the first message containing the search query
             val matchIndex = conversation.messageNodes.indexOfFirst { node ->
                 node.currentMessage.toText().contains(initialSearchQuery, ignoreCase = true)
@@ -1756,9 +1768,6 @@ private fun ChatPageContent(
                                 listOf(me.rerere.ai.ui.UIMessagePart.Text(suggestion)),
                                 persistenceMode = activePersistenceMode
                             )
-                            scope.launch {
-                                chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
-                            }
                         } else {
                             toaster.show(modelRequiredMessage, type = ToastType.Error)
                         }
@@ -1792,9 +1801,6 @@ private fun ChatPageContent(
                                 inputState.getContents(),
                                 persistenceMode = activePersistenceMode
                             )
-                            scope.launch {
-                                chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
-                            }
                         }
                         inputState.clearInput()
                     },
@@ -1814,9 +1820,6 @@ private fun ChatPageContent(
                                 answer = false,
                                 persistenceMode = activePersistenceMode
                             )
-                            scope.launch {
-                                chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
-                            }
                         }
                         inputState.clearInput()
                     },
