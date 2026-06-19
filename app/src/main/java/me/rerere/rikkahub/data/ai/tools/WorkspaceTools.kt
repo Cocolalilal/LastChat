@@ -9,7 +9,7 @@ import me.rerere.workspace.WorkspaceCommandResult
 import me.rerere.workspace.WorkspaceFileEntry
 import me.rerere.workspace.WorkspaceManager
 import me.rerere.workspace.WorkspaceStorageArea
-import java.io.ByteArrayOutputStream
+import okio.Buffer
 
 private const val SHELL_TIMEOUT_MAX_SECONDS = 600L
 private const val MAX_READ_FILE_BYTES = 8L * 1024 * 1024
@@ -202,9 +202,9 @@ private suspend fun WorkspaceRepository.readTextInRootfs(
     require(size <= MAX_READ_FILE_BYTES) {
         "File is too large to read"
     }
-    val buffer = ByteArrayOutputStream(size.toInt())
-    exportFile(workspaceId, area, relativePath, buffer)
-    return buffer.toString(Charsets.UTF_8.name())
+    val buffer = Buffer()
+    exportFile(workspaceId, area, relativePath, buffer.outputStream())
+    return buffer.readUtf8()
 }
 
 private fun rootfsPathToAreaAndRelative(path: String): Pair<WorkspaceStorageArea, String> {
