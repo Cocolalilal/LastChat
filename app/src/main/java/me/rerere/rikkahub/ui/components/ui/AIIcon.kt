@@ -43,6 +43,7 @@ import me.rerere.rikkahub.utils.JsonInstant
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.contentOrNull
+import org.koin.compose.koinInject
 
 private const val LOBEHUB_ICON_URI_PREFIX = "lobehub://"
 
@@ -666,10 +667,8 @@ private fun RemoteIcon(
     fallback: @Composable (() -> Unit)? = null
 ) {
     val context = LocalContext.current
-    val platformHttpClient = remember {
-        org.koin.java.KoinJavaComponent.get<PlatformHttpClient>(PlatformHttpClient::class.java)
-    }
-    val iconManager = remember(context) { 
+    val platformHttpClient = koinInject<PlatformHttpClient>()
+    val iconManager = remember(context, platformHttpClient) {
         me.rerere.rikkahub.utils.IconStorageManager.getInstance(context, platformHttpClient)
     }
     val darkMode = LocalDarkMode.current
