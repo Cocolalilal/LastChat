@@ -46,7 +46,7 @@ import me.rerere.rikkahub.utils.ImageUtils
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.getFileMimeType
 import me.rerere.rikkahub.utils.getFileNameFromUri
-import java.io.ByteArrayOutputStream
+import okio.Buffer
 import java.io.File
 import java.io.InputStream
 import java.security.MessageDigest
@@ -629,14 +629,15 @@ class ChatAttachmentRepository(
         val scaledBitmap = scaleBitmapIfNeeded(bitmap, longEdgeLimit)
         val preserveAlpha = scaledBitmap.hasAlpha()
         val outputMime = if (preserveAlpha) "image/png" else "image/jpeg"
-        val outputBytes = ByteArrayOutputStream().use { output ->
+        val outputBuffer = Buffer()
+        outputBuffer.outputStream().use { output ->
             scaledBitmap.compress(
                 if (preserveAlpha) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG,
                 if (preserveAlpha) 100 else 90,
                 output,
             )
-            output.toByteArray()
         }
+        val outputBytes = outputBuffer.readByteArray()
         if (scaledBitmap !== bitmap) {
             scaledBitmap.recycle()
         }
