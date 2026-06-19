@@ -51,7 +51,8 @@ import java.io.File
 import java.io.InputStream
 import java.security.MessageDigest
 import java.time.Instant
-import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.concurrent.atomics.AtomicBoolean
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.uuid.Uuid
 
 private const val CHAT_UPLOAD_PREFIX = "chat-"
@@ -90,6 +91,7 @@ data class ChatStorageSummary(
     val isSyncing: Boolean = true,
 )
 
+@OptIn(ExperimentalAtomicApi::class)
 class ChatAttachmentRepository(
     private val context: Context,
     private val chatAttachmentDao: ChatAttachmentDao,

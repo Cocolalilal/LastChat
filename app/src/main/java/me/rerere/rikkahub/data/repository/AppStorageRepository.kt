@@ -34,7 +34,8 @@ import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
 import me.rerere.rikkahub.utils.resolveOwnedFile
 import me.rerere.rikkahub.web.WebUploadRegistry
 import java.io.File
-import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.concurrent.atomics.AtomicBoolean
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 private const val TAG = "AppStorageRepo"
 
@@ -65,6 +66,7 @@ private data class AppStorageAuditState(
     val isScanning: Boolean = true,
 )
 
+@OptIn(ExperimentalAtomicApi::class)
 class AppStorageRepository(
     private val context: Context,
     private val settingsStore: SettingsStore,
