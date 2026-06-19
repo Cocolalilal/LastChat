@@ -977,237 +977,399 @@ private fun ColumnScope.ProviderConfigureLiteRT(
     val installedModelFiles by vm.installedModelFiles.collectAsStateWithLifecycle()
     val visionUnavailableSet by vm.visionUnavailableSet.collectAsStateWithLifecycle()
     val perfTelemetry by vm.perfTelemetry.collectAsStateWithLifecycle()
+    val haptics = rememberPremiumHaptics()
 
-    
+    var manualUrl by remember { mutableStateOf("") }
+    var maxTokensInput by remember(maxNumTokensOverride) {
+        mutableStateOf(maxNumTokensOverride?.toString() ?: "")
+    }
 
-    // Friendly post-crash banner. Default tone is "we handled it", not "panic".
+    Card(
+        shape = AppShapes.CardLarge,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(16.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.local_llm_surface_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                text = stringResource(R.string.local_llm_surface_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.78f),
+            )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                LocalLlmPill(stringResource(R.string.local_llm_model_count_short, provider.models.size))
+                LocalLlmPill(stringResource(R.string.local_llm_accelerator_label, accelerator ?: "auto"))
+            }
+        }
+    }
+
     crashRecoveryAccel?.let { accel ->
         Card(
+            shape = AppShapes.CardLarge,
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
             ),
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { vm.dismissCrashRecovery() },
+                .clickable {
+                    haptics.perform(HapticPattern.Pop)
+                    vm.dismissCrashRecovery()
+                },
         ) {
             Text(
                 text = stringResource(R.string.local_llm_crash_recovery_format, accel),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onTertiaryContainer,
-                modifier = Modifier.padding(12.dp),
+                modifier = Modifier.padding(16.dp),
             )
         }
     }
 
-    // Installed model count — model management is on the Models tab (page 1).
-    Text(
-        text = stringResource(R.string.local_llm_installed_models_count, provider.models.size),
-        style = MaterialTheme.typography.bodySmall,
-    )
-
-    // URL install field — paste an HF URL, hit Install.
-    var manualUrl by remember { mutableStateOf("") }
-    OutlinedTextField(
-        value = manualUrl,
-        onValueChange = { manualUrl = it },
-        label = { Text(stringResource(R.string.local_llm_install_url_label)) },
-        supportingText = { Text(stringResource(R.string.local_llm_install_url_hint)) },
-        modifier = Modifier.fillMaxWidth(),
-    )
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Button(
-            onClick = {
-                vm.startManualDownload(manualUrl)
-                manualUrl = ""
-            },
-            enabled = manualUrl.isNotBlank() && downloadProgress == null,
-        ) {
-            Text(stringResource(R.string.local_llm_install_url_action))
-        }
-        OutlinedButton(
-            onClick = { vm.startDefaultDownload() },
-            enabled = downloadProgress == null,
-        ) {
-            Text(stringResource(R.string.local_llm_download_default))
-        }
-    }
-
-    // Manage installed files — rename or delete each downloaded .litertlm.
-    if (provider.models.isNotEmpty()) {
-        Text(
-            stringResource(R.string.local_llm_manage_files_title),
-            style = MaterialTheme.typography.titleSmall,
-            modifier = Modifier.padding(top = 8.dp),
-        )
-        provider.models.forEach { model ->
-            InstalledModelRow(
-                model = model,
-                visionUnavailable = model.modelId in visionUnavailableSet,
-                // After a native crash inside liblitertlm we suppress the Re-try
-                // vision button: re-trying immediately is what just crashed the app.
-                // The user dismisses the crash banner (above) when they want to opt
-                // back in to taking that risk; the button reappears.
-                allowVisionRetry = crashRecoveryAccel == null,
-                perfSample = perfTelemetry[model.modelId],
-                onRename = { newName -> vm.renameModel(model.modelId, newName) },
-                onDelete = { vm.deleteModel(model.modelId) },
-                onRetryVision = { vm.retryVisionEncoder(model.modelId) },
-            )
-        }
-    }
-
-    // Recommended-models curated picker. Sourced from Google AI Edge Gallery's allowlist
-    // (LiteRtCatalog.ENTRIES). Per-entry Install button calls the same startManualDownload
-    // path the URL-paste field uses, so the install flow is identical.
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-        Text(
-            stringResource(R.string.local_llm_catalog_title),
-            style = MaterialTheme.typography.titleSmall,
-        )
-        Text(
-            stringResource(R.string.local_llm_catalog_subtitle),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        LiteRtCatalog.ENTRIES.forEach { entry ->
-            LiteRtCatalogEntryCard(
-                entry = entry,
-                installed = entry.modelFile in installedModelFiles,
-                downloadInProgress = downloadProgress != null,
-                onInstall = { vm.startManualDownload(entry.resolveUrl()) },
-            )
-        }
-    }
-
-    // Accelerator row with re-detect button.
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text(
-            stringResource(R.string.local_llm_accelerator_label, accelerator ?: "auto"),
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        OutlinedButton(onClick = { vm.reDetectAccelerator() }) {
-            Text(stringResource(R.string.local_llm_re_detect))
-        }
-    }
-
-    // GPU acceleration toggle. The default is now device-dependent (see
-    // LocalRuntimePreferences.defaultForceCpu): ON for capable devices, OFF only for the
-    // Google Tensor crash class where LiteRT-LM 0.11.0's GPU/NNAPI backend SIGSEGVs during
-    // inference. The toggle still lets the user override either way; the crash sweep and
-    // the runtime's GPU->CPU fallback backstop a wrong default.
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                stringResource(R.string.local_llm_try_gpu_label),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                stringResource(R.string.local_llm_try_gpu_desc),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Switch(
-            checked = !forceCpu,
-            onCheckedChange = { wantGpu -> vm.setForceCpu(!wantGpu) },
-        )
-    }
-
-    // Max-context override. Lets users push capable models (Gemma 4 E2B = 32k) past
-    // Gallery's curated defaults — the model's underlying KV cache size is still the
-    // hard ceiling (Qwen `ekv4096` rejects values above 4096 regardless of this).
-    var maxTokensInput by remember(maxNumTokensOverride) {
-        mutableStateOf(maxNumTokensOverride?.toString() ?: "")
-    }
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
-            stringResource(R.string.local_llm_max_tokens_label),
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        Text(
-            stringResource(R.string.local_llm_max_tokens_desc),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = maxTokensInput,
-                onValueChange = { newValue ->
-                    // Accept digits-only input; empty string = use curated default.
-                    if (newValue.isEmpty() || newValue.all { it.isDigit() }) {
-                        maxTokensInput = newValue
-                        val parsed = newValue.toIntOrNull()?.takeIf { it in 1..131072 }
-                        vm.setMaxNumTokensOverride(parsed)
-                    }
-                },
-                placeholder = {
-                    Text(stringResource(R.string.local_llm_max_tokens_placeholder))
-                },
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-            )
-            OutlinedButton(
-                onClick = {
-                    maxTokensInput = ""
-                    vm.setMaxNumTokensOverride(null)
-                },
-                enabled = maxNumTokensOverride != null,
-            ) {
-                Text(stringResource(R.string.local_llm_max_tokens_reset))
-            }
-        }
-    }
-
-    // Download progress indicator.
-    downloadProgress?.let { progress ->
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            if (progress.totalBytes != null && progress.totalBytes > 0) {
-                LinearProgressIndicator(
-                    progress = { progress.percent / 100f },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            } else {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            }
-            Text(
-                text = stringResource(R.string.local_llm_download_progress, progress.percent),
-                style = MaterialTheme.typography.labelSmall,
-            )
-        }
-    }
-
-    // Error text + optional "Delete model" action when a model file is the likely culprit.
     errorMessage?.let { msg ->
-        Text(
-            text = stringResource(R.string.local_llm_status_error_format, msg),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.error,
-        )
-        // If there are installed models, offer to delete them so the user can clear a
-        // broken file (e.g. wrong runtime version) without navigating away.
-        if (provider.models.isNotEmpty()) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+        Card(
+            shape = AppShapes.CardLarge,
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.errorContainer,
+                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.padding(16.dp),
             ) {
-                provider.models.forEach { model ->
-                    OutlinedButton(onClick = { vm.deleteModel(model.modelId) }) {
-                        Text(
-                            text = stringResource(R.string.local_llm_delete_model) +
-                                if (provider.models.size > 1) " ${model.modelId}" else "",
-                        )
+                Text(
+                    text = stringResource(R.string.local_llm_error_title),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Text(
+                    text = stringResource(R.string.local_llm_status_error_format, msg),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                if (provider.models.isNotEmpty()) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        provider.models.forEach { model ->
+                            OutlinedButton(
+                                onClick = {
+                                    haptics.perform(HapticPattern.Thud)
+                                    vm.deleteModel(model.modelId)
+                                },
+                                shape = AppShapes.ButtonPill,
+                            ) {
+                                Text(stringResource(R.string.local_llm_delete_model))
+                            }
+                        }
                     }
                 }
             }
         }
     }
+
+    downloadProgress?.let { progress ->
+        Card(
+            shape = AppShapes.CardLarge,
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.padding(16.dp),
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.local_llm_download_active_title),
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Text(
+                            text = stringResource(R.string.local_llm_download_active_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.76f),
+                        )
+                    }
+                    Text(
+                        text = stringResource(R.string.local_llm_download_progress, progress.percent),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+                if (progress.totalBytes != null && progress.totalBytes > 0) {
+                    LinearProgressIndicator(
+                        progress = { progress.percent / 100f },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                } else {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+            }
+        }
+    }
+
+    LocalLlmSectionHeader(
+        title = stringResource(R.string.local_llm_catalog_title),
+        subtitle = stringResource(R.string.local_llm_catalog_subtitle),
+    )
+    LiteRtCatalog.ENTRIES.forEach { entry ->
+        LiteRtCatalogEntryCard(
+            entry = entry,
+            installed = entry.modelFile in installedModelFiles,
+            downloadInProgress = downloadProgress != null,
+            onInstall = {
+                haptics.perform(HapticPattern.Pop)
+                vm.startManualDownload(entry.resolveUrl())
+            },
+        )
+    }
+
+    LocalLlmSectionHeader(
+        title = stringResource(R.string.local_llm_manage_files_title),
+        subtitle = if (provider.models.isEmpty()) {
+            stringResource(R.string.local_llm_no_models_desc)
+        } else {
+            stringResource(R.string.local_llm_installed_models_count, provider.models.size)
+        },
+    )
+    if (provider.models.isEmpty()) {
+        Card(
+            shape = AppShapes.CardLarge,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(16.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.local_llm_no_models_title),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Text(
+                    text = stringResource(R.string.local_llm_no_models_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    } else {
+        provider.models.forEach { model ->
+            Card(
+                shape = AppShapes.CardLarge,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Box(modifier = Modifier.padding(14.dp)) {
+                    InstalledModelRow(
+                        model = model,
+                        visionUnavailable = model.modelId in visionUnavailableSet,
+                        allowVisionRetry = crashRecoveryAccel == null,
+                        perfSample = perfTelemetry[model.modelId],
+                        onRename = { newName -> vm.renameModel(model.modelId, newName) },
+                        onDelete = { vm.deleteModel(model.modelId) },
+                        onRetryVision = { vm.retryVisionEncoder(model.modelId) },
+                    )
+                }
+            }
+        }
+    }
+
+    LocalLlmSectionHeader(
+        title = stringResource(R.string.local_llm_section_runtime),
+        subtitle = stringResource(R.string.local_llm_section_runtime_desc),
+    )
+    Card(
+        shape = AppShapes.CardLarge,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.padding(16.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    stringResource(R.string.local_llm_accelerator_label, accelerator ?: "auto"),
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                OutlinedButton(
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        vm.reDetectAccelerator()
+                    },
+                    shape = AppShapes.ButtonPill,
+                ) {
+                    Text(stringResource(R.string.local_llm_re_detect))
+                }
+            }
+            HorizontalDivider()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        stringResource(R.string.local_llm_try_gpu_label),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        stringResource(R.string.local_llm_try_gpu_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                HapticSwitch(
+                    checked = !forceCpu,
+                    onCheckedChange = { wantGpu -> vm.setForceCpu(!wantGpu) },
+                )
+            }
+            HorizontalDivider()
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    stringResource(R.string.local_llm_max_tokens_label),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    stringResource(R.string.local_llm_max_tokens_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedTextField(
+                        value = maxTokensInput,
+                        onValueChange = { newValue ->
+                            if (newValue.isEmpty() || newValue.all { it.isDigit() }) {
+                                maxTokensInput = newValue
+                                val parsed = newValue.toIntOrNull()?.takeIf { it in 1..131072 }
+                                vm.setMaxNumTokensOverride(parsed)
+                            }
+                        },
+                        placeholder = { Text(stringResource(R.string.local_llm_max_tokens_placeholder)) },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            maxTokensInput = ""
+                            vm.setMaxNumTokensOverride(null)
+                        },
+                        enabled = maxNumTokensOverride != null,
+                        shape = AppShapes.ButtonPill,
+                    ) {
+                        Text(stringResource(R.string.local_llm_max_tokens_reset))
+                    }
+                }
+            }
+        }
+    }
+
+    LocalLlmSectionHeader(
+        title = stringResource(R.string.local_llm_section_custom),
+        subtitle = stringResource(R.string.local_llm_section_custom_desc),
+    )
+    Card(
+        shape = AppShapes.CardLarge,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.padding(16.dp),
+        ) {
+            OutlinedTextField(
+                value = manualUrl,
+                onValueChange = { manualUrl = it },
+                label = { Text(stringResource(R.string.local_llm_install_url_label)) },
+                supportingText = { Text(stringResource(R.string.local_llm_install_url_hint)) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        vm.startManualDownload(manualUrl)
+                        manualUrl = ""
+                    },
+                    enabled = manualUrl.isNotBlank() && downloadProgress == null,
+                    shape = AppShapes.ButtonPill,
+                ) {
+                    Text(stringResource(R.string.local_llm_install_url_action))
+                }
+                OutlinedButton(
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        vm.startDefaultDownload()
+                    },
+                    enabled = downloadProgress == null,
+                    shape = AppShapes.ButtonPill,
+                ) {
+                    Text(stringResource(R.string.local_llm_download_default))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocalLlmSectionHeader(
+    title: String,
+    subtitle: String,
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+        modifier = Modifier.padding(top = 12.dp),
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall,
+        )
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun LocalLlmPill(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSecondary,
+        modifier = Modifier
+            .clip(AppShapes.CardMedium)
+            .background(MaterialTheme.colorScheme.secondary)
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+    )
 }
 
 
@@ -1219,6 +1381,7 @@ private fun LiteRtCatalogEntryCard(
     onInstall: () -> Unit,
 ) {
     Card(
+        shape = AppShapes.CardLarge,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
         ),
@@ -1244,7 +1407,7 @@ private fun LiteRtCatalogEntryCard(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSecondaryContainer,
                         modifier = Modifier
-                            .clip(MaterialTheme.shapes.small)
+                            .clip(AppShapes.CardMedium)
                             .background(MaterialTheme.colorScheme.secondaryContainer)
                             .padding(horizontal = 8.dp, vertical = 2.dp),
                     )
@@ -1316,6 +1479,7 @@ private fun LiteRtCatalogEntryCard(
                     Button(
                         onClick = onInstall,
                         enabled = !downloadInProgress,
+                        shape = AppShapes.ButtonPill,
                     ) {
                         Text(stringResource(R.string.local_llm_catalog_install))
                     }

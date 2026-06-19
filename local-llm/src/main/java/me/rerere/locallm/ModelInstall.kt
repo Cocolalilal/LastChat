@@ -70,7 +70,7 @@ object ModelInstall {
     }
 
     fun runtimeForExtension(extension: String): LocalRuntime? = when (extension.lowercase()) {
-        "litertlm" -> LocalRuntime.LiteRT
+        "litertlm", "task" -> LocalRuntime.LiteRT
         else -> null
     }
 
@@ -116,10 +116,11 @@ object ModelInstall {
             "litertlm", "tflite", "task" -> {
                 // LiteRT-LM files start with ASCII "LITERTLM"
                 // (0x4c 0x49 0x54 0x45 0x52 0x54 0x4c 0x4d).
-                // .tflite / .task files start with TFL3 (0x54 0x46 0x4c 0x33) at offset 4 in the
-                // FlatBuffer header (offset 0..3 is the size prefix). The simplest check: first
-                // 8 bytes are "LITERTLM" OR bytes 4..7 are "TFL3". Reject all-zero, all-FF,
-                // or HTML-like first bytes.
+                // .tflite files start with TFL3 (0x54 0x46 0x4c 0x33) at offset 4 in the
+                // FlatBuffer header (offset 0..3 is the size prefix). Some Gallery .task
+                // packages are zipped task bundles and start with PK at offset 4 after the
+                // FlatBuffer size prefix. Accept first 8 bytes as "LITERTLM", bytes 4..7
+                // as "TFL3", or bytes 4..7 as ZIP magic.
                 val isLitertlm = firstBytes.size >= 8 &&
                     firstBytes[0] == 0x4c.toByte() && firstBytes[1] == 0x49.toByte() &&
                     firstBytes[2] == 0x54.toByte() && firstBytes[3] == 0x45.toByte() &&
@@ -128,7 +129,10 @@ object ModelInstall {
                 val isTflite = firstBytes.size >= 8 &&
                     firstBytes[4] == 0x54.toByte() && firstBytes[5] == 0x46.toByte() &&
                     firstBytes[6] == 0x4c.toByte() && firstBytes[7] == 0x33.toByte()
-                isLitertlm || isTflite
+                val isTaskZip = firstBytes.size >= 8 &&
+                    firstBytes[4] == 0x50.toByte() && firstBytes[5] == 0x4b.toByte() &&
+                    firstBytes[6] == 0x03.toByte() && firstBytes[7] == 0x04.toByte()
+                isLitertlm || isTflite || isTaskZip
             }
             else -> {
                 // Unknown extension — accept by default but reject obvious zeros / HTML.

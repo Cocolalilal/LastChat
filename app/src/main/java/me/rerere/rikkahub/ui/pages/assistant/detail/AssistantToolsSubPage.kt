@@ -41,13 +41,16 @@ import me.rerere.rikkahub.data.ai.mcp.McpStatus
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantSearchMode
+import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.ui.components.ai.McpPicker
 import me.rerere.rikkahub.ui.components.ui.Select
+import me.rerere.rikkahub.ui.pages.extensions.workspace.toShellStatusLabel
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import me.rerere.rikkahub.utils.PermissionChecker
 import me.rerere.search.SearchServiceOptions
 import org.koin.compose.koinInject
+import kotlin.uuid.Uuid
 
 /**
  * Tools & Search tab - Combined search, local tools, and MCP settings.
@@ -61,11 +64,17 @@ fun AssistantToolsSubPage(
     mcpServerConfigs: List<McpServerConfig>
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val workspaceRepository = koinInject<WorkspaceRepository>()
+    val workspaces by workspaceRepository.listFlow().collectAsStateWithLifecycle(initialValue = emptyList())
+    val selectedWorkspace = remember(workspaces, assistant.workspaceId) {
+        workspaces.firstOrNull { it.id == assistant.workspaceId?.toString() }
+    }
     val context = LocalContext.current
     var pendingNotificationAccess by remember {
         mutableStateOf(PermissionChecker.MissingFeatureAccess())
     }
     var showNotificationAccessDialog by remember { mutableStateOf(false) }
+    var showWorkspacePicker by remember { mutableStateOf(false) }
 
     val notificationSettingsLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -202,21 +211,30 @@ fun AssistantToolsSubPage(
                 }
             )
             
-            // Python Engine
-            val pythonOption = assistant.localTools.filterIsInstance<LocalToolOption.PythonEngine>().firstOrNull()
             SettingGroupItem(
-                title = stringResource(R.string.assistant_page_local_tools_python_engine_title),
-                subtitle = stringResource(R.string.assistant_page_local_tools_python_engine_desc),
+                title = stringResource(R.string.assistant_page_local_tools_linux_workspace_title),
+                subtitle = selectedWorkspace?.name
+                    ?: stringResource(R.string.assistant_page_local_tools_linux_workspace_desc),
+                onClick = { showWorkspacePicker = true },
                 trailing = {
                     HapticSwitch(
-                        checked = pythonOption != null,
+                        checked = selectedWorkspace != null,
                         onCheckedChange = { enabled ->
-                            val newLocalTools = if (enabled) {
-                                assistant.localTools + LocalToolOption.PythonEngine
+                            if (enabled) {
+                                val workspace = workspaces.firstOrNull()
+                                if (workspace != null) {
+                                    onUpdate(
+                                        assistant.copy(
+                                            workspaceId = Uuid.parse(workspace.id),
+                                            localTools = assistant.localTools.filterNot { it is LocalToolOption.PythonEngine },
+                                        )
+                                    )
+                                } else {
+                                    showWorkspacePicker = true
+                                }
                             } else {
-                                assistant.localTools.filterNot { it is LocalToolOption.PythonEngine }
+                                onUpdate(assistant.copy(workspaceId = null))
                             }
-                            onUpdate(assistant.copy(localTools = newLocalTools))
                         }
                     )
                 }
@@ -353,6 +371,23 @@ fun AssistantToolsSubPage(
         }
     }
 
+    if (showWorkspacePicker) {
+        WorkspaceBindingDialog(
+            workspaces = workspaces,
+            selectedWorkspaceId = assistant.workspaceId?.toString(),
+            onDismiss = { showWorkspacePicker = false },
+            onSelect = { workspaceId ->
+                onUpdate(
+                    assistant.copy(
+                        workspaceId = workspaceId?.let { Uuid.parse(it) },
+                        localTools = assistant.localTools.filterNot { it is LocalToolOption.PythonEngine },
+                    )
+                )
+                showWorkspacePicker = false
+            },
+        )
+    }
+
     if (showNotificationAccessDialog && pendingNotificationAccess.specialAccesses.isNotEmpty()) {
         AlertDialog(
             onDismissRequest = { showNotificationAccessDialog = false },
@@ -387,4 +422,46 @@ fun AssistantToolsSubPage(
             }
         )
     }
+}
+
+@Composable
+private fun WorkspaceBindingDialog(
+    workspaces: List<me.rerere.rikkahub.data.db.entity.WorkspaceEntity>,
+    selectedWorkspaceId: String?,
+    onDismiss: () -> Unit,
+    onSelect: (String?) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.workspace_select)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(
+                    onClick = { onSelect(null) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.workspace_no_binding))
+                }
+                workspaces.forEach { workspace ->
+                    TextButton(
+                        onClick = { onSelect(workspace.id) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            text = if (workspace.id == selectedWorkspaceId) {
+                                "${workspace.name} • ${workspace.shellStatus.toShellStatusLabel()}"
+                            } else {
+                                "${workspace.name} • ${workspace.shellStatus.toShellStatusLabel()}"
+                            }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.common_cancel))
+            }
+        },
+    )
 }

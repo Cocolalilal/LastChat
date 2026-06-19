@@ -49,6 +49,7 @@ val viewModelModule = module {
             prefs = get(),
             httpClient = get(),
             settingsStore = get(),
+            workManager = get(),
         )
     }
     viewModelOf(::AssistantVM)

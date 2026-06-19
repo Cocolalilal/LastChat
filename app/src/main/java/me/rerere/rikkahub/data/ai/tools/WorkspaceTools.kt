@@ -17,6 +17,7 @@ private const val MAX_READ_FILE_BYTES = 8L * 1024 * 1024
 val WorkspaceToolDefaultApprovals: Map<String, Boolean> = mapOf(
     "workspace_read_file" to false,
     "workspace_write_file" to false,
+    "workspace_edit_file" to false,
     "workspace_shell" to true,
 )
 
@@ -36,6 +37,7 @@ suspend fun createWorkspaceTools(
     return listOf(
         createReadFileTool(workspaceId, ::needsApproval, workspaceRepository),
         createWriteFileTool(workspaceId, ::needsApproval, workspaceRepository),
+        createEditFileTool(workspaceId, ::needsApproval, workspaceRepository),
         createShellTool(workspaceId, ::needsApproval, workspaceRepository, shellCwd),
     )
 }
@@ -95,6 +97,48 @@ private fun createWriteFileTool(
         val overwrite = params["overwrite"]?.jsonPrimitive?.booleanOrNull ?: true
         val entry = workspaceRepository.writeTextInRootfs(workspaceId, path, text, overwrite)
         entry.toJson()
+    },
+)
+
+private fun createEditFileTool(
+    workspaceId: String,
+    needsApproval: (String) -> Boolean,
+    workspaceRepository: WorkspaceRepository,
+) = Tool(
+    name = "workspace_edit_file",
+    description = "Edit a UTF-8 text file using an exact text replacement inside the assistant's bound workspace Rootfs. Paths must be absolute inside Rootfs. Use /workspace for the workspace files area.",
+    parameters = {
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                putPathProperty(required = true)
+                put("old_text", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Exact text to replace")
+                })
+                put("new_text", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Replacement text")
+                })
+                put("replace_all", buildJsonObject {
+                    put("type", "boolean")
+                    put("description", "Whether to replace every occurrence. Defaults to false.")
+                })
+            },
+            required = listOf("path", "old_text", "new_text"),
+        )
+    },
+    approvalMode = if (needsApproval("workspace_edit_file")) ToolApprovalMode.RequiresApproval else ToolApprovalMode.Auto,
+    execute = {
+        val params = it.jsonObject
+        val path = params.absolutePath("path")
+        val oldText = params.string("old_text") ?: error("old_text is required")
+        val newText = params.string("new_text") ?: error("new_text is required")
+        val replaceAll = params["replace_all"]?.jsonPrimitive?.booleanOrNull ?: false
+        val current = workspaceRepository.readTextInRootfs(workspaceId, path)
+        require(oldText.isNotEmpty()) { "old_text must not be empty" }
+        require(current.contains(oldText)) { "old_text was not found in $path" }
+        val updated = if (replaceAll) current.replace(oldText, newText) else current.replaceFirst(oldText, newText)
+        workspaceRepository.writeTextInRootfs(workspaceId, path, updated, overwrite = true).toJson()
     },
 )
 

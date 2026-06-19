@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.ui.pages.extensions.workspace
 
 import android.content.Intent
+import android.os.Build
 import android.provider.OpenableColumns
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
@@ -24,7 +26,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -36,6 +37,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -73,6 +75,10 @@ import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import androidx.compose.ui.res.stringResource
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.nav.BackButton
+import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
+import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.theme.AppShapes
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
@@ -100,6 +106,7 @@ fun WorkspaceDetailPage(id: String) {
     val installError by vm.installError.collectAsStateWithLifecycle()
     val pagerState = rememberPagerState { 2 }
     val scope = rememberCoroutineScope()
+    val haptics = rememberPremiumHaptics()
     var deleteTarget by remember { mutableStateOf<WorkspaceFileEntry?>(null) }
     var showInstallDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -155,25 +162,64 @@ fun WorkspaceDetailPage(id: String) {
             )
         },
         bottomBar = {
-            NavigationBar {
-                NavigationBarItem(
-                    selected = pagerState.currentPage == 0,
-                    label = { Text(stringResource(R.string.workspace_detail_workspace_info)) },
-                    icon = { Icon(Icons.Rounded.Settings, contentDescription = null) },
-                    onClick = { scope.launch { pagerState.animateScrollToPage(0) } },
-                )
-                NavigationBarItem(
-                    selected = pagerState.currentPage == 1,
-                    label = { Text(stringResource(R.string.workspace_detail_area_files)) },
-                    icon = { Icon(Icons.Rounded.Description, contentDescription = null) },
-                    onClick = { scope.launch { pagerState.animateScrollToPage(1) } },
-                )
-            }
-        },
-        floatingActionButton = {
-            if (pagerState.currentPage == 1) {
-                FloatingActionButton(onClick = { filePicker.launch(arrayOf("*/*")) }) {
-                    Icon(Icons.Rounded.UploadFile, contentDescription = stringResource(R.string.workspace_detail_import_file))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 12.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Surface(
+                    modifier = Modifier.widthIn(max = 360.dp),
+                    shape = AppShapes.ButtonPill,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    tonalElevation = 6.dp,
+                    shadowElevation = 6.dp,
+                ) {
+                    NavigationBar(
+                        containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                        modifier = Modifier.padding(horizontal = 8.dp),
+                    ) {
+                        NavigationBarItem(
+                            selected = pagerState.currentPage == 0,
+                            label = { Text(stringResource(R.string.workspace_detail_workspace_info)) },
+                            icon = { Icon(Icons.Rounded.Computer, contentDescription = null) },
+                            onClick = {
+                                haptics.perform(HapticPattern.Pop)
+                                scope.launch { pagerState.animateScrollToPage(0) }
+                            },
+                        )
+                        NavigationBarItem(
+                            selected = pagerState.currentPage == 1,
+                            label = { Text(stringResource(R.string.workspace_detail_area_files)) },
+                            icon = { Icon(Icons.Rounded.Folder, contentDescription = null) },
+                            onClick = {
+                                haptics.perform(HapticPattern.Pop)
+                                scope.launch { pagerState.animateScrollToPage(1) }
+                            },
+                        )
+                    }
+                }
+                if (pagerState.currentPage == 1) {
+                    Surface(
+                        modifier = Modifier.align(Alignment.CenterEnd),
+                        shape = AppShapes.ButtonPill,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        tonalElevation = 6.dp,
+                        shadowElevation = 6.dp,
+                    ) {
+                        IconButton(
+                            onClick = {
+                                haptics.perform(HapticPattern.Pop)
+                                filePicker.launch(arrayOf("*/*"))
+                            },
+                            modifier = Modifier.padding(4.dp),
+                        ) {
+                            Icon(
+                                Icons.Rounded.Add,
+                                contentDescription = stringResource(R.string.workspace_detail_import_file),
+                            )
+                        }
+                    }
                 }
             }
         },
@@ -189,6 +235,7 @@ fun WorkspaceDetailPage(id: String) {
                     workspace = state.workspace,
                     installProgress = installProgress,
                     onInstallRootfs = { showInstallDialog = true },
+                    onRename = vm::rename,
                     onToolApprovalChange = vm::setToolApproval,
                 )
 
@@ -276,8 +323,11 @@ private fun WorkspaceBasicPage(
     workspace: WorkspaceEntity?,
     installProgress: RootfsInstallProgress?,
     onInstallRootfs: () -> Unit,
+    onRename: (String) -> Unit,
     onToolApprovalChange: (String, Boolean) -> Unit,
 ) {
+    var nameDraft by rememberSaveable(workspace?.id, workspace?.name) { mutableStateOf(workspace?.name.orEmpty()) }
+    val canRename = workspace != null && nameDraft.isNotBlank() && nameDraft.trim() != workspace.name
     val shellStatus = workspace?.shellStatus
     val installing = installProgress != null || shellStatus == WorkspaceShellStatus.INSTALLING.name
     val rootfsReady = shellStatus == WorkspaceShellStatus.READY.name
@@ -295,7 +345,8 @@ private fun WorkspaceBasicPage(
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(),
+                shape = AppShapes.CardLarge,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
             ) {
                 Column(
                     modifier = Modifier
@@ -307,7 +358,22 @@ private fun WorkspaceBasicPage(
                         text = stringResource(R.string.workspace_detail_workspace_info),
                         style = MaterialTheme.typography.titleMedium,
                     )
-                    WorkspaceInfoRow(stringResource(R.string.workspace_detail_name), workspace?.name ?: stringResource(R.string.workspace_detail_loading))
+                    OutlinedTextField(
+                        value = nameDraft,
+                        onValueChange = { nameDraft = it },
+                        enabled = workspace != null,
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(stringResource(R.string.workspace_detail_name)) },
+                        trailingIcon = {
+                            TextButton(
+                                enabled = canRename,
+                                onClick = { onRename(nameDraft.trim()) },
+                            ) {
+                                Text(stringResource(R.string.common_save))
+                            }
+                        },
+                    )
                     WorkspaceInfoRow(stringResource(R.string.workspace_detail_shell_status), workspace?.shellStatus?.toShellStatusLabel() ?: "-")
                 }
             }
@@ -316,7 +382,8 @@ private fun WorkspaceBasicPage(
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(),
+                shape = AppShapes.CardLarge,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
             ) {
                 Column(
                     modifier = Modifier
@@ -338,8 +405,9 @@ private fun WorkspaceBasicPage(
                         onClick = onInstallRootfs,
                         enabled = workspace != null && !installing,
                         modifier = Modifier.fillMaxWidth(),
+                        shape = AppShapes.ButtonPill,
                     ) {
-                        Icon(Icons.Rounded.Code, contentDescription = null)
+                        Icon(Icons.Rounded.Terminal, contentDescription = null)
                         Text(
                             text = installButtonText,
                             modifier = Modifier.padding(start = 8.dp),
@@ -371,7 +439,8 @@ private fun WorkspaceToolApprovalCard(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(),
+        shape = AppShapes.CardLarge,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     ) {
         Column(
             modifier = Modifier
@@ -485,7 +554,7 @@ private fun RootfsProgress(progress: RootfsInstallProgress) {
                 }
 
                 RootfsInstallStage.EXTRACTING -> {
-                    val entry = progress.currentEntry?.let { " · $it" }.orEmpty()
+                    val entry = progress.currentEntry?.let { " - $it" }.orEmpty()
                     stringResource(R.string.workspace_detail_extracting, progress.entriesExtracted, entry)
                 }
 
@@ -505,7 +574,7 @@ private fun InstallRootfsDialog(
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
 ) {
-    var url by rememberSaveable(workspace.id) { mutableStateOf(DEFAULT_ROOTFS_URL) }
+    var url by rememberSaveable(workspace.id) { mutableStateOf(defaultRootfsUrl()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -606,14 +675,24 @@ private fun WorkspaceAreaSelector(
         WorkspaceStorageArea.FILES to stringResource(R.string.workspace_detail_area_files),
         WorkspaceStorageArea.LINUX to stringResource(R.string.workspace_detail_area_rootfs),
     )
-    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-        areas.forEachIndexed { index, (area, label) ->
-            SegmentedButton(
-                selected = selected == area,
-                onClick = { onSelected(area) },
-                shape = SegmentedButtonDefaults.itemShape(index, areas.size),
-            ) {
-                Text(label)
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = AppShapes.CardLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        SingleChoiceSegmentedButtonRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+        ) {
+            areas.forEachIndexed { index, (area, label) ->
+                SegmentedButton(
+                    selected = selected == area,
+                    onClick = { onSelected(area) },
+                    shape = SegmentedButtonDefaults.itemShape(index, areas.size),
+                ) {
+                    Text(label)
+                }
             }
         }
     }
@@ -625,25 +704,38 @@ private fun WorkspacePathBar(
     canGoUp: Boolean,
     onGoUp: () -> Unit,
 ) {
-    Row(
+    Surface(
         modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        shape = AppShapes.CardLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
-        IconButton(
-            enabled = canGoUp,
-            onClick = onGoUp,
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(end = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null)
+            IconButton(
+                enabled = canGoUp,
+                onClick = onGoUp,
+            ) {
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null)
+            }
+            Icon(
+                imageVector = Icons.Rounded.Folder,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                text = path.ifBlank { "/" },
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
-        Text(
-            text = path.ifBlank { "/" },
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
     }
 }
 
@@ -657,12 +749,14 @@ private fun WorkspaceFileCard(
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .then(if (entry.isDirectory) Modifier.clickable(onClick = onOpen) else Modifier),
-        colors = CardDefaults.cardColors(),
-    ) {
+    PhysicsSwipeToDelete(onDelete = onDelete) { shape ->
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(if (entry.isDirectory) Modifier.clickable(onClick = onOpen) else Modifier),
+            shape = shape,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -692,13 +786,18 @@ private fun WorkspaceFileCard(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = if (entry.isDirectory) entry.path else "${entry.path} · ${formatBytes(entry.sizeBytes)}",
+                    text = if (entry.isDirectory) entry.path else "${entry.path} - ${formatBytes(entry.sizeBytes)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            Icon(
+                imageVector = Icons.Rounded.DragHandle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Box {
                 IconButton(onClick = { menuExpanded = true }) {
                     Icon(Icons.Rounded.MoreVert, contentDescription = null)
@@ -752,6 +851,7 @@ private fun WorkspaceFileCard(
                 }
             }
         }
+        }
     }
 }
 
@@ -782,7 +882,8 @@ private fun EmptyDirectoryState() {
 private fun ErrorCard(message: String) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(),
+        shape = AppShapes.CardLarge,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     ) {
         Text(
             text = message,
@@ -814,5 +915,15 @@ internal fun String.toShellStatusLabel(): String = when (this) {
     else -> lowercase()
 }
 
-private const val DEFAULT_ROOTFS_URL =
-    "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.3-base-arm64.tar.gz"
+private fun defaultRootfsUrl(): String {
+    val abi = Build.SUPPORTED_64_BIT_ABIS.firstOrNull()
+        ?: Build.SUPPORTED_ABIS.firstOrNull()
+        ?: "arm64-v8a"
+    val arch = when (abi) {
+        "x86_64" -> "amd64"
+        "arm64-v8a" -> "arm64"
+        "armeabi-v7a", "armeabi" -> "armhf"
+        else -> "arm64"
+    }
+    return "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.3-base-$arch.tar.gz"
+}

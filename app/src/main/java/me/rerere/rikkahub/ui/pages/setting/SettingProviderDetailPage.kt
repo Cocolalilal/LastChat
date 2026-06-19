@@ -144,6 +144,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.locallm.LocalRuntime
 import me.rerere.locallm.litert.LiteRtCatalog
+import me.rerere.locallm.litert.LiteRtModelMetadata
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.models.ModelMetadataResolver
 import me.rerere.rikkahub.data.ai.models.ModelResolutionOptions
@@ -185,6 +186,7 @@ import org.koin.compose.koinInject
 import org.koin.core.parameter.parametersOf
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.uuid.Uuid
 import me.rerere.rikkahub.data.model.Tag as DataTag
@@ -400,20 +402,22 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                     }
                 },
                 actions = {
-                    val shareSheetState = rememberShareSheetState()
-                    ShareSheet(shareSheetState)
+                    if (!isLocalLiteRt) {
+                        val shareSheetState = rememberShareSheetState()
+                        ShareSheet(shareSheetState)
 
-                    ConnectionTesterButton(
-                        provider = provider,
-                        scope = scope
-                    )
+                        ConnectionTesterButton(
+                            provider = provider,
+                            scope = scope
+                        )
 
-                    IconButton(
-                        onClick = {
-                            shareSheetState.show(provider)
+                        IconButton(
+                            onClick = {
+                                shareSheetState.show(provider)
+                            }
+                        ) {
+                            Icon(Icons.Rounded.Share, null)
                         }
-                    ) {
-                        Icon(Icons.Rounded.Share, null)
                     }
                 }
             )
@@ -812,6 +816,9 @@ private fun ModelList(
     val localCrashRecoveryAccel = localLlmVm?.crashRecoveryAccelerator?.collectAsStateWithLifecycle()?.value
     val apiModelCacheKey = remember(providerSetting) { providerSetting.apiModelCacheKey() }
     var modelList by remember(apiModelCacheKey) { mutableStateOf(ApiModelListCache.get(apiModelCacheKey)) }
+    val localCatalogModels = remember {
+        LiteRtCatalog.ENTRIES.map(LiteRtModelMetadata::modelForCatalogEntry)
+    }
     var isReloadingModels by remember(apiModelCacheKey) { mutableStateOf(false) }
     var reloadModelsError by remember(apiModelCacheKey) { mutableStateOf<String?>(null) }
 
@@ -1080,7 +1087,7 @@ private fun ModelList(
         ) {
             // Model picker FAB (gray, like lorebook toggle button)
             ModelPickerFab(
-                models = modelList,
+                models = if (providerSetting is ProviderSetting.LiteRtLocal) localCatalogModels else modelList,
                 selectedModels = providerSetting.models,
                 isLoading = isReloadingModels || localDownloadProgress != null,
                 reloadError = reloadModelsError,
@@ -1172,25 +1179,16 @@ private fun LocalLiteRtModelControls(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                ProviderIcon(
-                    provider = ProviderSetting.LiteRtLocal(),
-                    modifier = Modifier.size(40.dp),
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = stringResource(R.string.local_llm_section_runtime),
+                    style = MaterialTheme.typography.titleMedium,
                 )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.local_llm_litert_name),
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Text(
-                        text = stringResource(R.string.local_llm_tool_calling_litert),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                Text(
+                    text = stringResource(R.string.local_llm_section_runtime_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
             crashRecoveryAccel?.let { accel ->
@@ -1691,7 +1689,7 @@ private fun ModelPickerFab(
         onClick = { 
             showPicker = true
             haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Tick)
-            if (models.isEmpty() && !isLoading) {
+            if (!isLocalInstallPicker && models.isEmpty() && !isLoading) {
                 onReload()
             }
         },
@@ -1744,7 +1742,22 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (!isLocalInstallPicker) {
+                    if (isLocalInstallPicker) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.local_llm_catalog_title),
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                            Text(
+                                text = stringResource(R.string.local_llm_catalog_subtitle),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        if (isLoading) {
+                            LinearProgressIndicator(modifier = Modifier.weight(0.7f))
+                        }
+                    } else {
                         TextButton(
                             onClick = {
                                 haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
@@ -1768,33 +1781,33 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         ) {
                             Text(stringResource(if (allFilteredSelected) R.string.deselect_all else R.string.select_all))
                         }
-                    } else {
-                        Spacer(modifier = Modifier.height(40.dp))
-                    }
-                    if (isLoading) {
-                        LinearWavyProgressIndicator(modifier = Modifier.weight(1f))
-                    } else {
-                        Spacer(modifier = Modifier.weight(1f))
-                    }
-                    Button(
-                        onClick = {
-                            haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
-                            onReload()
-                        },
-                        enabled = !isLoading,
-                        modifier = Modifier.height(40.dp),
-                    ) {
-                        Icon(Icons.Rounded.Refresh, contentDescription = null)
-                        Spacer(Modifier.size(4.dp))
-                        Text(stringResource(R.string.setting_provider_page_reload_models))
+                        if (isLoading) {
+                            LinearWavyProgressIndicator(modifier = Modifier.weight(1f))
+                        } else {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                        Button(
+                            onClick = {
+                                haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
+                                onReload()
+                            },
+                            enabled = !isLoading,
+                            modifier = Modifier.height(40.dp),
+                        ) {
+                            Icon(Icons.Rounded.Refresh, contentDescription = null)
+                            Spacer(Modifier.size(4.dp))
+                            Text(stringResource(R.string.setting_provider_page_reload_models))
+                        }
                     }
                 }
-                reloadError?.let { error ->
-                    Text(
-                        text = stringResource(R.string.setting_provider_page_reload_models_error, error),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
+                if (!isLocalInstallPicker) {
+                    reloadError?.let { error ->
+                        Text(
+                            text = stringResource(R.string.setting_provider_page_reload_models_error, error),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
                 }
 
                 LazyColumn(
@@ -1834,6 +1847,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     items(filteredModels) { model ->
                         val selectedModel = selectedModels.firstOrNull { selected -> modelsReferToSameApiModel(selected, model) }
                         val isSelected = selectedModel != null
+                        val localSizeLabel = if (isLocalInstallPicker) liteRtModelSizeLabel(model.modelId) else null
                         val interactionSource = remember { MutableInteractionSource() }
                         val isPressed by interactionSource.collectIsPressedAsState()
                         val scale by animateFloatAsState(
@@ -1851,7 +1865,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 .clickable(
                                     interactionSource = interactionSource,
                                     indication = null,
-                                    enabled = !(isLocalInstallPicker && isLoading && !isSelected),
+                                    enabled = !isLocalInstallPicker,
                                 ) {
                                     haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
                                     if (isSelected) {
@@ -1886,8 +1900,14 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                     modifier = Modifier.weight(1f),
                                 ) {
                                     Text(
-                                        text = model.displayName,
+                                        text = if (localSizeLabel != null) {
+                                            "${model.displayName} \u00B7 $localSizeLabel"
+                                        } else {
+                                            model.displayName
+                                        },
                                         style = MaterialTheme.typography.titleSmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
                                     )
                                     Text(
                                         text = model.modelId,
@@ -1903,7 +1923,35 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                         ModelAbilityTag(model = model)
                                     }
                                 }
-                                ModelSelectionCircle(selected = isSelected)
+                                if (isLocalInstallPicker) {
+                                    if (isSelected) {
+                                        OutlinedButton(
+                                            onClick = {},
+                                            enabled = false,
+                                            modifier = Modifier.height(40.dp),
+                                        ) {
+                                            Text(stringResource(R.string.local_llm_catalog_installed))
+                                        }
+                                    } else {
+                                        Button(
+                                            onClick = {
+                                                haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
+                                                onInstallModel?.invoke(model)
+                                            },
+                                            enabled = !isLoading,
+                                            modifier = Modifier.height(40.dp),
+                                        ) {
+                                            Text(
+                                                stringResource(
+                                                    if (isLoading) R.string.local_llm_downloading_button
+                                                    else R.string.local_llm_catalog_install
+                                                )
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    ModelSelectionCircle(selected = isSelected)
+                                }
                             }
                         }
                     }
@@ -1921,6 +1969,15 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
         }
     }
 }
+
+private fun liteRtModelSizeLabel(modelId: String): String? =
+    LiteRtCatalog.findByModelFile(modelId)?.sizeBytes?.let { bytes ->
+        if (bytes >= 1_000_000_000L) {
+            String.format(Locale.US, "%.1f GB", bytes / 1_000_000_000.0)
+        } else {
+            String.format(Locale.US, "%.0f MB", bytes / 1_000_000.0)
+        }
+    }
 
 @Composable
 private fun AddNewModelFab(
@@ -2835,6 +2892,123 @@ fun ModalAbilitySelector(
 }
 
 @Composable
+private fun LocalLiteRtModelIdentitySheet(
+    model: Model,
+    onModelChange: (Model) -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+    parentProvider: ProviderSetting,
+) {
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            val extension = iconFileExtension(context, uri)
+            val copiedUri = withContext(Dispatchers.IO) {
+                ImageUtils.copyImageToInternalStorage(
+                    context = context,
+                    sourceUri = uri,
+                    fileName = "model_icon_${model.id}.$extension",
+                )
+            }
+            copiedUri?.let { iconUri ->
+                onModelChange(model.copy(customIconUri = iconUri.toString()))
+            }
+        }
+    }
+
+    ModalBottomSheet(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        dragHandle = null,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .imePadding()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Box(modifier = Modifier.fillMaxWidth()) {
+                IconButton(
+                    onClick = {
+                        scope.launch {
+                            sheetState.hide()
+                            onDismiss()
+                        }
+                    },
+                    modifier = Modifier.align(Alignment.CenterStart),
+                ) {
+                    Icon(Icons.Rounded.Close, null)
+                }
+                Text(
+                    text = stringResource(R.string.local_llm_edit_identity_title),
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.align(Alignment.Center),
+                )
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                CustomIconSelector(
+                    customIconUri = model.customIconUri,
+                    onPickFile = {
+                        imagePickerLauncher.launch(arrayOf("image/*", "image/svg+xml"))
+                    },
+                    onPickLobeHubIcon = { slug ->
+                        onModelChange(model.copy(customIconUri = lobeHubIconUri(slug)))
+                    },
+                    onReset = {
+                        onModelChange(model.copy(customIconUri = null))
+                    },
+                ) { iconModifier ->
+                    ModelIcon(
+                        model = model,
+                        provider = parentProvider,
+                        modifier = iconModifier,
+                    )
+                }
+                OutlinedTextField(
+                    value = model.displayName,
+                    onValueChange = { onModelChange(model.copy(displayName = it)) },
+                    label = { Text(stringResource(R.string.setting_provider_page_model_display_name)) },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+            ) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(stringResource(R.string.cancel))
+                }
+                Button(
+                    onClick = onConfirm,
+                    enabled = model.displayName.isNotBlank(),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(stringResource(R.string.confirm))
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ModelCard(
     model: Model,
     position: ItemPosition,
@@ -2856,6 +3030,19 @@ private fun ModelCard(
 
     if (dialogState.isEditing) {
         dialogState.currentState?.let { editingModel ->
+            if (parentProvider is ProviderSetting.LiteRtLocal) {
+                LocalLiteRtModelIdentitySheet(
+                    model = editingModel,
+                    onModelChange = { dialogState.currentState = it },
+                    onDismiss = { dialogState.dismiss() },
+                    onConfirm = {
+                        if (editingModel.displayName.isNotBlank()) {
+                            dialogState.confirm()
+                        }
+                    },
+                    parentProvider = parentProvider,
+                )
+            } else {
             val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             ModalBottomSheet(
 containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
@@ -2932,6 +3119,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         }
                     }
                 }
+            }
             }
         }
     }

@@ -179,18 +179,41 @@ class RootfsInstaller(
 
     private fun createSymlink(root: File, target: File, linkName: String) {
         if (linkName.isBlank()) return
+        val rootFile = root.canonicalFile
+        val sourceForFallback: File?
         val linkTarget = if (File(linkName).isAbsolute) {
+            sourceForFallback = root.safeResolve(linkName.trimStart('/'))
             File(linkName)
         } else {
             val resolved = File(target.parentFile ?: root, linkName).canonicalFile
-            val rootFile = root.canonicalFile
             require(resolved.path == rootFile.path || resolved.path.startsWith(rootFile.path + File.separator)) {
                 "Symlink escapes rootfs: ${target.name}"
             }
+            sourceForFallback = resolved
             (target.parentFile ?: root).toPath().relativize(resolved.toPath()).toFile()
         }
         target.delete()
-        Files.createSymbolicLink(target.toPath(), linkTarget.toPath())
+        runCatching {
+            Files.createSymbolicLink(target.toPath(), linkTarget.toPath())
+        }.recoverCatching { error ->
+            if (error !is IOException &&
+                error !is UnsupportedOperationException &&
+                error !is SecurityException
+            ) {
+                throw error
+            }
+            require(sourceForFallback != null && sourceForFallback.exists()) {
+                "Symlink target is unavailable: $linkName"
+            }
+            if (sourceForFallback.isDirectory) {
+                sourceForFallback.copyRecursively(target, overwrite = true)
+            } else {
+                sourceForFallback.copyTo(target, overwrite = true)
+                target.setReadable(sourceForFallback.canRead(), false)
+                target.setWritable(sourceForFallback.canWrite(), true)
+                target.setExecutable(sourceForFallback.canExecute(), false)
+            }
+        }.getOrThrow()
     }
 
     private fun createHardLink(root: File, target: File, linkName: String) {
@@ -318,12 +341,12 @@ class RootfsInstaller(
 
     private fun File.safeResolve(path: String): File {
         val normalized = normalizeTarPath(path)
-        val root = canonicalFile
-        val target = File(root, normalized).canonicalFile
-        require(target.path == root.path || target.path.startsWith(root.path + File.separator)) {
+        val rootPath = toPath().toAbsolutePath().normalize()
+        val targetPath = rootPath.resolve(normalized).normalize()
+        require(targetPath == rootPath || targetPath.startsWith(rootPath)) {
             "Rootfs entry escapes target directory: $path"
         }
-        return target
+        return targetPath.toFile()
     }
 
     private fun File.applyMode(mode: Int) {

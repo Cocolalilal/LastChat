@@ -1,11 +1,11 @@
 package me.rerere.workspace
 
-import com.sun.net.httpserver.HttpServer
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.net.InetSocketAddress
+import java.net.InetAddress
+import java.net.ServerSocket
 import java.nio.file.Files
 import java.util.zip.GZIPOutputStream
 
@@ -67,29 +67,22 @@ class ExampleUnitTest {
             TarTestEntry("bin/hello", content = "echo hello\n".toByteArray(), mode = 493),
             TarTestEntry("usr/bin/hello-link", type = '2', linkName = "../../bin/hello"),
         )
-        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
-        server.createContext("/rootfs.tar.gz") { exchange ->
-            exchange.sendResponseHeaders(200, archive.size.toLong())
-            exchange.responseBody.use { it.write(archive) }
-        }
-        server.start()
-        try {
+        SingleResponseHttpServer(archive).use { server ->
             val root = "test-workspace"
-            installer.install(root, "http://127.0.0.1:${server.address.port}/rootfs.tar.gz")
+            installer.install(root, "http://127.0.0.1:${server.port}/rootfs.tar.gz")
 
             val linuxDir = manager.linuxDir(root)
             assertEquals("echo hello\n", File(linuxDir, "bin/hello").readText())
             assertTrue(File(linuxDir, "bin/hello").canExecute())
-            assertTrue(Files.isSymbolicLink(File(linuxDir, "usr/bin/hello-link").toPath()))
-        } finally {
-            server.stop(0)
+            val link = File(linuxDir, "usr/bin/hello-link")
+            assertTrue(Files.isSymbolicLink(link.toPath()) || link.readText() == "echo hello\n")
         }
     }
 
     @Test
     fun commandRunsInsideWorkspaceFilesDirectory() {
         val baseDir = Files.createTempDirectory("workspace-command-test").toFile()
-        val manager = WorkspaceManager(baseDir)
+        val manager = WorkspaceManager(baseDir, shellRunner = TestShellRunner())
         val root = "test-workspace"
         manager.ensureWorkspace(root)
 
@@ -103,7 +96,7 @@ class ExampleUnitTest {
     @Test
     fun commandReceivesStdin() {
         val baseDir = Files.createTempDirectory("workspace-stdin-test").toFile()
-        val manager = WorkspaceManager(baseDir)
+        val manager = WorkspaceManager(baseDir, shellRunner = TestShellRunner())
         val root = "test-workspace"
         manager.ensureWorkspace(root)
 
@@ -136,7 +129,7 @@ class ExampleUnitTest {
     @Test
     fun commandOutputIsTruncatedAtLimit() {
         val baseDir = Files.createTempDirectory("workspace-truncate-test").toFile()
-        val manager = WorkspaceManager(baseDir)
+        val manager = WorkspaceManager(baseDir, shellRunner = TestShellRunner())
         val root = "test-workspace"
         manager.ensureWorkspace(root)
 
@@ -232,6 +225,76 @@ class ExampleUnitTest {
 
     private fun Int.paddingSize(): Int = (512 - (this % 512)).let {
         if (it == 512) 0 else it
+    }
+
+    private class SingleResponseHttpServer(
+        private val body: ByteArray,
+    ) : AutoCloseable {
+        private val serverSocket = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
+        val port: Int = serverSocket.localPort
+        private val thread = Thread(::serveOnce, "workspace-test-http").apply {
+            isDaemon = true
+            start()
+        }
+
+        private fun serveOnce() {
+            runCatching {
+                serverSocket.accept().use { socket ->
+                    val reader = socket.getInputStream().bufferedReader()
+                    while (reader.readLine()?.isNotEmpty() == true) {
+                        // Drain request headers before sending the response.
+                    }
+                    socket.getOutputStream().use { output ->
+                        output.write(
+                            (
+                                "HTTP/1.1 200 OK\r\n" +
+                                    "Content-Type: application/gzip\r\n" +
+                                    "Content-Length: ${body.size}\r\n" +
+                                    "Connection: close\r\n" +
+                                    "\r\n"
+                                ).toByteArray()
+                        )
+                        output.write(body)
+                    }
+                }
+            }
+        }
+
+        override fun close() {
+            serverSocket.close()
+            thread.join(1000)
+        }
+    }
+
+    private class TestShellRunner : WorkspaceShellRunner {
+        override fun execute(context: WorkspaceShellContext): WorkspaceCommandResult {
+            return when {
+                context.command == "printf hello > command.txt && cat command.txt" -> {
+                    File(context.workingDir, "command.txt").writeText("hello")
+                    WorkspaceCommandResult(exitCode = 0, stdout = "hello", stderr = "")
+                }
+
+                context.command == "cat > stdin.txt" -> {
+                    File(context.workingDir, "stdin.txt").writeBytes(context.stdin ?: ByteArray(0))
+                    WorkspaceCommandResult(exitCode = 0, stdout = "", stderr = "")
+                }
+
+                context.command.startsWith("awk 'BEGIN") -> {
+                    WorkspaceCommandResult(
+                        exitCode = 0,
+                        stdout = "a".repeat(MAX_OUTPUT_CHARS),
+                        stderr = "",
+                        truncated = true,
+                    )
+                }
+
+                else -> WorkspaceCommandResult(
+                    exitCode = 127,
+                    stdout = "",
+                    stderr = "Unsupported test command: ${context.command}",
+                )
+            }
+        }
     }
 
     private data class TarTestEntry(

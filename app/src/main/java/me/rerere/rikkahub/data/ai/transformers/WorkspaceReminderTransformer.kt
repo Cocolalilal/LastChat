@@ -20,7 +20,7 @@ class WorkspaceReminderTransformer(
         ctx: TransformerContext,
         messages: List<UIMessage>,
     ): List<UIMessage> {
-        val id = ctx.assistant.id?.toString() ?: return messages
+        val id = ctx.assistant.workspaceId?.toString() ?: return messages
         val workspace = workspaceRepository.getById(id) ?: return messages
         // 与 ChatService.createWorkspaceToolsIfReady 保持一致: 仅在 shell 就绪时注入
         if (workspace.shellStatus != WorkspaceShellStatus.READY.name) return messages

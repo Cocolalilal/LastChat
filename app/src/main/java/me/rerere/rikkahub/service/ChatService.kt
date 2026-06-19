@@ -8,7 +8,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.util.Log
 import androidx.annotation.StringRes
-import androidx.core.net.toUri
 import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.utils.LogUtil
 import androidx.core.app.ActivityCompat
@@ -74,14 +73,14 @@ import me.rerere.rikkahub.data.ai.shouldUseBuiltInSearch
 import me.rerere.rikkahub.data.ai.tools.ASK_USER_TOOL_NAME
 import me.rerere.rikkahub.data.ai.tools.AskUserAnswerPayload
 import me.rerere.rikkahub.data.ai.tools.LocalTools
-import me.rerere.rikkahub.data.ai.tools.PythonAttachmentReference
+import me.rerere.rikkahub.data.ai.tools.createWorkspaceTools
 import me.rerere.rikkahub.data.ai.tools.normalizeAskUserAnswerPayload
 import me.rerere.rikkahub.data.ai.tools.parseAskUserQuestionnaire
 import me.rerere.rikkahub.data.ai.tools.toJsonElement
 import me.rerere.rikkahub.data.ai.transformers.RegexOutputTransformer
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
 import me.rerere.rikkahub.data.ai.transformers.ThinkTagTransformer
-import me.rerere.rikkahub.data.ai.transformers.shouldSilentlyPreloadImageForPython
+import me.rerere.rikkahub.data.ai.transformers.WorkspaceReminderTransformer
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
@@ -98,6 +97,7 @@ import me.rerere.rikkahub.data.model.toMessageNode
 import me.rerere.rikkahub.data.repository.ChatAttachmentRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.utils.JsonInstantPretty
 import me.rerere.rikkahub.utils.applyPlaceholders
 import me.rerere.rikkahub.utils.appLocale
@@ -563,6 +563,7 @@ class ChatService(
     private val templateTransformer: TemplateTransformer,
     private val providerManager: ProviderManager,
     private val localTools: LocalTools,
+    private val workspaceRepository: WorkspaceRepository,
     val mcpManager: McpManager,
 ) {
     // 存储每个对话的状态
@@ -1436,6 +1437,7 @@ class ChatService(
                 },
                 inputTransformers = buildList {
                     addAll(defaultChatInputTransformers)
+                    add(WorkspaceReminderTransformer(workspaceRepository))
                     add(templateTransformer)
                 },
                 outputTransformers = defaultChatOutputTransformers,
@@ -1615,7 +1617,7 @@ class ChatService(
         val toolResult: UIMessagePart.ToolResult,
     )
 
-    private fun buildConversationTools(
+    private suspend fun buildConversationTools(
         settings: Settings,
         assistant: me.rerere.rikkahub.data.model.Assistant,
         conversation: Conversation,
@@ -1640,11 +1642,13 @@ class ChatService(
                     options = assistant.localTools,
                     assistantId = assistant.id,
                     conversationId = conversation.id,
-                    attachments = buildLatestUserPythonAttachments(
-                        conversation = conversation,
-                        settings = settings,
-                        model = model,
-                    )
+                )
+            )
+
+            addAll(
+                createWorkspaceTools(
+                    workspaceId = assistant.workspaceId?.toString(),
+                    workspaceRepository = workspaceRepository,
                 )
             )
 
@@ -1659,38 +1663,6 @@ class ChatService(
                         },
                     )
                 )
-            }
-        }
-    }
-
-    private fun buildLatestUserPythonAttachments(
-        conversation: Conversation,
-        settings: Settings,
-        model: Model,
-    ): List<PythonAttachmentReference> {
-        val latestUserMessage = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER } ?: return emptyList()
-        val hideImagePrompt = shouldSilentlyPreloadImageForPython(model, settings)
-        return latestUserMessage.parts.mapNotNull { part ->
-            when (part) {
-                is UIMessagePart.Image -> {
-                    val uri = part.url.toUri()
-                    val fileName = uri.lastPathSegment?.substringAfterLast('/')?.ifBlank { null } ?: return@mapNotNull null
-                    PythonAttachmentReference(
-                        url = part.url,
-                        fileName = fileName,
-                        mimeType = context.getFileMimeType(uri) ?: "application/octet-stream",
-                        promptVisible = !hideImagePrompt,
-                    )
-                }
-
-                is UIMessagePart.Document -> PythonAttachmentReference(
-                    url = part.url,
-                    fileName = part.fileName,
-                    mimeType = part.mime,
-                    promptVisible = true,
-                )
-
-                else -> null
             }
         }
     }

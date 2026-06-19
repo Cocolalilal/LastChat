@@ -172,6 +172,19 @@ class WorkspaceDetailVM(
         }
     }
 
+    fun rename(name: String) {
+        viewModelScope.launch {
+            val workspace = state.value.workspace ?: return@launch
+            runCatching {
+                repository.rename(workspace.id, name)
+            }.onSuccess {
+                loadWorkspace()
+            }.onFailure { error ->
+                _state.update { it.copy(error = error.message ?: "Rename failed") }
+            }
+        }
+    }
+
     fun installRootfs(url: String) {
         viewModelScope.launch {
             _installError.value = null

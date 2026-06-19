@@ -23,15 +23,16 @@ class ModelInstallTest {
         assertEquals(false, ModelInstall.isValidDownloadUrl("file:///etc/passwd"))
     }
 
-    @Test fun `runtimeForExtension routes litertlm to LiteRT and unknowns to null`() {
+    @Test fun `runtimeForExtension routes litertlm and task to LiteRT and unknowns to null`() {
         assertEquals(LocalRuntime.LiteRT, ModelInstall.runtimeForExtension("litertlm"))
+        assertEquals(LocalRuntime.LiteRT, ModelInstall.runtimeForExtension("task"))
         assertEquals(null, ModelInstall.runtimeForExtension("gguf"))
-        assertEquals(null, ModelInstall.runtimeForExtension("task"))
         assertEquals(null, ModelInstall.runtimeForExtension("tflite"))
     }
 
     @Test fun `runtimeForExtension is case-insensitive`() {
         assertEquals(LocalRuntime.LiteRT, ModelInstall.runtimeForExtension("LITERTLM"))
+        assertEquals(LocalRuntime.LiteRT, ModelInstall.runtimeForExtension("TASK"))
     }
 
     @Test fun `runtimeForExtension returns null for unrecognised extension`() {
@@ -128,6 +129,15 @@ class ModelInstallTest {
         val bytes = "LITERTLM      ".toByteArray().copyOf(16)
         assertTrue(ModelInstall.isValidMagicForExtension("litertlm", bytes))
         assertTrue(ModelInstall.isValidMagicForExtension("LITERTLM", bytes))  // case-insensitive
+    }
+
+    @Test fun `isValidMagicForExtension accepts zipped task bundle magic`() {
+        val bytes = byteArrayOf(
+            0x00, 0x00, 0x00, 0x00,
+            0x50, 0x4b, 0x03, 0x04,
+            0x14, 0x00, 0x00, 0x00,
+        )
+        assertTrue(ModelInstall.isValidMagicForExtension("task", bytes))
     }
 
     @Test fun `isValidMagicForExtension rejects all-zero file for litertlm`() {

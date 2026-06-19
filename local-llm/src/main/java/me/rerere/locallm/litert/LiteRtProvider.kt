@@ -133,7 +133,9 @@ class LiteRtProvider(
     override suspend fun listModels(providerSetting: ProviderSetting.LiteRtLocal): List<Model> {
         val installed = prefs.installedModels(LocalRuntime.LiteRT)
         val installedModels = installed.keys.map { fileName ->
-            LiteRtModelMetadata.modelForFile(fileName)
+            LiteRtCatalog.findByModelFile(fileName)
+                ?.let(LiteRtModelMetadata::modelForCatalogEntry)
+                ?: LiteRtModelMetadata.modelForFile(fileName)
         }
         val catalogModels = LiteRtCatalog.ENTRIES.map { entry ->
             LiteRtModelMetadata.modelForCatalogEntry(entry)
@@ -728,6 +730,19 @@ class LiteRtProvider(
         val joined = generateSequence<Throwable>(t) { it.cause }
             .map { it.message.orEmpty() }
             .joinToString("\n")
+
+        if (joined.contains("LiteRT engine could not load this model", ignoreCase = true) ||
+            joined.contains("LiteRtLmJniException", ignoreCase = true) ||
+            joined.contains("packaged for a different runtime version", ignoreCase = true)) {
+            return RuntimeException(
+                "This local model package is not compatible with the current LiteRT runtime " +
+                    "on this device. Delete it in Settings -> Local LiteRT, then install the " +
+                    "recommended Gallery-compatible Qwen package. For Gemma packages, try " +
+                    "CPU mode first; on 8 GB devices the lighter Qwen package is the safer " +
+                    "starter model.",
+                t,
+            )
+        }
 
         // Context-length overflow. The numbers in the message tell us the actual
         // input vs. the limit; surface both plus what to do next.

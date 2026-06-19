@@ -63,6 +63,8 @@
     <string name="assistant_page_local_tools_javascript_engine_title">JavaScript Engine</string>
     <string name="assistant_page_local_tools_python_engine_title">Python Engine</string>
     <string name="assistant_page_local_tools_python_engine_desc">Execute Python code with pip packages and file I/O. Supports numpy and Pillow.</string>
+    <string name="assistant_page_local_tools_linux_workspace_title">Linux Workspace</string>
+    <string name="assistant_page_local_tools_linux_workspace_desc">Bind a local Linux workspace with shell, files, Python, and pip tools.</string>
     <string name="assistant_page_local_tools_tts_title">Text to Speech</string>
     <string name="assistant_page_local_tools_tts_desc">Let the assistant read text aloud using your selected TTS provider</string>
     <string name="assistant_page_local_tools_character_questions_title">Character Questions</string>
@@ -1286,8 +1288,10 @@
   <string name="local_llm_download_progress">Downloading… %1$d%%</string>
   <string name="local_llm_catalog_title">Recommended models</string>
   <string name="local_llm_catalog_subtitle">Curated by Google AI Edge Gallery. Pick one for one-tap install.</string>
-  <string name="local_llm_catalog_install">Install</string>
+  <string name="local_llm_catalog_install">Download</string>
   <string name="local_llm_catalog_installed">Installed</string>
+  <string name="local_llm_downloading_button">Downloading</string>
+  <string name="local_llm_edit_identity_title">Model identity</string>
   <string name="local_llm_catalog_recommended">Recommended</string>
   <string name="local_llm_catalog_size_format">%1$.1f GB · needs %2$d GB RAM</string>
   <string name="local_llm_catalog_tag_multimodal">Multimodal</string>
@@ -1368,4 +1372,26 @@
   <string name="workspace_detail_installing">Installing…</string>
   <string name="workspace_detail_rootfs_install_failed">Rootfs install failed</string>
   <string name="workspace_detail_import_file">Import File</string>
+  <string name="notification_channel_local_model_downloads">Local model downloads</string>
+  <string name="local_llm_download_notification_title">Downloading local model</string>
+  <string name="local_llm_download_notification_progress">%1$s - %2$d%%</string>
+  <string name="local_llm_download_notification_progress_unknown">Downloading %1$s</string>
+  <string name="local_llm_download_notification_complete_title">Local model installed</string>
+  <string name="local_llm_download_notification_complete">%1$s is ready to use.</string>
+  <string name="local_llm_download_notification_failed_title">Local model download failed</string>
+  <string name="local_llm_download_notification_failed">%1$s failed: %2$s</string>
+  <string name="local_llm_surface_title">On-device model library</string>
+  <string name="local_llm_surface_desc">Download Gallery-compatible LiteRT packages, tune runtime safety, and manage the models stored on this phone.</string>
+  <string name="local_llm_model_count_short">%1$d installed</string>
+  <string name="local_llm_download_active_title">Downloading model</string>
+  <string name="local_llm_download_active_desc">Keep LastChat open or use the notification to watch progress.</string>
+  <string name="local_llm_section_runtime">Runtime</string>
+  <string name="local_llm_section_runtime_desc">CPU mode is the reliable baseline. Try acceleration only when a model is stable on this device.</string>
+  <string name="local_llm_section_custom">Advanced install</string>
+  <string name="local_llm_section_custom_desc">Paste a direct HuggingFace model URL when you already know the package is LiteRT-compatible.</string>
+  <string name="local_llm_no_models_title">No local models yet</string>
+  <string name="local_llm_no_models_desc">Install the recommended Qwen package first; it is the safest starter model for 8 GB phones.</string>
+  <string name="local_llm_catalog_note">Gallery-compatible</string>
+  <string name="local_llm_error_title">Local model issue</string>
+  <string name="local_llm_device_fit_format">%1$.1f GB download - %2$d GB RAM minimum</string>
 </resources>

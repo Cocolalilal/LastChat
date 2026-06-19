@@ -1126,12 +1126,12 @@ private fun MinimalPickerContent(
     ) { selectedUris ->
         if (selectedUris.isNotEmpty()) {
             onDismiss()
-            val isPythonEnabled = assistant.localTools.any { it is LocalToolOption.PythonEngine }
+            val isWorkspaceEnabled = assistant.workspaceId != null
             importScope.launch {
                 val importedFiles = withContext(Dispatchers.IO) {
                     context.prepareImportedPickerFiles(
                         selectedUris = selectedUris,
-                        isPythonEnabled = isPythonEnabled,
+                        isWorkspaceEnabled = isWorkspaceEnabled,
                     )
                 }
 

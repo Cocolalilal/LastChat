@@ -896,13 +896,11 @@ class LocalTools(
     
     /**
      * Get all enabled local tools for the conversation.
-     * @param attachments Image/document attachments from the most recent user message (for Python auto-import)
      */
     fun getTools(
         options: List<LocalToolOption>,
         assistantId: Uuid,
         conversationId: Uuid,
-        attachments: List<PythonAttachmentReference> = emptyList(),
     ): List<Tool> {
         val tools = mutableListOf<Tool>()
         if (options.contains(LocalToolOption.JavascriptEngine)) {
@@ -911,9 +909,9 @@ class LocalTools(
         if (options.contains(LocalToolOption.Notifications)) {
             tools.addAll(getNotificationTools(assistantId, conversationId))
         }
-        if (options.contains(LocalToolOption.PythonEngine)) {
-            tools.addAll(getPythonTools(conversationId, attachments))
-        }
+        // PythonEngine is kept only for backwards-compatible settings deserialization.
+        // Linux workspace tools replace the old Chaquopy sandbox and are wired through
+        // createWorkspaceTools when an assistant has a bound workspace.
         if (options.contains(LocalToolOption.Tts)) {
             tools.add(ttsTool)
         }

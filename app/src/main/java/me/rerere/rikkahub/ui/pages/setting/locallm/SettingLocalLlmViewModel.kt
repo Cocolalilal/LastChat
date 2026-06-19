@@ -1,8 +1,16 @@
 package me.rerere.rikkahub.ui.pages.setting.locallm
 
+import android.Manifest
+import android.app.Notification
 import android.content.Context
+import android.content.pm.PackageManager
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -12,17 +20,20 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
 import me.rerere.ai.provider.Model
-import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.LITERT_PROVIDER_ID
 import me.rerere.locallm.AcceleratorProbe
 import me.rerere.locallm.LocalRuntime
 import me.rerere.locallm.LocalRuntimePreferences
+import me.rerere.locallm.litert.LiteRtCatalog
 import me.rerere.locallm.litert.LiteRtModelMetadata
 import me.rerere.locallm.MemoryGuard
 import me.rerere.locallm.ModelInstall
+import me.rerere.rikkahub.LOCAL_MODEL_DOWNLOAD_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.service.LOCAL_MODEL_DOWNLOAD_WORK_TAG
+import me.rerere.rikkahub.service.LocalModelDownloadWorker
 import okhttp3.OkHttpClient
 
 /**
@@ -44,6 +55,7 @@ class SettingLocalLlmViewModel(
     private val prefs: LocalRuntimePreferences,
     private val httpClient: OkHttpClient,
     private val settingsStore: SettingsStore,
+    private val workManager: WorkManager,
 ) : ViewModel() {
 
     data class Progress(val percent: Int, val bytesRead: Long, val totalBytes: Long?)
@@ -116,7 +128,9 @@ class SettingLocalLlmViewModel(
      * runtime version and throws FAILED_PRECONDITION: No KV cache inputs found on 0.11.0.
      */
     private val defaultModelUrl: String =
-        "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm"
+        LiteRtCatalog.ENTRIES.firstOrNull { it.recommended }?.resolveUrl().orEmpty()
+
+    private val downloadNotificationId = 40_120
 
     /** Currently only LiteRT is wired; the helper exists so a future runtime can fan out
      *  by adding a `when` arm without touching every flow above. */
@@ -128,6 +142,56 @@ class SettingLocalLlmViewModel(
         viewModelScope.launch {
             refreshFromDisk()
             migrateExistingModelMetadata()
+        }
+        viewModelScope.launch {
+            observeDownloadWork()
+        }
+    }
+
+    private suspend fun observeDownloadWork() {
+        var lastFinishedId: java.util.UUID? = null
+        workManager.getWorkInfosByTagFlow(LOCAL_MODEL_DOWNLOAD_WORK_TAG).collect { infos ->
+            val active = infos.firstOrNull { info ->
+                info.state == WorkInfo.State.RUNNING ||
+                    info.state == WorkInfo.State.ENQUEUED ||
+                    info.state == WorkInfo.State.BLOCKED
+            }
+            if (active != null) {
+                val progress = active.progress
+                val bytesRead = progress.getLong(LocalModelDownloadWorker.KEY_BYTES_READ, 0L)
+                val totalRaw = progress.getLong(LocalModelDownloadWorker.KEY_TOTAL_BYTES, -1L)
+                val percent = progress.getInt(LocalModelDownloadWorker.KEY_PERCENT, 0)
+                _downloadProgress.value = Progress(
+                    percent = percent.coerceIn(0, 100),
+                    bytesRead = bytesRead,
+                    totalBytes = totalRaw.takeIf { it > 0L },
+                )
+                return@collect
+            }
+
+            _downloadProgress.value = null
+
+            val finished = infos.firstOrNull { info ->
+                info.id != lastFinishedId &&
+                    (info.state == WorkInfo.State.SUCCEEDED ||
+                        info.state == WorkInfo.State.FAILED ||
+                        info.state == WorkInfo.State.CANCELLED)
+            }
+            if (finished != null) {
+                lastFinishedId = finished.id
+                when (finished.state) {
+                    WorkInfo.State.SUCCEEDED -> {
+                        _errorMessage.value = null
+                        refreshFromDisk()
+                    }
+                    WorkInfo.State.FAILED -> {
+                        _errorMessage.value = finished.outputData
+                            .getString(LocalModelDownloadWorker.KEY_ERROR)
+                            ?: context.getString(R.string.context_refresh_error_unknown)
+                    }
+                    else -> Unit
+                }
+            }
         }
     }
 
@@ -147,23 +211,31 @@ class SettingLocalLlmViewModel(
         val originals = provider.models.toList()
         var anyChange = false
         val patched = originals.map { model ->
+            val catalogModel = LocalModelDownloadWorker.modelForInstalledFile(model.modelId)
             val current = LiteRtModelMetadata.Capabilities(
                 inputModalities = model.inputModalities,
                 abilities = model.abilities,
             )
-            val target = LiteRtModelMetadata.deriveCapabilities(model.modelId)
+            val target = LiteRtModelMetadata.Capabilities(
+                inputModalities = catalogModel.inputModalities,
+                abilities = catalogModel.abilities,
+            )
             val merged = LiteRtModelMetadata.mergeAdditive(current, target)
-            if (merged.inputModalities == model.inputModalities &&
-                merged.abilities == model.abilities
-            ) {
-                model
-            } else {
+            val nextModel = model.copy(
+                canonicalModelId = catalogModel.canonicalModelId ?: model.canonicalModelId,
+                type = catalogModel.type,
+                inputModalities = merged.inputModalities,
+                outputModalities = catalogModel.outputModalities,
+                abilities = merged.abilities,
+                iconUrl = catalogModel.iconUrl,
+                providerSlug = catalogModel.providerSlug,
+                imageGenerationMethod = model.imageGenerationMethod ?: catalogModel.imageGenerationMethod,
+                reasoningBehavior = model.reasoningBehavior ?: catalogModel.reasoningBehavior,
+            )
+            if (nextModel != model) {
                 anyChange = true
-                model.copy(
-                    inputModalities = merged.inputModalities,
-                    abilities = merged.abilities,
-                )
             }
+            nextModel
         }
         if (!anyChange) return
         val changedCount = patched.indices.count { patched[it] != originals[it] }
@@ -233,11 +305,7 @@ class SettingLocalLlmViewModel(
             val knownModelIds = currentProvider.models.map { it.modelId }.toSet()
             val missing = finalInstalled.keys.filter { it !in knownModelIds }
             for (fileName in missing) {
-                val caps = LiteRtModelMetadata.deriveCapabilities(fileName)
-                val model = LiteRtModelMetadata.modelForFile(fileName).copy(
-                    inputModalities = caps.inputModalities,
-                    abilities = caps.abilities,
-                )
+                val model = LocalModelDownloadWorker.modelForInstalledFile(fileName)
                 updateMyProvider { provider -> provider.addOrReplaceLocalModel(model) }
             }
         }
@@ -312,6 +380,10 @@ class SettingLocalLlmViewModel(
         _errorMessage.value = null
         viewModelScope.launch {
             val url = defaultModelUrl
+            if (url.isBlank()) {
+                _errorMessage.value = context.getString(R.string.local_llm_invalid_url)
+                return@launch
+            }
             val mem = MemoryGuard.canLoad(context, modelFileBytes = estimatedSize(runtime))
             if (mem is MemoryGuard.Decision.TooLarge) {
                 _errorMessage.value = context.getString(
@@ -322,7 +394,7 @@ class SettingLocalLlmViewModel(
                 )
                 return@launch
             }
-            executeDownload(url)
+            enqueueDownload(url)
         }
     }
 
@@ -336,7 +408,17 @@ class SettingLocalLlmViewModel(
             return
         }
         _errorMessage.value = null
-        viewModelScope.launch { executeDownload(normalizedUrl) }
+        enqueueDownload(normalizedUrl)
+    }
+
+    private fun enqueueDownload(url: String) {
+        val fileName = ModelInstall.extractFileNameFromUrl(url)
+        LocalModelDownloadWorker.enqueue(
+            context = context.applicationContext,
+            runtime = runtime,
+            url = url,
+            fileName = fileName,
+        )
     }
 
     /**
@@ -359,24 +441,31 @@ class SettingLocalLlmViewModel(
         } catch (cancel: kotlinx.coroutines.CancellationException) {
             // Cancellation is normal — user navigated away or hit Cancel. Don't surface.
             _downloadProgress.value = null
+            clearDownloadNotification()
             throw cancel
         } catch (t: Throwable) {
             android.util.Log.w("LocalLlmVM", "Uncaught download failure", t)
             _downloadProgress.value = null
             _errorMessage.value = "Download failed: ${t::class.simpleName}: ${t.message ?: ""}"
+            showDownloadFailedNotification(fileName, t.message.orEmpty())
         }
     }
 
     private suspend fun collectDownloadProgress(url: String, fileName: String, target: java.io.File) {
         ModelInstall.download(httpClient, url, target).collect { p ->
             when (p) {
-                is ModelInstall.Progress.Started ->
-                    _downloadProgress.value = Progress(0, 0L, p.totalBytes)
+                is ModelInstall.Progress.Started -> {
+                    val progress = Progress(0, 0L, p.totalBytes)
+                    _downloadProgress.value = progress
+                    showDownloadProgressNotification(fileName, progress)
+                }
                 is ModelInstall.Progress.Tick -> {
                     val total = p.totalBytes
                     val pct = if (total != null && total > 0)
                         ((p.bytesRead * 100) / total).toInt() else 0
-                    _downloadProgress.value = Progress(pct, p.bytesRead, total)
+                    val progress = Progress(pct, p.bytesRead, total)
+                    _downloadProgress.value = progress
+                    showDownloadProgressNotification(fileName, progress)
                 }
                 is ModelInstall.Progress.Done -> {
                     _downloadProgress.value = null
@@ -395,12 +484,95 @@ class SettingLocalLlmViewModel(
                         }
                     }
                     refreshFromDisk()
+                    showDownloadFinishedNotification(fileName)
                 }
                 is ModelInstall.Progress.Failed -> {
                     _downloadProgress.value = null
                     _errorMessage.value = p.cause.message.orEmpty()
+                    showDownloadFailedNotification(fileName, p.cause.message.orEmpty())
                 }
             }
+        }
+    }
+
+    private fun showDownloadProgressNotification(fileName: String, progress: Progress) {
+        val text = if (progress.totalBytes != null && progress.totalBytes > 0) {
+            context.getString(
+                R.string.local_llm_download_notification_progress,
+                fileName,
+                progress.percent,
+            )
+        } else {
+            context.getString(R.string.local_llm_download_notification_progress_unknown, fileName)
+        }
+        val notification = NotificationCompat.Builder(context, LOCAL_MODEL_DOWNLOAD_NOTIFICATION_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(context.getString(R.string.local_llm_download_notification_title))
+            .setContentText(text)
+            .setOnlyAlertOnce(true)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+            .apply {
+                if (progress.totalBytes != null && progress.totalBytes > 0) {
+                    setProgress(100, progress.percent.coerceIn(0, 100), false)
+                } else {
+                    setProgress(0, 0, true)
+                }
+            }
+            .build()
+        postDownloadNotification(notification)
+    }
+
+    private fun showDownloadFinishedNotification(fileName: String) {
+        val notification = NotificationCompat.Builder(context, LOCAL_MODEL_DOWNLOAD_NOTIFICATION_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(context.getString(R.string.local_llm_download_notification_complete_title))
+            .setContentText(context.getString(R.string.local_llm_download_notification_complete, fileName))
+            .setAutoCancel(true)
+            .setOngoing(false)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setProgress(0, 0, false)
+            .build()
+        postDownloadNotification(notification)
+    }
+
+    private fun showDownloadFailedNotification(fileName: String, message: String) {
+        val notification = NotificationCompat.Builder(context, LOCAL_MODEL_DOWNLOAD_NOTIFICATION_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(context.getString(R.string.local_llm_download_notification_failed_title))
+            .setContentText(
+                context.getString(
+                    R.string.local_llm_download_notification_failed,
+                    fileName,
+                    message.ifBlank { context.getString(R.string.context_refresh_error_unknown) },
+                )
+            )
+            .setAutoCancel(true)
+            .setOngoing(false)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setCategory(NotificationCompat.CATEGORY_ERROR)
+            .setProgress(0, 0, false)
+            .build()
+        postDownloadNotification(notification)
+    }
+
+    private fun clearDownloadNotification() {
+        runCatching {
+            NotificationManagerCompat.from(context).cancel(downloadNotificationId)
+        }
+    }
+
+    private fun postDownloadNotification(notification: Notification) {
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+        runCatching {
+            NotificationManagerCompat.from(context).notify(downloadNotificationId, notification)
         }
     }
 
@@ -446,8 +618,8 @@ class SettingLocalLlmViewModel(
     }
 
     private fun estimatedSize(rt: LocalRuntime): Long = when (rt) {
-        // Gallery allowlist sizeInBytes = 1_597_931_520 (~1.49 GB) + 200 MB safety pad.
-        LocalRuntime.LiteRT -> 1_800_000_000L
+        LocalRuntime.LiteRT -> (LiteRtCatalog.ENTRIES.firstOrNull { it.recommended }?.sizeBytes ?: 1_625_493_432L) +
+            350_000_000L
     }
 
     private fun ProviderSetting.addOrReplaceLocalModel(model: Model): ProviderSetting {

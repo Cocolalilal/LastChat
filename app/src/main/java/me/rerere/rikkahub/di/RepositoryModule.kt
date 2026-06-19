@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.di
 
+import android.content.Context
 import me.rerere.rikkahub.data.ai.rag.EmbeddingService
 import me.rerere.rikkahub.data.ai.MemorySearchService
 import me.rerere.rikkahub.data.repository.AppStorageRepository
@@ -7,7 +8,12 @@ import me.rerere.rikkahub.data.repository.ChatAttachmentRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.GenMediaRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.workspace.ProotShellRunner
+import me.rerere.workspace.RootfsInstaller
+import me.rerere.workspace.WorkspaceBindMount
+import me.rerere.workspace.WorkspaceManager
 import org.koin.dsl.module
+import java.io.File
 
 val repositoryModule = module {
     single {
@@ -48,6 +54,30 @@ val repositoryModule = module {
 
     single {
         GenMediaRepository(get())
+    }
+
+    single {
+        val context: Context = get()
+        WorkspaceManager(
+            baseDir = File(context.filesDir, "workspaces"),
+            shellRunner = ProotShellRunner(
+                nativeLibraryDir = File(context.applicationInfo.nativeLibraryDir),
+                extraBindMounts = listOf(
+                    WorkspaceBindMount(
+                        source = File(context.filesDir, "skills").apply { mkdirs() },
+                        target = "/skills",
+                    ),
+                    WorkspaceBindMount(
+                        source = File(context.filesDir, "tool_outputs").apply { mkdirs() },
+                        target = "/tool_outputs",
+                    ),
+                ),
+            ),
+        )
+    }
+
+    single {
+        RootfsInstaller(get())
     }
 
     single {

@@ -36,7 +36,7 @@ class LiteRtModelMetadataTest {
     @Test
     fun `Qwen2_5-1_5B-Instruct derives text + tool only`() {
         val caps = LiteRtModelMetadata.deriveCapabilities(
-            "Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm",
+            "Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv1280.task",
         )
         assertEquals(listOf(Modality.TEXT), caps.inputModalities)
         assertEquals(listOf(ModelAbility.TOOL), caps.abilities)
@@ -45,7 +45,7 @@ class LiteRtModelMetadataTest {
     @Test
     fun `Qwen LiteRT package name standardizes to model family name`() {
         val model = LiteRtModelMetadata.modelForFile(
-            "Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm",
+            "Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv1280.task",
         )
         assertEquals("Qwen2.5 1.5B Instruct", model.displayName)
         assertEquals("qwen2.5-1.5b-instruct", model.canonicalModelId)
@@ -53,11 +53,12 @@ class LiteRtModelMetadataTest {
     }
 
     @Test
-    fun `Gemma catalog entry standardizes name and keeps catalog filename id`() {
-        val model = LiteRtModelMetadata.modelForCatalogEntry(LiteRtCatalog.ENTRIES.first())
-        assertEquals("gemma-4-E2B-it.litertlm", model.modelId)
-        assertEquals("Gemma 4 E2B IT", model.displayName)
-        assertEquals("gemma-4-e2b-it", model.canonicalModelId)
+    fun `Gemma task catalog entry standardizes name and keeps catalog filename id`() {
+        val entry = LiteRtCatalog.ENTRIES.single { it.modelFile == "gemma-3n-E2B-it-int4.task" }
+        val model = LiteRtModelMetadata.modelForCatalogEntry(entry)
+        assertEquals("gemma-3n-E2B-it-int4.task", model.modelId)
+        assertEquals("Gemma 3n E2B IT Int4", model.displayName)
+        assertEquals("gemma-3n-e2b-it-int4", model.canonicalModelId)
         assertEquals("google", model.providerSlug)
     }
 

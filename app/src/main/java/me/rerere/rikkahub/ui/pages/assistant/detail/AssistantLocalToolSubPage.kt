@@ -21,11 +21,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.utils.PermissionChecker
+import org.koin.compose.koinInject
+import kotlin.uuid.Uuid
 
 @Composable
 fun AssistantLocalToolSubPage(
@@ -33,6 +37,11 @@ fun AssistantLocalToolSubPage(
     onUpdate: (Assistant) -> Unit
 ) {
     val context = LocalContext.current
+    val workspaceRepository = koinInject<WorkspaceRepository>()
+    val workspaces by workspaceRepository.listFlow().collectAsStateWithLifecycle(initialValue = emptyList())
+    val selectedWorkspace = remember(workspaces, assistant.workspaceId) {
+        workspaces.firstOrNull { it.id == assistant.workspaceId?.toString() }
+    }
     var pendingNotificationAccess by remember {
         mutableStateOf(PermissionChecker.MissingFeatureAccess())
     }
@@ -102,19 +111,23 @@ fun AssistantLocalToolSubPage(
             }
         )
 
-        // Python Engine
-        val pythonOption = assistant.localTools.filterIsInstance<LocalToolOption.PythonEngine>().firstOrNull()
         LocalToolCard(
-            title = stringResource(R.string.assistant_page_local_tools_python_engine_title),
-            description = stringResource(R.string.assistant_page_local_tools_python_engine_desc),
-            isEnabled = pythonOption != null,
+            title = stringResource(R.string.assistant_page_local_tools_linux_workspace_title),
+            description = selectedWorkspace?.name
+                ?: stringResource(R.string.assistant_page_local_tools_linux_workspace_desc),
+            isEnabled = selectedWorkspace != null,
             onToggle = { enabled ->
-                val newLocalTools = if (enabled) {
-                    assistant.localTools + LocalToolOption.PythonEngine
+                if (enabled) {
+                    val workspace = workspaces.firstOrNull() ?: return@LocalToolCard
+                    onUpdate(
+                        assistant.copy(
+                            workspaceId = Uuid.parse(workspace.id),
+                            localTools = assistant.localTools.filterNot { it is LocalToolOption.PythonEngine },
+                        )
+                    )
                 } else {
-                    assistant.localTools.filterNot { it is LocalToolOption.PythonEngine }
+                    onUpdate(assistant.copy(workspaceId = null))
                 }
-                onUpdate(assistant.copy(localTools = newLocalTools))
             }
         )
 
