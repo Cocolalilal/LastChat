@@ -7,7 +7,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicLong
+import kotlin.concurrent.atomics.AtomicLong
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.uuid.Uuid
 
 data class WebUploadedFileRecord(
@@ -19,6 +20,7 @@ data class WebUploadedFileRecord(
     val size: Long,
 )
 
+@OptIn(ExperimentalAtomicApi::class)
 object WebUploadRegistry {
     private const val UPLOAD_DIR = "upload"
 
@@ -52,7 +54,7 @@ object WebUploadRegistry {
 
         val relativePath = "$UPLOAD_DIR/$storedName"
         val record = WebUploadedFileRecord(
-            id = nextId.getAndIncrement(),
+            id = nextId.fetchAndAdd(1L),
             relativePath = relativePath,
             uri = file.toUri().toString(),
             fileName = displayName,
