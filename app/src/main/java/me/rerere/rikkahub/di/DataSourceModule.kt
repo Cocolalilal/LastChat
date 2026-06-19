@@ -59,7 +59,8 @@ import okhttp3.logging.HttpLoggingInterceptor
 import okio.Path.Companion.toOkioPath
 import org.koin.core.qualifier.named
 import org.koin.dsl.module
-import java.util.concurrent.TimeUnit
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
 const val SEARCH_PLATFORM_HTTP_CLIENT = "searchPlatformHttpClient"
 private const val MCP_OKHTTP_CLIENT = "mcpOkHttpClient"
@@ -214,9 +215,9 @@ val dataSourceModule = module {
     single<OkHttpClient> {
         val acceptLang = get<android.content.Context>().acceptLanguageHeader()
         OkHttpClient.Builder()
-            .connectTimeout(20, TimeUnit.SECONDS)
-            .readTimeout(10, TimeUnit.MINUTES)
-            .writeTimeout(120, TimeUnit.SECONDS)
+            .connectTimeout(20.seconds)
+            .readTimeout(10.minutes)
+            .writeTimeout(120.seconds)
             .followSslRedirects(true)
             .followRedirects(true)
             .retryOnConnectionFailure(true)
@@ -236,9 +237,9 @@ val dataSourceModule = module {
 
     single<OkHttpClient>(named(MCP_OKHTTP_CLIENT)) {
         OkHttpClient.Builder()
-            .connectTimeout(20, TimeUnit.SECONDS)
-            .readTimeout(10, TimeUnit.MINUTES)
-            .writeTimeout(120, TimeUnit.SECONDS)
+            .connectTimeout(20.seconds)
+            .readTimeout(10.minutes)
+            .writeTimeout(120.seconds)
             .followSslRedirects(true)
             .followRedirects(true)
             .build()
@@ -295,7 +296,7 @@ val dataSourceModule = module {
                     .followRedirects(false)
                     .authenticator(authHandler)
                     .addNetworkInterceptor(authHandler)
-                    .writeTimeout(5, TimeUnit.MINUTES)
+                    .writeTimeout(5.minutes)
                     .build()
             }
         }
@@ -312,7 +313,7 @@ val dataSourceModule = module {
     single<PlatformHttpClient>(named(SEARCH_PLATFORM_HTTP_CLIENT)) {
         OkHttpPlatformHttpClient(
             get<OkHttpClient>().newBuilder()
-                .readTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(30.seconds)
                 .build()
         )
     }
