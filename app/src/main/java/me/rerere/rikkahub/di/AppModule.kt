@@ -85,5 +85,4 @@ val appModule = module {
     }
 
     single { me.rerere.locallm.LocalRuntimePreferences(get()) }
-    single { me.rerere.locallm.litert.LiteRtRuntime(get()) }
 }

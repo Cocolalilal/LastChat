@@ -36,7 +36,7 @@ class WorkspaceManager(
 
     fun tempDir(root: String): File = File(workspaceDir(root), TEMP_DIR)
 
-    fun hasRootfs(root: String): Boolean = File(linuxDir(root), "bin/sh").isFile
+    fun hasRootfs(root: String): Boolean = linuxDir(root).hasUsableRootfs()
 
     fun deleteWorkspace(root: String): Boolean = workspaceDir(root).deleteRecursively()
 
@@ -178,4 +178,16 @@ class WorkspaceManager(
         const val DEFAULT_COMMAND_TIMEOUT_MS = 30_000L
         private val ROOT_NAME_REGEX = Regex("[A-Za-z0-9._-]+")
     }
+}
+
+internal fun File.hasUsableRootfs(): Boolean {
+    if (!isDirectory) return false
+    val hasEnv = File(this, "usr/bin/env").isFile || File(this, "bin/env").isFile
+    val hasShell = listOf(
+        "bin/bash",
+        "usr/bin/bash",
+        "bin/sh",
+        "usr/bin/sh",
+    ).any { File(this, it).isFile }
+    return hasEnv && hasShell
 }

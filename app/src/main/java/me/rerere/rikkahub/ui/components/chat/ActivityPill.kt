@@ -3,7 +3,8 @@ package me.rerere.rikkahub.ui.components.chat
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.Spring
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -12,20 +13,26 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -33,10 +40,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
@@ -57,6 +66,8 @@ import androidx.compose.ui.res.stringResource
 import me.rerere.rikkahub.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
+import me.rerere.rikkahub.ui.modifier.fadeEdges
 import me.rerere.rikkahub.ui.modifier.shimmer
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.DurationUnit
@@ -74,7 +85,8 @@ sealed interface ActivityState {
     /** Model is reasoning/thinking - shows timer */
     data class Reasoning(
         val startTimeMs: Long = System.currentTimeMillis(),
-        val title: String? = null
+        val title: String? = null,
+        val reasoningText: String = ""
     ) : ActivityState
 
     /** Model is using a tool */
@@ -275,6 +287,11 @@ enum class PillPosition {
     LAST        // Last in row - flat left, rounded right
 }
 
+private sealed interface SinglePillContentState {
+    data class Compact(val state: ActivityState) : SinglePillContentState
+    data class ExpandedReasoning(val state: ActivityState.Reasoning) : SinglePillContentState
+}
+
 /**
  * A row of activity pills with Apple-like smooth animations.
  * 
@@ -287,6 +304,8 @@ fun ActivityPillRow(
     onClick: (ActivityType?) -> Unit,
     modifier: Modifier = Modifier,
     connectsToBubbleBelow: Boolean = true,
+    reasoningPreviewEnabled: Boolean = false,
+    maxBubbleWidth: Dp = Dp.Infinity,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -394,7 +413,9 @@ fun ActivityPillRow(
                     AnimatedSinglePill(
                         state = state,
                         onClick = { onClick(clickType) },
-                        connectsToBubbleBelow = connectsToBubbleBelow
+                        connectsToBubbleBelow = connectsToBubbleBelow,
+                        reasoningPreviewEnabled = reasoningPreviewEnabled,
+                        maxBubbleWidth = maxBubbleWidth
                     )
                 }
             }
@@ -410,26 +431,44 @@ fun ActivityPillRow(
 private fun AnimatedSinglePill(
     state: ActivityState,
     onClick: () -> Unit,
-    connectsToBubbleBelow: Boolean
+    connectsToBubbleBelow: Boolean,
+    reasoningPreviewEnabled: Boolean,
+    maxBubbleWidth: Dp,
 ) {
+    val isExpandedReasoning = reasoningPreviewEnabled && state is ActivityState.Reasoning
+    val contentState = if (isExpandedReasoning) {
+        SinglePillContentState.ExpandedReasoning(state as ActivityState.Reasoning)
+    } else {
+        SinglePillContentState.Compact(state)
+    }
+    val expandedRadius = 24.dp
+
     // Animate corner radii for smooth transitions
     val topStartRadius by animateDpAsState(
-        targetValue = LARGE_RADIUS,
+        targetValue = if (isExpandedReasoning) expandedRadius else LARGE_RADIUS,
         animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
         label = "corner_top_start"
     )
     val topEndRadius by animateDpAsState(
-        targetValue = LARGE_RADIUS,
+        targetValue = if (isExpandedReasoning) expandedRadius else LARGE_RADIUS,
         animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
         label = "corner_top_end"
     )
     val bottomStartRadius by animateDpAsState(
-        targetValue = if (connectsToBubbleBelow) SMALL_RADIUS else LARGE_RADIUS,
+        targetValue = when {
+            isExpandedReasoning -> expandedRadius
+            connectsToBubbleBelow -> SMALL_RADIUS
+            else -> LARGE_RADIUS
+        },
         animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
         label = "corner_bottom_start"
     )
     val bottomEndRadius by animateDpAsState(
-        targetValue = if (connectsToBubbleBelow) SMALL_RADIUS else LARGE_RADIUS,
+        targetValue = when {
+            isExpandedReasoning -> expandedRadius
+            connectsToBubbleBelow -> SMALL_RADIUS
+            else -> LARGE_RADIUS
+        },
         animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
         label = "corner_bottom_end"
     )
@@ -451,108 +490,265 @@ private fun AnimatedSinglePill(
 
     Surface(
         modifier = Modifier
-            .height(PILL_HEIGHT)
+            .then(
+                if (isExpandedReasoning) {
+                    Modifier
+                        .widthIn(max = maxBubbleWidth)
+                        .fillMaxWidth()
+                } else {
+                    Modifier.height(PILL_HEIGHT)
+                }
+            )
             .then(if (testTag != null) Modifier.testTag(testTag) else Modifier),
         shape = pillShape,
         color = pillColor,
         contentColor = MaterialTheme.colorScheme.onSurface,
         onClick = onClick
     ) {
-        // AnimatedContent for smooth crossfade between DIFFERENT activity types
-        // Use contentKey based on activity TYPE, not instance, so same-type activities don't transition
         AnimatedContent(
-            targetState = state,
+            targetState = contentState,
             transitionSpec = {
-                // Crossfade with slight scale for Apple-like feel
-                (fadeIn(animationSpec = tween(200)) + 
-                 scaleIn(initialScale = 0.92f, animationSpec = tween(200)))
-                    .togetherWith(
-                        fadeOut(animationSpec = tween(150)) + 
-                        scaleOut(targetScale = 0.92f, animationSpec = tween(150))
+                val enter = fadeIn(tween(220, easing = LinearOutSlowInEasing)) +
+                    expandVertically(
+                        animationSpec = spring(dampingRatio = 0.75f, stiffness = 360f),
+                        expandFrom = Alignment.Top
+                    ) +
+                    scaleIn(
+                        initialScale = 0.92f,
+                        animationSpec = spring(dampingRatio = 0.75f, stiffness = 360f)
                     )
+                val exit = fadeOut(tween(150)) +
+                    shrinkVertically(
+                        animationSpec = spring(dampingRatio = 0.85f, stiffness = 420f),
+                        shrinkTowards = Alignment.Top
+                    ) +
+                    scaleOut(
+                        targetScale = 0.96f,
+                        animationSpec = tween(150)
+                    )
+                enter.togetherWith(exit)
             },
-            label = "pill_content",
-            contentKey = { stateToKey(it) },  // Same type = same key = no transition
+            contentKey = { it is SinglePillContentState.ExpandedReasoning },
+            label = "pill_reasoning_preview",
             modifier = Modifier.animateContentSize(
                 animationSpec = spring(dampingRatio = 0.75f, stiffness = 350f)
             )
-        ) { targetState ->
-            Row(
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                when (targetState) {
-                    is ActivityState.Waiting -> {
-                        TypingIndicator(
-                            dotSize = 7.dp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+        ) { targetContentState ->
+            when (targetContentState) {
+                is SinglePillContentState.ExpandedReasoning -> {
+                    ReasoningPreviewCard(state = targetContentState.state)
+                }
+                is SinglePillContentState.Compact -> {
+                    // AnimatedContent for smooth crossfade between different compact activity types.
+                    AnimatedContent(
+                        targetState = targetContentState.state,
+                        transitionSpec = {
+                            (fadeIn(animationSpec = tween(200)) +
+                                scaleIn(initialScale = 0.92f, animationSpec = tween(200)))
+                                .togetherWith(
+                                    fadeOut(animationSpec = tween(150)) +
+                                        scaleOut(targetScale = 0.92f, animationSpec = tween(150))
+                                )
+                        },
+                        label = "pill_content",
+                        contentKey = { stateToKey(it) },
+                        modifier = Modifier.animateContentSize(
+                            animationSpec = spring(dampingRatio = 0.75f, stiffness = 350f)
                         )
-                    }
+                    ) { targetState ->
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            when (targetState) {
+                                is ActivityState.Waiting -> {
+                                    TypingIndicator(
+                                        dotSize = 7.dp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
 
-                    is ActivityState.Ocr -> {
-                        OcrContent(isLive = true)
-                    }
-                    
-                    is ActivityState.Reasoning -> {
-                        // Read title from the outer `state` (not `targetState`) so it updates
-                        // on every recomposition even though contentKey stays "reasoning".
-                        val liveTitle = (state as? ActivityState.Reasoning)?.title
-                        ReasoningContent(
-                            startTimeMs = targetState.startTimeMs,
-                            title = liveTitle,
-                            isLive = true
-                        )
-                    }
+                                is ActivityState.Ocr -> {
+                                    OcrContent(isLive = true)
+                                }
 
-                    is ActivityState.ToolUse -> {
-                        ToolUseContent(
-                            toolName = targetState.toolName,
-                            displayName = targetState.displayName,
-                            isLive = true
-                        )
+                                is ActivityState.Reasoning -> {
+                                    val liveState = (state as? ActivityState.Reasoning) ?: targetState
+                                    ReasoningContent(
+                                        startTimeMs = liveState.startTimeMs,
+                                        title = liveState.title,
+                                        isLive = true
+                                    )
+                                }
+
+                                is ActivityState.ToolUse -> {
+                                    ToolUseContent(
+                                        toolName = targetState.toolName,
+                                        displayName = targetState.displayName,
+                                        isLive = true
+                                    )
+                                }
+
+                                is ActivityState.Replying -> {
+                                    Text(
+                                        text = stringResource(R.string.activity_pill_replying),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.shimmer(isLoading = true)
+                                    )
+                                }
+
+                                is ActivityState.LoadingModel -> {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Memory,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = targetState.modelName?.let { "Loading $it..." } ?: "Loading model...",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.shimmer(isLoading = true)
+                                    )
+                                }
+
+                                is ActivityState.CompletedSingle -> {
+                                    val item = ActivityItem(
+                                        type = targetState.type,
+                                        durationMs = targetState.durationMs,
+                                        count = targetState.count,
+                                        displayName = targetState.displayName
+                                    )
+                                    ExpandedActivityContent(item = item)
+                                }
+
+                                else -> {}
+                            }
+                        }
                     }
-                    
-                    is ActivityState.Replying -> {
-                        Text(
-                            text = stringResource(R.string.activity_pill_replying),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.shimmer(isLoading = true)
-                        )
-                    }
-                    
-                    is ActivityState.LoadingModel -> {
-                        Icon(
-                            imageVector = Icons.Rounded.Memory,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = targetState.modelName?.let { "Loading $it..." } ?: "Loading model...",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.shimmer(isLoading = true)
-                        )
-                    }
-                    
-                    is ActivityState.CompletedSingle -> {
-                        // Show expanded content for the single activity
-                        val item = ActivityItem(
-                            type = targetState.type,
-                            durationMs = targetState.durationMs,
-                            count = targetState.count,
-                            displayName = targetState.displayName
-                        )
-                        ExpandedActivityContent(item = item)
-                    }
-                    
-                    // Hidden and CompletedMultiple are handled by parent - shouldn't reach here
-                    else -> {}
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ReasoningPreviewCard(
+    state: ActivityState.Reasoning,
+) {
+    var elapsedMs by remember { mutableLongStateOf(0L) }
+    val scrollState = rememberScrollState()
+    var autoFollowPaused by remember { mutableStateOf(false) }
+    var lastObservedMax by remember { mutableIntStateOf(0) }
+    var pulseDimmed by remember { mutableStateOf(false) }
+    val previewAlpha by animateFloatAsState(
+        targetValue = if (pulseDimmed) 0.88f else 1f,
+        animationSpec = tween(durationMillis = 110, easing = LinearOutSlowInEasing),
+        label = "reasoning_preview_stream_alpha"
+    )
+
+    LaunchedEffect(state.startTimeMs) {
+        while (isActive) {
+            elapsedMs = System.currentTimeMillis() - state.startTimeMs
+            delay(50)
+        }
+    }
+
+    LaunchedEffect(state.reasoningText) {
+        if (state.reasoningText.isNotEmpty()) {
+            pulseDimmed = true
+            delay(110)
+            pulseDimmed = false
+        }
+    }
+
+    LaunchedEffect(scrollState) {
+        snapshotFlow { scrollState.value to scrollState.maxValue }.collect { (value, maxValue) ->
+            if (maxValue == lastObservedMax) {
+                autoFollowPaused = value < maxValue - 8
+            } else {
+                if (value >= lastObservedMax - 8) {
+                    autoFollowPaused = false
+                }
+                lastObservedMax = maxValue
+            }
+        }
+    }
+
+    LaunchedEffect(state.reasoningText, autoFollowPaused) {
+        if (!autoFollowPaused) {
+            delay(16)
+            scrollState.animateScrollTo(scrollState.maxValue)
+        }
+    }
+
+    val displayTitle = state.title?.takeIf { it.isNotBlank() }
+        ?: stringResource(R.string.activity_timeline_reasoning)
+    val previewText = state.reasoningText.takeIf { it.isNotBlank() } ?: displayTitle
+
+    Column(
+        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Lightbulb,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            AnimatedContent(
+                targetState = displayTitle,
+                transitionSpec = {
+                    (fadeIn(tween(220)) + slideInVertically(
+                        animationSpec = tween(220),
+                        initialOffsetY = { it / 2 }
+                    )).togetherWith(
+                        fadeOut(tween(150)) + slideOutVertically(
+                            animationSpec = tween(150),
+                            targetOffsetY = { -it / 2 }
+                        )
+                    )
+                },
+                label = "reasoning_preview_title",
+                modifier = Modifier.weight(1f)
+            ) { title ->
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.shimmer(true)
+                )
+            }
+            Text(
+                text = formatDuration(elapsedMs),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.shimmer(true)
+            )
+        }
+
+        MarkdownBlock(
+            content = previewText,
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer { alpha = previewAlpha }
+                .fadeEdges(fadeTop = true, fadeBottom = true)
+                .heightIn(max = 120.dp)
+                .verticalScroll(scrollState),
+            style = MaterialTheme.typography.bodySmall.copy(
+                color = MaterialTheme.colorScheme.onSurface
+            ),
+            paragraphSpacing = 8.dp,
+            streamingTextReveal = false
+        )
     }
 }
 

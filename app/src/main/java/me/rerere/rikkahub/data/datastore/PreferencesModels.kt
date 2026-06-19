@@ -230,6 +230,7 @@ data class DisplaySetting(
     val showAssistantBubbles: Boolean = true,
     val showTokenUsage: Boolean = false,
     val autoCloseThinking: Boolean = true,
+    val reasoningPreviewEnabled: Boolean = false,
     val showUpdates: Boolean = false,
     val checkForUpdates: Boolean = true,
     val showMessageJumper: Boolean = false,

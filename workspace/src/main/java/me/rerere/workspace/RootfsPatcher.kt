@@ -9,14 +9,15 @@ class RootfsPatcher {
         options: RootfsPatchOptions = RootfsPatchOptions(),
     ) {
         val etcDir = File(linuxDir, "etc")
-        if (!etcDir.isDirectory) return
-
-        ensureRootfsDns(etcDir, options.nameservers)
-        ensureHosts(etcDir, options.hostname)
-        ensureHostname(etcDir, options.hostname)
-        ensureLocale(etcDir, options.locale)
-        ensureGroupNames(etcDir, options.groupIds.ifEmpty { currentSupplementaryGroupIds() })
+        if (etcDir.isDirectory) {
+            ensureRootfsDns(etcDir, options.nameservers)
+            ensureHosts(etcDir, options.hostname)
+            ensureHostname(etcDir, options.hostname)
+            ensureLocale(etcDir, options.locale)
+            ensureGroupNames(etcDir, options.groupIds.ifEmpty { currentSupplementaryGroupIds() })
+        }
         ensureTempDirs(linuxDir)
+        ensureShellEntrypoints(linuxDir)
     }
 
     private fun ensureRootfsDns(
@@ -152,6 +153,39 @@ class RootfsPatcher {
             setWritable(true, true)
             setExecutable(true, true)
         }
+    }
+
+    private fun ensureShellEntrypoints(linuxDir: File) {
+        val usrBinDir = File(linuxDir, "usr/bin")
+        val binDir = File(linuxDir, "bin")
+        if (!binDir.exists() && usrBinDir.isDirectory) {
+            runCatching {
+                Files.createSymbolicLink(binDir.toPath(), File("usr/bin").toPath())
+            }.recoverCatching {
+                binDir.mkdirs()
+            }.getOrNull()
+        }
+
+        val sh = File(binDir, "sh")
+        if (sh.exists()) return
+
+        val source = listOf(
+            File(usrBinDir, "sh"),
+            File(usrBinDir, "bash"),
+            File(binDir, "bash"),
+        ).firstOrNull { it.isFile } ?: return
+        if (runCatching { sh.canonicalFile == source.canonicalFile }.getOrDefault(false)) return
+
+        sh.parentFile?.mkdirs()
+        runCatching {
+            val relativeTarget = sh.parentFile.toPath().relativize(source.toPath())
+            Files.createSymbolicLink(sh.toPath(), relativeTarget)
+        }.recoverCatching {
+            source.copyTo(sh, overwrite = true)
+            sh.setReadable(source.canRead(), false)
+            sh.setWritable(source.canWrite(), true)
+            sh.setExecutable(source.canExecute(), false)
+        }.getOrNull()
     }
 
     private fun currentSupplementaryGroupIds(): List<Long> {

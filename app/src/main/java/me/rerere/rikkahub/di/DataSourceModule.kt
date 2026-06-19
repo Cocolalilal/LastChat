@@ -342,22 +342,11 @@ val dataSourceModule = module {
     }
 
     single {
-        val settingsStore: me.rerere.rikkahub.data.datastore.SettingsStore = get()
         ProviderManager(
             platformHttpClient = get(),
             platformMediaEncoder = AndroidPlatformMediaEncoder(),
             platformJwtSigner = AndroidPlatformJwtSigner(),
-        ).also { pm ->
-            pm.registerProvider(
-                "local_litert",
-                me.rerere.locallm.litert.LiteRtProvider(
-                    context = get(),
-                    runtime = get(),
-                    prefs = get(),
-                    settingsUpdater = { fn -> settingsStore.update { old -> old.copy(providers = fn(old.providers)) } }
-                )
-            )
-        }
+        )
     }
 
     single {

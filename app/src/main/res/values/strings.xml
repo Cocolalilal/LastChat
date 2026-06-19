@@ -466,6 +466,8 @@
     <string name="setting_display_page_amoled_dark_mode_title">AMOLED Dark Mode</string>
     <string name="setting_display_page_auto_collapse_thinking_desc">Automatically collapse thinking content when done</string>
     <string name="setting_display_page_auto_collapse_thinking_title">Auto Collapse Thinking</string>
+    <string name="setting_display_page_reasoning_preview_desc">Expand the activity pill to show live reasoning while generating</string>
+    <string name="setting_display_page_reasoning_preview_title">Reasoning Preview</string>
     <string name="setting_display_page_chat_list_model_icon_desc">Show model icon in chat list</string>
     <string name="setting_display_page_chat_list_model_icon_title">Chat List Model Icon</string>
     <string name="setting_display_page_code_block_auto_collapse_desc">Automatically collapse code blocks by default</string>

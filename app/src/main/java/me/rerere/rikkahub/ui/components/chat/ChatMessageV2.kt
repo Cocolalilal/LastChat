@@ -724,7 +724,8 @@ internal fun deriveActivityState(
     if (activeReasoning != null) {
         return ActivityState.Reasoning(
             startTimeMs = activeReasoning.createdAt.toEpochMilliseconds(),
-            title = activeReasoning.title
+            title = activeReasoning.title,
+            reasoningText = activeReasoning.reasoning
         )
     }
     
@@ -1238,7 +1239,9 @@ private fun AssistantMessageTurn(
                             onActivityPillClick(type)
                         },
                         connectsToBubbleBelow = false,  // Bubbles are separate - fully rounded
-                        modifier = Modifier.height(36.dp)
+                        modifier = Modifier.widthIn(max = maxWidth),
+                        reasoningPreviewEnabled = effectiveDisplay.reasoningPreviewEnabled,
+                        maxBubbleWidth = maxWidth
                     )
                 }
             } else {
@@ -1380,7 +1383,9 @@ private fun AssistantMessageTurn(
                         onActivityPillClick(type)
                     },
                     connectsToBubbleBelow = false,
-                    modifier = Modifier.height(36.dp)
+                    modifier = Modifier.widthIn(max = maxWidth),
+                    reasoningPreviewEnabled = effectiveDisplay.reasoningPreviewEnabled,
+                    maxBubbleWidth = maxWidth
                 )
             }
 

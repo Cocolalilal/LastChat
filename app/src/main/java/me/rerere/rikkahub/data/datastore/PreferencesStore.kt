@@ -278,10 +278,10 @@ class SettingsStore(
             }
         }
         .map {
-            var providers = it.providers.ifEmpty { DEFAULT_PROVIDERS }.toMutableList()
-            if (providers.none { p -> p is ProviderSetting.LiteRtLocal }) {
-                providers.add(0, ProviderSetting.LiteRtLocal(enabled = true))
-            }
+            var providers = it.providers
+                .ifEmpty { DEFAULT_PROVIDERS }
+                .filterNot { provider -> provider is ProviderSetting.LiteRtLocal }
+                .toMutableList()
             providers = providers.map { provider ->
                 val defaultProvider = DEFAULT_PROVIDERS.find { it.id == provider.id }
                 if (defaultProvider != null) {
@@ -315,7 +315,10 @@ class SettingsStore(
             // 去重并清理无效引用
             val validMcpServerIds = settings.mcpServers.map { it.id }.toSet()
             settings.copy(
-                providers = settings.providers.distinctBy { it.id }.map { provider ->
+                providers = settings.providers
+                    .filterNot { provider -> provider is ProviderSetting.LiteRtLocal }
+                    .distinctBy { it.id }
+                    .map { provider ->
                     when (provider) {
                         is ProviderSetting.OpenAI -> provider.copy(
                             models = provider.models.distinctBy { model -> model.id }
@@ -482,6 +485,7 @@ class SettingsStore(
         }
         
         val normalizedSettings = settingsToSave
+            .copy(providers = settingsToSave.providers.filterNot { provider -> provider is ProviderSetting.LiteRtLocal })
             .normalizeWebServerSettings()
             .migrateLegacyModesToSkills()
             .normalizeFontSettings()

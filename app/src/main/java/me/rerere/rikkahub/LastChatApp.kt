@@ -36,6 +36,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import me.rerere.rikkahub.service.CHAT_STORAGE_MAINTENANCE_WORK_NAME
 import me.rerere.rikkahub.service.ChatStorageMaintenanceWorker
+import me.rerere.rikkahub.service.LOCAL_MODEL_DOWNLOAD_WORK_TAG
 import me.rerere.rikkahub.service.MemoryConsolidationWorker
 import me.rerere.rikkahub.service.SPONTANEOUS_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.service.SPONTANEOUS_WORK_INTERVAL_MINUTES
@@ -78,6 +79,7 @@ class LastChatApp : Application() {
         SearchService.installBingSearchClient(AndroidBingSearchClient(searchHttpClient))
         SearchService.installAcceptLanguageProvider { acceptLanguageHeader() }
         this.createNotificationChannel()
+        WorkManager.getInstance(this).cancelAllWorkByTag(LOCAL_MODEL_DOWNLOAD_WORK_TAG)
 
         // set cursor window size
         DatabaseUtil.setCursorWindowSize(16 * 1024 * 1024)

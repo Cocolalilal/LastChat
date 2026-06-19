@@ -52,8 +52,12 @@ class ExampleUnitTest {
         File(manager.linuxDir(root), "etc").mkdirs()
         assertFalse(manager.hasRootfs(root))
 
+        File(manager.linuxDir(root), "usr/bin").mkdirs()
+        File(manager.linuxDir(root), "usr/bin/env").writeText("#!/bin/sh\n")
+        assertFalse(manager.hasRootfs(root))
+
         File(manager.linuxDir(root), "bin").mkdirs()
-        File(manager.linuxDir(root), "bin/sh").writeText("#!/bin/sh\n")
+        File(manager.linuxDir(root), "bin/bash").writeText("#!/bin/bash\n")
         assertTrue(manager.hasRootfs(root))
     }
 

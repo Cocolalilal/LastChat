@@ -8,23 +8,21 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
@@ -37,22 +35,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-
-
-
-
-
-
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
-import androidx.compose.ui.res.stringResource
-import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.nav.BackButton
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.*
+import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
+import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.HapticPattern
@@ -72,51 +64,41 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
 
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
-                title = { Text(stringResource(R.string.workspace_page_title)) },
+            OneUITopAppBar(
+                title = stringResource(R.string.workspace_page_title),
                 navigationIcon = { BackButton() },
                 scrollBehavior = scrollBehavior,
-                colors = TopAppBarDefaults.topAppBarColors(),
             )
         },
         bottomBar = {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 12.dp),
-                contentAlignment = Alignment.Center,
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                contentAlignment = Alignment.BottomEnd,
             ) {
-                Surface(
-                    modifier = Modifier.widthIn(max = 360.dp),
-                    shape = AppShapes.ButtonPill,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    tonalElevation = 6.dp,
-                    shadowElevation = 6.dp,
+                FloatingActionButton(
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        showAddDialog = true
+                    },
+                    shape = AppShapes.CardLarge,
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 ) {
-                    TextButton(
-                        onClick = {
-                            haptics.perform(HapticPattern.Pop)
-                            showAddDialog = true
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                    ) {
-                        Icon(Icons.Rounded.Add, contentDescription = null)
-                        Text(
-                            text = stringResource(R.string.workspace_page_create),
-                            modifier = Modifier.padding(start = 8.dp),
-                        )
-                    }
+                    Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.workspace_page_create))
                 }
             }
         },
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
     ) { innerPadding ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = innerPadding + PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding(),
+            contentPadding = innerPadding + PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             if (workspaces.isEmpty()) {
                 item {
@@ -124,9 +106,17 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
                 }
             }
 
-            items(workspaces, key = { it.id }) { workspace ->
+            itemsIndexed(workspaces, key = { _, workspace -> workspace.id }) { index, workspace ->
+                val position = when {
+                    workspaces.size == 1 -> ItemPosition.ONLY
+                    index == 0 -> ItemPosition.FIRST
+                    index == workspaces.lastIndex -> ItemPosition.LAST
+                    else -> ItemPosition.MIDDLE
+                }
+
                 WorkspaceCard(
                     workspace = workspace,
+                    position = position,
                     onDelete = { deleteTarget = workspace },
                     onOpen = {
                         haptics.perform(HapticPattern.Pop)
@@ -150,13 +140,26 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
         )
     }
 
-    if (deleteTarget != null) {
+    deleteTarget?.let { workspace ->
         AlertDialog(
             onDismissRequest = { deleteTarget = null },
             title = { Text(stringResource(R.string.workspace_page_delete)) },
             text = { Text(stringResource(R.string.workspace_page_delete_confirm)) },
-            confirmButton = { TextButton(onClick = { deleteTarget?.let { vm.delete(it) }; deleteTarget = null }) { Text(stringResource(R.string.common_confirm)) } },
-            dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text(stringResource(R.string.common_cancel)) } }
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        vm.delete(workspace)
+                        deleteTarget = null
+                    }
+                ) {
+                    Text(stringResource(R.string.common_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
         )
     }
 }
@@ -168,22 +171,16 @@ private fun EmptyWorkspaceState() {
             .fillMaxWidth()
             .padding(vertical = 48.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Icon(
-            imageVector = Icons.Rounded.Computer,
-            contentDescription = null,
-            modifier = Modifier.size(48.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
         Text(
             text = stringResource(R.string.workspace_page_empty),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
             text = stringResource(R.string.workspace_page_empty_desc),
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
@@ -192,12 +189,14 @@ private fun EmptyWorkspaceState() {
 @Composable
 private fun WorkspaceCard(
     workspace: WorkspaceEntity,
+    position: ItemPosition,
     onDelete: () -> Unit,
     onOpen: () -> Unit,
 ) {
-    var menuExpanded by remember { mutableStateOf(false) }
-
-    PhysicsSwipeToDelete(onDelete = onDelete) { shape ->
+    PhysicsSwipeToDelete(
+        position = position,
+        onDelete = onDelete,
+    ) { shape ->
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -205,70 +204,30 @@ private fun WorkspaceCard(
             shape = shape,
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         ) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Computer,
-                        contentDescription = null,
-                        modifier = Modifier.size(22.dp),
-                        tint = MaterialTheme.colorScheme.primary,
+                    Text(
+                        text = workspace.name,
+                        style = MaterialTheme.typography.titleSmallEmphasized,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Text(
-                            text = workspace.name,
-                            style = MaterialTheme.typography.titleSmallEmphasized,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = workspace.shellStatus.toShellStatusLabel(),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    Icon(
-                        imageVector = Icons.Rounded.DragHandle,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    Text(
+                        text = workspace.shellStatus.toShellStatusLabel(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
-                    Box {
-                        IconButton(onClick = { menuExpanded = true }) {
-                            Icon(Icons.Rounded.MoreVert, contentDescription = null)
-                        }
-                        DropdownMenu(
-                            expanded = menuExpanded,
-                            onDismissRequest = { menuExpanded = false },
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Delete,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.error,
-                                    )
-                                },
-                                onClick = {
-                                    menuExpanded = false
-                                    onDelete()
-                                },
-                            )
-                        }
-                    }
                 }
             }
         }
@@ -298,6 +257,7 @@ private fun EditWorkspaceDialog(
                 label = { Text(stringResource(R.string.workspace_page_name)) },
                 singleLine = true,
                 isError = isDuplicate,
+                shape = AppShapes.InputField,
                 supportingText = if (isDuplicate) {
                     { Text(stringResource(R.string.workspace_page_name_duplicate)) }
                 } else null,

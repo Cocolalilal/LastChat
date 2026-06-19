@@ -297,7 +297,6 @@ sealed class ProviderSetting {
                 OpenAI::class,
                 Google::class,
                 Claude::class,
-                LiteRtLocal::class,
             )
         }
     }
