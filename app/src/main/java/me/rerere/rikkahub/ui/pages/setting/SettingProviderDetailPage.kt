@@ -187,7 +187,6 @@ import org.koin.core.parameter.parametersOf
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import java.util.Locale
-import java.util.concurrent.ConcurrentHashMap
 import kotlin.uuid.Uuid
 import me.rerere.rikkahub.data.model.Tag as DataTag
 import me.rerere.rikkahub.ui.components.ui.FormItem
@@ -336,11 +335,14 @@ private fun iconFileExtension(context: android.content.Context, uri: android.net
 }
 
 private object ApiModelListCache {
-    private val modelsByProvider = ConcurrentHashMap<String, List<Model>>()
+    private val lock = Any()
+    private val modelsByProvider = mutableMapOf<String, List<Model>>()
 
-    fun get(key: String): List<Model> = modelsByProvider[key].orEmpty()
+    fun get(key: String): List<Model> = synchronized(lock) {
+        modelsByProvider[key].orEmpty()
+    }
 
-    fun put(key: String, models: List<Model>) {
+    fun put(key: String, models: List<Model>) = synchronized(lock) {
         if (models.isNotEmpty()) {
             modelsByProvider[key] = models
         }
