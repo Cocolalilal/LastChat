@@ -6,6 +6,7 @@ import androidx.core.net.toUri
 import me.rerere.common.platform.PlatformMediaEncoder
 import okio.buffer
 import okio.sink
+import okio.source
 import java.io.File
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
@@ -23,7 +24,7 @@ class AndroidPlatformMediaEncoder : PlatformMediaEncoder {
                     convertToJpeg(file)
                     println("File converted to JPEG format: ${file.absolutePath}")
                 }
-                val encoded = base64Encode(file.readBytes())
+                val encoded = base64Encode(file.readByteArray())
                 if (withPrefix) "data:${file.guessMimeType().getOrThrow()};base64,$encoded" else encoded
             }
 
@@ -35,13 +36,13 @@ class AndroidPlatformMediaEncoder : PlatformMediaEncoder {
 
     override fun encodeVideo(url: String, withPrefix: Boolean): Result<String> = runCatching {
         val file = url.toFile()
-        val encoded = base64Encode(file.readBytes())
+        val encoded = base64Encode(file.readByteArray())
         if (withPrefix) "data:video/mp4;base64,$encoded" else encoded
     }
 
     override fun encodeAudio(url: String, withPrefix: Boolean): Result<String> = runCatching {
         val file = url.toFile()
-        val encoded = base64Encode(file.readBytes())
+        val encoded = base64Encode(file.readByteArray())
         if (withPrefix) "data:audio/mp3;base64,$encoded" else encoded
     }
 
@@ -128,6 +129,12 @@ class AndroidPlatformMediaEncoder : PlatformMediaEncoder {
                     }
                 }"
             )
+        }
+    }
+
+    private fun File.readByteArray(): ByteArray {
+        return source().buffer().use { source ->
+            source.readByteArray()
         }
     }
 
