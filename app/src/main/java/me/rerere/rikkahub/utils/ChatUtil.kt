@@ -25,8 +25,8 @@ import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.navigation.CHAT_ROUTE_TARGET_KEY
 import me.rerere.rikkahub.navigation.ChatRouteTarget
+import okio.Buffer
 import org.koin.core.context.GlobalContext
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
 import kotlin.io.encoding.Base64
@@ -313,9 +313,12 @@ suspend fun Context.convertBase64ImagePartToLocalFile(message: UIMessage): UIMes
         )
     }
 
-fun Bitmap.compress(): ByteArray = ByteArrayOutputStream().use {
-    compress(Bitmap.CompressFormat.PNG, 100, it)
-    it.toByteArray()
+fun Bitmap.compress(): ByteArray {
+    val buffer = Buffer()
+    buffer.outputStream().use {
+        compress(Bitmap.CompressFormat.PNG, 100, it)
+    }
+    return buffer.readByteArray()
 }
 
 suspend fun Context.deleteChatFiles(uris: List<Uri>) = withContext(Dispatchers.IO) {
