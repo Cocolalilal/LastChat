@@ -57,8 +57,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.R
 import me.rerere.common.android.appTempFolder
+import okio.buffer
+import okio.sink
 import java.io.File
-import java.io.FileOutputStream
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -312,7 +313,7 @@ private suspend fun squareCropAndSaveImage(
             avatarsDir.mkdirs()
         }
         val outputFile = File(avatarsDir, "avatar_${System.currentTimeMillis()}.png")
-        FileOutputStream(outputFile).use { stream ->
+        outputFile.sink().buffer().outputStream().use { stream ->
             croppedBitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
         }
         

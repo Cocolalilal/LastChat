@@ -69,8 +69,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.R
 import me.rerere.common.android.appTempFolder
+import okio.buffer
+import okio.sink
 import java.io.File
-import java.io.FileOutputStream
 import kotlin.math.roundToInt
 
 /**
@@ -422,7 +423,7 @@ private suspend fun cropAndSaveImage(
             context.appTempFolder,
             "cropped_${System.currentTimeMillis()}.${if (preserveAlpha) "png" else "jpg"}"
         )
-        FileOutputStream(outputFile).use { stream ->
+        outputFile.sink().buffer().outputStream().use { stream ->
             croppedBitmap.compress(
                 if (preserveAlpha) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG,
                 if (preserveAlpha) 100 else 92,

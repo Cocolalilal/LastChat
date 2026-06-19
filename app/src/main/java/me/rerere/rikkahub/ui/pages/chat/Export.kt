@@ -114,8 +114,9 @@ import me.rerere.rikkahub.utils.getActivity
 import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
 import me.rerere.rikkahub.utils.toLocalString
 import me.rerere.rikkahub.utils.writeClipboardText
+import okio.buffer
+import okio.sink
 import org.koin.compose.koinInject
-import java.io.FileOutputStream
 import java.time.LocalDateTime
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.DurationUnit
@@ -427,7 +428,7 @@ private fun exportToMarkdown(
             file.delete()
             file.createNewFile()
         }
-        FileOutputStream(file).use {
+        file.sink().buffer().use {
             it.write(markdown.toByteArray())
         }
 
@@ -492,7 +493,7 @@ private suspend fun exportToImage(
             file.createNewFile()
         }
 
-        FileOutputStream(file).use { fos ->
+        file.sink().buffer().outputStream().use { fos ->
             bitmap.compress(Bitmap.CompressFormat.PNG, 90, fos)
         }
 
