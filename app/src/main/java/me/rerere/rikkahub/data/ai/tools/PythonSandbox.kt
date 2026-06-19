@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import androidx.core.content.FileProvider
+import okio.buffer
+import okio.sink
 import java.io.File
 import kotlin.uuid.Uuid
 
@@ -108,7 +110,9 @@ class PythonSandbox(private val context: Context) {
     fun saveOutputFile(conversationId: Uuid, filename: String, data: ByteArray): Uri {
         val dir = getConversationDir(conversationId)
         val file = File(dir, filename)
-        file.writeBytes(data)
+        file.sink().buffer().use { output ->
+            output.write(data)
+        }
         return FileProvider.getUriForFile(
             context,
             "${context.packageName}.fileprovider",
@@ -125,7 +129,7 @@ class PythonSandbox(private val context: Context) {
         val destFile = File(dir, filename)
         
         context.contentResolver.openInputStream(sourceUri)?.use { input ->
-            destFile.outputStream().use { output ->
+            destFile.sink().buffer().outputStream().use { output ->
                 input.copyTo(output)
             }
         } ?: throw java.io.FileNotFoundException("Could not open input stream for URI: $sourceUri (File not found or no permission)")
