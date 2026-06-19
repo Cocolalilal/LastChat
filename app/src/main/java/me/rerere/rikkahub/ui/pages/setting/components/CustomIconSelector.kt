@@ -68,6 +68,7 @@ import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
+import org.koin.compose.koinInject
 
 private const val LOBEHUB_PNG_META_URL = "https://unpkg.com/@lobehub/icons-static-png@latest/?meta"
 
@@ -203,9 +204,7 @@ private fun LobeHubIconPickerSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val haptics = rememberPremiumHaptics()
-    val httpClient = remember {
-        org.koin.java.KoinJavaComponent.get<PlatformHttpClient>(PlatformHttpClient::class.java)
-    }
+    val httpClient = koinInject<PlatformHttpClient>()
     var searchQuery by remember { mutableStateOf("") }
     var fetchAttempt by remember { mutableIntStateOf(0) }
     var isLoading by remember { mutableStateOf(true) }
