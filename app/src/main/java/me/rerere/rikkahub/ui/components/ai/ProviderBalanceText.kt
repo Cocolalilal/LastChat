@@ -22,16 +22,18 @@ import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.utils.toDp
 import org.koin.compose.koinInject
-import java.util.concurrent.ConcurrentHashMap
 
 // Simple time-evicting cache (2 minutes expiry)
 private data class CacheEntry(val value: String, val timestamp: Long)
-private val cache = ConcurrentHashMap<String, CacheEntry>()
+private val cacheLock = Any()
+private val cache = mutableMapOf<String, CacheEntry>()
 private const val CACHE_EXPIRY_MS = 2 * 60 * 1000L // 2 minutes
 
-private fun getCached(key: String): String? {
-    val entry = cache[key] ?: return null
-    return if (System.currentTimeMillis() - entry.timestamp < CACHE_EXPIRY_MS) {
+private fun getCached(key: String): String? = synchronized(cacheLock) {
+    val entry = cache[key]
+    if (entry == null) {
+        null
+    } else if (System.currentTimeMillis() - entry.timestamp < CACHE_EXPIRY_MS) {
         entry.value
     } else {
         cache.remove(key)
@@ -39,7 +41,7 @@ private fun getCached(key: String): String? {
     }
 }
 
-private fun putCache(key: String, value: String) {
+private fun putCache(key: String, value: String) = synchronized(cacheLock) {
     cache[key] = CacheEntry(value, System.currentTimeMillis())
 }
 
