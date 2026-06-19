@@ -106,7 +106,6 @@ import me.rerere.search.SearchService
 import me.rerere.search.SearchServiceOptions
 import java.time.Instant
 import java.util.Locale
-import java.util.concurrent.ConcurrentHashMap
 import kotlin.uuid.Uuid
 
 private const val TAG = "ChatService"
@@ -567,10 +566,12 @@ class ChatService(
     val mcpManager: McpManager,
 ) {
     // 存储每个对话的状态
-    private val conversations = ConcurrentHashMap<Uuid, MutableStateFlow<Conversation>>()
+    private val conversationsLock = Any()
+    private val conversations = mutableMapOf<Uuid, MutableStateFlow<Conversation>>()
 
     // 记录哪些conversation有VM引用
-    private val conversationReferences = ConcurrentHashMap<Uuid, Int>()
+    private val conversationReferencesLock = Any()
+    private val conversationReferences = mutableMapOf<Uuid, Int>()
 
     // 记录哪些对话是临时对话（不持久化、不使用记忆）
     private val _conversationPersistenceModes = MutableStateFlow<Map<Uuid, ChatPersistenceMode>>(emptyMap())
@@ -613,26 +614,66 @@ class ChatService(
     }
 
     // 添加引用
+    private fun getConversationState(conversationId: Uuid): MutableStateFlow<Conversation>? =
+        synchronized(conversationsLock) {
+            conversations[conversationId]
+        }
+
+    private fun getOrCreateConversationState(
+        conversationId: Uuid,
+        initialConversation: () -> Conversation,
+    ): MutableStateFlow<Conversation> = synchronized(conversationsLock) {
+        conversations.getOrPut(conversationId) {
+            MutableStateFlow(initialConversation())
+        }
+    }
+
+    private fun conversationIdsSnapshot(): List<Uuid> = synchronized(conversationsLock) {
+        conversations.keys.toList()
+    }
+
+    private fun removeConversationState(conversationId: Uuid) = synchronized(conversationsLock) {
+        conversations.remove(conversationId)
+    }
+
+    private fun conversationReferenceCount(): Int = synchronized(conversationReferencesLock) {
+        conversationReferences.size
+    }
+
+    private fun hasConversationReference(conversationId: Uuid): Boolean =
+        synchronized(conversationReferencesLock) {
+            conversationReferences.containsKey(conversationId)
+        }
+
     fun addConversationReference(conversationId: Uuid) {
-        conversationReferences[conversationId] = conversationReferences.getOrDefault(conversationId, 0) + 1
+        val referenceCount = synchronized(conversationReferencesLock) {
+            val nextCount = conversationReferences.getOrDefault(conversationId, 0) + 1
+            conversationReferences[conversationId] = nextCount
+            nextCount
+        }
         LogUtil.d(
             TAG,
-            "Added reference for $conversationId (current references: ${conversationReferences[conversationId] ?: 0})"
+            "Added reference for $conversationId (current references: $referenceCount)"
         )
     }
 
     // 移除引用
     fun removeConversationReference(conversationId: Uuid) {
-        conversationReferences[conversationId]?.let { count ->
-            if (count > 1) {
-                conversationReferences[conversationId] = count - 1
-            } else {
-                conversationReferences.remove(conversationId)
-            }
+        val referenceCount = synchronized(conversationReferencesLock) {
+            conversationReferences[conversationId]?.let { count ->
+                if (count > 1) {
+                    val nextCount = count - 1
+                    conversationReferences[conversationId] = nextCount
+                    nextCount
+                } else {
+                    conversationReferences.remove(conversationId)
+                    0
+                }
+            } ?: 0
         }
         LogUtil.d(
             TAG,
-            "Removed reference for $conversationId (current references: ${conversationReferences[conversationId] ?: 0})"
+            "Removed reference for $conversationId (current references: $referenceCount)"
         )
         appScope.launch {
             delay(500)
@@ -642,14 +683,14 @@ class ChatService(
 
     // 检查是否有引用
     private fun hasReference(conversationId: Uuid): Boolean {
-        return conversationReferences.containsKey(conversationId) || _generationJobs.value.containsKey(
+        return hasConversationReference(conversationId) || _generationJobs.value.containsKey(
             conversationId
         )
     }
 
     // 检查所有conversation的引用情况（生成结束后调用）
     fun checkAllConversationsReferences() {
-        conversations.keys.forEach { conversationId ->
+        conversationIdsSnapshot().forEach { conversationId ->
             if (!hasReference(conversationId)) {
                 cleanupConversation(conversationId)
             }
@@ -659,12 +700,10 @@ class ChatService(
     // 获取对话的StateFlow
     fun getConversationFlow(conversationId: Uuid): StateFlow<Conversation> {
         val settings = settingsStore.settingsFlow.value
-        return conversations.getOrPut(conversationId) {
-            MutableStateFlow(
-                Conversation.ofId(
-                    id = conversationId,
-                    assistantId = settings.getCurrentAssistant().id
-                )
+        return getOrCreateConversationState(conversationId) {
+            Conversation.ofId(
+                id = conversationId,
+                assistantId = settings.getCurrentAssistant().id
             )
         }
     }
@@ -727,7 +766,7 @@ class ChatService(
 
     // 初始化对话
     suspend fun initializeConversation(conversationId: Uuid) {
-        val inMemoryConversation = conversations[conversationId]?.value
+        val inMemoryConversation = getConversationState(conversationId)?.value
         if (shouldPreserveInMemoryConversation(
                 conversation = inMemoryConversation,
                 persistenceMode = getConversationPersistenceMode(conversationId),
@@ -854,14 +893,14 @@ class ChatService(
     }
 
     suspend fun getConversationSnapshot(conversationId: Uuid): Conversation? {
-        val currentState = conversations[conversationId]?.value
+        val currentState = getConversationState(conversationId)?.value
         return currentState ?: withContext(Dispatchers.IO) {
             conversationRepo.getConversationById(conversationId)
         }?.let(::normalizeConversation)
     }
 
     suspend fun ensureConversationLoaded(conversationId: Uuid): Conversation? {
-        val currentState = conversations[conversationId]?.value
+        val currentState = getConversationState(conversationId)?.value
         if (currentState != null) return currentState
 
         val persistedConversation = withContext(Dispatchers.IO) {
@@ -2016,8 +2055,41 @@ class ChatService(
         }
     }
 
-    private val conversationDeletionJobs = java.util.concurrent.ConcurrentHashMap<Uuid, Job>()
-    private val recentlyDeletedConversations = java.util.concurrent.ConcurrentHashMap<Uuid, Conversation>()
+    private val conversationDeletionLock = Any()
+    private val conversationDeletionJobs = mutableMapOf<Uuid, Job>()
+    private val recentlyDeletedConversations = mutableMapOf<Uuid, Conversation>()
+
+    private fun cancelPendingConversationDeletion(conversationId: Uuid) {
+        val job = synchronized(conversationDeletionLock) {
+            conversationDeletionJobs.remove(conversationId)
+        }
+        job?.cancel()
+    }
+
+    private fun rememberDeletedConversation(conversationId: Uuid, conversation: Conversation) =
+        synchronized(conversationDeletionLock) {
+            recentlyDeletedConversations[conversationId] = conversation
+        }
+
+    private fun rememberConversationDeletionJob(conversationId: Uuid, job: Job) =
+        synchronized(conversationDeletionLock) {
+            conversationDeletionJobs[conversationId] = job
+        }
+
+    private fun forgetDeletedConversation(conversationId: Uuid) = synchronized(conversationDeletionLock) {
+        conversationDeletionJobs.remove(conversationId)
+        recentlyDeletedConversations.remove(conversationId)
+    }
+
+    private fun takeRecentlyDeletedConversation(conversationId: Uuid): Conversation? =
+        synchronized(conversationDeletionLock) {
+            val conversation = recentlyDeletedConversations[conversationId]
+            if (conversation != null) {
+                conversationDeletionJobs.remove(conversationId)
+                recentlyDeletedConversations.remove(conversationId)
+            }
+            conversation
+        }
 
     // Track recently restored conversations for fade-in animation
     private val _recentlyRestoredIds = kotlinx.coroutines.flow.MutableStateFlow<Set<Uuid>>(emptySet())
@@ -2030,35 +2102,32 @@ class ChatService(
             } ?: return@launch
 
             // Cancel any pending deletion for this conversation
-            conversationDeletionJobs[conversation.id]?.cancel()
+            cancelPendingConversationDeletion(conversation.id)
 
             // Soft delete (DB only, preserve files)
             withContext(Dispatchers.IO) {
                 conversationRepo.deleteConversation(conversationFull, deleteFiles = false)
             }
-            recentlyDeletedConversations[conversation.id] = conversationFull
+            rememberDeletedConversation(conversation.id, conversationFull)
 
             // Finalize the soft-delete window after a short undo grace period.
             val job = appScope.launch {
                 kotlinx.coroutines.delay(4000)
-                conversationDeletionJobs.remove(conversation.id)
-                recentlyDeletedConversations.remove(conversation.id)
+                forgetDeletedConversation(conversation.id)
             }
-            conversationDeletionJobs[conversation.id] = job
+            rememberConversationDeletionJob(conversation.id, job)
         }
     }
 
     fun undoDeleteConversation(conversationId: Uuid) {
-        conversationDeletionJobs[conversationId]?.cancel()
-        conversationDeletionJobs.remove(conversationId)
+        cancelPendingConversationDeletion(conversationId)
 
-        val conversation = recentlyDeletedConversations[conversationId]
+        val conversation = takeRecentlyDeletedConversation(conversationId)
         if (conversation != null) {
             appScope.launch {
                 withContext(Dispatchers.IO) {
                     conversationRepo.insertConversation(conversation)
                 }
-                recentlyDeletedConversations.remove(conversationId)
 
                 // Track for fade-in animation
                 _recentlyRestoredIds.value = _recentlyRestoredIds.value + conversationId
@@ -2199,7 +2268,7 @@ class ChatService(
     private suspend fun updateConversation(conversationId: Uuid, conversation: Conversation) {
         if (conversation.id != conversationId) return
         val normalizedConversation = normalizeConversation(conversation)
-        conversations.getOrPut(conversationId) { MutableStateFlow(normalizedConversation) }.value =
+        getOrCreateConversationState(conversationId) { normalizedConversation }.value =
             normalizedConversation
     }
 
@@ -2431,7 +2500,7 @@ class ChatService(
         preserveConsolidation: Boolean = false,
     ) {
         val normalizedConversation = mergeLiveMessagesIfIncomingIsStale(
-            liveConversation = conversations[conversationId]?.value,
+            liveConversation = getConversationState(conversationId)?.value,
             incomingConversation = normalizeConversation(conversation),
         )
         val synchronizedConversation = withContext(Dispatchers.IO) {
@@ -2551,12 +2620,12 @@ class ChatService(
     fun cleanupConversation(conversationId: Uuid) {
         getGenerationJob(conversationId)?.cancel()
         removeGenerationJob(conversationId)
-        conversations.remove(conversationId)
+        removeConversationState(conversationId)
         setConversationPersistenceMode(conversationId, ChatPersistenceMode.NORMAL)
 
         Log.i(
             TAG,
-            "cleanupConversation: removed $conversationId (current references: ${conversationReferences.size}, generation jobs: ${_generationJobs.value.size})"
+            "cleanupConversation: removed $conversationId (current references: ${conversationReferenceCount()}, generation jobs: ${_generationJobs.value.size})"
         )
     }
 }
