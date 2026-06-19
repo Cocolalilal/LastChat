@@ -472,8 +472,8 @@ class AppStorageRepository(
 
     private fun queryPackageStats(): AppPackageStorageStats {
         return runCatching {
-            val storageManager = context.getSystemService(StorageManager::class.java)
-            val statsManager = context.getSystemService(StorageStatsManager::class.java)
+            val storageManager = context.getSystemService(Context.STORAGE_SERVICE) as? StorageManager
+            val statsManager = context.getSystemService(Context.STORAGE_STATS_SERVICE) as? StorageStatsManager
             if (storageManager == null || statsManager == null) {
                 return@runCatching AppPackageStorageStats()
             }
