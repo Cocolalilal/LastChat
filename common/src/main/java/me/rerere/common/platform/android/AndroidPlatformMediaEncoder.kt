@@ -4,8 +4,9 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.core.net.toUri
 import me.rerere.common.platform.PlatformMediaEncoder
+import okio.buffer
+import okio.sink
 import java.io.File
-import java.io.FileOutputStream
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
@@ -75,7 +76,7 @@ class AndroidPlatformMediaEncoder : PlatformMediaEncoder {
         }
         val bitmap = BitmapFactory.decodeFile(file.absolutePath, opts)
             ?: throw IllegalStateException("Failed to decode image: ${file.absolutePath}")
-        FileOutputStream(file).use { outputStream ->
+        file.sink().buffer().outputStream().use { outputStream ->
             bitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
         }
         bitmap.recycle()

@@ -10,8 +10,9 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpRequest
+import okio.buffer
+import okio.sink
 import java.io.File
-import java.io.FileOutputStream
 
 /**
  * Manages persistent storage for auto-fetched model/provider icons.
@@ -145,7 +146,7 @@ class IconStorageManager private constructor(
                     
                     if (isSvg) {
                         val file = getIconFile(iconKey)
-                        FileOutputStream(file).use { output ->
+                        file.sink().buffer().use { output ->
                             output.write(response.body)
                         }
                         Uri.fromFile(file).toString()
@@ -156,7 +157,7 @@ class IconStorageManager private constructor(
                             val resized = resizeIfNeeded(bitmap, 256)
 
                             val file = getIconFile(iconKey)
-                            FileOutputStream(file).use { output ->
+                            file.sink().buffer().outputStream().use { output ->
                                 resized.compress(Bitmap.CompressFormat.PNG, 100, output)
                             }
 

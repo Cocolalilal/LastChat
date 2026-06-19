@@ -22,8 +22,9 @@ import androidx.core.content.FileProvider
 import androidx.core.net.toFile
 import androidx.core.net.toUri
 import me.rerere.common.http.urlDecode
+import okio.buffer
+import okio.sink
 import java.io.File
-import java.io.FileOutputStream
 import java.io.InputStream
 import java.io.OutputStream
 import kotlinx.coroutines.Dispatchers
@@ -189,7 +190,7 @@ fun Context.exportImage(
             // Android 9及以下直接写入文件
             val imagesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
             val image = File(imagesDir, fileName)
-            outputStream = FileOutputStream(image)
+            outputStream = image.sink().buffer().outputStream()
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
 
             // 通知图库更新
@@ -410,7 +411,7 @@ suspend fun Context.saveToDownloads(uri: Uri, fileName: String) {
             } else {
                 val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
                 val destFile = File(downloadsDir, fileName)
-                outputStream = FileOutputStream(destFile)
+                outputStream = destFile.sink().buffer().outputStream()
                 inputStream.copyTo(outputStream!!)
                 
                 // Notify media scanner
