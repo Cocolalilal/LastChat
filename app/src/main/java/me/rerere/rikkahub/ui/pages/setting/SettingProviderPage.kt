@@ -142,6 +142,7 @@ import io.github.g00fy2.quickie.QRResult
 import io.github.g00fy2.quickie.ScanQRCode
 import kotlinx.coroutines.launch
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.ProviderViewMode
@@ -176,6 +177,7 @@ import me.rerere.tts.provider.withDefaultVoices
 import me.rerere.rikkahub.utils.ImageUtils
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import me.rerere.rikkahub.data.model.Tag as DataTag
@@ -234,6 +236,7 @@ fun SettingProviderPage(
     
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
+    val httpClient = koinInject<PlatformHttpClient>()
     fun addProvider(provider: ProviderSetting) {
         val providerToAdd = provider.withUniqueId(settings.providers)
         vm.updateSettings(
@@ -249,9 +252,6 @@ fun SettingProviderPage(
                     getProviderSlugFromName(providerName) != null
             if (!hasLocalIcon) {
                 scope.launch {
-                    val httpClient = org.koin.java.KoinJavaComponent.get<me.rerere.common.platform.PlatformHttpClient>(
-                        me.rerere.common.platform.PlatformHttpClient::class.java
-                    )
                     val slug = searchLobeHubIcon(httpClient, providerName)
                     if (slug != null) {
                         val latestSettings = vm.settings.value
