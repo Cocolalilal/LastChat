@@ -1,5 +1,7 @@
 package me.rerere.common.platform.android.cache
 
+import okio.buffer
+import okio.sink
 import java.io.File
 import java.io.IOException
 
@@ -15,7 +17,9 @@ internal fun ensureParentDir(file: File) {
 internal fun atomicWrite(file: File, content: String) {
     ensureParentDir(file)
     val tmp = File(file.parentFile, file.name + ".tmp")
-    tmp.writeText(content)
+    tmp.sink().buffer().use { sink ->
+        sink.writeUtf8(content)
+    }
     if (file.exists()) {
         if (!tmp.renameTo(file)) {
             if (file.delete()) {

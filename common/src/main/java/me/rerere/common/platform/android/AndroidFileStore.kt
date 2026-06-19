@@ -3,6 +3,9 @@ package me.rerere.common.platform.android
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.rerere.common.platform.PlatformFileStore
+import okio.buffer
+import okio.sink
+import okio.source
 import java.io.File
 import java.io.IOException
 
@@ -11,7 +14,13 @@ class AndroidFileStore(
 ) : PlatformFileStore {
     override suspend fun readBytes(path: String): ByteArray? = withContext(Dispatchers.IO) {
         val file = resolvePath(path)
-        if (file.exists()) file.readBytes() else null
+        if (file.exists()) {
+            file.source().buffer().use { source ->
+                source.readByteArray()
+            }
+        } else {
+            null
+        }
     }
 
     override suspend fun writeBytes(path: String, bytes: ByteArray): Unit = withContext(Dispatchers.IO) {
@@ -23,7 +32,9 @@ class AndroidFileStore(
             }
         }
         val tmp = File(file.parentFile, file.name + ".tmp")
-        tmp.writeBytes(bytes)
+        tmp.sink().buffer().use { sink ->
+            sink.write(bytes)
+        }
         if (!tmp.renameTo(file)) {
             if (file.exists() && file.delete() && tmp.renameTo(file)) {
                 return@withContext
