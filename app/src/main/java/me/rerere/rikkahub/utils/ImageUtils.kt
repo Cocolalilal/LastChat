@@ -15,6 +15,8 @@ import com.google.zxing.BinaryBitmap
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.RGBLuminanceSource
 import com.google.zxing.common.HybridBinarizer
+import okio.buffer
+import okio.sink
 
 /**
  * 图片处理工具类
@@ -220,7 +222,7 @@ object ImageUtils {
             val destFile = java.io.File(iconDir, fileName)
             
             context.contentResolver.openInputStream(sourceUri)?.use { input ->
-                destFile.outputStream().use { output ->
+                destFile.sink().buffer().outputStream().use { output ->
                     input.copyTo(output)
                 }
             }

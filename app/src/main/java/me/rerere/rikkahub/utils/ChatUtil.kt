@@ -26,6 +26,8 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.navigation.CHAT_ROUTE_TARGET_KEY
 import me.rerere.rikkahub.navigation.ChatRouteTarget
 import okio.Buffer
+import okio.buffer
+import okio.sink
 import org.koin.core.context.GlobalContext
 import java.io.File
 import java.io.InputStream
@@ -124,7 +126,7 @@ suspend fun Context.saveMessageImage(image: String) = withContext(Dispatchers.IO
                     @Suppress("DEPRECATION")
                     val imagesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
                     val destFile = java.io.File(imagesDir, fileName)
-                    java.io.FileOutputStream(destFile).use { outputStream ->
+                    destFile.sink().buffer().outputStream().use { outputStream ->
                         inputStream.copyTo(outputStream)
                     }
                     // Notify media scanner
@@ -182,7 +184,7 @@ fun Context.createChatFilesByContents(uris: List<Uri>): List<Uri> {
         val newUri = file.toUri()
         runCatching {
             openUriInputStream(uri)?.use { inputStream ->
-                file.outputStream().use { outputStream ->
+                file.sink().buffer().outputStream().use { outputStream ->
                     inputStream.copyTo(outputStream)
                 }
             } ?: error("Unable to open input stream for $uri")
@@ -208,7 +210,7 @@ fun Context.createChatFilesByByteArrays(byteArrays: List<ByteArray>): List<Uri> 
             file.createNewFile()
         }
         val newUri = file.toUri()
-        file.outputStream().use { outputStream ->
+        file.sink().buffer().outputStream().use { outputStream ->
             outputStream.write(byteArray)
         }
         newUris.add(newUri)
@@ -228,7 +230,9 @@ fun Context.createChatTextFile(fileName: String, content: String): Uri {
     val baseName = fileName.substringBeforeLast('.', fileName)
     val safeBaseName = sanitizeUploadBaseName(baseName)
     val targetFile = dir.resolve("${safeBaseName}-${Uuid.random()}.$extension")
-    targetFile.writeText(content)
+    targetFile.sink().buffer().use { output ->
+        output.writeUtf8(content)
+    }
     return targetFile.toUri()
 }
 
@@ -366,7 +370,9 @@ fun Context.createImageFileFromBase64(base64Data: String, filePath: String): Fil
     val byteArray = Base64.decode(data.toByteArray())
     val file = File(filePath)
     file.parentFile?.mkdirs()
-    file.writeBytes(byteArray)
+    file.sink().buffer().use { output ->
+        output.write(byteArray)
+    }
     return file
 }
 
