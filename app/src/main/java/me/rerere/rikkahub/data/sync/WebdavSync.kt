@@ -17,9 +17,10 @@ import me.rerere.rikkahub.data.datastore.WebDavConfig
 import me.rerere.rikkahub.data.datastore.sanitize
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.utils.LogUtil
+import okio.buffer
+import okio.sink
+import okio.source
 import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -103,7 +104,7 @@ class WebdavSync(
                     "restoreFromWebDav: Downloading ${item.displayName} to ${backupFile.absolutePath}",
                 )
                 response.body?.byteStream()?.use { inputStream ->
-                    FileOutputStream(backupFile).use { outputStream ->
+                    backupFile.sink().buffer().outputStream().use { outputStream ->
                         inputStream.copyTo(outputStream)
                     }
                 }
@@ -172,7 +173,7 @@ class WebdavSync(
             sharedPrefsStores = BackupArchiveFormat.PORTABLE_SHARED_PREF_STORES,
         )
 
-        ZipOutputStream(FileOutputStream(backupFile)).use { zipOut ->
+        ZipOutputStream(backupFile.sink().buffer().outputStream()).use { zipOut ->
             val settingsForExport =
                 secretKeyManager.populateSecretsForExport(settingsStore.settingsFlow.value)
             addVirtualFileToZip(
@@ -234,7 +235,7 @@ class WebdavSync(
             stagedDbDir.mkdirs()
 
             try {
-                ZipInputStream(FileInputStream(backupFile)).use { zipIn ->
+                ZipInputStream(backupFile.source().buffer().inputStream()).use { zipIn ->
                     var entry: ZipEntry?
                     while (zipIn.nextEntry.also { entry = it } != null) {
                         val zipEntry = entry ?: continue
@@ -406,7 +407,7 @@ class WebdavSync(
         }
         val targetFile = File(stagedDbDir, targetName)
         targetFile.parentFile?.mkdirs()
-        FileOutputStream(targetFile).use { outputStream ->
+        targetFile.sink().buffer().outputStream().use { outputStream ->
             zipIn.copyTo(outputStream)
         }
     }
@@ -424,7 +425,7 @@ class WebdavSync(
         }
 
         targetFile.parentFile?.mkdirs()
-        FileOutputStream(targetFile).use { outputStream ->
+        targetFile.sink().buffer().outputStream().use { outputStream ->
             zipIn.copyTo(outputStream)
         }
     }
@@ -535,7 +536,7 @@ class WebdavSync(
 }
 
 private fun addFileToZip(zipOut: ZipOutputStream, file: File, entryName: String) {
-    FileInputStream(file).use { inputStream ->
+    file.source().buffer().inputStream().use { inputStream ->
         val zipEntry = ZipEntry(entryName)
         zipOut.putNextEntry(zipEntry)
         inputStream.copyTo(zipOut)
