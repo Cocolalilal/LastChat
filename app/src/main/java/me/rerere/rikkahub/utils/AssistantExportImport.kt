@@ -23,9 +23,9 @@ import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.db.dao.ChatEpisodeDAO
+import okio.Buffer
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.zip.Inflater
 import kotlin.io.encoding.Base64
@@ -409,11 +409,10 @@ object AssistantExportImport : KoinComponent {
         canvas.drawText(initial.toString(), size / 2f, yPos, textPaint)
         
         // Compress to PNG
-        val stream = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+        val bytes = bitmap.toPngBytes()
         bitmap.recycle()
         
-        return stream.toByteArray()
+        return bytes
     }
     
     /**
@@ -429,11 +428,10 @@ object AssistantExportImport : KoinComponent {
                 drawable.setBounds(0, 0, size, size)
                 drawable.draw(canvas)
                 
-                val stream = ByteArrayOutputStream()
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+                val bytes = bitmap.toPngBytes()
                 bitmap.recycle()
                 
-                return stream.toByteArray()
+                return bytes
             }
         } catch (e: Exception) {
             // Resource not found or other error
@@ -470,11 +468,18 @@ object AssistantExportImport : KoinComponent {
         val yPos = (size / 2f) + (textBounds.height() / 2f)
         canvas.drawText(emoji, size / 2f, yPos, textPaint)
         
-        val stream = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+        val bytes = bitmap.toPngBytes()
         bitmap.recycle()
         
-        return stream.toByteArray()
+        return bytes
+    }
+
+    private fun Bitmap.toPngBytes(): ByteArray {
+        val buffer = Buffer()
+        buffer.outputStream().use { output ->
+            compress(Bitmap.CompressFormat.PNG, 100, output)
+        }
+        return buffer.readByteArray()
     }
     
     /**
@@ -729,15 +734,15 @@ object AssistantExportImport : KoinComponent {
                                 val compressedData = data.copyOfRange(separator + 2, data.size)
                                 val inflater = Inflater()
                                 inflater.setInput(compressedData)
-                                val outputStream = ByteArrayOutputStream()
+                                val outputBuffer = Buffer()
                                 val buffer = ByteArray(1024)
                                 while (!inflater.finished()) {
                                     val count = inflater.inflate(buffer)
                                     if (count == 0 && inflater.needsInput()) break
-                                    outputStream.write(buffer, 0, count)
+                                    outputBuffer.write(buffer, 0, count)
                                 }
                                 inflater.end()
-                                result[keyword] = outputStream.toString(Charsets.ISO_8859_1.name())
+                                result[keyword] = outputBuffer.readString(Charsets.ISO_8859_1)
                             } catch (e: Exception) {
                                 // Skip malformed zTXt chunks
                             }
@@ -767,15 +772,15 @@ object AssistantExportImport : KoinComponent {
                                 try {
                                     val inflater = Inflater()
                                     inflater.setInput(textData)
-                                    val outputStream = ByteArrayOutputStream()
+                                    val outputBuffer = Buffer()
                                     val buffer = ByteArray(1024)
                                     while (!inflater.finished()) {
                                         val count = inflater.inflate(buffer)
                                         if (count == 0 && inflater.needsInput()) break
-                                        outputStream.write(buffer, 0, count)
+                                        outputBuffer.write(buffer, 0, count)
                                     }
                                     inflater.end()
-                                    outputStream.toString(Charsets.UTF_8.name())
+                                    outputBuffer.readString(Charsets.UTF_8)
                                 } catch (e: Exception) {
                                     null
                                 }
