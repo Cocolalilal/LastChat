@@ -602,6 +602,8 @@ private fun RootfsProgress(progress: RootfsInstallProgress) {
                     stringResource(R.string.workspace_detail_extracting, progress.entriesExtracted, entry)
                 }
 
+                RootfsInstallStage.CONFIGURING -> stringResource(R.string.workspace_detail_configuring)
+
                 RootfsInstallStage.INSTALLED -> stringResource(R.string.workspace_detail_install_complete)
             },
             style = MaterialTheme.typography.bodySmall,

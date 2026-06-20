@@ -16,6 +16,11 @@ import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
 import com.termux.view.TerminalViewClient
 
+import me.rerere.workspace.ProotLaunchMode
+import me.rerere.workspace.ProotLaunchModes
+import me.rerere.workspace.ProotLaunchPreferences
+import me.rerere.workspace.ProotRuntime
+import me.rerere.workspace.ProotRuntimes
 import me.rerere.workspace.RootfsPatchOptions
 import me.rerere.workspace.RootfsPatcher
 import me.rerere.workspace.hasUsableRootfs
@@ -24,6 +29,7 @@ import java.io.File
 internal fun createWorkspaceTerminalSession(
     context: Context,
     root: String,
+    launch: WorkspaceTerminalProotLaunch,
     client: TerminalSessionClient,
 ): TerminalSession {
     val appContext = context.applicationContext
@@ -32,9 +38,6 @@ internal fun createWorkspaceTerminalSession(
     val linuxDir = File(workspaceDir, "linux")
     val tempDir = File(workspaceDir, "tmp")
     val skillsDir = File(appContext.filesDir, "skills").apply { mkdirs() }
-    val nativeLibraryDir = File(appContext.applicationInfo.nativeLibraryDir)
-    val proot = File(nativeLibraryDir, "libproot_exec.so")
-    val loader = File(nativeLibraryDir, "libproot_loader.so")
 
     val args = mutableListOf(
         "--root-id",
@@ -68,14 +71,18 @@ internal fun createWorkspaceTerminalSession(
         "/bin/bash",
     )
 
-    val env = arrayOf(
-        "PROOT_LOADER=${loader.absolutePath}",
-        "PROOT_TMP_DIR=${tempDir.absolutePath}",
-        "TMPDIR=${tempDir.absolutePath}",
-    )
+    val env = buildList {
+        add("PROOT_LOADER=${launch.runtime.loader.absolutePath}")
+        add("PROOT_TMP_DIR=${tempDir.absolutePath}")
+        add("PROOT_TMPDIR=${tempDir.absolutePath}")
+        add("TMPDIR=${tempDir.absolutePath}")
+        launch.mode.environment.forEach { (name, value) ->
+            add("$name=$value")
+        }
+    }.toTypedArray()
 
     return TerminalSession(
-        proot.absolutePath,
+        launch.runtime.executable.absolutePath,
         filesDir.absolutePath,
         args.toTypedArray(),
         env,
@@ -86,16 +93,31 @@ internal fun createWorkspaceTerminalSession(
     }
 }
 
-internal fun prepareWorkspaceTerminalSession(context: Context, root: String) {
+internal data class WorkspaceTerminalProotLaunch(
+    val runtime: ProotRuntime,
+    val mode: ProotLaunchMode,
+)
+
+internal fun prepareWorkspaceTerminalSession(context: Context, root: String): WorkspaceTerminalProotLaunch? {
     val appContext = context.applicationContext
     val workspaceDir = File(File(appContext.filesDir, "workspaces"), root)
     val linuxDir = File(workspaceDir, "linux")
+    val tempDir = File(workspaceDir, "tmp")
     File(workspaceDir, "files").mkdirs()
-    File(workspaceDir, "tmp").mkdirs()
+    tempDir.apply {
+        mkdirs()
+        setReadable(true, true)
+        setWritable(true, true)
+        setExecutable(true, true)
+    }
     File(appContext.filesDir, "skills").mkdirs()
     RootfsPatcher().patch(
         linuxDir,
         RootfsPatchOptions(nameservers = appContext.activeDnsServers())
+    )
+    return resolveWorkspaceTerminalLaunch(
+        nativeLibraryDir = File(appContext.applicationInfo.nativeLibraryDir),
+        tempDir = tempDir,
     )
 }
 
@@ -324,6 +346,22 @@ private val URL_REGEX =
 
 // 终端里 URL 后面常跟标点(行尾句号、被括号包裹等), 打开前去掉这些结尾字符
 private val URL_TRAILING_TRIM = charArrayOf('.', ',', ';', ':', '!', '?', ')', ']', '}', '\'', '"')
+
+private fun resolveWorkspaceTerminalLaunch(
+    nativeLibraryDir: File,
+    tempDir: File,
+): WorkspaceTerminalProotLaunch? {
+    val runtimes = ProotRuntimes.resolve(nativeLibraryDir)
+    val preferred = ProotLaunchPreferences.read(tempDir)
+    val preferredRuntime = runtimes.firstOrNull { it.name == preferred?.runtimeName }
+    val preferredMode = ProotLaunchModes.all.firstOrNull { it.name == preferred?.launchModeName }
+    if (preferredRuntime != null && preferredMode != null) {
+        return WorkspaceTerminalProotLaunch(preferredRuntime, preferredMode)
+    }
+    return runtimes.firstOrNull()?.let { runtime ->
+        WorkspaceTerminalProotLaunch(runtime, ProotLaunchModes.noSeccomp)
+    }
+}
 
 private fun Context.activeDnsServers(): List<String> {
     val connectivityManager =

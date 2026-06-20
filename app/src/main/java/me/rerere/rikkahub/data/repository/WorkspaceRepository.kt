@@ -12,6 +12,7 @@ import me.rerere.rikkahub.data.db.dao.WorkspaceDAO
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.workspace.RootfsInstallProgress
+import me.rerere.workspace.RootfsInstallStage
 import me.rerere.workspace.RootfsInstaller
 import me.rerere.workspace.WorkspaceCommandResult
 import me.rerere.workspace.WorkspaceFileEntry
@@ -116,6 +117,8 @@ class WorkspaceRepository(
             // runInterruptible 让协程取消转成线程中断, 打断 install 内阻塞的下载/解压循环
             runInterruptible(Dispatchers.IO) {
                 rootfsInstaller.install(workspace.root, url, onProgress)
+                onProgress(RootfsInstallProgress(stage = RootfsInstallStage.CONFIGURING))
+                bootstrapRootfs(workspace.root)
             }
             updateShellState(workspace, WorkspaceShellStatus.READY.name)
             return true
@@ -230,10 +233,14 @@ class WorkspaceRepository(
     ): WorkspaceCommandResult {
         val workspace = dao.getById(id) ?: error("Workspace not found: $id")
         // runInterruptible 让协程取消转化为线程中断，从而打断阻塞的 Process.waitFor 并杀掉进程
-        return runInterruptible(Dispatchers.IO) {
+        val result = runInterruptible(Dispatchers.IO) {
             manager.ensureWorkspace(workspace.root)
             manager.executeCommand(workspace.root, command, cwd, timeoutMillis, stdin)
         }
+        if (result.isFatalProotFailure()) {
+            updateShellState(workspace, WorkspaceShellStatus.BROKEN.name)
+        }
+        return result.withWorkspaceRuntimeHint()
     }
 
     suspend fun delete(id: String): Boolean {
@@ -280,7 +287,68 @@ class WorkspaceRepository(
         )
     }
 
+    private fun bootstrapRootfs(root: String) {
+        val smoke = manager.executeCommand(
+            root = root,
+            command = "printf '%s' workspace-ready && test -d /workspace",
+            timeoutMillis = ROOTFS_SMOKE_TIMEOUT_MS,
+        )
+        require(smoke.exitCode == 0 && !smoke.timedOut && !smoke.isFatalProotFailure()) {
+            "Rootfs smoke test failed: ${smoke.failureText()}"
+        }
+
+        val python = manager.executeCommand(
+            root = root,
+            command = PYTHON_BOOTSTRAP_COMMAND,
+            timeoutMillis = PYTHON_BOOTSTRAP_TIMEOUT_MS,
+        )
+        require(python.exitCode == 0 && !python.timedOut && !python.isFatalProotFailure()) {
+            "Python setup failed: ${python.failureText()}"
+        }
+    }
+
     companion object {
         private const val TAG = "WorkspaceRepository"
+        private const val ROOTFS_SMOKE_TIMEOUT_MS = 30_000L
+        private const val PYTHON_BOOTSTRAP_TIMEOUT_MS = 10 * 60_000L
+        private val PYTHON_BOOTSTRAP_COMMAND = """
+            set -e
+            export DEBIAN_FRONTEND=noninteractive
+            if command -v python3 >/dev/null 2>&1 && python3 -m pip --version >/dev/null 2>&1; then
+              python3 --version
+              python3 -m pip --version
+              exit 0
+            fi
+            apt-get update
+            apt-get install -y --no-install-recommends ca-certificates python3 python3-pip
+            python3 --version
+            python3 -m pip --version
+        """.trimIndent()
+    }
+}
+
+private fun WorkspaceCommandResult.isFatalProotFailure(): Boolean {
+    val text = "$stderr\n$stdout"
+    return text.contains("proot error:", ignoreCase = true) &&
+        (
+            text.contains("Function not implemented", ignoreCase = true) ||
+                text.contains("ptrace(TRACEME)", ignoreCase = true) ||
+                text.contains("loader was not found", ignoreCase = true) ||
+                text.contains("qemu was not specified", ignoreCase = true)
+            )
+}
+
+private fun WorkspaceCommandResult.withWorkspaceRuntimeHint(): WorkspaceCommandResult {
+    if (!isFatalProotFailure()) return this
+    val hint = "\n\nWorkspace runtime is broken. Reinstall or repair the rootfs, and make sure this device uses a supported 64-bit ABI with bundled proot."
+    return copy(stderr = stderr.trimEnd() + hint)
+}
+
+private fun WorkspaceCommandResult.failureText(): String {
+    val message = stderr.ifBlank { stdout }.trim()
+    return when {
+        timedOut -> "timed out"
+        message.isNotBlank() -> message
+        else -> "exit code $exitCode"
     }
 }

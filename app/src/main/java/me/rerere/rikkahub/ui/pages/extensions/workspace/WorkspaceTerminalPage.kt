@@ -115,19 +115,18 @@ private fun WorkspaceTerminalContent(
         } else {
             // rootfs stat 与 RootfsPatcher().patch()/DNS 查询都是阻塞 I/O, 放到 IO 线程执行;
             // TerminalSession 构造内部会创建 Handler, 必须回到主线程执行
-            val prepared = withContext(Dispatchers.IO) {
+            val launch = withContext(Dispatchers.IO) {
                 if (!workspaceRootfsReady(context, current)) {
-                    false
+                    null
                 } else {
                     prepareWorkspaceTerminalSession(context, current)
-                    true
                 }
             }
-            if (!prepared) {
+            if (launch == null) {
                 TerminalSessionUiState.NotInstalled
             } else {
                 if (!isActive) return@produceState
-                val created = createWorkspaceTerminalSession(context, current, sessionClient)
+                val created = createWorkspaceTerminalSession(context, current, launch, sessionClient)
                 // 创建后若组合已离开, 主动回收以免泄漏 proot 进程, 且不再把已 finish 的 session 暴露为 Ready
                 if (!isActive) {
                     created.finishIfRunning()

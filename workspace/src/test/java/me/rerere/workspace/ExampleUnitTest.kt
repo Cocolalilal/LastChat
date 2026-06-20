@@ -151,6 +151,39 @@ class ExampleUnitTest {
     }
 
     @Test
+    fun prootRuntimesResolveAvailableLaunchers() {
+        val nativeLibraryDir = Files.createTempDirectory("proot-runtimes-test").toFile()
+        File(nativeLibraryDir, "libproot_exec.so").writeText("")
+        File(nativeLibraryDir, "libproot_loader.so").writeText("")
+        File(nativeLibraryDir, "libproot-userland.so").writeText("")
+        File(nativeLibraryDir, "libproot.so").writeText("")
+        File(nativeLibraryDir, "libproot-loader.so").writeText("")
+
+        assertEquals(
+            listOf("workspace", "termux-userland", "termux"),
+            ProotRuntimes.resolve(nativeLibraryDir).map { it.name },
+        )
+    }
+
+    @Test
+    fun prootLaunchPreferenceRoundTrips() {
+        val tempDir = Files.createTempDirectory("proot-launch-pref-test").toFile()
+        val nativeLibraryDir = Files.createTempDirectory("proot-launch-pref-native").toFile()
+        val runtime = ProotRuntime(
+            name = "workspace",
+            executable = File(nativeLibraryDir, "libproot_exec.so"),
+            loader = File(nativeLibraryDir, "libproot_loader.so"),
+        )
+
+        ProotLaunchPreferences.write(tempDir, runtime, ProotLaunchModes.noSeccomp)
+
+        assertEquals(
+            ProotLaunchSelection("workspace", "no-seccomp"),
+            ProotLaunchPreferences.read(tempDir),
+        )
+    }
+
+    @Test
     fun commandOutputIsTruncatedAtLimit() {
         val baseDir = Files.createTempDirectory("workspace-truncate-test").toFile()
         val manager = WorkspaceManager(baseDir, shellRunner = TestShellRunner())

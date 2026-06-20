@@ -3,21 +3,34 @@ package me.rerere.rikkahub.ui.pages.assistant.detail
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Computer
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -47,6 +60,7 @@ import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.pages.extensions.workspace.toShellStatusLabel
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.utils.PermissionChecker
 import me.rerere.search.SearchServiceOptions
 import org.koin.compose.koinInject
@@ -112,9 +126,7 @@ fun AssistantToolsSubPage(
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
-        // ═══════════════════════════════════════════════════════════════════
         // SEARCH GROUP
-        // ═══════════════════════════════════════════════════════════════════
         SettingsGroup(title = stringResource(R.string.assistant_tools_search_group)) {
             // Build options list for Select
             val currentSearchMode = assistant.searchMode
@@ -168,9 +180,7 @@ fun AssistantToolsSubPage(
             )
         }
 
-        // ═══════════════════════════════════════════════════════════════════
         // LOCAL TOOLS GROUP
-        // ═══════════════════════════════════════════════════════════════════
         SettingsGroup(title = stringResource(R.string.assistant_page_tab_local_tools)) {
             // JavaScript Engine
             SettingGroupItem(
@@ -215,28 +225,47 @@ fun AssistantToolsSubPage(
                 title = stringResource(R.string.assistant_page_local_tools_linux_workspace_title),
                 subtitle = selectedWorkspace?.name
                     ?: stringResource(R.string.assistant_page_local_tools_linux_workspace_desc),
+                icon = {
+                    Icon(
+                        imageVector = Icons.Rounded.Computer,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                },
                 onClick = { showWorkspacePicker = true },
                 trailing = {
-                    HapticSwitch(
-                        checked = selectedWorkspace != null,
-                        onCheckedChange = { enabled ->
-                            if (enabled) {
-                                val workspace = workspaces.firstOrNull()
-                                if (workspace != null) {
-                                    onUpdate(
-                                        assistant.copy(
-                                            workspaceId = Uuid.parse(workspace.id),
-                                            localTools = assistant.localTools.filterNot { it is LocalToolOption.PythonEngine },
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Edit,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        HapticSwitch(
+                            checked = selectedWorkspace != null,
+                            onCheckedChange = { enabled ->
+                                if (enabled) {
+                                    val workspace = workspaces.firstOrNull()
+                                    if (workspace != null) {
+                                        onUpdate(
+                                            assistant.copy(
+                                                workspaceId = Uuid.parse(workspace.id),
+                                                localTools = assistant.localTools.filterNot { it is LocalToolOption.PythonEngine },
+                                            )
                                         )
-                                    )
+                                    } else {
+                                        showWorkspacePicker = true
+                                    }
                                 } else {
-                                    showWorkspacePicker = true
+                                    onUpdate(assistant.copy(workspaceId = null))
                                 }
-                            } else {
-                                onUpdate(assistant.copy(workspaceId = null))
                             }
-                        }
-                    )
+                        )
+                    }
                 }
             )
 
@@ -295,9 +324,7 @@ fun AssistantToolsSubPage(
             )
         }
 
-        // ═══════════════════════════════════════════════════════════════════
         // MCP GROUP (only show if servers configured)
-        // ═══════════════════════════════════════════════════════════════════
         if (mcpServerConfigs.isNotEmpty()) {
             var showMcpPicker by remember { mutableStateOf(false) }
             val mcpManager = koinInject<McpManager>()
@@ -431,37 +458,123 @@ private fun WorkspaceBindingDialog(
     onDismiss: () -> Unit,
     onSelect: (String?) -> Unit,
 ) {
-    AlertDialog(
+    ModalBottomSheet(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.workspace_select)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(
-                    onClick = { onSelect(null) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(stringResource(R.string.workspace_no_binding))
-                }
-                workspaces.forEach { workspace ->
-                    TextButton(
-                        onClick = { onSelect(workspace.id) },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(
-                            text = if (workspace.id == selectedWorkspaceId) {
-                                "${workspace.name} • ${workspace.shellStatus.toShellStatusLabel()}"
-                            } else {
-                                "${workspace.name} • ${workspace.shellStatus.toShellStatusLabel()}"
-                            }
-                        )
-                    }
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        shape = RoundedCornerShape(topStart = 40.dp, topEnd = 40.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.7f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.workspace_select),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            )
+
+            WorkspaceBindingOption(
+                title = stringResource(R.string.workspace_no_binding),
+                subtitle = stringResource(R.string.assistant_page_local_tools_linux_workspace_desc),
+                icon = Icons.Rounded.Close,
+                selected = selectedWorkspaceId == null,
+                onClick = { onSelect(null) },
+            )
+
+            workspaces.forEach { workspace ->
+                WorkspaceBindingOption(
+                    title = workspace.name,
+                    subtitle = workspace.shellStatus.toShellStatusLabel(),
+                    icon = Icons.Rounded.Computer,
+                    selected = workspace.id == selectedWorkspaceId,
+                    onClick = { onSelect(workspace.id) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkspaceBindingOption(
+    title: String,
+    subtitle: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        shape = AppShapes.CardSmall,
+        color = if (selected) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+        } else {
+            MaterialTheme.colorScheme.surfaceContainer
+        },
+        border = BorderStroke(
+            1.dp,
+            if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+            else MaterialTheme.colorScheme.background,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainerHigh
+                },
+                modifier = Modifier.size(38.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = if (selected) {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.common_cancel))
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-        },
-    )
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Rounded.Check,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+    }
 }

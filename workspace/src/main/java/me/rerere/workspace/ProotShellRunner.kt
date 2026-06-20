@@ -1,6 +1,7 @@
 package me.rerere.workspace
 
 import java.io.File
+import java.io.IOException
 
 data class WorkspaceBindMount(
     val source: File,
@@ -36,36 +37,69 @@ class ProotShellRunner(
             )
         }
 
-        val proot = File(nativeLibraryDir, PROOT_EXEC)
-        val loader = File(nativeLibraryDir, PROOT_LOADER)
-        if (!proot.isFile) {
+        val runtimes = ProotRuntimes.resolve(nativeLibraryDir)
+        if (runtimes.isEmpty()) {
             return WorkspaceCommandResult(
                 exitCode = 127,
                 stdout = "",
-                stderr = "proot executable not found: ${proot.absolutePath}",
-            )
-        }
-        if (!loader.isFile) {
-            return WorkspaceCommandResult(
-                exitCode = 127,
-                stdout = "",
-                stderr = "proot loader not found: ${loader.absolutePath}",
+                stderr = "proot runtime not found in ${nativeLibraryDir.absolutePath}. " +
+                    "Expected libproot_exec.so/libproot_loader.so or libproot.so/libproot-loader.so.",
             )
         }
 
         context.tempDir.mkdirs()
+        context.tempDir.setReadable(true, true)
+        context.tempDir.setWritable(true, true)
+        context.tempDir.setExecutable(true, true)
         patcher.patch(context.linuxDir)
-        val process = ProcessBuilder(buildCommand(context, proot))
-            .directory(context.filesDir)
-            .redirectErrorStream(false)
-            .apply {
-                environment()["PROOT_LOADER"] = loader.absolutePath
-                environment()["PROOT_TMP_DIR"] = context.tempDir.absolutePath
-                environment()["TMPDIR"] = context.tempDir.absolutePath
-            }
-            .start()
 
-        return process.readResult(context.timeoutMillis, context.stdin)
+        var lastFailure: WorkspaceCommandResult? = null
+        val attemptedModes = mutableListOf<String>()
+        orderedAttempts(context, runtimes).forEach { attempt ->
+            attemptedModes += "${attempt.runtime.name}/${attempt.mode.name}"
+            val result = runProot(context, attempt.runtime, attempt.mode)
+            if (!result.shouldTryNextProotAttempt()) {
+                ProotLaunchPreferences.write(context.tempDir, attempt.runtime, attempt.mode)
+                return result
+            }
+            lastFailure = result
+        }
+
+        return lastFailure
+            ?.withLaunchDiagnostics(attemptedModes)
+            ?: WorkspaceCommandResult(
+                exitCode = 127,
+                stdout = "",
+                stderr = "proot failed before launch",
+            )
+    }
+
+    private fun runProot(
+        context: WorkspaceShellContext,
+        runtime: ProotRuntime,
+        mode: ProotLaunchMode,
+    ): WorkspaceCommandResult {
+        return try {
+            val process = ProcessBuilder(buildCommand(context, runtime.executable))
+                .directory(context.filesDir)
+                .redirectErrorStream(false)
+                .apply {
+                    environment()["PROOT_LOADER"] = runtime.loader.absolutePath
+                    environment()["PROOT_TMP_DIR"] = context.tempDir.absolutePath
+                    environment()["PROOT_TMPDIR"] = context.tempDir.absolutePath
+                    environment()["TMPDIR"] = context.tempDir.absolutePath
+                    environment().putAll(mode.environment)
+                }
+                .start()
+
+            process.readResult(context.timeoutMillis, context.stdin)
+        } catch (e: IOException) {
+            WorkspaceCommandResult(
+                exitCode = 127,
+                stdout = "",
+                stderr = "proot launch failed with ${runtime.name}/${mode.name}: ${e.message.orEmpty()}",
+            )
+        }
     }
 
     private fun buildCommand(
@@ -127,9 +161,51 @@ class ProotShellRunner(
         }
     }
 
+    private data class ProotAttempt(
+        val runtime: ProotRuntime,
+        val mode: ProotLaunchMode,
+    )
+
+    private fun orderedAttempts(
+        context: WorkspaceShellContext,
+        runtimes: List<ProotRuntime>,
+    ): List<ProotAttempt> {
+        val attempts = runtimes.flatMap { runtime ->
+            ProotLaunchModes.all.map { mode -> ProotAttempt(runtime, mode) }
+        }
+        val preferred = ProotLaunchPreferences.read(context.tempDir) ?: return attempts
+        return attempts.sortedBy { attempt ->
+            if (
+                attempt.runtime.name == preferred.runtimeName &&
+                attempt.mode.name == preferred.launchModeName
+            ) {
+                0
+            } else {
+                1
+            }
+        }
+    }
+
+    private fun WorkspaceCommandResult.shouldTryNextProotAttempt(): Boolean =
+        stderr.contains("proot launch failed with", ignoreCase = true) ||
+            isProotFunctionNotImplemented()
+
+    private fun WorkspaceCommandResult.isProotFunctionNotImplemented(): Boolean {
+        val output = "$stderr\n$stdout"
+        return output.contains("proot error:", ignoreCase = true) &&
+            output.contains("Function not implemented", ignoreCase = true)
+    }
+
+    private fun WorkspaceCommandResult.withLaunchDiagnostics(attemptedModes: List<String>): WorkspaceCommandResult {
+        val details = attemptedModes.joinToString()
+        val diagnostic = "Tried proot launch modes: $details. " +
+            "Android still returned Function not implemented while proot was entering the rootfs."
+        return copy(
+            stderr = if (stderr.isBlank()) diagnostic else "${stderr.trimEnd()}\n\n$diagnostic",
+        )
+    }
+
     private companion object {
-        private const val PROOT_EXEC = "libproot_exec.so"
-        private const val PROOT_LOADER = "libproot_loader.so"
         private const val WORKSPACE_DIR = "/workspace"
     }
 }

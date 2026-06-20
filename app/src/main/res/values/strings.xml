@@ -313,6 +313,14 @@
     <string name="activity_timeline_workspace_updated">Updated</string>
     <string name="activity_timeline_value_yes">Yes</string>
     <string name="activity_timeline_value_no">No</string>
+    <string name="tool_approval_title">Approve tool call</string>
+    <string name="tool_approval_approve">Approve</string>
+    <string name="tool_approval_approve_desc">Run this once and continue.</string>
+    <string name="tool_approval_always_workspace">Always approve in this workspace</string>
+    <string name="tool_approval_always_workspace_desc">Allow this workspace tool without asking again.</string>
+    <string name="tool_approval_deny_with_instruction">No, do something else</string>
+    <string name="tool_approval_deny_with_instruction_desc">Type an instruction in the message bar.</string>
+    <string name="tool_approval_input_placeholder">No, what should I do instead?</string>
     <string name="activity_timeline_memory_core">Core memory</string>
     <string name="activity_timeline_memory_episodic">Episodic memory</string>
     <string name="activity_timeline_deleted">Deleted</string>
@@ -1338,7 +1346,7 @@
   <string name="workspace_detail_tool_delete_file">Delete File</string>
   <string name="workspace_detail_tool_move_file">Move File</string>
   <string name="workspace_detail_tool_shell">Execute Command</string>
-  <string name="workspace_detail_install_rootfs_desc">Will download tar.gz and extract to the linux directory of %s.</string>
+  <string name="workspace_detail_install_rootfs_desc">Will download Ubuntu, verify proot, and install Python + pip for %s.</string>
   <string name="workspace_detail_download_url">tar.gz download URL</string>
   <string name="workspace_detail_area_files">Files</string>
   <string name="workspace_detail_area_rootfs">Rootfs</string>
@@ -1350,6 +1358,7 @@
   <string name="workspace_detail_downloading">Downloading %1$s%2$s</string>
   <string name="workspace_detail_extracting">Extracting %1$d items%2$s</string>
   <string name="workspace_detail_install_complete">Installation complete</string>
+  <string name="workspace_detail_configuring">Configuring Python and pip…</string>
   <string name="workspace_terminal_title">Terminal</string>
   <string name="workspace_terminal_title_with_name">%s · Terminal</string>
   <string name="workspace_terminal_not_installed">Please install Rootfs first</string>

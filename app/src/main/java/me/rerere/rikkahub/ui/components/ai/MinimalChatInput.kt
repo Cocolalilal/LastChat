@@ -72,6 +72,7 @@ import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Category
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FlashOn
@@ -85,6 +86,7 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Summarize
+import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.ViewModule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -128,6 +130,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import me.rerere.ai.provider.Model
+import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.models.ModelCatalogService
 import me.rerere.rikkahub.data.ai.models.searchProviderIconUri
@@ -159,10 +162,15 @@ import me.rerere.rikkahub.data.ai.tools.AskUserAnswer
 import me.rerere.rikkahub.data.ai.tools.AskUserAnswerPayload
 import me.rerere.rikkahub.data.ai.tools.AskUserOption
 import me.rerere.rikkahub.data.ai.tools.AskUserQuestionnaire
+import me.rerere.rikkahub.data.ai.tools.ASK_USER_TOOL_NAME
 import me.rerere.rikkahub.data.ai.tools.findPendingAskUserToolCall
 import me.rerere.rikkahub.data.ai.tools.toJsonElement
 import me.rerere.rikkahub.data.repository.ChatAttachmentManager
+import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.utils.JsonInstantPretty
+import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
 import java.io.File
 import java.time.Instant
 import kotlin.uuid.Uuid
@@ -215,6 +223,7 @@ fun MinimalChatInput(
     val assistant = conversationContext.assistant
     val currentChatModel = conversationContext.chatModel
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
+    val workspaceRepository = koinInject<WorkspaceRepository>()
     val keyboardController = LocalSoftwareKeyboardController.current
     val scope = rememberCoroutineScope()
     val availableSkills = remember(settings.skills) {
@@ -228,6 +237,14 @@ fun MinimalChatInput(
         conversation.currentMessages.findPendingAskUserToolCall()
     }
     val isQuestionnaireActive = pendingQuestionnaire != null
+    val pendingToolApproval = remember(conversation.messageNodes, pendingQuestionnaire?.toolCallId) {
+        if (pendingQuestionnaire != null) {
+            null
+        } else {
+            conversation.currentMessages.findPendingToolApproval()
+        }
+    }
+    val isToolApprovalActive = pendingToolApproval != null
     val questionnaire = pendingQuestionnaire?.questionnaire
     val questionnaireToolCallId = pendingQuestionnaire?.toolCallId
     var questionnaireIndex by rememberSaveable(questionnaireToolCallId) { mutableStateOf(0) }
@@ -238,6 +255,7 @@ fun MinimalChatInput(
         mutableStateOf<Map<String, String>>(emptyMap())
     }
     val questionnaireTextState = remember(questionnaireToolCallId) { TextFieldState() }
+    val toolApprovalTextState = remember(pendingToolApproval?.toolCallId) { TextFieldState() }
     val currentQuestion = questionnaire?.questions?.getOrNull(questionnaireIndex)
     val isFinalQuestion = questionnaire != null && questionnaireIndex == questionnaire.questions.lastIndex
 
@@ -281,6 +299,9 @@ fun MinimalChatInput(
         val question = currentQuestion ?: return@LaunchedEffect
         questionnaireCustomAnswers = questionnaireCustomAnswers + (question.id to questionnaireTextState.text.toString())
     }
+    LaunchedEffect(pendingToolApproval?.toolCallId) {
+        toolApprovalTextState.setTextAndPlaceCursorAtEnd("")
+    }
 
     // Collapse picker when keyboard opens
     val imeVisible = WindowInsets.isImeVisible
@@ -292,8 +313,8 @@ fun MinimalChatInput(
             focusManager.clearFocus()
         }
     }
-    LaunchedEffect(isQuestionnaireActive) {
-        if (isQuestionnaireActive) {
+    LaunchedEffect(isQuestionnaireActive, isToolApprovalActive) {
+        if (isQuestionnaireActive || isToolApprovalActive) {
             showPicker = false
         }
     }
@@ -341,6 +362,37 @@ fun MinimalChatInput(
         onToolApproval(toolCallId, true, "", payload)
     }
 
+    fun approvePendingTool(alwaysApproveWorkspace: Boolean) {
+        val pending = pendingToolApproval ?: return
+        keyboardController?.hide()
+        haptics.perform(if (alwaysApproveWorkspace) HapticPattern.Success else HapticPattern.Send)
+        if (alwaysApproveWorkspace && pending.isWorkspaceTool) {
+            val workspaceId = assistant.workspaceId?.toString()
+            if (workspaceId != null) {
+                scope.launch {
+                    workspaceRepository.setToolApproval(workspaceId, pending.toolName, needsApproval = false)
+                    onToolApproval(pending.toolCallId, true, "", null)
+                }
+                return
+            }
+        }
+        onToolApproval(pending.toolCallId, true, "", null)
+    }
+
+    fun denyPendingToolWithInstruction() {
+        val pending = pendingToolApproval ?: return
+        val reason = toolApprovalTextState.text.toString().trim()
+        if (reason.isBlank()) {
+            haptics.perform(HapticPattern.Pop)
+            state.focusRequester.requestFocus()
+            keyboardController?.show()
+            return
+        }
+        keyboardController?.hide()
+        haptics.perform(HapticPattern.Send)
+        onToolApproval(pending.toolCallId, false, reason, null)
+    }
+
     fun advanceQuestionnaire() {
         val activeQuestionnaire = questionnaire ?: return
         if (isFinalQuestion) {
@@ -359,6 +411,10 @@ fun MinimalChatInput(
                 questionnaireCustomAnswers = questionnaireCustomAnswers + (question.id to trimmed)
             }
             advanceQuestionnaire()
+            return
+        }
+        if (isToolApprovalActive) {
+            denyPendingToolWithInstruction()
             return
         }
         keyboardController?.hide()
@@ -420,8 +476,8 @@ fun MinimalChatInput(
                 .padding(bottom = bottomPadding, start = 16.dp, end = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            val showSuggestions = !isQuestionnaireActive && chatSuggestions.isNotEmpty()
-            val showScrollToBottom = !isQuestionnaireActive && showScrollToBottomButton
+            val showSuggestions = !isQuestionnaireActive && !isToolApprovalActive && chatSuggestions.isNotEmpty()
+            val showScrollToBottom = !isQuestionnaireActive && !isToolApprovalActive && showScrollToBottomButton
 
             // Suggestions and scroll-to-bottom affordance share a row so they never overlap.
             androidx.compose.animation.AnimatedVisibility(
@@ -502,6 +558,25 @@ fun MinimalChatInput(
                     )
                 }
             }
+
+            androidx.compose.animation.AnimatedVisibility(
+                visible = isToolApprovalActive && pendingToolApproval != null,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                pendingToolApproval?.let { pending ->
+                    ToolApprovalCard(
+                        approval = pending,
+                        onApprove = { approvePendingTool(alwaysApproveWorkspace = false) },
+                        onAlwaysApproveWorkspace = { approvePendingTool(alwaysApproveWorkspace = true) },
+                        onDenyWithInstruction = {
+                            state.focusRequester.requestFocus()
+                            keyboardController?.show()
+                            haptics.perform(HapticPattern.Pop)
+                        }
+                    )
+                }
+            }
             
             // Content receiver for clipboard image paste (must be outside Surface lambda)
             val receiveContentListener = remember(isQuestionnaireActive) {
@@ -535,7 +610,7 @@ fun MinimalChatInput(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 // Plus button - 48dp pill button
-                if (!isQuestionnaireActive) {
+                if (!isQuestionnaireActive && !isToolApprovalActive) {
                     Surface(
                         onClick = {
                             haptics.perform(HapticPattern.Pop)
@@ -575,7 +650,7 @@ fun MinimalChatInput(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         androidx.compose.animation.AnimatedVisibility(
-                            visible = !isQuestionnaireActive && state.messageContent.isNotEmpty(),
+                            visible = !isQuestionnaireActive && !isToolApprovalActive && state.messageContent.isNotEmpty(),
                             enter = fadeIn(
                                 animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f)
                             ) + expandVertically(
@@ -603,7 +678,7 @@ fun MinimalChatInput(
                         }
 
                         // Editing indicator - shown when editing a message
-                        if (!isQuestionnaireActive && state.isEditing()) {
+                        if (!isQuestionnaireActive && !isToolApprovalActive && state.isEditing()) {
                             Surface(
                                 color = if (LocalDarkMode.current) 
                                     MaterialTheme.colorScheme.surfaceContainerLowest  // Darker in dark mode
@@ -642,8 +717,11 @@ fun MinimalChatInput(
                         Box(
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            val activeTextState =
-                                if (isQuestionnaireActive) questionnaireTextState else state.textContent
+                            val activeTextState = when {
+                                isQuestionnaireActive -> questionnaireTextState
+                                isToolApprovalActive -> toolApprovalTextState
+                                else -> state.textContent
+                            }
                             TextField(
                                 state = activeTextState,
                                 modifier = Modifier
@@ -651,7 +729,7 @@ fun MinimalChatInput(
                                     .defaultMinSize(minHeight = 1.dp)  // Override internal min height (56dp)
                                     .focusRequester(state.focusRequester)
                                     .then(
-                                        if (isQuestionnaireActive) {
+                                        if (isQuestionnaireActive || isToolApprovalActive) {
                                             Modifier
                                         } else {
                                             Modifier.contentReceiver(receiveContentListener)
@@ -662,6 +740,8 @@ fun MinimalChatInput(
                                     Text(
                                         text = if (isQuestionnaireActive) {
                                             stringResource(R.string.character_questions_custom_answer_placeholder)
+                                        } else if (isToolApprovalActive) {
+                                            stringResource(R.string.tool_approval_input_placeholder)
                                         } else {
                                             stringResource(R.string.minimal_chat_input_placeholder, assistant.name)
                                         },
@@ -693,6 +773,7 @@ fun MinimalChatInput(
                                 val currentAction = when {
                                     isQuestionnaireActive && isFinalQuestion -> "questionnaire_submit"
                                     isQuestionnaireActive -> "questionnaire_next"
+                                    isToolApprovalActive -> "tool_approval_deny"
                                     state.loading -> "loading"
                                     !state.isEmpty() -> "send"
                                     else -> "picker"
@@ -702,6 +783,7 @@ fun MinimalChatInput(
                                     targetValue = when (currentAction) {
                                         "loading" -> MaterialTheme.colorScheme.errorContainer
                                         "questionnaire_submit", "questionnaire_next" -> MaterialTheme.colorScheme.primary
+                                        "tool_approval_deny" -> MaterialTheme.colorScheme.errorContainer
                                         "send" -> MaterialTheme.colorScheme.primary
                                         else -> Color.Transparent
                                     },
@@ -710,7 +792,12 @@ fun MinimalChatInput(
                                 
                                 Surface(
                                     onClick = { 
-                                        if (currentAction == "send" || currentAction == "loading" || currentAction.startsWith("questionnaire_")) {
+                                        if (
+                                            currentAction == "send" ||
+                                            currentAction == "loading" ||
+                                            currentAction == "tool_approval_deny" ||
+                                            currentAction.startsWith("questionnaire_")
+                                        ) {
                                             sendMessage()
                                         } else {
                                             showPicker = true
@@ -757,6 +844,14 @@ fun MinimalChatInput(
                                                         contentDescription = null,
                                                         modifier = Modifier.size(18.dp),
                                                         tint = MaterialTheme.colorScheme.onPrimary
+                                                    )
+                                                }
+                                                "tool_approval_deny" -> {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.Close,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(18.dp),
+                                                        tint = MaterialTheme.colorScheme.onErrorContainer
                                                     )
                                                 }
                                                 "picker" -> {
@@ -966,6 +1061,220 @@ private fun CharacterQuestionOptionRow(
             }
         }
     }
+}
+
+private data class PendingToolApproval(
+    val toolCallId: String,
+    val toolName: String,
+    val arguments: String,
+) {
+    val isWorkspaceTool: Boolean
+        get() = toolName.startsWith("workspace_")
+}
+
+private fun List<me.rerere.ai.ui.UIMessage>.findPendingToolApproval(): PendingToolApproval? {
+    return firstNotNullOfOrNull { message ->
+        message.getToolCalls().firstOrNull { toolCall ->
+            toolCall.toolName != ASK_USER_TOOL_NAME &&
+                toolCall.approvalState is ToolApprovalState.Pending
+        }?.let { toolCall ->
+            PendingToolApproval(
+                toolCallId = toolCall.toolCallId,
+                toolName = toolCall.toolName,
+                arguments = toolCall.arguments,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ToolApprovalCard(
+    approval: PendingToolApproval,
+    onApprove: () -> Unit,
+    onAlwaysApproveWorkspace: () -> Unit,
+    onDenyWithInstruction: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.size(34.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Rounded.Terminal,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.tool_approval_title),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = approval.displayName(),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            val summary = approval.summary()
+            if (summary.isNotBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = summary,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            ToolApprovalActionRow(
+                label = stringResource(R.string.tool_approval_approve),
+                description = stringResource(R.string.tool_approval_approve_desc),
+                icon = Icons.Rounded.Check,
+                selected = true,
+                onClick = onApprove,
+            )
+            if (approval.isWorkspaceTool) {
+                ToolApprovalActionRow(
+                    label = stringResource(R.string.tool_approval_always_workspace),
+                    description = stringResource(R.string.tool_approval_always_workspace_desc),
+                    icon = Icons.Rounded.Save,
+                    selected = false,
+                    onClick = onAlwaysApproveWorkspace,
+                )
+            }
+            ToolApprovalActionRow(
+                label = stringResource(R.string.tool_approval_deny_with_instruction),
+                description = stringResource(R.string.tool_approval_deny_with_instruction_desc),
+                icon = Icons.Rounded.Edit,
+                selected = false,
+                onClick = onDenyWithInstruction,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ToolApprovalActionRow(
+    label: String,
+    description: String,
+    icon: ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val haptics = rememberPremiumHaptics()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.85f else 1f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        label = "tool_approval_action_scale"
+    )
+
+    Surface(
+        onClick = {
+            haptics.perform(HapticPattern.Pop)
+            onClick()
+        },
+        shape = RoundedCornerShape(20.dp),
+        color = if (selected) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHigh
+        },
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+            else MaterialTheme.colorScheme.background
+        ),
+        interactionSource = interactionSource,
+        modifier = modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PendingToolApproval.displayName(): String = when (toolName) {
+    "workspace_shell" -> stringResource(R.string.activity_timeline_tool_workspace_shell)
+    "workspace_read_file" -> stringResource(R.string.activity_timeline_tool_workspace_read_file)
+    "workspace_write_file" -> stringResource(R.string.activity_timeline_tool_workspace_write_file)
+    "workspace_edit_file" -> stringResource(R.string.activity_timeline_tool_workspace_edit_file)
+    else -> toolName.replace("_", " ").replaceFirstChar { it.uppercase() }
+}
+
+private fun PendingToolApproval.summary(): String {
+    val args = runCatching { JsonInstantPretty.parseToJsonElement(arguments).jsonObject }.getOrNull()
+    val key = when (toolName) {
+        "workspace_shell" -> "command"
+        "workspace_read_file", "workspace_write_file", "workspace_edit_file" -> "path"
+        else -> null
+    }
+    return key?.let { args?.get(it)?.jsonPrimitiveOrNull?.contentOrNull }
+        ?: arguments.take(240)
 }
 
 @Composable
