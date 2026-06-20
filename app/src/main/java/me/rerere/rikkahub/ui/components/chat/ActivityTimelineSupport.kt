@@ -6,6 +6,8 @@ import androidx.compose.material.icons.rounded.BookmarkRemove
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Computer
+import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Image
@@ -231,8 +233,10 @@ internal fun getTimelineIcon(entry: TimelineEntry): ImageVector {
             "search_memory" -> Icons.Rounded.Memory
             "eval_python", "pip_install", "write_sandbox_file",
             "read_sandbox_file", "list_sandbox_files", "delete_sandbox_file" -> Icons.Rounded.Terminal
+            "workspace_shell" -> Icons.Rounded.Terminal
+            "workspace_read_file", "workspace_write_file", "workspace_edit_file" -> Icons.Rounded.Description
             "manage_skills" -> Icons.Rounded.Category
-            else -> Icons.Rounded.Build
+            else -> if (entry.toolName.startsWith("workspace_")) Icons.Rounded.Computer else Icons.Rounded.Build
         }
 
         is TimelineEntry.MemoryAction -> when (entry.operation) {
@@ -258,6 +262,10 @@ private fun getLocalizedToolLabel(toolName: String, fallback: String): String {
         "read_sandbox_file" -> stringResource(R.string.activity_timeline_tool_read_file)
         "list_sandbox_files" -> stringResource(R.string.chat_message_tool_python_list_files)
         "delete_sandbox_file" -> stringResource(R.string.activity_timeline_tool_delete_file)
+        "workspace_read_file" -> stringResource(R.string.activity_timeline_tool_workspace_read_file)
+        "workspace_write_file" -> stringResource(R.string.activity_timeline_tool_workspace_write_file)
+        "workspace_edit_file" -> stringResource(R.string.activity_timeline_tool_workspace_edit_file)
+        "workspace_shell" -> stringResource(R.string.activity_timeline_tool_workspace_shell)
         "ask_user" -> stringResource(R.string.activity_timeline_tool_ask_user)
         "manage_skills" -> stringResource(R.string.activity_timeline_tool_manage_skills)
         else -> fallback

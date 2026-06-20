@@ -100,8 +100,10 @@ import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.ai.tools.AskUserAnswer
 import me.rerere.rikkahub.data.ai.tools.AskUserQuestion
 import me.rerere.rikkahub.ui.components.message.SANDBOX_FILE_TOOLS
+import me.rerere.rikkahub.ui.components.message.WORKSPACE_TOOLS
 import me.rerere.rikkahub.ui.components.message.buildPythonToolSummary
 import me.rerere.rikkahub.ui.components.message.buildSandboxFileToolSummary
+import me.rerere.rikkahub.ui.components.message.buildWorkspaceToolSummary
 import me.rerere.rikkahub.utils.JsonInstantPretty
 import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
 import me.rerere.rikkahub.ui.hooks.HapticPattern
@@ -932,6 +934,15 @@ private fun TimelinePreview(entry: TimelineEntry, followLiveContent: Boolean = f
                     !fileSummary?.previewText.isNullOrBlank() -> fileSummary?.previewText.orEmpty().take(160)
                     else -> entry.argumentsText.take(160)
                 }
+            } else if (entry.toolName in WORKSPACE_TOOLS) {
+                val workspaceSummary = buildWorkspaceToolSummary(
+                    toolName = entry.toolName,
+                    arguments = entry.argumentsJson,
+                    content = entry.resultJson
+                )
+                workspaceSummary?.previewText?.take(160).orEmpty().ifBlank {
+                    entry.argumentsText.take(160)
+                }
             } else {
                 val args = entry.argumentsText
                 val result = entry.resultText
@@ -981,6 +992,7 @@ private fun ToolCallDetails(entry: TimelineEntry.ToolCall) {
         "scrape_web" -> ScrapeTimelineDetails(entry)
         "eval_python" -> PythonTimelineDetails(entry)
         in SANDBOX_FILE_TOOLS -> SandboxFileTimelineDetails(entry)
+        in WORKSPACE_TOOLS -> WorkspaceTimelineDetails(entry)
         "ask_user" -> AskUserTimelineDetails(entry)
         "manage_skills" -> SkillManagementTimelineDetails(entry)
         else -> GenericToolDetails(entry)
@@ -1648,6 +1660,156 @@ private fun SandboxFileTimelineDetails(entry: TimelineEntry.ToolCall) {
                 value = error,
                 valueColor = MaterialTheme.colorScheme.error,
                 monospace = true
+            )
+        }
+    }
+}
+
+@Composable
+private fun WorkspaceTimelineDetails(entry: TimelineEntry.ToolCall) {
+    val summary = buildWorkspaceToolSummary(
+        toolName = entry.toolName,
+        arguments = entry.argumentsJson,
+        content = entry.resultJson
+    ) ?: return GenericToolDetails(entry)
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        summary.command?.takeIf { it.isNotBlank() }?.let { command ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_workspace_command),
+                value = command,
+                monospace = true
+            )
+        }
+        summary.path?.takeIf { it.isNotBlank() }?.let { path ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_file_path),
+                value = path,
+                monospace = true
+            )
+        }
+        summary.cwd?.takeIf { it.isNotBlank() }?.let { cwd ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_workspace_cwd),
+                value = cwd,
+                monospace = true
+            )
+        }
+        summary.timeout?.takeIf { it.isNotBlank() }?.let { timeout ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_workspace_timeout),
+                value = timeout
+            )
+        }
+        summary.exitCode?.let { exitCode ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_workspace_exit_code),
+                value = exitCode.toString(),
+                valueColor = if (exitCode == 0) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.error
+                }
+            )
+        }
+        summary.timedOut?.let { timedOut ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_workspace_timed_out),
+                value = if (timedOut) {
+                    stringResource(R.string.activity_timeline_value_yes)
+                } else {
+                    stringResource(R.string.activity_timeline_value_no)
+                },
+                valueColor = if (timedOut) MaterialTheme.colorScheme.error else null
+            )
+        }
+        summary.truncated?.let { truncated ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_workspace_truncated),
+                value = if (truncated) {
+                    stringResource(R.string.activity_timeline_value_yes)
+                } else {
+                    stringResource(R.string.activity_timeline_value_no)
+                }
+            )
+        }
+        summary.name?.takeIf { it.isNotBlank() }?.let { name ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_file_name),
+                value = name,
+                monospace = true
+            )
+        }
+        summary.isDirectory?.let { isDirectory ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_workspace_entry_type),
+                value = stringResource(
+                    if (isDirectory) {
+                        R.string.activity_timeline_workspace_directory
+                    } else {
+                        R.string.activity_timeline_workspace_file
+                    }
+                )
+            )
+        }
+        summary.sizeBytes?.let { sizeBytes ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_workspace_size),
+                value = stringResource(R.string.activity_timeline_workspace_size_bytes, sizeBytes)
+            )
+        }
+        summary.updatedAt?.let { updatedAt ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_workspace_updated),
+                value = updatedAt.toString()
+            )
+        }
+        summary.text?.takeIf { it.isNotBlank() }?.let { text ->
+            TimelineDetailBlock(
+                label = stringResource(R.string.activity_timeline_content),
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            ) {
+                Text(
+                    text = text.take(1200),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+        }
+        summary.stdout?.takeIf { it.isNotBlank() }?.let { stdout ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_python_stdout),
+                value = stdout.take(1200),
+                monospace = true
+            )
+        }
+        summary.stderr?.takeIf { it.isNotBlank() }?.let { stderr ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_python_stderr),
+                value = stderr.take(1200),
+                valueColor = MaterialTheme.colorScheme.error,
+                monospace = true
+            )
+        }
+        summary.error?.takeIf { it.isNotBlank() }?.let { error ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_error),
+                value = error,
+                valueColor = MaterialTheme.colorScheme.error,
+                monospace = true
+            )
+        }
+        if (
+            summary.command != null &&
+            summary.exitCode == 0 &&
+            summary.stdout.isNullOrBlank() &&
+            summary.stderr.isNullOrBlank()
+        ) {
+            Text(
+                text = stringResource(R.string.activity_timeline_no_output),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }

@@ -103,6 +103,7 @@ import me.rerere.rikkahub.utils.applyPlaceholders
 import me.rerere.rikkahub.utils.appLocale
 import me.rerere.rikkahub.utils.getFileMimeType
 import me.rerere.search.SearchService
+import me.rerere.workspace.WorkspaceShellStatus
 import me.rerere.search.SearchServiceOptions
 import java.time.Instant
 import java.util.Locale
@@ -1684,12 +1685,20 @@ class ChatService(
                 )
             )
 
-            addAll(
-                createWorkspaceTools(
-                    workspaceId = assistant.workspaceId?.toString(),
-                    workspaceRepository = workspaceRepository,
+            val workspaceId = assistant.workspaceId?.toString()
+            val workspace = workspaceId?.let { workspaceRepository.getById(it) }
+            if (
+                model.abilities.contains(ModelAbility.TOOL) &&
+                workspace != null &&
+                workspace.shellStatus == WorkspaceShellStatus.READY.name
+            ) {
+                addAll(
+                    createWorkspaceTools(
+                        workspaceId = workspaceId,
+                        workspaceRepository = workspaceRepository,
+                    )
                 )
-            )
+            }
 
             mcpManager.getAllAvailableTools().forEach { (serverId, tool) ->
                 add(

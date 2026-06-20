@@ -62,6 +62,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Category
+import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.Image
@@ -163,6 +164,7 @@ enum class ActivityType {
     SEARCH,
     MEMORY_RECALL,
     PYTHON,
+    WORKSPACE,
     SKILL,
     MCP,
     LOADING_MODEL,
@@ -175,6 +177,7 @@ private fun ActivityType.toTestTag(): String = when (this) {
     ActivityType.SEARCH -> "activity_pill_search"
     ActivityType.MEMORY_RECALL -> "activity_pill_memory_recall"
     ActivityType.PYTHON -> "activity_pill_python"
+    ActivityType.WORKSPACE -> "activity_pill_workspace"
     ActivityType.SKILL -> "activity_pill_skill"
     ActivityType.MCP -> "activity_pill_mcp"
     ActivityType.LOADING_MODEL -> "activity_pill_loading_model"
@@ -190,6 +193,7 @@ private fun ActivityType.getIcon(): ImageVector = when (this) {
     ActivityType.SEARCH -> Icons.Rounded.Public
     ActivityType.MEMORY_RECALL -> Icons.Rounded.Memory
     ActivityType.PYTHON -> Icons.Rounded.Terminal
+    ActivityType.WORKSPACE -> Icons.Rounded.Computer
     ActivityType.SKILL -> Icons.Rounded.Category
     ActivityType.MCP -> Icons.Rounded.Memory
     ActivityType.LOADING_MODEL -> Icons.Rounded.Memory
@@ -205,6 +209,7 @@ private fun ActivityType.getDisplayText(): String = when (this) {
     ActivityType.SEARCH -> "Searched"
     ActivityType.MEMORY_RECALL -> "Recalled"
     ActivityType.PYTHON -> "Ran Python"
+    ActivityType.WORKSPACE -> "Used workspace"
     ActivityType.SKILL -> "Skills"
     ActivityType.MCP -> "MCP"
     ActivityType.LOADING_MODEL -> "Loaded model"
@@ -219,6 +224,7 @@ internal fun categorizeToolName(toolName: String): ActivityType = when (toolName
     "search_memory" -> ActivityType.MEMORY_RECALL
     "eval_python", "pip_install", "write_sandbox_file", 
     "read_sandbox_file", "list_sandbox_files", "delete_sandbox_file" -> ActivityType.PYTHON
+    "workspace_read_file", "workspace_write_file", "workspace_edit_file", "workspace_shell" -> ActivityType.WORKSPACE
     "manage_skills" -> ActivityType.SKILL
     else -> if (toolName.startsWith("mcp_")) ActivityType.MCP else ActivityType.TOOL_OTHER
 }
@@ -232,10 +238,20 @@ private val pythonToolNames = setOf(
     "delete_sandbox_file"
 )
 
+private val workspaceToolNames = setOf(
+    "workspace_read_file",
+    "workspace_write_file",
+    "workspace_edit_file",
+    "workspace_shell"
+)
+
 internal fun resolveActivityToolName(toolName: String, arguments: String): String {
     val normalized = toolName.trim()
-    if (normalized in pythonToolNames) {
+    if (normalized in pythonToolNames || normalized in workspaceToolNames) {
         return normalized
+    }
+    if (normalized.length >= 10 && workspaceToolNames.any { it.startsWith(normalized) }) {
+        return workspaceToolNames.first { it.startsWith(normalized) }
     }
     if (normalized.length >= 3 && pythonToolNames.any { it.startsWith(normalized) }) {
         return "eval_python"
@@ -921,6 +937,7 @@ private fun ExpandedActivityContent(item: ActivityItem) {
         ActivityType.SEARCH -> "Searched the Web"
         ActivityType.MEMORY_RECALL -> stringResource(R.string.activity_pill_memory_recalled)
         ActivityType.PYTHON -> "Ran Python"
+        ActivityType.WORKSPACE -> "Used workspace"
         ActivityType.SKILL -> "Managed skills"
         ActivityType.MCP -> "MCP"
         ActivityType.TOOL_OTHER -> "Used tool"
@@ -1142,6 +1159,9 @@ private fun ExpandedActivityPill(
             }
             ActivityType.PYTHON -> {
                 if (item.count > 1) "Ran Python Ã—${item.count}" else "Ran Python"
+            }
+            ActivityType.WORKSPACE -> {
+                if (item.count > 1) "Used workspace x${item.count}" else "Used workspace"
             }
             ActivityType.SKILL -> {
                 if (item.count > 1) "Managed skills x${item.count}" else "Managed skills"

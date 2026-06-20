@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.ai.transformers
 
 import me.rerere.ai.core.MessageRole
+import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
@@ -23,9 +24,17 @@ class WorkspaceReminderTransformer(
         val id = ctx.assistant.workspaceId?.toString() ?: return messages
         val workspace = workspaceRepository.getById(id) ?: return messages
         // 与 ChatService.createWorkspaceToolsIfReady 保持一致: 仅在 shell 就绪时注入
-        if (workspace.shellStatus != WorkspaceShellStatus.READY.name) return messages
-
-        val prompt = buildWorkspacePrompt(workspace, null)
+        val prompt = when {
+            !ctx.model.abilities.contains(ModelAbility.TOOL) -> buildWorkspaceUnavailablePrompt(
+                workspace = workspace,
+                reason = "The selected model is not marked as tool-capable, so workspace_shell, workspace_read_file, workspace_write_file, and workspace_edit_file are not available in this chat."
+            )
+            workspace.shellStatus != WorkspaceShellStatus.READY.name -> buildWorkspaceUnavailablePrompt(
+                workspace = workspace,
+                reason = "The workspace rootfs is not ready. The user must install or repair the rootfs before shell and file tools can run."
+            )
+            else -> buildWorkspacePrompt(workspace, null)
+        }
 
         // 追加到第一条 system 消息; 若不存在则插入一条
         val systemIndex = messages.indexOfFirst { it.role == MessageRole.SYSTEM }
@@ -48,11 +57,22 @@ private fun buildWorkspacePrompt(workspace: WorkspaceEntity, cwd: String? = null
     appendLine("  - `workspace_read_file`: read file contents.")
     appendLine("  - `workspace_write_file` / `workspace_edit_file`: create files, or make precise edits to existing files.")
     appendLine("  - `workspace_shell`: run shell commands (the files area is mounted at /workspace).")
+    appendLine("- If you need to inspect the environment, call `workspace_shell`. Do not claim that you checked, installed, read, wrote, or generated anything unless a workspace tool result is present in the conversation.")
+    appendLine("- If a workspace tool call is pending user approval, wait for the approval/result instead of guessing the outcome.")
     appendLine("- Prefer `workspace_shell` for tasks that standard Unix tools handle well, and prefer `workspace_edit_file` for targeted edits over rewriting whole files.")
     appendLine("- The skills directory is mounted at `/skills`. Each skill is a subdirectory `/skills/<skill-name>/` containing a `SKILL.md` (with `name` and `description` frontmatter) plus any supporting files. Read a skill's `SKILL.md` before using it, and follow its instructions.")
     if (!cwd.isNullOrBlank()) {
         appendLine("- Current working directory: `$cwd`. Use this as the default context for file operations and shell commands.")
     }
+    append("</workspace>")
+}
+
+private fun buildWorkspaceUnavailablePrompt(workspace: WorkspaceEntity, reason: String): String = buildString {
+    appendLine("<workspace>")
+    appendLine("A Linux workspace named \"${workspace.name}\" is configured, but it is not currently usable.")
+    appendLine("- $reason")
+    appendLine("- Do not claim that you can run workspace commands, inspect Python, read/write workspace files, or create files in the workspace during this turn.")
+    appendLine("- If the user asks about the Linux environment, explain this limitation briefly and tell them what needs to be enabled or fixed.")
     append("</workspace>")
 }
 

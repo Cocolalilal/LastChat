@@ -151,6 +151,52 @@ class ActivityTimelineParsingTest {
     }
 
     @Test
+    fun deriveActivityState_categorizesWorkspaceToolsSeparately() {
+        val liveState = deriveActivityState(
+            parts = listOf(
+                UIMessagePart.ToolCall(
+                    toolCallId = "workspace-1",
+                    toolName = "workspace_shell",
+                    arguments = """{"command":"python3 --version"}"""
+                )
+            ),
+            loading = true
+        )
+
+        val toolState = liveState as ActivityState.ToolUse
+        assertEquals(ActivityType.WORKSPACE, categorizeToolName(toolState.toolName))
+        assertEquals("Running workspace command", toolState.displayName)
+
+        val result = buildJsonObject {
+            put("exitCode", 0)
+            put("stdout", "Python 3.12.0")
+            put("stderr", "")
+            put("timedOut", false)
+        }
+        val entries = buildTimelineEntries(
+            parts = listOf(
+                UIMessagePart.ToolCall(
+                    toolCallId = "workspace-1",
+                    toolName = "workspace_shell",
+                    arguments = """{"command":"python3 --version"}"""
+                ),
+                UIMessagePart.ToolResult(
+                    toolCallId = "workspace-1",
+                    toolName = "workspace_shell",
+                    arguments = buildJsonObject { put("command", "python3 --version") },
+                    content = result
+                )
+            )
+        )
+
+        val entry = entries.single() as TimelineEntry.ToolCall
+        assertFalse(entry.isLoading)
+        assertEquals("Running workspace command", entry.displayName)
+        assertEquals(result, entry.resultJson)
+        assertEquals(ActivityType.WORKSPACE, categorizeToolName(entry.toolName))
+    }
+
+    @Test
     fun messageTurnGroup_keepsMatchingToolResultWhenVersionTagIsMissing() {
         val group = MessageTurnGroup(
             nodes = listOf(
