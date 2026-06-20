@@ -5,8 +5,8 @@ import android.net.Uri
 import kotlinx.serialization.json.Json
 import me.rerere.rikkahub.data.model.Skill
 import me.rerere.rikkahub.data.model.SkillExport
-import java.io.BufferedReader
-import java.io.InputStreamReader
+import okio.buffer
+import okio.source
 
 /**
  * Utility for importing and exporting Claude Skills.
@@ -83,9 +83,11 @@ object SkillExportImport {
             val inputStream = context.contentResolver.openInputStream(uri)
                 ?: return ImportResult.Error("Could not open file")
 
-            val reader = BufferedReader(InputStreamReader(inputStream))
-            val content = reader.readText()
-            reader.close()
+            val content = inputStream.use { input ->
+                input.source().buffer().use { source ->
+                    source.readUtf8()
+                }
+            }
 
             importFromString(content)
         } catch (e: Exception) {
