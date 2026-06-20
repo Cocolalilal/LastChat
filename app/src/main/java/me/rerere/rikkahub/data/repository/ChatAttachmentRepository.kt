@@ -47,6 +47,9 @@ import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.getFileMimeType
 import me.rerere.rikkahub.utils.getFileNameFromUri
 import okio.Buffer
+import okio.buffer
+import okio.sink
+import okio.source
 import java.io.File
 import java.io.InputStream
 import java.security.MessageDigest
@@ -652,7 +655,9 @@ class ChatAttachmentRepository(
                 mime = outputMime,
             )
         )
-        file.writeBytes(outputBytes)
+        file.sink().buffer().use { output ->
+            output.write(outputBytes)
+        }
         // Use inJustDecodeBounds to get dimensions without allocating a full bitmap
         val outputBounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(outputBytes, 0, outputBytes.size, outputBounds)
@@ -900,7 +905,7 @@ class ChatAttachmentRepository(
         return runCatching {
             val digest = MessageDigest.getInstance("SHA-256")
             outputFile.parentFile?.mkdirs()
-            outputFile.outputStream().use { output ->
+            outputFile.sink().buffer().outputStream().use { output ->
                 input.use { inputStream ->
                     val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                     while (true) {
@@ -920,7 +925,7 @@ class ChatAttachmentRepository(
 
     private fun sha256(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")
-        file.inputStream().use { input ->
+        file.source().buffer().inputStream().use { input ->
             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
             while (true) {
                 val read = input.read(buffer)
