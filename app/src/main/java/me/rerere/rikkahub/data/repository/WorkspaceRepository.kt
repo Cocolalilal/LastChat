@@ -332,7 +332,10 @@ private fun WorkspaceCommandResult.isFatalProotFailure(): Boolean {
     return text.contains("proot error:", ignoreCase = true) &&
         (
             text.contains("Function not implemented", ignoreCase = true) ||
+                text.contains("No such file or directory", ignoreCase = true) ||
                 text.contains("ptrace(TRACEME)", ignoreCase = true) ||
+                text.contains("can't chmod", ignoreCase = true) ||
+                text.contains("can't chdir", ignoreCase = true) ||
                 text.contains("loader was not found", ignoreCase = true) ||
                 text.contains("qemu was not specified", ignoreCase = true)
             )
@@ -340,7 +343,7 @@ private fun WorkspaceCommandResult.isFatalProotFailure(): Boolean {
 
 private fun WorkspaceCommandResult.withWorkspaceRuntimeHint(): WorkspaceCommandResult {
     if (!isFatalProotFailure()) return this
-    val hint = "\n\nWorkspace runtime is broken. Reinstall or repair the rootfs, and make sure this device uses a supported 64-bit ABI with bundled proot."
+    val hint = "\n\nWorkspace runtime is broken. Reinstall or repair the rootfs, and make sure this device uses a supported 64-bit ABI with the bundled workspace proot runtime."
     return copy(stderr = stderr.trimEnd() + hint)
 }
 

@@ -156,4 +156,22 @@ class MemorySearchServiceTest {
         assertFalse(shouldRegisterMemorySearchTool(Assistant(enableMemory = true, enableMemorySearchTool = false)))
         assertTrue(shouldRegisterMemorySearchTool(Assistant(enableMemory = true, enableMemorySearchTool = true)))
     }
+
+    @Test
+    fun shouldRegisterMemorySearchToolRequiresExplicitRecallIntentWhenMessagesProvided() {
+        val assistant = Assistant(enableMemory = true, enableMemorySearchTool = true)
+
+        assertFalse(
+            shouldRegisterMemorySearchTool(
+                assistant = assistant,
+                messages = listOf(UIMessage.user("I hug her quietly."))
+            )
+        )
+        assertTrue(
+            shouldRegisterMemorySearchTool(
+                assistant = assistant,
+                messages = listOf(UIMessage.user("Do you remember what I said about Lisbon?"))
+            )
+        )
+    }
 }

@@ -58,24 +58,23 @@ internal fun createWorkspaceTerminalSession(
             args += path
         }
     }
-    args += listOf(
-        "/usr/bin/env",
-        "-i",
-        "HOME=/root",
-        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-        "TERM=xterm-256color",
-        "LANG=C.UTF-8",
-        "LC_ALL=C.UTF-8",
-        "USER=root",
-        "SHELL=/bin/bash",
-        "/bin/bash",
-    )
+    val shellCommand = linuxDir.rootfsShellCommand()
+    args += shellCommand
 
     val env = buildList {
         add("PROOT_LOADER=${launch.runtime.loader.absolutePath}")
+        launch.runtime.loader32?.let { add("PROOT_LOADER_32=${it.absolutePath}") }
         add("PROOT_TMP_DIR=${tempDir.absolutePath}")
         add("PROOT_TMPDIR=${tempDir.absolutePath}")
         add("TMPDIR=${tempDir.absolutePath}")
+        add("LD_LIBRARY_PATH=${launch.runtime.executable.parentFile?.absolutePath.orEmpty()}")
+        add("HOME=/root")
+        add("PATH=$ROOTFS_PATH")
+        add("TERM=xterm-256color")
+        add("LANG=C.UTF-8")
+        add("LC_ALL=C.UTF-8")
+        add("USER=root")
+        add("SHELL=${shellCommand.firstOrNull() ?: "/bin/sh"}")
         launch.mode.environment.forEach { (name, value) ->
             add("$name=$value")
         }
@@ -338,6 +337,7 @@ internal class WorkspaceTerminalViewClient(
 
 private const val WORKSPACE_DIR = "/workspace"
 private const val SKILLS_DIR = "/skills"
+private const val ROOTFS_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 // 一个 URL 最多还原跨越的软换行行数(向上/向下各算), 足够覆盖任意真实 URL
 private const val URL_MAX_WRAP_ROWS = 50
 
@@ -346,6 +346,23 @@ private val URL_REGEX =
 
 // 终端里 URL 后面常跟标点(行尾句号、被括号包裹等), 打开前去掉这些结尾字符
 private val URL_TRAILING_TRIM = charArrayOf('.', ',', ';', ':', '!', '?', ')', ']', '}', '\'', '"')
+
+private val ROOTFS_SHELLS = listOf(
+    "/bin/bash",
+    "/usr/bin/bash",
+    "/bin/sh",
+    "/usr/bin/sh",
+)
+
+private fun File.rootfsShellCommand(): List<String> {
+    val shell = ROOTFS_SHELLS.firstOrNull { File(this, it.removePrefix("/")).isFile }
+        ?: "/bin/sh"
+    return if (shell.endsWith("bash")) {
+        listOf(shell, "-l")
+    } else {
+        listOf(shell)
+    }
+}
 
 private fun resolveWorkspaceTerminalLaunch(
     nativeLibraryDir: File,

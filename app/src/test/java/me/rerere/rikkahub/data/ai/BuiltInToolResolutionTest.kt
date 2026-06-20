@@ -94,4 +94,19 @@ class BuiltInToolResolutionTest {
 
         assertEquals(true, shouldUseBuiltInSearch(model, assistant))
     }
+
+    @Test
+    fun `shouldUseBuiltInSearch respects explicit intent guard`() {
+        val model = Model(
+            modelId = "gemini-3.1-pro-preview",
+            tools = setOf(BuiltInTools.Search, BuiltInTools.UrlContext)
+        )
+        val assistant = Assistant(preferBuiltInSearch = true)
+
+        assertEquals(false, shouldUseBuiltInSearch(model, assistant, allowSearch = false))
+        assertEquals(
+            setOf(BuiltInTools.UrlContext),
+            resolveActiveBuiltInTools(model, assistant, allowSearch = false)
+        )
+    }
 }

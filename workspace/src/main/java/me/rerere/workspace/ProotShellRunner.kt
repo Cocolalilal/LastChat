@@ -43,7 +43,7 @@ class ProotShellRunner(
                 exitCode = 127,
                 stdout = "",
                 stderr = "proot runtime not found in ${nativeLibraryDir.absolutePath}. " +
-                    "Expected libproot_exec.so/libproot_loader.so or libproot.so/libproot-loader.so.",
+                    "Linux workspaces require the bundled libproot_exec.so/libproot_loader.so runtime.",
             )
         }
 
@@ -53,20 +53,19 @@ class ProotShellRunner(
         context.tempDir.setExecutable(true, true)
         patcher.patch(context.linuxDir)
 
-        var lastFailure: WorkspaceCommandResult? = null
-        val attemptedModes = mutableListOf<String>()
+        val failures = mutableListOf<ProotAttemptFailure>()
         orderedAttempts(context, runtimes).forEach { attempt ->
-            attemptedModes += "${attempt.runtime.name}/${attempt.mode.name}"
             val result = runProot(context, attempt.runtime, attempt.mode)
             if (!result.shouldTryNextProotAttempt()) {
                 ProotLaunchPreferences.write(context.tempDir, attempt.runtime, attempt.mode)
                 return result
             }
-            lastFailure = result
+            failures += ProotAttemptFailure(attempt, result)
         }
 
-        return lastFailure
-            ?.withLaunchDiagnostics(attemptedModes)
+        return failures.lastOrNull()
+            ?.result
+            ?.withLaunchDiagnostics(failures)
             ?: WorkspaceCommandResult(
                 exitCode = 127,
                 stdout = "",
@@ -85,9 +84,16 @@ class ProotShellRunner(
                 .redirectErrorStream(false)
                 .apply {
                     environment()["PROOT_LOADER"] = runtime.loader.absolutePath
+                    runtime.loader32?.let { environment()["PROOT_LOADER_32"] = it.absolutePath }
                     environment()["PROOT_TMP_DIR"] = context.tempDir.absolutePath
                     environment()["PROOT_TMPDIR"] = context.tempDir.absolutePath
                     environment()["TMPDIR"] = context.tempDir.absolutePath
+                    environment()["LD_LIBRARY_PATH"] = runtime.executable.parentFile?.absolutePath.orEmpty()
+                    environment()["HOME"] = "/root"
+                    environment()["PATH"] = ROOTFS_PATH
+                    environment()["TERM"] = "xterm-256color"
+                    environment()["LANG"] = "C.UTF-8"
+                    environment()["LC_ALL"] = "C.UTF-8"
                     environment().putAll(mode.environment)
                 }
                 .start()
@@ -133,16 +139,7 @@ class ProotShellRunner(
             }
         }
 
-        command += listOf(
-            "/usr/bin/env",
-            "-i",
-            "HOME=/root",
-            "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-            "TERM=xterm-256color",
-            "LANG=C.UTF-8",
-            "LC_ALL=C.UTF-8",
-            "/bin/bash",
-            "-l",
+        command += context.linuxDir.rootfsShellCommand() + listOf(
             "-c",
             "cd -- \"\$1\" && eval \"\$2\"",
             "rikkahub",
@@ -161,9 +158,24 @@ class ProotShellRunner(
         }
     }
 
+    private fun File.rootfsShellCommand(): List<String> {
+        val shell = ROOTFS_SHELLS.firstOrNull { File(this, it.removePrefix("/")).isFile }
+            ?: "/bin/sh"
+        return if (shell.endsWith("bash")) {
+            listOf(shell, "-l")
+        } else {
+            listOf(shell)
+        }
+    }
+
     private data class ProotAttempt(
         val runtime: ProotRuntime,
         val mode: ProotLaunchMode,
+    )
+
+    private data class ProotAttemptFailure(
+        val attempt: ProotAttempt,
+        val result: WorkspaceCommandResult,
     )
 
     private fun orderedAttempts(
@@ -188,18 +200,34 @@ class ProotShellRunner(
 
     private fun WorkspaceCommandResult.shouldTryNextProotAttempt(): Boolean =
         stderr.contains("proot launch failed with", ignoreCase = true) ||
-            isProotFunctionNotImplemented()
+            isProotPreExecFailure()
 
-    private fun WorkspaceCommandResult.isProotFunctionNotImplemented(): Boolean {
+    private fun WorkspaceCommandResult.isProotPreExecFailure(): Boolean {
         val output = "$stderr\n$stdout"
         return output.contains("proot error:", ignoreCase = true) &&
-            output.contains("Function not implemented", ignoreCase = true)
+            (
+                output.contains("Function not implemented", ignoreCase = true) ||
+                    output.contains("No such file or directory", ignoreCase = true) ||
+                    output.contains("can't chmod", ignoreCase = true) ||
+                    output.contains("can't chdir", ignoreCase = true) ||
+                    output.contains("execve(", ignoreCase = true)
+                )
     }
 
-    private fun WorkspaceCommandResult.withLaunchDiagnostics(attemptedModes: List<String>): WorkspaceCommandResult {
-        val details = attemptedModes.joinToString()
-        val diagnostic = "Tried proot launch modes: $details. " +
-            "Android still returned Function not implemented while proot was entering the rootfs."
+    private fun WorkspaceCommandResult.withLaunchDiagnostics(
+        failures: List<ProotAttemptFailure>,
+    ): WorkspaceCommandResult {
+        val details = failures.joinToString(separator = "\n") { failure ->
+            val output = failure.result.stderr.ifBlank { failure.result.stdout }
+                .lineSequence()
+                .firstOrNull { it.isNotBlank() }
+                .orEmpty()
+            "${failure.attempt.runtime.name}/${failure.attempt.mode.name}: " +
+                "exit ${failure.result.exitCode}" +
+                if (output.isBlank()) "" else " - $output"
+        }
+        val diagnostic = "Tried proot launch modes:\n$details\n" +
+            "Android still failed while proot was entering the rootfs."
         return copy(
             stderr = if (stderr.isBlank()) diagnostic else "${stderr.trimEnd()}\n\n$diagnostic",
         )
@@ -207,5 +235,12 @@ class ProotShellRunner(
 
     private companion object {
         private const val WORKSPACE_DIR = "/workspace"
+        private const val ROOTFS_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        private val ROOTFS_SHELLS = listOf(
+            "/bin/bash",
+            "/usr/bin/bash",
+            "/bin/sh",
+            "/usr/bin/sh",
+        )
     }
 }

@@ -69,6 +69,7 @@ import me.rerere.rikkahub.data.ai.buildTitleGenerationParams
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.prompts.buildSuggestionPromptContent
 import me.rerere.rikkahub.data.ai.prompts.parseSuggestionLines
+import me.rerere.rikkahub.data.ai.hasExplicitWebSearchIntent
 import me.rerere.rikkahub.data.ai.shouldUseBuiltInSearch
 import me.rerere.rikkahub.data.ai.tools.ASK_USER_TOOL_NAME
 import me.rerere.rikkahub.data.ai.tools.AskUserAnswerPayload
@@ -1664,11 +1665,16 @@ class ChatService(
         model: Model,
     ): List<Tool> {
         return buildList {
-            val useBuiltInSearch = shouldUseBuiltInSearch(model, assistant)
+            val allowWebSearch = hasExplicitWebSearchIntent(conversation.currentMessages)
+            val useBuiltInSearch = shouldUseBuiltInSearch(
+                model = model,
+                assistant = assistant,
+                allowSearch = allowWebSearch,
+            )
 
             when (val searchMode = assistant.searchMode) {
                 is AssistantSearchMode.Provider -> {
-                    if (!useBuiltInSearch) {
+                    if (allowWebSearch && !useBuiltInSearch) {
                         addAll(createSearchTool(settings, searchMode.index))
                     }
                 }

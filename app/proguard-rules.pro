@@ -37,4 +37,15 @@
 -keep class me.rerere.rikkahub.web.** { *; }
 -keep class me.rerere.rikkahub.service.WebServerService { *; }
 
+# Linux workspace shell uses ProcessBuilder plus Termux terminal JNI. R8 does not
+# rewrite native proot binaries, but keep this boundary intact in release builds.
+-keep class me.rerere.workspace.** { *; }
+-keep class me.rerere.rikkahub.ui.pages.extensions.workspace.** { *; }
+-keep class com.termux.terminal.** { *; }
+-keep class com.termux.view.** { *; }
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
+-dontwarn com.termux.**
+
 -dontobfuscate

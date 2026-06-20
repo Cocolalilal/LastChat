@@ -182,14 +182,13 @@ class WorkspaceManager(
 
 fun File.hasUsableRootfs(): Boolean {
     if (!isDirectory) return false
-    val hasEnv = File(this, "usr/bin/env").isFile || File(this, "bin/env").isFile
     val hasShell = listOf(
         "bin/bash",
         "usr/bin/bash",
         "bin/sh",
         "usr/bin/sh",
     ).any { File(this, it).isFile }
-    return hasEnv && hasShell
+    return hasShell
 }
 
 enum class WorkspaceRootfsArchitecture(

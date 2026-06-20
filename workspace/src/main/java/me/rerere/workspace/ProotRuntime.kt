@@ -6,6 +6,7 @@ data class ProotRuntime(
     val name: String,
     val executable: File,
     val loader: File,
+    val loader32: File?,
 )
 
 data class ProotLaunchMode(
@@ -24,16 +25,7 @@ object ProotRuntimes {
             name = "workspace",
             executable = File(nativeLibraryDir, "libproot_exec.so"),
             loader = File(nativeLibraryDir, "libproot_loader.so"),
-        )
-        addIfPresent(
-            name = "termux-userland",
-            executable = File(nativeLibraryDir, "libproot-userland.so"),
-            loader = File(nativeLibraryDir, "libproot-loader.so"),
-        )
-        addIfPresent(
-            name = "termux",
-            executable = File(nativeLibraryDir, "libproot.so"),
-            loader = File(nativeLibraryDir, "libproot-loader.so"),
+            loader32 = File(nativeLibraryDir, "libproot_loader32.so"),
         )
     }
 
@@ -41,9 +33,10 @@ object ProotRuntimes {
         name: String,
         executable: File,
         loader: File,
+        loader32: File?,
     ) {
         if (executable.isFile && loader.isFile) {
-            add(ProotRuntime(name, executable, loader))
+            add(ProotRuntime(name, executable, loader, loader32?.takeIf { it.isFile }))
         }
     }
 }
@@ -57,6 +50,12 @@ object ProotLaunchModes {
         name = "no-seccomp",
         environment = mapOf(
             "PROOT_NO_SECCOMP" to "1",
+        ),
+    )
+    val noSeccompAssume = ProotLaunchMode(
+        name = "no-seccomp-assume",
+        environment = mapOf(
+            "PROOT_NO_SECCOMP" to "1",
             "PROOT_ASSUME_NEW_SECCOMP" to "1",
         ),
     )
@@ -68,7 +67,7 @@ object ProotLaunchModes {
             "PROOT_FORCE_KOMPAT" to "1",
         ),
     )
-    val all = listOf(default, noSeccomp, compat)
+    val all = listOf(noSeccomp, noSeccompAssume, compat, default)
 }
 
 object ProotLaunchPreferences {

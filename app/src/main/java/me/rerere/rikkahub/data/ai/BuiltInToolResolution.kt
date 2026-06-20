@@ -8,11 +8,12 @@ import me.rerere.rikkahub.data.model.AssistantSearchMode
 internal fun resolveActiveBuiltInTools(
     model: Model,
     assistant: Assistant,
+    allowSearch: Boolean = true,
 ): Set<BuiltInTools> {
     val activeTools = model.tools
         .filterNotTo(mutableSetOf()) { it is BuiltInTools.Search }
 
-    if (shouldUseBuiltInSearch(model, assistant)) {
+    if (shouldUseBuiltInSearch(model, assistant, allowSearch)) {
         activeTools += BuiltInTools.Search
     }
 
@@ -22,8 +23,10 @@ internal fun resolveActiveBuiltInTools(
 internal fun shouldUseBuiltInSearch(
     model: Model,
     assistant: Assistant,
+    allowSearch: Boolean = true,
 ): Boolean {
-    return BuiltInTools.Search in model.tools &&
+    return allowSearch &&
+        BuiltInTools.Search in model.tools &&
         (
             assistant.preferBuiltInSearch ||
                 assistant.searchMode is AssistantSearchMode.BuiltIn
