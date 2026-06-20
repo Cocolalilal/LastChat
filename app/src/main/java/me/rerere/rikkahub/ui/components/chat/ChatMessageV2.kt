@@ -1245,7 +1245,11 @@ private fun AssistantMessageTurn(
                         connectsToBubbleBelow = false,  // Bubbles are separate - fully rounded
                         modifier = Modifier.widthIn(max = maxWidth),
                         reasoningPreviewEnabled = effectiveDisplay.reasoningPreviewEnabled,
-                        maxBubbleWidth = maxWidth
+                        maxBubbleWidth = maxWidth,
+                        timelineOpen = timelineOpen,
+                        timelineEntries = timelineEntries,
+                        initialTimelineOpenRequest = initialTimelineOpenRequest,
+                        assistantId = assistant?.id?.toString()
                     )
                 }
             } else {
@@ -1276,39 +1280,6 @@ private fun AssistantMessageTurn(
                         }
                     }
                 }
-            }
-
-            AnimatedVisibility(
-                visible = timelineOpen && timelineEntries.isNotEmpty(),
-                enter = expandVertically(
-                    animationSpec = tween(
-                        durationMillis = 220,
-                        easing = LinearOutSlowInEasing
-                    )
-                ) + fadeIn(
-                    animationSpec = tween(
-                        durationMillis = 180,
-                        easing = LinearOutSlowInEasing
-                    )
-                ),
-                exit = shrinkVertically(
-                    animationSpec = tween(
-                        durationMillis = 180,
-                        easing = FastOutLinearInEasing
-                    )
-                ) + fadeOut(
-                    animationSpec = tween(
-                        durationMillis = 120,
-                        easing = FastOutLinearInEasing
-                    )
-                )
-            ) {
-                ActivityTimelinePanel(
-                    entries = timelineEntries,
-                    initialOpenRequest = initialTimelineOpenRequest,
-                    assistantId = assistant?.id?.toString(),
-                    scrollHandoffMode = TimelineScrollHandoffMode.EdgeGatedToParent,
-                )
             }
 
             AttachmentRow(
@@ -1389,40 +1360,11 @@ private fun AssistantMessageTurn(
                     connectsToBubbleBelow = false,
                     modifier = Modifier.widthIn(max = maxWidth),
                     reasoningPreviewEnabled = effectiveDisplay.reasoningPreviewEnabled,
-                    maxBubbleWidth = maxWidth
-                )
-            }
-
-            AnimatedVisibility(
-                visible = timelineOpen && timelineEntries.isNotEmpty(),
-                enter = expandVertically(
-                    animationSpec = tween(
-                        durationMillis = 220,
-                        easing = LinearOutSlowInEasing
-                    )
-                ) + fadeIn(
-                    animationSpec = tween(
-                        durationMillis = 180,
-                        easing = LinearOutSlowInEasing
-                    )
-                ),
-                exit = shrinkVertically(
-                    animationSpec = tween(
-                        durationMillis = 180,
-                        easing = FastOutLinearInEasing
-                    )
-                ) + fadeOut(
-                    animationSpec = tween(
-                        durationMillis = 120,
-                        easing = FastOutLinearInEasing
-                    )
-                )
-            ) {
-                ActivityTimelinePanel(
-                    entries = timelineEntries,
-                    initialOpenRequest = initialTimelineOpenRequest,
-                    assistantId = assistant?.id?.toString(),
-                    scrollHandoffMode = TimelineScrollHandoffMode.EdgeGatedToParent,
+                    maxBubbleWidth = maxWidth,
+                    timelineOpen = timelineOpen,
+                    timelineEntries = timelineEntries,
+                    initialTimelineOpenRequest = initialTimelineOpenRequest,
+                    assistantId = assistant?.id?.toString()
                 )
             }
 

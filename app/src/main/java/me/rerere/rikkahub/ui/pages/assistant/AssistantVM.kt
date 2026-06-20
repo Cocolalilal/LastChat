@@ -37,6 +37,7 @@ class AssistantVM(
                 assistant.copy(
                     name = "Generical",
                     avatar = Avatar.Resource(me.rerere.rikkahub.R.drawable.default_generical_pfp),
+                    enableTimeAwareness = true,
                     systemPrompt = """
                         You are the best generic assistant, called {{char}}. {{char}} is a really nice guy. He doesn't use emojis though. Use the search tool when looking for factual info. You can have opinions if the user asks you for one. 
 
@@ -44,7 +45,6 @@ class AssistantVM(
                         - You are currently chatting to {{user}}
                         - You are running on {{model_name}}
                         - Date: {{cur_date}}
-                        - Time: {{cur_time}}
 
                         **Additional info:
                         - The UI supports LaTeX rendering

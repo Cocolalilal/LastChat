@@ -14,7 +14,13 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkHorizontally
@@ -77,6 +83,8 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.Fullscreen
+import androidx.compose.material.icons.rounded.FullscreenExit
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowLeft
@@ -88,6 +96,8 @@ import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Summarize
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.ViewModule
+import androidx.compose.material.icons.rounded.Fullscreen
+import androidx.compose.material.icons.rounded.FullscreenExit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -126,6 +136,11 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
@@ -273,6 +288,7 @@ fun MinimalChatInput(
     
     var showPicker by remember { mutableStateOf(false) }
     var isFocused by remember { mutableStateOf(false) }
+    var isExpandedFullScreen by remember { mutableStateOf(false) }
     var imageToCrop by remember { mutableStateOf<PendingImageCrop?>(null) }
 
     LaunchedEffect(questionnaireToolCallId, questionnaire?.questions?.size) {
@@ -764,6 +780,17 @@ fun MinimalChatInput(
                                 )
                             )
                             
+                            ExpandButtonOverlay(
+                                isVisible = !isExpandedFullScreen && activeTextState.text.toString().lines().size >= 5 && !isQuestionnaireActive && !isToolApprovalActive,
+                                onExpand = {
+                                    haptics.perform(HapticPattern.Pop)
+                                    isExpandedFullScreen = true
+                                },
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(end = 4.dp, top = 4.dp)
+                            )
+                            
                             // Action button - bottom-right for multiline, optically centered when collapsed
                             Box(
                                 modifier = Modifier
@@ -878,6 +905,224 @@ fun MinimalChatInput(
         }  // Column ends
     }  // Box ends
     
+    if (isExpandedFullScreen) {
+        Dialog(
+            onDismissRequest = { isExpandedFullScreen = false },
+            properties = DialogProperties(
+                usePlatformDefaultWidth = false,
+                decorFitsSystemWindows = false
+            )
+        ) {
+            val transitionState = remember { MutableTransitionState(false) }
+            LaunchedEffect(Unit) {
+                transitionState.targetState = true
+            }
+            
+            // Share the same activeTextState so the text is preserved
+            val activeTextState = when {
+                isQuestionnaireActive -> questionnaireTextState
+                isToolApprovalActive -> toolApprovalTextState
+                else -> state.textContent
+            }
+            
+            // Request focus when dialog opens
+            val expandedFocusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
+            LaunchedEffect(transitionState.currentState) {
+                if (transitionState.currentState) {
+                    expandedFocusRequester.requestFocus()
+                }
+            }
+
+            androidx.compose.animation.AnimatedVisibility(
+                visibleState = transitionState,
+                enter = slideInVertically(
+                    initialOffsetY = { it },
+                    animationSpec = tween(300, easing = androidx.compose.animation.core.FastOutSlowInEasing)
+                ) + fadeIn(tween(300)),
+                exit = slideOutVertically(
+                    targetOffsetY = { it },
+                    animationSpec = tween(200, easing = androidx.compose.animation.core.FastOutLinearInEasing)
+                ) + fadeOut(tween(200))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            if (amoledMode) Color.Black else MaterialTheme.colorScheme.background
+                        )
+                        .statusBarsPadding()
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        // Top bar with minimize button
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            IconButton(
+                                onClick = { 
+                                    haptics.perform(HapticPattern.Pop)
+                                    isExpandedFullScreen = false 
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.FullscreenExit,
+                                    contentDescription = "Minimize",
+                                    tint = MaterialTheme.colorScheme.onBackground
+                                )
+                            }
+                        }
+                        
+                        // Text input field taking up remaining space
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                        ) {
+                            TextField(
+                                state = activeTextState,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .focusRequester(expandedFocusRequester),
+                                placeholder = {
+                                    Text(
+                                        text = if (isQuestionnaireActive) {
+                                            stringResource(R.string.character_questions_custom_answer_placeholder)
+                                        } else if (isToolApprovalActive) {
+                                            stringResource(R.string.tool_approval_input_placeholder)
+                                        } else {
+                                            stringResource(R.string.minimal_chat_input_placeholder, assistant.name)
+                                        }
+                                    )
+                                },
+                                lineLimits = TextFieldLineLimits.MultiLine(minHeightInLines = 5),
+                                contentPadding = PaddingValues(
+                                    start = 16.dp,
+                                    top = 16.dp,
+                                    end = 16.dp,
+                                    bottom = 80.dp, // Leave space for send button
+                                ),
+                                colors = TextFieldDefaults.colors().copy(
+                                    unfocusedIndicatorColor = Color.Transparent,
+                                    focusedIndicatorColor = Color.Transparent,
+                                    focusedContainerColor = Color.Transparent,
+                                    unfocusedContainerColor = Color.Transparent,
+                                )
+                            )
+                            
+                            // Floating send button at the bottom right
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(16.dp)
+                            ) {
+                                val currentAction = when {
+                                    isQuestionnaireActive && isFinalQuestion -> "questionnaire_submit"
+                                    isQuestionnaireActive -> "questionnaire_next"
+                                    isToolApprovalActive -> "tool_approval_deny"
+                                    state.loading -> "loading"
+                                    !state.isEmpty() -> "send"
+                                    else -> "picker" // Fallback but usually hidden
+                                }
+                                
+                                val containerColor by animateColorAsState(
+                                    targetValue = when (currentAction) {
+                                        "loading" -> MaterialTheme.colorScheme.errorContainer
+                                        "questionnaire_submit", "questionnaire_next" -> MaterialTheme.colorScheme.primary
+                                        "tool_approval_deny" -> MaterialTheme.colorScheme.errorContainer
+                                        "send" -> MaterialTheme.colorScheme.primary
+                                        else -> MaterialTheme.colorScheme.surfaceVariant
+                                    },
+                                    label = "ActionContainerColorExpanded"
+                                )
+                                
+                                Surface(
+                                    onClick = { 
+                                        if (
+                                            currentAction == "send" ||
+                                            currentAction == "loading" ||
+                                            currentAction == "tool_approval_deny" ||
+                                            currentAction.startsWith("questionnaire_")
+                                        ) {
+                                            sendMessage()
+                                            isExpandedFullScreen = false
+                                        }
+                                    },
+                                    shape = CircleShape,
+                                    color = containerColor,
+                                    modifier = Modifier.size(56.dp) // Larger button
+                                ) {
+                                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                        AnimatedContent(
+                                            targetState = currentAction,
+                                            transitionSpec = { fadeIn() togetherWith fadeOut() },
+                                            label = "ActionContentExpanded"
+                                        ) { action ->
+                                            when (action) {
+                                                "loading" -> {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.Stop,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(24.dp),
+                                                        tint = MaterialTheme.colorScheme.onErrorContainer
+                                                    )
+                                                }
+                                                "send" -> {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.ArrowUpward,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(24.dp),
+                                                        tint = MaterialTheme.colorScheme.onPrimary
+                                                    )
+                                                }
+                                                "questionnaire_next" -> {
+                                                    Icon(
+                                                        imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(24.dp),
+                                                        tint = MaterialTheme.colorScheme.onPrimary
+                                                    )
+                                                }
+                                                "questionnaire_submit" -> {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.ArrowUpward,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(24.dp),
+                                                        tint = MaterialTheme.colorScheme.onPrimary
+                                                    )
+                                                }
+                                                "tool_approval_deny" -> {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.Close,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(24.dp),
+                                                        tint = MaterialTheme.colorScheme.onErrorContainer
+                                                    )
+                                                }
+                                                else -> {
+                                                    // Fallback
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.ArrowUpward,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(24.dp),
+                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Bottom sheet picker with custom MinimalPickerContent
     // Optical roundness: sheet corners (40dp) = button corners (24dp) + padding (16dp)
     if (showPicker) {
@@ -2580,6 +2825,32 @@ private fun ChatSuggestionsRow(
                 }
             }
         }
+        }
+    }
+}
+
+@Composable
+private fun ExpandButtonOverlay(
+    isVisible: Boolean,
+    onExpand: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    androidx.compose.animation.AnimatedVisibility(
+        visible = isVisible,
+        enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(200)),
+        exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(200)),
+        modifier = modifier
+    ) {
+        androidx.compose.material3.IconButton(
+            onClick = onExpand,
+            modifier = Modifier.size(36.dp)
+        ) {
+            androidx.compose.material3.Icon(
+                imageVector = androidx.compose.material.icons.Icons.Rounded.Fullscreen,
+                contentDescription = "Expand",
+                modifier = Modifier.size(20.dp),
+                tint = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

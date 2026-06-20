@@ -5,9 +5,11 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -21,20 +23,34 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Build
+import androidx.compose.material.icons.rounded.Category
+import androidx.compose.material.icons.rounded.Computer
+import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Lightbulb
+import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -51,36 +67,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Lightbulb
-import androidx.compose.material.icons.rounded.Build
-import androidx.compose.material.icons.rounded.Category
-import androidx.compose.material.icons.rounded.Computer
-import androidx.compose.material.icons.rounded.Public
-import androidx.compose.material.icons.rounded.Terminal
-import androidx.compose.material.icons.rounded.Image
-import androidx.compose.material.icons.rounded.Memory
-import androidx.compose.ui.res.stringResource
-import me.rerere.rikkahub.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.richtext.updatePreviewAutoFollowPaused
 import me.rerere.rikkahub.ui.modifier.fadeEdges
 import me.rerere.rikkahub.ui.modifier.shimmer
-import kotlin.time.Duration.Companion.seconds
-import kotlin.time.DurationUnit
-
-/**
- * State representing what the assistant is currently doing.
- */
 sealed interface ActivityState {
     /** Waiting for first token - shows typing dots */
     data object Waiting : ActivityState
@@ -315,22 +319,33 @@ enum class PillPosition {
 private sealed interface SinglePillContentState {
     data class Compact(val state: ActivityState) : SinglePillContentState
     data class ExpandedReasoning(val state: ActivityState.Reasoning) : SinglePillContentState
+    data class ExpandedTimeline(
+        val entries: List<TimelineEntry>,
+        val initialRequest: TimelineOpenRequest?,
+        val assistantId: String?,
+        val scrollHandoffMode: TimelineScrollHandoffMode
+    ) : SinglePillContentState
 }
 
 /**
  * A row of activity pills with Apple-like smooth animations.
  * 
- * During loading: Shows a single morphing pill (Waiting â†’ Reasoning â†’ Tool â†’ etc.)
+ * During loading: Shows a single morphing pill (Waiting → Reasoning → Tool → etc.)
  * After completion: If multiple activities, reveals them with staggered fly-out animation
  */
 @Composable
-fun ActivityPillRow(
+internal fun ActivityPillRow(
     state: ActivityState,
     onClick: (ActivityType?) -> Unit,
     modifier: Modifier = Modifier,
     connectsToBubbleBelow: Boolean = true,
     reasoningPreviewEnabled: Boolean = false,
     maxBubbleWidth: Dp = Dp.Infinity,
+    timelineOpen: Boolean = false,
+    timelineEntries: List<TimelineEntry> = emptyList(),
+    initialTimelineOpenRequest: TimelineOpenRequest? = null,
+    assistantId: String? = null,
+    timelineScrollHandoffMode: TimelineScrollHandoffMode = TimelineScrollHandoffMode.EdgeGatedToParent,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -361,89 +376,18 @@ fun ActivityPillRow(
             horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            when (state) {
-                is ActivityState.CompletedMultiple -> {
-                    // Multiple activities - first pill morphs, others fly in
-                    var othersCanAppear by remember { mutableStateOf(false) }
-                    
-                    activityItems.forEachIndexed { index, item ->
-                        val position = when {
-                            activityItems.size == 1 -> PillPosition.SINGLE
-                            index == 0 -> PillPosition.FIRST
-                            index == activityItems.lastIndex -> PillPosition.LAST
-                            else -> PillPosition.MIDDLE
-                        }
-                        
-                        if (index == 0) {
-                            // First pill - always visible, triggers others
-                            LaunchedEffect(Unit) {
-                                delay(100L)
-                                othersCanAppear = true
-                            }
-                            
-                            // Use expanded pill when there's only one activity, compact otherwise
-                            if (activityItems.size == 1) {
-                                ExpandedActivityPill(
-                                    item = item,
-                                    onClick = { onClick(item.type) },
-                                    position = position,
-                                    connectsToBubbleBelow = connectsToBubbleBelow
-                                )
-                            } else {
-                                CompactActivityPill(
-                                    item = item,
-                                    onClick = { onClick(item.type) },
-                                    position = position,
-                                    connectsToBubbleBelow = connectsToBubbleBelow
-                                )
-                            }
-                        } else {
-                            // Other pills - staggered fly-out
-                            var visible by remember { mutableStateOf(false) }
-                            LaunchedEffect(othersCanAppear) {
-                                if (othersCanAppear) {
-                                    delay(index * 50L)
-                                    visible = true
-                                }
-                            }
-                            
-                            AnimatedVisibility(
-                                visible = visible,
-                                enter = fadeIn(tween(150)) + slideInHorizontally(
-                                    initialOffsetX = { -it / 2 },
-                                    animationSpec = spring(dampingRatio = 0.75f, stiffness = 350f)
-                                ),
-                                exit = fadeOut(tween(100)) + slideOutHorizontally(targetOffsetX = { -it / 2 })
-                            ) {
-                                CompactActivityPill(
-                                    item = item,
-                                    onClick = { onClick(item.type) },
-                                    position = position,
-                                    connectsToBubbleBelow = connectsToBubbleBelow
-                                )
-                            }
-                        }
-                    }
-                }
-                
-                else -> {
-                    // Single pill for all other states (Waiting, Reasoning, ToolUse, Replying, CompletedSingle)
-                    val clickType = when (state) {
-                        is ActivityState.Ocr -> ActivityType.OCR
-                        is ActivityState.Reasoning -> ActivityType.REASONING
-                        is ActivityState.ToolUse -> categorizeToolName(state.toolName)
-                        is ActivityState.CompletedSingle -> state.type
-                        else -> null
-                    }
-                    AnimatedSinglePill(
-                        state = state,
-                        onClick = { onClick(clickType) },
-                        connectsToBubbleBelow = connectsToBubbleBelow,
-                        reasoningPreviewEnabled = reasoningPreviewEnabled,
-                        maxBubbleWidth = maxBubbleWidth
-                    )
-                }
-            }
+            AnimatedSinglePill(
+                state = state,
+                onClick = onClick,
+                connectsToBubbleBelow = connectsToBubbleBelow,
+                reasoningPreviewEnabled = reasoningPreviewEnabled,
+                maxBubbleWidth = maxBubbleWidth,
+                timelineOpen = timelineOpen,
+                timelineEntries = timelineEntries,
+                initialTimelineOpenRequest = initialTimelineOpenRequest,
+                assistantId = assistantId,
+                timelineScrollHandoffMode = timelineScrollHandoffMode
+            )
         }
     }
 }
@@ -455,41 +399,58 @@ fun ActivityPillRow(
 @Composable
 private fun AnimatedSinglePill(
     state: ActivityState,
-    onClick: () -> Unit,
+    onClick: (ActivityType?) -> Unit,
     connectsToBubbleBelow: Boolean,
     reasoningPreviewEnabled: Boolean,
     maxBubbleWidth: Dp,
+    timelineOpen: Boolean,
+    timelineEntries: List<TimelineEntry>,
+    initialTimelineOpenRequest: TimelineOpenRequest?,
+    assistantId: String?,
+    timelineScrollHandoffMode: TimelineScrollHandoffMode
 ) {
-    val isExpandedReasoning = reasoningPreviewEnabled && state is ActivityState.Reasoning
-    val requestedContentState = if (isExpandedReasoning) {
+    val isExpandedReasoning = reasoningPreviewEnabled && state is ActivityState.Reasoning && !timelineOpen
+    val requestedContentState = if (timelineOpen && timelineEntries.isNotEmpty()) {
+        SinglePillContentState.ExpandedTimeline(
+            entries = timelineEntries,
+            initialRequest = initialTimelineOpenRequest,
+            assistantId = assistantId,
+            scrollHandoffMode = timelineScrollHandoffMode
+        )
+    } else if (isExpandedReasoning) {
         SinglePillContentState.ExpandedReasoning(state as ActivityState.Reasoning)
     } else {
         SinglePillContentState.Compact(state)
     }
     var surfaceExpanded by remember {
-        mutableStateOf(requestedContentState is SinglePillContentState.ExpandedReasoning)
+        mutableStateOf(requestedContentState !is SinglePillContentState.Compact)
     }
     var renderedContentState by remember { mutableStateOf(requestedContentState) }
     val latestRequestedState by rememberUpdatedState(requestedContentState)
-    val expandedRadius = 24.dp
+    val expandedRadius = 20.dp
 
     LaunchedEffect(
         isExpandedReasoning,
+        timelineOpen,
         (state as? ActivityState.Reasoning)?.startTimeMs,
         if (state is ActivityState.Reasoning) "reasoning" else stateToKey(state)
     ) {
         val requested = latestRequestedState
         when (requested) {
-            is SinglePillContentState.ExpandedReasoning -> {
+            is SinglePillContentState.ExpandedReasoning,
+            is SinglePillContentState.ExpandedTimeline -> {
                 if (renderedContentState is SinglePillContentState.Compact) {
-                    renderedContentState = SinglePillContentState.Compact(requested.state)
+                    renderedContentState = SinglePillContentState.Compact(
+                        (requested as? SinglePillContentState.ExpandedReasoning)?.state 
+                            ?: (renderedContentState as SinglePillContentState.Compact).state
+                    )
                     delay(PILL_EXPAND_STAGING_MILLIS)
                 }
                 surfaceExpanded = true
                 renderedContentState = requested
             }
             is SinglePillContentState.Compact -> {
-                if (surfaceExpanded || renderedContentState is SinglePillContentState.ExpandedReasoning) {
+                if (surfaceExpanded || renderedContentState !is SinglePillContentState.Compact) {
                     surfaceExpanded = false
                     delay(PILL_MORPH_SETTLE_MILLIS)
                 }
@@ -528,7 +489,12 @@ private fun AnimatedSinglePill(
         label = "corner_bottom_end"
     )
     
-    val pillColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    val isMultipleMinimized = !surfaceExpanded && state is ActivityState.CompletedMultiple
+    val pillColor by animateColorAsState(
+        targetValue = if (isMultipleMinimized) Color.Transparent else MaterialTheme.colorScheme.surfaceContainerHigh,
+        animationSpec = tween(150),
+        label = "pill_color"
+    )
     val pillShape = RoundedCornerShape(
             topStart = topStartRadius,
             topEnd = topEndRadius,
@@ -559,22 +525,43 @@ private fun AnimatedSinglePill(
         shape = pillShape,
         color = pillColor,
         contentColor = MaterialTheme.colorScheme.onSurface,
-        onClick = onClick
+        onClick = {
+            val clickType = when (state) {
+                is ActivityState.Ocr -> ActivityType.OCR
+                is ActivityState.Reasoning -> ActivityType.REASONING
+                is ActivityState.ToolUse -> categorizeToolName(state.toolName)
+                is ActivityState.CompletedSingle -> state.type
+                else -> null
+            }
+            onClick(clickType)
+        }
     ) {
         AnimatedContent(
             targetState = renderedContentState,
             transitionSpec = {
-                (EnterTransition.None togetherWith ExitTransition.None) using SizeTransform(clip = true) { _, _ ->
+                (fadeIn(animationSpec = tween(150, delayMillis = 50)) togetherWith fadeOut(animationSpec = tween(100))) using SizeTransform(clip = false) { _, _ ->
                     PILL_MORPH_SPEC
                 }
             },
-            contentKey = { it is SinglePillContentState.ExpandedReasoning },
-            label = "pill_reasoning_preview",
-            modifier = Modifier.animateContentSize(
-                animationSpec = PILL_MORPH_SPEC
-            )
+            contentKey = { 
+                when (it) {
+                    is SinglePillContentState.ExpandedReasoning -> "reasoning"
+                    is SinglePillContentState.ExpandedTimeline -> "timeline"
+                    is SinglePillContentState.Compact -> "compact"
+                }
+            },
+            label = "pill_morph_content"
         ) { targetContentState ->
             when (targetContentState) {
+                is SinglePillContentState.ExpandedTimeline -> {
+                    ActivityTimelinePanel(
+                        entries = targetContentState.entries,
+                        initialOpenRequest = targetContentState.initialRequest,
+                        assistantId = targetContentState.assistantId,
+                        scrollHandoffMode = targetContentState.scrollHandoffMode,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
                 is SinglePillContentState.ExpandedReasoning -> {
                     ReasoningPreviewCard(
                         state = (state as? ActivityState.Reasoning) ?: targetContentState.state,
@@ -595,80 +582,135 @@ private fun AnimatedSinglePill(
                                 )
                         },
                         label = "pill_content",
-                        contentKey = { stateToKey(it) },
-                        modifier = Modifier.animateContentSize(
-                            animationSpec = spring(dampingRatio = 0.75f, stiffness = 350f)
-                        )
+                        contentKey = { stateToKey(it) }
                     ) { targetState ->
-                        Row(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            when (targetState) {
-                                is ActivityState.Waiting -> {
-                                    TypingIndicator(
-                                        dotSize = 7.dp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                        if (targetState is ActivityState.CompletedMultiple) {
+                            val items = buildActivityItemsFromMultiple(targetState)
+                            var othersCanAppear by remember { mutableStateOf(false) }
+                            
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                items.forEachIndexed { index, item ->
+                                    val position = when {
+                                        items.size == 1 -> PillPosition.SINGLE
+                                        index == 0 -> PillPosition.FIRST
+                                        index == items.lastIndex -> PillPosition.LAST
+                                        else -> PillPosition.MIDDLE
+                                    }
+                                    
+                                    if (index == 0) {
+                                        LaunchedEffect(Unit) {
+                                            delay(100L)
+                                            othersCanAppear = true
+                                        }
+                                        if (items.size == 1) {
+                                            ExpandedActivityPill(
+                                                item = item,
+                                                onClick = { onClick(item.type) },
+                                                position = position,
+                                                connectsToBubbleBelow = connectsToBubbleBelow
+                                            )
+                                        } else {
+                                            CompactActivityPill(
+                                                item = item,
+                                                onClick = { onClick(item.type) },
+                                                position = position,
+                                                connectsToBubbleBelow = connectsToBubbleBelow
+                                            )
+                                        }
+                                    } else {
+                                        var visible by remember { mutableStateOf(false) }
+                                        LaunchedEffect(othersCanAppear) {
+                                            if (othersCanAppear) {
+                                                delay(index * 50L)
+                                                visible = true
+                                            }
+                                        }
+                                        
+                                        AnimatedVisibility(
+                                            visible = visible,
+                                            enter = fadeIn(tween(150)) + slideInHorizontally(
+                                                initialOffsetX = { -it / 2 },
+                                                animationSpec = spring(dampingRatio = 0.75f, stiffness = 350f)
+                                            ),
+                                            exit = fadeOut(tween(100)) + slideOutHorizontally(targetOffsetX = { -it / 2 })
+                                        ) {
+                                            CompactActivityPill(
+                                                item = item,
+                                                onClick = { onClick(item.type) },
+                                                position = position,
+                                                connectsToBubbleBelow = connectsToBubbleBelow
+                                            )
+                                        }
+                                    }
                                 }
-
-                                is ActivityState.Ocr -> {
-                                    OcrContent(isLive = true)
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                when (targetState) {
+                                    is ActivityState.Waiting -> {
+                                        TypingIndicator(
+                                            dotSize = 7.dp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    is ActivityState.Ocr -> {
+                                        OcrContent(isLive = true)
+                                    }
+                                    is ActivityState.Reasoning -> {
+                                        val liveState = (state as? ActivityState.Reasoning) ?: targetState
+                                        ReasoningContent(
+                                            startTimeMs = liveState.startTimeMs,
+                                            title = liveState.title,
+                                            isLive = true
+                                        )
+                                    }
+                                    is ActivityState.ToolUse -> {
+                                        ToolUseContent(
+                                            toolName = targetState.toolName,
+                                            displayName = targetState.displayName,
+                                            isLive = true
+                                        )
+                                    }
+                                    is ActivityState.Replying -> {
+                                        Text(
+                                            text = stringResource(R.string.activity_pill_replying),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.shimmer(isLoading = true)
+                                        )
+                                    }
+                                    is ActivityState.LoadingModel -> {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Memory,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = targetState.modelName?.let { "Loading $it..." } ?: "Loading model...",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.shimmer(isLoading = true)
+                                        )
+                                    }
+                                    is ActivityState.CompletedSingle -> {
+                                        val item = ActivityItem(
+                                            type = targetState.type,
+                                            durationMs = targetState.durationMs,
+                                            count = targetState.count,
+                                            displayName = targetState.displayName
+                                        )
+                                        ExpandedActivityContent(item = item)
+                                    }
+                                    else -> {}
                                 }
-
-                                is ActivityState.Reasoning -> {
-                                    val liveState = (state as? ActivityState.Reasoning) ?: targetState
-                                    ReasoningContent(
-                                        startTimeMs = liveState.startTimeMs,
-                                        title = liveState.title,
-                                        isLive = true
-                                    )
-                                }
-
-                                is ActivityState.ToolUse -> {
-                                    ToolUseContent(
-                                        toolName = targetState.toolName,
-                                        displayName = targetState.displayName,
-                                        isLive = true
-                                    )
-                                }
-
-                                is ActivityState.Replying -> {
-                                    Text(
-                                        text = stringResource(R.string.activity_pill_replying),
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.shimmer(isLoading = true)
-                                    )
-                                }
-
-                                is ActivityState.LoadingModel -> {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Memory,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    Text(
-                                        text = targetState.modelName?.let { "Loading $it..." } ?: "Loading model...",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.shimmer(isLoading = true)
-                                    )
-                                }
-
-                                is ActivityState.CompletedSingle -> {
-                                    val item = ActivityItem(
-                                        type = targetState.type,
-                                        durationMs = targetState.durationMs,
-                                        count = targetState.count,
-                                        displayName = targetState.displayName
-                                    )
-                                    ExpandedActivityContent(item = item)
-                                }
-
-                                else -> {}
                             }
                         }
                     }

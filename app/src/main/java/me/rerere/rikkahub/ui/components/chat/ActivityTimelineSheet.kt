@@ -702,184 +702,143 @@ private fun TimelineEntryItem(
     } else {
         getTimelineAccentColor(entry)
     }
-    val containerColor = when {
-        isMemoryDeleted -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
-        entry is TimelineEntry.MemoryAction -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
-        else -> MaterialTheme.colorScheme.surfaceContainerLow
-    }
 
+    val viewRequester = remember { BringIntoViewRequester() }
     val followSignature = remember(entry) { buildEntryFollowSignature(entry) }
-    val bringIntoViewRequester = remember { BringIntoViewRequester() }
 
-    Row(
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .height(IntrinsicSize.Min)
+            .testTag("timeline_entry_${entry.id}")
+            .clickable(
+                enabled = hasExpandableContent,
+                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                indication = null // No ripple for clean morphing
+            ) { onToggleExpanded() }
+            .animateContentSize(
+                animationSpec = tween(
+                    durationMillis = TIMELINE_ENTRY_ANIMATION_MS,
+                    easing = LinearOutSlowInEasing
+                )
+            ),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .width(18.dp)
-                .fillMaxHeight(),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Box(
-                modifier = Modifier
-                    .padding(top = 14.dp)
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(accentColor)
-            )
-            if (!isLast) {
-                Box(
-                    modifier = Modifier
-                        .width(2.dp)
-                        .weight(1f)
-                        .background(accentColor.copy(alpha = 0.25f))
-                )
-            }
-        }
+        val durationLabel = if (entry is TimelineEntry.Reasoning) {
+            formatTimelineDuration(entry.durationMs)?.let { " · $it" } ?: ""
+        } else ""
 
-        Spacer(modifier = Modifier.width(8.dp))
+        TimelineDivider(
+            label = getTimelineLabel(entry) + durationLabel,
+            icon = getTimelineIcon(entry),
+            color = accentColor,
+            modifier = Modifier.padding(vertical = 4.dp)
+        )
 
-        Surface(
-            shape = AppShapes.CardMedium,
-            color = containerColor,
-            modifier = Modifier
-                .testTag("timeline_entry_${entry.id}")
-                .fillMaxWidth()
-                .clip(AppShapes.CardMedium)
-                .clickable(enabled = hasExpandableContent) { onToggleExpanded() }
-                .animateContentSize(
-                    animationSpec = tween(
-                        durationMillis = TIMELINE_ENTRY_ANIMATION_MS,
-                        easing = LinearOutSlowInEasing
+        if (hasExpandableContent) {
+            androidx.compose.animation.AnimatedContent(
+                targetState = expanded,
+                transitionSpec = {
+                    fadeIn(
+                        animationSpec = tween(
+                            durationMillis = TIMELINE_ENTRY_ANIMATION_MS,
+                            easing = LinearOutSlowInEasing
+                        )
+                    ) togetherWith fadeOut(
+                        animationSpec = tween(
+                            durationMillis = TIMELINE_ENTRY_ANIMATION_MS / 2,
+                            easing = FastOutLinearInEasing
+                        )
                     )
-                )
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = accentColor.copy(alpha = 0.15f),
-                        modifier = Modifier.size(28.dp)
+                },
+                label = "timeline_expand"
+            ) { isExpanded ->
+                if (isExpanded) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = getTimelineIcon(entry),
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = accentColor
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.width(10.dp))
-
-                    Text(
-                        text = getTimelineLabel(entry),
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-
-                    if (entry is TimelineEntry.Reasoning) {
-                        formatTimelineDuration(entry.durationMs)?.let { duration ->
-                            Text(
-                                text = duration,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                        }
-                    }
-
-                    if (hasExpandableContent) {
-                        Icon(
-                            imageVector = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                            contentDescription = if (expanded) {
-                                stringResource(R.string.activity_timeline_collapse)
-                            } else {
-                                stringResource(R.string.activity_timeline_expand)
-                            },
-                            modifier = Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        TimelineExpandedContent(
+                            entry = entry,
+                            isDeleted = isMemoryDeleted,
+                            onEditMemory = onEditMemory,
+                            onDeleteMemory = onDeleteMemory,
+                            onRestoreMemory = onRestoreMemory,
+                            onRevertMemory = onRevertMemory,
+                            canRestore = canRestore,
+                            followLiveContent = followLiveContent
+                        )
+                        Spacer(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .bringIntoViewRequester(viewRequester)
                         )
                     }
-                }
-
-                if (hasExpandableContent) {
-                    androidx.compose.animation.AnimatedContent(
-                        targetState = expanded,
-                        transitionSpec = {
-                            fadeIn(
-                                animationSpec = tween(
-                                    durationMillis = TIMELINE_ENTRY_ANIMATION_MS,
-                                    easing = LinearOutSlowInEasing
-                                )
-                            )
-                                .togetherWith(
-                                    fadeOut(
-                                        animationSpec = tween(
-                                            durationMillis = TIMELINE_ENTRY_ANIMATION_MS / 2,
-                                            easing = FastOutLinearInEasing
-                                        )
-                                    )
-                                )
-                        },
-                        label = "timeline_expand"
-                    ) { isExpanded ->
-                        if (isExpanded) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 4.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                TimelineExpandedContent(
-                                    entry = entry,
-                                    isDeleted = isMemoryDeleted,
-                                    onEditMemory = onEditMemory,
-                                    onDeleteMemory = onDeleteMemory,
-                                    onRestoreMemory = onRestoreMemory,
-                                    onRevertMemory = onRevertMemory,
-                                    canRestore = canRestore,
-                                    followLiveContent = followLiveContent
-                                )
-                                Spacer(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(1.dp)
-                                        .bringIntoViewRequester(bringIntoViewRequester)
-                                )
-                            }
-                        } else {
-                            TimelinePreview(entry = entry, followLiveContent = followLiveContent)
-                        }
-                    }
                 } else {
-                    TimelinePreview(entry = entry, followLiveContent = followLiveContent)
+                    Box(modifier = Modifier.padding(horizontal = 8.dp)) {
+                        TimelinePreview(entry = entry, followLiveContent = followLiveContent)
+                    }
                 }
+            }
+        } else {
+            Box(modifier = Modifier.padding(horizontal = 8.dp)) {
+                TimelinePreview(entry = entry, followLiveContent = followLiveContent)
             }
         }
     }
-
     LaunchedEffect(expanded, followLiveContent, followSignature) {
         if (expanded && followLiveContent) {
             try {
-                bringIntoViewRequester.bringIntoView()
+                viewRequester.bringIntoView()
             } catch (_: IllegalStateException) {
                 // The expanded row may be leaving composition while live content is still updating.
             }
         }
+    }
+}
+
+@Composable
+private fun TimelineDivider(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    color: androidx.compose.ui.graphics.Color,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = modifier.fillMaxWidth().padding(horizontal = 8.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(color.copy(alpha = 0.2f))
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+                tint = color
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = color
+            )
+        }
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(color.copy(alpha = 0.2f))
+        )
     }
 }
 

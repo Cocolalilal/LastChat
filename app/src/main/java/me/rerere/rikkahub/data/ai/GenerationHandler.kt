@@ -1112,10 +1112,11 @@ class GenerationHandler(
         )
 
         val builtMessages = buildList {
-            val finalSystemPrompt = buildList {
-                if (baseSystemPrompt.isNotBlank()) {
-                    add(baseSystemPrompt)
-                }
+            if (baseSystemPrompt.isNotBlank()) {
+                add(UIMessage.system(baseSystemPrompt))
+            }
+            
+            val dynamicContext = buildList {
                 if (selectedMemories.isNotEmpty()) {
                     add(buildMemoryPrompt(model, selectedMemories))
                 }
@@ -1123,20 +1124,38 @@ class GenerationHandler(
                     add(timeAwarenessPrompt)
                 }
             }.joinToString(separator = "\n")
-            if (finalSystemPrompt.isNotBlank()) {
-                add(UIMessage.system(finalSystemPrompt))
+
+            if (orderedSelectedMessages.isNotEmpty()) {
+                val lastMessage = orderedSelectedMessages.last()
+                val history = orderedSelectedMessages.dropLast(1)
+                
+                addAll(history)
+                
+                if (dynamicContext.isNotBlank()) {
+                    add(UIMessage.system(dynamicContext))
+                }
+                
+                // Add skill and lorebook attachments as a user message if there are any
+                if (allContextAttachments.isNotEmpty()) {
+                    add(UIMessage(
+                        role = me.rerere.ai.core.MessageRole.USER,
+                        parts = allContextAttachments
+                    ))
+                }
+                
+                add(lastMessage)
+            } else {
+                if (dynamicContext.isNotBlank()) {
+                    add(UIMessage.system(dynamicContext))
+                }
+                
+                if (allContextAttachments.isNotEmpty()) {
+                    add(UIMessage(
+                        role = me.rerere.ai.core.MessageRole.USER,
+                        parts = allContextAttachments
+                    ))
+                }
             }
-            
-            // Add skill and lorebook attachments as a user message if there are any
-            if (allContextAttachments.isNotEmpty()) {
-                add(UIMessage(
-                    role = me.rerere.ai.core.MessageRole.USER,
-                    parts = allContextAttachments
-                ))
-            }
-            
-            // Restore chat history order
-            addAll(orderedSelectedMessages)
         }
         // Build UsedMemory list for UI display
         val usedMemories = selectedMemories.mapIndexed { index, memory ->

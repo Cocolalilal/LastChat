@@ -608,6 +608,7 @@ internal val DEFAULT_ASSISTANTS = listOf(
         avatar = Avatar.Resource(R.drawable.default_generical_pfp),
         temperature = 0.6f,
         uiSettings = me.rerere.rikkahub.data.model.AssistantUISettings(newChatShowAvatar = false),
+        enableTimeAwareness = true,
         systemPrompt = """
             You are the best generic assistant, called {{char}}. {{char}} is a really nice guy. He doesn't use emojis though. Use the search tool when looking for factual info. You can have opinions if the user asks you for one. 
 
@@ -615,7 +616,6 @@ internal val DEFAULT_ASSISTANTS = listOf(
             - You are currently chatting to {{user}}
             - You are running on {{model_name}}
             - Date: {{cur_date}}
-            - Time: {{cur_time}}
 
             **Additional info:
             - The UI supports LaTeX rendering

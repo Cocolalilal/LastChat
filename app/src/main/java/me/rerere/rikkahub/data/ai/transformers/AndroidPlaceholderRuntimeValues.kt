@@ -34,12 +34,12 @@ internal object AndroidPlaceholderRuntimeValues {
         .format(this)
 
     private fun Temporal.toTimeString() = DateTimeFormatter
-        .ofLocalizedTime(FormatStyle.MEDIUM)
+        .ofLocalizedTime(FormatStyle.SHORT)
         .withLocale(currentAppLocale())
         .format(this)
 
     private fun Temporal.toDateTimeString() = DateTimeFormatter
-        .ofLocalizedDateTime(FormatStyle.MEDIUM)
+        .ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT)
         .withLocale(currentAppLocale())
         .format(this)
 
