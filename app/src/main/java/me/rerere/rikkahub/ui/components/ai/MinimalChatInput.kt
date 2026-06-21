@@ -37,7 +37,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.foundation.clickable
 import androidx.compose.animation.core.spring
-import androidx.compose.ui.zIndex.zIndex
+import androidx.compose.ui.zIndex
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.core.net.toUri
@@ -204,7 +205,10 @@ import org.koin.compose.koinInject
  * Shows a simple input bar with + button, text field, and send button.
  * The + button opens a bottom sheet with file upload, model picker, and other options.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(
+    ExperimentalMaterial3Api::class,
+    androidx.compose.foundation.ExperimentalFoundationApi::class
+)
 @Composable
 fun MinimalChatInput(
     state: ChatInputState,
@@ -707,25 +711,23 @@ fun MinimalChatInput(
                             contentAlignment = Alignment.Center, 
                             modifier = Modifier
                                 .fillMaxSize()
-                                .androidx.compose.foundation.ExperimentalFoundationApi::class.let {
-                                    androidx.compose.foundation.combinedClickable(
-                                        onLongClick = {
-                                            if (!sttRecording && !sttFinalizing && hasSelectedSttProvider) {
-                                                haptics.perform(HapticPattern.Pop)
-                                                startSttRecording()
-                                            }
-                                        },
-                                        onClick = {
+                                .combinedClickable(
+                                    onLongClick = {
+                                        if (!sttRecording && !sttFinalizing && hasSelectedSttProvider) {
                                             haptics.perform(HapticPattern.Pop)
-                                            if (sttRecording) {
-                                                stopSttRecording(accept = false)
-                                            } else {
-                                                showPicker = true
-                                                keyboardController?.hide()
-                                            }
+                                            startSttRecording()
                                         }
-                                    )
-                                }
+                                    },
+                                    onClick = {
+                                        haptics.perform(HapticPattern.Pop)
+                                        if (sttRecording) {
+                                            stopSttRecording(accept = false)
+                                        } else {
+                                            showPicker = true
+                                            keyboardController?.hide()
+                                        }
+                                    }
+                                )
                         ) {
                             Icon(
                                 imageVector = if (sttRecording) Icons.Rounded.Close else Icons.Rounded.Add,

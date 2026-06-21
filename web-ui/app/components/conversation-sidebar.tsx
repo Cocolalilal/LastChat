@@ -739,7 +739,7 @@ export const ConversationSidebar = React.memo(
               <Button
                 variant="outline"
                 size="sm"
-                className={cn(SIDEBAR_ACTION_BUTTON_CLASSNAME, "rounded-t-[var(--radius-card)] rounded-b-[4px]")}
+                className={cn(SIDEBAR_ACTION_BUTTON_CLASSNAME, "rounded-t-[var(--radius-list-item)] rounded-b-[4px]")}
                 onClick={onCreateConversation}
               >
                 <Plus className="size-4" />
@@ -748,7 +748,7 @@ export const ConversationSidebar = React.memo(
 
               <ConversationSearchButton
                 onSelect={onSelect}
-                className={cn(SIDEBAR_ACTION_BUTTON_CLASSNAME, "rounded-b-[var(--radius-card)] rounded-t-[4px]")}
+                className={cn(SIDEBAR_ACTION_BUTTON_CLASSNAME, "rounded-b-[var(--radius-list-item)] rounded-t-[4px]")}
               />
             </div>
           </SidebarGroup>

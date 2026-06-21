@@ -478,7 +478,8 @@ private fun AnimatedSinglePill(
     Surface(
         modifier = Modifier
             .animateContentSize(
-                animationSpec = PILL_MORPH_SPEC
+                animationSpec = PILL_MORPH_SPEC,
+                alignment = Alignment.TopStart
             )
             .then(
                 if (surfaceExpanded) {
@@ -509,6 +510,7 @@ private fun AnimatedSinglePill(
                     PILL_MORPH_SPEC
                 }
             },
+            contentAlignment = Alignment.TopStart,
             contentKey = { 
                 when (it) {
                     is SinglePillContentState.ExpandedReasoning -> "reasoning"

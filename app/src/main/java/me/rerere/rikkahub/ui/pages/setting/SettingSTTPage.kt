@@ -167,9 +167,7 @@ fun SettingSTTPage(vm: SettingVM = koinViewModel()) {
                             modifier = Modifier.padding(bottom = 24.dp)
                         )
                         FormItem(
-                            title = "Replace model icon with microphone",
-                            desc = "Show the microphone instead of the model picker in the chat input.",
-                            onClick = {
+                            modifier = Modifier.clickable {
                                 vm.updateSettings(
                                     settings.copy(
                                         displaySetting = settings.displaySetting.copy(
@@ -177,21 +175,24 @@ fun SettingSTTPage(vm: SettingVM = koinViewModel()) {
                                         )
                                     )
                                 )
-                            }
-                        ) {
-                            Switch(
-                                checked = settings.displaySetting.sttReplaceModelIcon,
-                                onCheckedChange = {
-                                    vm.updateSettings(
-                                        settings.copy(
-                                            displaySetting = settings.displaySetting.copy(
-                                                sttReplaceModelIcon = it
+                            }.padding(vertical = 8.dp),
+                            label = { Text("Replace model icon with microphone") },
+                            description = { Text("Show the microphone instead of the model picker in the chat input.") },
+                            tail = {
+                                Switch(
+                                    checked = settings.displaySetting.sttReplaceModelIcon,
+                                    onCheckedChange = {
+                                        vm.updateSettings(
+                                            settings.copy(
+                                                displaySetting = settings.displaySetting.copy(
+                                                    sttReplaceModelIcon = it
+                                                )
                                             )
                                         )
-                                    )
-                                }
-                            )
-                        }
+                                    }
+                                )
+                            }
+                        )
                     }
                 }
             }
