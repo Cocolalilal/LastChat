@@ -84,6 +84,7 @@ import me.rerere.rikkahub.data.model.chatAttachmentState
 import me.rerere.rikkahub.data.model.replacePersonaPlaceholders
 import me.rerere.rikkahub.data.model.replaceRegexes
 import me.rerere.rikkahub.data.model.versionSelectionIndices
+import me.rerere.rikkahub.data.ai.tools.parseJsonElementWithRecovery
 import me.rerere.rikkahub.ui.components.message.ChatMessageActionButtons
 import me.rerere.rikkahub.ui.components.message.ChatMessageActionsSheet
 import me.rerere.rikkahub.ui.components.message.ChatMessageCopySheet
@@ -97,7 +98,6 @@ import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.ui.context.LocalSettings
-import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.base64Encode
 import me.rerere.rikkahub.utils.copyMessageToClipboard
 import me.rerere.rikkahub.utils.formatNumber
@@ -544,8 +544,8 @@ internal fun buildTimelineEntries(
                         id = reserveEntryId("tool_$rawId"),
                         toolName = resolvedToolName,
                         displayName = getToolDisplayName(resolvedToolName),
-                        argumentsText = part.arguments.take(200),
-                        resultText = result?.content?.toString()?.take(500),
+                        argumentsText = part.arguments,
+                        resultText = result?.content?.toString(),
                         argumentsJson = argumentsJson,
                         resultJson = resultJson,
                         isLoading = result == null && part.approvalState !is ToolApprovalState.Pending
@@ -595,7 +595,7 @@ private fun buildMemoryTimelineEntry(
 }
 
 private fun parseJsonObjectOrNull(raw: String): JsonObject? {
-    return runCatching { JsonInstant.parseToJsonElement(raw).jsonObject }.getOrNull()
+    return parseJsonElementWithRecovery(raw) as? JsonObject
 }
 
 private data class ToolCallMatch(
@@ -897,6 +897,7 @@ fun ChatMessageTurn(
                             timelineOpen = true
                         }
                     },
+                    onTimelineDismiss = { timelineOpen = false },
                     onBubbleClick = {
                         if (isLastTurn) {
                             showActionsSheet = true
@@ -1131,6 +1132,7 @@ private fun AssistantMessageTurn(
     initialTimelineOpenRequest: TimelineOpenRequest?,
     onCitationClick: (String) -> Unit,
     onActivityPillClick: (ActivityType?) -> Unit,
+    onTimelineDismiss: () -> Unit,
     onBubbleClick: () -> Unit,
     onRegenerate: () -> Unit,
     onUpdate: (MessageNode) -> Unit,
@@ -1249,7 +1251,8 @@ private fun AssistantMessageTurn(
                         timelineOpen = timelineOpen,
                         timelineEntries = timelineEntries,
                         initialTimelineOpenRequest = initialTimelineOpenRequest,
-                        assistantId = assistant?.id?.toString()
+                        assistantId = assistant?.id?.toString(),
+                        onTimelineDismiss = onTimelineDismiss
                     )
                 }
             } else {
@@ -1364,7 +1367,8 @@ private fun AssistantMessageTurn(
                     timelineOpen = timelineOpen,
                     timelineEntries = timelineEntries,
                     initialTimelineOpenRequest = initialTimelineOpenRequest,
-                    assistantId = assistant?.id?.toString()
+                    assistantId = assistant?.id?.toString(),
+                    onTimelineDismiss = onTimelineDismiss
                 )
             }
 

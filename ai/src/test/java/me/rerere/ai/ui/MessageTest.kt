@@ -6,6 +6,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.MessageRole
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MessageTest {
@@ -400,5 +401,93 @@ class MessageTest {
         assertEquals("""{"code":"print('hello')"}""", toolCall.arguments)
         assertEquals("", toolCall.toolCallId)
     }
-}
 
+    @Test
+    fun `appendChunk does not duplicate repeated complete tool names`() {
+        val initialMessage = UIMessage(
+            role = MessageRole.ASSISTANT,
+            parts = listOf(
+                UIMessagePart.ToolCall(
+                    toolCallId = "",
+                    toolName = "search_web",
+                    arguments = ""
+                )
+            )
+        )
+
+        val chunk = MessageChunk(
+            id = "chunk-search",
+            model = "test",
+            choices = listOf(
+                UIMessageChoice(
+                    index = 0,
+                    delta = UIMessage(
+                        role = MessageRole.ASSISTANT,
+                        parts = listOf(
+                            UIMessagePart.ToolCall(
+                                toolCallId = "",
+                                toolName = "search_web",
+                                arguments = """{"query":"kotlin"}"""
+                            )
+                        )
+                    ),
+                    message = null,
+                    finishReason = null
+                )
+            )
+        )
+
+        val result = initialMessage + chunk
+
+        val toolCall = result.parts.single() as UIMessagePart.ToolCall
+        assertEquals("search_web", toolCall.toolName)
+        assertEquals("""{"query":"kotlin"}""", toolCall.arguments)
+    }
+
+    @Test
+    fun `appendChunk keeps separate complete blank ID tool calls separate`() {
+        val initialMessage = UIMessage(
+            role = MessageRole.ASSISTANT,
+            parts = listOf(
+                UIMessagePart.ToolCall(
+                    toolCallId = "",
+                    toolName = "search_web",
+                    arguments = """{"query":"planning agents"}"""
+                )
+            )
+        )
+
+        val chunk = MessageChunk(
+            id = "chunk-search-2",
+            model = "test",
+            choices = listOf(
+                UIMessageChoice(
+                    index = 0,
+                    delta = UIMessage(
+                        role = MessageRole.ASSISTANT,
+                        parts = listOf(
+                            UIMessagePart.ToolCall(
+                                toolCallId = "",
+                                toolName = "search_web",
+                                arguments = """{"query":"coding agents benchmarks"}"""
+                            )
+                        )
+                    ),
+                    message = null,
+                    finishReason = null
+                )
+            )
+        )
+
+        val result = initialMessage + chunk
+
+        assertEquals(2, result.parts.size)
+        assertTrue(result.parts.all { it is UIMessagePart.ToolCall })
+        val first = result.parts[0] as UIMessagePart.ToolCall
+        val second = result.parts[1] as UIMessagePart.ToolCall
+        assertEquals("search_web", first.toolName)
+        assertEquals("""{"query":"planning agents"}""", first.arguments)
+        assertEquals("search_web", second.toolName)
+        assertEquals("""{"query":"coding agents benchmarks"}""", second.arguments)
+    }
+}

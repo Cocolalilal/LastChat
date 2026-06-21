@@ -62,7 +62,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -303,8 +302,6 @@ private val SMALL_RADIUS = 6.dp
 private val PILL_HEIGHT = 36.dp
 private val PILL_MORPH_SPEC = tween<IntSize>(durationMillis = 220, easing = FastOutSlowInEasing)
 private val PILL_CORNER_SPEC = tween<Dp>(durationMillis = 220, easing = FastOutSlowInEasing)
-private const val PILL_MORPH_SETTLE_MILLIS = 230L
-private const val PILL_EXPAND_STAGING_MILLIS = 70L
 
 /**
  * Position of a pill in a row of pills.
@@ -346,6 +343,7 @@ internal fun ActivityPillRow(
     initialTimelineOpenRequest: TimelineOpenRequest? = null,
     assistantId: String? = null,
     timelineScrollHandoffMode: TimelineScrollHandoffMode = TimelineScrollHandoffMode.EdgeGatedToParent,
+    onTimelineDismiss: () -> Unit = { onClick(null) },
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -386,7 +384,8 @@ internal fun ActivityPillRow(
                 timelineEntries = timelineEntries,
                 initialTimelineOpenRequest = initialTimelineOpenRequest,
                 assistantId = assistantId,
-                timelineScrollHandoffMode = timelineScrollHandoffMode
+                timelineScrollHandoffMode = timelineScrollHandoffMode,
+                onTimelineDismiss = onTimelineDismiss
             )
         }
     }
@@ -407,7 +406,8 @@ private fun AnimatedSinglePill(
     timelineEntries: List<TimelineEntry>,
     initialTimelineOpenRequest: TimelineOpenRequest?,
     assistantId: String?,
-    timelineScrollHandoffMode: TimelineScrollHandoffMode
+    timelineScrollHandoffMode: TimelineScrollHandoffMode,
+    onTimelineDismiss: () -> Unit
 ) {
     val isExpandedReasoning = reasoningPreviewEnabled && state is ActivityState.Reasoning && !timelineOpen
     val requestedContentState = if (timelineOpen && timelineEntries.isNotEmpty()) {
@@ -422,42 +422,8 @@ private fun AnimatedSinglePill(
     } else {
         SinglePillContentState.Compact(state)
     }
-    var surfaceExpanded by remember {
-        mutableStateOf(requestedContentState !is SinglePillContentState.Compact)
-    }
-    var renderedContentState by remember { mutableStateOf(requestedContentState) }
-    val latestRequestedState by rememberUpdatedState(requestedContentState)
+    val surfaceExpanded = requestedContentState !is SinglePillContentState.Compact
     val expandedRadius = 20.dp
-
-    LaunchedEffect(
-        isExpandedReasoning,
-        timelineOpen,
-        (state as? ActivityState.Reasoning)?.startTimeMs,
-        if (state is ActivityState.Reasoning) "reasoning" else stateToKey(state)
-    ) {
-        val requested = latestRequestedState
-        when (requested) {
-            is SinglePillContentState.ExpandedReasoning,
-            is SinglePillContentState.ExpandedTimeline -> {
-                if (renderedContentState is SinglePillContentState.Compact) {
-                    renderedContentState = SinglePillContentState.Compact(
-                        (requested as? SinglePillContentState.ExpandedReasoning)?.state 
-                            ?: (renderedContentState as SinglePillContentState.Compact).state
-                    )
-                    delay(PILL_EXPAND_STAGING_MILLIS)
-                }
-                surfaceExpanded = true
-                renderedContentState = requested
-            }
-            is SinglePillContentState.Compact -> {
-                if (surfaceExpanded || renderedContentState !is SinglePillContentState.Compact) {
-                    surfaceExpanded = false
-                    delay(PILL_MORPH_SETTLE_MILLIS)
-                }
-                renderedContentState = requested
-            }
-        }
-    }
 
     // Animate corner radii for smooth transitions
     val topStartRadius by animateDpAsState(
@@ -537,9 +503,9 @@ private fun AnimatedSinglePill(
         }
     ) {
         AnimatedContent(
-            targetState = renderedContentState,
+            targetState = requestedContentState,
             transitionSpec = {
-                (fadeIn(animationSpec = tween(150, delayMillis = 50)) togetherWith fadeOut(animationSpec = tween(100))) using SizeTransform(clip = false) { _, _ ->
+                (fadeIn(animationSpec = tween(150)) togetherWith fadeOut(animationSpec = tween(90))) using SizeTransform(clip = false) { _, _ ->
                     PILL_MORPH_SPEC
                 }
             },
@@ -559,6 +525,7 @@ private fun AnimatedSinglePill(
                         initialOpenRequest = targetContentState.initialRequest,
                         assistantId = targetContentState.assistantId,
                         scrollHandoffMode = targetContentState.scrollHandoffMode,
+                        onTimelineClick = onTimelineDismiss,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }

@@ -5,6 +5,7 @@ import com.whl.quickjs.android.QuickJSLoader
 import com.whl.quickjs.wrapper.QuickJSArray
 import com.whl.quickjs.wrapper.QuickJSContext
 import com.whl.quickjs.wrapper.QuickJSObject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.runBlocking
@@ -39,7 +40,7 @@ class AndroidHighlighter(ctx: Context) : Highlighter {
 
     override suspend fun highlight(code: String, language: String): List<HighlightToken> =
         withContext(dispatcher) {
-            runCatching {
+            try {
                 val result = highlightFn.call(code, language)
                 require(result is QuickJSArray) {
                     "highlight result must be an array"
@@ -69,9 +70,12 @@ class AndroidHighlighter(ctx: Context) : Highlighter {
                 } finally {
                     result.release()
                 }
-            }.onFailure {
-                it.printStackTrace()
-            }.getOrThrow()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                e.printStackTrace()
+                listOf(HighlightToken.Plain(content = code))
+            }
         }
 
     override fun destroy() {

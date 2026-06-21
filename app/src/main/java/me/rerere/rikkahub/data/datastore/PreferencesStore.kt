@@ -130,6 +130,10 @@ class SettingsStore(
         val SELECTED_TTS_VOICE = stringPreferencesKey("selected_tts_voice")
         val TTS_AUTOPLAY_MODE = stringPreferencesKey("tts_autoplay_mode")
 
+        // STT
+        val STT_PROVIDERS = stringPreferencesKey("stt_providers")
+        val SELECTED_STT_PROVIDER = stringPreferencesKey("selected_stt_provider")
+
         // Web Server
         val WEB_SERVER_ENABLED = booleanPreferencesKey("web_server_enabled")
         val WEB_SERVER_PORT = intPreferencesKey("web_server_port")
@@ -246,6 +250,10 @@ class SettingsStore(
                     ttsAutoplayMode = preferences[TTS_AUTOPLAY_MODE]?.let {
                         JsonInstant.decodeFromString<TtsAutoplayMode>(it)
                     } ?: TtsAutoplayMode.OFF,
+                    sttProviders = preferences[STT_PROVIDERS]?.let {
+                        JsonInstant.decodeFromString(it)
+                    } ?: DEFAULT_STT_PROVIDERS,
+                    selectedSttProviderId = preferences[SELECTED_STT_PROVIDER]?.let { Uuid.parse(it) },
                     webServerEnabled = preferences[WEB_SERVER_ENABLED] == true,
                     webServerPort = preferences[WEB_SERVER_PORT] ?: 8080,
                     webServerJwtEnabled = preferences[WEB_SERVER_JWT_ENABLED] == true,
@@ -309,7 +317,7 @@ class SettingsStore(
                 assistants = assistants,
                 ttsProviders = ttsProviders,
                 selectedTTSVoiceId = selectedTtsVoiceId,
-            ).normalizeWebServerSettings().normalizeFontSettings().normalizeTtsSettings()
+            ).normalizeWebServerSettings().normalizeFontSettings().normalizeTtsSettings().normalizeSttSettings()
         }
         .map { settings ->
             // 去重并清理无效引用
@@ -355,6 +363,10 @@ class SettingsStore(
                         voices = provider.withDefaultVoices(defaultVoiceId).voices.distinctBy { voice -> voice.id }
                     )
                 },
+                sttProviders = settings.sttProviders.distinctBy { it.id },
+                selectedSttProviderId = settings.selectedSttProviderId?.takeIf { id ->
+                    settings.sttProviders.any { provider -> provider.id == id }
+                },
                 selectedTTSVoiceId = settings.ttsProviders
                     .flatMap { it.voices }
                     .firstOrNull { it.id == settings.selectedTTSVoiceId }
@@ -379,7 +391,7 @@ class SettingsStore(
                     }
                 }
             }
-            migrated.normalizeFontSettings()
+            migrated.normalizeFontSettings().normalizeSttSettings()
         }
         .map { settings ->
             val migrated = settings.migrateLegacyModesToSkills()
@@ -391,7 +403,7 @@ class SettingsStore(
                     }
                 }
             }
-            migrated.normalizeFontSettings()
+            migrated.normalizeFontSettings().normalizeSttSettings()
         }
         .onEach {
             get<MessageTemplateCache>().invalidateAll()
@@ -435,6 +447,7 @@ class SettingsStore(
             preferences[PROVIDERS] = JsonInstant.encodeToString(settings.providers)
             preferences[WEBDAV_CONFIG] = JsonInstant.encodeToString(settings.webDavConfig)
             preferences[TTS_PROVIDERS] = JsonInstant.encodeToString(settings.ttsProviders)
+            preferences[STT_PROVIDERS] = JsonInstant.encodeToString(settings.sttProviders)
         }
     }
 
@@ -491,6 +504,7 @@ class SettingsStore(
             .normalizeFontSettings()
             .normalizeThemeId()
             .normalizeTtsSettings()
+            .normalizeSttSettings()
 
         // Handle explicit secret deletions (user cleared a field that had a value)
         // This must be called BEFORE migration to remove deleted secrets from SecureStore
@@ -503,6 +517,7 @@ class SettingsStore(
         settingsFlow.value = secretKeyManager.populateSecretsForExport(migratedSettings)
             .normalizeFontSettings()
             .normalizeTtsSettings()
+            .normalizeSttSettings()
         dataStore.edit { preferences ->
             preferences[DYNAMIC_COLOR] = normalizedSettings.dynamicColor
             preferences[SETUP_COMPLETED] = normalizedSettings.setupCompleted
@@ -557,6 +572,10 @@ class SettingsStore(
             } ?: preferences.remove(SELECTED_TTS_PROVIDER)
             preferences[SELECTED_TTS_VOICE] = normalizedSettings.selectedTTSVoiceId.toString()
             preferences[TTS_AUTOPLAY_MODE] = JsonInstant.encodeToString(normalizedSettings.ttsAutoplayMode)
+            preferences[STT_PROVIDERS] = JsonInstant.encodeToString(migratedSettings.sttProviders)
+            normalizedSettings.selectedSttProviderId?.let {
+                preferences[SELECTED_STT_PROVIDER] = it.toString()
+            } ?: preferences.remove(SELECTED_STT_PROVIDER)
             preferences[WEB_SERVER_ENABLED] = normalizedSettings.webServerEnabled
             preferences[WEB_SERVER_PORT] = normalizedSettings.webServerPort
             preferences[WEB_SERVER_JWT_ENABLED] = normalizedSettings.webServerJwtEnabled

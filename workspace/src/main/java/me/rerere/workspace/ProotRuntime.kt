@@ -67,7 +67,7 @@ object ProotLaunchModes {
             "PROOT_FORCE_KOMPAT" to "1",
         ),
     )
-    val all = listOf(noSeccomp, noSeccompAssume, compat, default)
+    val all = listOf(default, noSeccomp, noSeccompAssume, compat)
 }
 
 object ProotLaunchPreferences {

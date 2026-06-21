@@ -1,4 +1,4 @@
-import type { MessageDto } from './dto';
+import type { MessageDto } from "./dto";
 /**
  * Display settings
  * @see app/src/main/java/me/rerere/rikkahub/data/datastore/PreferencesStore.kt - DisplaySetting
@@ -97,6 +97,11 @@ export interface AssistantProfile {
   tags: string[];
   quickMessages?: AssistantQuickMessage[];
   presetMessages?: MessageDto[];
+  enableMemory?: boolean;
+  enableMemoryConsolidation?: boolean;
+  enableHistorySummarization?: boolean;
+  autoRegenerateSummary?: boolean;
+  maxHistoryMessages?: number | null;
   [key: string]: unknown;
 }
 

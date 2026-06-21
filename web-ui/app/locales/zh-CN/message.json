@@ -21,9 +21,12 @@
       "reasoning": "å·²æŽ¨ç†",
       "ocr": "\u5df2\u5b8c\u6210 OCR",
       "search": "å·²æœç´¢ç½‘é¡µ",
+      "memory_recall": "\u5df2\u68c0\u7d22\u8bb0\u5fc6",
       "python": "å·²è¿è¡Œ Python",
+      "workspace": "\u5df2\u4f7f\u7528\u5de5\u4f5c\u533a",
       "skill": "å·²ä½¿ç”¨æŠ€èƒ½",
       "mcp": "å·²ä½¿ç”¨ MCP",
+      "loading_model": "\u5df2\u52a0\u8f7d\u6a21\u578b",
       "tool_other": "å·²ä½¿ç”¨å·¥å…·"
     },
     "timeline_ocr_source": "\u6765\u6e90",

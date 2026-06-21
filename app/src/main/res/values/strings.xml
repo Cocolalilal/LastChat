@@ -348,8 +348,20 @@
     <string name="chat_page_export_copied">Copied to clipboard</string>
     <string name="chat_page_export_markdown">Markdown</string>
     <string name="chat_page_export_markdown_desc">Export chat as markdown file</string>
+    <string name="chat_page_export_markdown_failed">Failed to export markdown: %1$s</string>
     <string name="chat_page_export_share_via">Share via</string>
     <string name="chat_page_export_success">Exported as %1$s</string>
+    <string name="chat_page_export_selected_count">%1$d selected messages</string>
+    <string name="chat_page_export_tweaks">Export details</string>
+    <string name="chat_page_export_tweaks_desc">Apply these switches to every export format.</string>
+    <string name="chat_page_export_include_reasoning">Include reasoning</string>
+    <string name="chat_page_export_include_reasoning_desc">Add full reasoning text under each assistant turn.</string>
+    <string name="chat_page_export_include_tool_calls">Include tool calls</string>
+    <string name="chat_page_export_include_tool_calls_desc">Add readable tool and activity details.</string>
+    <string name="chat_page_export_include_troubleshooting">Troubleshooting details</string>
+    <string name="chat_page_export_include_troubleshooting_desc">Include stored diagnostics, error codes, and redacted raw details.</string>
+    <string name="chat_page_export_troubleshooting_title">Troubleshooting</string>
+    <string name="chat_page_export_no_stored_api_error_details">No stored API error details for this selection.</string>
     <string name="chat_page_history">History</string>
     <string name="chat_page_learning_mode">Learning Mode</string>
     <string name="chat_page_learning_mode_desc">Learn step by step</string>
@@ -449,6 +461,8 @@
     <string name="notification_chat_done_title">Message Generated</string>
     <string name="permission_camera">Camera</string>
     <string name="permission_camera_desc">Camera permission required to take photos</string>
+    <string name="permission_microphone">Microphone</string>
+    <string name="permission_microphone_desc">Microphone permission is required for speech-to-text recording</string>
     <string name="permission_desc_goto_setting">Some permissions permanently denied, please enable in settings:</string>
     <string name="permission_desc_require_permission">App requires following permissions:</string>
     <string name="permission_diaog_title">Permission Request</string>
@@ -650,6 +664,8 @@
     <string name="setting_page_theme_type_standard">Standard</string>
     <string name="setting_page_tts_service">TTS Providers</string>
     <string name="setting_page_tts_service_desc">Configure TTS providers</string>
+    <string name="setting_page_stt_service">STT Providers</string>
+    <string name="setting_page_stt_service_desc">Configure STT providers</string>
     <string name="setting_provider_page_abilities">Abilities</string>
     <string name="setting_provider_page_add">Add</string>
     <string name="setting_provider_page_add_model">Add Model</string>
@@ -860,6 +876,7 @@
     <string name="setting_tts_page_speed_description">Synthesis Speed (0.25 - 4.0)</string>
     <string name="setting_tts_page_test_text">Hello, this is a text-to-speech test.</string>
     <string name="setting_tts_page_title">TTS Providers</string>
+    <string name="setting_stt_page_title">STT Providers</string>
     <string name="setting_tts_page_voice">Voice</string>
     <string name="setting_tts_page_voice_description">Voice to use for synthesis</string>
     <string name="setting_tts_page_voice_id">Voice ID</string>

@@ -10,6 +10,8 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
+import me.rerere.highlight.Highlighter
+import me.rerere.highlight.HighlightToken
 import me.rerere.highlight.LocalHighlighter
 import me.rerere.highlight.android.AndroidHighlighter
 import me.rerere.rikkahub.R
@@ -96,5 +98,32 @@ class HighlightCodeBlockTest {
         composeRule.waitUntil(timeoutMillis = 5_000) {
             followRequests > 0
         }
+    }
+
+    @Test
+    fun highlighterFailureFallsBackToPlainText() {
+        val throwingHighlighter = object : Highlighter {
+            override suspend fun highlight(code: String, language: String): List<HighlightToken> {
+                throw IllegalArgumentException("boom")
+            }
+        }
+
+        composeRule.setContent {
+            CompositionLocalProvider(
+                LocalSettings provides Settings(),
+                LocalHighlighter provides throwingHighlighter
+            ) {
+                MaterialTheme {
+                    HighlightCodeBlock(
+                        code = "echo hello",
+                        language = "ts title=\"demo\"",
+                        completeCodeBlock = true
+                    )
+                }
+            }
+        }
+
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("echo hello").assertExists()
     }
 }

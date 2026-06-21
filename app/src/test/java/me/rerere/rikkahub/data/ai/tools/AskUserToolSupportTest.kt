@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.data.ai.tools
 
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
@@ -187,6 +189,22 @@ class AskUserToolSupportTest {
 
         assertEquals("scope", wrapped?.questions?.singleOrNull()?.id)
         assertEquals("tone", fenced?.questions?.singleOrNull()?.id)
+    }
+
+    @Test
+    fun parseJsonElementWithRecovery_recoversFirstObjectFromConcatenatedToolArguments() {
+        val parsed = parseJsonElementWithRecovery(
+            """
+            {"query":"Google AI Studio context caching free tier"}
+            {"query":"DeepSeek API free credits prompt caching"}
+            """.trimIndent()
+        )
+
+        assertNotNull(parsed)
+        assertEquals(
+            "Google AI Studio context caching free tier",
+            parsed?.jsonObject?.get("query")?.jsonPrimitive?.content,
+        )
     }
 
     @Test

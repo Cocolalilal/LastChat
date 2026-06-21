@@ -52,10 +52,12 @@ import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.context.LocalSharedTransitionScope
 import me.rerere.rikkahub.ui.context.LocalTTSState
+import me.rerere.rikkahub.ui.context.LocalSTTState
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.readBooleanPreference
 import me.rerere.rikkahub.ui.hooks.readStringPreference
 import me.rerere.rikkahub.ui.hooks.rememberCustomTtsState
+import me.rerere.rikkahub.ui.hooks.rememberCustomSttState
 import me.rerere.rikkahub.ui.image.AppImageLoaderFactory
 import me.rerere.rikkahub.ui.motion.LocalMotionPolicy
 import me.rerere.rikkahub.ui.motion.rememberSystemMotionPolicy
@@ -659,6 +661,7 @@ class RouteActivity : ComponentActivity() {
         val toastState = rememberAppToasterState()
         val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
         val tts = rememberCustomTtsState()
+        val stt = rememberCustomSttState()
         val motionPolicy = rememberSystemMotionPolicy()
         SharedTransitionLayout {
             CompositionLocalProvider(
@@ -669,6 +672,7 @@ class RouteActivity : ComponentActivity() {
                 LocalMotionPolicy provides motionPolicy,
                 LocalToaster provides toastState,
                 LocalTTSState provides tts,
+                LocalSTTState provides stt,
             ) {
                 // Check for backup cleanup results and show toast
                 LaunchedEffect(Unit) {
@@ -1086,6 +1090,12 @@ class RouteActivity : ComponentActivity() {
                         }
                     }
 
+                    composable<Screen.SettingSTT> {
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.Stt) {
+                            SettingProviderPage(initialTab = me.rerere.rikkahub.ui.pages.setting.ProvidersTab.Stt)
+                        }
+                    }
+
                     composable<Screen.SettingWeb> {
                         AdaptiveSettingsScaffold(selected = SettingsDestination.Web) {
                             SettingWebPage()
@@ -1348,6 +1358,9 @@ sealed interface Screen {
 
     @Serializable
     data object SettingTTS : Screen
+
+    @Serializable
+    data object SettingSTT : Screen
 
     @Serializable
     data object SettingWeb : Screen

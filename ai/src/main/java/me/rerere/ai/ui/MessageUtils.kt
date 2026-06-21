@@ -112,10 +112,14 @@ data class UIMessage(
                             val lastToolCall =
                                 acc.lastOrNull { it is UIMessagePart.ToolCall } as? UIMessagePart.ToolCall
                             if (lastToolCall != null && (lastToolCall == acc.lastOrNull() || !lastToolCall.toolCallId.isBlank())) {
-                                acc.map { part ->
-                                    if (part == lastToolCall && part is UIMessagePart.ToolCall) {
-                                        part.merge(deltaPart)
-                                    } else part
+                                if (shouldStartNewBlankIdToolCall(lastToolCall, deltaPart)) {
+                                    acc + deltaPart.copy()
+                                } else {
+                                    acc.map { part ->
+                                        if (part == lastToolCall && part is UIMessagePart.ToolCall) {
+                                            part.merge(deltaPart)
+                                        } else part
+                                    }
                                 }
                             } else {
                                 acc + deltaPart.copy()
@@ -482,10 +486,10 @@ sealed class UIMessagePart {
         fun merge(other: ToolCall): ToolCall {
             return ToolCall(
                 toolCallId = toolCallId,
-                toolName = toolName + other.toolName,
+                toolName = mergeToolName(toolName, other.toolName),
                 arguments = arguments + other.arguments,
                 approvalState = other.approvalState.takeUnless { it == ToolApprovalState.Auto } ?: approvalState,
-                metadata = if(other.metadata != null) other.metadata else metadata,
+                metadata = if (other.metadata != null) other.metadata else metadata,
             )
         }
 
@@ -502,6 +506,74 @@ sealed class UIMessagePart {
     ) : UIMessagePart() {
         override val priority: Int = 0
     }
+}
+
+private fun mergeToolName(existing: String, incoming: String): String {
+    return when {
+        incoming.isBlank() -> existing
+        existing.isBlank() -> incoming
+        existing == incoming -> existing
+        else -> existing + incoming
+    }
+}
+
+private fun shouldStartNewBlankIdToolCall(
+    existing: UIMessagePart.ToolCall,
+    incoming: UIMessagePart.ToolCall,
+): Boolean {
+    return existing.toolCallId.isBlank() &&
+        incoming.toolCallId.isBlank() &&
+        existing.toolName.isNotBlank() &&
+        incoming.toolName.isNotBlank() &&
+        existing.arguments.isCompleteJsonElementString() &&
+        incoming.arguments.isCompleteJsonElementString()
+}
+
+private fun String.isCompleteJsonElementString(): Boolean {
+    val input = trim()
+    if (input.isBlank()) return false
+
+    val opener = input.first()
+    val expectedCloser = when (opener) {
+        '{' -> '}'
+        '[' -> ']'
+        else -> return false
+    }
+
+    val stack = ArrayDeque<Char>()
+    var inString = false
+    var escaping = false
+
+    input.forEachIndexed { index, char ->
+        if (escaping) {
+            escaping = false
+            return@forEachIndexed
+        }
+
+        when (char) {
+            '\\' -> if (inString) {
+                escaping = true
+            }
+
+            '"' -> inString = !inString
+            else -> {
+                if (inString) return@forEachIndexed
+
+                when (char) {
+                    '{' -> stack.addLast('}')
+                    '[' -> stack.addLast(']')
+                    '}', ']' -> {
+                        if (stack.isEmpty() || stack.removeLast() != char) return false
+                        if (stack.isEmpty()) {
+                            return char == expectedCloser && input.substring(index + 1).isBlank()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return false
 }
 
 @Serializable

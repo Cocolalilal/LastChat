@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.data.datastore
 
+import me.rerere.asr.ASRProviderSetting
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.tts.provider.TTSProviderSetting
 import kotlin.uuid.Uuid
@@ -20,6 +21,7 @@ class SecretKeyManager(
         private const val PROVIDER_APIKEY_PREFIX = "provider_apikey_"
         private const val PROVIDER_PRIVATEKEY_PREFIX = "provider_privatekey_"
         private const val TTS_PROVIDER_APIKEY_PREFIX = "tts_provider_apikey_"
+        private const val STT_PROVIDER_APIKEY_PREFIX = "stt_provider_apikey_"
         private const val WEBDAV_PASSWORD_KEY = "webdav_password"
     }
 
@@ -94,6 +96,26 @@ class SecretKeyManager(
         secureStore.removeSecret("$TTS_PROVIDER_APIKEY_PREFIX$providerId")
     }
 
+    // ========== STT API Key Management ==========
+
+    fun getSttApiKey(providerId: Uuid, plaintextFallback: String): String {
+        val key = "$STT_PROVIDER_APIKEY_PREFIX$providerId"
+        return secureStore.getSecret(key) ?: plaintextFallback
+    }
+
+    fun setSttApiKey(providerId: Uuid, apiKey: String) {
+        val key = "$STT_PROVIDER_APIKEY_PREFIX$providerId"
+        if (apiKey.isNotBlank()) {
+            secureStore.putSecret(key, apiKey)
+        } else {
+            secureStore.removeSecret(key)
+        }
+    }
+
+    fun removeSttProviderSecrets(providerId: Uuid) {
+        secureStore.removeSecret("$STT_PROVIDER_APIKEY_PREFIX$providerId")
+    }
+
     // ========== WebDAV Password Management ==========
 
     fun getWebDavPassword(plaintextFallback: String): String {
@@ -142,11 +164,18 @@ class SecretKeyManager(
             }
         }
 
+        val migratedSttProviders = settings.sttProviders.map { provider ->
+            migrateSttProviderSecrets(provider).also {
+                if (it != provider) migrated = true
+            }
+        }
+
         return if (migrated) {
             settings.copy(
                 providers = migratedProviders,
                 webDavConfig = migratedWebDav,
-                ttsProviders = migratedTtsProviders
+                ttsProviders = migratedTtsProviders,
+                sttProviders = migratedSttProviders,
             )
         } else {
             settings
@@ -211,6 +240,16 @@ class SecretKeyManager(
             
             if (oldKey.isNotBlank() && newKey.isBlank()) {
                 setTtsApiKey(newTtsProvider.id, "")
+            }
+        }
+
+        // Handle STT provider secrets
+        for (newSttProvider in newSettings.sttProviders) {
+            val oldSttProvider = oldSettings.sttProviders.find { it.id == newSttProvider.id } ?: continue
+            val oldKey = oldSttProvider.apiKeyOrBlank()
+            val newKey = newSttProvider.apiKeyOrBlank()
+            if (oldKey.isNotBlank() && newKey.isBlank()) {
+                setSttApiKey(newSttProvider.id, "")
             }
         }
 
@@ -298,6 +337,47 @@ class SecretKeyManager(
         }
     }
 
+    private fun migrateSttProviderSecrets(provider: ASRProviderSetting): ASRProviderSetting {
+        return when (provider) {
+            is ASRProviderSetting.OpenAIRealtime -> {
+                if (provider.apiKey.isNotBlank()) {
+                    setSttApiKey(provider.id, provider.apiKey)
+                    provider.copy(apiKey = "")
+                } else provider
+            }
+
+            is ASRProviderSetting.DashScope -> {
+                if (provider.apiKey.isNotBlank()) {
+                    setSttApiKey(provider.id, provider.apiKey)
+                    provider.copy(apiKey = "")
+                } else provider
+            }
+
+            is ASRProviderSetting.Volcengine -> {
+                if (provider.apiKey.isNotBlank()) {
+                    setSttApiKey(provider.id, provider.apiKey)
+                    provider.copy(apiKey = "")
+                } else provider
+            }
+
+            is ASRProviderSetting.MiMo -> {
+                if (provider.apiKey.isNotBlank()) {
+                    setSttApiKey(provider.id, provider.apiKey)
+                    provider.copy(apiKey = "")
+                } else provider
+            }
+
+            is ASRProviderSetting.Step -> {
+                if (provider.apiKey.isNotBlank()) {
+                    setSttApiKey(provider.id, provider.apiKey)
+                    provider.copy(apiKey = "")
+                } else provider
+            }
+
+            is ASRProviderSetting.SystemSTT -> provider
+        }
+    }
+
     // ========== Backup/Export Support ==========
 
     /**
@@ -317,10 +397,15 @@ class SecretKeyManager(
             populateTtsProviderSecrets(provider)
         }
 
+        val sttProvidersWithSecrets = settings.sttProviders.map { provider ->
+            populateSttProviderSecrets(provider)
+        }
+
         return settings.copy(
             providers = providersWithSecrets,
             webDavConfig = webDavWithPassword,
-            ttsProviders = ttsProvidersWithSecrets
+            ttsProviders = ttsProvidersWithSecrets,
+            sttProviders = sttProvidersWithSecrets,
         )
     }
 
@@ -373,6 +458,17 @@ class SecretKeyManager(
         }
     }
 
+    private fun populateSttProviderSecrets(provider: ASRProviderSetting): ASRProviderSetting {
+        return when (provider) {
+            is ASRProviderSetting.OpenAIRealtime -> provider.copy(apiKey = getSttApiKey(provider.id, provider.apiKey))
+            is ASRProviderSetting.DashScope -> provider.copy(apiKey = getSttApiKey(provider.id, provider.apiKey))
+            is ASRProviderSetting.Volcengine -> provider.copy(apiKey = getSttApiKey(provider.id, provider.apiKey))
+            is ASRProviderSetting.MiMo -> provider.copy(apiKey = getSttApiKey(provider.id, provider.apiKey))
+            is ASRProviderSetting.Step -> provider.copy(apiKey = getSttApiKey(provider.id, provider.apiKey))
+            is ASRProviderSetting.SystemSTT -> provider
+        }
+    }
+
     /**
      * Import secrets from backup settings and store them encrypted.
      * This should be called after restoring settings from a backup file.
@@ -380,5 +476,16 @@ class SecretKeyManager(
     fun importSecretsFromBackup(settings: Settings): Settings {
         // Same as migration - store secrets and clear plaintext
         return migrateSecretsFromSettings(settings)
+    }
+}
+
+private fun ASRProviderSetting.apiKeyOrBlank(): String {
+    return when (this) {
+        is ASRProviderSetting.OpenAIRealtime -> apiKey
+        is ASRProviderSetting.DashScope -> apiKey
+        is ASRProviderSetting.Volcengine -> apiKey
+        is ASRProviderSetting.MiMo -> apiKey
+        is ASRProviderSetting.Step -> apiKey
+        is ASRProviderSetting.SystemSTT -> ""
     }
 }

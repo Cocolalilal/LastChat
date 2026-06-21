@@ -2,6 +2,7 @@ package me.rerere.rikkahub.data.datastore
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import me.rerere.asr.ASRProviderSetting
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
@@ -36,6 +37,10 @@ import me.rerere.tts.provider.withVoiceApplied
 import kotlin.uuid.Uuid
 
 val DISABLED_MODEL_ID: Uuid = Uuid.parse("00000000-0000-0000-0000-000000000000")
+val DEFAULT_SYSTEM_STT_ID: Uuid = Uuid.parse("00000000-0000-0000-0000-000000000003")
+val DEFAULT_STT_PROVIDERS: List<ASRProviderSetting> = listOf(
+    ASRProviderSetting.SystemSTT(id = DEFAULT_SYSTEM_STT_ID)
+)
 
 @Serializable
 data class Settings(
@@ -83,6 +88,8 @@ data class Settings(
     val selectedTTSProviderId: Uuid = DEFAULT_SYSTEM_TTS_ID,
     val selectedTTSVoiceId: Uuid = DEFAULT_SYSTEM_TTS_VOICE_ID,
     val ttsAutoplayMode: TtsAutoplayMode = TtsAutoplayMode.OFF,
+    val sttProviders: List<ASRProviderSetting> = DEFAULT_STT_PROVIDERS,
+    val selectedSttProviderId: Uuid? = null,
     val webServerEnabled: Boolean = false,
     val webServerPort: Int = 8080,
     val webServerJwtEnabled: Boolean = false,
@@ -451,6 +458,23 @@ fun Settings.getEffectiveTTSProvider(assistant: Assistant? = null): TTSProviderS
 
 fun Settings.getEffectiveTtsAutoplayMode(assistant: Assistant? = null): TtsAutoplayMode {
     return (assistant?.ttsAutoplayMode ?: ttsAutoplayMode).asEnabledMode()
+}
+
+fun Settings.getSelectedSTTProvider(): ASRProviderSetting? {
+    return selectedSttProviderId?.let { id ->
+        sttProviders.find { it.id == id }
+    }
+}
+
+fun Settings.normalizeSttSettings(): Settings {
+    val normalizedProviders = sttProviders.distinctBy { it.id }
+    val normalizedSelectedId = selectedSttProviderId?.takeIf { id ->
+        normalizedProviders.any { provider -> provider.id == id }
+    }
+    return copy(
+        sttProviders = normalizedProviders,
+        selectedSttProviderId = normalizedSelectedId,
+    )
 }
 
 fun Settings.normalizeTtsSettings(): Settings {

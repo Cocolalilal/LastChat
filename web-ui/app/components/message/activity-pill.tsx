@@ -1,16 +1,16 @@
 import * as React from "react";
+import { AnimatePresence, motion } from "motion/react";
 import {
-  AnimatePresence,
-  motion,
-} from "motion/react";
-import { Build,
+  Build,
   Category,
+  Computer,
   Globe,
   Image,
   Lightbulb,
   Memory,
   Sparkles,
-  Terminal, } from "~/lib/material-icons";
+  Terminal,
+} from "~/lib/material-icons";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -36,11 +36,17 @@ function getActivityIcon(type: ActivityType) {
       return Image;
     case "search":
       return Globe;
+    case "memory_recall":
+      return Memory;
     case "python":
       return Terminal;
+    case "workspace":
+      return Computer;
     case "skill":
       return Category;
     case "mcp":
+      return Memory;
+    case "loading_model":
       return Memory;
     case "tool_other":
       return Build;
@@ -97,57 +103,71 @@ function buildSegments(
 ): PillSegment[] {
   switch (state.type) {
     case "waiting":
-      return [{
-        key: "waiting",
-        type: "sparkles",
-        label: t("activity.waiting"),
-        variant: "full",
-      }];
+      return [
+        {
+          key: "waiting",
+          type: "sparkles",
+          label: t("activity.waiting"),
+          variant: "full",
+        },
+      ];
     case "replying":
-      return [{
-        key: "replying",
-        type: "replying",
-        label: t("activity.replying"),
-        variant: "full",
-        showIcon: false,
-      }];
+      return [
+        {
+          key: "replying",
+          type: "replying",
+          label: t("activity.replying"),
+          variant: "full",
+          showIcon: false,
+        },
+      ];
     case "ocr":
-      return [{
-        key: "ocr-live",
-        type: "ocr",
-        label: t("activity.ocr_live"),
-        variant: "full",
-      }];
+      return [
+        {
+          key: "ocr-live",
+          type: "ocr",
+          label: t("activity.ocr_live"),
+          variant: "full",
+        },
+      ];
     case "reasoning":
-      return [{
-        key: "reasoning-live",
-        type: "reasoning",
-        label: t("activity.reasoning_live", {
-          duration: formatDuration(Math.max(now - state.startTimeMs, 0)),
-        }),
-        variant: "full",
-      }];
+      return [
+        {
+          key: "reasoning-live",
+          type: "reasoning",
+          label: t("activity.reasoning_live", {
+            duration: formatDuration(Math.max(now - state.startTimeMs, 0)),
+          }),
+          variant: "full",
+        },
+      ];
     case "tool_use":
-      return [{
-        key: `tool-${state.toolName}`,
-        type: categorizeToolName(state.toolName),
-        label: state.displayName,
-        variant: "full",
-      }];
+      return [
+        {
+          key: `tool-${state.toolName}`,
+          type: categorizeToolName(state.toolName),
+          label: state.displayName,
+          variant: "full",
+        },
+      ];
     case "completed_single":
-      return [{
-        key: `completed-${state.activityType}`,
-        type: state.activityType,
-        label:
-          state.activityType === "reasoning" && state.durationMs
-            ? t("activity.reasoning_done", { duration: formatDuration(state.durationMs) })
-            : state.activityType === "ocr"
-              ? state.count && state.count > 1
-                ? t("activity.ocr_done_count", { count: state.count })
-                : t("activity.ocr_done")
-            : t(`activity.type.${state.activityType}`),
-        variant: "full",
-      }];
+      return [
+        {
+          key: `completed-${state.activityType}`,
+          type: state.activityType,
+          label:
+            state.activityType === "reasoning" && state.durationMs
+              ? t("activity.reasoning_done", { duration: formatDuration(state.durationMs) })
+              : state.activityType === "ocr"
+                ? state.count && state.count > 1
+                  ? t("activity.ocr_done_count", { count: state.count })
+                  : t("activity.ocr_done")
+                : state.activityType === "reasoning"
+                  ? t("activity.type.reasoning")
+                  : t(`activity.type.${state.activityType}`),
+          variant: "full",
+        },
+      ];
     case "completed_multiple":
       if (state.reasoningDurationMs) {
         return [
@@ -194,16 +214,19 @@ function ActivitySegmentContent({
         : getActivityIcon(segment.type);
 
   return (
-    <span className={cn("flex min-w-0 items-center overflow-hidden", segment.variant === "full" ? "gap-2" : "justify-center")}>
+    <span
+      className={cn(
+        "flex min-w-0 items-center overflow-hidden",
+        segment.variant === "full" ? "gap-2" : "justify-center",
+      )}
+    >
       {segment.showIcon !== false && Icon ? (
         <span className="flex shrink-0 items-center justify-center">
           <Icon className={cn("size-3.5", emphasizeLive && "text-primary")} />
         </span>
       ) : null}
       {segment.variant === "full" && segment.label ? (
-        <span className="truncate whitespace-nowrap tabular-nums">
-          {segment.label}
-        </span>
+        <span className="truncate whitespace-nowrap tabular-nums">{segment.label}</span>
       ) : null}
     </span>
   );
@@ -239,16 +262,20 @@ function ActivitySegmentButton({
               scale: { ...getChatTactileTransition(false), delay },
             },
       }}
-      exit={reducedMotion ? { opacity: 0 } : { opacity: 0, x: -6, scale: 0.985, transition: { duration: 0.12 } }}
+      exit={
+        reducedMotion
+          ? { opacity: 0 }
+          : { opacity: 0, x: -6, scale: 0.985, transition: { duration: 0.12 } }
+      }
       whileHover={reducedMotion ? undefined : { y: -1, scale: 1.01 }}
       whileTap={reducedMotion ? undefined : { scale: 0.975 }}
       transition={getChatLayoutTransition(reducedMotion)}
       onClick={onClick}
       className={cn(
-        "border text-card-foreground shadow-sm transition-colors hover:bg-card",
+        "border text-card-foreground shadow-sm transition-colors hover:bg-card active:shadow-none",
         segment.variant === "mini"
-          ? "inline-flex size-8 items-center justify-center rounded-full border-border/70 bg-card/88"
-          : "inline-flex h-8 max-w-full items-center rounded-full border-border/70 bg-card/88 px-3 text-xs font-medium",
+          ? "inline-flex size-9 items-center justify-center rounded-t-[var(--radius-activity-large)] rounded-b-[var(--radius-activity-small)] border-border/70 bg-card/88"
+          : "inline-flex h-9 max-w-full items-center rounded-t-[var(--radius-activity-large)] rounded-b-[var(--radius-activity-small)] border-border/70 bg-card/88 px-3.5 text-xs font-medium",
       )}
       title={segment.variant === "mini" ? segment.type : undefined}
       aria-label={segment.label ?? segment.type}
@@ -298,7 +325,11 @@ export function ActivityPill({
                 scale: getChatTactileTransition(false),
               },
         }}
-        exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 4, scale: 0.985, transition: { duration: 0.14 } }}
+        exit={
+          reducedMotion
+            ? { opacity: 0 }
+            : { opacity: 0, y: 4, scale: 0.985, transition: { duration: 0.14 } }
+        }
         className={cn("inline-flex max-w-full", className)}
       >
         <motion.div layout className="inline-flex max-w-full items-center gap-1.5">

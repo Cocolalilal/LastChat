@@ -50,6 +50,16 @@ class HighlightCodeBlockStateTest {
     }
 
     @Test
+    fun normalizeCodeBlockLanguageStripsInfoStringsAndAliases() {
+        assertEquals("typescript", normalizeCodeBlockLanguage("ts title=\"demo\""))
+        assertEquals("javascript", normalizeCodeBlockLanguage("{.language-js}"))
+        assertEquals("cpp", normalizeCodeBlockLanguage("c++"))
+        assertEquals("csharp", normalizeCodeBlockLanguage("C#"))
+        assertEquals("plaintext", normalizeCodeBlockLanguage(""))
+        assertEquals("json", normalizeCodeBlockLanguage("jsonl"))
+    }
+
+    @Test
     fun userScrollingUpPausesPreviewAutoFollowUntilBottom() {
         val paused = updatePreviewAutoFollowPaused(
             currentlyPaused = false,

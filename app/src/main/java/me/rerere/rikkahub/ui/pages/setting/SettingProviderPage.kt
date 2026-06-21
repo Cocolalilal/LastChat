@@ -317,6 +317,8 @@ fun SettingProviderPage(
                                 }
                             )
                         }
+
+                        ProvidersTab.Stt -> Unit
                     }
                 }
                 when (currentTab) {
@@ -348,6 +350,14 @@ fun SettingProviderPage(
                         vm.updateSettings(
                             settings.copy(
                                 ttsProviders = listOf(providerToAdd) + settings.ttsProviders
+                            )
+                        )
+                    }
+
+                    ProvidersTab.Stt -> AddSTTProviderButton(asFab = true) { newProvider ->
+                        vm.updateSettings(
+                            settings.copy(
+                                sttProviders = listOf(newProvider) + settings.sttProviders
                             )
                         )
                     }
@@ -491,10 +501,11 @@ fun SettingProviderPage(
 
                 ProvidersTab.Search -> SearchProvidersContent(vm = vm, contentPadding = innerPadding)
                 ProvidersTab.Tts -> TtsProvidersContent(vm = vm, contentPadding = innerPadding)
+                ProvidersTab.Stt -> SttProvidersContent(vm = vm, contentPadding = innerPadding)
             }
         }
             AnimatedVisibility(
-                visible = !useWideLayout && currentTab != ProvidersTab.Models,
+                visible = !useWideLayout && (currentTab == ProvidersTab.Search || currentTab == ProvidersTab.Tts),
                 enter = slideInHorizontally(
                     animationSpec = tween(120),
                     initialOffsetX = { it }

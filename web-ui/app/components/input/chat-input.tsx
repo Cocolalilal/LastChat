@@ -1,11 +1,9 @@
 import * as React from "react";
-import {
-  AnimatePresence,
-  motion,
-} from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 
 import { fileTypeFromBuffer } from "file-type";
-import { AudioFile,
+import {
+  AudioFile,
   ArrowUp,
   ChevronLeft,
   ChevronRight,
@@ -18,7 +16,8 @@ import { AudioFile,
   Plus,
   Square,
   Video,
-  X, } from "~/lib/material-icons";
+  X,
+} from "~/lib/material-icons";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
@@ -67,7 +66,12 @@ export interface ChatInputProps {
   shouldDeleteFileOnRemove?: (part: UIMessagePart) => boolean;
   onRemovePart: (index: number, part: UIMessagePart) => Promise<void> | void;
   onSend: () => Promise<void> | void;
-  onToolApproval?: (toolCallId: string, approved: boolean, reason: string, answer?: string) => Promise<void> | void;
+  onToolApproval?: (
+    toolCallId: string,
+    approved: boolean,
+    reason: string,
+    answer?: string,
+  ) => Promise<void> | void;
   onStop?: () => Promise<void> | void;
   onCancelEdit?: () => void;
   onSuggestionClick?: (suggestion: string) => void;
@@ -78,8 +82,7 @@ export interface ChatInputProps {
 const IMAGE_UPLOAD_ACCEPT = "image/*";
 const COMPOSER_CONTROL_BUTTON_CLASSNAME =
   "h-9 rounded-full border border-border/70 bg-muted/70 text-foreground shadow-none hover:bg-accent hover:text-accent-foreground";
-const COMPOSER_CHIP_CLASSNAME =
-  "border border-border/70 bg-muted/65 text-foreground shadow-none";
+const COMPOSER_CHIP_CLASSNAME = "border border-border/70 bg-muted/65 text-foreground shadow-none";
 
 export interface PendingQuestionnaire {
   toolCallId: string;
@@ -114,9 +117,7 @@ async function isAllowedUploadFile(file: globalThis.File): Promise<boolean> {
   return false;
 }
 
-function toMessagePart(
-  file: UploadFilesResponseDto["files"][number],
-): UIMessagePart {
+function toMessagePart(file: UploadFilesResponseDto["files"][number]): UIMessagePart {
   if (file.mime.startsWith("image/")) {
     return {
       type: "image",
@@ -238,8 +239,7 @@ function ChatInputInner({
     return source
       .map((item) => {
         const title = typeof item?.title === "string" ? item.title.trim() : "";
-        const content =
-          typeof item?.content === "string" ? item.content.trim() : "";
+        const content = typeof item?.content === "string" ? item.content.trim() : "";
         if (!content) {
           return null;
         }
@@ -280,7 +280,9 @@ function ChatInputInner({
     ? !ready || disabled || uploading || submitting
     : submitting || uploading || (!canStop && !canSend);
   const activeQuestion = questionnaireActive
-    ? pendingQuestionnaire!.questions[Math.min(questionIndex, pendingQuestionnaire!.questions.length - 1)]
+    ? pendingQuestionnaire!.questions[
+        Math.min(questionIndex, pendingQuestionnaire!.questions.length - 1)
+      ]
     : null;
   const isFinalQuestion = questionnaireActive
     ? questionIndex >= pendingQuestionnaire!.questions.length - 1
@@ -324,9 +326,7 @@ function ChatInputInner({
       const skippedFiles = results.filter((r) => !r.allowed).map((r) => r.file);
 
       if (skippedFiles.length > 0) {
-        toast.warning(
-          t("chat.unsupported_file_skipped", { count: skippedFiles.length }),
-        );
+        toast.warning(t("chat.unsupported_file_skipped", { count: skippedFiles.length }));
       }
 
       if (uploadableFiles.length === 0) {
@@ -341,17 +341,12 @@ function ChatInputInner({
       setUploading(true);
       setError(null);
       try {
-        const response = await api.postMultipart<UploadFilesResponseDto>(
-          "files/upload",
-          formData,
-        );
+        const response = await api.postMultipart<UploadFilesResponseDto>("files/upload", formData);
         const parts = response.files.map(toMessagePart);
         onAddParts(parts);
       } catch (uploadError) {
         const message =
-          uploadError instanceof Error
-            ? uploadError.message
-            : t("chat.upload_failed");
+          uploadError instanceof Error ? uploadError.message : t("chat.upload_failed");
         setError(message);
       } finally {
         setUploading(false);
@@ -397,27 +392,25 @@ function ChatInputInner({
     [customAnswers, pendingQuestionnaire, selectedAnswers],
   );
 
-  const handleQuestionnaireAction = React.useCallback(async (dismissed = false) => {
-    if (!pendingQuestionnaire || !onToolApproval) {
-      return;
-    }
+  const handleQuestionnaireAction = React.useCallback(
+    async (dismissed = false) => {
+      if (!pendingQuestionnaire || !onToolApproval) {
+        return;
+      }
 
-    if (dismissed || isFinalQuestion) {
-      const payload = buildQuestionnairePayload(dismissed);
-      if (!payload) return;
-      await onToolApproval(pendingQuestionnaire.toolCallId, true, "", payload);
-      return;
-    }
+      if (dismissed || isFinalQuestion) {
+        const payload = buildQuestionnairePayload(dismissed);
+        if (!payload) return;
+        await onToolApproval(pendingQuestionnaire.toolCallId, true, "", payload);
+        return;
+      }
 
-    setQuestionIndex((current) =>
-      Math.min(current + 1, pendingQuestionnaire.questions.length - 1),
-    );
-  }, [
-    buildQuestionnairePayload,
-    isFinalQuestion,
-    onToolApproval,
-    pendingQuestionnaire,
-  ]);
+      setQuestionIndex((current) =>
+        Math.min(current + 1, pendingQuestionnaire.questions.length - 1),
+      );
+    },
+    [buildQuestionnairePayload, isFinalQuestion, onToolApproval, pendingQuestionnaire],
+  );
 
   const handlePrimaryAction = React.useCallback(async () => {
     if (actionDisabled) {
@@ -442,15 +435,21 @@ function ChatInputInner({
         await onSend();
       }
     } catch (submitError) {
-      const message =
-        submitError instanceof Error
-          ? submitError.message
-          : t("chat.send_failed");
+      const message = submitError instanceof Error ? submitError.message : t("chat.send_failed");
       setError(message);
     } finally {
       setSubmitting(false);
     }
-  }, [actionDisabled, canSend, canStop, handleQuestionnaireAction, onSend, onStop, questionnaireActive, t]);
+  }, [
+    actionDisabled,
+    canSend,
+    canStop,
+    handleQuestionnaireAction,
+    onSend,
+    onStop,
+    questionnaireActive,
+    t,
+  ]);
 
   const handleTextChange = React.useCallback(
     (event: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -587,17 +586,14 @@ function ChatInputInner({
     [canUpload, dragActive],
   );
 
-  const handleDragLeave = React.useCallback(
-    (event: React.DragEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      event.stopPropagation();
-      dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
-      if (dragDepthRef.current === 0) {
-        setDragActive(false);
-      }
-    },
-    [],
-  );
+  const handleDragLeave = React.useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) {
+      setDragActive(false);
+    }
+  }, []);
 
   const handleDrop = React.useCallback(
     async (event: React.DragEvent<HTMLDivElement>) => {
@@ -612,9 +608,7 @@ function ChatInputInner({
     [canUpload, uploadFiles],
   );
 
-  const sendHint = sendOnEnter
-    ? t("chat.send_hint_enter")
-    : t("chat.send_hint_newline");
+  const sendHint = sendOnEnter ? t("chat.send_hint_enter") : t("chat.send_hint_newline");
   const placeholder = questionnaireActive
     ? t("chat.questionnaire_placeholder")
     : ready
@@ -622,19 +616,13 @@ function ChatInputInner({
       : t("chat.placeholder_not_ready");
 
   return (
-    <div
-      className={cn(
-        "bg-transparent",
-        className,
-      )}
-    >
+    <div className={cn("bg-transparent", className)}>
       <div className={CHAT_COLUMN_CLASSNAME}>
         <motion.div
           layout
           className={cn(
-            "relative flex flex-col gap-2.5 rounded-[var(--radius-bubble)] border border-border bg-card px-3 py-3 shadow-xl backdrop-blur-xl transition-shadow focus-within:border-ring/50 focus-within:shadow-2xl focus-within:ring-1 focus-within:ring-ring/40 sm:px-4 sm:py-3.5",
-            dragActive &&
-              "border-primary/40 bg-primary/5 ring-2 ring-primary/20",
+            "relative flex min-h-12 flex-col gap-1.5 rounded-[var(--radius-input-capsule)] border border-border/80 bg-card/92 px-2 py-1.5 shadow-sm backdrop-blur-xl transition-shadow focus-within:border-ring/45 focus-within:shadow-md focus-within:ring-1 focus-within:ring-ring/25 sm:px-2.5 sm:py-2",
+            dragActive && "border-primary/40 bg-primary/5 ring-2 ring-primary/20",
           )}
           transition={getChatLayoutTransition(reducedMotion)}
           onDragEnter={handleDragEnter}
@@ -659,7 +647,11 @@ function ChatInputInner({
                         scale: getChatTactileTransition(false),
                       },
                 }}
-                exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.985, transition: { duration: 0.12 } }}
+                exit={
+                  reducedMotion
+                    ? { opacity: 0 }
+                    : { opacity: 0, scale: 0.985, transition: { duration: 0.12 } }
+                }
                 className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-[calc(var(--radius-bubble)-2px)] border-2 border-dashed border-primary/50 bg-background/80 px-4 text-center text-sm font-medium text-primary"
               >
                 {t("chat.drop_to_upload")}
@@ -683,8 +675,12 @@ function ChatInputInner({
                         y: getChatLayoutTransition(false),
                       },
                 }}
-                exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -6, transition: { duration: 0.12 } }}
-                className="flex items-center justify-between rounded-[var(--radius-card-inner)] border border-border/70 bg-secondary/60 px-3 py-2 text-xs"
+                exit={
+                  reducedMotion
+                    ? { opacity: 0 }
+                    : { opacity: 0, y: -6, transition: { duration: 0.12 } }
+                }
+                className="mx-1 flex items-center justify-between rounded-[var(--radius-input-inner)] border border-border/70 bg-secondary/60 px-2.5 py-1.5 text-xs"
               >
                 <span className="text-primary">{t("chat.editing_tip")}</span>
                 <Button
@@ -719,14 +715,20 @@ function ChatInputInner({
                         height: getChatLayoutTransition(false),
                       },
                 }}
-                exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -6, height: 0, transition: { duration: 0.12 } }}
+                exit={
+                  reducedMotion
+                    ? { opacity: 0 }
+                    : { opacity: 0, y: -6, height: 0, transition: { duration: 0.12 } }
+                }
                 className="overflow-hidden rounded-[var(--radius-card-inner)] border border-border/70 bg-secondary/50"
               >
                 <QuestionnairePanel
                   question={activeQuestion}
                   currentIndex={questionIndex}
                   totalQuestions={pendingQuestionnaire.questions.length}
-                  selectedValue={activeQuestion ? selectedAnswers[activeQuestion.id] ?? null : null}
+                  selectedValue={
+                    activeQuestion ? (selectedAnswers[activeQuestion.id] ?? null) : null
+                  }
                   onPrevious={() => {
                     setQuestionIndex((current) => Math.max(0, current - 1));
                   }}
@@ -775,8 +777,12 @@ function ChatInputInner({
                         y: getChatLayoutTransition(false),
                       },
                 }}
-                exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -4, transition: { duration: 0.12 } }}
-                className="flex gap-2 overflow-x-auto px-1 pb-1"
+                exit={
+                  reducedMotion
+                    ? { opacity: 0 }
+                    : { opacity: 0, y: -4, transition: { duration: 0.12 } }
+                }
+                className="flex gap-1.5 overflow-x-auto px-1 pb-0.5"
               >
                 {suggestions.map((suggestion, index) => (
                   <motion.button
@@ -792,9 +798,18 @@ function ChatInputInner({
                       transition: reducedMotion
                         ? { duration: 0.01 }
                         : {
-                            opacity: { duration: CHAT_MOTION_DURATION.fast, delay: index * CHAT_MOTION_DURATION.stagger },
-                            x: { ...getChatLayoutTransition(false), delay: index * CHAT_MOTION_DURATION.stagger },
-                            scale: { ...getChatTactileTransition(false), delay: index * CHAT_MOTION_DURATION.stagger },
+                            opacity: {
+                              duration: CHAT_MOTION_DURATION.fast,
+                              delay: index * CHAT_MOTION_DURATION.stagger,
+                            },
+                            x: {
+                              ...getChatLayoutTransition(false),
+                              delay: index * CHAT_MOTION_DURATION.stagger,
+                            },
+                            scale: {
+                              ...getChatTactileTransition(false),
+                              delay: index * CHAT_MOTION_DURATION.stagger,
+                            },
                           },
                     }}
                     whileTap={reducedMotion ? undefined : { scale: 0.97 }}
@@ -834,14 +849,27 @@ function ChatInputInner({
                         transition: reducedMotion
                           ? { duration: 0.01 }
                           : {
-                              opacity: { duration: CHAT_MOTION_DURATION.fast, delay: index * CHAT_MOTION_DURATION.stagger },
-                              y: { ...getChatLayoutTransition(false), delay: index * CHAT_MOTION_DURATION.stagger },
-                              scale: { ...getChatTactileTransition(false), delay: index * CHAT_MOTION_DURATION.stagger },
+                              opacity: {
+                                duration: CHAT_MOTION_DURATION.fast,
+                                delay: index * CHAT_MOTION_DURATION.stagger,
+                              },
+                              y: {
+                                ...getChatLayoutTransition(false),
+                                delay: index * CHAT_MOTION_DURATION.stagger,
+                              },
+                              scale: {
+                                ...getChatTactileTransition(false),
+                                delay: index * CHAT_MOTION_DURATION.stagger,
+                              },
                             },
                       }}
-                      exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: 6, transition: { duration: 0.12 } }}
+                      exit={
+                        reducedMotion
+                          ? { opacity: 0 }
+                          : { opacity: 0, scale: 0.97, y: 6, transition: { duration: 0.12 } }
+                      }
                       className={cn(
-                        "group inline-flex max-w-[220px] items-center gap-1.5 rounded-[var(--radius-card-inner)] px-2.5 py-1.5 text-xs",
+                        "group inline-flex max-w-[220px] items-center gap-1.5 rounded-[var(--radius-input-inner)] px-2.5 py-1.5 text-xs",
                         COMPOSER_CHIP_CLASSNAME,
                       )}
                     >
@@ -858,18 +886,12 @@ function ChatInputInner({
                       <button
                         className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
                         onClick={async () => {
-                          if (!ready || disabled || isGenerating || submitting)
-                            return;
+                          if (!ready || disabled || isGenerating || submitting) return;
 
                           const fileId = getPartFileId(part);
-                          if (
-                            fileId != null &&
-                            (shouldDeleteFileOnRemove?.(part) ?? true)
-                          ) {
+                          if (fileId != null && (shouldDeleteFileOnRemove?.(part) ?? true)) {
                             try {
-                              await api.delete<{ status: string }>(
-                                `files/${fileId}`,
-                              );
+                              await api.delete<{ status: string }>(`files/${fileId}`);
                             } catch (deleteError) {
                               const message =
                                 deleteError instanceof Error
@@ -909,8 +931,12 @@ function ChatInputInner({
                         y: getChatLayoutTransition(false),
                       },
                 }}
-                exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -2, transition: { duration: 0.12 } }}
-                className="px-1 text-xs text-muted-foreground"
+                exit={
+                  reducedMotion
+                    ? { opacity: 0 }
+                    : { opacity: 0, y: -2, transition: { duration: 0.12 } }
+                }
+                className="px-2 text-xs text-muted-foreground"
               >
                 {t("chat.no_image_input_hint")}
               </motion.div>
@@ -923,25 +949,22 @@ function ChatInputInner({
             onChange={handleTextChange}
             onKeyDown={handleKeyDown}
             onPaste={(event) => {
-                void handlePaste(event);
-              }}
+              void handlePaste(event);
+            }}
             placeholder={placeholder}
             disabled={!ready || disabled}
-            className="min-h-[1.75rem] max-h-[240px] resize-none border-0 bg-transparent px-1 py-0.5 text-[15px] leading-7 shadow-none focus-visible:ring-0 dark:bg-transparent"
+            className="min-h-6 max-h-[200px] resize-none border-0 bg-transparent px-3.5 py-2 pr-12 text-[15px] leading-6 shadow-none focus-visible:ring-0 dark:bg-transparent"
             rows={1}
           />
           <motion.div
             layout
             transition={getChatLayoutTransition(reducedMotion)}
-            className="flex items-end justify-between gap-3 pt-1"
+            className="flex items-end justify-between gap-2 px-0.5 pt-0"
           >
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <div className="flex min-w-0 flex-wrap items-center gap-1">
               {!questionnaireActive ? (
                 <>
-                  <DropdownMenu
-                    open={uploadMenuOpen}
-                    onOpenChange={setUploadMenuOpen}
-                  >
+                  <DropdownMenu open={uploadMenuOpen} onOpenChange={setUploadMenuOpen}>
                     <input
                       ref={fileInputRef}
                       className="hidden"
@@ -962,7 +985,7 @@ function ChatInputInner({
                         variant="ghost"
                         size="icon"
                         disabled={!canUpload}
-                        className={cn("size-9", COMPOSER_CONTROL_BUTTON_CLASSNAME)}
+                        className={cn("size-9 rounded-full", COMPOSER_CONTROL_BUTTON_CLASSNAME)}
                       >
                         <Plus
                           className={cn(
@@ -972,11 +995,7 @@ function ChatInputInner({
                         />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent
-                      className="min-w-36"
-                      side="top"
-                      align="start"
-                    >
+                    <DropdownMenuContent className="min-w-36" side="top" align="start">
                       <DropdownMenuItem
                         onClick={() => {
                           imageInputRef.current?.click();
@@ -1039,7 +1058,7 @@ function ChatInputInner({
               disabled={actionDisabled}
               size="icon"
               className={cn(
-                "size-11 rounded-full shadow-lg",
+                "size-9 rounded-full shadow-sm",
                 isGenerating && !submitting
                   ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
                   : "bg-primary text-primary-foreground hover:bg-primary/90",
@@ -1054,7 +1073,9 @@ function ChatInputInner({
                   {submitting || uploading ? (
                     <motion.span
                       key="composer-loading"
-                      initial={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.8, rotate: -16 }}
+                      initial={
+                        reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.8, rotate: -16 }
+                      }
                       animate={{ opacity: 1, scale: 1, rotate: 0 }}
                       exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.8, rotate: 16 }}
                       transition={getChatTactileTransition(reducedMotion)}
@@ -1064,7 +1085,9 @@ function ChatInputInner({
                   ) : isGenerating ? (
                     <motion.span
                       key="composer-stop"
-                      initial={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.8, rotate: -12 }}
+                      initial={
+                        reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.8, rotate: -12 }
+                      }
                       animate={{ opacity: 1, scale: 1, rotate: 0 }}
                       exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.8, rotate: 12 }}
                       transition={getChatTactileTransition(reducedMotion)}
@@ -1073,10 +1096,20 @@ function ChatInputInner({
                     </motion.span>
                   ) : (
                     <motion.span
-                      key={questionnaireActive ? (isFinalQuestion ? "composer-questionnaire-submit" : "composer-questionnaire-next") : "composer-send"}
-                      initial={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.8, rotate: 12 }}
+                      key={
+                        questionnaireActive
+                          ? isFinalQuestion
+                            ? "composer-questionnaire-submit"
+                            : "composer-questionnaire-next"
+                          : "composer-send"
+                      }
+                      initial={
+                        reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.8, rotate: 12 }
+                      }
                       animate={{ opacity: 1, scale: 1, rotate: 0 }}
-                      exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.8, rotate: -12 }}
+                      exit={
+                        reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.8, rotate: -12 }
+                      }
                       transition={getChatTactileTransition(reducedMotion)}
                     >
                       {questionnaireActive && !isFinalQuestion ? (
@@ -1091,12 +1124,8 @@ function ChatInputInner({
             </Button>
           </motion.div>
         </motion.div>
-        <p className="mt-2 text-center text-[11px] text-muted-foreground">
-          {sendHint}
-        </p>
-        {error ? (
-          <p className="mt-1 text-center text-xs text-destructive">{error}</p>
-        ) : null}
+        <p className="mt-1 text-center text-[11px] leading-4 text-muted-foreground">{sendHint}</p>
+        {error ? <p className="mt-0.5 text-center text-xs text-destructive">{error}</p> : null}
       </div>
     </div>
   );
@@ -1147,7 +1176,9 @@ function QuestionnairePanel({
           >
             <ChevronLeft className="size-3.5" />
           </button>
-          <span className="px-1">{t("chat.questionnaire_progress", { current: currentIndex + 1, total: totalQuestions })}</span>
+          <span className="px-1">
+            {t("chat.questionnaire_progress", { current: currentIndex + 1, total: totalQuestions })}
+          </span>
           <button
             type="button"
             onClick={onNext}
@@ -1234,9 +1265,7 @@ function QuickMessageButton({
               }}
             >
               <div className="min-w-0">
-                <div className="truncate text-sm font-medium">
-                  {quickMessage.title}
-                </div>
+                <div className="truncate text-sm font-medium">{quickMessage.title}</div>
                 <div className="text-muted-foreground mt-0.5 line-clamp-2 text-xs">
                   {quickMessage.content}
                 </div>

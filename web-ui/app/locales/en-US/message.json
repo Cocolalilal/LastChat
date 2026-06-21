@@ -21,9 +21,12 @@
       "reasoning": "Reasoned",
       "ocr": "Ran OCR",
       "search": "Searched web",
+      "memory_recall": "Recalled memory",
       "python": "Ran Python",
+      "workspace": "Used workspace",
       "skill": "Used skills",
       "mcp": "Used MCP",
+      "loading_model": "Loaded model",
       "tool_other": "Used tools"
     },
     "timeline_ocr_source": "Source",

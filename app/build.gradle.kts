@@ -429,6 +429,7 @@ dependencies {
     implementation(project(":highlight"))
     implementation(project(":search"))
     implementation(project(":tts"))
+    implementation(project(":speech"))
     implementation(project(":common"))
     implementation(project(":local-llm"))
     implementation(project(":workspace"))

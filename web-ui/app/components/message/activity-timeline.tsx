@@ -1,17 +1,16 @@
 import * as React from "react";
+import { AnimatePresence, motion } from "motion/react";
 import {
-  AnimatePresence,
-  motion,
-} from "motion/react";
-import { Build,
+  Build,
   Category,
   ChevronDown,
-  ChevronUp,
+  Computer,
   Globe,
   Image,
   Lightbulb,
   Memory,
-  Terminal, } from "~/lib/material-icons";
+  Terminal,
+} from "~/lib/material-icons";
 import { useTranslation } from "react-i18next";
 
 import Markdown from "~/components/markdown/markdown";
@@ -45,11 +44,17 @@ function getActivityIcon(type: ActivityType) {
       return Image;
     case "search":
       return Globe;
+    case "memory_recall":
+      return Memory;
     case "python":
       return Terminal;
+    case "workspace":
+      return Computer;
     case "skill":
       return Category;
     case "mcp":
+      return Memory;
+    case "loading_model":
       return Memory;
     case "tool_other":
       return Build;
@@ -91,15 +96,19 @@ function TimelineDetail({
         transition: reducedMotion
           ? { duration: 0.01 }
           : {
-            opacity: { duration: CHAT_MOTION_DURATION.fast, ease: "easeOut" },
-            height: getChatLayoutTransition(false),
-            y: getChatLayoutTransition(false),
-          },
+              opacity: { duration: CHAT_MOTION_DURATION.fast, ease: "easeOut" },
+              height: getChatLayoutTransition(false),
+              y: getChatLayoutTransition(false),
+            },
       }}
-      exit={reducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, y: -4, transition: { duration: 0.12 } }}
-      className="overflow-hidden border-t border-border bg-secondary/35"
+      exit={
+        reducedMotion
+          ? { opacity: 0 }
+          : { opacity: 0, height: 0, y: -4, transition: { duration: 0.12 } }
+      }
+      className="overflow-hidden border-t border-border/60 bg-secondary/25"
     >
-      <div className="px-4 py-3">{children}</div>
+      <div className="px-3.5 py-3">{children}</div>
     </motion.div>
   );
 }
@@ -119,7 +128,12 @@ export function ActivityTimeline({
   onOpenChange: (open: boolean) => void;
   initialExpandedType?: ActivityType | null;
   resetKey?: number;
-  onToolApproval?: (toolCallId: string, approved: boolean, reason: string, answer?: string) => void | Promise<void>;
+  onToolApproval?: (
+    toolCallId: string,
+    approved: boolean,
+    reason: string,
+    answer?: string,
+  ) => void | Promise<void>;
 }) {
   const { t } = useTranslation("message");
   const reducedMotion = useChatReducedMotion();
@@ -156,20 +170,22 @@ export function ActivityTimeline({
             transition: reducedMotion
               ? { duration: 0.01 }
               : {
-                opacity: getChatFadeTransition(false),
-                height: getChatLayoutTransition(false),
-                y: getChatLayoutTransition(false),
-              },
+                  opacity: getChatFadeTransition(false),
+                  height: getChatLayoutTransition(false),
+                  y: getChatLayoutTransition(false),
+                },
           }}
-          exit={reducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, y: -6, transition: { duration: 0.14 } }}
+          exit={
+            reducedMotion
+              ? { opacity: 0 }
+              : { opacity: 0, height: 0, y: -6, transition: { duration: 0.14 } }
+          }
           aria-hidden={!open}
           className="overflow-hidden"
         >
-          <motion.div
-            className="space-y-3 rounded-[var(--radius-card)] border border-border bg-card px-4 py-4"
-          >
+          <motion.div className="space-y-2.5 rounded-[var(--radius-activity-large)] border border-border/70 bg-card/90 px-3 py-3 shadow-sm">
             <div>
-              <div className="text-sm font-medium">{t("activity.timeline_title")}</div>
+              <div className="text-sm font-semibold">{t("activity.timeline_title")}</div>
               <div className="text-xs text-muted-foreground">
                 {t("activity.timeline_description", { count: entries.length })}
               </div>
@@ -208,24 +224,35 @@ export function ActivityTimeline({
                       transition: reducedMotion
                         ? { duration: 0.01 }
                         : {
-                          opacity: { duration: CHAT_MOTION_DURATION.fast, delay: index * CHAT_MOTION_DURATION.stagger },
-                          y: { ...getChatLayoutTransition(false), delay: index * CHAT_MOTION_DURATION.stagger },
-                          scale: { ...getChatLayoutTransition(false), delay: index * CHAT_MOTION_DURATION.stagger },
-                        },
+                            opacity: {
+                              duration: CHAT_MOTION_DURATION.fast,
+                              delay: index * CHAT_MOTION_DURATION.stagger,
+                            },
+                            y: {
+                              ...getChatLayoutTransition(false),
+                              delay: index * CHAT_MOTION_DURATION.stagger,
+                            },
+                            scale: {
+                              ...getChatLayoutTransition(false),
+                              delay: index * CHAT_MOTION_DURATION.stagger,
+                            },
+                          },
                     }}
-                    className="overflow-hidden rounded-[var(--radius-card-inner)] border border-border/80 bg-background"
+                    className="overflow-hidden rounded-[var(--radius-input-inner)] border border-border/70 bg-background/80"
                   >
                     <button
                       type="button"
                       onClick={toggleExpanded}
-                      className="flex w-full items-center gap-3 px-4 py-3 text-left"
+                      className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left"
                     >
                       <Icon className="size-4 text-primary" />
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-medium">{t("activity.type.reasoning")}</div>
                         {entry.durationMs ? (
                           <div className="text-xs text-muted-foreground">
-                            {t("activity.reasoning_done", { duration: formatDuration(entry.durationMs) })}
+                            {t("activity.reasoning_done", {
+                              duration: formatDuration(entry.durationMs),
+                            })}
                           </div>
                         ) : null}
                       </div>
@@ -271,23 +298,36 @@ export function ActivityTimeline({
                       transition: reducedMotion
                         ? { duration: 0.01 }
                         : {
-                          opacity: { duration: CHAT_MOTION_DURATION.fast, delay: index * CHAT_MOTION_DURATION.stagger },
-                          y: { ...getChatLayoutTransition(false), delay: index * CHAT_MOTION_DURATION.stagger },
-                          scale: { ...getChatLayoutTransition(false), delay: index * CHAT_MOTION_DURATION.stagger },
-                        },
+                            opacity: {
+                              duration: CHAT_MOTION_DURATION.fast,
+                              delay: index * CHAT_MOTION_DURATION.stagger,
+                            },
+                            y: {
+                              ...getChatLayoutTransition(false),
+                              delay: index * CHAT_MOTION_DURATION.stagger,
+                            },
+                            scale: {
+                              ...getChatLayoutTransition(false),
+                              delay: index * CHAT_MOTION_DURATION.stagger,
+                            },
+                          },
                     }}
-                    className="overflow-hidden rounded-[var(--radius-card-inner)] border border-border/80 bg-background"
+                    className="overflow-hidden rounded-[var(--radius-input-inner)] border border-border/70 bg-background/80"
                   >
                     <button
                       type="button"
                       onClick={toggleExpanded}
-                      className="flex w-full items-center gap-3 px-4 py-3 text-left"
+                      className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left"
                     >
-                      <Icon className={cn("size-4 text-primary", entry.isLoading && "animate-pulse")} />
+                      <Icon
+                        className={cn("size-4 text-primary", entry.isLoading && "animate-pulse")}
+                      />
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-medium">{t("activity.type.ocr")}</div>
                         {preview ? (
-                          <div className="line-clamp-1 text-xs text-muted-foreground">{preview}</div>
+                          <div className="line-clamp-1 text-xs text-muted-foreground">
+                            {preview}
+                          </div>
                         ) : null}
                       </div>
                       <motion.span
@@ -304,17 +344,23 @@ export function ActivityTimeline({
                           <div className="space-y-3 text-sm text-muted-foreground">
                             {entry.fileName ? (
                               <div className="space-y-1">
-                                <div className="text-xs font-medium text-foreground/80">{t("chat_message.copy_document")}</div>
+                                <div className="text-xs font-medium text-foreground/80">
+                                  {t("chat_message.copy_document")}
+                                </div>
                                 <div>{entry.fileName}</div>
                               </div>
                             ) : null}
                             <div className="space-y-1">
-                              <div className="text-xs font-medium text-foreground/80">{t("activity.timeline_ocr_source")}</div>
+                              <div className="text-xs font-medium text-foreground/80">
+                                {t("activity.timeline_ocr_source")}
+                              </div>
                               <div>{sourceLabel}</div>
                             </div>
                             {entry.pageNumbers.length > 0 ? (
                               <div className="space-y-1">
-                                <div className="text-xs font-medium text-foreground/80">{t("activity.timeline_ocr_pages_label")}</div>
+                                <div className="text-xs font-medium text-foreground/80">
+                                  {t("activity.timeline_ocr_pages_label")}
+                                </div>
                                 <div>{entry.pageNumbers.join(", ")}</div>
                               </div>
                             ) : null}
@@ -341,28 +387,48 @@ export function ActivityTimeline({
                     transition: reducedMotion
                       ? { duration: 0.01 }
                       : {
-                        opacity: { duration: CHAT_MOTION_DURATION.fast, delay: index * CHAT_MOTION_DURATION.stagger },
-                        y: { ...getChatLayoutTransition(false), delay: index * CHAT_MOTION_DURATION.stagger },
-                        scale: { ...getChatLayoutTransition(false), delay: index * CHAT_MOTION_DURATION.stagger },
-                      },
+                          opacity: {
+                            duration: CHAT_MOTION_DURATION.fast,
+                            delay: index * CHAT_MOTION_DURATION.stagger,
+                          },
+                          y: {
+                            ...getChatLayoutTransition(false),
+                            delay: index * CHAT_MOTION_DURATION.stagger,
+                          },
+                          scale: {
+                            ...getChatLayoutTransition(false),
+                            delay: index * CHAT_MOTION_DURATION.stagger,
+                          },
+                        },
                   }}
-                  className="overflow-hidden rounded-[var(--radius-card-inner)] border border-border/80 bg-background"
+                  className="overflow-hidden rounded-[var(--radius-input-inner)] border border-border/70 bg-background/80"
                 >
                   <button
                     type="button"
                     onClick={toggleExpanded}
-                    className="flex w-full items-start gap-3 px-4 py-3 text-left"
+                    className="flex w-full items-start gap-3 px-3.5 py-2.5 text-left"
                   >
-                    <Icon className={cn("mt-0.5 size-4 text-primary", entry.isLoading && "animate-pulse")} />
+                    <Icon
+                      className={cn(
+                        "mt-0.5 size-4 text-primary",
+                        entry.isLoading && "animate-pulse",
+                      )}
+                    />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
                         <div>
                           <div className="text-sm font-medium">{entry.displayName}</div>
                           {preview ? (
-                            <div className="line-clamp-1 text-xs text-muted-foreground">{preview}</div>
+                            <div className="line-clamp-1 text-xs text-muted-foreground">
+                              {preview}
+                            </div>
                           ) : null}
                         </div>
-                        <ToolApprovalActions tool={entry.tool} onToolApproval={onToolApproval} t={t} />
+                        <ToolApprovalActions
+                          tool={entry.tool}
+                          onToolApproval={onToolApproval}
+                          t={t}
+                        />
                       </div>
                       <div className="pt-2">
                         <ToolPreviewContent tool={entry.tool} t={t} />

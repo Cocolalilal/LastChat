@@ -1,6 +1,9 @@
 package me.rerere.rikkahub.web
 
 import android.content.Context
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 import androidx.core.net.toUri
 import io.ktor.http.ContentDisposition
 import io.ktor.http.ContentType
@@ -21,6 +24,7 @@ import io.ktor.server.request.receiveMultipart
 import io.ktor.server.response.header
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytes
+import io.ktor.server.response.respondRedirect
 import io.ktor.server.response.respondOutputStream
 import io.ktor.server.response.respondText
 import io.ktor.server.response.respondTextWriter
@@ -66,6 +70,7 @@ import me.rerere.rikkahub.data.model.AssistantSearchMode
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.service.ChatService
+import me.rerere.rikkahub.service.MemoryConsolidationWorker
 import me.rerere.rikkahub.utils.JsonInstant
 
 private const val MAX_UPLOAD_FILE_SIZE_BYTES = 20 * 1024 * 1024
@@ -161,8 +166,11 @@ fun Application.configureWebApi(
                 if (name.isBlank()) {
                     throw BadRequestException("Missing name")
                 }
+                val icon = call.request.queryParameters["icon"]?.trim()?.takeIf { it.isNotBlank() }
+                val providerSlug = call.request.queryParameters["providerSlug"]?.trim()?.takeIf { it.isNotBlank() }
+                val theme = call.request.queryParameters["theme"]?.trim()?.takeIf { it.isNotBlank() }
 
-                val assetPath = resolveAiIconAssetPath(name)
+                val assetPath = resolveAiIconAssetPath(name = name, icon = icon, providerSlug = providerSlug)
                 if (assetPath != null) {
                     runCatching {
                         val bytes = withContext(Dispatchers.IO) {
@@ -173,6 +181,15 @@ fun Application.configureWebApi(
                     }.onSuccess {
                         return@get
                     }
+                }
+
+                val remoteIconUrl = icon
+                    ?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+                    ?: providerSlug?.toLobeHubIconUrl(theme)
+                if (remoteIconUrl != null) {
+                    call.response.header(HttpHeaders.CacheControl, "public, max-age=3600")
+                    call.respondRedirect(remoteIconUrl, permanent = false)
+                    return@get
                 }
 
                 call.response.header(HttpHeaders.CacheControl, "public, max-age=3600")
@@ -404,6 +421,48 @@ private fun Route.webRoutes(
 
             chatService.generateTitle(conversationId, conversation, force = true)
             call.respond(HttpStatusCode.Accepted, mapOf("status" to "accepted"))
+        }
+
+        post("/{id}/consolidate") {
+            val conversationId = call.parameters["id"].toUuid("conversation id")
+            withContext(Dispatchers.IO) {
+                conversationRepo.getConversationById(conversationId)
+            } ?: throw NotFoundException("Conversation not found")
+
+            withContext(Dispatchers.IO) {
+                conversationRepo.markAsNotConsolidated(conversationId)
+            }
+            val request = OneTimeWorkRequestBuilder<MemoryConsolidationWorker>()
+                .setInputData(
+                    workDataOf(
+                        "FORCE_CONVERSATION_ID" to conversationId.toString()
+                    )
+                )
+                .build()
+            WorkManager.getInstance(context).enqueue(request)
+            call.respond(HttpStatusCode.Accepted, mapOf("status" to "accepted"))
+        }
+
+        post("/{id}/context-refresh") {
+            val conversationId = call.parameters["id"].toUuid("conversation id")
+            val result = chatService.summarizeAndRefresh(conversationId)
+            val error = result.errorResId?.let { resId ->
+                if (result.errorArgs.isEmpty()) {
+                    context.getString(resId)
+                } else {
+                    context.getString(resId, *result.errorArgs.toTypedArray())
+                }
+            }
+            call.respond(
+                if (result.success) HttpStatusCode.OK else HttpStatusCode.BadRequest,
+                ContextRefreshResponse(
+                    success = result.success,
+                    summary = result.summary.takeIf { it.isNotBlank() },
+                    messagesSummarized = result.messagesSummarized,
+                    tokensSaved = result.tokensSaved,
+                    error = error,
+                )
+            )
         }
 
         post("/{id}/title") {
@@ -1042,7 +1101,13 @@ private fun ConversationDto.singleNodeDiffOrNull(current: ConversationDto): Node
         isPinned != current.isPinned ||
         enabledSkillIds != current.enabledSkillIds ||
         truncateIndex != current.truncateIndex ||
-        chatSuggestions != current.chatSuggestions
+        chatSuggestions != current.chatSuggestions ||
+        isConsolidated != current.isConsolidated ||
+        contextSummary != current.contextSummary ||
+        contextSummaryUpToIndex != current.contextSummaryUpToIndex ||
+        lastPruneTime != current.lastPruneTime ||
+        lastPruneMessageCount != current.lastPruneMessageCount ||
+        lastRefreshTime != current.lastRefreshTime
     ) {
         return null
     }
@@ -1289,23 +1354,45 @@ private fun secureEquals(left: String, right: String): Boolean {
     return MessageDigest.isEqual(left.toByteArray(Charsets.UTF_8), right.toByteArray(Charsets.UTF_8))
 }
 
-private fun resolveAiIconAssetPath(name: String): String? {
-    val lowerName = name.lowercase(Locale.ROOT)
+internal fun resolveAiIconAssetPath(
+    name: String,
+    icon: String? = null,
+    providerSlug: String? = null,
+): String? {
+    icon?.extractCatalogIconFileName()?.let { return it }
+    val lowerName = listOfNotNull(name, providerSlug)
+        .joinToString(" ")
+        .lowercase(Locale.ROOT)
     return when {
+        "ai21" in lowerName -> "ai21.svg"
+        "anthropic" in lowerName || "claude" in lowerName -> "claude.svg"
+        "baai" in lowerName -> "baai.svg"
+        "baichuan" in lowerName -> "baichuan.svg"
+        "baidu" in lowerName || "ernie" in lowerName -> "baidu.svg"
         "bing" in lowerName -> "bing.svg"
         "bocha" in lowerName -> "bocha.svg"
         "brave" in lowerName -> "brave.svg"
+        "cerebras" in lowerName -> "cerebras.svg"
+        "cohere" in lowerName || "command" in lowerName -> "cohere.svg"
+        "deepseek" in lowerName -> "deepseek.svg"
         "elevenlabs" in lowerName || "eleven labs" in lowerName -> "elevenlabs.svg"
         "exa" in lowerName -> "exa.svg"
         "firecrawl" in lowerName -> "firecrawl.svg"
+        "fireworks" in lowerName -> "fireworks.svg"
         "gemini" in lowerName || "google" in lowerName -> "gemini.svg"
+        "github" in lowerName -> "github.svg"
+        "groq" in lowerName -> "groq.svg"
         "grok" in lowerName || "xai" in lowerName -> "grok.svg"
+        "huggingface" in lowerName || "hugging face" in lowerName -> "huggingface.svg"
         "jina" in lowerName -> "jina.svg"
         "linkup" in lowerName -> "linkup.svg"
+        "meta" in lowerName || "llama" in lowerName -> "meta.svg"
         "metaso" in lowerName -> "metaso.svg"
+        "mistral" in lowerName -> "mistral.svg"
         "minimax" in lowerName -> "minimax.svg"
         "nano-gpt" in lowerName || "nanogpt" in lowerName -> "nanogpt.svg"
         "ollama" in lowerName -> "ollama.svg"
+        "openrouter" in lowerName -> "openrouter.svg"
         "openai" in lowerName -> "openai.svg"
         "perplexity" in lowerName -> "perplexity.svg"
         "qwen" in lowerName || "dashscope" in lowerName -> "qwen.svg"
@@ -1314,6 +1401,54 @@ private fun resolveAiIconAssetPath(name: String): String? {
         "zhipu" in lowerName || "glm" in lowerName -> "zhipu.svg"
         else -> null
     }
+}
+
+internal fun String.extractCatalogIconFileName(): String? {
+    val normalized = trim()
+    if (normalized.isBlank()) return null
+    val lower = normalized.lowercase(Locale.ROOT)
+    val markers = listOf(
+        "/catalog/icons/",
+        "catalog/icons/",
+        "/icons/",
+        "icons/",
+        "file:///android_asset/icons/",
+    )
+    markers.forEach { marker ->
+        val index = lower.indexOf(marker)
+        if (index >= 0) {
+            return normalized.substring(index + marker.length)
+                .substringAfterLast('/')
+                .takeIf { it.isSafeIconAssetName() }
+        }
+    }
+    if (!normalized.contains('/') && !normalized.contains('\\') && normalized.isSafeIconAssetName()) {
+        return normalized
+    }
+    return null
+}
+
+internal fun String.isSafeIconAssetName(): Boolean {
+    if (isBlank() || contains("..") || contains('/') || contains('\\')) return false
+    val extension = substringAfterLast('.', "").lowercase(Locale.ROOT)
+    return extension in setOf("svg", "png", "webp")
+}
+
+internal fun String.toLobeHubIconUrl(theme: String?): String {
+    val normalized = lowercase(Locale.ROOT)
+        .trim()
+        .removePrefix("lobehub://")
+        .replace(" ", "-")
+        .replace("_", "-")
+    val slug = when (normalized.replace("-", "")) {
+        "metallama" -> "meta"
+        "mistralai" -> "mistral"
+        "01ai" -> "yi"
+        "moonshotai" -> "moonshot"
+        else -> normalized
+    }
+    val resolvedTheme = if (theme.equals("dark", ignoreCase = true)) "dark" else "light"
+    return "https://registry.npmmirror.com/@lobehub/icons-static-png/latest/files/$resolvedTheme/$slug.png"
 }
 
 private fun buildFallbackSvg(name: String): String {

@@ -72,13 +72,8 @@ private const val TAG = "GenerationHandler"
 private const val SKILL_MANAGEMENT_TOOL_NAME = "manage_skills"
 internal const val MEMORY_SEARCH_TOOL_NAME = "search_memory"
 
-internal fun shouldRegisterMemorySearchTool(
-    assistant: Assistant,
-    messages: List<UIMessage> = emptyList(),
-): Boolean {
-    return assistant.enableMemory &&
-        assistant.enableMemorySearchTool &&
-        (messages.isEmpty() || hasExplicitMemorySearchIntent(messages))
+internal fun shouldRegisterMemorySearchTool(assistant: Assistant): Boolean {
+    return assistant.enableMemory && assistant.enableMemorySearchTool
 }
 private const val SKILL_REASON_ASSISTANT = "Enabled for assistant"
 private const val SKILL_REASON_CONVERSATION = "Enabled for chat"
@@ -484,7 +479,7 @@ class GenerationHandler(
                         onDelete = { id ->
                             memoryRepo.deleteMemory(id)
                         },
-                        onSearch = if (shouldRegisterMemorySearchTool(assistant, messages)) {
+                        onSearch = if (shouldRegisterMemorySearchTool(assistant)) {
                             { query, limit, timeRange ->
                                 memorySearchService.searchMemory(
                                     assistant = assistant,
@@ -592,7 +587,7 @@ class GenerationHandler(
                         metadata = toolCall.metadata
                     )
                 }.onFailure {
-                    it.printStackTrace()
+                    Log.e(TAG, "Tool execution failed: ${toolCall.toolName}", it)
                     results += UIMessagePart.ToolResult(
                         toolName = toolCall.toolName,
                         toolCallId = toolCall.toolCallId,
@@ -600,10 +595,7 @@ class GenerationHandler(
                         content = buildJsonObject {
                             put(
                                 "error",
-                                JsonPrimitive(buildString {
-                                    append("[${it::class.qualifiedName ?: it::class.simpleName ?: "Throwable"}] ${it.message}")
-                                    append("\n${it.stackTraceToString()}")
-                                })
+                                JsonPrimitive(formatToolExecutionError(it))
                             )
                         },
                         arguments = runCatching {
@@ -1302,11 +1294,7 @@ class GenerationHandler(
             topK = null,
             maxTokens = assistant.maxTokens,
             tools = tools,
-            builtInTools = resolveActiveBuiltInTools(
-                model = model,
-                assistant = assistant,
-                allowSearch = hasExplicitWebSearchIntent(messages),
-            ),
+            builtInTools = resolveActiveBuiltInTools(model, assistant),
             thinkingBudget = assistant.thinkingBudget,
             sessionId = activeConversationId?.toString(),
             customHeaders = buildList {
@@ -1710,6 +1698,13 @@ class GenerationHandler(
             error("Invalid tool arguments")
         }
     }
+
+}
+
+internal fun formatToolExecutionError(throwable: Throwable): String {
+    return throwable.message
+        ?.takeIf { it.isNotBlank() }
+        ?: (throwable::class.simpleName ?: "Tool execution failed")
 }
 
 internal fun List<UIMessage>.upsertOcrPlaceholder(

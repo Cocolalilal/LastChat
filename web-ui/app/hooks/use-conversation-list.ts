@@ -23,6 +23,12 @@ interface ConversationSummaryUpdate {
   createAt: number;
   updateAt: number;
   isGenerating: boolean;
+  isConsolidated: boolean;
+  contextSummary?: string | null;
+  contextSummaryUpToIndex: number;
+  lastPruneTime: number;
+  lastPruneMessageCount: number;
+  lastRefreshTime: number;
 }
 
 export interface UseConversationListResult {
@@ -111,6 +117,12 @@ export function useConversationList({
                   createAt: update.createAt,
                   updateAt: update.updateAt,
                   isGenerating: update.isGenerating,
+                  isConsolidated: update.isConsolidated,
+                  contextSummary: update.contextSummary,
+                  contextSummaryUpToIndex: update.contextSummaryUpToIndex,
+                  lastPruneTime: update.lastPruneTime,
+                  lastPruneMessageCount: update.lastPruneMessageCount,
+                  lastRefreshTime: update.lastRefreshTime,
                 }
               : item,
           ),
@@ -284,5 +296,11 @@ export function toConversationSummaryUpdate(
     createAt: conversation.createAt,
     updateAt: conversation.updateAt,
     isGenerating: conversation.isGenerating,
+    isConsolidated: conversation.isConsolidated,
+    contextSummary: conversation.contextSummary,
+    contextSummaryUpToIndex: conversation.contextSummaryUpToIndex,
+    lastPruneTime: conversation.lastPruneTime,
+    lastPruneMessageCount: conversation.lastPruneMessageCount,
+    lastRefreshTime: conversation.lastRefreshTime,
   };
 }

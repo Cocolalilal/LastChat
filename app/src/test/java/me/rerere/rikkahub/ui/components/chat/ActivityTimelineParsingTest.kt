@@ -299,6 +299,29 @@ class ActivityTimelineParsingTest {
     }
 
     @Test
+    fun buildTimelineEntries_recoversFirstObjectFromConcatenatedArguments() {
+        val entries = buildTimelineEntries(
+            parts = listOf(
+                UIMessagePart.ToolCall(
+                    toolCallId = "search-1",
+                    toolName = "search_web",
+                    arguments = """
+                        {"query":"coding agents planning vs no planning performance comparison"}
+                        {"query":"Plan-and-Execute agent performance benchmark"}
+                    """.trimIndent()
+                )
+            )
+        )
+
+        val entry = entries.single() as TimelineEntry.ToolCall
+        val args = entry.argumentsJson as JsonObject
+        assertEquals(
+            JsonPrimitive("coding agents planning vs no planning performance comparison"),
+            args["query"]
+        )
+    }
+
+    @Test
     fun buildInitialTimelineFocus_completedTurnKeepsEntriesCollapsed() {
         val entries = listOf(
             TimelineEntry.Reasoning(
@@ -419,6 +442,55 @@ class ActivityTimelineParsingTest {
 
         assertEquals(listOf("Search", "search-fallback"), summary.activated)
         assertEquals(listOf("Code"), summary.disabled)
+    }
+
+    @Test
+    fun buildTimelineCopyText_includesSearchQueryAnswerAndSources() {
+        val text = buildTimelineCopyText(
+            TimelineEntry.ToolCall(
+                id = "search-1",
+                toolName = "search_web",
+                displayName = "Searching web",
+                argumentsText = """{"query":"compose shared bounds"}""",
+                resultText = null,
+                argumentsJson = buildJsonObject {
+                    put("query", "compose shared bounds")
+                },
+                resultJson = buildJsonObject {
+                    put("answer", "Use shared bounds for coordinated size changes.")
+                    put("items", buildJsonArray {
+                        add(buildJsonObject {
+                            put("title", "Android Developers")
+                            put("url", "https://developer.android.com/develop/ui/compose/animation/shared-elements")
+                            put("text", "Shared element transition docs")
+                        })
+                    })
+                }
+            )
+        )
+
+        assertTrue(text.contains("compose shared bounds"))
+        assertTrue(text.contains("Use shared bounds"))
+        assertTrue(text.contains("https://developer.android.com"))
+    }
+
+    @Test
+    fun buildTimelineCopyText_includesMemoryBeforeAndAfter() {
+        val text = buildTimelineCopyText(
+            TimelineEntry.MemoryAction(
+                id = "memory-1",
+                toolName = "edit_memory",
+                operation = MemoryOperation.EDIT,
+                memoryId = 7,
+                content = "After memory",
+                previousContent = "Before memory",
+                memoryType = 0,
+                timestamp = 1L
+            )
+        )
+
+        assertTrue(text.contains("Before memory"))
+        assertTrue(text.contains("After memory"))
     }
 
     @Test

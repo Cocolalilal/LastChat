@@ -166,11 +166,12 @@ fun HighlightCodeBlock(
 ) {
     val darkMode = LocalDarkMode.current
     val colorPalette = if (darkMode) AtomOneDarkPalette else AtomOneLightPalette
+    val normalizedLanguage = remember(language) { normalizeCodeBlockLanguage(language) }
     val horizontalScrollState = rememberScrollState()
     val verticalScrollState = rememberScrollState()
     val clipboardManager = LocalClipboard.current
     val scope = rememberCoroutineScope()
-    val navController = if (language.lowercase() == "html") LocalNavController.current else null
+    val navController = if (normalizedLanguage == "html") LocalNavController.current else null
     val context = LocalContext.current
     val settings = LocalSettings.current
     val effectiveDisplay = settings.getEffectiveDisplaySetting()
@@ -288,8 +289,8 @@ fun HighlightCodeBlock(
         }
     }
 
-    val languageLabel = remember(language) {
-        getLanguageDisplayName(language).lowercase()
+    val languageLabel = remember(normalizedLanguage) {
+        getLanguageDisplayName(normalizedLanguage).lowercase()
     }
 
     fun toggle() {
@@ -333,10 +334,10 @@ fun HighlightCodeBlock(
             ) {
                 CodeBlockHeader(
                     languageLabel = languageLabel,
-                    showPreview = language.lowercase() == "html",
+                    showPreview = normalizedLanguage == "html",
                     actionTextColor = actionTextColor,
                     onSave = {
-                        val extension = getFileExtension(language)
+                        val extension = getFileExtension(normalizedLanguage)
                         createDocumentLauncher.launch(
                             "code_${Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())}.$extension"
                         )
@@ -362,7 +363,7 @@ fun HighlightCodeBlock(
             ) {
                 CodeBlockText(
                     code = code,
-                    language = language,
+                    language = normalizedLanguage,
                     expandState = expandState,
                     autoWrap = autoWrap,
                     horizontalScrollState = horizontalScrollState,
@@ -630,6 +631,43 @@ internal fun CodeBlockFooter(
     }
 }
 
+internal fun normalizeCodeBlockLanguage(language: String): String {
+    val token = language
+        .lineSequence()
+        .firstOrNull()
+        ?.trim()
+        ?.substringBefore(' ')
+        ?.substringBefore('\t')
+        ?.trim('.', '{', '}', ',', ';', ':', '"', '\'')
+        ?: ""
+    val normalized = token
+        .removePrefix("language-")
+        .removePrefix("lang-")
+        .lowercase()
+
+    return when (normalized) {
+        "", "plain", "text", "txt", "none" -> "plaintext"
+        "kt", "kts" -> "kotlin"
+        "js", "mjs", "cjs" -> "javascript"
+        "ts" -> "typescript"
+        "py", "py3" -> "python"
+        "rb" -> "ruby"
+        "rs" -> "rust"
+        "golang" -> "go"
+        "sh", "shell", "zsh" -> "bash"
+        "ps", "pwsh" -> "powershell"
+        "c++" -> "cpp"
+        "c#", "cs" -> "csharp"
+        "objective-c", "objc" -> "objectivec"
+        "md" -> "markdown"
+        "yml" -> "yaml"
+        "jsonl" -> "json"
+        "dockerfile" -> "docker"
+        "plantuml" -> "plant-uml"
+        else -> normalized
+    }
+}
+
 private fun getLanguageDisplayName(language: String): String {
     return when (language.lowercase()) {
         "kotlin", "kt" -> "Kotlin"
@@ -638,6 +676,7 @@ private fun getLanguageDisplayName(language: String): String {
         "javascript", "js" -> "JavaScript"
         "typescript", "ts" -> "TypeScript"
         "cpp", "c++" -> "C++"
+        "csharp", "c#" -> "C#"
         "c" -> "C"
         "html" -> "HTML"
         "css" -> "CSS"
@@ -662,7 +701,9 @@ private fun getLanguageDisplayName(language: String): String {
         "clojure", "clj" -> "Clojure"
         "elixir", "ex" -> "Elixir"
         "erlang", "erl" -> "Erlang"
-        "dockerfile" -> "Dockerfile"
+        "docker", "dockerfile" -> "Dockerfile"
+        "powershell" -> "PowerShell"
+        "plant-uml" -> "PlantUML"
         "toml" -> "TOML"
         "ini" -> "INI"
         "graphql", "gql" -> "GraphQL"
@@ -679,6 +720,7 @@ private fun getFileExtension(language: String): String {
         "javascript" -> "js"
         "typescript" -> "ts"
         "cpp", "c++" -> "cpp"
+        "csharp", "c#" -> "cs"
         "c" -> "c"
         "html" -> "html"
         "css" -> "css"
@@ -688,6 +730,8 @@ private fun getFileExtension(language: String): String {
         "markdown", "md" -> "md"
         "sql" -> "sql"
         "sh", "bash" -> "sh"
+        "powershell" -> "ps1"
+        "docker", "dockerfile" -> "Dockerfile"
         else -> "txt"
     }
 }
@@ -702,10 +746,11 @@ fun rememberHighlightCodeVisualTransformation(
     val highlighter = LocalHighlighter.current
     val darkMode = LocalDarkMode.current
     val colorPalette = if (darkMode) AtomOneDarkPalette else AtomOneLightPalette
+    val normalizedLanguage = remember(language) { normalizeCodeBlockLanguage(language) }
     
-    val highlighted by produceState<AnnotatedString?>(initialValue = null, code, language, darkMode) {
+    val highlighted by produceState<AnnotatedString?>(initialValue = null, code, normalizedLanguage, darkMode) {
         try {
-            val tokens = highlighter.highlight(code, language)
+            val tokens = highlighter.highlight(code, normalizedLanguage)
             value = buildAnnotatedString {
                 tokens.forEach { token ->
                     buildHighlightText(token, colorPalette)

@@ -996,8 +996,9 @@ private fun MarkdownNode(
             val scope = rememberCoroutineScope()
             Text(
                 text = linkText,
-                color = MaterialTheme.colorScheme.primary,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
                 textDecoration = TextDecoration.Underline,
+                fontWeight = FontWeight.Medium,
                 modifier = modifier.clickable {
                     Log.d("Markdown", "Link clicked: text='$linkText', dest='$linkDest'")
                     val uri = linkDest.toUri()
@@ -1155,11 +1156,12 @@ private fun MarkdownNode(
 
             val language =
                 node.findChildOfTypeRecursive(MarkdownTokenTypes.FENCE_LANG)?.getTextInNode(content) ?: "plaintext"
+            val normalizedLanguage = normalizeCodeBlockLanguage(language)
             val hasEnd = node.findChildOfTypeRecursive(MarkdownTokenTypes.CODE_FENCE_END) != null
 
             // Mermaid diagrams: render directly without HighlightCodeBlock wrapper
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                if (hasEnd && language == "mermaid") {
+                if (hasEnd && normalizedLanguage == "mermaid") {
                     Mermaid(
                         code = code,
                         modifier = Modifier
@@ -1169,7 +1171,7 @@ private fun MarkdownNode(
                 } else {
                     HighlightCodeBlock(
                         code = code,
-                        language = language,
+                        language = normalizedLanguage,
                         modifier = Modifier
                             .padding(bottom = 4.dp)
                             .fillMaxWidth(),
@@ -1570,7 +1572,13 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
         node.type == GFMTokenTypes.GFM_AUTOLINK -> {
             val link = node.getTextInNode(content)
             withLink(LinkAnnotation.Url(link)) {
-                withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
+                withStyle(
+                    SpanStyle(
+                        color = colorScheme.primary.copy(alpha = 0.9f),
+                        fontWeight = FontWeight.Medium,
+                        textDecoration = TextDecoration.Underline
+                    )
+                ) {
                     append(link)
                 }
             }
@@ -1718,8 +1726,9 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                                     },
                                 style = TextStyle(
                                     fontSize = style.fontSize,
-                                    color = colorScheme.primary,
-                                    textDecoration = TextDecoration.Underline
+                                    color = colorScheme.primary.copy(alpha = 0.9f),
+                                    textDecoration = TextDecoration.Underline,
+                                    fontWeight = FontWeight.Medium
                                 ),
                             )
                         })
@@ -1729,7 +1738,9 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                 withLink(LinkAnnotation.Url(linkDest)) {
                     withStyle(
                         SpanStyle(
-                            color = colorScheme.primary, textDecoration = TextDecoration.Underline
+                            color = colorScheme.primary.copy(alpha = 0.9f),
+                            textDecoration = TextDecoration.Underline,
+                            fontWeight = FontWeight.Medium
                         )
                     ) {
                         append(linkText)
@@ -1742,7 +1753,13 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
             val links = node.children.trim(MarkdownTokenTypes.LT, 1).trim(MarkdownTokenTypes.GT, 1)
             links.fastForEach { link ->
                 withLink(LinkAnnotation.Url(link.getTextInNode(content))) {
-                    withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
+                    withStyle(
+                        SpanStyle(
+                            color = colorScheme.primary.copy(alpha = 0.9f),
+                            fontWeight = FontWeight.Medium,
+                            textDecoration = TextDecoration.Underline
+                        )
+                    ) {
                         append(link.getTextInNode(content))
                     }
                 }

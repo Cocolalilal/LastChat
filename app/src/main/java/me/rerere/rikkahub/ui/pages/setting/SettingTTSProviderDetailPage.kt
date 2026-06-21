@@ -32,6 +32,7 @@ import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.DragIndicator
+import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.ViewModule
@@ -1171,13 +1172,27 @@ private fun TtsProviderIcon(
     provider: TTSProviderSetting,
     catalogSnapshot: me.rerere.rikkahub.data.ai.models.ModelCatalogSnapshot?,
 ) {
+    if (provider is TTSProviderSetting.SystemTTS) {
+        Box(
+            modifier = Modifier.size(24.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.PhoneAndroid,
+                contentDescription = provider.name.ifBlank { "System TTS" },
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        return
+    }
+
     val catalogId = when (provider) {
         is TTSProviderSetting.OpenAI -> "openai"
         is TTSProviderSetting.Gemini -> "gemini"
         is TTSProviderSetting.MiniMax -> "minimax"
         is TTSProviderSetting.ElevenLabs -> "elevenlabs"
         is TTSProviderSetting.Qwen -> "qwen"
-        is TTSProviderSetting.SystemTTS -> "System"
+        is TTSProviderSetting.SystemTTS -> error("System TTS is rendered before catalog lookup")
     }
     AutoAIIconWithUrl(
         name = provider.name.ifBlank { catalogId },

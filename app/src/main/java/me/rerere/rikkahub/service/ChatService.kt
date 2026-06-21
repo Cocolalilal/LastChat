@@ -69,7 +69,6 @@ import me.rerere.rikkahub.data.ai.buildTitleGenerationParams
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.prompts.buildSuggestionPromptContent
 import me.rerere.rikkahub.data.ai.prompts.parseSuggestionLines
-import me.rerere.rikkahub.data.ai.hasExplicitWebSearchIntent
 import me.rerere.rikkahub.data.ai.shouldUseBuiltInSearch
 import me.rerere.rikkahub.data.ai.tools.ASK_USER_TOOL_NAME
 import me.rerere.rikkahub.data.ai.tools.AskUserAnswerPayload
@@ -77,6 +76,7 @@ import me.rerere.rikkahub.data.ai.tools.LocalTools
 import me.rerere.rikkahub.data.ai.tools.createWorkspaceTools
 import me.rerere.rikkahub.data.ai.tools.normalizeAskUserAnswerPayload
 import me.rerere.rikkahub.data.ai.tools.parseAskUserQuestionnaire
+import me.rerere.rikkahub.data.ai.tools.parseJsonElementWithRecovery
 import me.rerere.rikkahub.data.ai.tools.toJsonElement
 import me.rerere.rikkahub.data.ai.transformers.RegexOutputTransformer
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
@@ -1665,16 +1665,11 @@ class ChatService(
         model: Model,
     ): List<Tool> {
         return buildList {
-            val allowWebSearch = hasExplicitWebSearchIntent(conversation.currentMessages)
-            val useBuiltInSearch = shouldUseBuiltInSearch(
-                model = model,
-                assistant = assistant,
-                allowSearch = allowWebSearch,
-            )
+            val useBuiltInSearch = shouldUseBuiltInSearch(model, assistant)
 
             when (val searchMode = assistant.searchMode) {
                 is AssistantSearchMode.Provider -> {
-                    if (allowWebSearch && !useBuiltInSearch) {
+                    if (!useBuiltInSearch) {
                         addAll(createSearchTool(settings, searchMode.index))
                     }
                 }
@@ -1794,11 +1789,7 @@ class ChatService(
     }
 
     private fun parseToolArguments(arguments: String): JsonElement {
-        return runCatching {
-            JsonInstantPretty.parseToJsonElement(arguments.ifBlank { "{}" })
-        }.getOrElse {
-            JsonPrimitive(arguments)
-        }
+        return parseJsonElementWithRecovery(arguments, JsonInstantPretty) ?: JsonPrimitive(arguments)
     }
 
     private fun createSearchTool(settings: Settings, providerIndex: Int? = null): Set<Tool> {

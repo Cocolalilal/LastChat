@@ -24,38 +24,83 @@ function toFallbackText(name: string): string {
 }
 
 function isCatalogIconUrl(url: string): boolean {
+  const lower = url.toLowerCase();
   return (
-    url.toLowerCase().includes("/lastchat/main/catalog/icons/") ||
-    url.toLowerCase().includes("/lastchat/refs/heads/main/catalog/icons/")
+    lower.includes("/catalog/icons/") ||
+    lower.includes("catalog/icons/") ||
+    lower.includes("raw.githubusercontent.com/cocolalilal/lastchat") ||
+    lower.includes("jsdelivr.net/gh/cocolalilal/lastchat") ||
+    lower.startsWith("icons/") ||
+    lower.startsWith("/icons/") ||
+    lower.includes("file:///android_asset/icons/")
   );
+}
+
+function isRemoteUrl(url: string): boolean {
+  return url.startsWith("https://") || url.startsWith("http://");
+}
+
+function getThemeName(): "dark" | "light" {
+  if (typeof document === "undefined") return "light";
+  return document.documentElement.classList.contains("dark") ? "dark" : "light";
+}
+
+function buildApiIconSrc({
+  name,
+  icon,
+  providerSlug,
+}: {
+  name: string;
+  icon?: string | null;
+  providerSlug?: string | null;
+}) {
+  const params = new URLSearchParams({ name });
+  if (icon) params.set("icon", icon);
+  if (providerSlug) params.set("providerSlug", providerSlug);
+  params.set("theme", getThemeName());
+  return `/api/ai-icon?${params.toString()}`;
 }
 
 export function AIIcon({
   name,
   iconUrl,
   customIconUri,
+  providerSlug,
   size = 24,
   loading = false,
   className,
   imageClassName,
-  allowNameIconFallback = false,
+  allowNameIconFallback = true,
 }: AIIconProps) {
   const normalizedName = name.trim() || "auto";
   const fallbackText = toFallbackText(normalizedName);
   
   const srcStack = React.useMemo(() => {
     const stack: string[] = [];
-    if (customIconUri && isCatalogIconUrl(customIconUri)) {
-      stack.push(customIconUri);
+    if (customIconUri) {
+      if (customIconUri.startsWith("lobehub://")) {
+        stack.push(buildApiIconSrc({
+          name: normalizedName,
+          providerSlug: customIconUri.replace(/^lobehub:\/\//i, ""),
+        }));
+      } else if (isCatalogIconUrl(customIconUri)) {
+        stack.push(buildApiIconSrc({ name: normalizedName, icon: customIconUri, providerSlug }));
+      } else if (isRemoteUrl(customIconUri)) {
+        stack.push(customIconUri);
+      }
     }
-    if (iconUrl && isCatalogIconUrl(iconUrl)) {
-      stack.push(iconUrl);
+    if (iconUrl) {
+      if (isCatalogIconUrl(iconUrl)) {
+        stack.push(buildApiIconSrc({ name: normalizedName, icon: iconUrl, providerSlug }));
+      } else if (isRemoteUrl(iconUrl)) {
+        stack.push(iconUrl);
+      }
     }
     if (allowNameIconFallback) {
-      stack.push(`/api/ai-icon?name=${encodeURIComponent(normalizedName)}`);
+      stack.push(buildApiIconSrc({ name: normalizedName, providerSlug }));
     }
     return stack;
-  }, [customIconUri, iconUrl, allowNameIconFallback, normalizedName]);
+  }, [allowNameIconFallback, customIconUri, iconUrl, normalizedName, providerSlug]);
 
   const [srcIndex, setSrcIndex] = React.useState(0);
   const [loaded, setLoaded] = React.useState(false);
