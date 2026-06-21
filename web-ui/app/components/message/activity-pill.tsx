@@ -238,13 +238,27 @@ function ActivitySegmentButton({
   live,
   reducedMotion,
   delay = 0,
+  isFirst,
+  isLast,
+  isOnly,
 }: {
   segment: PillSegment;
   onClick: () => void;
   live: boolean;
   reducedMotion: boolean;
   delay?: number;
+  isFirst?: boolean;
+  isLast?: boolean;
+  isOnly?: boolean;
 }) {
+  const radiusClass = isOnly
+    ? "rounded-[var(--radius-activity-large)]"
+    : isFirst
+      ? "rounded-l-[var(--radius-activity-large)] rounded-r-[var(--radius-activity-small)]"
+      : isLast
+        ? "rounded-r-[var(--radius-activity-large)] rounded-l-[var(--radius-activity-small)]"
+        : "rounded-[var(--radius-activity-small)]";
+
   return (
     <motion.button
       type="button"
@@ -273,9 +287,10 @@ function ActivitySegmentButton({
       onClick={onClick}
       className={cn(
         "border text-card-foreground shadow-sm transition-colors hover:bg-card active:shadow-none",
+        radiusClass,
         segment.variant === "mini"
-          ? "inline-flex size-9 items-center justify-center rounded-t-[var(--radius-activity-large)] rounded-b-[var(--radius-activity-small)] border-border/70 bg-card/88"
-          : "inline-flex h-9 max-w-full items-center rounded-t-[var(--radius-activity-large)] rounded-b-[var(--radius-activity-small)] border-border/70 bg-card/88 px-3.5 text-xs font-medium",
+          ? "inline-flex size-9 items-center justify-center border-border/70 bg-card/88"
+          : "inline-flex h-9 max-w-full items-center border-border/70 bg-card/88 px-3.5 text-xs font-medium",
       )}
       title={segment.variant === "mini" ? segment.type : undefined}
       aria-label={segment.label ?? segment.type}
@@ -332,7 +347,7 @@ export function ActivityPill({
         }
         className={cn("inline-flex max-w-full", className)}
       >
-        <motion.div layout className="inline-flex max-w-full items-center gap-1.5">
+        <motion.div layout className="inline-flex max-w-full items-center gap-[2px]">
           <AnimatePresence initial={false}>
             {segments.map((segment, index) => (
               <ActivitySegmentButton
@@ -342,6 +357,9 @@ export function ActivityPill({
                 live={live && index === 0}
                 reducedMotion={reducedMotion}
                 delay={reducedMotion ? 0 : index * CHAT_MOTION_DURATION.stagger}
+                isOnly={segments.length === 1}
+                isFirst={index === 0 && segments.length > 1}
+                isLast={index === segments.length - 1 && segments.length > 1}
               />
             ))}
           </AnimatePresence>

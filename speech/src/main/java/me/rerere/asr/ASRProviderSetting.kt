@@ -22,7 +22,7 @@ sealed class ASRProviderSetting {
         val servicePackageName: String? = null,
         val serviceClassName: String? = null,
         val language: String = "",
-        val preferOffline: Boolean = true,
+        val preferOffline: Boolean = false,
         val partialResults: Boolean = true,
     ) : ASRProviderSetting() {
         override fun copyProvider(

@@ -1,4 +1,5 @@
 import * as React from "react";
+import { cn } from "~/lib/utils";
 
 import dayjs from "dayjs";
 import type { TFunction } from "i18next";
@@ -734,11 +735,11 @@ export const ConversationSidebar = React.memo(
         </SidebarHeader>
         <SidebarContent className="min-h-0">
           <SidebarGroup className="px-2 pt-0.5 pb-0.5">
-            <div className="flex flex-col gap-1 overflow-hidden rounded-[var(--radius-card)] bg-sidebar-accent/25 p-1">
+            <div className="flex flex-col gap-[2px]">
               <Button
                 variant="outline"
                 size="sm"
-                className={SIDEBAR_ACTION_BUTTON_CLASSNAME}
+                className={cn(SIDEBAR_ACTION_BUTTON_CLASSNAME, "rounded-t-[var(--radius-card)] rounded-b-[4px]")}
                 onClick={onCreateConversation}
               >
                 <Plus className="size-4" />
@@ -747,7 +748,7 @@ export const ConversationSidebar = React.memo(
 
               <ConversationSearchButton
                 onSelect={onSelect}
-                className={SIDEBAR_ACTION_BUTTON_CLASSNAME}
+                className={cn(SIDEBAR_ACTION_BUTTON_CLASSNAME, "rounded-b-[var(--radius-card)] rounded-t-[4px]")}
               />
             </div>
           </SidebarGroup>

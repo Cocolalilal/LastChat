@@ -1432,7 +1432,7 @@ private fun TTSProviderItemContent(
 
         Column(
             modifier = Modifier.weight(1f),
-            verticalArrangement = if (provider is TTSProviderSetting.SystemTTS) Arrangement.spacedBy(8.dp) else Arrangement.Center,
+            verticalArrangement = Arrangement.Center,
         ) {
             Text(
                 text = provider.name.ifEmpty { stringResource(R.string.setting_tts_page_default_name) },
@@ -1441,40 +1441,6 @@ private fun TTSProviderItemContent(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            
-            // Tags row - only show for SystemTTS
-            if (provider is TTSProviderSetting.SystemTTS) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(24.dp)
-                        .clipToBounds()
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.wrapContentWidth(align = Alignment.Start, unbounded = true)
-                    ) {
-                        Tag(type = TagType.SUCCESS) {
-                            Text(stringResource(R.string.local_label))
-                        }
-                    }
-                    // Fade gradient overlay
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .size(width = 40.dp, height = 24.dp)
-                            .background(
-                                brush = Brush.horizontalGradient(
-                                    colors = listOf(
-                                        Color.Transparent,
-                                        backgroundColor
-                                    )
-                                )
-                            )
-                    )
-                }
-            }
         }
         
         dragHandle()

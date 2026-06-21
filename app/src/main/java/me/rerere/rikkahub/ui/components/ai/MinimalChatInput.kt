@@ -37,6 +37,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.foundation.clickable
 import androidx.compose.animation.core.spring
+import androidx.compose.ui.zIndex.zIndex
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.core.net.toUri
 import androidx.compose.foundation.background
 import androidx.compose.animation.core.animateFloatAsState
@@ -298,7 +301,13 @@ fun MinimalChatInput(
     var acceptSttWhenIdle by remember { mutableStateOf(false) }
     var discardSttWhenIdle by remember { mutableStateOf(false) }
     val sttRecording = sttState.isRecording
-    val sttFinalizing = acceptSttWhenIdle && !sttRecording
+    val sttFinalizing = sttState.status == me.rerere.asr.ASRStatus.Stopping
+
+    LaunchedEffect(sttState.errorMessage) {
+        sttState.errorMessage?.let { error ->
+            toaster.show(error, type = me.rerere.rikkahub.ui.components.ui.ToastType.Error)
+        }
+    }
 
     fun startSttRecording() {
         if (!microphonePermission.allRequiredPermissionsGranted) {
@@ -687,15 +696,6 @@ fun MinimalChatInput(
                 // Plus button - 48dp pill button
                 if (!isQuestionnaireActive && !isToolApprovalActive) {
                     Surface(
-                        onClick = {
-                            haptics.perform(HapticPattern.Pop)
-                            if (sttRecording) {
-                                stopSttRecording(accept = false)
-                            } else {
-                                showPicker = true
-                                keyboardController?.hide()
-                            }
-                        },
                         shape = CircleShape,
                         color = blurredContainerColor(MaterialTheme.colorScheme.surfaceContainer),
                         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
@@ -703,7 +703,30 @@ fun MinimalChatInput(
                             .size(48.dp)
                             .lastChatBlurEffect(MaterialTheme.colorScheme.surfaceContainer, CircleShape)
                     ) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        Box(
+                            contentAlignment = Alignment.Center, 
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .androidx.compose.foundation.ExperimentalFoundationApi::class.let {
+                                    androidx.compose.foundation.combinedClickable(
+                                        onLongClick = {
+                                            if (!sttRecording && !sttFinalizing && hasSelectedSttProvider) {
+                                                haptics.perform(HapticPattern.Pop)
+                                                startSttRecording()
+                                            }
+                                        },
+                                        onClick = {
+                                            haptics.perform(HapticPattern.Pop)
+                                            if (sttRecording) {
+                                                stopSttRecording(accept = false)
+                                            } else {
+                                                showPicker = true
+                                                keyboardController?.hide()
+                                            }
+                                        }
+                                    )
+                                }
+                        ) {
                             Icon(
                                 imageVector = if (sttRecording) Icons.Rounded.Close else Icons.Rounded.Add,
                                 contentDescription = null,
@@ -796,6 +819,58 @@ fun MinimalChatInput(
                         Box(
                             modifier = Modifier.fillMaxWidth()
                         ) {
+                            androidx.compose.animation.AnimatedVisibility(
+                                visible = (sttRecording || sttFinalizing) && hasSelectedSttProvider,
+                                enter = fadeIn(spring(dampingRatio = 0.6f, stiffness = 300f)),
+                                exit = fadeOut(tween(140)),
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .zIndex(10f)
+                            ) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.surfaceContainer,
+                                    modifier = Modifier.fillMaxSize().clickable(
+                                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                                        indication = null
+                                    ) {
+                                        if (sttRecording || sttFinalizing) {
+                                            haptics.perform(HapticPattern.Pop)
+                                            stopSttRecording(accept = false)
+                                        }
+                                    }
+                                ) {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp),
+                                        contentAlignment = Alignment.CenterStart
+                                    ) {
+                                        androidx.compose.animation.AnimatedVisibility(
+                                            visible = true,
+                                            enter = slideInHorizontally(
+                                                initialOffsetX = { it / 2 },
+                                                animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f)
+                                            ),
+                                            exit = slideOutHorizontally(
+                                                targetOffsetX = { it / 2 },
+                                                animationSpec = tween(140)
+                                            )
+                                        ) {
+                                            if (sttFinalizing) {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(24.dp),
+                                                    strokeWidth = 2.dp,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                )
+                                            } else {
+                                                STTWaveformLine(
+                                                    amplitudes = sttState.amplitudes,
+                                                    active = sttRecording,
+                                                    modifier = Modifier.fillMaxWidth().height(24.dp),
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                             val activeTextState = when {
                                 isQuestionnaireActive -> questionnaireTextState
                                 isToolApprovalActive -> toolApprovalTextState
@@ -816,23 +891,33 @@ fun MinimalChatInput(
                                     )
                                     .onFocusChanged { isFocused = it.isFocused },
                                 placeholder = {
-                                    Text(
-                                        text = if (isQuestionnaireActive) {
-                                            stringResource(R.string.character_questions_custom_answer_placeholder)
-                                        } else if (isToolApprovalActive) {
-                                            stringResource(R.string.tool_approval_input_placeholder)
-                                        } else {
-                                            stringResource(R.string.minimal_chat_input_placeholder, assistant.name)
-                                        },
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
+                                    androidx.compose.animation.AnimatedVisibility(
+                                        visible = !((sttRecording || sttFinalizing) && hasSelectedSttProvider),
+                                        enter = fadeIn(tween(220)),
+                                        exit = fadeOut(tween(140))
+                                    ) {
+                                        Text(
+                                            text = if (isQuestionnaireActive) {
+                                                stringResource(R.string.character_questions_custom_answer_placeholder)
+                                            } else if (isToolApprovalActive) {
+                                                stringResource(R.string.tool_approval_input_placeholder)
+                                            } else {
+                                                stringResource(R.string.minimal_chat_input_placeholder, assistant.name)
+                                            },
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 },
                                 lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),
                                 contentPadding = PaddingValues(
                                     start = 16.dp,
                                     top = 12.dp,
-                                    end = if ((sttRecording || sttFinalizing) && hasSelectedSttProvider) 150.dp else 52.dp,
+                                    end = androidx.compose.animation.core.animateDpAsState(
+                                        targetValue = if ((sttRecording || sttFinalizing) && hasSelectedSttProvider) 150.dp else 42.dp,
+                                        animationSpec = tween(220),
+                                        label = "input_padding"
+                                    ).value,
                                     bottom = 12.dp,
                                 ),
                                 colors = TextFieldDefaults.colors().copy(
@@ -858,7 +943,7 @@ fun MinimalChatInput(
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
-                                    .padding(start = 6.dp, end = 6.dp, top = 6.dp, bottom = 6.dp)
+                                    .padding(start = 6.dp, end = 4.dp, top = 6.dp, bottom = 6.dp)
                             ) {
                                 val currentAction = when {
                                     isQuestionnaireActive && isFinalQuestion -> "questionnaire_submit"
@@ -868,7 +953,7 @@ fun MinimalChatInput(
                                     !state.isEmpty() -> "send"
                                     hasSelectedSttProvider && sttRecording -> "stt_recording"
                                     hasSelectedSttProvider && sttFinalizing -> "stt_finalizing"
-                                    hasSelectedSttProvider -> "stt"
+                                    hasSelectedSttProvider && settings.displaySetting.sttReplaceModelIcon -> "stt"
                                     else -> "picker"
                                 }
                                 
@@ -884,29 +969,7 @@ fun MinimalChatInput(
                                     label = "ActionContainerColor"
                                 )
 
-                                Box(
-                                    modifier = Modifier
-                                        .align(Alignment.CenterEnd)
-                                        .padding(end = 42.dp),
-                                ) {
-                                    androidx.compose.animation.AnimatedVisibility(
-                                        visible = (sttRecording || sttFinalizing) && hasSelectedSttProvider,
-                                        enter = fadeIn(spring(dampingRatio = 0.6f, stiffness = 300f)) + expandHorizontally(
-                                            animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
-                                            expandFrom = Alignment.End,
-                                        ),
-                                        exit = fadeOut(tween(140)) + shrinkHorizontally(
-                                            animationSpec = tween(220),
-                                            shrinkTowards = Alignment.Start,
-                                        ),
-                                    ) {
-                                        STTWaveformLine(
-                                            amplitudes = sttState.amplitudes,
-                                            active = sttRecording,
-                                            modifier = Modifier.size(width = 96.dp, height = 24.dp),
-                                        )
-                                    }
-                                }
+
                                 
                                 Surface(
                                     onClick = { 
@@ -982,7 +1045,7 @@ fun MinimalChatInput(
                                                     Icon(
                                                         imageVector = Icons.Rounded.Mic,
                                                         contentDescription = null,
-                                                        modifier = Modifier.size(18.dp),
+                                                        modifier = Modifier.size(24.dp),
                                                         tint = if (action == "stt_recording") {
                                                             MaterialTheme.colorScheme.onPrimary
                                                         } else {
@@ -991,11 +1054,7 @@ fun MinimalChatInput(
                                                     )
                                                 }
                                                 "stt_finalizing" -> {
-                                                    CircularProgressIndicator(
-                                                        modifier = Modifier.size(18.dp),
-                                                        strokeWidth = 2.dp,
-                                                        color = MaterialTheme.colorScheme.primary,
-                                                    )
+                                                    // Handled in the waveform box
                                                 }
                                                 "picker" -> {
                                                     ModelSelector(

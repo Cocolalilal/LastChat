@@ -58,6 +58,8 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -75,6 +77,17 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import me.rerere.asr.ASRProviderSetting
+
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.foundation.LocalOverscrollFactory
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.layout.Spacer
 import me.rerere.asr.android.discoverLocalSpeechRecognitionServices
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.nav.BackButton
@@ -108,12 +121,78 @@ fun SettingSTTPage(vm: SettingVM = koinViewModel()) {
             )
         },
         bottomBar = {
+            var showSettingsDialog by remember { mutableStateOf(false) }
+            val haptics = rememberPremiumHaptics(enabled = vm.settings.value.displaySetting.enableUIHaptics)
             ProvidersBottomBar(selectedTab = ProvidersTab.Stt) {
+                FloatingActionButton(
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        showSettingsDialog = true
+                    },
+                    shape = AppShapes.CardLarge,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = MaterialTheme.colorScheme.onSurface
+                ) {
+                    Icon(Icons.Rounded.Settings, contentDescription = "STT Settings")
+                }
                 AddSTTProviderButton(asFab = true) { provider ->
                     val settings = vm.settings.value
                     vm.updateSettings(
                         settings.copy(sttProviders = listOf(provider) + settings.sttProviders)
                     )
+                }
+            }
+
+            if (showSettingsDialog) {
+                val settings by vm.settings.collectAsStateWithLifecycle()
+                ModalBottomSheet(
+                    onDismissRequest = { showSettingsDialog = false },
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp)
+                            .padding(bottom = 32.dp)
+                    ) {
+                        Text(
+                            text = "STT Settings",
+                            style = MaterialTheme.typography.titleLarge,
+                            modifier = Modifier.padding(bottom = 16.dp)
+                        )
+                        Text(
+                            text = "By default, you can start the STT by pressing the plus button on the left of the message input field for more than 3 seconds.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 24.dp)
+                        )
+                        FormItem(
+                            title = "Replace model icon with microphone",
+                            desc = "Show the microphone instead of the model picker in the chat input.",
+                            onClick = {
+                                vm.updateSettings(
+                                    settings.copy(
+                                        displaySetting = settings.displaySetting.copy(
+                                            sttReplaceModelIcon = !settings.displaySetting.sttReplaceModelIcon
+                                        )
+                                    )
+                                )
+                            }
+                        ) {
+                            Switch(
+                                checked = settings.displaySetting.sttReplaceModelIcon,
+                                onCheckedChange = {
+                                    vm.updateSettings(
+                                        settings.copy(
+                                            displaySetting = settings.displaySetting.copy(
+                                                sttReplaceModelIcon = it
+                                            )
+                                        )
+                                    )
+                                }
+                            )
+                        }
+                    }
                 }
             }
         },
@@ -226,8 +305,7 @@ internal fun SttProvidersContent(
                                 selected = settings.selectedSttProviderId == provider.id,
                                 haptics = haptics,
                                 onClick = {
-                                    val selectedId = if (settings.selectedSttProviderId == provider.id) null else provider.id
-                                    vm.updateSettings(settings.copy(selectedSttProviderId = selectedId))
+                                    vm.updateSettings(settings.copy(selectedSttProviderId = provider.id))
                                 },
                                 onEdit = { editingProvider = provider },
                                 dragHandle = {
@@ -320,12 +398,7 @@ private fun STTProviderItemContent(
     onEdit: () -> Unit,
     dragHandle: @Composable () -> Unit,
 ) {
-    val targetRadii = sttItemCornerRadii(selected, position)
-    val topStart by animateDpAsState(targetRadii.topStart, spring(dampingRatio = 0.5f, stiffness = 400f), label = "stt_top_start")
-    val topEnd by animateDpAsState(targetRadii.topEnd, spring(dampingRatio = 0.5f, stiffness = 400f), label = "stt_top_end")
-    val bottomStart by animateDpAsState(targetRadii.bottomStart, spring(dampingRatio = 0.5f, stiffness = 400f), label = "stt_bottom_start")
-    val bottomEnd by animateDpAsState(targetRadii.bottomEnd, spring(dampingRatio = 0.5f, stiffness = 400f), label = "stt_bottom_end")
-    val containerColor by animateColorAsState(
+    val backgroundColor by androidx.compose.animation.animateColorAsState(
         targetValue = if (selected) {
             MaterialTheme.colorScheme.primaryContainer
         } else if (LocalDarkMode.current) {
@@ -334,31 +407,31 @@ private fun STTProviderItemContent(
             MaterialTheme.colorScheme.surfaceContainerHighest
         },
         animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
-        label = "stt_container_color",
+        label = "sttProviderBackground"
     )
-    val contentColor by animateColorAsState(
+    val contentColor by androidx.compose.animation.animateColorAsState(
         targetValue = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
         animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
-        label = "stt_content_color",
+        label = "sttProviderTextColor"
     )
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(topStart, topEnd, bottomEnd, bottomStart))
-            .background(containerColor)
+            .clip(RoundedCornerShape(0.dp))
+            .background(backgroundColor)
             .clickable {
                 haptics.perform(HapticPattern.Pop)
                 onClick()
             }
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         STTProviderIcon(provider = provider, contentColor = contentColor)
         Column(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.Center,
         ) {
             Text(
                 text = provider.name.ifBlank { provider.typeName() },
@@ -367,23 +440,21 @@ private fun STTProviderItemContent(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(24.dp)
-                    .clipToBounds(),
-            ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.wrapContentWidth(align = Alignment.Start, unbounded = true),
+            
+            if (provider !is ASRProviderSetting.SystemSTT) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(24.dp)
+                        .clipToBounds(),
                 ) {
-                    Tag(type = TagType.DEFAULT) {
-                        Text(provider.typeName())
-                    }
-                    if (provider is ASRProviderSetting.SystemSTT && provider.preferOffline) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.wrapContentWidth(align = Alignment.Start, unbounded = true),
+                    ) {
                         Tag(type = TagType.DEFAULT) {
-                            Text("Offline preferred")
+                            Text(provider.typeName())
                         }
                     }
                 }
@@ -419,12 +490,17 @@ private fun sttItemCornerRadii(selected: Boolean, position: ItemPosition): SttCo
 @Composable
 private fun STTProviderIcon(provider: ASRProviderSetting, contentColor: Color) {
     if (provider is ASRProviderSetting.SystemSTT) {
-        Icon(
-            Icons.Rounded.PhoneAndroid,
-            contentDescription = null,
+        Box(
             modifier = Modifier.size(40.dp),
-            tint = contentColor,
-        )
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Rounded.PhoneAndroid,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+                tint = contentColor,
+            )
+        }
     } else {
         AutoAIIconWithUrl(
             name = provider.typeName(),
@@ -439,41 +515,227 @@ internal fun AddSTTProviderButton(
     asFab: Boolean = false,
     onAdd: (ASRProviderSetting) -> Unit,
 ) {
-    var showDialog by remember { mutableStateOf(false) }
+    var showBottomSheet by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
     val haptics = rememberPremiumHaptics()
 
     val onClick = {
         haptics.perform(HapticPattern.Pop)
-        showDialog = true
+        searchQuery = ""
+        showBottomSheet = true
     }
 
     if (asFab) {
         FloatingActionButton(
             onClick = onClick,
-            shape = AppShapes.CardLarge,
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            contentColor = MaterialTheme.colorScheme.onSurface,
+            shape = AppShapes.CardLarge
         ) {
-            Icon(Icons.Rounded.Add, contentDescription = null)
+            Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.setting_tts_page_add_provider_content_description))
         }
     } else {
         IconButton(onClick = onClick) {
-            Icon(Icons.Rounded.Add, contentDescription = null)
+            Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.setting_tts_page_add_provider_content_description))
         }
     }
 
-    if (showDialog) {
-        var currentProvider by remember { mutableStateOf<ASRProviderSetting>(ASRProviderSetting.SystemSTT()) }
-        STTProviderEditorSheet(
-            provider = currentProvider,
-            title = "Add STT Provider",
-            onDismiss = { showDialog = false },
-            onSave = { _, updated ->
-                onAdd(updated)
-                showDialog = false
-            },
-            onProviderChange = { currentProvider = it },
+    if (showBottomSheet) {
+        val bottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        
+        data class STTPreset(
+            val type: kotlin.reflect.KClass<out ASRProviderSetting>,
+            val name: String,
+            val description: String,
+            val isLocal: Boolean = false,
         )
+
+        val allPresets = listOf(
+            STTPreset(ASRProviderSetting.SystemSTT::class, "System STT", "Local system speech recognition", isLocal = true),
+            STTPreset(ASRProviderSetting.OpenAIRealtime::class, "OpenAI", "OpenAI Realtime API"),
+            STTPreset(ASRProviderSetting.DashScope::class, "DashScope", "Aliyun DashScope ASR"),
+            STTPreset(ASRProviderSetting.Volcengine::class, "Volcengine", "Volcengine ASR"),
+            STTPreset(ASRProviderSetting.MiMo::class, "MiMo", "MiMo ASR"),
+            STTPreset(ASRProviderSetting.Step::class, "Step", "Step Fun ASR"),
+        )
+        
+        val filteredPresets = if (searchQuery.isBlank()) {
+            allPresets
+        } else {
+            allPresets.filter { preset ->
+                preset.name.contains(searchQuery, ignoreCase = true) ||
+                    preset.description.contains(searchQuery, ignoreCase = true)
+            }
+        }
+        
+        val scope = rememberCoroutineScope()
+        
+        ModalBottomSheet(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            onDismissRequest = {
+                showBottomSheet = false
+            },
+            sheetState = bottomSheetState,
+            sheetGesturesEnabled = false,
+            dragHandle = {
+                IconButton(
+                    onClick = {
+                        scope.launch {
+                            bottomSheetState.hide()
+                            showBottomSheet = false
+                        }
+                    }
+                ) {
+                    Icon(Icons.Rounded.KeyboardArrowDown, null)
+                }
+            }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .fillMaxHeight(0.85f)
+                    .clipToBounds()
+            ) {
+                Text(
+                    text = "Add STT Provider",
+                    style = MaterialTheme.typography.headlineSmall,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp)
+                )
+                
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text(stringResource(R.string.setting_provider_page_search_placeholder)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = AppShapes.SearchField,
+                    singleLine = true,
+                    leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                    trailingIcon = if (searchQuery.isNotEmpty()) {
+                        {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.clear_search))
+                            }
+                        }
+                    } else null
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                CompositionLocalProvider(
+                    LocalOverscrollFactory provides null
+                ) {
+                    val lazyListState = rememberLazyListState()
+                    val nestedScrollConnection = remember {
+                        object : NestedScrollConnection {
+                            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                                if (lazyListState.firstVisibleItemIndex > 0 || lazyListState.firstVisibleItemScrollOffset > 0) {
+                                    return Offset.Zero
+                                }
+                                return Offset.Zero
+                            }
+                        }
+                    }
+                    LazyColumn(
+                        state = lazyListState,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clipToBounds()
+                            .nestedScroll(nestedScrollConnection),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        contentPadding = PaddingValues(bottom = 16.dp)
+                    ) {
+                        itemsIndexed(filteredPresets, key = { _, preset -> preset.name }) { index, preset ->
+                            val position = when {
+                                filteredPresets.size == 1 -> ItemPosition.ONLY
+                                index == 0 -> ItemPosition.FIRST
+                                index == filteredPresets.lastIndex -> ItemPosition.LAST
+                                else -> ItemPosition.MIDDLE
+                            }
+
+                            val shape = when (position) {
+                                ItemPosition.FIRST -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
+                                ItemPosition.LAST -> RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
+                                ItemPosition.MIDDLE -> RoundedCornerShape(10.dp)
+                                ItemPosition.ONLY -> RoundedCornerShape(24.dp)
+                            }
+
+                            androidx.compose.material3.Surface(
+                                onClick = {
+                                    haptics.perform(HapticPattern.Pop)
+                                    val newProvider = when (preset.type) {
+                                        ASRProviderSetting.SystemSTT::class -> ASRProviderSetting.SystemSTT(name = preset.name)
+                                        ASRProviderSetting.OpenAIRealtime::class -> ASRProviderSetting.OpenAIRealtime()
+                                        ASRProviderSetting.DashScope::class -> ASRProviderSetting.DashScope()
+                                        ASRProviderSetting.Volcengine::class -> ASRProviderSetting.Volcengine()
+                                        ASRProviderSetting.MiMo::class -> ASRProviderSetting.MiMo()
+                                        ASRProviderSetting.Step::class -> ASRProviderSetting.Step()
+                                        else -> ASRProviderSetting.SystemSTT()
+                                    }
+                                    onAdd(newProvider)
+                                    showBottomSheet = false
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = shape,
+                                color = if (LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (preset.isLocal) {
+                                        Box(
+                                            modifier = Modifier.size(40.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.PhoneAndroid,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                        }
+                                    } else {
+                                        AutoAIIconWithUrl(
+                                            name = preset.name,
+                                            customIconUri = null,
+                                            modifier = Modifier.size(40.dp)
+                                        )
+                                    }
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = preset.name,
+                                            style = MaterialTheme.typography.titleMedium
+                                        )
+                                        Text(
+                                            text = preset.description,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        if (preset.isLocal) {
+                                            Tag(type = TagType.SUCCESS) {
+                                                Text(stringResource(R.string.local_label))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

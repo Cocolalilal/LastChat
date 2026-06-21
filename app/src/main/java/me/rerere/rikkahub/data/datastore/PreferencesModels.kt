@@ -251,13 +251,14 @@ data class DisplaySetting(
     val codeBlockAutoWrap: Boolean = false,
     val codeBlockAutoCollapse: Boolean = true,
     val rpStyleRules: List<RpStyleRule> = emptyList(),
-    val ttsTextFilterRules: List<TtsTextFilterRule> = emptyList(),
+        val ttsTextFilterRules: List<TtsTextFilterRule> = emptyList(),
     val providerViewMode: ProviderViewMode = ProviderViewMode.LIST,
     val showContextStacks: Boolean = false,
     val newChatHeaderStyle: NewChatHeaderStyle = NewChatHeaderStyle.GREETING,
     val newChatContentStyle: NewChatContentStyle = NewChatContentStyle.ACTIONS,
     val newChatShowAvatar: Boolean = true,
     val chatToolbarAtBottom: Boolean = false,
+    val sttReplaceModelIcon: Boolean = false,
 )
 
 internal fun DisplaySetting.normalizeFontSettings(): DisplaySetting {

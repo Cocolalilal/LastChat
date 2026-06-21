@@ -1447,7 +1447,7 @@ internal fun String.toLobeHubIconUrl(theme: String?): String {
         "moonshotai" -> "moonshot"
         else -> normalized
     }
-    val resolvedTheme = if (theme.equals("dark", ignoreCase = true)) "dark" else "light"
+    val resolvedTheme = if (theme.equals("dark", ignoreCase = true)) "light" else "dark"
     return "https://registry.npmmirror.com/@lobehub/icons-static-png/latest/files/$resolvedTheme/$slug.png"
 }
 

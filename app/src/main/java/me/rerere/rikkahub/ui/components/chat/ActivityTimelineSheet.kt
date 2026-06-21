@@ -515,18 +515,6 @@ internal fun ActivityTimelinePanel(
         ) {
             if (entries.isEmpty()) {
                 Text(
-                    easing = LinearOutSlowInEasing
-                )
-            )
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            if (entries.isEmpty()) {
-                Text(
                     text = stringResource(R.string.activity_timeline_empty),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -541,7 +529,7 @@ internal fun ActivityTimelinePanel(
                         .testTag("activity_timeline_list")
                         .nestedScroll(timelineScrollLock),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 8.dp)
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 10.dp)
                 ) {
                     itemsIndexed(
                         items = entries,

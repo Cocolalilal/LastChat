@@ -1,6 +1,7 @@
 import * as React from "react";
 
 import { cn } from "~/lib/utils";
+import { useTheme } from "~/components/theme-provider";
 
 export interface AIIconProps {
   name: string;
@@ -40,24 +41,21 @@ function isRemoteUrl(url: string): boolean {
   return url.startsWith("https://") || url.startsWith("http://");
 }
 
-function getThemeName(): "dark" | "light" {
-  if (typeof document === "undefined") return "light";
-  return document.documentElement.classList.contains("dark") ? "dark" : "light";
-}
-
 function buildApiIconSrc({
   name,
   icon,
   providerSlug,
+  theme,
 }: {
   name: string;
   icon?: string | null;
   providerSlug?: string | null;
+  theme: "dark" | "light";
 }) {
   const params = new URLSearchParams({ name });
   if (icon) params.set("icon", icon);
   if (providerSlug) params.set("providerSlug", providerSlug);
-  params.set("theme", getThemeName());
+  params.set("theme", theme);
   return `/api/ai-icon?${params.toString()}`;
 }
 
@@ -74,6 +72,7 @@ export function AIIcon({
 }: AIIconProps) {
   const normalizedName = name.trim() || "auto";
   const fallbackText = toFallbackText(normalizedName);
+  const { resolvedMode } = useTheme();
   
   const srcStack = React.useMemo(() => {
     const stack: string[] = [];
@@ -82,25 +81,26 @@ export function AIIcon({
         stack.push(buildApiIconSrc({
           name: normalizedName,
           providerSlug: customIconUri.replace(/^lobehub:\/\//i, ""),
+          theme: resolvedMode,
         }));
       } else if (isCatalogIconUrl(customIconUri)) {
-        stack.push(buildApiIconSrc({ name: normalizedName, icon: customIconUri, providerSlug }));
+        stack.push(buildApiIconSrc({ name: normalizedName, icon: customIconUri, providerSlug, theme: resolvedMode }));
       } else if (isRemoteUrl(customIconUri)) {
         stack.push(customIconUri);
       }
     }
     if (iconUrl) {
       if (isCatalogIconUrl(iconUrl)) {
-        stack.push(buildApiIconSrc({ name: normalizedName, icon: iconUrl, providerSlug }));
+        stack.push(buildApiIconSrc({ name: normalizedName, icon: iconUrl, providerSlug, theme: resolvedMode }));
       } else if (isRemoteUrl(iconUrl)) {
         stack.push(iconUrl);
       }
     }
     if (allowNameIconFallback) {
-      stack.push(buildApiIconSrc({ name: normalizedName, providerSlug }));
+      stack.push(buildApiIconSrc({ name: normalizedName, providerSlug, theme: resolvedMode }));
     }
     return stack;
-  }, [allowNameIconFallback, customIconUri, iconUrl, normalizedName, providerSlug]);
+  }, [allowNameIconFallback, customIconUri, iconUrl, normalizedName, providerSlug, resolvedMode]);
 
   const [srcIndex, setSrcIndex] = React.useState(0);
   const [loaded, setLoaded] = React.useState(false);
@@ -116,7 +116,7 @@ export function AIIcon({
   return (
     <span
       className={cn(
-        "relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary",
+        "relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full",
         loading && "animate-pulse",
         className,
       )}
