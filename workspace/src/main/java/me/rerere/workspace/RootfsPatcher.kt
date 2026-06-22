@@ -171,7 +171,8 @@ class RootfsPatcher {
 
         sh.parentFile?.mkdirs()
         runCatching {
-            val relativeTarget = sh.parentFile.toPath().relativize(source.toPath())
+            val parent = sh.parentFile ?: return@runCatching
+            val relativeTarget = parent.toPath().relativize(source.toPath())
             Files.createSymbolicLink(sh.toPath(), relativeTarget)
         }.recoverCatching {
             source.copyTo(sh, overwrite = true)
@@ -195,21 +196,43 @@ class RootfsPatcher {
     ) {
         val link = File(linuxDir, linkPath)
         val target = File(linuxDir, targetPath)
-        if (link.exists() || Files.isSymbolicLink(link.toPath()) || !target.exists()) return
+        if (!target.exists()) return
+        if (Files.isSymbolicLink(link.toPath())) return
 
-        link.parentFile?.mkdirs()
-        runCatching {
-            Files.createSymbolicLink(link.toPath(), File(targetPath).toPath())
-        }.recoverCatching {
-            if (target.isDirectory) {
-                target.copyRecursively(link, overwrite = true)
-            } else {
-                target.copyTo(link, overwrite = true)
-                link.setReadable(target.canRead(), false)
-                link.setWritable(target.canWrite(), true)
-                link.setExecutable(target.canExecute(), false)
+        if (!link.exists()) {
+            link.parentFile?.mkdirs()
+            runCatching {
+                Files.createSymbolicLink(link.toPath(), File(targetPath).toPath())
+            }.recoverCatching {
+                if (target.isDirectory) {
+                    target.copyRecursively(link, overwrite = true)
+                } else {
+                    target.copyTo(link, overwrite = true)
+                    link.setReadable(target.canRead(), false)
+                    link.setWritable(target.canWrite(), true)
+                    link.setExecutable(target.canExecute(), false)
+                }
+            }.getOrNull()
+            return
+        }
+
+        if (link.isDirectory && target.isDirectory) {
+            val tempLink = File(link.parentFile, "${link.name}.rikkahub-tmp")
+            runCatching {
+                Files.createSymbolicLink(tempLink.toPath(), File(targetPath).toPath())
+            }.onSuccess {
+                link.listFiles()?.forEach { child ->
+                    val dest = File(target, child.name)
+                    if (!dest.exists()) {
+                        child.renameTo(dest)
+                    }
+                }
+                link.deleteRecursively()
+                tempLink.renameTo(link)
+            }.onFailure {
+                tempLink.delete()
             }
-        }.getOrNull()
+        }
     }
 
     private fun currentSupplementaryGroupIds(): List<Long> {

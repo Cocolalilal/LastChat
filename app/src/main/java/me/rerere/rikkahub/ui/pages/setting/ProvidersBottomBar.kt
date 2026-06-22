@@ -66,7 +66,7 @@ fun ProvidersBottomBar(
         if (!useWideLayout) {
             Surface(
                 modifier = Modifier
-                    .align(Alignment.BottomStart),
+                    .align(Alignment.BottomCenter),
                 shape = RoundedCornerShape(28.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 tonalElevation = 6.dp,

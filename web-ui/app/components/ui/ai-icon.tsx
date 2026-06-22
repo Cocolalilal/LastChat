@@ -1,6 +1,7 @@
 import * as React from "react";
 
 import { cn } from "~/lib/utils";
+import { resolveFileUrl } from "~/lib/files";
 import { useTheme } from "~/components/theme-provider";
 
 export interface AIIconProps {
@@ -39,6 +40,14 @@ function isCatalogIconUrl(url: string): boolean {
 
 function isRemoteUrl(url: string): boolean {
   return url.startsWith("https://") || url.startsWith("http://");
+}
+
+function isLocalFileUrl(url: string): boolean {
+  return (
+    url.startsWith("file://") ||
+    url.startsWith("content://") ||
+    url.startsWith("android.resource://")
+  );
 }
 
 function buildApiIconSrc({
@@ -87,6 +96,8 @@ export function AIIcon({
         stack.push(buildApiIconSrc({ name: normalizedName, icon: customIconUri, providerSlug, theme: resolvedMode }));
       } else if (isRemoteUrl(customIconUri)) {
         stack.push(customIconUri);
+      } else if (isLocalFileUrl(customIconUri)) {
+        stack.push(resolveFileUrl(customIconUri));
       }
     }
     if (iconUrl) {
@@ -94,6 +105,8 @@ export function AIIcon({
         stack.push(buildApiIconSrc({ name: normalizedName, icon: iconUrl, providerSlug, theme: resolvedMode }));
       } else if (isRemoteUrl(iconUrl)) {
         stack.push(iconUrl);
+      } else if (isLocalFileUrl(iconUrl)) {
+        stack.push(resolveFileUrl(iconUrl));
       }
     }
     if (allowNameIconFallback) {

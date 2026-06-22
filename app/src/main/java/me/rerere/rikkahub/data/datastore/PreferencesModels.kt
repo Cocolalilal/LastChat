@@ -37,10 +37,7 @@ import me.rerere.tts.provider.withVoiceApplied
 import kotlin.uuid.Uuid
 
 val DISABLED_MODEL_ID: Uuid = Uuid.parse("00000000-0000-0000-0000-000000000000")
-val DEFAULT_SYSTEM_STT_ID: Uuid = Uuid.parse("00000000-0000-0000-0000-000000000003")
-val DEFAULT_STT_PROVIDERS: List<ASRProviderSetting> = listOf(
-    ASRProviderSetting.SystemSTT(id = DEFAULT_SYSTEM_STT_ID)
-)
+val DEFAULT_STT_PROVIDERS: List<ASRProviderSetting> = emptyList()
 
 @Serializable
 data class Settings(
@@ -468,7 +465,9 @@ fun Settings.getSelectedSTTProvider(): ASRProviderSetting? {
 }
 
 fun Settings.normalizeSttSettings(): Settings {
-    val normalizedProviders = sttProviders.distinctBy { it.id }
+    // Filter out legacy SystemSTT entries (local STT removed); keep only remote providers
+    val withoutLegacy = sttProviders.filterNot { it is ASRProviderSetting.SystemSTT }
+    val normalizedProviders = withoutLegacy.distinctBy { it.id }
     val normalizedSelectedId = selectedSttProviderId?.takeIf { id ->
         normalizedProviders.any { provider -> provider.id == id }
     }

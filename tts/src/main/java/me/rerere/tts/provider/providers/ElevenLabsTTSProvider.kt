@@ -1,15 +1,19 @@
 package me.rerere.tts.provider.providers
 
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.withContext
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.common.platform.PlatformLog
 import me.rerere.tts.model.AudioChunk
 import me.rerere.tts.model.AudioFormat
+import me.rerere.tts.model.TTSModelInfo
 import me.rerere.tts.model.TTSRequest
 import me.rerere.tts.provider.TTSProvider
 import me.rerere.tts.provider.TTSProviderSetting
+import org.json.JSONArray
 import org.json.JSONObject
 
 private const val TAG = "ElevenLabsTTSProvider"
@@ -62,5 +66,43 @@ class ElevenLabsTTSProvider(
                 )
             )
         )
+    }
+
+    override suspend fun listModels(
+        providerSetting: TTSProviderSetting.ElevenLabs
+    ): List<TTSModelInfo> = withContext(Dispatchers.IO) {
+        if (providerSetting.apiKey.isBlank()) return@withContext emptyList()
+        runCatching {
+            val response = httpClient.execute(
+                PlatformHttpRequest(
+                    method = "GET",
+                    url = "https://api.elevenlabs.io/v1/models",
+                    headers = mapOf(
+                        "xi-api-key" to providerSetting.apiKey,
+                    ),
+                )
+            )
+            if (response.statusCode !in 200..299) {
+                PlatformLog.e(
+                    TAG,
+                    "listModels failed: ${response.statusCode} ${response.body.decodeToString()}"
+                )
+                return@withContext emptyList()
+            }
+            val arr = JSONArray(response.body.decodeToString())
+            buildList {
+                for (i in 0 until arr.length()) {
+                    val item = arr.optJSONObject(i) ?: continue
+                    val id = item.optString("model_id", "")
+                    val name = item.optString("name", id)
+                    if (id.isNotBlank()) {
+                        add(TTSModelInfo(id = id, displayName = name))
+                    }
+                }
+            }
+        }.getOrElse { e ->
+            PlatformLog.e(TAG, "listModels error: ${e.message}")
+            emptyList()
+        }
     }
 }

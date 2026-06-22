@@ -1,8 +1,11 @@
 package me.rerere.ai.provider.providers.openai
 
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
+import me.rerere.common.platform.PlatformLog
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -38,7 +41,6 @@ import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.parseErrorDetail
 import me.rerere.common.http.jsonObjectOrNull
 import me.rerere.common.http.urlHostOrNull
-import me.rerere.common.platform.PlatformLog
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpProxy
 import me.rerere.common.platform.PlatformHttpRequest
@@ -141,6 +143,14 @@ class ResponseAPI(
 
         awaitClose {
             job.cancel()
+        }
+    }.retryWhen { cause, attempt ->
+        if (attempt < 3 && cause.message?.contains("429") == true) {
+            PlatformLog.w(TAG, "streamText: Rate limit (429) hit. Retrying attempt ${attempt + 1}...")
+            kotlinx.coroutines.delay(1000L * (attempt + 1))
+            true
+        } else {
+            false
         }
     }
 
@@ -609,22 +619,22 @@ class ResponseAPI(
     }
 
     private fun parseStreamFailure(event: PlatformServerEvent.Failure): Throwable {
+        val bodySnippet = event.body?.takeIf { it.isNotBlank() }?.take(500)
         val fallback = RuntimeException(
-            "Stream failed${event.statusCode?.let { " #$it" }.orEmpty()}: ${event.message.orEmpty()}"
+            "Stream failed${event.statusCode?.let { " #$it" }.orEmpty()}: ${event.message.orEmpty()}" +
+                (bodySnippet?.let { " (body: $it)" } ?: "")
         )
         val bodyRaw = event.body
         return try {
             if (!bodyRaw.isNullOrBlank()) {
                 val bodyElement = Json.parseToJsonElement(bodyRaw)
-                println(bodyElement)
                 bodyElement.parseErrorDetail()
             } else {
                 fallback
             }
         } catch (e: Throwable) {
             PlatformLog.w(TAG, "onFailure: failed to parse from $bodyRaw")
-            e.printStackTrace()
-            e
+            fallback
         }
     }
 }

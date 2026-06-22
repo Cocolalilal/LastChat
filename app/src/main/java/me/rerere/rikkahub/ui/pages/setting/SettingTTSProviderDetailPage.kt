@@ -108,6 +108,7 @@ import me.rerere.rikkahub.ui.pages.setting.components.TTSProviderConfigure
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.tts.provider.TTSProviderSetting
+import me.rerere.rikkahub.ui.pages.setting.components.TTSProviderIcon
 import me.rerere.tts.provider.TTSVoice
 import me.rerere.tts.provider.android.discoverLocalTtsEngines
 import me.rerere.tts.provider.android.discoverLocalTtsVoices
@@ -144,7 +145,7 @@ fun SettingTTSProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        TtsProviderIcon(provider = provider, catalogSnapshot = catalogSnapshot)
+                        TTSProviderIcon(provider = provider, catalogSnapshot = catalogSnapshot, modifier = Modifier.size(24.dp))
                         Text(provider.name.ifBlank { "TTS Provider" }, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
@@ -1062,6 +1063,9 @@ private fun providerPresetVoices(provider: TTSProviderSetting): List<TTSVoice> {
             TTSVoice(name = it, providerVoiceId = it, model = provider.model, languageType = provider.languageType)
         }
         is TTSProviderSetting.SystemTTS -> emptyList()
+        is TTSProviderSetting.Cartesia,
+        is TTSProviderSetting.FishAudio,
+        is TTSProviderSetting.PlayHT -> emptyList()
     }
 }
 
@@ -1113,6 +1117,13 @@ private fun manualVoiceForProvider(
             providerVoiceId = trimmedVoiceId,
             model = provider.model,
             languageType = provider.languageType,
+        )
+
+        is TTSProviderSetting.Cartesia,
+        is TTSProviderSetting.FishAudio,
+        is TTSProviderSetting.PlayHT -> TTSVoice(
+            name = displayName,
+            providerVoiceId = trimmedVoiceId,
         )
     }
 }
@@ -1167,36 +1178,4 @@ private suspend fun fetchProviderVoices(
     }
 }
 
-@Composable
-private fun TtsProviderIcon(
-    provider: TTSProviderSetting,
-    catalogSnapshot: me.rerere.rikkahub.data.ai.models.ModelCatalogSnapshot?,
-) {
-    if (provider is TTSProviderSetting.SystemTTS) {
-        Box(
-            modifier = Modifier.size(24.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.PhoneAndroid,
-                contentDescription = provider.name.ifBlank { "System TTS" },
-                modifier = Modifier.size(20.dp),
-            )
-        }
-        return
-    }
 
-    val catalogId = when (provider) {
-        is TTSProviderSetting.OpenAI -> "openai"
-        is TTSProviderSetting.Gemini -> "gemini"
-        is TTSProviderSetting.MiniMax -> "minimax"
-        is TTSProviderSetting.ElevenLabs -> "elevenlabs"
-        is TTSProviderSetting.Qwen -> "qwen"
-        is TTSProviderSetting.SystemTTS -> error("System TTS is rendered before catalog lookup")
-    }
-    AutoAIIconWithUrl(
-        name = provider.name.ifBlank { catalogId },
-        customIconUri = catalogSnapshot?.ttsProviderIconUri(catalogId),
-        modifier = Modifier.size(24.dp),
-    )
-}

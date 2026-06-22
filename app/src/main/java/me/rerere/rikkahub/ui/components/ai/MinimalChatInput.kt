@@ -842,8 +842,11 @@ fun MinimalChatInput(
                                     }
                                 ) {
                                     Box(
-                                        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp),
-                                        contentAlignment = Alignment.CenterStart
+                                        modifier = Modifier.fillMaxSize().padding(
+                                            top = 12.dp,
+                                            bottom = 12.dp,
+                                        ),
+                                        contentAlignment = Alignment.Center
                                     ) {
                                         androidx.compose.animation.AnimatedVisibility(
                                             visible = true,
@@ -2362,7 +2365,7 @@ private fun STTWaveformLine(
     }
     Row(
         modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(3.dp, Alignment.End),
+        horizontalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         bars.forEachIndexed { index, value ->

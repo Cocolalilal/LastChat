@@ -10,16 +10,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import me.rerere.asr.ASRController
 import me.rerere.asr.ASRProviderSetting
 import me.rerere.asr.ASRState
 import me.rerere.asr.providers.DashScopeASRController
 import me.rerere.asr.providers.MiMoASRController
+import me.rerere.asr.providers.OpenAICompatibleASRController
 import me.rerere.asr.providers.OpenAIRealtimeASRController
 import me.rerere.asr.providers.StepASRController
-import me.rerere.asr.providers.SystemASRController
 import me.rerere.asr.providers.VolcengineASRController
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getSelectedSTTProvider
@@ -62,8 +65,12 @@ private class CustomSttStateImpl(
     private val context: Context,
     private val httpClient: OkHttpClient,
 ) : CustomSttState {
+    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate)
     private var controller: ASRController? = null
-    private val idleState = MutableStateFlow(ASRState())
+    private var controllerJob: kotlinx.coroutines.Job? = null
+    
+    private val _state = MutableStateFlow(ASRState())
+    override val state: StateFlow<ASRState> = _state.asStateFlow()
 
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
@@ -76,56 +83,67 @@ private class CustomSttStateImpl(
         .setAcceptsDelayedFocusGain(false)
         .build()
 
-    override val state: StateFlow<ASRState>
-        get() = controller?.state ?: idleState
-
     fun updateProvider(provider: ASRProviderSetting?) {
+        controllerJob?.cancel()
         controller?.dispose()
-        controller = provider?.let { createController(it) }
-        if (controller == null) {
-            idleState.value = ASRState()
+        
+        val newController = provider?.let { createController(it) }
+        controller = newController
+        
+        if (newController == null) {
+            _state.value = ASRState()
+        } else {
+            controllerJob = scope.launch {
+                newController.state.collect { 
+                    _state.value = it 
+                }
+            }
         }
     }
 
     override fun start(onTranscriptChange: (String) -> Unit) {
-        val result = audioManager.requestAudioFocus(audioFocusRequest)
-        if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-            controller?.start(onTranscriptChange)
+        val controller = controller
+        if (controller != null && controller.needsAudioFocus) {
+            val result = audioManager.requestAudioFocus(audioFocusRequest)
+            if (result != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) return
         }
+        controller?.start(onTranscriptChange)
     }
 
     override fun stop() {
         controller?.stop()
-        audioManager.abandonAudioFocusRequest(audioFocusRequest)
+        if (controller?.needsAudioFocus == true) {
+            audioManager.abandonAudioFocusRequest(audioFocusRequest)
+        }
     }
 
     override fun cleanup() {
+        controllerJob?.cancel()
         controller?.dispose()
         controller = null
         audioManager.abandonAudioFocusRequest(audioFocusRequest)
+        scope.cancel()
     }
 
     private fun createController(provider: ASRProviderSetting): ASRController? {
         return when (provider) {
-            is ASRProviderSetting.SystemSTT -> SystemASRController(context, provider)
+            is ASRProviderSetting.SystemSTT -> null
+            is ASRProviderSetting.OpenAICompatible -> {
+                OpenAICompatibleASRController(context, httpClient, provider)
+            }
             is ASRProviderSetting.OpenAIRealtime -> {
-                if (provider.apiKey.isBlank()) return null
                 OpenAIRealtimeASRController(context, httpClient, provider)
             }
             is ASRProviderSetting.DashScope -> {
-                if (provider.apiKey.isBlank()) return null
                 DashScopeASRController(context, httpClient, provider)
             }
             is ASRProviderSetting.Volcengine -> {
-                if (provider.apiKey.isBlank()) return null
                 VolcengineASRController(context, httpClient, provider)
             }
             is ASRProviderSetting.MiMo -> {
-                if (provider.apiKey.isBlank()) return null
                 MiMoASRController(context, httpClient, provider)
             }
             is ASRProviderSetting.Step -> {
-                if (provider.apiKey.isBlank()) return null
                 StepASRController(context, httpClient, provider)
             }
         }

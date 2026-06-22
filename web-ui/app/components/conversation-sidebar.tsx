@@ -735,7 +735,7 @@ export const ConversationSidebar = React.memo(
         </SidebarHeader>
         <SidebarContent className="min-h-0">
           <SidebarGroup className="px-2 pt-0.5 pb-0.5">
-            <div className="flex flex-col gap-[2px]">
+            <div className="flex flex-col gap-[3px]">
               <Button
                 variant="outline"
                 size="sm"

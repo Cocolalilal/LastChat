@@ -2,6 +2,7 @@ package me.rerere.ai.provider.providers.openai
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -13,6 +14,7 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.provider.CustomBody
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
+import me.rerere.ai.provider.OpenAICompatibilityMode
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.ReasoningRequestBehavior
 import me.rerere.ai.provider.TextGenerationParams
@@ -303,21 +305,99 @@ class OpenAIReasoningRequestTest {
     }
 
     @Test
-    fun chatCompletionsAddsOpenCodeGoPromptCacheControlsWithoutTopLevelCacheControl() {
+    fun chatCompletionsDoesNotInjectCacheControlForOpenCodeGo() {
         val body = chatCompletionsBody(
             messages = listOf(UIMessage.system("Stable system prompt"), UIMessage.user("Hello")),
-            model = reasoningModel.copy(modelId = "opencode-go/qwen3.7-plus"),
+            model = reasoningModel.copy(modelId = "glm-5.2"),
             providerSetting = providerSetting.copy(baseUrl = "https://opencode.ai/zen/go/v1")
         )
 
         assertFalse(body.containsKey("cache_control"))
 
         val messages = body["messages"]?.jsonArray ?: error("messages are missing")
-        val userContent = messages[1].jsonObject["content"]?.jsonArray ?: error("user content is missing")
+        val systemContent = messages[0].jsonObject["content"]
+        val userContent = messages[1].jsonObject["content"]
+        // No cache_control injection — relies on automatic prefix caching
+        assertFalse(systemContent is JsonArray)
+        assertFalse(userContent is JsonArray)
+    }
+
+    @Test
+    fun chatCompletionsSendsPromptCacheKeyForOpenCodeGo() {
+        val body = chatCompletionsBody(
+            messages = listOf(UIMessage.system("Stable system prompt"), UIMessage.user("Hello")),
+            model = reasoningModel.copy(modelId = "glm-5.2"),
+            providerSetting = providerSetting.copy(baseUrl = "https://opencode.ai/zen/go/v1"),
+            sessionId = "conversation-123",
+        )
+
+        assertEquals("conversation-123", body["prompt_cache_key"]?.jsonPrimitive?.contentOrNull)
+    }
+
+    @Test
+    fun chatCompletionsSendsPromptCacheKeyForDeepSeek() {
+        val body = chatCompletionsBody(
+            messages = listOf(UIMessage.system("Stable system prompt"), UIMessage.user("Hello")),
+            model = reasoningModel,
+            providerSetting = providerSetting.copy(baseUrl = "https://api.deepseek.com/v1"),
+            sessionId = "conversation-123",
+        )
+
+        assertEquals("conversation-123", body["prompt_cache_key"]?.jsonPrimitive?.contentOrNull)
+    }
+
+    @Test
+    fun chatCompletionsSendsPromptCacheKeyForZhipu() {
+        val body = chatCompletionsBody(
+            messages = listOf(UIMessage.system("Stable system prompt"), UIMessage.user("Hello")),
+            model = reasoningModel,
+            providerSetting = providerSetting.copy(baseUrl = "https://open.bigmodel.cn/api/paas/v4"),
+            sessionId = "conversation-123",
+        )
+
+        assertEquals("conversation-123", body["prompt_cache_key"]?.jsonPrimitive?.contentOrNull)
+    }
+
+    @Test
+    fun chatCompletionsPromptCacheModeEnabledForcesBreakpoints() {
+        val body = chatCompletionsBody(
+            messages = listOf(UIMessage.system("Stable system prompt"), UIMessage.user("Hello")),
+            model = reasoningModel,
+            providerSetting = providerSetting.copy(
+                baseUrl = "https://generic.example.com/v1",
+                promptCacheMode = OpenAICompatibilityMode.ENABLED,
+            )
+        )
+
+        val messages = body["messages"]?.jsonArray ?: error("messages are missing")
+        val userContent = messages[1].jsonObject["content"]?.jsonArray ?: error("user content should be array when breakpoints enabled")
         assertEquals(
             "ephemeral",
             userContent[0].jsonObject["cache_control"]?.jsonObject?.get("type")?.jsonPrimitive?.contentOrNull
         )
+    }
+
+    @Test
+    fun chatCompletionsPromptCacheModeDisabledSuppressesBreakpointsAndCacheKey() {
+        val body = chatCompletionsBody(
+            messages = listOf(UIMessage.system("Stable system prompt"), UIMessage.user("Hello")),
+            model = reasoningModel.copy(modelId = "anthropic/claude-sonnet-4.5"),
+            providerSetting = providerSetting.copy(
+                baseUrl = "https://openrouter.ai/api/v1",
+                promptCacheMode = OpenAICompatibilityMode.DISABLED,
+            ),
+            sessionId = "conversation-123",
+        )
+
+        assertFalse(body.containsKey("cache_control"))
+        assertFalse(body.containsKey("prompt_cache_key"))
+
+        val messages = body["messages"]?.jsonArray ?: error("messages are missing")
+        val systemContent = messages[0].jsonObject["content"]
+        // No cache_control injection when disabled
+        if (systemContent is JsonArray) {
+            assertNull(systemContent[0].jsonObject["cache_control"])
+        }
     }
 
     @Test

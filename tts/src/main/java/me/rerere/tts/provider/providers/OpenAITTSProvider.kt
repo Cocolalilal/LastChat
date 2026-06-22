@@ -1,18 +1,26 @@
 package me.rerere.tts.provider.providers
 
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.withContext
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.common.platform.PlatformLog
 import me.rerere.tts.model.AudioChunk
 import me.rerere.tts.model.AudioFormat
+import me.rerere.tts.model.TTSModelInfo
 import me.rerere.tts.model.TTSRequest
 import me.rerere.tts.provider.TTSProvider
 import me.rerere.tts.provider.TTSProviderSetting
+import org.json.JSONArray
 import org.json.JSONObject
 
 private const val TAG = "OpenAITTSProvider"
+
+private val TTS_MODEL_PATTERNS = listOf(
+    "tts", "audio", "speech", "orpheus", "playai", "voice", "sonic", "speak"
+)
 
 class OpenAITTSProvider(
     private val httpClient: PlatformHttpClient,
@@ -67,5 +75,54 @@ class OpenAITTSProvider(
                 )
             )
         )
+    }
+
+    override suspend fun listModels(
+        providerSetting: TTSProviderSetting.OpenAI
+    ): List<TTSModelInfo> = withContext(Dispatchers.IO) {
+        if (providerSetting.apiKey.isBlank()) return@withContext emptyList()
+        runCatching {
+            val response = httpClient.execute(
+                PlatformHttpRequest(
+                    method = "GET",
+                    url = "${providerSetting.baseUrl}/models",
+                    headers = mapOf(
+                        "Authorization" to "Bearer ${providerSetting.apiKey}",
+                    ),
+                )
+            )
+            if (response.statusCode !in 200..299) {
+                PlatformLog.e(
+                    TAG,
+                    "listModels failed: ${response.statusCode} ${response.body.decodeToString()}"
+                )
+                return@withContext emptyList()
+            }
+            val body = response.body.decodeToString()
+            val json = JSONObject(body)
+            val dataArray = json.optJSONArray("data") as? JSONArray
+            val all = dataArray?.let { arr ->
+                buildList {
+                    for (i in 0 until arr.length()) {
+                        val item = arr.optJSONObject(i) ?: continue
+                        val id = item.optString("id", "")
+                        if (id.isNotBlank()) {
+                            add(TTSModelInfo(id = id, displayName = id))
+                        }
+                    }
+                }
+            } ?: emptyList()
+
+            if (all.isEmpty()) return@withContext emptyList()
+
+            val ttsMatches = all.filter { info ->
+                val lower = info.id.lowercase()
+                TTS_MODEL_PATTERNS.any { pattern -> lower.contains(pattern) }
+            }
+            if (ttsMatches.isNotEmpty()) ttsMatches else all
+        }.getOrElse { e ->
+            PlatformLog.e(TAG, "listModels error: ${e.message}")
+            emptyList()
+        }
     }
 }

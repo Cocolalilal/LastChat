@@ -1,7 +1,9 @@
 package me.rerere.workspace
 
+import android.os.Build
 import java.io.File
 import java.io.IOException
+import java.nio.file.Files
 
 data class WorkspaceBindMount(
     val source: File,
@@ -54,18 +56,19 @@ class ProotShellRunner(
         patcher.patch(context.linuxDir)
 
         val failures = mutableListOf<ProotAttemptFailure>()
-        orderedAttempts(context, runtimes).forEach { attempt ->
+        for (attempt in orderedAttempts(context, runtimes)) {
             val result = runProot(context, attempt.runtime, attempt.mode)
-            if (!result.shouldTryNextProotAttempt()) {
+            if (!result.isProotLaunchFailure()) {
                 ProotLaunchPreferences.write(context.tempDir, attempt.runtime, attempt.mode)
                 return result
             }
             failures += ProotAttemptFailure(attempt, result)
         }
 
+        val verboseDiag = runVerboseDiagnostic(context, runtimes.first())
         return failures.lastOrNull()
             ?.result
-            ?.withLaunchDiagnostics(failures)
+            ?.withLaunchDiagnostics(failures, verboseDiag)
             ?: WorkspaceCommandResult(
                 exitCode = 127,
                 stdout = "",
@@ -79,7 +82,7 @@ class ProotShellRunner(
         mode: ProotLaunchMode,
     ): WorkspaceCommandResult {
         return try {
-            val process = ProcessBuilder(buildCommand(context, runtime.executable))
+            val process = ProcessBuilder(buildCommand(context, runtime.executable, mode, runtime))
                 .directory(context.filesDir)
                 .redirectErrorStream(false)
                 .apply {
@@ -111,12 +114,24 @@ class ProotShellRunner(
     private fun buildCommand(
         context: WorkspaceShellContext,
         proot: File,
+        mode: ProotLaunchMode,
+        runtime: ProotRuntime,
     ): List<String> {
-        val command = mutableListOf(
-            proot.absolutePath,
-            "--root-id",
-            "--link2symlink",
-            "--kill-on-exit",
+        val command = mutableListOf(proot.absolutePath)
+
+        if (mode.verbose) {
+            command += "--verbose=1"
+        }
+        if (mode.useAshmemMemfd && runtime.supportsAshmemMemfd) {
+            command += "--ashmem-memfd"
+        }
+        if (!mode.minimalFlags) {
+            command += "--root-id"
+            command += "--link2symlink"
+            command += "--kill-on-exit"
+        }
+
+        command += listOf(
             "-r",
             context.linuxDir.absolutePath,
             "-w",
@@ -198,24 +213,199 @@ class ProotShellRunner(
         }
     }
 
-    private fun WorkspaceCommandResult.shouldTryNextProotAttempt(): Boolean =
-        stderr.contains("proot launch failed with", ignoreCase = true) ||
-            isProotPreExecFailure()
-
-    private fun WorkspaceCommandResult.isProotPreExecFailure(): Boolean {
+    private fun WorkspaceCommandResult.isProotLaunchFailure(): Boolean {
         val output = "$stderr\n$stdout"
-        return output.contains("proot error:", ignoreCase = true) &&
-            (
-                output.contains("Function not implemented", ignoreCase = true) ||
-                    output.contains("No such file or directory", ignoreCase = true) ||
-                    output.contains("can't chmod", ignoreCase = true) ||
-                    output.contains("can't chdir", ignoreCase = true) ||
-                    output.contains("execve(", ignoreCase = true)
-                )
+        return output.contains("proot error:", ignoreCase = true) ||
+            output.contains("proot launch failed with", ignoreCase = true) ||
+            output.contains("proot info:", ignoreCase = true) ||
+            output.contains("fatal error: see", ignoreCase = true) ||
+            output.contains("ptrace(TRACEME)", ignoreCase = true) ||
+            output.contains("Function not implemented", ignoreCase = true) ||
+            (exitCode == 127 && output.isBlank())
+    }
+
+    private fun runVerboseDiagnostic(
+        context: WorkspaceShellContext,
+        runtime: ProotRuntime,
+    ): String {
+        val sanityCheck = runProotSanityCheck(context, runtime)
+        val rootfsDiag = diagnoseRootfs(context.linuxDir)
+        val shellCheck = runProotShellOnly(context, runtime)
+        val verboseResult = runProot(
+            context,
+            runtime,
+            ProotLaunchModes.verboseDiagnostic,
+        )
+        val verboseOutput = verboseResult.stderr.ifBlank { verboseResult.stdout }
+        val trimmed = verboseOutput.lineSequence()
+            .filter { it.isNotBlank() }
+            .joinToString("\n")
+            .take(MAX_VERBOSE_LINES)
+        return buildString {
+            appendLine("=== proot sanity check ===")
+            appendLine(sanityCheck)
+            appendLine("=== rootfs diagnostic ===")
+            appendLine(rootfsDiag)
+            appendLine("=== proot shell-only test ===")
+            appendLine(shellCheck)
+            appendLine("=== verbose proot output (first $MAX_VERBOSE_LINES lines) ===")
+            appendLine(trimmed)
+        }
+    }
+
+    private fun diagnoseRootfs(linuxDir: File): String {
+        return buildString {
+            val bashPath = listOf("usr/bin/bash", "bin/bash").firstOrNull { File(linuxDir, it).isFile }
+            appendLine("bash: $bashPath (${if (bashPath != null) File(linuxDir, bashPath).length() else "missing"} bytes)")
+            val interpreter = bashPath?.let { parseElfInterpreter(File(linuxDir, it)) }
+            appendLine("bash ELF interpreter: $interpreter")
+            listOf("lib", "lib64", "usr/lib", "usr/lib64").forEach { path ->
+                val f = File(linuxDir, path)
+                val type = when {
+                    Files.isSymbolicLink(f.toPath()) -> "symlink -> ${runCatching { Files.readSymbolicLink(f.toPath()) }.getOrDefault("?")}"
+                    f.isDirectory -> "dir (${f.list()?.size ?: 0} entries)"
+                    f.isFile -> "file (${f.length()} bytes)"
+                    else -> "missing"
+                }
+                appendLine("  /$path: $type")
+            }
+            val linkerPaths = listOf(
+                "lib/ld-linux-aarch64.so.1",
+                "usr/lib/ld-linux-aarch64.so.1",
+                "lib/aarch64-linux-gnu/ld-linux-aarch64.so.1",
+                "usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1",
+                "lib64/ld-linux-x86-64.so.2",
+                "usr/lib64/ld-linux-x86-64.so.2",
+            )
+            linkerPaths.forEach { path ->
+                val f = File(linuxDir, path)
+                if (f.exists() || Files.isSymbolicLink(f.toPath())) {
+                    val type = if (Files.isSymbolicLink(f.toPath())) "symlink" else "file (${f.length()} bytes)"
+                    appendLine("  /$path: $type")
+                }
+            }
+        }
+    }
+
+    private fun parseElfInterpreter(file: File): String? {
+        return runCatching {
+            val bytes = file.readBytes()
+            if (bytes.size < 64 || bytes[0] != 0x7f.toByte() || bytes[1] != 'E'.code.toByte()) return null
+            val is64Bit = bytes[4] == 2.toByte()
+            val phdrOffset = if (is64Bit) {
+                bytes.toInt32(32).toLong() // e_phoff
+            } else {
+                bytes.toInt32(28).toLong()
+            }
+            val phdrSize = if (is64Bit) 56 else 32
+            val phdrCount = bytes.toInt16(if (is64Bit) 56 else 44) // e_phnum
+            for (i in 0 until phdrCount) {
+                val offset = (phdrOffset + i * phdrSize).toInt()
+                val pType = bytes.toInt32(offset)
+                if (pType == 3) { // PT_INTERP
+                    val interpOffset = if (is64Bit) bytes.toInt32(offset + 8).toLong() else bytes.toInt32(offset + 8).toLong()
+                    val interpSize = if (is64Bit) bytes.toInt32(offset + 32).toInt() else bytes.toInt32(offset + 16).toInt()
+                    val interp = bytes.copyOfRange(interpOffset.toInt(), interpOffset.toInt() + interpSize)
+                    return String(interp).trimEnd('\u0000')
+                }
+            }
+            null
+        }.getOrNull()
+    }
+
+    private fun ByteArray.toInt32(offset: Int): Int =
+        (this[offset].toInt() and 0xff) or
+            ((this[offset + 1].toInt() and 0xff) shl 8) or
+            ((this[offset + 2].toInt() and 0xff) shl 16) or
+            ((this[offset + 3].toInt() and 0xff) shl 24)
+
+    private fun ByteArray.toInt16(offset: Int): Int =
+        (this[offset].toInt() and 0xff) or
+            ((this[offset + 1].toInt() and 0xff) shl 8)
+
+    private fun runProotSanityCheck(
+        context: WorkspaceShellContext,
+        runtime: ProotRuntime,
+    ): String {
+        return try {
+            val process = ProcessBuilder(
+                runtime.executable.absolutePath,
+                "--version",
+            ).apply {
+                environment()["LD_LIBRARY_PATH"] = runtime.executable.parentFile?.absolutePath.orEmpty()
+                environment()["PROOT_LOADER"] = runtime.loader.absolutePath
+                environment()["PROOT_TMP_DIR"] = context.tempDir.absolutePath
+            }.start()
+            val result = process.readResult(5000L, null)
+            "exit ${result.exitCode}, output: ${result.stdout.trim().take(200)}"
+        } catch (e: Exception) {
+            "failed to start: ${e.message}"
+        }
+    }
+
+    private fun runProotShellOnly(
+        context: WorkspaceShellContext,
+        runtime: ProotRuntime,
+    ): String {
+        return try {
+            val mode = ProotLaunchModes.noMemfd
+            val process = ProcessBuilder(buildShellOnlyCommand(context, runtime.executable, mode, runtime))
+                .directory(context.filesDir)
+                .redirectErrorStream(false)
+                .apply {
+                    environment()["PROOT_LOADER"] = runtime.loader.absolutePath
+                    environment()["PROOT_TMP_DIR"] = context.tempDir.absolutePath
+                    environment()["PROOT_TMPDIR"] = context.tempDir.absolutePath
+                    environment()["TMPDIR"] = context.tempDir.absolutePath
+                    environment()["LD_LIBRARY_PATH"] = runtime.executable.parentFile?.absolutePath.orEmpty()
+                    environment().putAll(mode.environment)
+                }
+                .start()
+            val result = process.readResult(10000L, "echo SHELL_OK\n".toByteArray())
+            "exit ${result.exitCode}, stdout: ${result.stdout.trim().take(200)}, stderr: ${result.stderr.trim().take(200)}"
+        } catch (e: Exception) {
+            "failed to start: ${e.message}"
+        }
+    }
+
+    private fun buildShellOnlyCommand(
+        context: WorkspaceShellContext,
+        proot: File,
+        mode: ProotLaunchMode,
+        runtime: ProotRuntime,
+    ): List<String> {
+        val command = mutableListOf(proot.absolutePath)
+        if (mode.useAshmemMemfd && runtime.supportsAshmemMemfd) {
+            command += "--ashmem-memfd"
+        }
+        if (!mode.minimalFlags) {
+            command += "--root-id"
+            command += "--link2symlink"
+            command += "--kill-on-exit"
+        }
+        command += listOf(
+            "-r",
+            context.linuxDir.absolutePath,
+            "-w",
+            "/",
+            "-b",
+            "${context.filesDir.absolutePath}:$WORKSPACE_DIR",
+        )
+        listOf("/dev", "/proc", "/sys").forEach { path ->
+            if (File(path).exists()) {
+                command += "-b"
+                command += path
+            }
+        }
+        val shell = ROOTFS_SHELLS.firstOrNull { File(context.linuxDir, it.removePrefix("/")).isFile }
+            ?: "/bin/sh"
+        command += shell
+        return command
     }
 
     private fun WorkspaceCommandResult.withLaunchDiagnostics(
         failures: List<ProotAttemptFailure>,
+        verboseDiagnostic: String,
     ): WorkspaceCommandResult {
         val details = failures.joinToString(separator = "\n") { failure ->
             val output = failure.result.stderr.ifBlank { failure.result.stdout }
@@ -226,8 +416,12 @@ class ProotShellRunner(
                 "exit ${failure.result.exitCode}" +
                 if (output.isBlank()) "" else " - $output"
         }
+        val deviceInfo = "Device: ${Build.MANUFACTURER} ${Build.MODEL}, " +
+            "Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})"
         val diagnostic = "Tried proot launch modes:\n$details\n" +
-            "Android still failed while proot was entering the rootfs."
+            "$deviceInfo\n" +
+            "Android still failed while proot was entering the rootfs.\n\n" +
+            verboseDiagnostic
         return copy(
             stderr = if (stderr.isBlank()) diagnostic else "${stderr.trimEnd()}\n\n$diagnostic",
         )
@@ -236,6 +430,7 @@ class ProotShellRunner(
     private companion object {
         private const val WORKSPACE_DIR = "/workspace"
         private const val ROOTFS_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        private const val MAX_VERBOSE_LINES = 200
         private val ROOTFS_SHELLS = listOf(
             "/bin/bash",
             "/usr/bin/bash",

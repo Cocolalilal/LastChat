@@ -191,6 +191,96 @@ fun File.hasUsableRootfs(): Boolean {
     return hasShell
 }
 
+fun File.rootfsInterpreter(): String? {
+    val candidate = listOf(
+        "bin/bash",
+        "usr/bin/bash",
+        "bin/sh",
+        "usr/bin/sh",
+    ).map { File(this, it) }.firstOrNull { it.isFile } ?: return null
+
+    return runCatching { candidate.elfInterpreter() }.getOrNull()
+}
+
+private fun File.elfInterpreter(): String? {
+    val bytes = readBytes()
+    if (bytes.size < 64) return null
+    if (bytes[0] != 0x7f.toByte() || bytes[1] != 'E'.code.toByte() ||
+        bytes[2] != 'L'.code.toByte() || bytes[3] != 'F'.code.toByte()
+    ) {
+        return null
+    }
+    val is64Bit = bytes[4].toInt() == 2
+    val littleEndian = bytes[5].toInt() == 1
+    val phoff = if (is64Bit) {
+        readLong(bytes, 32, littleEndian)
+    } else {
+        readInt(bytes, 28, littleEndian).toLong()
+    }
+    val phentsize = readShort(bytes, if (is64Bit) 54 else 42, littleEndian)
+    val phnum = readShort(bytes, if (is64Bit) 56 else 44, littleEndian)
+
+    if (phoff <= 0 || phnum <= 0 || phentsize <= 0) return null
+    if (phoff + phnum.toLong() * phentsize > bytes.size) return null
+
+    for (i in 0 until phnum) {
+        val base = (phoff + i.toLong() * phentsize).toInt()
+        val ptype = readInt(bytes, base, littleEndian)
+        if (ptype == 3) {
+            val offset = if (is64Bit) readLong(bytes, base + 8, littleEndian) else readInt(bytes, base + 4, littleEndian).toLong()
+            val filesz = if (is64Bit) readLong(bytes, base + 32, littleEndian) else readInt(bytes, base + 16, littleEndian).toLong()
+            if (offset <= 0 || filesz <= 0 || filesz > 4096) return null
+            if (offset + filesz > bytes.size) return null
+            return String(bytes, offset.toInt(), filesz.toInt(), Charsets.UTF_8).trimEnd('\u0000')
+        }
+    }
+    return null
+}
+
+private fun readShort(data: ByteArray, offset: Int, littleEndian: Boolean): Int {
+    return if (littleEndian) {
+        (data[offset].toInt() and 0xff) or ((data[offset + 1].toInt() and 0xff) shl 8)
+    } else {
+        ((data[offset].toInt() and 0xff) shl 8) or (data[offset + 1].toInt() and 0xff)
+    }
+}
+
+private fun readInt(data: ByteArray, offset: Int, littleEndian: Boolean): Int {
+    return if (littleEndian) {
+        (data[offset].toInt() and 0xff) or
+            ((data[offset + 1].toInt() and 0xff) shl 8) or
+            ((data[offset + 2].toInt() and 0xff) shl 16) or
+            ((data[offset + 3].toInt() and 0xff) shl 24)
+    } else {
+        ((data[offset].toInt() and 0xff) shl 24) or
+            ((data[offset + 1].toInt() and 0xff) shl 16) or
+            ((data[offset + 2].toInt() and 0xff) shl 8) or
+            (data[offset + 3].toInt() and 0xff)
+    }
+}
+
+private fun readLong(data: ByteArray, offset: Int, littleEndian: Boolean): Long {
+    return if (littleEndian) {
+        (data[offset].toLong() and 0xff) or
+            ((data[offset + 1].toLong() and 0xff) shl 8) or
+            ((data[offset + 2].toLong() and 0xff) shl 16) or
+            ((data[offset + 3].toLong() and 0xff) shl 24) or
+            ((data[offset + 4].toLong() and 0xff) shl 32) or
+            ((data[offset + 5].toLong() and 0xff) shl 40) or
+            ((data[offset + 6].toLong() and 0xff) shl 48) or
+            ((data[offset + 7].toLong() and 0xff) shl 56)
+    } else {
+        ((data[offset].toLong() and 0xff) shl 56) or
+            ((data[offset + 1].toLong() and 0xff) shl 48) or
+            ((data[offset + 2].toLong() and 0xff) shl 40) or
+            ((data[offset + 3].toLong() and 0xff) shl 32) or
+            ((data[offset + 4].toLong() and 0xff) shl 24) or
+            ((data[offset + 5].toLong() and 0xff) shl 16) or
+            ((data[offset + 6].toLong() and 0xff) shl 8) or
+            (data[offset + 7].toLong() and 0xff)
+    }
+}
+
 enum class WorkspaceRootfsArchitecture(
     val displayName: String,
     val ubuntuArch: String,

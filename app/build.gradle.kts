@@ -185,12 +185,6 @@ android {
         jniLibs {
             useLegacyPackaging = true
             pickFirsts += "lib/*/libtermux.so"
-            excludes += setOf(
-                "lib/*/libproot.so",
-                "lib/*/libproot-loader.so",
-                "lib/*/libproot-loader32.so",
-                "lib/*/libproot-userland.so"
-            )
         }
     }
     androidResources {

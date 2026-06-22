@@ -60,7 +60,9 @@ data class LastChatCatalog(
     @SerialName("search_providers")
     val searchProviders: List<CatalogServiceProvider> = emptyList(),
     @SerialName("tts_providers")
-    val ttsProviders: List<CatalogServiceProvider> = emptyList(),
+    val ttsProviders: List<CatalogTTSProvider> = emptyList(),
+    @SerialName("stt_providers")
+    val sttProviders: List<CatalogServiceProvider> = emptyList(),
     @SerialName("model_groups")
     val legacyModelGroups: List<CatalogModelFamily> = emptyList(),
 ) {
@@ -79,6 +81,42 @@ data class CatalogServiceProvider(
     @SerialName("built_in")
     val builtIn: Boolean = false,
 )
+
+@Serializable
+data class CatalogTTSProvider(
+    val id: String,
+    val name: String,
+    val aliases: List<String> = emptyList(),
+    val description: String = "",
+    val icon: String? = null,
+    val preset: Boolean = true,
+    @SerialName("built_in")
+    val builtIn: Boolean = false,
+    val type: CatalogTTSProviderType = CatalogTTSProviderType.OPENAI,
+    @SerialName("base_url")
+    val baseUrl: String = "",
+    @SerialName("default_model")
+    val defaultModel: String = "",
+    @SerialName("default_voice")
+    val defaultVoice: String = "",
+    @SerialName("signup_url")
+    val signupUrl: String? = null,
+    @SerialName("api_key_url")
+    val apiKeyUrl: String? = null,
+)
+
+@Serializable
+enum class CatalogTTSProviderType {
+    @SerialName("openai") OPENAI,
+    @SerialName("gemini") GEMINI,
+    @SerialName("system") SYSTEM,
+    @SerialName("minimax") MINIMAX,
+    @SerialName("elevenlabs") ELEVENLABS,
+    @SerialName("qwen") QWEN,
+    @SerialName("fishaudio") FISHAUDIO,
+    @SerialName("cartesia") CARTESIA,
+    @SerialName("playht") PLAYHT,
+}
 
 @Serializable
 data class CatalogProvider(
@@ -123,6 +161,8 @@ data class CatalogProvider(
     val imageResponseModalitiesMode: OpenAICompatibilityMode = OpenAICompatibilityMode.AUTO,
     @SerialName("reasoning_content_replay_mode")
     val reasoningContentReplayMode: OpenAICompatibilityMode = OpenAICompatibilityMode.AUTO,
+    @SerialName("prompt_cache_mode")
+    val promptCacheMode: OpenAICompatibilityMode = OpenAICompatibilityMode.AUTO,
 )
 
 @Serializable
@@ -338,7 +378,8 @@ data class ModelCatalogSnapshot(
     val globalRules: List<CatalogModelRule> = emptyList(),
     val modelOverrides: List<CatalogModelOverride> = emptyList(),
     val searchProviders: List<CatalogServiceProvider> = emptyList(),
-    val ttsProviders: List<CatalogServiceProvider> = emptyList(),
+    val ttsProviders: List<CatalogTTSProvider> = emptyList(),
+    val sttProviders: List<CatalogServiceProvider> = emptyList(),
 ) {
     val catalog: LastChatCatalog
         get() = LastChatCatalog(
@@ -348,6 +389,7 @@ data class ModelCatalogSnapshot(
             modelOverrides = modelOverrides,
             searchProviders = searchProviders,
             ttsProviders = ttsProviders,
+            sttProviders = sttProviders,
         )
 }
 
@@ -450,6 +492,7 @@ object ModelCatalogParser {
             modelOverrides = effectiveOverrides,
             searchProviders = catalog.searchProviders,
             ttsProviders = catalog.ttsProviders,
+            sttProviders = catalog.sttProviders,
         )
     }
 }
@@ -891,12 +934,32 @@ fun ModelCatalogSnapshot.searchProviderIconUri(providerIdOrName: String): String
 
 fun ModelCatalogSnapshot.ttsProviderIconUri(providerIdOrName: String): String? {
     return ttsProviders
+        .firstOrNull { provider -> provider.matchesCatalogTTSProvider(providerIdOrName) }
+        ?.icon
+        ?.toCatalogIconUrl()
+}
+
+fun ModelCatalogSnapshot.ttsProviderById(providerId: String): CatalogTTSProvider? {
+    return ttsProviders.firstOrNull { it.id == providerId }
+}
+
+fun ModelCatalogSnapshot.sttProviderIconUri(providerIdOrName: String): String? {
+    return sttProviders
         .firstOrNull { provider -> provider.matchesCatalogServiceProvider(providerIdOrName) }
         ?.icon
         ?.toCatalogIconUrl()
 }
 
 private fun CatalogServiceProvider.matchesCatalogServiceProvider(value: String): Boolean {
+    val normalizedValue = value.normalizeCatalogToken()
+    if (normalizedValue.isBlank()) return false
+    return sequenceOf(id, name)
+        .plus(aliases)
+        .map { it.normalizeCatalogToken() }
+        .any { it == normalizedValue }
+}
+
+private fun CatalogTTSProvider.matchesCatalogTTSProvider(value: String): Boolean {
     val normalizedValue = value.normalizeCatalogToken()
     if (normalizedValue.isBlank()) return false
     return sequenceOf(id, name)

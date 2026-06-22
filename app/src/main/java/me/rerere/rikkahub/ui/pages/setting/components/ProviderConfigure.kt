@@ -409,6 +409,7 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
             streamOptionsMode = if (this is ProviderSetting.OpenAI) this.streamOptionsMode else OpenAICompatibilityMode.AUTO,
             imageResponseModalitiesMode = if (this is ProviderSetting.OpenAI) this.imageResponseModalitiesMode else OpenAICompatibilityMode.AUTO,
             reasoningContentReplayMode = if (this is ProviderSetting.OpenAI) this.reasoningContentReplayMode else OpenAICompatibilityMode.AUTO,
+            promptCacheMode = if (this is ProviderSetting.OpenAI) this.promptCacheMode else OpenAICompatibilityMode.AUTO,
         )
 
         ProviderSetting.Google::class -> ProviderSetting.Google(

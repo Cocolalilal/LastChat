@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -30,9 +29,14 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.DragIndicator
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.Mic
-import androidx.compose.material.icons.rounded.PhoneAndroid
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -45,6 +49,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -56,7 +61,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -69,7 +73,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -78,9 +82,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import me.rerere.asr.ASRProviderSetting
 
-import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -88,8 +89,10 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.Spacer
-import me.rerere.asr.android.discoverLocalSpeechRecognitionServices
+import me.rerere.asr.fetchSttModels
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.ai.models.ModelCatalogSnapshot
+import me.rerere.rikkahub.data.ai.models.sttProviderIconUri
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
@@ -97,14 +100,15 @@ import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.OutlinedNumberInput
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
-import me.rerere.rikkahub.ui.components.ui.Tag
-import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.pages.setting.components.CustomIconSelector
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.plus
+import okhttp3.OkHttpClient
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import kotlin.reflect.KClass
@@ -112,6 +116,7 @@ import kotlin.reflect.KClass
 @Composable
 fun SettingSTTPage(vm: SettingVM = koinViewModel()) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val catalogSnapshot by vm.modelCatalogSnapshot.collectAsStateWithLifecycle()
     Scaffold(
         topBar = {
             OneUITopAppBar(
@@ -135,7 +140,10 @@ fun SettingSTTPage(vm: SettingVM = koinViewModel()) {
                 ) {
                     Icon(Icons.Rounded.Settings, contentDescription = "STT Settings")
                 }
-                AddSTTProviderButton(asFab = true) { provider ->
+                AddSTTProviderButton(
+                    catalogSnapshot = catalogSnapshot,
+                    asFab = true,
+                ) { provider ->
                     val settings = vm.settings.value
                     vm.updateSettings(
                         settings.copy(sttProviders = listOf(provider) + settings.sttProviders)
@@ -276,9 +284,11 @@ internal fun SttProvidersContent(
                         label = "stt_provider_drag_scale",
                     )
                     key(provider.id) {
+                        val selected = settings.selectedSttProviderId == provider.id
                         PhysicsSwipeToDelete(
                             position = position,
-                            groupCornerRadius = 24.dp,
+                            groupCornerRadius = if (selected) 50.dp else 24.dp,
+                            itemCornerRadius = if (selected) 50.dp else 10.dp,
                             deleteEnabled = true,
                             neighborOffset = neighborOffset,
                             onDragProgress = { offset, unlocked ->
@@ -299,11 +309,12 @@ internal fun SttProvidersContent(
                             modifier = Modifier
                                 .scale(dragScale)
                                 .fillMaxWidth(),
-                        ) { _ ->
+                        ) { shape ->
                             STTProviderItemContent(
                                 provider = provider,
                                 position = position,
-                                selected = settings.selectedSttProviderId == provider.id,
+                                selected = selected,
+                                shape = shape,
                                 haptics = haptics,
                                 onClick = {
                                     vm.updateSettings(settings.copy(selectedSttProviderId = provider.id))
@@ -394,6 +405,7 @@ private fun STTProviderItemContent(
     provider: ASRProviderSetting,
     position: ItemPosition,
     selected: Boolean,
+    shape: Shape,
     haptics: me.rerere.rikkahub.ui.hooks.PremiumHaptics,
     onClick: () -> Unit,
     onEdit: () -> Unit,
@@ -419,7 +431,7 @@ private fun STTProviderItemContent(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(0.dp))
+            .clip(shape)
             .background(backgroundColor)
             .clickable {
                 haptics.perform(HapticPattern.Pop)
@@ -441,25 +453,6 @@ private fun STTProviderItemContent(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            
-            if (provider !is ASRProviderSetting.SystemSTT) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(24.dp)
-                        .clipToBounds(),
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.wrapContentWidth(align = Alignment.Start, unbounded = true),
-                    ) {
-                        Tag(type = TagType.DEFAULT) {
-                            Text(provider.typeName())
-                        }
-                    }
-                }
-            }
         }
         IconButton(onClick = {
             haptics.perform(HapticPattern.Pop)
@@ -471,54 +464,27 @@ private fun STTProviderItemContent(
     }
 }
 
-private data class SttCornerRadii(
-    val topStart: androidx.compose.ui.unit.Dp,
-    val topEnd: androidx.compose.ui.unit.Dp,
-    val bottomStart: androidx.compose.ui.unit.Dp,
-    val bottomEnd: androidx.compose.ui.unit.Dp,
-)
-
-private fun sttItemCornerRadii(selected: Boolean, position: ItemPosition): SttCornerRadii {
-    if (selected) return SttCornerRadii(50.dp, 50.dp, 50.dp, 50.dp)
-    return when (position) {
-        ItemPosition.ONLY -> SttCornerRadii(24.dp, 24.dp, 24.dp, 24.dp)
-        ItemPosition.FIRST -> SttCornerRadii(24.dp, 24.dp, 10.dp, 10.dp)
-        ItemPosition.MIDDLE -> SttCornerRadii(10.dp, 10.dp, 10.dp, 10.dp)
-        ItemPosition.LAST -> SttCornerRadii(10.dp, 10.dp, 24.dp, 24.dp)
-    }
-}
-
 @Composable
 private fun STTProviderIcon(provider: ASRProviderSetting, contentColor: Color) {
-    if (provider is ASRProviderSetting.SystemSTT) {
-        Box(
-            modifier = Modifier.size(40.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                Icons.Rounded.PhoneAndroid,
-                contentDescription = null,
-                modifier = Modifier.size(24.dp),
-                tint = contentColor,
-            )
-        }
-    } else {
-        AutoAIIconWithUrl(
-            name = provider.typeName(),
-            customIconUri = null,
-            modifier = Modifier.size(40.dp),
-        )
-    }
+    AutoAIIconWithUrl(
+        name = provider.name.ifBlank { provider.typeName() },
+        customIconUri = provider.customIconUri,
+        modifier = Modifier.size(40.dp),
+    )
 }
 
 @Composable
 internal fun AddSTTProviderButton(
+    catalogSnapshot: ModelCatalogSnapshot? = null,
+    enableHaptics: Boolean = true,
     asFab: Boolean = false,
     onAdd: (ASRProviderSetting) -> Unit,
 ) {
     var showBottomSheet by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
-    val haptics = rememberPremiumHaptics()
+    var showCustomDialog by remember { mutableStateOf(false) }
+    var customProvider by remember { mutableStateOf<ASRProviderSetting.OpenAICompatible?>(null) }
+    val haptics = rememberPremiumHaptics(enabled = enableHaptics)
 
     val onClick = {
         haptics.perform(HapticPattern.Pop)
@@ -541,23 +507,35 @@ internal fun AddSTTProviderButton(
 
     if (showBottomSheet) {
         val bottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        
+
         data class STTPreset(
-            val type: kotlin.reflect.KClass<out ASRProviderSetting>,
+            val type: KClass<out ASRProviderSetting>,
             val name: String,
             val description: String,
-            val isLocal: Boolean = false,
+            val catalogId: String? = null,
+            val baseUrl: String? = null,
+            val defaultModel: String? = null,
         )
 
         val allPresets = listOf(
-            STTPreset(ASRProviderSetting.SystemSTT::class, "System STT", "Local system speech recognition", isLocal = true),
-            STTPreset(ASRProviderSetting.OpenAIRealtime::class, "OpenAI", "OpenAI Realtime API"),
-            STTPreset(ASRProviderSetting.DashScope::class, "DashScope", "Aliyun DashScope ASR"),
-            STTPreset(ASRProviderSetting.Volcengine::class, "Volcengine", "Volcengine ASR"),
-            STTPreset(ASRProviderSetting.MiMo::class, "MiMo", "MiMo ASR"),
-            STTPreset(ASRProviderSetting.Step::class, "Step", "Step Fun ASR"),
+            STTPreset(ASRProviderSetting.OpenAICompatible::class, "OpenAI", "OpenAI Whisper / gpt-4o-transcribe", catalogId = "openai", baseUrl = "https://api.openai.com/v1", defaultModel = "whisper-1"),
+            STTPreset(ASRProviderSetting.OpenAIRealtime::class, "OpenAI Realtime", "Live transcription via WebSocket", catalogId = "openai_realtime"),
+            STTPreset(ASRProviderSetting.OpenAICompatible::class, "OpenRouter", "Multiple STT providers through one API", catalogId = "openrouter", baseUrl = "https://openrouter.ai/api/v1", defaultModel = "openai/whisper-large-v3"),
+            STTPreset(ASRProviderSetting.OpenAICompatible::class, "Groq", "Ultra-fast Whisper on Groq", catalogId = "groq", baseUrl = "https://api.groq.com/openai/v1", defaultModel = "whisper-large-v3-turbo"),
+            STTPreset(ASRProviderSetting.OpenAICompatible::class, "Regolo AI", "European Whisper STT", catalogId = "regolo", baseUrl = "https://api.regolo.ai/v1", defaultModel = "faster-whisper-large-v3"),
+            STTPreset(ASRProviderSetting.OpenAICompatible::class, "xAI", "Grok speech-to-text API", catalogId = "xai", baseUrl = "https://api.x.ai/v1", defaultModel = "grok-stt-v1"),
+            STTPreset(ASRProviderSetting.OpenAICompatible::class, "DeepInfra", "Whisper on DeepInfra", catalogId = "deepinfra", baseUrl = "https://api.deepinfra.com/v1/openai", defaultModel = "openai/whisper-large"),
+            STTPreset(ASRProviderSetting.OpenAICompatible::class, "Together AI", "Whisper on Together AI", catalogId = "together", baseUrl = "https://api.together.ai/v1", defaultModel = "openai/whisper-large-v3"),
+            STTPreset(ASRProviderSetting.OpenAICompatible::class, "Fireworks AI", "Whisper on Fireworks AI", catalogId = "fireworks", baseUrl = "https://api.fireworks.ai/inference/v1", defaultModel = "whisper-v3"),
+            STTPreset(ASRProviderSetting.OpenAICompatible::class, "SiliconFlow", "Whisper on SiliconFlow", catalogId = "siliconflow", baseUrl = "https://api.siliconflow.cn/v1", defaultModel = "FunAudioLLM/SenseVoiceSmall"),
+            STTPreset(ASRProviderSetting.OpenAICompatible::class, "AiHubMix", "OpenAI-compatible STT aggregator", catalogId = "aihubmix", baseUrl = "https://aihubmix.com/v1", defaultModel = "whisper-1"),
+            STTPreset(ASRProviderSetting.OpenAICompatible::class, "Novita AI", "Whisper on Novita AI", catalogId = "novita", baseUrl = "https://api.novita.ai/v1", defaultModel = "openai/whisper-large-v3"),
+            STTPreset(ASRProviderSetting.DashScope::class, "DashScope", "Aliyun DashScope realtime ASR", catalogId = "dashscope"),
+            STTPreset(ASRProviderSetting.Volcengine::class, "Volcengine", "ByteDance Volcengine SeedASR", catalogId = "volcengine"),
+            STTPreset(ASRProviderSetting.MiMo::class, "MiMo", "Xiaomi MiMo ASR", catalogId = "mimo"),
+            STTPreset(ASRProviderSetting.Step::class, "Step", "StepFun StepAudio ASR", catalogId = "step"),
         )
-        
+
         val filteredPresets = if (searchQuery.isBlank()) {
             allPresets
         } else {
@@ -566,9 +544,9 @@ internal fun AddSTTProviderButton(
                     preset.description.contains(searchQuery, ignoreCase = true)
             }
         }
-        
+
         val scope = rememberCoroutineScope()
-        
+
         ModalBottomSheet(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = {
@@ -604,7 +582,7 @@ internal fun AddSTTProviderButton(
                         .fillMaxWidth()
                         .padding(bottom = 16.dp)
                 )
-                
+
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
@@ -621,9 +599,9 @@ internal fun AddSTTProviderButton(
                         }
                     } else null
                 )
-                
+
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 CompositionLocalProvider(
                     LocalOverscrollFactory provides null
                 ) {
@@ -647,6 +625,51 @@ internal fun AddSTTProviderButton(
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                         contentPadding = PaddingValues(bottom = 16.dp)
                     ) {
+                        // Add Custom Provider card at the top
+                        item {
+                            Card(
+                                onClick = {
+                                    haptics.perform(HapticPattern.Pop)
+                                    showBottomSheet = false
+                                    customProvider = ASRProviderSetting.OpenAICompatible()
+                                    showCustomDialog = true
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                                ),
+                                shape = RoundedCornerShape(24.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Add,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(40.dp),
+                                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = stringResource(R.string.setting_provider_page_add_custom_provider),
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                        Text(
+                                            text = stringResource(R.string.setting_provider_page_add_custom_provider_desc),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
+
                         itemsIndexed(filteredPresets, key = { _, preset -> preset.name }) { index, preset ->
                             val position = when {
                                 filteredPresets.size == 1 -> ItemPosition.ONLY
@@ -662,17 +685,39 @@ internal fun AddSTTProviderButton(
                                 ItemPosition.ONLY -> RoundedCornerShape(24.dp)
                             }
 
-                            androidx.compose.material3.Surface(
+                            val iconUri = preset.catalogId?.let { catalogSnapshot?.sttProviderIconUri(it) }
+
+                            Surface(
                                 onClick = {
                                     haptics.perform(HapticPattern.Pop)
                                     val newProvider = when (preset.type) {
-                                        ASRProviderSetting.SystemSTT::class -> ASRProviderSetting.SystemSTT(name = preset.name)
-                                        ASRProviderSetting.OpenAIRealtime::class -> ASRProviderSetting.OpenAIRealtime()
-                                        ASRProviderSetting.DashScope::class -> ASRProviderSetting.DashScope()
-                                        ASRProviderSetting.Volcengine::class -> ASRProviderSetting.Volcengine()
-                                        ASRProviderSetting.MiMo::class -> ASRProviderSetting.MiMo()
-                                        ASRProviderSetting.Step::class -> ASRProviderSetting.Step()
-                                        else -> ASRProviderSetting.SystemSTT()
+                                        ASRProviderSetting.OpenAICompatible::class -> ASRProviderSetting.OpenAICompatible(
+                                            name = preset.name,
+                                            baseUrl = preset.baseUrl ?: "https://api.openai.com/v1",
+                                            model = preset.defaultModel ?: "whisper-1",
+                                            customIconUri = iconUri,
+                                        )
+                                        ASRProviderSetting.OpenAIRealtime::class -> ASRProviderSetting.OpenAIRealtime(
+                                            name = preset.name,
+                                            customIconUri = iconUri,
+                                        )
+                                        ASRProviderSetting.DashScope::class -> ASRProviderSetting.DashScope(
+                                            name = preset.name,
+                                            customIconUri = iconUri,
+                                        )
+                                        ASRProviderSetting.Volcengine::class -> ASRProviderSetting.Volcengine(
+                                            name = preset.name,
+                                            customIconUri = iconUri,
+                                        )
+                                        ASRProviderSetting.MiMo::class -> ASRProviderSetting.MiMo(
+                                            name = preset.name,
+                                            customIconUri = iconUri,
+                                        )
+                                        ASRProviderSetting.Step::class -> ASRProviderSetting.Step(
+                                            name = preset.name,
+                                            customIconUri = iconUri,
+                                        )
+                                        else -> ASRProviderSetting.OpenAICompatible(name = preset.name)
                                     }
                                     onAdd(newProvider)
                                     showBottomSheet = false
@@ -688,24 +733,11 @@ internal fun AddSTTProviderButton(
                                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    if (preset.isLocal) {
-                                        Box(
-                                            modifier = Modifier.size(40.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Rounded.PhoneAndroid,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(24.dp)
-                                            )
-                                        }
-                                    } else {
-                                        AutoAIIconWithUrl(
-                                            name = preset.name,
-                                            customIconUri = null,
-                                            modifier = Modifier.size(40.dp)
-                                        )
-                                    }
+                                    AutoAIIconWithUrl(
+                                        name = preset.name,
+                                        customIconUri = iconUri,
+                                        modifier = Modifier.size(40.dp)
+                                    )
 
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
@@ -720,16 +752,6 @@ internal fun AddSTTProviderButton(
                                             overflow = TextOverflow.Ellipsis
                                         )
                                     }
-
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                    ) {
-                                        if (preset.isLocal) {
-                                            Tag(type = TagType.SUCCESS) {
-                                                Text(stringResource(R.string.local_label))
-                                            }
-                                        }
-                                    }
                                 }
                             }
                         }
@@ -737,6 +759,23 @@ internal fun AddSTTProviderButton(
                 }
             }
         }
+    }
+
+    // Custom provider dialog
+    if (showCustomDialog && customProvider != null) {
+        STTProviderEditorSheet(
+            provider = customProvider,
+            title = "Add Custom STT Provider",
+            onDismiss = {
+                showCustomDialog = false
+                customProvider = null
+            },
+            onSave = { _, updated ->
+                onAdd(updated)
+                showCustomDialog = false
+                customProvider = null
+            },
+        )
     }
 }
 
@@ -825,21 +864,39 @@ private fun STTProviderConfigure(
         modifier = modifier.verticalScroll(rememberScrollState()),
     ) {
         ProviderTypeField(setting = setting, onValueChange = onValueChange)
-        FormItem(
-            label = { Text("Name") },
-            description = { Text("Shown in the STT providers list.") },
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.fillMaxWidth(),
         ) {
+            CustomIconSelector(
+                customIconUri = setting.customIconUri,
+                onPickFile = { /* file picker not wired for STT — LobeHub only */ },
+                onPickLobeHubIcon = { slug ->
+                    onValueChange(setting.copyProvider(customIconUri = "lobehub://$slug"))
+                },
+                onReset = {
+                    onValueChange(setting.copyProvider(customIconUri = null))
+                },
+            ) { iconModifier ->
+                AutoAIIconWithUrl(
+                    name = setting.name.ifBlank { setting.typeName() },
+                    customIconUri = setting.customIconUri,
+                    modifier = iconModifier,
+                )
+            }
             OutlinedTextField(
                 value = setting.name,
                 onValueChange = { onValueChange(setting.copyProvider(name = it)) },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("System STT") },
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("STT Provider") },
                 shape = AppShapes.InputField,
             )
         }
 
         when (setting) {
-            is ASRProviderSetting.SystemSTT -> SystemSTTConfiguration(setting, onValueChange)
+            is ASRProviderSetting.SystemSTT -> {}
+            is ASRProviderSetting.OpenAICompatible -> OpenAICompatibleSTTConfiguration(setting, onValueChange)
             is ASRProviderSetting.OpenAIRealtime -> OpenAIRealtimeSTTConfiguration(setting, onValueChange)
             is ASRProviderSetting.DashScope -> DashScopeSTTConfiguration(setting, onValueChange)
             is ASRProviderSetting.Volcengine -> VolcengineSTTConfiguration(setting, onValueChange)
@@ -892,96 +949,214 @@ private fun ProviderTypeField(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SystemSTTConfiguration(
-    setting: ASRProviderSetting.SystemSTT,
+private fun OpenAICompatibleSTTConfiguration(
+    setting: ASRProviderSetting.OpenAICompatible,
     onValueChange: (ASRProviderSetting) -> Unit,
 ) {
-    val context = LocalContext.current
-    val services by produceState(initialValue = emptyList(), context) {
-        value = discoverLocalSpeechRecognitionServices(context)
-    }
-    var expanded by remember { mutableStateOf(false) }
-    val selectedLabel = services.firstOrNull {
-        it.packageName == setting.servicePackageName && it.className == setting.serviceClassName
-    }?.label ?: "System default"
-
-    FormItem(
-        label = { Text("Speech Service") },
-        description = { Text("Select an installed Android speech recognition service.") },
-    ) {
-        ExposedDropdownMenuBox(
-            expanded = expanded,
-            onExpandedChange = { expanded = !expanded },
-        ) {
-            OutlinedTextField(
-                value = selectedLabel,
-                onValueChange = {},
-                readOnly = true,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                shape = AppShapes.InputField,
-            )
-            ExposedDropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-            ) {
-                DropdownMenuItem(
-                    text = { Text("System default") },
-                    onClick = {
-                        expanded = false
-                        onValueChange(setting.copy(servicePackageName = null, serviceClassName = null))
-                    },
-                )
-                services.forEach { service ->
-                    DropdownMenuItem(
-                        text = { Text(service.label) },
-                        onClick = {
-                            expanded = false
-                            onValueChange(
-                                setting.copy(
-                                    servicePackageName = service.packageName,
-                                    serviceClassName = service.className,
-                                ),
-                            )
-                        },
-                    )
-                }
-            }
-        }
-    }
-    FormItem(
-        label = { Text("Language") },
-        description = { Text("Optional BCP-47 language tag, such as en-US.") },
-    ) {
-        OutlinedTextField(
-            value = setting.language,
-            onValueChange = { onValueChange(setting.copy(language = it)) },
+    ApiKeyField(setting.apiKey, { onValueChange(setting.copy(apiKey = it)) }, "API key")
+    TextFieldItem("Base URL", setting.baseUrl, { onValueChange(setting.copy(baseUrl = it)) }, "https://api.openai.com/v1")
+    SttModelPicker(
+        label = "Model",
+        currentModel = setting.model,
+        baseUrl = setting.baseUrl,
+        apiKey = setting.apiKey,
+        onValueChange = { onValueChange(setting.copy(model = it)) },
+        placeholder = "whisper-1",
+    )
+    TextFieldItem("Language", setting.language, { onValueChange(setting.copy(language = it)) }, "auto (e.g. en, zh)")
+    TextFieldItem("Prompt", setting.prompt, { onValueChange(setting.copy(prompt = it)) }, "Optional context", minLines = 2)
+    FormItem(label = { Text("Temperature") }, description = { Text("0 = most deterministic, 1 = more random.") }) {
+        OutlinedNumberInput(
+            value = setting.temperature,
+            onValueChange = { if (it in 0f..1f) onValueChange(setting.copy(temperature = it)) },
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("System default") },
+            label = "Temperature",
+        )
+    }
+    FormItem(label = { Text("Response Format") }) {
+        OutlinedTextField(
+            value = setting.responseFormat,
+            onValueChange = { onValueChange(setting.copy(responseFormat = it)) },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("text") },
             shape = AppShapes.InputField,
         )
     }
-    FormItem(
-        label = { Text("Prefer offline") },
-        description = { Text("Ask the selected service to use offline recognition when available.") },
-    ) {
-        Switch(
-            checked = setting.preferOffline,
-            onCheckedChange = { onValueChange(setting.copy(preferOffline = it)) },
+    NumberItem("Sample Rate", setting.sampleRate, { if (it in 8000..48000) onValueChange(setting.copy(sampleRate = it)) })
+    NumberItem("Segment Duration", setting.segmentDurationSec, { if (it in 0..300) onValueChange(setting.copy(segmentDurationSec = it)) })
+}
+
+/**
+ * Model picker for STT providers. Fetches available models from the provider's
+ * /models endpoint and shows them in a bottom sheet. Falls back to free-text
+ * if fetching fails or the user prefers to type manually.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SttModelPicker(
+    label: String,
+    currentModel: String,
+    baseUrl: String,
+    apiKey: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String = "",
+) {
+    val httpClient = koinInject<OkHttpClient>()
+    val scope = rememberCoroutineScope()
+    var showPicker by remember { mutableStateOf(false) }
+    var models by remember { mutableStateOf<List<String>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(false) }
+    var hasLoaded by remember { mutableStateOf(false) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    var manualText by remember { mutableStateOf("") }
+    val haptics = rememberPremiumHaptics()
+
+    fun loadModels() {
+        if (baseUrl.isBlank() || apiKey.isBlank()) return
+        scope.launch {
+            isLoading = true
+            loadError = null
+            val result = runCatching { fetchSttModels(httpClient, baseUrl, apiKey) }
+            isLoading = false
+            hasLoaded = true
+            result
+                .onSuccess { models = it }
+                .onFailure { loadError = it.message ?: "Failed to fetch models" }
+        }
+    }
+
+    FormItem(label = { Text(label) }) {
+        OutlinedTextField(
+            value = currentModel,
+            onValueChange = onValueChange,
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text(placeholder) },
+            shape = AppShapes.InputField,
+            trailingIcon = {
+                IconButton(onClick = {
+                    haptics.perform(HapticPattern.Pop)
+                    showPicker = true
+                    if (!hasLoaded && !isLoading) loadModels()
+                }) {
+                    Icon(Icons.Rounded.Search, contentDescription = "Pick model")
+                }
+            },
         )
     }
-    FormItem(
-        label = { Text("Partial results") },
-        description = { Text("Show interim transcripts while you speak.") },
-    ) {
-        Switch(
-            checked = setting.partialResults,
-            onCheckedChange = { onValueChange(setting.copy(partialResults = it)) },
-        )
+
+    if (showPicker) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { showPicker = false },
+            sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Select Model", style = MaterialTheme.typography.titleLarge)
+                    IconButton(onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        loadModels()
+                    }) {
+                        Icon(Icons.Rounded.Refresh, contentDescription = "Refresh")
+                    }
+                }
+
+                if (baseUrl.isBlank() || apiKey.isBlank()) {
+                    Text(
+                        text = "Enter Base URL and API key first to fetch models.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else if (isLoading) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(24.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                } else if (loadError != null) {
+                    Text(
+                        text = loadError!!,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                } else if (models.isEmpty() && hasLoaded) {
+                    Text(
+                        text = "No models found. Enter a model ID manually below.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                models.forEach { modelId ->
+                    Surface(
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            onValueChange(modelId)
+                            showPicker = false
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = AppShapes.InputField,
+                        color = if (modelId == currentModel) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainerHigh
+                        },
+                    ) {
+                        Text(
+                            text = modelId,
+                            modifier = Modifier.padding(16.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (modelId == currentModel) {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            },
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Manual entry:", style = MaterialTheme.typography.labelMedium)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedTextField(
+                        value = manualText,
+                        onValueChange = { manualText = it },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text(placeholder) },
+                        shape = AppShapes.InputField,
+                        singleLine = true,
+                    )
+                    TextButton(
+                        onClick = {
+                            if (manualText.isNotBlank()) {
+                                haptics.perform(HapticPattern.Pop)
+                                onValueChange(manualText.trim())
+                                manualText = ""
+                                showPicker = false
+                            }
+                        },
+                    ) {
+                        Text("Set")
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -992,7 +1167,14 @@ private fun OpenAIRealtimeSTTConfiguration(
 ) {
     ApiKeyField(setting.apiKey, { onValueChange(setting.copy(apiKey = it)) }, "OpenAI API key")
     TextFieldItem("WebSocket URL", setting.websocketUrl, { onValueChange(setting.copy(websocketUrl = it)) }, "wss://api.openai.com/v1/realtime?intent=transcription")
-    TextFieldItem("Model", setting.model, { onValueChange(setting.copy(model = it)) }, "gpt-4o-transcribe")
+    SttModelPicker(
+        label = "Model",
+        currentModel = setting.model,
+        baseUrl = "https://api.openai.com/v1",
+        apiKey = setting.apiKey,
+        onValueChange = { onValueChange(setting.copy(model = it)) },
+        placeholder = "gpt-4o-transcribe",
+    )
     TextFieldItem("Language", setting.language, { onValueChange(setting.copy(language = it)) }, "auto")
     TextFieldItem("Prompt", setting.prompt, { onValueChange(setting.copy(prompt = it)) }, "Optional", minLines = 2)
     NumberItem("Sample Rate", setting.sampleRate, { if (it in 8000..48000) onValueChange(setting.copy(sampleRate = it)) })
@@ -1024,7 +1206,14 @@ private fun VolcengineSTTConfiguration(setting: ASRProviderSetting.Volcengine, o
 private fun MiMoSTTConfiguration(setting: ASRProviderSetting.MiMo, onValueChange: (ASRProviderSetting) -> Unit) {
     ApiKeyField(setting.apiKey, { onValueChange(setting.copy(apiKey = it)) }, "MiMo API key")
     TextFieldItem("Base URL", setting.baseUrl, { onValueChange(setting.copy(baseUrl = it)) }, "https://api.xiaomimimo.com/v1")
-    TextFieldItem("Model", setting.model, { onValueChange(setting.copy(model = it)) }, "mimo-v2.5-asr")
+    SttModelPicker(
+        label = "Model",
+        currentModel = setting.model,
+        baseUrl = setting.baseUrl,
+        apiKey = setting.apiKey,
+        onValueChange = { onValueChange(setting.copy(model = it)) },
+        placeholder = "mimo-v2.5-asr",
+    )
     TextFieldItem("Language", setting.language, { onValueChange(setting.copy(language = it)) }, "auto")
     NumberItem("Sample Rate", setting.sampleRate, { if (it in 8000..48000) onValueChange(setting.copy(sampleRate = it)) })
     NumberItem("Segment Duration", setting.segmentDurationSec, { if (it in 0..300) onValueChange(setting.copy(segmentDurationSec = it)) })
@@ -1034,7 +1223,14 @@ private fun MiMoSTTConfiguration(setting: ASRProviderSetting.MiMo, onValueChange
 private fun StepSTTConfiguration(setting: ASRProviderSetting.Step, onValueChange: (ASRProviderSetting) -> Unit) {
     ApiKeyField(setting.apiKey, { onValueChange(setting.copy(apiKey = it)) }, "Step API key")
     TextFieldItem("Base URL", setting.baseUrl, { onValueChange(setting.copy(baseUrl = it)) }, "https://api.stepfun.com")
-    TextFieldItem("Model", setting.model, { onValueChange(setting.copy(model = it)) }, "stepaudio-2.5-asr")
+    SttModelPicker(
+        label = "Model",
+        currentModel = setting.model,
+        baseUrl = "${setting.baseUrl.trimEnd('/')}/v1",
+        apiKey = setting.apiKey,
+        onValueChange = { onValueChange(setting.copy(model = it)) },
+        placeholder = "stepaudio-2.5-asr",
+    )
     TextFieldItem("Language", setting.language, { onValueChange(setting.copy(language = it)) }, "auto")
     NumberItem("Sample Rate", setting.sampleRate, { if (it in 8000..48000) onValueChange(setting.copy(sampleRate = it)) })
     NumberItem("Segment Duration", setting.segmentDurationSec, { if (it in 0..300) onValueChange(setting.copy(segmentDurationSec = it)) })
@@ -1116,13 +1312,14 @@ private fun NumberItem(label: String, value: Float, onValueChange: (Float) -> Un
 private fun ASRProviderSetting.convertTo(type: KClass<out ASRProviderSetting>): ASRProviderSetting {
     val id = id
     val name = name
+    val iconUri = customIconUri
     return when (type) {
-        ASRProviderSetting.SystemSTT::class -> ASRProviderSetting.SystemSTT(id = id, name = name.ifBlank { "System STT" })
-        ASRProviderSetting.OpenAIRealtime::class -> ASRProviderSetting.OpenAIRealtime(id = id, name = name.ifBlank { "OpenAI Realtime STT" })
-        ASRProviderSetting.DashScope::class -> ASRProviderSetting.DashScope(id = id, name = name.ifBlank { "DashScope STT" })
-        ASRProviderSetting.Volcengine::class -> ASRProviderSetting.Volcengine(id = id, name = name.ifBlank { "Volcengine STT" })
-        ASRProviderSetting.MiMo::class -> ASRProviderSetting.MiMo(id = id, name = name.ifBlank { "MiMo STT" })
-        ASRProviderSetting.Step::class -> ASRProviderSetting.Step(id = id, name = name.ifBlank { "Step STT" })
+        ASRProviderSetting.OpenAICompatible::class -> ASRProviderSetting.OpenAICompatible(id = id, name = name.ifBlank { "OpenAI-compatible STT" }, customIconUri = iconUri)
+        ASRProviderSetting.OpenAIRealtime::class -> ASRProviderSetting.OpenAIRealtime(id = id, name = name.ifBlank { "OpenAI Realtime STT" }, customIconUri = iconUri)
+        ASRProviderSetting.DashScope::class -> ASRProviderSetting.DashScope(id = id, name = name.ifBlank { "DashScope STT" }, customIconUri = iconUri)
+        ASRProviderSetting.Volcengine::class -> ASRProviderSetting.Volcengine(id = id, name = name.ifBlank { "Volcengine STT" }, customIconUri = iconUri)
+        ASRProviderSetting.MiMo::class -> ASRProviderSetting.MiMo(id = id, name = name.ifBlank { "MiMo STT" }, customIconUri = iconUri)
+        ASRProviderSetting.Step::class -> ASRProviderSetting.Step(id = id, name = name.ifBlank { "Step STT" }, customIconUri = iconUri)
         else -> this
     }
 }
@@ -1133,12 +1330,13 @@ private fun ASRProviderSetting.typeName(): String {
 
 private fun KClass<out ASRProviderSetting>.sttTypeName(): String {
     return when (this) {
-        ASRProviderSetting.SystemSTT::class -> "System STT"
+        ASRProviderSetting.OpenAICompatible::class -> "OpenAI-compatible"
         ASRProviderSetting.OpenAIRealtime::class -> "OpenAI Realtime"
         ASRProviderSetting.DashScope::class -> "DashScope"
         ASRProviderSetting.Volcengine::class -> "Volcengine"
         ASRProviderSetting.MiMo::class -> "MiMo"
         ASRProviderSetting.Step::class -> "Step"
+        ASRProviderSetting.SystemSTT::class -> "System STT"
         else -> "STT Provider"
     }
 }

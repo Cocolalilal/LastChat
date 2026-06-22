@@ -329,16 +329,12 @@ class WorkspaceRepository(
 
 private fun WorkspaceCommandResult.isFatalProotFailure(): Boolean {
     val text = "$stderr\n$stdout"
-    return text.contains("proot error:", ignoreCase = true) &&
-        (
-            text.contains("Function not implemented", ignoreCase = true) ||
-                text.contains("No such file or directory", ignoreCase = true) ||
-                text.contains("ptrace(TRACEME)", ignoreCase = true) ||
-                text.contains("can't chmod", ignoreCase = true) ||
-                text.contains("can't chdir", ignoreCase = true) ||
-                text.contains("loader was not found", ignoreCase = true) ||
-                text.contains("qemu was not specified", ignoreCase = true)
-            )
+    return text.contains("proot error:", ignoreCase = true) ||
+        text.contains("proot launch failed with", ignoreCase = true) ||
+        text.contains("proot info:", ignoreCase = true) ||
+        text.contains("fatal error: see", ignoreCase = true) ||
+        text.contains("ptrace(TRACEME)", ignoreCase = true) ||
+        text.contains("Function not implemented", ignoreCase = true)
 }
 
 private fun WorkspaceCommandResult.withWorkspaceRuntimeHint(): WorkspaceCommandResult {

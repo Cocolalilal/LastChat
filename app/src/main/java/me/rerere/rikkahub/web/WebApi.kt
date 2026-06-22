@@ -174,7 +174,13 @@ fun Application.configureWebApi(
                 if (assetPath != null) {
                     runCatching {
                         val bytes = withContext(Dispatchers.IO) {
-                            context.assets.open("icons/$assetPath").use { it.readBytes() }
+                            if (assetPath.endsWith(".svg", ignoreCase = true)) {
+                                val text = context.assets.open("icons/$assetPath").bufferedReader().use { it.readText() }
+                                val color = if (theme.equals("dark", ignoreCase = true)) "#FFFFFF" else "#000000"
+                                text.replace("currentColor", color).toByteArray()
+                            } else {
+                                context.assets.open("icons/$assetPath").use { it.readBytes() }
+                            }
                         }
                         call.response.header(HttpHeaders.CacheControl, "public, max-age=86400")
                         call.respondBytes(bytes, contentType = guessAssetContentType(assetPath))
@@ -194,7 +200,7 @@ fun Application.configureWebApi(
 
                 call.response.header(HttpHeaders.CacheControl, "public, max-age=3600")
                 call.respondText(
-                    text = buildFallbackSvg(name),
+                    text = buildFallbackSvg(name, theme),
                     contentType = ContentType.Image.SVG,
                 )
             }
@@ -1447,11 +1453,11 @@ internal fun String.toLobeHubIconUrl(theme: String?): String {
         "moonshotai" -> "moonshot"
         else -> normalized
     }
-    val resolvedTheme = if (theme.equals("dark", ignoreCase = true)) "light" else "dark"
+    val resolvedTheme = if (theme.equals("dark", ignoreCase = true)) "dark" else "light"
     return "https://registry.npmmirror.com/@lobehub/icons-static-png/latest/files/$resolvedTheme/$slug.png"
 }
 
-private fun buildFallbackSvg(name: String): String {
+private fun buildFallbackSvg(name: String, theme: String? = null): String {
     val text = name.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "A"
     val escapedText = text
         .replace("&", "&amp;")
@@ -1460,10 +1466,14 @@ private fun buildFallbackSvg(name: String): String {
         .replace("\"", "&quot;")
         .replace("'", "&apos;")
 
+    val isDark = theme.equals("dark", ignoreCase = true)
+    val bgColor = if (isDark) "#2D3035" else "#E9EAEE"
+    val fgColor = if (isDark) "#B0B3B8" else "#4E5969"
+
     return """
         <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
-          <rect x="0" y="0" width="64" height="64" rx="32" fill="#E9EAEE"/>
-          <text x="32" y="36" font-family="system-ui, sans-serif" font-size="24" font-weight="600" text-anchor="middle" fill="#4E5969">$escapedText</text>
+          <rect x="0" y="0" width="64" height="64" rx="32" fill="$bgColor"/>
+          <text x="32" y="36" font-family="system-ui, sans-serif" font-size="24" font-weight="600" text-anchor="middle" fill="$fgColor">$escapedText</text>
         </svg>
     """.trimIndent()
 }

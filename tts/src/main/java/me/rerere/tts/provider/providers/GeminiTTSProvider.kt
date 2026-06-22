@@ -1,7 +1,9 @@
 package me.rerere.tts.provider.providers
 
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import me.rerere.common.platform.PlatformHttpClient
@@ -9,6 +11,7 @@ import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.common.platform.PlatformLog
 import me.rerere.tts.model.AudioChunk
 import me.rerere.tts.model.AudioFormat
+import me.rerere.tts.model.TTSModelInfo
 import me.rerere.tts.model.TTSRequest
 import me.rerere.tts.provider.TTSProvider
 import me.rerere.tts.provider.TTSProviderSetting
@@ -133,5 +136,48 @@ class GeminiTTSProvider(
                 )
             )
         )
+    }
+
+    override suspend fun listModels(
+        providerSetting: TTSProviderSetting.Gemini
+    ): List<TTSModelInfo> = withContext(Dispatchers.IO) {
+        if (providerSetting.apiKey.isBlank()) return@withContext emptyList()
+        runCatching {
+            val response = httpClient.execute(
+                PlatformHttpRequest(
+                    method = "GET",
+                    url = "${providerSetting.baseUrl}/models",
+                    headers = mapOf(
+                        "x-goog-api-key" to providerSetting.apiKey,
+                    ),
+                )
+            )
+            if (response.statusCode !in 200..299) {
+                PlatformLog.e(
+                    TAG,
+                    "listModels failed: ${response.statusCode} ${response.body.decodeToString()}"
+                )
+                return@withContext emptyList()
+            }
+            val body = response.body.decodeToString()
+            val json = JSONObject(body)
+            val arr = json.optJSONArray("models") as? JSONArray
+            arr?.let { a ->
+                buildList {
+                    for (i in 0 until a.length()) {
+                        val item = a.optJSONObject(i) ?: continue
+                        val rawName = item.optString("name", "")
+                        val id = rawName.removePrefix("models/").removePrefix("tunedModels/")
+                        val lower = id.lowercase()
+                        if (lower.contains("tts") || lower.contains("speech") || lower.endsWith("-tts")) {
+                            add(TTSModelInfo(id = id, displayName = id))
+                        }
+                    }
+                }
+            } ?: emptyList()
+        }.getOrElse { e ->
+            PlatformLog.e(TAG, "listModels error: ${e.message}")
+            emptyList()
+        }
     }
 }

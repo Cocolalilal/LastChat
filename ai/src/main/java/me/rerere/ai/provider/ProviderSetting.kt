@@ -77,6 +77,7 @@ sealed class ProviderSetting {
         val streamOptionsMode: OpenAICompatibilityMode = OpenAICompatibilityMode.AUTO,
         val imageResponseModalitiesMode: OpenAICompatibilityMode = OpenAICompatibilityMode.AUTO,
         val reasoningContentReplayMode: OpenAICompatibilityMode = OpenAICompatibilityMode.AUTO,
+        val promptCacheMode: OpenAICompatibilityMode = OpenAICompatibilityMode.AUTO,
     ) : ProviderSetting() {
         override fun addModel(model: Model): ProviderSetting {
             return copy(models = models + model)

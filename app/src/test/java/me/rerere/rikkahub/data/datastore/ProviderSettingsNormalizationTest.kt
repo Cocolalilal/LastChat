@@ -94,7 +94,7 @@ class ProviderSettingsNormalizationTest {
 
     @Test
     fun `stt selected provider can be cleared`() {
-        val provider = ASRProviderSetting.SystemSTT(
+        val provider = ASRProviderSetting.OpenAICompatible(
             id = Uuid.parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
         )
         val settings = Settings(
@@ -113,7 +113,7 @@ class ProviderSettingsNormalizationTest {
         val selectedProviderId = Uuid.parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
         val settings = Settings(
             sttProviders = listOf(
-                ASRProviderSetting.SystemSTT(
+                ASRProviderSetting.OpenAICompatible(
                     id = Uuid.parse("cccccccc-cccc-cccc-cccc-cccccccccccc")
                 )
             ),
@@ -140,10 +140,36 @@ class ProviderSettingsNormalizationTest {
 
     @Test
     fun `settings round trip keeps nullable selected stt provider id`() {
-        val json = JsonInstant.encodeToString(Settings(selectedSttProviderId = null))
+        val provider = ASRProviderSetting.OpenAICompatible()
+        val settings = Settings(
+            sttProviders = listOf(provider),
+            selectedSttProviderId = null,
+        )
+        val json = JsonInstant.encodeToString(settings)
         val decoded = JsonInstant.decodeFromString<Settings>(json)
 
         assertEquals(null, decoded.selectedSttProviderId)
         assertTrue(decoded.sttProviders.isNotEmpty())
+    }
+
+    @Test
+    fun `legacy system stt entries are filtered out on normalize`() {
+        val systemStt = ASRProviderSetting.SystemSTT(
+            id = Uuid.parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
+        )
+        val compatible = ASRProviderSetting.OpenAICompatible(
+            id = Uuid.parse("ffffffff-ffff-ffff-ffff-ffffffffffff")
+        )
+        val settings = Settings(
+            sttProviders = listOf(systemStt, compatible),
+            selectedSttProviderId = systemStt.id,
+        )
+
+        val normalized = settings.normalizeSttSettings()
+
+        assertTrue(normalized.sttProviders.none { it is ASRProviderSetting.SystemSTT })
+        assertEquals(1, normalized.sttProviders.size)
+        assertEquals(compatible.id, normalized.sttProviders.first().id)
+        assertEquals(null, normalized.selectedSttProviderId)
     }
 }

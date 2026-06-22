@@ -354,7 +354,11 @@ fun SettingProviderPage(
                         )
                     }
 
-                    ProvidersTab.Stt -> AddSTTProviderButton(asFab = true) { newProvider ->
+                    ProvidersTab.Stt -> AddSTTProviderButton(
+                        catalogSnapshot = catalogSnapshot,
+                        enableHaptics = settings.displaySetting.enableUIHaptics,
+                        asFab = true,
+                    ) { newProvider ->
                         vm.updateSettings(
                             settings.copy(
                                 sttProviders = listOf(newProvider) + settings.sttProviders

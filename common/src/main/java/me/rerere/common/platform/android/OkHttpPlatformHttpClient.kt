@@ -45,7 +45,7 @@ class OkHttpPlatformHttpClient(
                 is SseEvent.Failure -> PlatformServerEvent.Failure(
                     message = event.throwable?.message,
                     statusCode = event.response?.code,
-                    body = event.response?.body?.string()
+                    body = runCatching { event.response?.peekBody(1_000_000L)?.string() }.getOrNull()
                 )
             }
         }

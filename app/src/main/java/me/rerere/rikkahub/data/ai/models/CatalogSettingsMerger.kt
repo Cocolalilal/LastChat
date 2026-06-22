@@ -69,6 +69,7 @@ private fun ProviderSetting.withCatalogProviderDefaults(
             streamOptionsMode = streamOptionsMode.catalogDefault(catalogProvider.streamOptionsMode),
             imageResponseModalitiesMode = imageResponseModalitiesMode.catalogDefault(catalogProvider.imageResponseModalitiesMode),
             reasoningContentReplayMode = reasoningContentReplayMode.catalogDefault(catalogProvider.reasoningContentReplayMode),
+            promptCacheMode = promptCacheMode.catalogDefault(catalogProvider.promptCacheMode),
         )
 
         is ProviderSetting.Google -> copy(customIconUri = resolvedIcon)
@@ -97,6 +98,7 @@ private fun CatalogProvider.toProviderSetting(): ProviderSetting? {
             streamOptionsMode = streamOptionsMode,
             imageResponseModalitiesMode = imageResponseModalitiesMode,
             reasoningContentReplayMode = reasoningContentReplayMode,
+            promptCacheMode = promptCacheMode,
         )
 
         CatalogProviderType.GOOGLE -> ProviderSetting.Google(

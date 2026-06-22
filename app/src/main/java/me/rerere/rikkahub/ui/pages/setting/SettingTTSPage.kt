@@ -123,6 +123,10 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.components.ui.ToastType
+import me.rerere.rikkahub.ui.pages.setting.components.TTSProviderIcon
+import me.rerere.rikkahub.ui.pages.setting.components.toTTSProviderPresets
+import me.rerere.rikkahub.ui.pages.setting.components.FALLBACK_TTS_PROVIDER_PRESETS
+import me.rerere.rikkahub.ui.pages.setting.components.toTTSProviderSetting
 
 @Composable
 fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
@@ -1154,24 +1158,9 @@ internal fun AddTTSProviderButton(
     if (showBottomSheet) {
         val bottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         
-        // TTS Provider presets
-        data class TTSPreset(
-            val type: kotlin.reflect.KClass<out TTSProviderSetting>,
-            val name: String,
-            val description: String,
-            val catalogId: String? = null,
-            val isLocal: Boolean = false,
-        )
-
-        val allTtsPresets = listOf(
-            TTSPreset(TTSProviderSetting.SystemTTS::class, stringResource(R.string.setting_tts_page_default_system_name), stringResource(R.string.setting_tts_preset_system_desc), isLocal = true),
-            TTSPreset(TTSProviderSetting.OpenAI::class, "OpenAI", stringResource(R.string.setting_tts_preset_openai_desc), catalogId = "openai"),
-            TTSPreset(TTSProviderSetting.Gemini::class, "Gemini", stringResource(R.string.setting_tts_preset_gemini_desc), catalogId = "gemini"),
-            TTSPreset(TTSProviderSetting.ElevenLabs::class, "ElevenLabs", stringResource(R.string.setting_tts_preset_elevenlabs_desc), catalogId = "elevenlabs"),
-            TTSPreset(TTSProviderSetting.MiniMax::class, "MiniMax", stringResource(R.string.setting_tts_preset_minimax_desc), catalogId = "minimax"),
-            TTSPreset(TTSProviderSetting.Qwen::class, "Qwen", stringResource(R.string.setting_tts_preset_qwen_desc), catalogId = "qwen"),
-        )
-        
+        val allTtsPresets = remember(catalogSnapshot) {
+            catalogSnapshot?.toTTSProviderPresets() ?: FALLBACK_TTS_PROVIDER_PRESETS
+        }        
         // Filter presets based on search
         val filteredPresets = if (searchQuery.isBlank()) {
             allTtsPresets
@@ -1240,7 +1229,35 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 )
                 
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
+                Surface(
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        onAdd(TTSProviderSetting.OpenAI(name = "Custom TTS"))
+                        showBottomSheet = false
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier.size(40.dp).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Rounded.Add, null, tint = MaterialTheme.colorScheme.onPrimary)
+                        }
+                        Column {
+                            Text(text = "Custom OpenAI-compatible TTS", style = MaterialTheme.typography.titleMedium)
+                            Text(text = "Add any TTS that supports the OpenAI /audio/speech protocol.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+
                 CompositionLocalProvider(
                     LocalOverscrollFactory provides null
                 ) {
@@ -1282,15 +1299,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                             Surface(
                                 onClick = {
                                     haptics.perform(HapticPattern.Pop)
-                                    val newProvider = when (preset.type) {
-                                        TTSProviderSetting.SystemTTS::class -> TTSProviderSetting.SystemTTS(name = preset.name)
-                                        TTSProviderSetting.OpenAI::class -> TTSProviderSetting.OpenAI()
-                                        TTSProviderSetting.Gemini::class -> TTSProviderSetting.Gemini()
-                                        TTSProviderSetting.ElevenLabs::class -> TTSProviderSetting.ElevenLabs()
-                                        TTSProviderSetting.MiniMax::class -> TTSProviderSetting.MiniMax()
-                                        TTSProviderSetting.Qwen::class -> TTSProviderSetting.Qwen()
-                                        else -> TTSProviderSetting.SystemTTS()
-                                    }
+                                    val newProvider = preset.toTTSProviderSetting()
                                     onAdd(newProvider)
                                     showBottomSheet = false
                                 },
@@ -1305,27 +1314,23 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    when (preset.type) {
-                                        TTSProviderSetting.SystemTTS::class -> {
-                                            Box(
-                                                modifier = Modifier.size(40.dp),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Rounded.PhoneAndroid,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(24.dp)
-                                                )
-                                            }
-                                        }
-
-                                        else -> {
-                                            AutoAIIconWithUrl(
-                                                name = preset.name,
-                                                customIconUri = preset.catalogId?.let { catalogSnapshot?.ttsProviderIconUri(it) },
-                                                modifier = Modifier.size(40.dp)
+                                    if (preset.isLocal) {
+                                        Box(
+                                            modifier = Modifier.size(40.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.PhoneAndroid,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(24.dp)
                                             )
                                         }
+                                    } else {
+                                        AutoAIIconWithUrl(
+                                            name = preset.name,
+                                            customIconUri = preset.customIconUri,
+                                            modifier = Modifier.size(40.dp)
+                                        )
                                     }
 
                                     Column(modifier = Modifier.weight(1f)) {
@@ -1398,37 +1403,12 @@ private fun TTSProviderItemContent(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Icon: System TTS shows a phone icon, others use provider icon lookup
-        when (provider) {
-            is TTSProviderSetting.SystemTTS -> {
-                Box(
-                    modifier = Modifier.size(40.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.PhoneAndroid,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = textColor,
-                    )
-                }
-            }
-            else -> {
-                val providerCatalogId = when (provider) {
-                    is TTSProviderSetting.OpenAI -> "openai"
-                    is TTSProviderSetting.Gemini -> "gemini"
-                    is TTSProviderSetting.MiniMax -> "minimax"
-                    is TTSProviderSetting.ElevenLabs -> "elevenlabs"
-                    is TTSProviderSetting.Qwen -> "qwen"
-                    is TTSProviderSetting.SystemTTS -> "System"
-                }
-                AutoAIIconWithUrl(
-                    name = provider.name.ifEmpty { providerCatalogId },
-                    customIconUri = catalogSnapshot?.ttsProviderIconUri(providerCatalogId),
-                    modifier = Modifier.size(40.dp)
-                )
-            }
-        }
+        TTSProviderIcon(
+            provider = provider,
+            catalogSnapshot = catalogSnapshot,
+            modifier = Modifier.size(40.dp),
+            tint = textColor
+        )
 
         Column(
             modifier = Modifier.weight(1f),

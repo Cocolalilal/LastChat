@@ -227,6 +227,9 @@ class SecretKeyManager(
                 is TTSProviderSetting.MiniMax -> oldTtsProvider.apiKey
                 is TTSProviderSetting.ElevenLabs -> oldTtsProvider.apiKey
                 is TTSProviderSetting.Qwen -> oldTtsProvider.apiKey
+                is TTSProviderSetting.Cartesia -> oldTtsProvider.apiKey
+                is TTSProviderSetting.FishAudio -> oldTtsProvider.apiKey
+                is TTSProviderSetting.PlayHT -> oldTtsProvider.apiKey
                 is TTSProviderSetting.SystemTTS -> ""
             }
             val newKey = when (newTtsProvider) {
@@ -235,6 +238,9 @@ class SecretKeyManager(
                 is TTSProviderSetting.MiniMax -> newTtsProvider.apiKey
                 is TTSProviderSetting.ElevenLabs -> newTtsProvider.apiKey
                 is TTSProviderSetting.Qwen -> newTtsProvider.apiKey
+                is TTSProviderSetting.Cartesia -> newTtsProvider.apiKey
+                is TTSProviderSetting.FishAudio -> newTtsProvider.apiKey
+                is TTSProviderSetting.PlayHT -> newTtsProvider.apiKey
                 is TTSProviderSetting.SystemTTS -> ""
             }
             
@@ -333,12 +339,40 @@ class SecretKeyManager(
                 } else provider
             }
 
+            is TTSProviderSetting.Cartesia -> {
+                if (provider.apiKey.isNotBlank()) {
+                    setTtsApiKey(provider.id, provider.apiKey)
+                    provider.copy(apiKey = "")
+                } else provider
+            }
+
+            is TTSProviderSetting.FishAudio -> {
+                if (provider.apiKey.isNotBlank()) {
+                    setTtsApiKey(provider.id, provider.apiKey)
+                    provider.copy(apiKey = "")
+                } else provider
+            }
+
+            is TTSProviderSetting.PlayHT -> {
+                if (provider.apiKey.isNotBlank()) {
+                    setTtsApiKey(provider.id, provider.apiKey)
+                    provider.copy(apiKey = "")
+                } else provider
+            }
+
             is TTSProviderSetting.SystemTTS -> provider
         }
     }
 
     private fun migrateSttProviderSecrets(provider: ASRProviderSetting): ASRProviderSetting {
         return when (provider) {
+            is ASRProviderSetting.OpenAICompatible -> {
+                if (provider.apiKey.isNotBlank()) {
+                    setSttApiKey(provider.id, provider.apiKey)
+                    provider.copy(apiKey = "")
+                } else provider
+            }
+
             is ASRProviderSetting.OpenAIRealtime -> {
                 if (provider.apiKey.isNotBlank()) {
                     setSttApiKey(provider.id, provider.apiKey)
@@ -454,12 +488,25 @@ class SecretKeyManager(
                 provider.copy(apiKey = getTtsApiKey(provider.id, provider.apiKey))
             }
 
+            is TTSProviderSetting.Cartesia -> {
+                provider.copy(apiKey = getTtsApiKey(provider.id, provider.apiKey))
+            }
+
+            is TTSProviderSetting.FishAudio -> {
+                provider.copy(apiKey = getTtsApiKey(provider.id, provider.apiKey))
+            }
+
+            is TTSProviderSetting.PlayHT -> {
+                provider.copy(apiKey = getTtsApiKey(provider.id, provider.apiKey))
+            }
+
             is TTSProviderSetting.SystemTTS -> provider
         }
     }
 
     private fun populateSttProviderSecrets(provider: ASRProviderSetting): ASRProviderSetting {
         return when (provider) {
+            is ASRProviderSetting.OpenAICompatible -> provider.copy(apiKey = getSttApiKey(provider.id, provider.apiKey))
             is ASRProviderSetting.OpenAIRealtime -> provider.copy(apiKey = getSttApiKey(provider.id, provider.apiKey))
             is ASRProviderSetting.DashScope -> provider.copy(apiKey = getSttApiKey(provider.id, provider.apiKey))
             is ASRProviderSetting.Volcengine -> provider.copy(apiKey = getSttApiKey(provider.id, provider.apiKey))
@@ -481,6 +528,7 @@ class SecretKeyManager(
 
 private fun ASRProviderSetting.apiKeyOrBlank(): String {
     return when (this) {
+        is ASRProviderSetting.OpenAICompatible -> apiKey
         is ASRProviderSetting.OpenAIRealtime -> apiKey
         is ASRProviderSetting.DashScope -> apiKey
         is ASRProviderSetting.Volcengine -> apiKey

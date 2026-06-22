@@ -1,8 +1,12 @@
 package me.rerere.rikkahub.ui.pages.extensions.workspace
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.provider.OpenableColumns
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -12,9 +16,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -22,8 +29,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -52,8 +61,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
@@ -175,50 +187,68 @@ fun WorkspaceDetailPage(id: String) {
         },
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
     ) { innerPadding ->
-        HorizontalPager(
-            state = pagerState,
+        Box(
             modifier = Modifier
-                .padding(innerPadding)
-                .fillMaxSize(),
-        ) { page ->
-            when (page) {
-                0 -> WorkspaceBasicPage(
-                    workspace = state.workspace,
-                    installProgress = installProgress,
-                    onInstallRootfs = { showInstallDialog = true },
-                    onRename = vm::rename,
-                    onToolApprovalChange = vm::setToolApproval,
-                    runtimeSupport = runtimeSupport,
-                )
+                .fillMaxSize()
+                .consumeWindowInsets(innerPadding),
+        ) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = innerPadding.calculateTopPadding()),
+            ) { page ->
+                when (page) {
+                    0 -> WorkspaceBasicPage(
+                        workspace = state.workspace,
+                        installProgress = installProgress,
+                        onInstallRootfs = { showInstallDialog = true },
+                        onRename = vm::rename,
+                        onToolApprovalChange = vm::setToolApproval,
+                        runtimeSupport = runtimeSupport,
+                    )
 
-                1 -> WorkspaceFilesPage(
-                    state = state,
-                    contentPadding = PaddingValues(),
-                    onSelectArea = vm::selectArea,
-                    onGoUp = vm::goUp,
-                    onOpen = vm::open,
-                    onDelete = { deleteTarget = it },
-                    onExport = { entry ->
-                        exportTarget = entry
-                        exportLauncher.launch(entry.name)
-                    },
-                    onShare = { entry ->
-                        vm.shareFile(entry, context.cacheDir) { file ->
-                            val uri = FileProvider.getUriForFile(
-                                context,
-                                "${context.packageName}.fileprovider",
-                                file,
-                            )
-                            val intent = Intent(Intent.ACTION_SEND).apply {
-                                type = "application/octet-stream"
-                                putExtra(Intent.EXTRA_STREAM, uri)
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    1 -> WorkspaceFilesPage(
+                        state = state,
+                        contentPadding = PaddingValues(),
+                        onSelectArea = vm::selectArea,
+                        onGoUp = vm::goUp,
+                        onOpen = vm::open,
+                        onDelete = { deleteTarget = it },
+                        onExport = { entry ->
+                            exportTarget = entry
+                            exportLauncher.launch(entry.name)
+                        },
+                        onShare = { entry ->
+                            vm.shareFile(entry, context.cacheDir) { file ->
+                                val uri = FileProvider.getUriForFile(
+                                    context,
+                                    "${context.packageName}.fileprovider",
+                                    file,
+                                )
+                                val intent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "application/octet-stream"
+                                    putExtra(Intent.EXTRA_STREAM, uri)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(Intent.createChooser(intent, null))
                             }
-                            context.startActivity(Intent.createChooser(intent, null))
-                        }
-                    },
-                )
+                        },
+                    )
+                }
             }
+
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(120.dp)
+                    .background(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(Color.Transparent, MaterialTheme.colorScheme.background),
+                        ),
+                    ),
+            )
         }
     }
 
@@ -237,13 +267,29 @@ fun WorkspaceDetailPage(id: String) {
     }
 
     installError?.let { message ->
+        val context = LocalContext.current
         AlertDialog(
             onDismissRequest = vm::dismissInstallError,
             title = { Text(stringResource(R.string.workspace_detail_rootfs_install_failed)) },
-            text = { Text(message) },
+            text = {
+                Text(
+                    text = message,
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    fontFamily = FontFamily.Monospace,
+                )
+            },
             confirmButton = {
-                TextButton(onClick = vm::dismissInstallError) {
-                    Text(stringResource(R.string.common_confirm))
+                Row {
+                    TextButton(onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("LastChat error", message))
+                        Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                    }) {
+                        Text(stringResource(R.string.copy))
+                    }
+                    TextButton(onClick = vm::dismissInstallError) {
+                        Text(stringResource(R.string.common_confirm))
+                    }
                 }
             },
         )
@@ -375,7 +421,7 @@ private fun WorkspaceBasicPage(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(16.dp) + PaddingValues(bottom = 104.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
@@ -675,7 +721,7 @@ private fun WorkspaceFilesPage(
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = contentPadding + PaddingValues(16.dp),
+        contentPadding = contentPadding + PaddingValues(16.dp) + PaddingValues(bottom = 104.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         item {
@@ -733,24 +779,18 @@ private fun WorkspaceAreaSelector(
         WorkspaceStorageArea.FILES to stringResource(R.string.workspace_detail_area_files),
         WorkspaceStorageArea.LINUX to stringResource(R.string.workspace_detail_area_rootfs),
     )
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = AppShapes.CardLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    SingleChoiceSegmentedButtonRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(12.dp),
     ) {
-        SingleChoiceSegmentedButtonRow(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-        ) {
-            areas.forEachIndexed { index, (area, label) ->
-                SegmentedButton(
-                    selected = selected == area,
-                    onClick = { onSelected(area) },
-                    shape = SegmentedButtonDefaults.itemShape(index, areas.size),
-                ) {
-                    Text(label)
-                }
+        areas.forEachIndexed { index, (area, label) ->
+            SegmentedButton(
+                selected = selected == area,
+                onClick = { onSelected(area) },
+                shape = SegmentedButtonDefaults.itemShape(index, areas.size),
+            ) {
+                Text(label)
             }
         }
     }

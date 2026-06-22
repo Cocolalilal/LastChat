@@ -73,6 +73,32 @@ fun TTSProviderSetting.legacyDefaultVoice(defaultVoiceId: Uuid? = null): TTSVoic
             model = model,
             languageType = languageType,
         )
+
+        is TTSProviderSetting.FishAudio -> TTSVoice(
+            id = id(),
+            name = referenceId.ifBlank { "Fish Audio Voice" },
+            providerVoiceId = referenceId,
+            model = model,
+            speed = speed,
+        )
+
+        is TTSProviderSetting.Cartesia -> TTSVoice(
+            id = id(),
+            name = voiceId.ifBlank { "Cartesia Voice" },
+            providerVoiceId = voiceId,
+            model = modelId,
+            speed = speed,
+            emotion = emotion,
+            languageType = language,
+        )
+
+        is TTSProviderSetting.PlayHT -> TTSVoice(
+            id = id(),
+            name = voice.ifBlank { "PlayHT Voice" },
+            providerVoiceId = voice,
+            model = voiceEngine,
+            speed = speed,
+        )
     }
 }
 
@@ -112,6 +138,26 @@ fun TTSProviderSetting.withVoiceApplied(voice: TTSVoice): TTSProviderSetting {
             voice = providerVoiceId ?: this.voice,
             model = voice.model ?: model,
             languageType = voice.languageType ?: languageType,
+        )
+
+        is TTSProviderSetting.FishAudio -> copy(
+            referenceId = providerVoiceId ?: referenceId,
+            model = voice.model ?: model,
+            speed = voice.speed,
+        )
+
+        is TTSProviderSetting.Cartesia -> copy(
+            voiceId = providerVoiceId ?: voiceId,
+            modelId = voice.model ?: modelId,
+            speed = voice.speed,
+            emotion = voice.emotion ?: emotion,
+            language = voice.languageType ?: language,
+        )
+
+        is TTSProviderSetting.PlayHT -> copy(
+            voice = providerVoiceId ?: this.voice,
+            voiceEngine = voice.model ?: voiceEngine,
+            speed = voice.speed,
         )
     }
 }

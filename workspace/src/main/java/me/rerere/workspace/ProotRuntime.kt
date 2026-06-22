@@ -7,11 +7,15 @@ data class ProotRuntime(
     val executable: File,
     val loader: File,
     val loader32: File?,
+    val supportsAshmemMemfd: Boolean = false,
 )
 
 data class ProotLaunchMode(
     val name: String,
     val environment: Map<String, String>,
+    val minimalFlags: Boolean = false,
+    val verbose: Boolean = false,
+    val useAshmemMemfd: Boolean = false,
 )
 
 data class ProotLaunchSelection(
@@ -26,6 +30,19 @@ object ProotRuntimes {
             executable = File(nativeLibraryDir, "libproot_exec.so"),
             loader = File(nativeLibraryDir, "libproot_loader.so"),
             loader32 = File(nativeLibraryDir, "libproot_loader32.so"),
+            supportsAshmemMemfd = true,
+        )
+        addIfPresent(
+            name = "termux-userland",
+            executable = File(nativeLibraryDir, "libproot-userland.so"),
+            loader = File(nativeLibraryDir, "libproot-loader.so"),
+            loader32 = File(nativeLibraryDir, "libproot-loader32.so"),
+        )
+        addIfPresent(
+            name = "termux",
+            executable = File(nativeLibraryDir, "libproot.so"),
+            loader = File(nativeLibraryDir, "libproot-loader.so"),
+            loader32 = File(nativeLibraryDir, "libproot-loader32.so"),
         )
     }
 
@@ -34,9 +51,10 @@ object ProotRuntimes {
         executable: File,
         loader: File,
         loader32: File?,
+        supportsAshmemMemfd: Boolean = false,
     ) {
         if (executable.isFile && loader.isFile) {
-            add(ProotRuntime(name, executable, loader, loader32?.takeIf { it.isFile }))
+            add(ProotRuntime(name, executable, loader, loader32?.takeIf { it.isFile }, supportsAshmemMemfd))
         }
     }
 }
@@ -67,7 +85,51 @@ object ProotLaunchModes {
             "PROOT_FORCE_KOMPAT" to "1",
         ),
     )
-    val all = listOf(default, noSeccomp, noSeccompAssume, compat)
+    val minimal = ProotLaunchMode(
+        name = "minimal",
+        environment = emptyMap(),
+        minimalFlags = true,
+    )
+    val minimalAssume = ProotLaunchMode(
+        name = "minimal-assume",
+        environment = mapOf(
+            "PROOT_NO_SECCOMP" to "1",
+            "PROOT_ASSUME_NEW_SECCOMP" to "1",
+        ),
+        minimalFlags = true,
+    )
+    val noMemfd = ProotLaunchMode(
+        name = "no-memfd",
+        environment = mapOf(
+            "PROOT_NO_SECCOMP" to "1",
+            "PROOT_ASSUME_NEW_SECCOMP" to "1",
+            "PROOT_ASSUME_MEMFD_UNSUPPORTED" to "1",
+        ),
+        useAshmemMemfd = true,
+    )
+    val noMemfdMinimal = ProotLaunchMode(
+        name = "no-memfd-minimal",
+        environment = mapOf(
+            "PROOT_NO_SECCOMP" to "1",
+            "PROOT_ASSUME_NEW_SECCOMP" to "1",
+            "PROOT_ASSUME_MEMFD_UNSUPPORTED" to "1",
+            "PROOT_IGNORE_MISSING_BINDINGS" to "1",
+        ),
+        minimalFlags = true,
+        useAshmemMemfd = true,
+    )
+    val all = listOf(noMemfd, noMemfdMinimal, default, noSeccomp, noSeccompAssume, compat, minimal, minimalAssume)
+    val verboseDiagnostic = ProotLaunchMode(
+        name = "verbose-diagnostic",
+        environment = mapOf(
+            "PROOT_NO_SECCOMP" to "1",
+            "PROOT_ASSUME_NEW_SECCOMP" to "1",
+            "PROOT_ASSUME_MEMFD_UNSUPPORTED" to "1",
+        ),
+        minimalFlags = false,
+        verbose = true,
+        useAshmemMemfd = true,
+    )
 }
 
 object ProotLaunchPreferences {

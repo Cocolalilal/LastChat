@@ -2,8 +2,10 @@ package me.rerere.ai.provider.providers
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
+import me.rerere.common.platform.PlatformLog
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -41,7 +43,6 @@ import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.parseErrorDetail
 import me.rerere.common.http.urlHostOrNull
-import me.rerere.common.platform.PlatformLog
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpProxy
 import me.rerere.common.platform.PlatformHttpRequest
@@ -208,6 +209,14 @@ class ClaudeProvider(
 
         awaitClose {
             job.cancel()
+        }
+    }.retryWhen { cause, attempt ->
+        if (attempt < 3 && cause.message?.contains("429") == true) {
+            PlatformLog.w(TAG, "streamText: Rate limit (429) hit. Retrying attempt ${attempt + 1}...")
+            kotlinx.coroutines.delay(1000L * (attempt + 1))
+            true
+        } else {
+            false
         }
     }
 

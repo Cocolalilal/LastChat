@@ -198,7 +198,10 @@ class MiMoASRController(
         if (flushJob?.isActive == true) return
         flushJob = scope.launch(Dispatchers.IO) {
             runCatching { flushSegment() }
-                .onFailure { Log.e(TAG, "Segment flush failed", it) }
+                .onFailure { 
+                    Log.e(TAG, "Segment flush failed", it)
+                    setError(it.message ?: "Segment flush failed")
+                }
         }
     }
 

@@ -29,6 +29,7 @@ data class ProviderPreset(
     val streamOptionsMode: OpenAICompatibilityMode = OpenAICompatibilityMode.AUTO,
     val imageResponseModalitiesMode: OpenAICompatibilityMode = OpenAICompatibilityMode.AUTO,
     val reasoningContentReplayMode: OpenAICompatibilityMode = OpenAICompatibilityMode.AUTO,
+    val promptCacheMode: OpenAICompatibilityMode = OpenAICompatibilityMode.AUTO,
     val reasoningBehavior: me.rerere.ai.provider.ReasoningRequestBehavior? = null,
     val signupUrl: String? = null,
     val apiKeyUrl: String? = null,
@@ -112,6 +113,7 @@ fun CatalogProvider.toProviderPreset(snapshot: ModelCatalogSnapshot): ProviderPr
         streamOptionsMode = streamOptionsMode,
         imageResponseModalitiesMode = imageResponseModalitiesMode,
         reasoningContentReplayMode = reasoningContentReplayMode,
+        promptCacheMode = promptCacheMode,
         reasoningBehavior = reasoningBehavior?.toReasoningRequestBehavior(),
         signupUrl = signupUrl,
         apiKeyUrl = apiKeyUrl,
@@ -141,6 +143,7 @@ fun ProviderPreset.toProviderSetting(): ProviderSetting {
             streamOptionsMode = streamOptionsMode,
             imageResponseModalitiesMode = imageResponseModalitiesMode,
             reasoningContentReplayMode = reasoningContentReplayMode,
+            promptCacheMode = promptCacheMode,
             reasoningBehavior = reasoningBehavior,
         )
 

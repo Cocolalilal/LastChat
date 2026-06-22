@@ -151,13 +151,25 @@ class ExampleUnitTest {
     }
 
     @Test
-    fun prootRuntimesResolveWorkspaceLauncherOnly() {
+    fun prootRuntimesResolveAllAvailableLaunchers() {
         val nativeLibraryDir = Files.createTempDirectory("proot-runtimes-test").toFile()
         File(nativeLibraryDir, "libproot_exec.so").writeText("")
         File(nativeLibraryDir, "libproot_loader.so").writeText("")
         File(nativeLibraryDir, "libproot-userland.so").writeText("")
         File(nativeLibraryDir, "libproot.so").writeText("")
         File(nativeLibraryDir, "libproot-loader.so").writeText("")
+
+        assertEquals(
+            listOf("workspace", "termux-userland", "termux"),
+            ProotRuntimes.resolve(nativeLibraryDir).map { it.name },
+        )
+    }
+
+    @Test
+    fun prootRuntimesResolveWorkspaceLauncherOnly() {
+        val nativeLibraryDir = Files.createTempDirectory("proot-runtimes-test-workspace-only").toFile()
+        File(nativeLibraryDir, "libproot_exec.so").writeText("")
+        File(nativeLibraryDir, "libproot_loader.so").writeText("")
 
         assertEquals(
             listOf("workspace"),

@@ -7,4 +7,7 @@ interface ASRController {
     fun start(onTranscriptChange: (String) -> Unit)
     fun stop()
     fun dispose()
+
+    val needsAudioFocus: Boolean
+        get() = true
 }

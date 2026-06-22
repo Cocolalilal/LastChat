@@ -37,6 +37,20 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.tts.provider.TTSProviderSetting
 import me.rerere.tts.provider.android.LocalTtsVoice
 import me.rerere.tts.provider.android.discoverLocalTtsVoices
+import me.rerere.rikkahub.ui.pages.setting.components.CustomIconSelector
+import me.rerere.rikkahub.ui.components.ui.lobeHubIconUri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.content.Intent
+import me.rerere.tts.provider.android.TTSManager
+import org.koin.compose.koinInject
+import kotlinx.coroutines.launch
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
 
 @Composable
 private fun visibilityToggleDescription(isVisible: Boolean): String {
@@ -51,6 +65,24 @@ fun TTSProviderConfigure(
     scrollable: Boolean = true,
     onValueChange: (TTSProviderSetting) -> Unit
 ) {
+    val context = LocalContext.current
+    val iconPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+        onResult = { uri ->
+            uri?.let {
+                try {
+                    context.contentResolver.takePersistableUriPermission(
+                        it,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                    onValueChange(setting.copyProvider(customIconUri = it.toString()))
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    )
+
     Column(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         modifier = if (scrollable) {
@@ -59,22 +91,47 @@ fun TTSProviderConfigure(
             modifier
         }
     ) {
-        // Name
-        FormItem(
-            label = { Text(stringResource(R.string.setting_tts_page_name)) },
-            description = { Text(stringResource(R.string.setting_tts_page_name_description)) }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
         ) {
-            OutlinedTextField(
-                value = setting.name,
-                onValueChange = { newName ->
-                    onValueChange(setting.copyProvider(name = newName))
-                },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text(stringResource(R.string.setting_tts_page_name_placeholder)) },
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
-            )
+            if (setting !is TTSProviderSetting.SystemTTS) {
+                CustomIconSelector(
+                    customIconUri = setting.customIconUri,
+                    onPickFile = {
+                        iconPickerLauncher.launch(arrayOf("image/*", "image/svg+xml"))
+                    },
+                    onPickLobeHubIcon = { slug ->
+                        onValueChange(setting.copyProvider(customIconUri = lobeHubIconUri(slug)))
+                    },
+                    onReset = {
+                        onValueChange(setting.copyProvider(customIconUri = null))
+                    },
+                    modifier = Modifier.size(56.dp),
+                    icon = { modifier ->
+                        TTSProviderIcon(provider = setting, catalogSnapshot = null, modifier = modifier.size(48.dp))
+                    }
+                )
+            }
+            
+            // Name
+            FormItem(
+                label = { Text(stringResource(R.string.setting_tts_page_name)) },
+                description = { Text(stringResource(R.string.setting_tts_page_name_description)) },
+                modifier = Modifier.weight(1f)
+            ) {
+                OutlinedTextField(
+                    value = setting.name,
+                    onValueChange = { newName ->
+                        onValueChange(setting.copyProvider(name = newName))
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text(stringResource(R.string.setting_tts_page_name_placeholder)) },
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                )
+            }
         }
-
         // Provider-specific fields
         when (setting) {
             is TTSProviderSetting.OpenAI -> OpenAITTSConfiguration(setting, showVoiceFields, onValueChange)
@@ -83,6 +140,11 @@ fun TTSProviderConfigure(
             is TTSProviderSetting.ElevenLabs -> ElevenLabsTTSConfiguration(setting, showVoiceFields, onValueChange)
             is TTSProviderSetting.Qwen -> QwenTTSConfiguration(setting, showVoiceFields, onValueChange)
             is TTSProviderSetting.SystemTTS -> SystemTTSConfiguration(setting, showVoiceFields, onValueChange)
+            is TTSProviderSetting.Cartesia,
+            is TTSProviderSetting.FishAudio,
+            is TTSProviderSetting.PlayHT -> {
+                // Not implemented yet
+            }
         }
     }
 }
@@ -139,19 +201,72 @@ private fun OpenAITTSConfiguration(
     }
 
     // Model
+    var fetchingModels by remember { mutableStateOf(false) }
+    var availableModels by remember { mutableStateOf<List<String>?>(null) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val ttsManager = koinInject<TTSManager>()
+    var modelExpanded by remember { mutableStateOf(false) }
+
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_model)) },
         description = { Text(stringResource(R.string.setting_tts_page_model_description)) }
     ) {
-        OutlinedTextField(
-            value = setting.model,
-            onValueChange = { newModel ->
-                onValueChange(setting.copy(model = newModel))
-            },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text(stringResource(R.string.setting_tts_page_model_placeholder_openai)) },
-            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
-        )
+        ExposedDropdownMenuBox(
+            expanded = modelExpanded,
+            onExpandedChange = { if (availableModels != null) modelExpanded = !modelExpanded }
+        ) {
+            OutlinedTextField(
+                value = setting.model,
+                onValueChange = { newModel ->
+                    onValueChange(setting.copy(model = newModel))
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable),
+                placeholder = { Text(stringResource(R.string.setting_tts_page_model_placeholder_openai)) },
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                trailingIcon = {
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        if (fetchingModels) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        } else {
+                            TextButton(
+                                onClick = {
+                                    scope.launch {
+                                        fetchingModels = true
+                                        val models = runCatching { ttsManager.listModels(setting) }.getOrNull()
+                                        if (models != null) {
+                                            availableModels = models.map { it.id }
+                                            modelExpanded = true
+                                        }
+                                        fetchingModels = false
+                                    }
+                                }
+                            ) {
+                                Text("Fetch")
+                            }
+                        }
+                    }
+                }
+            )
+            
+            if (availableModels != null) {
+                ExposedDropdownMenu(
+                    expanded = modelExpanded,
+                    onDismissRequest = { modelExpanded = false }
+                ) {
+                    availableModels?.forEach { modelId ->
+                        DropdownMenuItem(
+                            text = { Text(modelId) },
+                            onClick = {
+                                modelExpanded = false
+                                onValueChange(setting.copy(model = modelId))
+                            }
+                        )
+                    }
+                }
+            }
+        }
     }
 
     if (showVoiceFields) {
