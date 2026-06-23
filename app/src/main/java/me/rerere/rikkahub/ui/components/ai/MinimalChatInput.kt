@@ -251,6 +251,7 @@ fun MinimalChatInput(
     val currentChatModel = conversationContext.chatModel
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
     val workspaceRepository = koinInject<WorkspaceRepository>()
+    val modelCatalog = koinInject<ModelCatalogService>()
     val keyboardController = LocalSoftwareKeyboardController.current
     val scope = rememberCoroutineScope()
     val availableSkills = remember(settings.skills) {
@@ -300,7 +301,7 @@ fun MinimalChatInput(
     val microphonePermission = rememberPermissionState(PermissionMicrophone)
     val stt = LocalSTTState.current
     val sttState by stt.state.collectAsStateWithLifecycle()
-    val hasSelectedSttProvider = settings.selectedSttProviderId != null
+    val hasSelectedSttProvider = settings.sttModelId != null
     var sttDraft by remember { mutableStateOf("") }
     var acceptSttWhenIdle by remember { mutableStateOf(false) }
     var discardSttWhenIdle by remember { mutableStateOf(false) }
@@ -344,11 +345,31 @@ fun MinimalChatInput(
             if (acceptSttWhenIdle) {
                 delay(220)
                 val transcript = sttDraft.trim()
-                if (transcript.isNotBlank()) {
+                val bytes = sttState.audioData
+                
+                if (transcript.isNotBlank() || bytes != null) {
+                    val isAudioSupported = currentChatModel?.inputModalities?.contains(me.rerere.ai.provider.Modality.AUDIO) == true
+                    
+                    val formattedTranscript = if (isAudioSupported && bytes != null) {
+                        if (transcript.isNotBlank()) "🎙️ \"$transcript\"" else "🎙️"
+                    } else {
+                        transcript
+                    }
+                    
                     val prefix = state.textContent.text.toString()
                     state.setMessageText(
-                        if (prefix.isBlank()) transcript else "$prefix $transcript"
+                        if (prefix.isBlank()) formattedTranscript else "$prefix $formattedTranscript"
                     )
+                    
+                    if (bytes != null && isAudioSupported) {
+                        val tempFile = withContext(Dispatchers.IO) {
+                            val file = File(context.cacheDir, "stt_${System.currentTimeMillis()}.wav")
+                            file.writeBytes(bytes)
+                            file
+                        }
+                        state.addAudios(listOf(android.net.Uri.fromFile(tempFile)))
+                    }
+                    
                     runCatching { state.focusRequester.requestFocus() }
                 }
             }
@@ -721,7 +742,7 @@ fun MinimalChatInput(
                                     onClick = {
                                         haptics.perform(HapticPattern.Pop)
                                         if (sttRecording) {
-                                            stopSttRecording(accept = false)
+                                            stopSttRecording(accept = true)
                                         } else {
                                             showPicker = true
                                             keyboardController?.hide()
@@ -730,7 +751,7 @@ fun MinimalChatInput(
                                 )
                         ) {
                             Icon(
-                                imageVector = if (sttRecording) Icons.Rounded.Close else Icons.Rounded.Add,
+                                imageVector = if (sttRecording) Icons.Rounded.Stop else Icons.Rounded.Add,
                                 contentDescription = null,
                                 modifier = Modifier.size(24.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -2351,18 +2372,23 @@ private fun STTWaveformLine(
     active: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    val count = 21
+    val center = count / 2
+    val historyNeeded = center + 1
+
     val bars = remember(amplitudes, active) {
-        val source = amplitudes.takeLast(18)
-        if (source.isEmpty()) {
-            List(18) { index ->
-                if (active) 0.18f + ((index % 4) * 0.05f) else 0.12f
-            }
-        } else {
-            List(18) { index ->
-                source.getOrNull(index - (18 - source.size)) ?: 0.12f
+        val source = amplitudes.takeLast(historyNeeded).reversed()
+        List(count) { index ->
+            val distFromCenter = kotlin.math.abs(index - center)
+            if (source.isEmpty()) {
+                if (active) 0.15f + ((distFromCenter % 3) * 0.05f) else 0.08f
+            } else {
+                val rawValue = source.getOrNull(distFromCenter) ?: 0.08f
+                rawValue
             }
         }
     }
+    
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterHorizontally),

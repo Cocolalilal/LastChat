@@ -88,6 +88,7 @@ import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Title
 import androidx.compose.material.icons.rounded.ViewModule
+import androidx.compose.material.icons.rounded.Mic
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -231,9 +232,15 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     .imePadding(),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
+                val modelMetadataResolver = org.koin.compose.koinInject<me.rerere.rikkahub.data.ai.models.ModelMetadataResolver>()
                 val filteredProviderSettings = providers.fastFilter {
                     it.enabled && it.models.fastAny { model ->
-                        model.type == type && modelFilter(model)
+                        val isTypeMatch = if (type == ModelType.STT) {
+                            modelMetadataResolver.applyToModel(model, it).type == ModelType.STT
+                        } else {
+                            model.type == type
+                        }
+                        isTypeMatch && modelFilter(model)
                     }
                 }
                 ModelList(
@@ -274,6 +281,7 @@ internal fun ColumnScope.ModelList(
     val settingsStore = koinInject<SettingsStore>()
     val settings = settingsStore.settingsFlow
         .collectAsStateWithLifecycle()
+    val modelMetadataResolver = org.koin.compose.koinInject<me.rerere.rikkahub.data.ai.models.ModelMetadataResolver>()
     
     var activeProviderId by remember { mutableStateOf<Uuid?>(null) }
     
@@ -281,8 +289,13 @@ internal fun ColumnScope.ModelList(
 
     val favoriteModels = settings.value.favoriteModels.mapNotNull { modelId ->
         val model = providers.findModelById(modelId) ?: return@mapNotNull null
-        if (model.type != modelType || !modelFilter(model)) return@mapNotNull null
         val provider = model.findProvider(providers = providers, checkOverwrite = false) ?: return@mapNotNull null
+        val isTypeMatch = if (modelType == ModelType.STT) {
+            modelMetadataResolver.applyToModel(model, provider).type == ModelType.STT
+        } else {
+            model.type == modelType
+        }
+        if (!isTypeMatch || !modelFilter(model)) return@mapNotNull null
         model to provider
     }
     val favoriteListItems = remember(favoriteModels) {
@@ -1157,6 +1170,7 @@ fun ModelTypeTag(model: Model) {
                     ModelType.CHAT -> R.string.setting_provider_page_chat_model
                     ModelType.EMBEDDING -> R.string.setting_provider_page_embedding_model
                     ModelType.IMAGE -> R.string.setting_provider_page_image_model
+                    ModelType.STT -> R.string.setting_provider_page_stt_model
                 }
             )
         )
@@ -1173,6 +1187,7 @@ fun ModelModalityTag(model: Model) {
                 imageVector = when (modality) {
                     Modality.TEXT -> Icons.Rounded.Title
                     Modality.IMAGE -> Icons.Rounded.Image
+                    Modality.AUDIO -> Icons.Rounded.Mic
                 },
                 contentDescription = null,
                 modifier = Modifier
@@ -1190,6 +1205,7 @@ fun ModelModalityTag(model: Model) {
                 imageVector = when (modality) {
                     Modality.TEXT -> Icons.Rounded.Title
                     Modality.IMAGE -> Icons.Rounded.Image
+                    Modality.AUDIO -> Icons.Rounded.Mic
                 },
                 contentDescription = null,
                 modifier = Modifier
