@@ -149,7 +149,8 @@ internal data class StreamingSettleRange(
 )
 
 private val LocalStreamingTextReveal = compositionLocalOf<StreamingTextReveal?> { null }
-private val LocalMarkdownParagraphSpacing = compositionLocalOf { 4.dp }
+val LocalMarkdownParagraphSpacing = compositionLocalOf { 4.dp }
+val LocalMarkdownWorkspaceId = compositionLocalOf<String?> { null }
 
 /**
  * Safely get color from RP style rule for a given pattern.
@@ -367,6 +368,7 @@ fun MarkdownBlock(
     style: TextStyle = LocalTextStyle.current,
     paragraphSpacing: Dp = 4.dp,
     streamingTextReveal: Boolean = false,
+    workspaceId: String? = null,
     onExpandedStreamingCodeBlockChanged: (() -> Unit)? = null,
     onClickCitation: (String) -> Unit = {}
 ) {
@@ -454,6 +456,7 @@ fun MarkdownBlock(
         LocalRpStyleRules provides rpStyleRules,
         LocalStreamingTextReveal provides streamingReveal,
         LocalMarkdownParagraphSpacing provides paragraphSpacing,
+        LocalMarkdownWorkspaceId provides workspaceId,
         LocalLayoutDirection provides blockDirection.toLayoutDirection(),
     ) {
         ProvideTextStyle(style) {
@@ -1077,14 +1080,24 @@ private fun MarkdownNode(
         // 图片
         MarkdownElementTypes.IMAGE -> {
             val altText = node.findChildOfTypeRecursive(MarkdownElementTypes.LINK_TEXT)?.getTextInNode(content) ?: ""
-            val imageUrl =
-                node.findChildOfTypeRecursive(MarkdownElementTypes.LINK_DESTINATION)?.getTextInNode(content) ?: ""
+            val originalImageUrl = node.findChildOfTypeRecursive(MarkdownElementTypes.LINK_DESTINATION)?.getTextInNode(content) ?: ""
+            
+            var imageModel: String = originalImageUrl
+            val workspaceId = LocalMarkdownWorkspaceId.current
+            if (workspaceId != null && originalImageUrl.startsWith("/workspace/")) {
+                val context = LocalContext.current
+                val localFile = java.io.File(context.filesDir, "workspaces/$workspaceId/files" + originalImageUrl.removePrefix("/workspace"))
+                if (localFile.exists()) {
+                    imageModel = "file://" + localFile.absolutePath
+                }
+            }
+
             Column(
                 modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // 这里可以使用Coil等图片加载库加载图片
                 ZoomableAsyncImage(
-                    model = imageUrl,
+                    model = imageModel,
                     contentDescription = altText,
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
@@ -1683,7 +1696,7 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                                         }
                                         .fillMaxSize()
                                         .clip(CircleShape)
-                                        .background(colorScheme.tertiaryContainer.copy(0.2f)),
+                                        .background(colorScheme.surfaceVariant),
                                     contentAlignment = Alignment.Center) {
                                     Text(
                                         text = domain,
@@ -1692,8 +1705,8 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                                             fontSize = 10.sp,
                                             lineHeight = 10.sp,
                                             fontFamily = FontFamily.Monospace,
-                                            color = colorScheme.onTertiaryContainer,
-                                            fontWeight = FontWeight.Thin
+                                            color = colorScheme.onSurfaceVariant,
+                                            fontWeight = FontWeight.Light
                                         ),
                                     )
                                 }

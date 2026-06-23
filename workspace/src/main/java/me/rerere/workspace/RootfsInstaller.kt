@@ -193,7 +193,7 @@ class RootfsInstaller(
                 "Symlink escapes rootfs: ${target.name}"
             }
             sourceForFallback = resolved
-            (target.parentFile ?: root).toPath().relativize(resolved.toPath()).toFile()
+            File(linkName)
         }
         target.delete()
         runCatching {

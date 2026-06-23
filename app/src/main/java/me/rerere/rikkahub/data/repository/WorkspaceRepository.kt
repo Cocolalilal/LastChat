@@ -344,9 +344,11 @@ private fun WorkspaceCommandResult.withWorkspaceRuntimeHint(): WorkspaceCommandR
 }
 
 private fun WorkspaceCommandResult.failureText(): String {
-    val message = stderr.ifBlank { stdout }.trim()
+    val message = listOf(stdout.trim(), stderr.trim())
+        .filter { it.isNotBlank() }
+        .joinToString("\n")
     return when {
-        timedOut -> "timed out"
+        timedOut -> "timed out\n$message"
         message.isNotBlank() -> message
         else -> "exit code $exitCode"
     }

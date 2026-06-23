@@ -13,7 +13,6 @@ plugins {
     alias(libs.plugins.ksp)
     alias(libs.plugins.google.services)
     alias(libs.plugins.firebase.crashlytics)
-    alias(libs.plugins.chaquopy)
 }
 
 val enableReleaseShrinker = providers.gradleProperty("lastchat.release.minify")
@@ -241,40 +240,6 @@ kotlin {
     }
 }
 
-chaquopy {
-    defaultConfig {
-        version = "3.11"
-
-        // Allow local/CI environments to override Python discovery instead of relying
-        // on a machine-specific Windows path.
-        val configuredBuildPython = providers.gradleProperty("chaquopy.buildPython").orNull
-            ?: System.getenv("CHAQUOPY_BUILD_PYTHON")
-            ?: System.getenv("PYTHON")
-            ?: System.getenv("PYTHON3")
-        if (!configuredBuildPython.isNullOrBlank()) {
-            buildPython(configuredBuildPython)
-        }
-
-        pip {
-            // Core data science  
-            install("numpy")
-            install("pandas")
-            
-            // Visualization  
-            install("matplotlib")
-            install("Pillow")
-            
-            // Documents & Office files
-            install("openpyxl")      // Excel files
-            install("python-pptx")   // PowerPoint presentations
-            install("pypdf")         // PDF manipulation
-            install("python-docx")   // Word documents
-            
-            // Utilities
-            install("requests")
-        }
-    }
-}
 
 dependencies {
     implementation(libs.androidx.core.ktx)

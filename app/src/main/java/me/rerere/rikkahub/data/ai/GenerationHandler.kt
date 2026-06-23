@@ -1123,19 +1123,17 @@ class GenerationHandler(
                 
                 addAll(history)
                 
-                if (dynamicContext.isNotBlank()) {
-                    add(UIMessage.system(dynamicContext))
-                }
+                var finalParts = lastMessage.parts
                 
-                // Add skill and lorebook attachments as a user message if there are any
                 if (allContextAttachments.isNotEmpty()) {
-                    add(UIMessage(
-                        role = me.rerere.ai.core.MessageRole.USER,
-                        parts = allContextAttachments
-                    ))
+                    finalParts = allContextAttachments + finalParts
                 }
                 
-                add(lastMessage)
+                if (dynamicContext.isNotBlank()) {
+                    finalParts = listOf(UIMessagePart.Text("<system>\n$dynamicContext\n</system>\n\n")) + finalParts
+                }
+                
+                add(lastMessage.copy(parts = finalParts))
             } else {
                 if (dynamicContext.isNotBlank()) {
                     add(UIMessage.system(dynamicContext))

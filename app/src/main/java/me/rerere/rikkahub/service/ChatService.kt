@@ -1154,13 +1154,70 @@ class ChatService(
 
         val job = appScope.launch {
             try {
+                var effectiveContent = content
                 val currentConversation = getConversationFlow(conversationId).value
+                val settings = settingsStore.settingsFlow.first()
+                val conversationContext = settings.resolveConversationContext(currentConversation)
+                val workspaceId = conversationContext.assistant?.workspaceId?.toString()
+
+                if (workspaceId != null) {
+                    val syncedFiles = mutableListOf<String>()
+                    withContext(Dispatchers.IO) {
+                        effectiveContent.forEach { part ->
+                            val url = when(part) {
+                                is UIMessagePart.Image -> part.url
+                                is UIMessagePart.Video -> part.url
+                                is UIMessagePart.Audio -> part.url
+                                is UIMessagePart.Document -> part.url
+                                else -> null
+                            }
+                            val fileName = when(part) {
+                                is UIMessagePart.Document -> part.fileName ?: url?.substringAfterLast("/")?.substringBefore("?")
+                                else -> url?.substringAfterLast("/")?.substringBefore("?")
+                            }
+                            if (url != null && url.startsWith("file://")) {
+                                try {
+                                    val uri = java.net.URI(url)
+                                    val file = java.io.File(uri)
+                                    if (file.exists()) {
+                                        file.inputStream().use { stream ->
+                                            workspaceRepository.importFile(
+                                                id = workspaceId,
+                                                area = me.rerere.workspace.WorkspaceStorageArea.FILES,
+                                                destinationPath = getWorkspaceCwd(
+                                                    assistantName = conversationContext.assistant.name,
+                                                    chatTitle = currentConversation.title,
+                                                    chatId = currentConversation.id.toString()
+                                                ).removePrefix("/workspace/").removePrefix("/workspace") + "/uploads",
+                                                fileName = fileName ?: file.name,
+                                                inputStream = stream
+                                            )
+                                        }
+                                        val cwd = getWorkspaceCwd(
+                                            assistantName = conversationContext.assistant.name,
+                                            chatTitle = currentConversation.title,
+                                            chatId = currentConversation.id.toString()
+                                        )
+                                        syncedFiles.add("$cwd/uploads/${fileName ?: file.name}")
+                                    }
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            }
+                        }
+                    }
+                    if (syncedFiles.isNotEmpty()) {
+                        effectiveContent = effectiveContent + UIMessagePart.Text(
+                            "\n[System: The attachments in this message have been synced to your workspace at: ${syncedFiles.joinToString(", ")}]\n"
+                        )
+                    }
+                }
 
                 // 添加消息到列表
                 val newConversation = currentConversation.copy(
                     messageNodes = currentConversation.messageNodes + UIMessage(
                         role = MessageRole.USER,
-                        parts = content,
+                        parts = effectiveContent,
                     ).toMessageNode(),
                 )
                 if (effectiveMode == ChatPersistenceMode.PERSIST_ON_REPLY) {
@@ -2653,4 +2710,9 @@ private fun kotlinx.serialization.json.JsonElement.truncateLargeJsonText(maxLeng
         is kotlinx.serialization.json.JsonObject -> kotlinx.serialization.json.JsonObject(this.mapValues { it.value.truncateLargeJsonText(maxLength) })
         is kotlinx.serialization.json.JsonArray -> kotlinx.serialization.json.JsonArray(this.map { it.truncateLargeJsonText(maxLength) })
     }
+}
+
+private fun getWorkspaceCwd(assistantName: String, chatTitle: String, chatId: String): String {
+    val sanitizedTitle = chatTitle.replace(Regex("[^a-zA-Z0-9_\\\\-\\u4e00-\\u9fa5]"), "_").take(30)
+    return "/workspace/chats/${sanitizedTitle}_${chatId.take(8)}"
 }

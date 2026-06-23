@@ -34,9 +34,9 @@ private const val MODEL_CATALOG_FILE_NAME = "lastchat_catalog.json"
 private const val MODEL_CATALOG_FILE_PATH = "$MODEL_CATALOG_DIR_NAME/$MODEL_CATALOG_FILE_NAME"
 private const val MODEL_CATALOG_ASSET_NAME = "lastchat_catalog.json"
 private const val MODEL_CATALOG_URL =
-    "https://raw.githubusercontent.com/Cocolalilal/LastChat/main/catalog/lastchat_catalog.json"
+    "https://raw.githubusercontent.com/Cocolalilal/LastChat/LastChat/catalog/lastchat_catalog.json"
 private const val CATALOG_RAW_BASE_URL =
-    "https://raw.githubusercontent.com/Cocolalilal/LastChat/main/catalog/"
+    "https://raw.githubusercontent.com/Cocolalilal/LastChat/LastChat/catalog/"
 
 enum class ModelCatalogSource {
     BUNDLED,

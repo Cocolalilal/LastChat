@@ -16,6 +16,7 @@ import me.rerere.workspace.WorkspaceShellStatus
  */
 class WorkspaceReminderTransformer(
     private val workspaceRepository: WorkspaceRepository,
+    private val cwd: String? = null,
 ) : InputMessageTransformer {
     override suspend fun transform(
         ctx: TransformerContext,
@@ -33,7 +34,7 @@ class WorkspaceReminderTransformer(
                 workspace = workspace,
                 reason = "The workspace rootfs is not ready. The user must install or repair the rootfs before shell and file tools can run."
             )
-            else -> buildWorkspacePrompt(workspace, null)
+            else -> buildWorkspacePrompt(workspace, cwd)
         }
 
         // 追加到第一条 system 消息; 若不存在则插入一条

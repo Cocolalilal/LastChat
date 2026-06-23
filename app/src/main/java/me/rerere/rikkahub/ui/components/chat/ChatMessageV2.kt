@@ -1020,6 +1020,7 @@ private fun UserMessageTurn(
                     }
                 ) {
                     MarkdownBlock(
+                        workspaceId = assistant?.workspaceId?.toString(),
                         content = part.text
                             .replacePersonaPlaceholders(
                                 assistant = assistant,
@@ -1309,6 +1310,7 @@ private fun AssistantMessageTurn(
                     onClick = handleBubbleClick
                 ) {
                     MarkdownBlock(
+                        workspaceId = assistant?.workspaceId?.toString(),
                         content = part.text.trimStart()
                             .replacePersonaPlaceholders(
                                 assistant = assistant,
@@ -1385,6 +1387,7 @@ private fun AssistantMessageTurn(
 
             allTextBubbles.forEachIndexed { index, (_, part) ->
                 MarkdownBlock(
+                    workspaceId = assistant?.workspaceId?.toString(),
                     content = part.text.trimStart()
                         .replacePersonaPlaceholders(
                             assistant = assistant,

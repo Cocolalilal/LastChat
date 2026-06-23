@@ -211,15 +211,29 @@ fun WorkspaceDetailPage(id: String) {
                     1 -> WorkspaceFilesPage(
                         state = state,
                         contentPadding = PaddingValues(),
-                        onSelectArea = vm::selectArea,
-                        onGoUp = vm::goUp,
-                        onOpen = vm::open,
-                        onDelete = { deleteTarget = it },
+                        onSelectArea = {
+                            haptics.perform(HapticPattern.Pop)
+                            vm.selectArea(it)
+                        },
+                        onGoUp = {
+                            haptics.perform(HapticPattern.Pop)
+                            vm.goUp()
+                        },
+                        onOpen = {
+                            haptics.perform(HapticPattern.Pop)
+                            vm.open(it)
+                        },
+                        onDelete = {
+                            haptics.perform(HapticPattern.Pop)
+                            deleteTarget = it
+                        },
                         onExport = { entry ->
+                            haptics.perform(HapticPattern.Pop)
                             exportTarget = entry
                             exportLauncher.launch(entry.name)
                         },
                         onShare = { entry ->
+                            haptics.perform(HapticPattern.Pop)
                             vm.shareFile(entry, context.cacheDir) { file ->
                                 val uri = FileProvider.getUriForFile(
                                     context,
@@ -302,6 +316,7 @@ fun WorkspaceDetailPage(id: String) {
             text = { Text(stringResource(R.string.workspace_detail_will_delete, entry.path)) },
             confirmButton = {
                 TextButton(onClick = {
+                    haptics.perform(HapticPattern.Thud)
                     vm.delete(entry)
                     deleteTarget = null
                 }) {
@@ -309,7 +324,10 @@ fun WorkspaceDetailPage(id: String) {
                 }
             },
             dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) {
+                TextButton(onClick = { 
+                    haptics.perform(HapticPattern.Pop)
+                    deleteTarget = null 
+                }) {
                     Text(stringResource(R.string.common_cancel))
                 }
             }

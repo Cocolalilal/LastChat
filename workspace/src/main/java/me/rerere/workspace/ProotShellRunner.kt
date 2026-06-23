@@ -90,7 +90,7 @@ class ProotShellRunner(
                     runtime.loader32?.let { environment()["PROOT_LOADER_32"] = it.absolutePath }
                     environment()["PROOT_TMP_DIR"] = context.tempDir.absolutePath
                     environment()["PROOT_TMPDIR"] = context.tempDir.absolutePath
-                    environment()["TMPDIR"] = context.tempDir.absolutePath
+                    environment()["TMPDIR"] = "/tmp"
                     environment()["LD_LIBRARY_PATH"] = runtime.executable.parentFile?.absolutePath.orEmpty()
                     environment()["HOME"] = "/root"
                     environment()["PATH"] = ROOTFS_PATH
@@ -356,7 +356,7 @@ class ProotShellRunner(
                     environment()["PROOT_LOADER"] = runtime.loader.absolutePath
                     environment()["PROOT_TMP_DIR"] = context.tempDir.absolutePath
                     environment()["PROOT_TMPDIR"] = context.tempDir.absolutePath
-                    environment()["TMPDIR"] = context.tempDir.absolutePath
+                    environment()["TMPDIR"] = "/tmp"
                     environment()["LD_LIBRARY_PATH"] = runtime.executable.parentFile?.absolutePath.orEmpty()
                     environment().putAll(mode.environment)
                 }

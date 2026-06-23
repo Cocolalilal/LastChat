@@ -148,6 +148,7 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
             confirmButton = {
                 TextButton(
                     onClick = {
+                        haptics.perform(HapticPattern.Thud)
                         vm.delete(workspace)
                         deleteTarget = null
                     }
@@ -156,7 +157,10 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
                 }
             },
             dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) {
+                TextButton(onClick = { 
+                    haptics.perform(HapticPattern.Pop)
+                    deleteTarget = null 
+                }) {
                     Text(stringResource(R.string.common_cancel))
                 }
             },

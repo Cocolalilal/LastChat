@@ -130,7 +130,7 @@
       "id": "zhipu",
       "name": "Zhipu",
       "aliases": [
-        "\u667a\u8c31",
+        "智谱",
         "zhipu ai",
         "glm"
       ],
@@ -142,7 +142,7 @@
       "id": "metaso",
       "name": "Metaso",
       "aliases": [
-        "\u79d8\u5854",
+        "秘塔",
         "metaso ai"
       ],
       "description": "Metaso AI search API.",
@@ -153,7 +153,7 @@
       "id": "bocha",
       "name": "Bocha",
       "aliases": [
-        "\u535a\u67e5",
+        "博查",
         "bocha ai"
       ],
       "description": "Bocha AI search API.",
@@ -1036,15 +1036,6 @@
       "api_key_url": "https://studio.ai21.com/account/api-key"
     },
     {
-      "id": "c1d92a0e-c1d4-45aa-9b24-78fdbe4a3198",
-      "name": "Amazon Bedrock",
-      "description": "Amazon Bedrock is a fully managed service that offers a choice of high-performing foundation models.",
-      "type": "openai",
-      "base_url": "https://bedrock-runtime.us-east-1.amazonaws.com/v1",
-      "icon": "icons/amazon.svg",
-      "preset": true
-    },
-    {
       "id": "e3f92a0e-c1d4-45aa-9b24-78fdbe4a3199",
       "name": "Arcee AI",
       "description": "Arcee AI provides access to specialized domain-specific and agentic models.",
@@ -1151,31 +1142,13 @@
       "chat_completions_path": "/chat/completions",
       "use_response_api": false,
       "balance_option": {},
-      "icon": "icons/commandcode.svg",
+      "icon": "icons/command-symbol.svg",
       "preset": true,
       "signup_url": "https://commandcode.ai",
       "api_key_url": "https://commandcode.ai",
       "stream_options_mode": "auto",
       "image_response_modalities_mode": "auto",
       "reasoning_content_replay_mode": "auto"
-    },
-    {
-      "id": "e45820b3-565b-4c99-b39a-1986320c5890",
-      "name": "Cloudflare Workers AI",
-      "description": "Cloudflare Workers AI API provider. Ensure you substitute the correct placeholders in the URL.",
-      "type": "openai",
-      "base_url": "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1",
-      "chat_completions_path": "/chat/completions",
-      "use_response_api": false,
-      "balance_option": {},
-      "icon": "icons/cloudflare.svg",
-      "preset": true,
-      "signup_url": "https://dash.cloudflare.com",
-      "api_key_url": "https://dash.cloudflare.com",
-      "stream_options_mode": "auto",
-      "image_response_modalities_mode": "auto",
-      "reasoning_content_replay_mode": "auto",
-      "setup_description": "Please replace {account_id} with your actual Account ID."
     },
     {
       "id": "3ca10648-755e-4a56-b90c-e6daec71d811",
@@ -1186,7 +1159,7 @@
       "chat_completions_path": "/chat/completions",
       "use_response_api": false,
       "balance_option": {},
-      "icon": "icons/lepton.svg",
+      "icon": "icons/leptonai.svg",
       "preset": true,
       "signup_url": "https://lepton.ai",
       "api_key_url": "https://lepton.ai",
@@ -1212,142 +1185,6 @@
       "reasoning_content_replay_mode": "auto"
     },
     {
-      "id": "73889b41-b693-4f58-be62-97c03f5ab10c",
-      "name": "Predibase",
-      "description": "Predibase API provider.",
-      "type": "openai",
-      "base_url": "https://api.predibase.com/v1",
-      "chat_completions_path": "/chat/completions",
-      "use_response_api": false,
-      "balance_option": {},
-      "icon": "icons/predibase.svg",
-      "preset": true,
-      "signup_url": "https://predibase.com",
-      "api_key_url": "https://predibase.com",
-      "stream_options_mode": "auto",
-      "image_response_modalities_mode": "auto",
-      "reasoning_content_replay_mode": "auto"
-    },
-    {
-      "id": "7f93ed49-dd52-4e68-a8b7-d83926801270",
-      "name": "Writer",
-      "description": "Writer API provider.",
-      "type": "openai",
-      "base_url": "https://api.writer.com/v1",
-      "chat_completions_path": "/chat/completions",
-      "use_response_api": false,
-      "balance_option": {},
-      "icon": "icons/writer.svg",
-      "preset": true,
-      "signup_url": "https://writer.com",
-      "api_key_url": "https://writer.com",
-      "stream_options_mode": "auto",
-      "image_response_modalities_mode": "auto",
-      "reasoning_content_replay_mode": "auto"
-    },
-    {
-      "id": "3b1b8cdd-3a61-4338-a690-df2f73d02d58",
-      "name": "OpenPipe",
-      "description": "OpenPipe API provider.",
-      "type": "openai",
-      "base_url": "https://app.openpipe.ai/api/v1",
-      "chat_completions_path": "/chat/completions",
-      "use_response_api": false,
-      "balance_option": {},
-      "icon": "icons/openpipe.svg",
-      "preset": true,
-      "signup_url": "https://openpipe.ai",
-      "api_key_url": "https://openpipe.ai",
-      "stream_options_mode": "auto",
-      "image_response_modalities_mode": "auto",
-      "reasoning_content_replay_mode": "auto"
-    },
-    {
-      "id": "fe1e0cf8-eb4f-4825-a8b2-feb0096fe536",
-      "name": "PPIO",
-      "description": "PPIO API provider.",
-      "type": "openai",
-      "base_url": "https://api.ppinfra.com/v3/openai",
-      "chat_completions_path": "/chat/completions",
-      "use_response_api": false,
-      "balance_option": {},
-      "icon": "icons/ppio.svg",
-      "preset": true,
-      "signup_url": "https://ppinfra.com",
-      "api_key_url": "https://ppinfra.com",
-      "stream_options_mode": "auto",
-      "image_response_modalities_mode": "auto",
-      "reasoning_content_replay_mode": "auto"
-    },
-    {
-      "id": "b690b4d9-0639-4c43-b57c-e831258234d7",
-      "name": "Crusoe AI",
-      "description": "Crusoe AI API provider.",
-      "type": "openai",
-      "base_url": "https://api.crusoe.ai/v1",
-      "chat_completions_path": "/chat/completions",
-      "use_response_api": false,
-      "balance_option": {},
-      "icon": "icons/crusoe.svg",
-      "preset": true,
-      "signup_url": "https://crusoe.ai",
-      "api_key_url": "https://crusoe.ai",
-      "stream_options_mode": "auto",
-      "image_response_modalities_mode": "auto",
-      "reasoning_content_replay_mode": "auto"
-    },
-    {
-      "id": "8bb0ac03-1e5b-4584-af08-03b5f06cc0d2",
-      "name": "Sao10K",
-      "description": "Sao10K API provider.",
-      "type": "openai",
-      "base_url": "https://api.sao10k.com/v1",
-      "chat_completions_path": "/chat/completions",
-      "use_response_api": false,
-      "balance_option": {},
-      "icon": "icons/sao10k.svg",
-      "preset": true,
-      "signup_url": "https://sao10k.com",
-      "api_key_url": "https://sao10k.com",
-      "stream_options_mode": "auto",
-      "image_response_modalities_mode": "auto",
-      "reasoning_content_replay_mode": "auto"
-    },
-    {
-      "id": "4c6432e6-3d1c-451f-93a8-5ebe089c3631",
-      "name": "Monster API",
-      "description": "Monster API API provider.",
-      "type": "openai",
-      "base_url": "https://api.monsterapi.ai/v1",
-      "chat_completions_path": "/chat/completions",
-      "use_response_api": false,
-      "balance_option": {},
-      "icon": "icons/monsterapi.svg",
-      "preset": true,
-      "signup_url": "https://monsterapi.ai",
-      "api_key_url": "https://monsterapi.ai",
-      "stream_options_mode": "auto",
-      "image_response_modalities_mode": "auto",
-      "reasoning_content_replay_mode": "auto"
-    },
-    {
-      "id": "a400f181-6d3a-4d8c-9b7e-1bb187b4f8e5",
-      "name": "Reka AI",
-      "description": "Reka AI API provider.",
-      "type": "openai",
-      "base_url": "https://api.reka.ai/v1",
-      "chat_completions_path": "/chat/completions",
-      "use_response_api": false,
-      "balance_option": {},
-      "icon": "icons/reka.svg",
-      "preset": true,
-      "signup_url": "https://reka.ai",
-      "api_key_url": "https://reka.ai",
-      "stream_options_mode": "auto",
-      "image_response_modalities_mode": "auto",
-      "reasoning_content_replay_mode": "auto"
-    },
-    {
       "id": "890e3c2d-3f93-4031-8c8d-e9b8906474b4",
       "name": "Inference.net",
       "description": "Inference.net API provider.",
@@ -1360,40 +1197,6 @@
       "preset": true,
       "signup_url": "https://inference.net",
       "api_key_url": "https://inference.net",
-      "stream_options_mode": "auto",
-      "image_response_modalities_mode": "auto",
-      "reasoning_content_replay_mode": "auto"
-    },
-    {
-      "id": "ab5ac130-94f5-49a2-9903-9f4d73d43f3e",
-      "name": "InclusionAI",
-      "description": "InclusionAI API provider.",
-      "type": "openai",
-      "base_url": "https://api.inclusionai.com/v1",
-      "chat_completions_path": "/chat/completions",
-      "use_response_api": false,
-      "balance_option": {},
-      "icon": "icons/inclusionai.svg",
-      "preset": true,
-      "signup_url": "https://inclusionai.com",
-      "api_key_url": "https://inclusionai.com",
-      "stream_options_mode": "auto",
-      "image_response_modalities_mode": "auto",
-      "reasoning_content_replay_mode": "auto"
-    },
-    {
-      "id": "42604f3f-56c5-45a4-b4c4-59fb75fef4ae",
-      "name": "Meta Llama API",
-      "description": "Meta Llama API API provider.",
-      "type": "openai",
-      "base_url": "https://api.llama.com/v1",
-      "chat_completions_path": "/chat/completions",
-      "use_response_api": false,
-      "balance_option": {},
-      "icon": "icons/meta.svg",
-      "preset": true,
-      "signup_url": "https://llama.com",
-      "api_key_url": "https://llama.com",
       "stream_options_mode": "auto",
       "image_response_modalities_mode": "auto",
       "reasoning_content_replay_mode": "auto"
@@ -1416,40 +1219,6 @@
       "reasoning_content_replay_mode": "auto"
     },
     {
-      "id": "a17a2a7c-a03f-4e3a-8159-74a8dde2a23e",
-      "name": "Sarvam AI",
-      "description": "Sarvam AI API provider.",
-      "type": "openai",
-      "base_url": "https://api.sarvam.ai/v1",
-      "chat_completions_path": "/chat/completions",
-      "use_response_api": false,
-      "balance_option": {},
-      "icon": "icons/sarvam.svg",
-      "preset": true,
-      "signup_url": "https://sarvam.ai",
-      "api_key_url": "https://sarvam.ai",
-      "stream_options_mode": "auto",
-      "image_response_modalities_mode": "auto",
-      "reasoning_content_replay_mode": "auto"
-    },
-    {
-      "id": "cc5884b4-abf3-489f-ac06-604027921cac",
-      "name": "Portkey",
-      "description": "Portkey API provider.",
-      "type": "openai",
-      "base_url": "https://api.portkey.ai/v1",
-      "chat_completions_path": "/chat/completions",
-      "use_response_api": false,
-      "balance_option": {},
-      "icon": "icons/portkey.svg",
-      "preset": true,
-      "signup_url": "https://portkey.ai",
-      "api_key_url": "https://portkey.ai",
-      "stream_options_mode": "auto",
-      "image_response_modalities_mode": "auto",
-      "reasoning_content_replay_mode": "auto"
-    },
-    {
       "id": "86990ca4-05b9-46bd-aaf6-f475db646039",
       "name": "Helicone",
       "description": "Helicone API provider.",
@@ -1465,24 +1234,6 @@
       "stream_options_mode": "auto",
       "image_response_modalities_mode": "auto",
       "reasoning_content_replay_mode": "auto"
-    },
-    {
-      "id": "8459ff20-548f-4408-be14-91293a1469d7",
-      "name": "Cloudflare AI Gateway",
-      "description": "Cloudflare AI Gateway API provider. Ensure you substitute the correct placeholders in the URL.",
-      "type": "openai",
-      "base_url": "https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_id}/openai",
-      "chat_completions_path": "/chat/completions",
-      "use_response_api": false,
-      "balance_option": {},
-      "icon": "icons/cloudflare.svg",
-      "preset": true,
-      "signup_url": "https://dash.cloudflare.com",
-      "api_key_url": "https://dash.cloudflare.com",
-      "stream_options_mode": "auto",
-      "image_response_modalities_mode": "auto",
-      "reasoning_content_replay_mode": "auto",
-      "setup_description": "Please replace {account_id} with your actual Account ID."
     },
     {
       "id": "16d739cd-b73c-4d20-a680-2c36d74b509c",
@@ -1514,23 +1265,6 @@
       "preset": true,
       "signup_url": "https://nscale.com",
       "api_key_url": "https://nscale.com",
-      "stream_options_mode": "auto",
-      "image_response_modalities_mode": "auto",
-      "reasoning_content_replay_mode": "auto"
-    },
-    {
-      "id": "bae89e87-f5b0-4ddb-b0e3-dac38f6b66d6",
-      "name": "OVHcloud AI Endpoints",
-      "description": "OVHcloud AI Endpoints API provider.",
-      "type": "openai",
-      "base_url": "https://gra.ai.cloud.ovh.net/v1",
-      "chat_completions_path": "/chat/completions",
-      "use_response_api": false,
-      "balance_option": {},
-      "icon": "icons/ovhcloud.svg",
-      "preset": true,
-      "signup_url": "https://ovhcloud.com",
-      "api_key_url": "https://ovhcloud.com",
       "stream_options_mode": "auto",
       "image_response_modalities_mode": "auto",
       "reasoning_content_replay_mode": "auto"
@@ -1894,6 +1628,20 @@
           "id": "qwen3",
           "match_patterns": [
             "qwen3"
+          ],
+          "abilities": [
+            "TOOL",
+            "REASONING"
+          ]
+        },
+        {
+          "id": "qwen3.5",
+          "match_patterns": [
+            "qwen3\\.5"
+          ],
+          "input_modalities": [
+            "TEXT",
+            "IMAGE"
           ],
           "abilities": [
             "TOOL",
@@ -3287,7 +3035,7 @@
       "id": "ai360",
       "aliases": [
         "ai360",
-        "360\u00e6\u2122\u00ba\u00e8\u201e\u2018",
+        "360æ™ºè„‘",
         "360"
       ],
       "match_patterns": [
@@ -4655,6 +4403,88 @@
       "output_modalities": [
         "TEXT"
       ]
+    }
+  ],
+  "stt_providers": [
+    {
+      "id": "openai",
+      "name": "OpenAI",
+      "icon": "icons/openai.svg"
+    },
+    {
+      "id": "openai_realtime",
+      "name": "OpenAI Realtime",
+      "icon": "icons/openai.svg"
+    },
+    {
+      "id": "openrouter",
+      "name": "OpenRouter",
+      "icon": "icons/openrouter.svg"
+    },
+    {
+      "id": "groq",
+      "name": "Groq",
+      "icon": "icons/groq.svg"
+    },
+    {
+      "id": "regolo",
+      "name": "Regolo AI",
+      "icon": "icons/regolo.svg"
+    },
+    {
+      "id": "xai",
+      "name": "xAI",
+      "icon": "icons/xai.svg"
+    },
+    {
+      "id": "deepinfra",
+      "name": "DeepInfra",
+      "icon": "icons/deepinfra.svg"
+    },
+    {
+      "id": "together",
+      "name": "Together AI",
+      "icon": "icons/together.svg"
+    },
+    {
+      "id": "fireworks",
+      "name": "Fireworks AI",
+      "icon": "icons/fireworks.svg"
+    },
+    {
+      "id": "siliconflow",
+      "name": "SiliconFlow",
+      "icon": "icons/siliconflow.svg"
+    },
+    {
+      "id": "aihubmix",
+      "name": "AiHubMix",
+      "icon": "icons/aihubmix.svg"
+    },
+    {
+      "id": "novita",
+      "name": "Novita AI",
+      "icon": "icons/novita.svg"
+    },
+    {
+      "id": "dashscope",
+      "name": "DashScope",
+      "icon": "icons/dashscope.svg"
+    },
+    {
+      "id": "volcengine",
+      "name": "Volcengine",
+      "icon": "icons/volcengine.svg"
+    },
+    {
+      "id": "mimo",
+      "name": "MiMo",
+      "icon": "icons/mimo.svg"
+    },
+    {
+      "id": "step",
+      "name": "Step",
+      "icon": "icons/step.svg"
     }
   ]
 }

@@ -339,8 +339,8 @@ fun MinimalChatInput(
         }
     }
 
-    LaunchedEffect(sttRecording, acceptSttWhenIdle, discardSttWhenIdle) {
-        if (!sttRecording && (acceptSttWhenIdle || discardSttWhenIdle)) {
+    LaunchedEffect(sttRecording, sttFinalizing, acceptSttWhenIdle, discardSttWhenIdle) {
+        if (!sttRecording && !sttFinalizing && (acceptSttWhenIdle || discardSttWhenIdle)) {
             if (acceptSttWhenIdle) {
                 delay(220)
                 val transcript = sttDraft.trim()
@@ -837,7 +837,7 @@ fun MinimalChatInput(
                                     ) {
                                         if (sttRecording || sttFinalizing) {
                                             haptics.perform(HapticPattern.Pop)
-                                            stopSttRecording(accept = false)
+                                            stopSttRecording(accept = true)
                                         }
                                     }
                                 ) {
@@ -948,7 +948,7 @@ fun MinimalChatInput(
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
-                                    .padding(start = 6.dp, end = 4.dp, top = 6.dp, bottom = 6.dp)
+                                    .padding(start = 6.dp, end = 6.dp, top = 6.dp, bottom = 6.dp)
                             ) {
                                 val currentAction = when {
                                     isQuestionnaireActive && isFinalQuestion -> "questionnaire_submit"

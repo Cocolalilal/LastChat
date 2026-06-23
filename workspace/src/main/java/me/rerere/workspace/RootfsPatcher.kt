@@ -19,6 +19,7 @@ class RootfsPatcher {
         ensureTempDirs(linuxDir)
         ensureMergedUsrLinks(linuxDir)
         ensureShellEntrypoints(linuxDir)
+        ensureAptAndDpkgConfigs(linuxDir)
     }
 
     private fun ensureRootfsDns(
@@ -180,6 +181,28 @@ class RootfsPatcher {
             sh.setWritable(source.canWrite(), true)
             sh.setExecutable(source.canExecute(), false)
         }.getOrNull()
+    }
+
+    private fun ensureAptAndDpkgConfigs(linuxDir: File) {
+        val etcDir = File(linuxDir, "etc")
+        
+        // Prevent dpkg from calling sync() which can be extremely slow or fail in proot on Android
+        val dpkgCfgDir = File(etcDir, "dpkg/dpkg.cfg.d")
+        dpkgCfgDir.mkdirs()
+        File(dpkgCfgDir, "force-unsafe-io").writeText("force-unsafe-io\n")
+
+        // Prevent services from starting during package installation
+        val policy = File(linuxDir, "usr/sbin/policy-rc.d")
+        policy.parentFile?.mkdirs()
+        if (!policy.exists()) {
+            policy.writeText("#!/bin/sh\nexit 101\n")
+            policy.setExecutable(true, false)
+        }
+
+        // Disable apt-get sandboxing to avoid _apt user permission issues in proot
+        val aptConfDir = File(etcDir, "apt/apt.conf.d")
+        aptConfDir.mkdirs()
+        File(aptConfDir, "99proot-sandbox").writeText("APT::Sandbox::User \"root\";\n")
     }
 
     private fun ensureMergedUsrLinks(linuxDir: File) {
