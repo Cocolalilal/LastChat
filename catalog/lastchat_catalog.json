@@ -130,7 +130,7 @@
       "id": "zhipu",
       "name": "Zhipu",
       "aliases": [
-        "智谱",
+        "\u667a\u8c31",
         "zhipu ai",
         "glm"
       ],
@@ -142,7 +142,7 @@
       "id": "metaso",
       "name": "Metaso",
       "aliases": [
-        "秘塔",
+        "\u79d8\u5854",
         "metaso ai"
       ],
       "description": "Metaso AI search API.",
@@ -153,7 +153,7 @@
       "id": "bocha",
       "name": "Bocha",
       "aliases": [
-        "博查",
+        "\u535a\u67e5",
         "bocha ai"
       ],
       "description": "Bocha AI search API.",
@@ -1346,7 +1346,8 @@
           ],
           "input_modalities": [
             "TEXT",
-            "IMAGE"
+            "IMAGE",
+            "AUDIO"
           ],
           "abilities": [
             "TOOL"
@@ -1384,6 +1385,20 @@
             "TEXT"
           ],
           "abilities": []
+        },
+        {
+          "id": "gpt-audio",
+          "match_patterns": [
+            "gpt-4o-audio"
+          ],
+          "input_modalities": [
+            "TEXT",
+            "IMAGE",
+            "AUDIO"
+          ],
+          "abilities": [
+            "TOOL"
+          ]
         }
       ]
     },
@@ -1461,7 +1476,8 @@
       "type": "CHAT",
       "input_modalities": [
         "TEXT",
-        "IMAGE"
+        "IMAGE",
+        "AUDIO"
       ],
       "output_modalities": [
         "TEXT"
@@ -1689,6 +1705,19 @@
             "math",
             "vl|omni|vision"
           ]
+        },
+        {
+          "id": "qwen-audio",
+          "match_patterns": [
+            "qwen.*audio"
+          ],
+          "input_modalities": [
+            "TEXT",
+            "AUDIO"
+          ],
+          "abilities": [
+            "TOOL"
+          ]
         }
       ]
     },
@@ -1793,7 +1822,8 @@
           ],
           "input_modalities": [
             "TEXT",
-            "IMAGE"
+            "IMAGE",
+            "AUDIO"
           ],
           "abilities": [
             "TOOL",
@@ -1824,7 +1854,8 @@
       "icon": "icons/gemma.svg",
       "type": "CHAT",
       "input_modalities": [
-        "TEXT"
+        "TEXT",
+        "AUDIO"
       ],
       "output_modalities": [
         "TEXT"
@@ -1842,7 +1873,8 @@
           ],
           "input_modalities": [
             "TEXT",
-            "IMAGE"
+            "IMAGE",
+            "AUDIO"
           ],
           "abilities": [
             "TOOL",
@@ -1875,7 +1907,8 @@
       "icon": "icons/grok.svg",
       "type": "CHAT",
       "input_modalities": [
-        "TEXT"
+        "TEXT",
+        "AUDIO"
       ],
       "output_modalities": [
         "TEXT"
@@ -1893,6 +1926,10 @@
           "abilities": [
             "TOOL",
             "REASONING"
+          ],
+          "input_modalities": [
+            "TEXT",
+            "AUDIO"
           ]
         },
         {
@@ -2046,12 +2083,23 @@
           "exclude_patterns": [
             "4\\.5",
             "5",
+            "voice",
             "v|vision",
             "4\\.6",
             "4\\.7",
             "zero",
             "z1",
             "rumination"
+          ]
+        },
+        {
+          "id": "glm-4-voice",
+          "match_patterns": [
+            "glm[-_]?4.*voice"
+          ],
+          "input_modalities": [
+            "TEXT",
+            "AUDIO"
           ]
         },
         {
@@ -2214,7 +2262,8 @@
       "icon": "icons/bytedance.svg",
       "type": "CHAT",
       "input_modalities": [
-        "TEXT"
+        "TEXT",
+        "AUDIO"
       ],
       "output_modalities": [
         "TEXT"
@@ -2291,7 +2340,8 @@
       "icon": "icons/minimax.svg",
       "type": "CHAT",
       "input_modalities": [
-        "TEXT"
+        "TEXT",
+        "AUDIO"
       ],
       "output_modalities": [
         "TEXT"
@@ -2403,7 +2453,8 @@
       "icon": "icons/baidu.svg",
       "type": "CHAT",
       "input_modalities": [
-        "TEXT"
+        "TEXT",
+        "AUDIO"
       ],
       "output_modalities": [
         "TEXT"
@@ -3035,7 +3086,7 @@
       "id": "ai360",
       "aliases": [
         "ai360",
-        "360æ™ºè„‘",
+        "360\u00e6\u2122\u00ba\u00e8\u201e\u2018",
         "360"
       ],
       "match_patterns": [
@@ -4399,6 +4450,20 @@
       "type": "EMBEDDING",
       "input_modalities": [
         "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ]
+    },
+    {
+      "id": "whisper-1",
+      "canonical_model_id": "whisper-1",
+      "provider_ids": [
+        "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91"
+      ],
+      "type": "STT",
+      "input_modalities": [
+        "AUDIO"
       ],
       "output_modalities": [
         "TEXT"

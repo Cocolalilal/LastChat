@@ -1532,6 +1532,17 @@ private fun ModelSettingsForm(
                             }
                         )
 
+                        if (model.type == ModelType.STT) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            ModelSttOptionsForm(
+                                sttOptions = model.sttOptions,
+                                onUpdate = {
+                                    onModelChange(model.copy(sttOptions = it))
+                                }
+                            )
+                        }
+
+
                         if (model.type == ModelType.CHAT && parentProvider != null) {
                             ModelCapabilityProbeButton(
                                 enabled = model.modelId.isNotBlank(),
@@ -2720,6 +2731,7 @@ private fun ModelTypeSelector(
                                 ModelType.CHAT -> R.string.setting_provider_page_chat_model
                                 ModelType.EMBEDDING -> R.string.setting_provider_page_embedding_model
                                 ModelType.IMAGE -> R.string.setting_provider_page_image_model
+                                ModelType.STT -> R.string.setting_provider_page_stt_model
                             }
                         )
                     )
@@ -2815,6 +2827,7 @@ private fun ModelModalitySelector(
                             when (modality) {
                                 Modality.TEXT -> R.string.setting_provider_page_text
                                 Modality.IMAGE -> R.string.setting_provider_page_image
+                                Modality.AUDIO -> R.string.setting_provider_page_audio
                             }
                         )
                     )
@@ -2846,6 +2859,7 @@ private fun ModelModalitySelector(
                             when (modality) {
                                 Modality.TEXT -> R.string.setting_provider_page_text
                                 Modality.IMAGE -> R.string.setting_provider_page_image
+                                Modality.AUDIO -> R.string.setting_provider_page_audio
                             }
                         )
                     )
@@ -3419,5 +3433,42 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ModelSttOptionsForm(
+    sttOptions: me.rerere.ai.provider.SttOptions?,
+    onUpdate: (me.rerere.ai.provider.SttOptions) -> Unit
+) {
+    val options = sttOptions ?: me.rerere.ai.provider.SttOptions()
+    Column(
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        OutlinedTextField(
+            value = options.language,
+            onValueChange = { onUpdate(options.copy(language = it)) },
+            label = { Text(stringResource(R.string.setting_provider_page_stt_language)) },
+            supportingText = { Text(stringResource(R.string.setting_provider_page_stt_language_desc)) },
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+        )
+        OutlinedTextField(
+            value = options.prompt,
+            onValueChange = { onUpdate(options.copy(prompt = it)) },
+            label = { Text(stringResource(R.string.setting_provider_page_stt_prompt)) },
+            supportingText = { Text(stringResource(R.string.setting_provider_page_stt_prompt_desc)) },
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+        )
+        OutlinedTextField(
+            value = options.responseFormat,
+            onValueChange = { onUpdate(options.copy(responseFormat = it)) },
+            label = { Text(stringResource(R.string.setting_provider_page_stt_response_format)) },
+            supportingText = { Text(stringResource(R.string.setting_provider_page_stt_response_format_desc)) },
+            modifier = Modifier.fillMaxWidth(),
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+        )
     }
 }

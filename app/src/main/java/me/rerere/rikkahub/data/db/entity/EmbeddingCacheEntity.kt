@@ -20,5 +20,6 @@ data class EmbeddingCacheEntity(
     @ColumnInfo(name = "memory_type") val memoryType: Int, // 0 = CORE, 1 = EPISODIC
     @ColumnInfo(name = "model_id") val modelId: String,
     @ColumnInfo(name = "embedding") val embedding: String, // JSON list of floats
+    @ColumnInfo(name = "embedding_blob", typeAffinity = ColumnInfo.BLOB) val embeddingBlob: ByteArray? = null,
     @ColumnInfo(name = "created_at") val createdAt: Long = System.currentTimeMillis()
 )

@@ -8,12 +8,14 @@ enum class ModelType {
     CHAT,
     IMAGE,
     EMBEDDING,
+    STT,
 }
 
 @Serializable
 enum class Modality {
     TEXT,
     IMAGE,
+    AUDIO,
 }
 
 @Serializable

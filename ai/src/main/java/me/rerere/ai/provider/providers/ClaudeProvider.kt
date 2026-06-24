@@ -277,11 +277,14 @@ class ClaudeProvider(
             // 处理工具
             if (params.model.abilities.contains(ModelAbility.TOOL) && params.tools.isNotEmpty()) {
                 putJsonArray("tools") {
-                    params.tools.forEach { tool ->
+                    params.tools.forEachIndexed { index, tool ->
                         add(buildJsonObject {
                             put("name", tool.name)
                             put("description", tool.description)
                             put("input_schema", json.encodeToJsonElement(tool.parameters()))
+                            if (promptCacheBreakpoints.cacheSystem && index == params.tools.lastIndex) {
+                                put("cache_control", buildPromptCacheControl())
+                            }
                         })
                     }
                 }
@@ -294,7 +297,8 @@ class ClaudeProvider(
             .filter { it.isValidToUpload() && it.role != MessageRole.SYSTEM }
             .forEach { message ->
                 if (message.role == MessageRole.TOOL) {
-                    message.getToolResults().forEach { result ->
+                    val toolResults = message.getToolResults()
+                    toolResults.forEachIndexed { index, result ->
                         add(buildJsonObject {
                             put("role", "user")
                             putJsonArray("content") {
@@ -302,6 +306,9 @@ class ClaudeProvider(
                                     put("type", "tool_result")
                                     put("tool_use_id", result.toolCallId)
                                     put("content", json.encodeToString(result.content))
+                                    if (message.id in cacheMessageIds && index == toolResults.lastIndex) {
+                                        put("cache_control", buildPromptCacheControl())
+                                    }
                                 })
                             }
                         })
@@ -404,8 +411,10 @@ class ClaudeProvider(
         val messageIds = asSequence()
             .filter { message ->
                 message.role != MessageRole.SYSTEM &&
-                    message.role != MessageRole.TOOL &&
-                    message.parts.any { it is UIMessagePart.Text && it.text.isNotBlank() }
+                    (
+                        (message.role == MessageRole.TOOL && message.getToolResults().isNotEmpty()) ||
+                        (message.role != MessageRole.TOOL && message.parts.any { it is UIMessagePart.Text && it.text.isNotBlank() })
+                    )
             }
             .map { it.id }
             .toList()

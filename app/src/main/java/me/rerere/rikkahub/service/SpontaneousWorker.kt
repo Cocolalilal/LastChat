@@ -258,16 +258,19 @@ class SpontaneousWorker(
                 ?.toText()
                 .orEmpty()
             if (lastUserMessage.isNotBlank()) {
+                val searchLimit = if (assistant.ragLimit > 50) 9999 else assistant.ragLimit
                 memoryRepository.retrieveRelevantMemories(
                     assistantId = assistantId,
                     query = lastUserMessage,
-                    limit = 5,
+                    limit = searchLimit,
                 )
             } else {
-                memoryRepository.getMemoriesOfAssistant(assistantId).take(5)
+                val limit = if (assistant.ragLimit > 50) 9999 else assistant.ragLimit
+                memoryRepository.getMemoriesOfAssistant(assistantId).take(limit)
             }
         } else {
-            memoryRepository.getMemoriesOfAssistant(assistantId).take(5)
+            val limit = if (assistant.ragLimit > 50) 9999 else assistant.ragLimit
+            memoryRepository.getMemoriesOfAssistant(assistantId).take(limit)
         }
 
         val episodicMemories = if (conversation == null && retrievedMemories.size < 5) {

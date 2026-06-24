@@ -22,5 +22,6 @@ data class Model(
     val customIconUri: String? = null,
     val imageGenerationMethod: ImageGenerationMethod? = null,
     val reasoningBehavior: ReasoningRequestBehavior? = null,
+    val sttOptions: SttOptions? = null,
 )
 

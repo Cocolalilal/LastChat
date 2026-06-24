@@ -625,10 +625,13 @@ class GoogleProvider(
                                     }
 
                                     is UIMessagePart.Audio -> {
+                                        val mimeType = if (part.url.endsWith(".wav")) "audio/wav" 
+                                            else if (part.url.startsWith("data:audio/wav")) "audio/wav"
+                                            else "audio/mp3"
                                         mediaEncoder.encodeAudio(part.url, withPrefix = false).onSuccess { base64Data ->
                                             add(buildJsonObject {
                                                 put("inline_data", buildJsonObject {
-                                                    put("mime_type", "audio/mp3")
+                                                    put("mime_type", mimeType)
                                                     put("data", base64Data)
                                                 })
                                             })

@@ -236,7 +236,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 val filteredProviderSettings = providers.fastFilter {
                     it.enabled && it.models.fastAny { model ->
                         val isTypeMatch = if (type == ModelType.STT) {
-                            modelMetadataResolver.applyToModel(model, it).type == ModelType.STT
+                            val resolvedModel = modelMetadataResolver.applyToModel(model, it)
+                            resolvedModel.type == ModelType.STT || Modality.AUDIO in resolvedModel.inputModalities
                         } else {
                             model.type == type
                         }

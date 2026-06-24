@@ -39,13 +39,45 @@ class WorkspaceReminderTransformer(
 
         // 追加到第一条 system 消息; 若不存在则插入一条
         val systemIndex = messages.indexOfFirst { it.role == MessageRole.SYSTEM }
-        return if (systemIndex >= 0) {
+        var modifiedMessages = if (systemIndex >= 0) {
             messages.toMutableList().apply {
                 this[systemIndex] = this[systemIndex].appendText("\n\n$prompt")
             }
         } else {
-            listOf(UIMessage.system(prompt)) + messages
+            (listOf(UIMessage.system(prompt)) + messages).toMutableList()
         }
+
+        if (cwd != null) {
+            modifiedMessages = modifiedMessages.map { msg ->
+                if (msg.role == MessageRole.USER) {
+                    val syncedFiles = mutableListOf<String>()
+                    msg.parts.forEach { part ->
+                        val url = when(part) {
+                            is UIMessagePart.Image -> part.url
+                            is UIMessagePart.Document -> part.url
+                            else -> null
+                        }
+                        val fileName = when(part) {
+                            is UIMessagePart.Document -> part.fileName ?: url?.substringAfterLast("/")?.substringBefore("?")
+                            else -> url?.substringAfterLast("/")?.substringBefore("?")
+                        }
+                        if (url != null && url.startsWith("file://")) {
+                            syncedFiles.add("$cwd/uploads/$fileName")
+                        }
+                    }
+                    if (syncedFiles.isNotEmpty()) {
+                        val systemNote = "\n[System: The attachments in this message have been synced to your workspace at: ${syncedFiles.joinToString(", ")}]\n"
+                        msg.appendText(systemNote)
+                    } else {
+                        msg
+                    }
+                } else {
+                    msg
+                }
+            }.toMutableList()
+        }
+
+        return modifiedMessages
     }
 }
 

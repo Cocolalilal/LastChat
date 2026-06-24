@@ -111,7 +111,6 @@ enum class SettingsDestination {
     ProviderModels,
     Search,
     Tts,
-    Stt,
     Mcp,
     Web,
     AndroidIntegration,
@@ -323,7 +322,6 @@ private fun settingsDetailParent(route: String): Screen? {
     return when {
         route.contains("SettingProviderDetail") -> Screen.SettingProvider
         route.contains("SettingTTSProviderDetail") -> Screen.SettingTTS
-        route.contains("SettingSTT") -> Screen.SettingSTT
         route.contains("SettingLorebookDetail") -> Screen.SettingLorebooks
         route.contains("AssistantDetail") -> Screen.Assistant
         else -> null
@@ -654,8 +652,7 @@ private fun SettingsDestination.mainDestination(): SettingsDestination {
         SettingsDestination.BackupLocal -> SettingsDestination.Backup
         SettingsDestination.ProviderModels,
         SettingsDestination.Search,
-        SettingsDestination.Tts,
-        SettingsDestination.Stt -> SettingsDestination.Providers
+        SettingsDestination.Tts -> SettingsDestination.Providers
         SettingsDestination.Skills,
         SettingsDestination.Lorebooks -> SettingsDestination.PromptInjections
         else -> this
@@ -672,7 +669,6 @@ private fun settingsPaneGroups(): List<SettingsPaneGroup> {
         SettingsPaneEntry(SettingsDestination.ProviderModels, R.string.setting_provider_page_title, null, Icons.Rounded.Cloud, Screen.SettingProvider),
         SettingsPaneEntry(SettingsDestination.Search, R.string.setting_page_search_service, null, Icons.Rounded.Public, Screen.SettingSearch),
         SettingsPaneEntry(SettingsDestination.Tts, R.string.setting_page_tts_service, null, Icons.AutoMirrored.Rounded.VolumeUp, Screen.SettingTTS),
-        SettingsPaneEntry(SettingsDestination.Stt, R.string.setting_page_stt_service, null, Icons.Rounded.Mic, Screen.SettingSTT),
     )
     val promptChildren = listOf(
         SettingsPaneEntry(SettingsDestination.Skills, R.string.prompt_injections_page_skills, null, Icons.Rounded.Code, Screen.SettingSkills()),

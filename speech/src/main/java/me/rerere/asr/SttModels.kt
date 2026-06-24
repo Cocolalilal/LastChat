@@ -6,20 +6,25 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 
+data class SttModel(
+    val id: String,
+    val name: String,
+    val isEmbedding: Boolean,
+    val isImage: Boolean,
+    val isAudio: Boolean
+)
+
 /**
  * Fetches available STT models from an OpenAI-compatible provider's `/models` endpoint.
  *
  * For OpenRouter, appends `?output_modalities=transcription` to filter to STT models only.
  * For all other providers, returns every model id (the caller may further filter).
- *
- * Returns a list of model id strings sorted alphabetically. On any error returns an
- * empty list — the caller should fall back to a free-text model field.
  */
 suspend fun fetchSttModels(
     httpClient: OkHttpClient,
     baseUrl: String,
     apiKey: String,
-): List<String> = withContext(Dispatchers.IO) {
+): List<SttModel> = withContext(Dispatchers.IO) {
     runCatching {
         val cleanBase = baseUrl.trimEnd('/')
         val url = if (cleanBase.contains("openrouter.ai", ignoreCase = true)) {
@@ -42,9 +47,47 @@ suspend fun fetchSttModels(
                 for (i in 0 until data.length()) {
                     val modelObj = data.optJSONObject(i) ?: continue
                     val id = modelObj.optString("id", "")
-                    if (id.isNotEmpty()) add(id)
+                    if (id.isEmpty()) continue
+                    
+                    val name = modelObj.optString("name", id).ifBlank { id }
+                    val architecture = modelObj.optJSONObject("architecture")
+                    
+                    var isEmbedding = id.contains("embed", ignoreCase = true)
+                    var isImage = false
+                    var isAudio = false
+                    
+                    if (architecture != null) {
+                        val modality = architecture.optString("modality", "")
+                        if (modality.contains("embedding", ignoreCase = true)) isEmbedding = true
+                        
+                        val inMod = architecture.optJSONArray("input_modalities")
+                        val outMod = architecture.optJSONArray("output_modalities")
+                        
+                        val allModalities = buildSet {
+                            if (inMod != null) {
+                                for (j in 0 until inMod.length()) add(inMod.optString(j, "").lowercase())
+                            }
+                            if (outMod != null) {
+                                for (j in 0 until outMod.length()) add(outMod.optString(j, "").lowercase())
+                            }
+                        }
+                        
+                        if (allModalities.any { it.contains("embedding") }) isEmbedding = true
+                        if (allModalities.any { it.contains("image") }) isImage = true
+                        if (allModalities.any { it.contains("audio") || it.contains("transcription") }) isAudio = true
+                    } else {
+                        // Fallback heuristics based on ID if architecture info is missing
+                        if (id.contains("whisper", ignoreCase = true) || id.contains("audio", ignoreCase = true) || id.contains("stt", ignoreCase = true) || id.contains("speech", ignoreCase = true)) {
+                            isAudio = true
+                        }
+                        if (id.contains("vision", ignoreCase = true) || id.contains("image", ignoreCase = true)) {
+                            isImage = true
+                        }
+                    }
+                    
+                    add(SttModel(id, name, isEmbedding, isImage, isAudio))
                 }
-            }.sorted()
+            }.sortedBy { it.id }
         }
     }.getOrDefault(emptyList())
 }

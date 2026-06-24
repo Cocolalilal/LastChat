@@ -112,10 +112,6 @@ class SecretKeyManager(
         }
     }
 
-    fun removeSttProviderSecrets(providerId: Uuid) {
-        secureStore.removeSecret("$STT_PROVIDER_APIKEY_PREFIX$providerId")
-    }
-
     // ========== WebDAV Password Management ==========
 
     fun getWebDavPassword(plaintextFallback: String): String {
@@ -164,18 +160,11 @@ class SecretKeyManager(
             }
         }
 
-        val migratedSttProviders = settings.sttProviders.map { provider ->
-            migrateSttProviderSecrets(provider).also {
-                if (it != provider) migrated = true
-            }
-        }
-
         return if (migrated) {
             settings.copy(
                 providers = migratedProviders,
                 webDavConfig = migratedWebDav,
                 ttsProviders = migratedTtsProviders,
-                sttProviders = migratedSttProviders,
             )
         } else {
             settings
@@ -249,16 +238,6 @@ class SecretKeyManager(
             }
         }
 
-        // Handle STT provider secrets
-        for (newSttProvider in newSettings.sttProviders) {
-            val oldSttProvider = oldSettings.sttProviders.find { it.id == newSttProvider.id } ?: continue
-            val oldKey = oldSttProvider.apiKeyOrBlank()
-            val newKey = newSttProvider.apiKeyOrBlank()
-            if (oldKey.isNotBlank() && newKey.isBlank()) {
-                setSttApiKey(newSttProvider.id, "")
-            }
-        }
-
         // Handle WebDAV password
         if (oldSettings.webDavConfig.password.isNotBlank() && 
             newSettings.webDavConfig.password.isBlank()) {
@@ -278,6 +257,7 @@ class SecretKeyManager(
                     provider.copy(apiKey = "") // Clear plaintext
                 } else provider
             }
+
             is ProviderSetting.Google -> {
                 var updated = provider
                 if (provider.apiKey.isNotBlank()) {
@@ -431,15 +411,10 @@ class SecretKeyManager(
             populateTtsProviderSecrets(provider)
         }
 
-        val sttProvidersWithSecrets = settings.sttProviders.map { provider ->
-            populateSttProviderSecrets(provider)
-        }
-
         return settings.copy(
             providers = providersWithSecrets,
             webDavConfig = webDavWithPassword,
             ttsProviders = ttsProvidersWithSecrets,
-            sttProviders = sttProvidersWithSecrets,
         )
     }
 
@@ -451,6 +426,7 @@ class SecretKeyManager(
             is ProviderSetting.OpenAI -> {
                 provider.copy(apiKey = getApiKey(provider.id, provider.apiKey))
             }
+
             is ProviderSetting.Google -> {
                 provider.copy(
                     apiKey = getApiKey(provider.id, provider.apiKey),
@@ -525,7 +501,6 @@ class SecretKeyManager(
         return migrateSecretsFromSettings(settings)
     }
 }
-
 private fun ASRProviderSetting.apiKeyOrBlank(): String {
     return when (this) {
         is ASRProviderSetting.OpenAICompatible -> apiKey

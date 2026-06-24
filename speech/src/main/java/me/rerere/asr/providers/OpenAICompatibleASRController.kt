@@ -24,7 +24,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.asr.ASRController
-import me.rerere.asr.ASRProviderSetting
+import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.ProviderSetting
 import me.rerere.asr.ASRState
 import me.rerere.asr.ASRStatus
 import me.rerere.asr.appendAmplitude
@@ -60,7 +61,8 @@ private const val MAX_SEGMENT_BYTES = 6 * 1024 * 1024
 class OpenAICompatibleASRController(
     private val context: Context,
     private val httpClient: OkHttpClient,
-    private val provider: ASRProviderSetting.OpenAICompatible,
+    private val provider: ProviderSetting.OpenAI,
+    private val model: Model
 ) : ASRController {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -76,6 +78,7 @@ class OpenAICompatibleASRController(
     private val bufferLock = Any()
     private var currentBuffer = ByteArrayOutputStream()
     private var segmentStartElapsedMs = 0L
+    private var sessionBuffer = ByteArrayOutputStream()
     private val completedTranscripts = Collections.synchronizedList(mutableListOf<String>())
 
     override fun start(onTranscriptChange: (String) -> Unit) {
@@ -93,6 +96,7 @@ class OpenAICompatibleASRController(
         synchronized(bufferLock) {
             currentBuffer = ByteArrayOutputStream()
             segmentStartElapsedMs = SystemClock.elapsedRealtime()
+            sessionBuffer = ByteArrayOutputStream()
         }
         completedTranscripts.clear()
         flushJob = null
@@ -107,6 +111,7 @@ class OpenAICompatibleASRController(
     }
 
     override fun stop() {
+        if (!state.value.isRecording) return
         recorderJob?.cancel()
         releaseRecorder()
         _state.update { it.copy(status = ASRStatus.Stopping) }
@@ -119,7 +124,24 @@ class OpenAICompatibleASRController(
                 Log.e(TAG, "Final flush failed", e)
                 setError(e.message ?: "STT final flush failed")
             } finally {
-                _state.update { it.copy(status = ASRStatus.Idle) }
+                val fullWavBytes = runCatching {
+                    val pcmBytes = sessionBuffer.toByteArray()
+                    if (pcmBytes.isEmpty()) null else {
+                        pcm16ToWav(
+                            pcm = pcmBytes,
+                            sampleRate = model.sttOptions?.sampleRate ?: 16000,
+                            channels = 1,
+                            bitsPerSample = 16,
+                        )
+                    }
+                }.getOrNull()
+
+                _state.update { 
+                    it.copy(
+                        status = ASRStatus.Idle,
+                        audioData = fullWavBytes
+                    ) 
+                }
             }
         }
     }
@@ -135,7 +157,7 @@ class OpenAICompatibleASRController(
     private fun startRecorder() {
         recorderJob?.cancel()
         recorderJob = scope.launch(Dispatchers.IO) {
-            val sampleRate = provider.sampleRate
+            val sampleRate = model.sttOptions?.sampleRate ?: 16000
             val minBufferSize = AudioRecord.getMinBufferSize(
                 sampleRate,
                 AudioFormat.CHANNEL_IN_MONO,
@@ -146,7 +168,7 @@ class OpenAICompatibleASRController(
                 .coerceAtLeast(4096)
 
             val recorder = AudioRecord(
-                MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+                MediaRecorder.AudioSource.MIC,
                 sampleRate,
                 AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT,
@@ -157,7 +179,9 @@ class OpenAICompatibleASRController(
             try {
                 recorder.startRecording()
                 val buffer = ByteArray(bufferSize)
-                val segmentMs = provider.segmentDurationSec.coerceAtLeast(0) * 1000L
+                val segmentMs = (model.sttOptions?.segmentDurationSec ?: 0).coerceAtLeast(0) * 1000L
+                var silenceStartMs = 0L
+                sessionBuffer.reset()
                 while (isActive) {
                     val read = recorder.read(buffer, 0, buffer.size)
                     if (read > 0) {
@@ -166,6 +190,7 @@ class OpenAICompatibleASRController(
 
                         val shouldFlush = synchronized(bufferLock) {
                             currentBuffer.write(buffer, 0, read)
+                            sessionBuffer.write(buffer, 0, read)
                             if (segmentMs <= 0) {
                                 currentBuffer.size() >= MAX_SEGMENT_BYTES
                             } else {
@@ -176,6 +201,17 @@ class OpenAICompatibleASRController(
 
                         if (shouldFlush) {
                             triggerFlush()
+                        }
+                        
+                        // Simple VAD auto-stop (1.5 seconds of silence)
+                        if (amplitude < 0.12f) {
+                            if (silenceStartMs == 0L) silenceStartMs = SystemClock.elapsedRealtime()
+                            else if (SystemClock.elapsedRealtime() - silenceStartMs > 1500L) {
+                                scope.launch { stop() }
+                                break
+                            }
+                        } else {
+                            silenceStartMs = 0L
                         }
                     } else if (read < 0) {
                         throw IllegalStateException("AudioRecord read error: $read")
@@ -212,12 +248,13 @@ class OpenAICompatibleASRController(
 
         val wavBytes = pcm16ToWav(
             pcm = pcmBytes,
-            sampleRate = provider.sampleRate,
+            sampleRate = model.sttOptions?.sampleRate ?: 16000,
             channels = 1,
             bitsPerSample = 16,
         )
 
-        val text = if (provider.isOpenRouter) {
+        val isOpenRouter = provider.baseUrl.contains("openrouter.ai", ignoreCase = true)
+        val text = if (isOpenRouter) {
             transcribeOpenRouter(wavBytes)
         } else {
             transcribeMultipart(wavBytes)
@@ -230,19 +267,25 @@ class OpenAICompatibleASRController(
     }
 
     private suspend fun transcribeMultipart(wavBytes: ByteArray): String {
+        val sttOptions = model.sttOptions
+        val responseFormat = sttOptions?.responseFormat ?: "json"
+        val language = sttOptions?.language.orEmpty()
+        val prompt = sttOptions?.prompt.orEmpty()
+        val temperature = sttOptions?.temperature ?: 0f
+
         val multipartBuilder = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
             .addFormDataPart("file", "audio.wav", wavBytes.toRequestBody(AUDIO_OCTET_STREAM))
-            .addFormDataPart("model", provider.model)
-            .addFormDataPart("response_format", provider.responseFormat)
+            .addFormDataPart("model", model.modelId)
+            .addFormDataPart("response_format", responseFormat)
 
-        if (provider.language.isNotBlank()) {
-            multipartBuilder.addFormDataPart("language", provider.language)
+        if (language.isNotBlank()) {
+            multipartBuilder.addFormDataPart("language", language)
         }
-        if (provider.prompt.isNotBlank()) {
-            multipartBuilder.addFormDataPart("prompt", provider.prompt)
+        if (prompt.isNotBlank()) {
+            multipartBuilder.addFormDataPart("prompt", prompt)
         }
-        multipartBuilder.addFormDataPart("temperature", provider.temperature.toString())
+        multipartBuilder.addFormDataPart("temperature", temperature.toString())
 
         val request = Request.Builder()
             .url("${provider.baseUrl.trimEnd('/')}/audio/transcriptions")
@@ -250,16 +293,18 @@ class OpenAICompatibleASRController(
             .post(multipartBuilder.build())
             .build()
 
-        return executeTranscription(request, provider.responseFormat)
+        return executeTranscription(request, responseFormat)
     }
 
     private suspend fun transcribeOpenRouter(wavBytes: ByteArray): String {
+        val sttOptions = model.sttOptions
+        val language = sttOptions?.language.orEmpty()
         val b64 = Base64.encodeToString(wavBytes, Base64.NO_WRAP)
         val body = JSONObject()
-            .put("model", provider.model)
+            .put("model", model.modelId)
             .put("input_audio", JSONObject().put("data", b64).put("format", "wav"))
-        if (provider.language.isNotBlank()) {
-            body.put("language", provider.language)
+        if (language.isNotBlank()) {
+            body.put("language", language)
         }
 
         val request = Request.Builder()
@@ -280,15 +325,36 @@ class OpenAICompatibleASRController(
                 if (!resp.isSuccessful) {
                     throw IOException("STT HTTP ${resp.code}: $respBody")
                 }
+                val trimmedBody = respBody.trim()
+                if (trimmedBody.startsWith("{") && trimmedBody.endsWith("}")) {
+                    val json = runCatching { JSONObject(trimmedBody) }.getOrNull()
+                    if (json != null) {
+                        if (json.has("text")) {
+                            val txt = json.optString("text", "").trim()
+                            if (txt.isNotEmpty()) return@use txt
+                        }
+                        // Try nested output.text or something if exists
+                        val possibleTextKeys = listOf("text", "transcript", "result")
+                        for (key in json.keys()) {
+                            val v = json.opt(key)
+                            if (v is String && v.isNotEmpty() && key in possibleTextKeys) return@use v
+                            if (v is JSONObject && v.has("text")) {
+                                val nestedTxt = v.optString("text", "").trim()
+                                if (nestedTxt.isNotEmpty()) return@use nestedTxt
+                            }
+                        }
+                    }
+                }
+                
                 when (responseFormat) {
-                    "text" -> respBody.trim()
+                    "text" -> trimmedBody
                     "json", "verbose_json" -> {
-                        val json = runCatching { JSONObject(respBody) }.getOrElse {
-                            throw IOException("STT response is not valid JSON: $respBody")
+                        val json = runCatching { JSONObject(trimmedBody) }.getOrElse {
+                            throw IOException("STT response is not valid JSON: $trimmedBody")
                         }
                         json.optString("text", "").trim()
                     }
-                    else -> respBody.trim()
+                    else -> trimmedBody
                 }
             }
         }

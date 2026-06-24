@@ -980,6 +980,7 @@ private fun defaultOutputModalities(type: ModelType): List<Modality> {
     return when (type) {
         ModelType.CHAT, ModelType.EMBEDDING -> listOf(Modality.TEXT)
         ModelType.IMAGE -> listOf(Modality.IMAGE)
+        ModelType.STT -> listOf(Modality.TEXT)
     }
 }
 

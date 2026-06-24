@@ -1161,7 +1161,6 @@ class ChatService(
                 val workspaceId = conversationContext.assistant?.workspaceId?.toString()
 
                 if (workspaceId != null) {
-                    val syncedFiles = mutableListOf<String>()
                     withContext(Dispatchers.IO) {
                         effectiveContent.forEach { part ->
                             val url = when(part) {
@@ -1193,23 +1192,12 @@ class ChatService(
                                                 inputStream = stream
                                             )
                                         }
-                                        val cwd = getWorkspaceCwd(
-                                            assistantName = conversationContext.assistant.name,
-                                            chatTitle = currentConversation.title,
-                                            chatId = currentConversation.id.toString()
-                                        )
-                                        syncedFiles.add("$cwd/uploads/${fileName ?: file.name}")
                                     }
                                 } catch (e: Exception) {
                                     e.printStackTrace()
                                 }
                             }
                         }
-                    }
-                    if (syncedFiles.isNotEmpty()) {
-                        effectiveContent = effectiveContent + UIMessagePart.Text(
-                            "\n[System: The attachments in this message have been synced to your workspace at: ${syncedFiles.joinToString(", ")}]\n"
-                        )
                     }
                 }
 
@@ -1512,7 +1500,7 @@ class ChatService(
                             val results = memoryRepository.retrieveRelevantMemories(
                                 assistantId = conversation.assistantId.toString(),
                                 query = lastUserMessage,
-                                limit = 50, // Hardcoded high limit for dynamic context
+                                limit = if (assistant.ragLimit > 50) 9999 else assistant.ragLimit,
                                 similarityThreshold = assistant.ragSimilarityThreshold,
                                 includeCore = assistant.ragIncludeCore,
                                 includeEpisodes = assistant.ragIncludeEpisodes
@@ -1535,7 +1523,12 @@ class ChatService(
                 },
                 inputTransformers = buildList {
                     addAll(defaultChatInputTransformers)
-                    add(WorkspaceReminderTransformer(workspaceRepository))
+                    val cwd = getWorkspaceCwd(
+                        assistantName = assistant?.name ?: "",
+                        chatTitle = conversation.title,
+                        chatId = conversation.id.toString()
+                    )
+                    add(WorkspaceReminderTransformer(workspaceRepository, cwd))
                     add(templateTransformer)
                 },
                 outputTransformers = defaultChatOutputTransformers,

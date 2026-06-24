@@ -683,6 +683,7 @@
     <string name="setting_provider_page_balance_json_key">Balance JSON Key</string>
     <string name="setting_provider_page_basic_settings">Basic Settings</string>
     <string name="setting_provider_page_chat_model">Chat</string>
+    <string name="setting_provider_page_stt_model">STT</string>
     <string name="setting_provider_page_configuration">Configuration</string>
     <string name="setting_provider_page_configure_provider_override">Configure Override</string>
     <string name="setting_provider_page_delete_dialog_text">Are you sure you want to delete this provider? This cannot be undone.</string>
@@ -775,6 +776,7 @@
     <string name="setting_provider_page_test_connection">Test Connection</string>
     <string name="setting_provider_page_test_success">Test Success</string>
     <string name="setting_provider_page_text">Text</string>
+    <string name="setting_provider_page_audio">Audio</string>
     <string name="setting_provider_page_title">Model Providers</string>
     <string name="setting_provider_page_tool">Tools</string>
     <string name="setting_provider_page_vertex_ai">Vertex AI</string>
@@ -877,6 +879,9 @@
     <string name="setting_tts_page_test_text">Hello, this is a text-to-speech test.</string>
     <string name="setting_tts_page_title">TTS Providers</string>
     <string name="setting_stt_page_title">STT Providers</string>
+    <string name="setting_stt_settings_title">STT Settings</string>
+    <string name="setting_stt_replace_model_icon">Dedicated STT Button</string>
+    <string name="setting_stt_replace_model_icon_desc">Show a dedicated microphone button in the chat input instead of the model settings icon.\n(If this is off, you can still use STT by long-pressing the + button)</string>
     <string name="setting_tts_page_voice">Voice</string>
     <string name="setting_tts_page_voice_description">Voice to use for synthesis</string>
     <string name="setting_tts_page_voice_id">Voice ID</string>
@@ -931,6 +936,12 @@
     <string name="setting_model_page_embedding_model_desc">Model for text embeddings (e.g. for memory).</string>
     <string name="select_all">Select All</string>
     <string name="deselect_all">Deselect All</string>
+    <string name="setting_provider_page_stt_language">Language</string>
+    <string name="setting_provider_page_stt_language_desc">Optional language code (e.g. \'en\', \'zh\')</string>
+    <string name="setting_provider_page_stt_prompt">Prompt</string>
+    <string name="setting_provider_page_stt_prompt_desc">Optional prompt to guide the model\'s style</string>
+    <string name="setting_provider_page_stt_response_format">Response Format</string>
+    <string name="setting_provider_page_stt_response_format_desc">JSON is highly recommended (e.g. \'json\', \'verbose_json\', \'text\')</string>
     <string name="temporary_chat_title">Temporary Chat</string>
     <string name="temporary_chat_description">Your character won\'t remember this chat and you won\'t be able to access it once you close it.</string>
     <string name="delete_memory_confirmation">Are you sure you want to delete this memory? This cannot be undone.</string>

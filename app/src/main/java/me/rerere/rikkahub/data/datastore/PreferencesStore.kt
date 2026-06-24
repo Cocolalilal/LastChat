@@ -131,8 +131,9 @@ class SettingsStore(
         val TTS_AUTOPLAY_MODE = stringPreferencesKey("tts_autoplay_mode")
 
         // STT
-        val STT_PROVIDERS = stringPreferencesKey("stt_providers")
-        val SELECTED_STT_PROVIDER = stringPreferencesKey("selected_stt_provider")
+        val STT_MODEL = stringPreferencesKey("stt_model")
+        val STT_THINKING_BUDGET = intPreferencesKey("stt_thinking_budget")
+        val STT_PROMPT = stringPreferencesKey("stt_prompt")
 
         // Web Server
         val WEB_SERVER_ENABLED = booleanPreferencesKey("web_server_enabled")
@@ -250,10 +251,9 @@ class SettingsStore(
                     ttsAutoplayMode = preferences[TTS_AUTOPLAY_MODE]?.let {
                         JsonInstant.decodeFromString<TtsAutoplayMode>(it)
                     } ?: TtsAutoplayMode.OFF,
-                    sttProviders = preferences[STT_PROVIDERS]?.let {
-                        JsonInstant.decodeFromString(it)
-                    } ?: DEFAULT_STT_PROVIDERS,
-                    selectedSttProviderId = preferences[SELECTED_STT_PROVIDER]?.let { Uuid.parse(it) },
+                    sttModelId = preferences[STT_MODEL]?.let { Uuid.parse(it) },
+                    sttThinkingBudget = preferences[STT_THINKING_BUDGET] ?: 0,
+                    sttPrompt = preferences[STT_PROMPT] ?: me.rerere.rikkahub.data.ai.prompts.DEFAULT_STT_PROMPT,
                     webServerEnabled = preferences[WEB_SERVER_ENABLED] == true,
                     webServerPort = preferences[WEB_SERVER_PORT] ?: 8080,
                     webServerJwtEnabled = preferences[WEB_SERVER_JWT_ENABLED] == true,
@@ -317,7 +317,7 @@ class SettingsStore(
                 assistants = assistants,
                 ttsProviders = ttsProviders,
                 selectedTTSVoiceId = selectedTtsVoiceId,
-            ).normalizeWebServerSettings().normalizeFontSettings().normalizeTtsSettings().normalizeSttSettings()
+            ).normalizeWebServerSettings().normalizeFontSettings().normalizeTtsSettings()
         }
         .map { settings ->
             // 去重并清理无效引用
@@ -363,10 +363,7 @@ class SettingsStore(
                         voices = provider.withDefaultVoices(defaultVoiceId).voices.distinctBy { voice -> voice.id }
                     )
                 },
-                sttProviders = settings.sttProviders.distinctBy { it.id },
-                selectedSttProviderId = settings.selectedSttProviderId?.takeIf { id ->
-                    settings.sttProviders.any { provider -> provider.id == id }
-                },
+
                 selectedTTSVoiceId = settings.ttsProviders
                     .flatMap { it.voices }
                     .firstOrNull { it.id == settings.selectedTTSVoiceId }
@@ -391,7 +388,7 @@ class SettingsStore(
                     }
                 }
             }
-            migrated.normalizeFontSettings().normalizeSttSettings()
+            migrated.normalizeFontSettings()
         }
         .map { settings ->
             val migrated = settings.migrateLegacyModesToSkills()
@@ -403,7 +400,7 @@ class SettingsStore(
                     }
                 }
             }
-            migrated.normalizeFontSettings().normalizeSttSettings()
+            migrated.normalizeFontSettings()
         }
         .onEach {
             get<MessageTemplateCache>().invalidateAll()
@@ -447,7 +444,6 @@ class SettingsStore(
             preferences[PROVIDERS] = JsonInstant.encodeToString(settings.providers)
             preferences[WEBDAV_CONFIG] = JsonInstant.encodeToString(settings.webDavConfig)
             preferences[TTS_PROVIDERS] = JsonInstant.encodeToString(settings.ttsProviders)
-            preferences[STT_PROVIDERS] = JsonInstant.encodeToString(settings.sttProviders)
         }
     }
 
@@ -504,7 +500,6 @@ class SettingsStore(
             .normalizeFontSettings()
             .normalizeThemeId()
             .normalizeTtsSettings()
-            .normalizeSttSettings()
 
         // Handle explicit secret deletions (user cleared a field that had a value)
         // This must be called BEFORE migration to remove deleted secrets from SecureStore
@@ -517,7 +512,6 @@ class SettingsStore(
         settingsFlow.value = secretKeyManager.populateSecretsForExport(migratedSettings)
             .normalizeFontSettings()
             .normalizeTtsSettings()
-            .normalizeSttSettings()
         dataStore.edit { preferences ->
             preferences[DYNAMIC_COLOR] = normalizedSettings.dynamicColor
             preferences[SETUP_COMPLETED] = normalizedSettings.setupCompleted
@@ -572,10 +566,11 @@ class SettingsStore(
             } ?: preferences.remove(SELECTED_TTS_PROVIDER)
             preferences[SELECTED_TTS_VOICE] = normalizedSettings.selectedTTSVoiceId.toString()
             preferences[TTS_AUTOPLAY_MODE] = JsonInstant.encodeToString(normalizedSettings.ttsAutoplayMode)
-            preferences[STT_PROVIDERS] = JsonInstant.encodeToString(migratedSettings.sttProviders)
-            normalizedSettings.selectedSttProviderId?.let {
-                preferences[SELECTED_STT_PROVIDER] = it.toString()
-            } ?: preferences.remove(SELECTED_STT_PROVIDER)
+            normalizedSettings.sttModelId?.let {
+                preferences[STT_MODEL] = it.toString()
+            } ?: preferences.remove(STT_MODEL)
+            preferences[STT_THINKING_BUDGET] = normalizedSettings.sttThinkingBudget
+            preferences[STT_PROMPT] = normalizedSettings.sttPrompt
             preferences[WEB_SERVER_ENABLED] = normalizedSettings.webServerEnabled
             preferences[WEB_SERVER_PORT] = normalizedSettings.webServerPort
             preferences[WEB_SERVER_JWT_ENABLED] = normalizedSettings.webServerJwtEnabled

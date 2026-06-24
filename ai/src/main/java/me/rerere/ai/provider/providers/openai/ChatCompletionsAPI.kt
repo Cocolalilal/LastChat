@@ -467,7 +467,8 @@ class ChatCompletionsAPI(
         uploadableMessages
             .forEachIndexed { index, message ->
                 if (message.role == MessageRole.TOOL) {
-                    message.getToolResults().forEach { result ->
+                    val toolResults = message.getToolResults()
+                    toolResults.forEachIndexed { resultIndex, result ->
                         add(buildJsonObject {
                             put("role", "tool")
                             put("name", result.toolName)
@@ -477,6 +478,11 @@ class ChatCompletionsAPI(
                                 put("content", result.content)
                             } else {
                                 put("content", json.encodeToString(result.content))
+                            }
+                            
+                            val shouldCacheMessage = index in cacheBreakpointIndices
+                            if (shouldCacheMessage && resultIndex == toolResults.lastIndex) {
+                                put("cache_control", buildPromptCacheControl())
                             }
                         })
                     }
@@ -497,7 +503,7 @@ class ChatCompletionsAPI(
                     } else {
                         // 否则，使用parts构建
                         val uploadableParts = message.parts
-                            .filter { it is UIMessagePart.Text || it is UIMessagePart.Image }
+                            .filter { it is UIMessagePart.Text || it is UIMessagePart.Image || it is UIMessagePart.Audio }
                         val cacheableTextPartIndex = if (shouldCacheMessage) {
                             uploadableParts.indexOfLast { part ->
                                 part is UIMessagePart.Text && part.text.isNotBlank()
@@ -535,6 +541,25 @@ class ChatCompletionsAPI(
                                         })
                                     }
 
+                                    is UIMessagePart.Audio -> {
+                                        add(buildJsonObject {
+                                            mediaEncoder.encodeAudio(part.url, withPrefix = false).onSuccess { base64Data ->
+                                                val format = if (part.url.endsWith(".wav") || part.url.startsWith("data:audio/wav")) "wav" else "mp3"
+                                                put("type", "input_audio")
+                                                put("input_audio", buildJsonObject {
+                                                    put("data", base64Data)
+                                                    put("format", format)
+                                                })
+                                            }.onFailure {
+                                                it.printStackTrace()
+                                                println("encode audio failed: ${part.url}")
+
+                                                put("type", "text")
+                                                put("text", "")
+                                            }
+                                        })
+                                    }
+
                                     is UIMessagePart.Reasoning,
                                     is UIMessagePart.ToolCall -> {
                                         // Reasoning and tool calls are serialized as top-level fields.
@@ -551,7 +576,7 @@ class ChatCompletionsAPI(
                             }
                         }
                         if (shouldReplayDeepSeekReasoning && message.role == MessageRole.ASSISTANT &&
-                            message.parts.none { it is UIMessagePart.Text || it is UIMessagePart.Image }
+                            message.parts.none { it is UIMessagePart.Text || it is UIMessagePart.Image || it is UIMessagePart.Audio }
                         ) {
                             put("content", "")
                         }
@@ -675,11 +700,12 @@ class ChatCompletionsAPI(
 
         val eligibleIndices = mapIndexedNotNull { index, message ->
             val hasCacheableText = message.parts.any { part ->
-                part is UIMessagePart.Text &&
+                (part is UIMessagePart.Text &&
                     part.text.isNotBlank() &&
-                    part.text != LEADING_ASSISTANT_COMPATIBILITY_USER_PROMPT
-            }
-            if (message.role != MessageRole.TOOL && hasCacheableText) index else null
+                    part.text != LEADING_ASSISTANT_COMPATIBILITY_USER_PROMPT) ||
+                part is UIMessagePart.ToolCall
+            } || message.role == MessageRole.TOOL
+            if (hasCacheableText) index else null
         }
         if (eligibleIndices.isEmpty()) return emptySet()
 
@@ -841,7 +867,7 @@ class ChatCompletionsAPI(
     }
 
 private fun List<UIMessagePart>.isOnlyTextPart(): Boolean {
-    val gonnaSend = filter { it is UIMessagePart.Text || it is UIMessagePart.Image }.size
+    val gonnaSend = filter { it is UIMessagePart.Text || it is UIMessagePart.Image || it is UIMessagePart.Audio }.size
     val texts = filter { it is UIMessagePart.Text }.size
     return gonnaSend == texts && texts == 1
 }

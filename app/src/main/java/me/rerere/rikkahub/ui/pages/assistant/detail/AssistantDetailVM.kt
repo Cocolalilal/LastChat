@@ -297,7 +297,9 @@ class AssistantDetailVM(
                 } else {
                     0.0f // Show all for debugging
                 }
-                val limit = if (currentAssistant.ragLimit > 0) {
+                val limit = if (currentAssistant.ragLimit > 50) {
+                    9999
+                } else if (currentAssistant.ragLimit > 0) {
                     currentAssistant.ragLimit
                 } else {
                     10 // Default for debugging

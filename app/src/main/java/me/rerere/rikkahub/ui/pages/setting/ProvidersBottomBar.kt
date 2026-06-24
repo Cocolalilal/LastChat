@@ -43,7 +43,6 @@ enum class ProvidersTab(
     Models(Screen.SettingProvider, Icons.Rounded.Cloud, R.string.setting_provider_page_title),
     Search(Screen.SettingSearch, Icons.Rounded.Public, R.string.setting_page_search_title),
     Tts(Screen.SettingTTS, Icons.AutoMirrored.Rounded.VolumeUp, R.string.setting_tts_page_title),
-    Stt(Screen.SettingSTT, Icons.Rounded.Mic, R.string.setting_stt_page_title),
 }
 
 @Composable

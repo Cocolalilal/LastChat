@@ -60,7 +60,7 @@ data class Assistant(
     val enableMemorySearchTool: Boolean = false, // Allow the assistant to deliberately search memories and past chats
     val useRagMemoryRetrieval: Boolean = true, // If true, use vector-based RAG. If false, inject all memories
     val ragSimilarityThreshold: Float = 0.45f, // Similarity threshold for RAG (0.0 = include all, 1.0 = only perfect matches)
-    val ragLimit: Int = 5, // Maximum number of memories to retrieve via RAG
+    val ragLimit: Int = 10, // Maximum number of memories to retrieve via RAG
     val enableRecentChatsReference: Boolean = false, // Use chat episodes in memory
     val ragIncludeEpisodes: Boolean = true, // Include episodic memories in RAG
     val ragIncludeCore: Boolean = true, // Include core memories in RAG

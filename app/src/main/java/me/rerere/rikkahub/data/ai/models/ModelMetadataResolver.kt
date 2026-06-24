@@ -209,6 +209,7 @@ class ModelMetadataResolver(
             ModelType.CHAT -> catalogEntry?.inputModalities?.takeIf { it.isNotEmpty() } ?: inputs.toList()
             ModelType.IMAGE -> catalogEntry?.inputModalities?.takeIf { it.isNotEmpty() } ?: inputs.toList()
             ModelType.EMBEDDING -> listOf(Modality.TEXT)
+            ModelType.STT -> listOf(Modality.AUDIO)
         }
     }
 
@@ -236,6 +237,7 @@ class ModelMetadataResolver(
             }.distinct()
 
             ModelType.EMBEDDING -> listOf(Modality.TEXT)
+            ModelType.STT -> listOf(Modality.TEXT)
         }
     }
 

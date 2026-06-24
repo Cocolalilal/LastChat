@@ -144,6 +144,9 @@
     <string name="assistant_memory_similarity_all">0.0 (All)</string>
     <string name="assistant_memory_similarity_exact">1.0 (Exact)</string>
     <string name="assistant_memory_similarity_perfect">1.0 (Perfect)</string>
+    <string name="assistant_memory_rag_limit">Max amount of memories</string>
+    <string name="assistant_memory_rag_limit_desc">How many memories can be recalled at a time max. Current: %1$s</string>
+    <string name="assistant_memory_rag_limit_unlimited">Unlimited</string>
     <string name="assistant_memory_consolidation_delay_label">Consolidation Delay</string>
     <string name="assistant_memory_consolidation_delay_value">%1$d min</string>
     <string name="assistant_memory_sort">Sort</string>

@@ -478,7 +478,7 @@ private fun ConversationItem(
     val combinedAlpha = restoredAlpha * pressAlpha
     
     val backgroundColor = if (selected) {
-        lerp(MaterialTheme.colorScheme.surface, MaterialTheme.colorScheme.surfaceContainerLow, 0.65f)
+        lerp(MaterialTheme.colorScheme.surface, MaterialTheme.colorScheme.surfaceContainerLow, 0.8f)
     } else {
         Color.Transparent
     }

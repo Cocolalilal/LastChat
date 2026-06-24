@@ -2,7 +2,6 @@ package me.rerere.rikkahub.data.datastore
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
-import me.rerere.asr.ASRProviderSetting
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
@@ -13,6 +12,7 @@ import me.rerere.rikkahub.data.ai.prompts.DEFAULT_OCR_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_SUGGESTION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TITLE_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TRANSLATION_PROMPT
+import me.rerere.rikkahub.data.ai.prompts.DEFAULT_STT_PROMPT
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantSearchMode
 import me.rerere.rikkahub.data.model.Avatar
@@ -37,7 +37,6 @@ import me.rerere.tts.provider.withVoiceApplied
 import kotlin.uuid.Uuid
 
 val DISABLED_MODEL_ID: Uuid = Uuid.parse("00000000-0000-0000-0000-000000000000")
-val DEFAULT_STT_PROVIDERS: List<ASRProviderSetting> = emptyList()
 
 @Serializable
 data class Settings(
@@ -85,8 +84,9 @@ data class Settings(
     val selectedTTSProviderId: Uuid = DEFAULT_SYSTEM_TTS_ID,
     val selectedTTSVoiceId: Uuid = DEFAULT_SYSTEM_TTS_VOICE_ID,
     val ttsAutoplayMode: TtsAutoplayMode = TtsAutoplayMode.OFF,
-    val sttProviders: List<ASRProviderSetting> = DEFAULT_STT_PROVIDERS,
-    val selectedSttProviderId: Uuid? = null,
+    val sttModelId: Uuid? = null,
+    val sttThinkingBudget: Int = 0,
+    val sttPrompt: String = DEFAULT_STT_PROMPT,
     val webServerEnabled: Boolean = false,
     val webServerPort: Int = 8080,
     val webServerJwtEnabled: Boolean = false,
@@ -456,25 +456,6 @@ fun Settings.getEffectiveTTSProvider(assistant: Assistant? = null): TTSProviderS
 
 fun Settings.getEffectiveTtsAutoplayMode(assistant: Assistant? = null): TtsAutoplayMode {
     return (assistant?.ttsAutoplayMode ?: ttsAutoplayMode).asEnabledMode()
-}
-
-fun Settings.getSelectedSTTProvider(): ASRProviderSetting? {
-    return selectedSttProviderId?.let { id ->
-        sttProviders.find { it.id == id }
-    }
-}
-
-fun Settings.normalizeSttSettings(): Settings {
-    // Filter out legacy SystemSTT entries (local STT removed); keep only remote providers
-    val withoutLegacy = sttProviders.filterNot { it is ASRProviderSetting.SystemSTT }
-    val normalizedProviders = withoutLegacy.distinctBy { it.id }
-    val normalizedSelectedId = selectedSttProviderId?.takeIf { id ->
-        normalizedProviders.any { provider -> provider.id == id }
-    }
-    return copy(
-        sttProviders = normalizedProviders,
-        selectedSttProviderId = normalizedSelectedId,
-    )
 }
 
 fun Settings.normalizeTtsSettings(): Settings {

@@ -196,6 +196,7 @@ fun SettingProviderPage(
     val useWideLayout = LocalSettingsWideLayout.current
     val pager = rememberPagerState(initialPage = initialTab.ordinal) { ProvidersTab.entries.size }
     val currentTab = ProvidersTab.entries[pager.currentPage]
+    
     var showSearchCommonOptions by remember { mutableStateOf(false) }
     var showTtsFilterSettings by remember { mutableStateOf(false) }
     val providerPresets = remember(catalogSnapshot) {
@@ -310,15 +311,12 @@ fun SettingProviderPage(
                         ) {
                             Icon(
                                 Icons.Rounded.Settings,
-                                contentDescription = if (currentTab == ProvidersTab.Search) {
-                                    stringResource(R.string.setting_page_search_common_options)
-                                } else {
-                                    stringResource(R.string.setting_tts_settings_title)
+                                contentDescription = when (currentTab) {
+                                    ProvidersTab.Search -> stringResource(R.string.setting_page_search_common_options)
+                                    else -> stringResource(R.string.setting_tts_settings_title)
                                 }
                             )
                         }
-
-                        ProvidersTab.Stt -> Unit
                     }
                 }
                 when (currentTab) {
@@ -350,18 +348,6 @@ fun SettingProviderPage(
                         vm.updateSettings(
                             settings.copy(
                                 ttsProviders = listOf(providerToAdd) + settings.ttsProviders
-                            )
-                        )
-                    }
-
-                    ProvidersTab.Stt -> AddSTTProviderButton(
-                        catalogSnapshot = catalogSnapshot,
-                        enableHaptics = settings.displaySetting.enableUIHaptics,
-                        asFab = true,
-                    ) { newProvider ->
-                        vm.updateSettings(
-                            settings.copy(
-                                sttProviders = listOf(newProvider) + settings.sttProviders
                             )
                         )
                     }
@@ -505,7 +491,6 @@ fun SettingProviderPage(
 
                 ProvidersTab.Search -> SearchProvidersContent(vm = vm, contentPadding = innerPadding)
                 ProvidersTab.Tts -> TtsProvidersContent(vm = vm, contentPadding = innerPadding)
-                ProvidersTab.Stt -> SttProvidersContent(vm = vm, contentPadding = innerPadding)
             }
         }
             AnimatedVisibility(
@@ -535,10 +520,9 @@ fun SettingProviderPage(
                     ) {
                         Icon(
                             Icons.Rounded.Settings,
-                            contentDescription = if (currentTab == ProvidersTab.Search) {
-                                stringResource(R.string.setting_page_search_common_options)
-                            } else {
-                                stringResource(R.string.setting_tts_settings_title)
+                            contentDescription = when (currentTab) {
+                                ProvidersTab.Search -> stringResource(R.string.setting_page_search_common_options)
+                                else -> stringResource(R.string.setting_tts_settings_title)
                             }
                         )
                     }

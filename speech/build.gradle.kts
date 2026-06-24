@@ -48,6 +48,7 @@ android {
 
 dependencies {
     implementation(project(":common"))
+    implementation(project(":ai"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.okhttp)

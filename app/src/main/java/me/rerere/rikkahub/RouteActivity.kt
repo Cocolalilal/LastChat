@@ -1090,12 +1090,6 @@ class RouteActivity : ComponentActivity() {
                         }
                     }
 
-                    composable<Screen.SettingSTT> {
-                        AdaptiveSettingsScaffold(selected = SettingsDestination.Stt) {
-                            SettingProviderPage(initialTab = me.rerere.rikkahub.ui.pages.setting.ProvidersTab.Stt)
-                        }
-                    }
-
                     composable<Screen.SettingWeb> {
                         AdaptiveSettingsScaffold(selected = SettingsDestination.Web) {
                             SettingWebPage()
@@ -1358,9 +1352,6 @@ sealed interface Screen {
 
     @Serializable
     data object SettingTTS : Screen
-
-    @Serializable
-    data object SettingSTT : Screen
 
     @Serializable
     data object SettingWeb : Screen

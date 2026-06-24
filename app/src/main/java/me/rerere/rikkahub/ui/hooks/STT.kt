@@ -16,32 +16,41 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import me.rerere.asr.ASRController
-import me.rerere.asr.ASRProviderSetting
+import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.provider.Model
 import me.rerere.asr.ASRState
-import me.rerere.asr.providers.DashScopeASRController
-import me.rerere.asr.providers.MiMoASRController
 import me.rerere.asr.providers.OpenAICompatibleASRController
-import me.rerere.asr.providers.OpenAIRealtimeASRController
-import me.rerere.asr.providers.StepASRController
-import me.rerere.asr.providers.VolcengineASRController
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.data.datastore.getSelectedSTTProvider
+import me.rerere.ai.provider.ProviderManager
 import okhttp3.OkHttpClient
 import org.koin.compose.koinInject
+import me.rerere.ai.provider.ModelType
+import me.rerere.rikkahub.service.stt.ChatMultimodalASRController
 
 @Composable
 fun rememberCustomSttState(): CustomSttState {
     val context = LocalContext.current
     val settingsStore = koinInject<SettingsStore>()
     val httpClient = koinInject<OkHttpClient>()
+    val providerManager = koinInject<ProviderManager>()
     val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
 
     val sttState = remember {
-        CustomSttStateImpl(context.applicationContext, httpClient)
+        CustomSttStateImpl(context.applicationContext, httpClient, providerManager)
     }
 
-    DisposableEffect(settings.selectedSttProviderId, settings.sttProviders) {
-        sttState.updateProvider(settings.getSelectedSTTProvider())
+    val sttModelId = settings.sttModelId
+    val provider = remember(sttModelId, settings.providers) {
+        if (sttModelId != null) {
+            settings.providers.firstOrNull { it.models.any { model -> model.id == sttModelId } }
+        } else null
+    }
+    val model = remember(sttModelId, provider) {
+        provider?.models?.firstOrNull { it.id == sttModelId }
+    }
+
+    DisposableEffect(provider, model, settings.sttThinkingBudget, settings.sttPrompt) {
+        sttState.updateProvider(provider, model, settings.sttThinkingBudget, settings.sttPrompt)
         onDispose { }
     }
 
@@ -64,6 +73,7 @@ interface CustomSttState {
 private class CustomSttStateImpl(
     private val context: Context,
     private val httpClient: OkHttpClient,
+    private val providerManager: ProviderManager,
 ) : CustomSttState {
     private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate)
     private var controller: ASRController? = null
@@ -83,11 +93,13 @@ private class CustomSttStateImpl(
         .setAcceptsDelayedFocusGain(false)
         .build()
 
-    fun updateProvider(provider: ASRProviderSetting?) {
+    fun updateProvider(provider: ProviderSetting?, model: Model?, thinkingBudget: Int, prompt: String) {
         controllerJob?.cancel()
         controller?.dispose()
         
-        val newController = provider?.let { createController(it) }
+        val newController = if (provider != null && model != null) {
+            createController(provider, model, thinkingBudget, prompt)
+        } else null
         controller = newController
         
         if (newController == null) {
@@ -125,27 +137,15 @@ private class CustomSttStateImpl(
         scope.cancel()
     }
 
-    private fun createController(provider: ASRProviderSetting): ASRController? {
-        return when (provider) {
-            is ASRProviderSetting.SystemSTT -> null
-            is ASRProviderSetting.OpenAICompatible -> {
-                OpenAICompatibleASRController(context, httpClient, provider)
+    private fun createController(provider: ProviderSetting, model: Model, thinkingBudget: Int, prompt: String): ASRController? {
+        if (model.type == ModelType.STT) {
+            return when (provider) {
+                is ProviderSetting.OpenAI -> OpenAICompatibleASRController(context, httpClient, provider, model)
+                else -> null
             }
-            is ASRProviderSetting.OpenAIRealtime -> {
-                OpenAIRealtimeASRController(context, httpClient, provider)
-            }
-            is ASRProviderSetting.DashScope -> {
-                DashScopeASRController(context, httpClient, provider)
-            }
-            is ASRProviderSetting.Volcengine -> {
-                VolcengineASRController(context, httpClient, provider)
-            }
-            is ASRProviderSetting.MiMo -> {
-                MiMoASRController(context, httpClient, provider)
-            }
-            is ASRProviderSetting.Step -> {
-                StepASRController(context, httpClient, provider)
-            }
+        } else if (model.type == ModelType.CHAT) {
+            return ChatMultimodalASRController(context, providerManager, provider, model, thinkingBudget, prompt)
         }
+        return null
     }
 }
