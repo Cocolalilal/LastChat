@@ -2803,6 +2803,9 @@ private fun ModelModalitySelector(
     onUpdateOutputModalities: (List<Modality>) -> Unit
 ) {
     if (model.type == ModelType.CHAT) {
+        val selectableInputModalities = Modality.entries.filter { it != Modality.AUDIO }
+        val selectableOutputModalities = Modality.entries.filter { it != Modality.AUDIO }
+
         Text(
             stringResource(R.string.setting_provider_page_input_modality),
             style = MaterialTheme.typography.titleSmall
@@ -2810,10 +2813,10 @@ private fun ModelModalitySelector(
         MultiChoiceSegmentedButtonRow(
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Modality.entries.forEachIndexed { index, modality ->
+            selectableInputModalities.forEachIndexed { index, modality ->
                 SegmentedButton(
                     checked = modality in inputModalities,
-                    shape = SegmentedButtonDefaults.itemShape(index, Modality.entries.size),
+                    shape = SegmentedButtonDefaults.itemShape(index, selectableInputModalities.size),
                     onCheckedChange = {
                         if (it) {
                             onUpdateInputModalities(inputModalities + modality)
@@ -2842,10 +2845,10 @@ private fun ModelModalitySelector(
         MultiChoiceSegmentedButtonRow(
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Modality.entries.forEachIndexed { index, modality ->
+            selectableOutputModalities.forEachIndexed { index, modality ->
                 SegmentedButton(
                     checked = modality in outputModalities,
-                    shape = SegmentedButtonDefaults.itemShape(index, Modality.entries.size),
+                    shape = SegmentedButtonDefaults.itemShape(index, selectableOutputModalities.size),
                     onCheckedChange = {
                         if (it) {
                             onUpdateOutputModalities(outputModalities + modality)

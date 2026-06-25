@@ -21,22 +21,19 @@ import me.rerere.ai.provider.Model
 import me.rerere.asr.ASRState
 import me.rerere.asr.providers.OpenAICompatibleASRController
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.ai.provider.ProviderManager
 import okhttp3.OkHttpClient
 import org.koin.compose.koinInject
 import me.rerere.ai.provider.ModelType
-import me.rerere.rikkahub.service.stt.ChatMultimodalASRController
 
 @Composable
 fun rememberCustomSttState(): CustomSttState {
     val context = LocalContext.current
     val settingsStore = koinInject<SettingsStore>()
     val httpClient = koinInject<OkHttpClient>()
-    val providerManager = koinInject<ProviderManager>()
     val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
 
     val sttState = remember {
-        CustomSttStateImpl(context.applicationContext, httpClient, providerManager)
+        CustomSttStateImpl(context.applicationContext, httpClient)
     }
 
     val sttModelId = settings.sttModelId
@@ -49,8 +46,8 @@ fun rememberCustomSttState(): CustomSttState {
         provider?.models?.firstOrNull { it.id == sttModelId }
     }
 
-    DisposableEffect(provider, model, settings.sttThinkingBudget, settings.sttPrompt) {
-        sttState.updateProvider(provider, model, settings.sttThinkingBudget, settings.sttPrompt)
+    DisposableEffect(provider, model) {
+        sttState.updateProvider(provider, model)
         onDispose { }
     }
 
@@ -73,7 +70,6 @@ interface CustomSttState {
 private class CustomSttStateImpl(
     private val context: Context,
     private val httpClient: OkHttpClient,
-    private val providerManager: ProviderManager,
 ) : CustomSttState {
     private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate)
     private var controller: ASRController? = null
@@ -93,12 +89,12 @@ private class CustomSttStateImpl(
         .setAcceptsDelayedFocusGain(false)
         .build()
 
-    fun updateProvider(provider: ProviderSetting?, model: Model?, thinkingBudget: Int, prompt: String) {
+    fun updateProvider(provider: ProviderSetting?, model: Model?) {
         controllerJob?.cancel()
         controller?.dispose()
         
         val newController = if (provider != null && model != null) {
-            createController(provider, model, thinkingBudget, prompt)
+            createController(provider, model)
         } else null
         controller = newController
         
@@ -137,14 +133,12 @@ private class CustomSttStateImpl(
         scope.cancel()
     }
 
-    private fun createController(provider: ProviderSetting, model: Model, thinkingBudget: Int, prompt: String): ASRController? {
+    private fun createController(provider: ProviderSetting, model: Model): ASRController? {
         if (model.type == ModelType.STT) {
             return when (provider) {
                 is ProviderSetting.OpenAI -> OpenAICompatibleASRController(context, httpClient, provider, model)
                 else -> null
             }
-        } else if (model.type == ModelType.CHAT) {
-            return ChatMultimodalASRController(context, providerManager, provider, model, thinkingBudget, prompt)
         }
         return null
     }

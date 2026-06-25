@@ -237,7 +237,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     it.enabled && it.models.fastAny { model ->
                         val isTypeMatch = if (type == ModelType.STT) {
                             val resolvedModel = modelMetadataResolver.applyToModel(model, it)
-                            resolvedModel.type == ModelType.STT || Modality.AUDIO in resolvedModel.inputModalities
+                            resolvedModel.type == ModelType.STT
                         } else {
                             model.type == type
                         }
@@ -293,7 +293,7 @@ internal fun ColumnScope.ModelList(
         val provider = model.findProvider(providers = providers, checkOverwrite = false) ?: return@mapNotNull null
         val isTypeMatch = if (modelType == ModelType.STT) {
             val resolvedModel = modelMetadataResolver.applyToModel(model, provider)
-            resolvedModel.type == ModelType.STT || Modality.AUDIO in resolvedModel.inputModalities
+            resolvedModel.type == ModelType.STT
         } else {
             model.type == modelType
         }
@@ -321,7 +321,7 @@ internal fun ColumnScope.ModelList(
                 val filteredModels = providerSetting.models.fastFilter { model ->
                     val isTypeMatch = if (modelType == ModelType.STT) {
                         val resolvedModel = modelMetadataResolver.applyToModel(model, providerSetting)
-                        resolvedModel.type == ModelType.STT || Modality.AUDIO in resolvedModel.inputModalities
+                        resolvedModel.type == ModelType.STT
                     } else {
                         model.type == modelType
                     }
@@ -1191,6 +1191,7 @@ fun ModelModalityTag(model: Model) {
         type = TagType.SUCCESS
     ) {
         model.inputModalities.fastForEach { modality ->
+            if (modality == Modality.AUDIO) return@fastForEach
             Icon(
                 imageVector = when (modality) {
                     Modality.TEXT -> Icons.Rounded.Title

@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-05-24",
+  "updated_at": "2026-06-25",
   "search_providers": [
     {
       "id": "bing",
@@ -1295,6 +1295,66 @@
       "versions": []
     },
     {
+      "id": "whisper",
+      "aliases": [
+        "whisper"
+      ],
+      "match_patterns": [
+        "whisper",
+        "distil-whisper"
+      ],
+      "icon": "icons/openai.svg",
+      "type": "STT",
+      "input_modalities": [
+        "AUDIO"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "abilities": [],
+      "versions": []
+    },
+    {
+      "id": "sensevoice",
+      "aliases": [
+        "sensevoice",
+        "funaudiollm"
+      ],
+      "match_patterns": [
+        "sensevoice",
+        "FunAudioLLM"
+      ],
+      "icon": "icons/siliconflow.svg",
+      "type": "STT",
+      "input_modalities": [
+        "AUDIO"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "abilities": [],
+      "versions": []
+    },
+    {
+      "id": "paraformer",
+      "aliases": [
+        "paraformer"
+      ],
+      "match_patterns": [
+        "paraformer"
+      ],
+      "icon": "icons/dashscope.svg",
+      "type": "STT",
+      "input_modalities": [
+        "AUDIO"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "abilities": [],
+      "versions": []
+    },
+    {
       "id": "gpt",
       "aliases": [
         "gpt",
@@ -1346,8 +1406,7 @@
           ],
           "input_modalities": [
             "TEXT",
-            "IMAGE",
-            "AUDIO"
+            "IMAGE"
           ],
           "abilities": [
             "TOOL"
@@ -1393,12 +1452,25 @@
           ],
           "input_modalities": [
             "TEXT",
-            "IMAGE",
-            "AUDIO"
+            "IMAGE"
           ],
           "abilities": [
             "TOOL"
           ]
+        },
+        {
+          "id": "gpt-transcribe",
+          "match_patterns": [
+            "gpt-.*-transcribe"
+          ],
+          "type": "STT",
+          "input_modalities": [
+            "AUDIO"
+          ],
+          "output_modalities": [
+            "TEXT"
+          ],
+          "abilities": []
         }
       ]
     },
@@ -1476,8 +1548,7 @@
       "type": "CHAT",
       "input_modalities": [
         "TEXT",
-        "IMAGE",
-        "AUDIO"
+        "IMAGE"
       ],
       "output_modalities": [
         "TEXT"
@@ -1712,8 +1783,7 @@
             "qwen.*audio"
           ],
           "input_modalities": [
-            "TEXT",
-            "AUDIO"
+            "TEXT"
           ],
           "abilities": [
             "TOOL"
@@ -1822,8 +1892,7 @@
           ],
           "input_modalities": [
             "TEXT",
-            "IMAGE",
-            "AUDIO"
+            "IMAGE"
           ],
           "abilities": [
             "TOOL",
@@ -1854,8 +1923,7 @@
       "icon": "icons/gemma.svg",
       "type": "CHAT",
       "input_modalities": [
-        "TEXT",
-        "AUDIO"
+        "TEXT"
       ],
       "output_modalities": [
         "TEXT"
@@ -1873,8 +1941,7 @@
           ],
           "input_modalities": [
             "TEXT",
-            "IMAGE",
-            "AUDIO"
+            "IMAGE"
           ],
           "abilities": [
             "TOOL",
@@ -1907,8 +1974,7 @@
       "icon": "icons/grok.svg",
       "type": "CHAT",
       "input_modalities": [
-        "TEXT",
-        "AUDIO"
+        "TEXT"
       ],
       "output_modalities": [
         "TEXT"
@@ -1928,8 +1994,7 @@
             "REASONING"
           ],
           "input_modalities": [
-            "TEXT",
-            "AUDIO"
+            "TEXT"
           ]
         },
         {
@@ -2098,8 +2163,7 @@
             "glm[-_]?4.*voice"
           ],
           "input_modalities": [
-            "TEXT",
-            "AUDIO"
+            "TEXT"
           ]
         },
         {
@@ -2262,8 +2326,7 @@
       "icon": "icons/bytedance.svg",
       "type": "CHAT",
       "input_modalities": [
-        "TEXT",
-        "AUDIO"
+        "TEXT"
       ],
       "output_modalities": [
         "TEXT"
@@ -2340,8 +2403,7 @@
       "icon": "icons/minimax.svg",
       "type": "CHAT",
       "input_modalities": [
-        "TEXT",
-        "AUDIO"
+        "TEXT"
       ],
       "output_modalities": [
         "TEXT"
@@ -2453,8 +2515,7 @@
       "icon": "icons/baidu.svg",
       "type": "CHAT",
       "input_modalities": [
-        "TEXT",
-        "AUDIO"
+        "TEXT"
       ],
       "output_modalities": [
         "TEXT"
@@ -4460,13 +4521,63 @@
       "canonical_model_id": "whisper-1",
       "provider_ids": [
         "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91"
-      ],
-      "type": "STT",
-      "input_modalities": [
-        "AUDIO"
-      ],
-      "output_modalities": [
-        "TEXT"
+      ]
+    },
+    {
+      "id": "whisper-large-v3",
+      "canonical_model_id": "whisper-large-v3",
+      "provider_ids": [
+        "f9fe0a18-2b30-46e1-9c57-5562654e8d64",
+        "c7e2b7da-a579-4a94-9b24-9b24bfa1e9ad",
+        "8e9f2910-c114-411a-b302-18cb92193b2a",
+        "b38e1192-5b47-4d2a-a163-f622a2eaf717"
+      ]
+    },
+    {
+      "id": "whisper-large-v3-turbo",
+      "canonical_model_id": "whisper-large-v3-turbo",
+      "provider_ids": [
+        "f9fe0a18-2b30-46e1-9c57-5562654e8d64",
+        "b38e1192-5b47-4d2a-a163-f622a2eaf717"
+      ]
+    },
+    {
+      "id": "distil-whisper-large-v3-en",
+      "canonical_model_id": "distil-whisper-large-v3-en",
+      "provider_ids": [
+        "f9fe0a18-2b30-46e1-9c57-5562654e8d64"
+      ]
+    },
+    {
+      "id": "gpt-4o-transcribe",
+      "canonical_model_id": "gpt-4o-transcribe",
+      "provider_ids": [
+        "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91",
+        "c5e85cbb-8e28-454c-96d0-0585750d081c"
+      ]
+    },
+    {
+      "id": "gpt-4o-mini-transcribe",
+      "canonical_model_id": "gpt-4o-mini-transcribe",
+      "provider_ids": [
+        "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91",
+        "c5e85cbb-8e28-454c-96d0-0585750d081c"
+      ]
+    },
+    {
+      "id": "FunAudioLLM/SenseVoiceSmall",
+      "canonical_model_id": "FunAudioLLM/SenseVoiceSmall",
+      "provider_ids": [
+        "b38e1192-5b47-4d2a-a163-f622a2eaf717",
+        "c5e85cbb-8e28-454c-96d0-0585750d081c"
+      ]
+    },
+    {
+      "id": "paraformer-realtime-v2",
+      "canonical_model_id": "paraformer-realtime-v2",
+      "provider_ids": [
+        "5e729975-9794-4013-af7e-63a548cf3356",
+        "c5e85cbb-8e28-454c-96d0-0585750d081c"
       ]
     }
   ],

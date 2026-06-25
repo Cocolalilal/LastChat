@@ -345,30 +345,12 @@ fun MinimalChatInput(
             if (acceptSttWhenIdle) {
                 delay(220)
                 val transcript = sttDraft.trim()
-                val bytes = sttState.audioData
                 
-                if (transcript.isNotBlank() || bytes != null) {
-                    val isAudioSupported = currentChatModel?.inputModalities?.contains(me.rerere.ai.provider.Modality.AUDIO) == true
-                    
-                    val formattedTranscript = if (isAudioSupported && bytes != null) {
-                        if (transcript.isNotBlank()) "🎙️ \"$transcript\"" else "🎙️"
-                    } else {
-                        transcript
-                    }
-                    
+                if (transcript.isNotBlank()) {
                     val prefix = state.textContent.text.toString()
                     state.setMessageText(
-                        if (prefix.isBlank()) formattedTranscript else "$prefix $formattedTranscript"
+                        if (prefix.isBlank()) transcript else "$prefix $transcript"
                     )
-                    
-                    if (bytes != null && isAudioSupported) {
-                        val tempFile = withContext(Dispatchers.IO) {
-                            val file = File(context.cacheDir, "stt_${System.currentTimeMillis()}.wav")
-                            file.writeBytes(bytes)
-                            file
-                        }
-                        state.addAudios(listOf(android.net.Uri.fromFile(tempFile)))
-                    }
                     
                     runCatching { state.focusRequester.requestFocus() }
                 }

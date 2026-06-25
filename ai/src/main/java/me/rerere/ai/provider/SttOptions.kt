@@ -11,7 +11,7 @@ data class SttOptions(
     val hotwords: List<String> = emptyList(),
     val language: String = "",
     val prompt: String = "",
-    val responseFormat: String = "json",
+    val responseFormat: String = "text",
     val temperature: Float = 0f,
     val preferOffline: Boolean = false,
     val partialResults: Boolean = false

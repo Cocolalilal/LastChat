@@ -268,6 +268,7 @@ private fun String?.toModelTypeOrNull(): ModelType? {
         "embedding" -> ModelType.EMBEDDING
         "image_generation", "image" -> ModelType.IMAGE
         "chat" -> ModelType.CHAT
+        "stt" -> ModelType.STT
         else -> null
     }
 }
