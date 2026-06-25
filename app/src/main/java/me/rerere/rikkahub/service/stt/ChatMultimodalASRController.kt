@@ -107,12 +107,11 @@ class ChatMultimodalASRController(
                     
                     val messages = listOf(
                         UIMessage(
-                            role = MessageRole.SYSTEM,
-                            parts = listOf(UIMessagePart.Text(prompt))
-                        ),
-                        UIMessage(
                             role = MessageRole.USER,
-                            parts = listOf(UIMessagePart.Audio(url = audioUrl))
+                            parts = listOf(
+                                UIMessagePart.Text(prompt),
+                                UIMessagePart.Audio(url = audioUrl)
+                            )
                         )
                     )
 

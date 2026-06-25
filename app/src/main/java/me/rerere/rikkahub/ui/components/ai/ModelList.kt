@@ -292,7 +292,8 @@ internal fun ColumnScope.ModelList(
         val model = providers.findModelById(modelId) ?: return@mapNotNull null
         val provider = model.findProvider(providers = providers, checkOverwrite = false) ?: return@mapNotNull null
         val isTypeMatch = if (modelType == ModelType.STT) {
-            modelMetadataResolver.applyToModel(model, provider).type == ModelType.STT
+            val resolvedModel = modelMetadataResolver.applyToModel(model, provider)
+            resolvedModel.type == ModelType.STT || Modality.AUDIO in resolvedModel.inputModalities
         } else {
             model.type == modelType
         }
@@ -317,10 +318,16 @@ internal fun ColumnScope.ModelList(
     val providerListItems = remember(providers, modelType, searchKeywords, settings.value.favoriteModels, modelFilter) {
         buildList {
             providers.forEach { providerSetting ->
-                val filteredModels = providerSetting.models.fastFilter {
-                    it.type == modelType &&
-                        modelFilter(it) &&
-                        it.displayName.contains(searchKeywords, true)
+                val filteredModels = providerSetting.models.fastFilter { model ->
+                    val isTypeMatch = if (modelType == ModelType.STT) {
+                        val resolvedModel = modelMetadataResolver.applyToModel(model, providerSetting)
+                        resolvedModel.type == ModelType.STT || Modality.AUDIO in resolvedModel.inputModalities
+                    } else {
+                        model.type == modelType
+                    }
+                    isTypeMatch &&
+                        modelFilter(model) &&
+                        model.displayName.contains(searchKeywords, true)
                 }
                 
                 // Add provider header

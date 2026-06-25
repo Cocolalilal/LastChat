@@ -189,9 +189,18 @@ fun Application.configureWebApi(
                     }
                 }
 
+                // Normalize providerSlug for correct LobeHub CDN lookups.
+                // E.g., "NVIDIA NIM" → "nvidia", "Regolo AI" → "regolo"
+                val effectiveSlug = providerSlug
+                    ?.let { getProviderSlugFromName(it) ?: it.lowercase(Locale.ROOT).takeIf { s -> s.isNotBlank() } }
+                    ?: getProviderSlugFromName(name)
+
                 val remoteIconUrl = icon
                     ?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
-                    ?: providerSlug?.toLobeHubIconUrl(theme)
+                    ?: effectiveSlug?.toLobeHubIconUrl(theme)
+                    ?: assetPath?.let {
+                        "https://raw.githubusercontent.com/Cocolalilal/LastChat/main/catalog/icons/$it"
+                    }
                 if (remoteIconUrl != null) {
                     call.response.header(HttpHeaders.CacheControl, "public, max-age=3600")
                     call.respondRedirect(remoteIconUrl, permanent = false)
@@ -1369,7 +1378,9 @@ internal fun resolveAiIconAssetPath(
     val lowerName = listOfNotNull(name, providerSlug)
         .joinToString(" ")
         .lowercase(Locale.ROOT)
-    return when {
+
+    // First try explicit name pattern matching
+    val explicitMatch = when {
         "ai21" in lowerName -> "ai21.svg"
         "anthropic" in lowerName || "claude" in lowerName -> "claude.svg"
         "baai" in lowerName -> "baai.svg"
@@ -1407,6 +1418,16 @@ internal fun resolveAiIconAssetPath(
         "zhipu" in lowerName || "glm" in lowerName -> "zhipu.svg"
         else -> null
     }
+    if (explicitMatch != null) return explicitMatch
+
+    // Generic fallback: try first word of the name as an SVG filename.
+    // This handles providers like "NVIDIA NIM" → "nvidia.svg", "Regolo AI" → "regolo.svg"
+    return lowerName.split(Regex("""[\s,;_/\\]+"""))
+        .firstOrNull { it.length > 1 && it.all { c -> c.isLetterOrDigit() || c == '-' } }
+        ?.let { token ->
+            val sanitized = token.replace(Regex("[^a-z0-9-]"), "").trim('-')
+            if (sanitized.length > 1) "$sanitized.svg" else null
+        }
 }
 
 internal fun String.extractCatalogIconFileName(): String? {
@@ -1438,6 +1459,56 @@ internal fun String.isSafeIconAssetName(): Boolean {
     if (isBlank() || contains("..") || contains('/') || contains('\\')) return false
     val extension = substringAfterLast('.', "").lowercase(Locale.ROOT)
     return extension in setOf("svg", "png", "webp")
+}
+
+internal fun getProviderSlugFromName(name: String): String? {
+    val lowerName = name.lowercase(Locale.ROOT)
+    return when {
+        lowerName.contains("openai") -> "openai"
+        lowerName.contains("anthropic") || lowerName.contains("claude") -> "anthropic"
+        lowerName.contains("google") || lowerName.contains("gemini") -> "google"
+        lowerName.contains("deepseek") -> "deepseek"
+        lowerName.contains("mistral") -> "mistral"
+        lowerName.contains("meta") || lowerName.contains("llama") -> "meta"
+        lowerName.contains("cohere") -> "cohere"
+        lowerName.contains("perplexity") -> "perplexity"
+        lowerName.contains("groq") -> "groq"
+        lowerName.contains("openrouter") -> "openrouter"
+        lowerName.contains("together") -> "together"
+        lowerName.contains("fireworks") -> "fireworks"
+        lowerName.contains("nvidia") -> "nvidia"
+        lowerName.contains("qwen") || lowerName.contains("alibaba") -> "qwen"
+        lowerName.contains("zhipu") || lowerName.contains("glm") -> "zhipu"
+        lowerName.contains("moonshot") || lowerName.contains("kimi") -> "moonshot"
+        lowerName.contains("minimax") -> "minimax"
+        lowerName.contains("xai") || lowerName.contains("grok") -> "xai"
+        lowerName.contains("bytedance") || lowerName.contains("doubao") -> "bytedance"
+        lowerName.contains("siliconflow") || lowerName.contains("silicon") -> "siliconflow"
+        lowerName.contains("cerebras") -> "cerebras"
+        lowerName.contains("cloudflare") -> "cloudflare"
+        lowerName.contains("hunyuan") || lowerName.contains("tencent") -> "hunyuan"
+        lowerName.contains("regolo") -> "regolo"
+        lowerName.contains("ai21") -> "ai21"
+        lowerName.contains("baai") -> "baai"
+        lowerName.contains("baichuan") -> "baichuan"
+        lowerName.contains("baidu") || lowerName.contains("ernie") -> "baidu"
+        lowerName.contains("bing") -> "bing"
+        lowerName.contains("bocha") -> "bocha"
+        lowerName.contains("brave") -> "brave"
+        lowerName.contains("elevenlabs") || lowerName.contains("eleven labs") -> "elevenlabs"
+        lowerName.contains("exa") -> "exa"
+        lowerName.contains("firecrawl") -> "firecrawl"
+        lowerName.contains("github") -> "github"
+        lowerName.contains("huggingface") || lowerName.contains("hugging face") -> "huggingface"
+        lowerName.contains("jina") -> "jina"
+        lowerName.contains("linkup") -> "linkup"
+        lowerName.contains("metaso") -> "metaso"
+        lowerName.contains("nanogpt") || lowerName.contains("nano-gpt") -> "nanogpt"
+        lowerName.contains("ollama") -> "ollama"
+        lowerName.contains("searxng") || lowerName.contains("searx") -> "searxng"
+        lowerName.contains("tavily") -> "tavily"
+        else -> null
+    }
 }
 
 internal fun String.toLobeHubIconUrl(theme: String?): String {

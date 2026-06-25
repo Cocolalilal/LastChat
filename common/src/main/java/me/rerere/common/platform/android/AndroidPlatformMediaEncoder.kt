@@ -35,15 +35,33 @@ class AndroidPlatformMediaEncoder : PlatformMediaEncoder {
     }
 
     override fun encodeVideo(url: String, withPrefix: Boolean): Result<String> = runCatching {
-        val file = url.toFile()
-        val encoded = base64Encode(file.readByteArray())
-        if (withPrefix) "data:video/mp4;base64,$encoded" else encoded
+        when {
+            url.startsWith("file://") -> {
+                val file = url.toFile()
+                val encoded = base64Encode(file.readByteArray())
+                if (withPrefix) "data:video/mp4;base64,$encoded" else encoded
+            }
+            url.startsWith("data:") -> {
+                if (withPrefix) url else url.substringAfter("base64,")
+            }
+            url.startsWith("http:") -> url
+            else -> throw IllegalArgumentException("Unsupported URL format: $url")
+        }
     }
 
     override fun encodeAudio(url: String, withPrefix: Boolean): Result<String> = runCatching {
-        val file = url.toFile()
-        val encoded = base64Encode(file.readByteArray())
-        if (withPrefix) "data:audio/mp3;base64,$encoded" else encoded
+        when {
+            url.startsWith("file://") -> {
+                val file = url.toFile()
+                val encoded = base64Encode(file.readByteArray())
+                if (withPrefix) "data:audio/mp3;base64,$encoded" else encoded
+            }
+            url.startsWith("data:") -> {
+                if (withPrefix) url else url.substringAfter("base64,")
+            }
+            url.startsWith("http:") -> url
+            else -> throw IllegalArgumentException("Unsupported URL format: $url")
+        }
     }
 
     private fun String.toFile(): File {
