@@ -311,6 +311,7 @@ fun MinimalChatInput(
     LaunchedEffect(sttState.errorMessage) {
         sttState.errorMessage?.let { error ->
             toaster.show(error, type = me.rerere.rikkahub.ui.components.ui.ToastType.Error)
+            stt.clearError()
         }
     }
 

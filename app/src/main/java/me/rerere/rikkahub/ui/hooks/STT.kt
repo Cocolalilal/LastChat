@@ -64,6 +64,7 @@ interface CustomSttState {
     val state: StateFlow<ASRState>
     fun start(onTranscriptChange: (String) -> Unit)
     fun stop()
+    fun clearError()
     fun cleanup()
 }
 
@@ -123,6 +124,10 @@ private class CustomSttStateImpl(
         if (controller?.needsAudioFocus == true) {
             audioManager.abandonAudioFocusRequest(audioFocusRequest)
         }
+    }
+
+    override fun clearError() {
+        _state.update { it.copy(errorMessage = null) }
     }
 
     override fun cleanup() {
