@@ -29,27 +29,6 @@ class MemoryRepository(
     private val embeddingCacheDAO: EmbeddingCacheDAO
 ) {
     private val embeddingCache = java.util.concurrent.ConcurrentHashMap<String, List<FloatArray>>()
-    private val cacheInitializedModels = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
-
-    private suspend fun ensureCacheLoaded(modelId: String) {
-        if (cacheInitializedModels[modelId] == true) return
-        val cachedEntities = embeddingCacheDAO.getEmbeddingsByModel(modelId)
-        for (entity in cachedEntities) {
-            val cacheKey = "${entity.memoryType}:${entity.memoryId}:$modelId"
-            val blob = entity.embeddingBlob
-            if (blob != null) {
-                embeddingCache[cacheKey] = blob.toListOfFloatArrays()
-            } else {
-                try {
-                    val floats = JsonInstant.decodeFromString<List<Float>>(entity.embedding).toFloatArray()
-                    embeddingCache[cacheKey] = listOf(floats)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-        }
-        cacheInitializedModels[modelId] = true
-    }
 
     fun getMemoriesOfAssistantFlow(assistantId: String): Flow<List<AssistantMemory>> =
         memoryDAO.getMemoriesOfAssistantFlow(assistantId)
@@ -104,8 +83,16 @@ class MemoryRepository(
         return memoryDAO.getMemoriesOfAssistant(assistantId)
     }
 
+    suspend fun getMemoryEntitiesOfAssistantLimited(assistantId: String, limit: Int): List<MemoryEntity> {
+        return memoryDAO.getMemoriesOfAssistantLimited(assistantId, limit)
+    }
+
     suspend fun getEpisodeEntitiesOfAssistant(assistantId: String): List<ChatEpisodeEntity> {
         return chatEpisodeDAO.getEpisodesOfAssistant(assistantId)
+    }
+
+    suspend fun getEpisodeEntitiesOfAssistantLimited(assistantId: String, limit: Int): List<ChatEpisodeEntity> {
+        return chatEpisodeDAO.getEpisodesOfAssistantLimited(assistantId, limit)
     }
 
     /**
@@ -122,10 +109,8 @@ class MemoryRepository(
         existingBlob: ByteArray? = null,
         existingModelId: String? = null
     ): List<FloatArray>? {
-val modelId = embeddingService.getEmbeddingModelId(assistantId)
+        val modelId = embeddingService.getEmbeddingModelId(assistantId)
         val cacheKey = "$memoryType:$memoryId:$modelId"
-
-        ensureCacheLoaded(modelId)
 
         embeddingCache[cacheKey]?.let { return it }
 
@@ -343,9 +328,12 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
             return@coroutineScope emptyList()
         }
 
-        // Get both core memories and episodes
-        val memories = if (includeCore) memoryDAO.getMemoriesOfAssistant(assistantId) else emptyList()
-        val episodes = if (includeEpisodes) chatEpisodeDAO.getEpisodesOfAssistant(assistantId) else emptyList()
+        // Fetch a reasonable number of candidates (limit * 20, max 1000) to avoid OOM
+        val fetchLimit = (limit * 20).coerceAtMost(1000)
+
+        // Get both core memories and episodes with limit
+        val memories = if (includeCore) memoryDAO.getMemoriesOfAssistantLimited(assistantId, fetchLimit) else emptyList()
+        val episodes = if (includeEpisodes) chatEpisodeDAO.getEpisodesOfAssistantLimited(assistantId, fetchLimit) else emptyList()
         
         val memoryDeferred = memories.map { memory ->
             async {

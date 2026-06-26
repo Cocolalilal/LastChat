@@ -491,7 +491,7 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_32_33 = object : Migration(32, 33) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 Log.i(TAG, "migrate: start migrate from 32 to 33")
-                db.execSQL("ALTER TABLE ConversationEntity ADD COLUMN last_model_id TEXT")
+                db.execSQL("ALTER TABLE ConversationEntity ADD COLUMN last_model_id TEXT NOT NULL DEFAULT ''")
                 Log.i(TAG, "migrate: migrate from 32 to 33 success")
             }
         }

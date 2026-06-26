@@ -505,6 +505,7 @@ class MemorySearchService(
         val core = memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
             .filter { memory -> memory.type == MemoryType.CORE }
             .filter { memory -> timeRange?.contains(memory.timestamp) ?: true }
+            .take(500)
 
         queries.forEachIndexed { queryIndex, recallQuery ->
             if (assistant.useRagMemoryRetrieval) {

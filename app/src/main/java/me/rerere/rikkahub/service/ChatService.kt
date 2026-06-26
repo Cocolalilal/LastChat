@@ -1511,12 +1511,14 @@ class ChatService(
                             }
                             results
                         } else {
-                            if (settings.enableRagLogging) Log.d("RAG", "Empty query, using all memories")
+                            if (settings.enableRagLogging) Log.d("RAG", "Empty query, using recent memories")
                             memoryRepository.getMemoriesOfAssistant(conversation.assistantId.toString())
+                                .take(50)
                         }
                     } else {
-                        // Simple mode: inject all memories
+                        // Simple mode: inject recent memories
                         memoryRepository.getMemoriesOfAssistant(conversation.assistantId.toString())
+                            .take(50)
                     }
                 } else {
                     emptyList()

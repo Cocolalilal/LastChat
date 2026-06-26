@@ -303,7 +303,7 @@ class AssistantDetailVM(
                     currentAssistant.ragLimit
                 } else {
                     10 // Default for debugging
-                }
+                }.coerceAtMost(200)
                 
                 val results = memoryRepository.retrieveRelevantMemoriesWithScores(
                     assistantId = assistantId.toString(),

@@ -15,6 +15,9 @@ interface MemoryDAO {
     @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId")
     suspend fun getMemoriesOfAssistant(assistantId: String): List<MemoryEntity>
 
+    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId LIMIT :limit")
+    suspend fun getMemoriesOfAssistantLimited(assistantId: String, limit: Int): List<MemoryEntity>
+
     @Query("SELECT * FROM memoryentity WHERE id = :id")
     suspend fun getMemoryById(id: Int): MemoryEntity?
 

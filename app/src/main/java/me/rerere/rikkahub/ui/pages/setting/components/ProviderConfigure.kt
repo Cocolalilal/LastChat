@@ -380,13 +380,15 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
         is ProviderSetting.Claude -> this.baseUrl
         is ProviderSetting.ComfyUI -> this.baseUrl
         is ProviderSetting.LiteRtLocal -> ""
+        else -> ""
     }
     val targetDefaultBaseUrl = when (type) {
         ProviderSetting.OpenAI::class -> ProviderSetting.OpenAI().baseUrl
         ProviderSetting.Google::class -> ProviderSetting.Google().baseUrl
         ProviderSetting.Claude::class -> ProviderSetting.Claude().baseUrl
         ProviderSetting.ComfyUI::class -> ProviderSetting.ComfyUI().baseUrl
-        else -> error("Unsupported provider type: $type")
+        ProviderSetting.LiteRtLocal::class -> ""
+        else -> return this
     }
     val convertedBaseUrl = sourceBaseUrl.convertToTargetBaseUrl(targetDefaultBaseUrl)
 
@@ -463,7 +465,9 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
             modelInputName = if (this is ProviderSetting.ComfyUI) this.modelInputName else "ckpt_name",
         )
 
-        else -> error("Unsupported provider type: $type")
+        ProviderSetting.LiteRtLocal::class -> this
+
+        else -> this
     }
 }
 

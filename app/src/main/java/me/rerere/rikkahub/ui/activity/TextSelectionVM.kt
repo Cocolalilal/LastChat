@@ -238,10 +238,10 @@ class TextSelectionVM(
             return emptyList()
         }
         if (!assistant.useRagMemoryRetrieval) {
-            return memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
+            return memoryRepository.getMemoriesOfAssistant(assistant.id.toString()).take(50)
         }
         if (queryText.isBlank()) {
-            return memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
+            return memoryRepository.getMemoriesOfAssistant(assistant.id.toString()).take(50)
         }
         val results = memoryRepository.retrieveRelevantMemories(
             assistantId = assistant.id.toString(),

@@ -1187,6 +1187,8 @@ fun ModelTypeTag(model: Model) {
 
 @Composable
 fun ModelModalityTag(model: Model) {
+    if (model.type == ModelType.STT) return
+    
     Tag(
         type = TagType.SUCCESS
     ) {
