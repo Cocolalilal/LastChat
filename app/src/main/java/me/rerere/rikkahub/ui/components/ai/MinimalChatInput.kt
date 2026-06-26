@@ -885,6 +885,9 @@ fun MinimalChatInput(
                                 isToolApprovalActive -> toolApprovalTextState
                                 else -> state.textContent
                             }
+                            val lineCount = androidx.compose.runtime.derivedStateOf {
+                                activeTextState.text.toString().lines().size
+                            }
                             TextField(
                                 state = activeTextState,
                                 modifier = Modifier
@@ -938,7 +941,7 @@ fun MinimalChatInput(
                             )
                             
                             ExpandButtonOverlay(
-                                isVisible = !isExpandedFullScreen && activeTextState.text.toString().lines().size >= 5 && !isQuestionnaireActive && !isToolApprovalActive,
+                                isVisible = !isExpandedFullScreen && lineCount.value >= 5 && !isQuestionnaireActive && !isToolApprovalActive,
                                 onExpand = {
                                     haptics.perform(HapticPattern.Pop)
                                     isExpandedFullScreen = true
@@ -1135,6 +1138,7 @@ fun MinimalChatInput(
                             if (amoledMode) Color.Black else MaterialTheme.colorScheme.background
                         )
                         .statusBarsPadding()
+                        .imePadding()
                 ) {
                     Column(
                         modifier = Modifier.fillMaxSize()
