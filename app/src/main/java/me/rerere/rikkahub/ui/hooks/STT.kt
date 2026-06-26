@@ -127,7 +127,7 @@ private class CustomSttStateImpl(
     }
 
     override fun clearError() {
-        _state.update { it.copy(errorMessage = null) }
+        _state.value = _state.value.copy(errorMessage = null)
     }
 
     override fun cleanup() {

@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.richtext
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.webkit.JavascriptInterface
 import androidx.activity.compose.LocalActivity
@@ -142,7 +143,7 @@ fun Mermaid(
                     activity?.let {
                         // 解码Base64图像并保存
                         val imageBytes = base64Decode(base64Image)
-                        val bitmap = decodeBitmapWithBounds(imageBytes, 2048, 2048)
+                        val bitmap: Bitmap? = decodeBitmapWithBounds(imageBytes, 2048, 2048)
                         checkNotNull(bitmap) { "Could not decode exported image" }
                         context.exportImage(
                             it,

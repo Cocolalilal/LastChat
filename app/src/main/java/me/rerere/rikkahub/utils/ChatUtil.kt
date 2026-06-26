@@ -298,14 +298,16 @@ suspend fun Context.convertBase64ImagePartToLocalFile(message: UIMessage): UIMes
                             val sourceByteArray = Base64.decode(part.url.substringAfter("base64,").toByteArray())
                             val bitmap = decodeBitmapWithBounds(sourceByteArray, 2048, 2048)
                             val byteArray = bitmap?.compress()
-                            val urls = createChatFilesByByteArrays(listOf(byteArray))
-                            Log.i(
-                                TAG,
-                                "convertBase64ImagePartToLocalFile: convert base64 img to ${urls.joinToString(", ")}"
-                            )
-                            part.copy(
-                                url = urls.first().toString(),
-                            )
+                            if (byteArray == null) part else {
+                                val urls = createChatFilesByByteArrays(listOf(byteArray))
+                                Log.i(
+                                    TAG,
+                                    "convertBase64ImagePartToLocalFile: convert base64 img to ${urls.joinToString(", ")}"
+                                )
+                                part.copy(
+                                    url = urls.first().toString(),
+                                )
+                            }
                         } else {
                             part
                         }

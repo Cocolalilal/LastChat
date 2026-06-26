@@ -263,11 +263,12 @@ class ConversationRepository(
         val lastModelId = conversation.messageNodes
             .asReversed()
             .firstOrNull { node ->
-                node.messages.any { it.role == me.rerere.ai.core.MessageRole.ASSISTANT && it.modelId != null && it.modelId.isNotBlank() }
+                node.messages.any { it.role == me.rerere.ai.core.MessageRole.ASSISTANT && it.modelId?.toString()?.isNotBlank() == true }
             }
             ?.messages
-            ?.lastOrNull { it.role == me.rerere.ai.core.MessageRole.ASSISTANT && it.modelId != null && it.modelId.isNotBlank() }
+            ?.lastOrNull { it.role == me.rerere.ai.core.MessageRole.ASSISTANT && it.modelId?.toString()?.isNotBlank() == true }
             ?.modelId
+            ?.toString()
             ?: ""
 
         return ConversationEntity(
@@ -415,7 +416,7 @@ class ConversationRepository(
      * Returns the model UUID as string, or null if no model found.
      */
     fun getMostUsedModelIdForAssistantFlow(assistantId: String): Flow<String?> = 
-        conversationDAO.getMostUsedModelIdForAssistant(assistantId).asFlow()
+        kotlinx.coroutines.flow.flow { emit(conversationDAO.getMostUsedModelIdForAssistant(assistantId)) }
 
     // ===== Daily Activity Tracking (for the activity heatmap) =====
     
