@@ -45,7 +45,7 @@ import kotlinx.serialization.json.put
 
 @Database(
     entities = [ConversationEntity::class, MemoryEntity::class, GenMediaEntity::class, ChatEpisodeEntity::class, EmbeddingCacheEntity::class, DailyActivityEntity::class, UsageStatsEntity::class, ChatAttachmentEntity::class, ConversationAttachmentRefEntity::class, WorkspaceEntity::class],
-    version = 32,
+    version = 33,
     autoMigrations = [
         AutoMigration(from = 30, to = 31),
         AutoMigration(from = 1, to = 2),
@@ -75,6 +75,7 @@ import kotlinx.serialization.json.put
         // 28->29 is manual migration (MIGRATION_28_29) - drops removed local model install registry
         // 29->30 is manual migration (MIGRATION_29_30) - adds per-chat lorebook overrides
         // 31->32 is manual migration (MIGRATION_31_32) - adds embedding_blob columns
+        // 32->33 is manual migration (MIGRATION_32_33) - adds last_model_id to conversation table
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -484,6 +485,14 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE ChatEpisodeEntity ADD COLUMN embedding_blob BLOB")
                 db.execSQL("ALTER TABLE embedding_cache ADD COLUMN embedding_blob BLOB")
                 Log.i(TAG, "migrate: migrate from 31 to 32 success")
+            }
+        }
+
+        val MIGRATION_32_33 = object : Migration(32, 33) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "migrate: start migrate from 32 to 33")
+                db.execSQL("ALTER TABLE ConversationEntity ADD COLUMN last_model_id TEXT")
+                Log.i(TAG, "migrate: migrate from 32 to 33 success")
             }
         }
     }

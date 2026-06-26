@@ -277,11 +277,38 @@ class AssistantWidget : GlanceAppWidget() {
                 }
             }
             if (response.statusCode != 200) return null
-            val bitmap = BitmapFactory.decodeByteArray(response.body, 0, response.body.size)
+            val body = response.body
+            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(body, 0, body.size, options)
+            options.inJustDecodeBounds = false
+            options.inSampleSize = calculateInSampleSize(
+                options.outWidth,
+                options.outHeight,
+                256,
+                256
+            )
+            val bitmap = BitmapFactory.decodeByteArray(body, 0, body.size, options)
             bitmap?.let { makeCircular(it).also { bitmap.recycle() } }
         } catch (e: Exception) {
             Log.e(TAG, "Error loading image", e)
             null
         }
+    }
+
+    private fun calculateInSampleSize(
+        srcWidth: Int,
+        srcHeight: Int,
+        reqWidth: Int,
+        reqHeight: Int
+    ): Int {
+        var inSampleSize = 1
+        if (srcHeight > reqHeight || srcWidth > reqWidth) {
+            var halfHeight = srcHeight / 2
+            var halfWidth = srcWidth / 2
+            while ((halfHeight / inSampleSize) >= reqHeight && (halfWidth / inSampleSize) >= reqWidth) {
+                inSampleSize *= 2
+            }
+        }
+        return inSampleSize
     }
 }

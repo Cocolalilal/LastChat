@@ -247,7 +247,12 @@ class AppShortcutManager(
                 )
             }
             if (response.statusCode != 200) return@withContext null
-            val bitmap = android.graphics.BitmapFactory.decodeByteArray(response.body, 0, response.body.size)
+            val body = response.body
+            val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeByteArray(body, 0, body.size, options)
+            options.inJustDecodeBounds = false
+            options.inSampleSize = calculateInSampleSize(options.outWidth, options.outHeight, 108, 108)
+            val bitmap = android.graphics.BitmapFactory.decodeByteArray(body, 0, body.size, options)
             
             if (bitmap != null) {
                 // Create circular adaptive icon
@@ -289,5 +294,17 @@ class AppShortcutManager(
         } catch (e: Exception) {
             e.printStackTrace()
         }
+    }
+
+    private fun calculateInSampleSize(srcWidth: Int, srcHeight: Int, reqWidth: Int, reqHeight: Int): Int {
+        var inSampleSize = 1
+        if (srcHeight > reqHeight || srcWidth > reqWidth) {
+            var halfHeight = srcHeight / 2
+            var halfWidth = srcWidth / 2
+            while ((halfHeight / inSampleSize) >= reqHeight && (halfWidth / inSampleSize) >= reqWidth) {
+                inSampleSize *= 2
+            }
+        }
+        return inSampleSize
     }
 }

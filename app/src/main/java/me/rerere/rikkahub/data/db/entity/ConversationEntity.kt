@@ -47,4 +47,6 @@ data class ConversationEntity(
     val lastRefreshTime: Long = 0L,
     @ColumnInfo(name = "is_fork", defaultValue = "0")
     val isFork: Boolean = false,
+    @ColumnInfo(name = "last_model_id", defaultValue = "")
+    val lastModelId: String = "",
 )

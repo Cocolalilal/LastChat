@@ -259,6 +259,17 @@ class ConversationRepository(
     }
 
     fun conversationToConversationEntity(conversation: Conversation): ConversationEntity {
+        // Extract last used model ID from the last assistant message
+        val lastModelId = conversation.messageNodes
+            .asReversed()
+            .firstOrNull { node ->
+                node.messages.any { it.role == me.rerere.ai.core.MessageRole.ASSISTANT && it.modelId != null && it.modelId.isNotBlank() }
+            }
+            ?.messages
+            ?.lastOrNull { it.role == me.rerere.ai.core.MessageRole.ASSISTANT && it.modelId != null && it.modelId.isNotBlank() }
+            ?.modelId
+            ?: ""
+
         return ConversationEntity(
             id = conversation.id.toString(),
             title = conversation.title,
@@ -280,6 +291,7 @@ class ConversationRepository(
             lastPruneMessageCount = conversation.lastPruneMessageCount,
             lastRefreshTime = conversation.lastRefreshTime,
             isFork = conversation.isFork,
+            lastModelId = lastModelId,
         )
     }
 
@@ -399,40 +411,11 @@ class ConversationRepository(
     }
 
     /**
-     * Get the most frequently used model ID for an assistant by analyzing message nodes.
+     * Get the most frequently used model ID for an assistant using the last_model_id column.
      * Returns the model UUID as string, or null if no model found.
      */
     fun getMostUsedModelIdForAssistantFlow(assistantId: String): Flow<String?> = 
-        conversationDAO.getConversationsOfAssistant(assistantId)
-            .map { conversations ->
-                // Extract all modelIds from message nodes
-                val modelCounts = mutableMapOf<String, Int>()
-                
-                for (conversation in conversations) {
-                    try {
-                        val nodesJson = JsonInstant.parseToJsonElement(conversation.nodes)
-                        if (nodesJson is JsonArray) {
-                            for (nodeElement in nodesJson) {
-                                val node = nodeElement.jsonObject
-                                // Check all variants of the current node
-                                val messages = node["messages"]?.jsonArray ?: continue
-                                for (messageElement in messages) {
-                                    val message = messageElement.jsonObject
-                                    val modelId = message["modelId"]?.jsonPrimitive?.content
-                                    if (modelId != null && modelId != "null") {
-                                        modelCounts[modelId] = (modelCounts[modelId] ?: 0) + 1
-                                    }
-                                }
-                            }
-                        }
-                    } catch (e: Exception) {
-                        // Skip malformed conversations
-                    }
-                }
-                
-                // Return the most used model ID
-                modelCounts.maxByOrNull { it.value }?.key
-            }
+        conversationDAO.getMostUsedModelIdForAssistant(assistantId).asFlow()
 
     // ===== Daily Activity Tracking (for the activity heatmap) =====
     

@@ -136,14 +136,13 @@ fun Mermaid(
                 contentHeight = (height * density.density).toInt()
                 mermaidHeightCache.put(code, contentHeight)
             },
-            onExportImage = { base64Image ->
+                    onExportImage = { base64Image ->
                 runCatching {
                     check(base64Image.isNotBlank()) { "Exported image was empty" }
                     activity?.let {
                         // 解码Base64图像并保存
                         val imageBytes = base64Decode(base64Image)
-                        val bitmap =
-                            BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+                        val bitmap = decodeBitmapWithBounds(imageBytes, 2048, 2048)
                         checkNotNull(bitmap) { "Could not decode exported image" }
                         context.exportImage(
                             it,
@@ -599,3 +598,23 @@ enum class MermaidTheme(val value: String) {
 
 @OptIn(ExperimentalEncodingApi::class)
 private fun base64Decode(value: String): ByteArray = Base64.decode(value)
+
+private fun decodeBitmapWithBounds(data: ByteArray, maxWidth: Int, maxHeight: Int): Bitmap? {
+    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(data, 0, data.size, options)
+    options.inJustDecodeBounds = false
+    options.inSampleSize = calculateInSampleSize(options.outWidth, options.outHeight, maxWidth, maxHeight)
+    return BitmapFactory.decodeByteArray(data, 0, data.size, options)
+}
+
+private fun calculateInSampleSize(srcWidth: Int, srcHeight: Int, reqWidth: Int, reqHeight: Int): Int {
+    var inSampleSize = 1
+    if (srcHeight > reqHeight || srcWidth > reqWidth) {
+        var halfHeight = srcHeight / 2
+        var halfWidth = srcWidth / 2
+        while ((halfHeight / inSampleSize) >= reqHeight && (halfWidth / inSampleSize) >= reqWidth) {
+            inSampleSize *= 2
+        }
+    }
+    return inSampleSize
+}

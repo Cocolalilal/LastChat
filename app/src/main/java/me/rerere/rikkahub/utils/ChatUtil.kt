@@ -91,8 +91,8 @@ suspend fun Context.saveMessageImage(image: String) = withContext(Dispatchers.IO
     when {
         image.startsWith("data:image") -> {
             val byteArray = Base64.decode(image.substringAfter("base64,").toByteArray())
-            val bitmap = BitmapFactory.decodeByteArray(byteArray, 0, byteArray.size)
-            exportImage(this@saveMessageImage.getActivity()!!, bitmap)
+            val bitmap = decodeBitmapWithBounds(byteArray, 2048, 2048)
+            bitmap?.let { exportImage(this@saveMessageImage.getActivity()!!, it) }
         }
 
         image.startsWith("file:") -> {
@@ -150,8 +150,8 @@ suspend fun Context.saveMessageImage(image: String) = withContext(Dispatchers.IO
                 )
 
                 if (response.statusCode == 200) {
-                    val bitmap = BitmapFactory.decodeByteArray(response.body, 0, response.body.size)
-                    exportImage(this@saveMessageImage.getActivity()!!, bitmap)
+                    val bitmap = decodeBitmapWithBounds(response.body, 2048, 2048)
+                    bitmap?.let { exportImage(this@saveMessageImage.getActivity()!!, it) }
                 } else {
                     Log.e(
                         TAG,
@@ -296,8 +296,8 @@ suspend fun Context.convertBase64ImagePartToLocalFile(message: UIMessage): UIMes
                         if (part.url.startsWith("data:image")) {
                             // base64 image
                             val sourceByteArray = Base64.decode(part.url.substringAfter("base64,").toByteArray())
-                            val bitmap = BitmapFactory.decodeByteArray(sourceByteArray, 0, sourceByteArray.size)
-                            val byteArray = bitmap.compress()
+                            val bitmap = decodeBitmapWithBounds(sourceByteArray, 2048, 2048)
+                            val byteArray = bitmap?.compress()
                             val urls = createChatFilesByByteArrays(listOf(byteArray))
                             Log.i(
                                 TAG,
@@ -417,4 +417,24 @@ private fun sanitizeUploadBaseName(rawName: String?): String {
         ?.trim('-', '.', '_')
         ?.take(48)
     return cleaned?.takeIf { it.isNotBlank() } ?: "upload"
+}
+
+private fun decodeBitmapWithBounds(data: ByteArray, maxWidth: Int, maxHeight: Int): Bitmap? {
+    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(data, 0, data.size, options)
+    options.inJustDecodeBounds = false
+    options.inSampleSize = calculateInSampleSize(options.outWidth, options.outHeight, maxWidth, maxHeight)
+    return BitmapFactory.decodeByteArray(data, 0, data.size, options)
+}
+
+private fun calculateInSampleSize(srcWidth: Int, srcHeight: Int, reqWidth: Int, reqHeight: Int): Int {
+    var inSampleSize = 1
+    if (srcHeight > reqHeight || srcWidth > reqWidth) {
+        var halfHeight = srcHeight / 2
+        var halfWidth = srcWidth / 2
+        while ((halfHeight / inSampleSize) >= reqHeight && (halfWidth / inSampleSize) >= reqWidth) {
+            inSampleSize *= 2
+        }
+    }
+    return inSampleSize
 }
