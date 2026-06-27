@@ -100,6 +100,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.ui.util.fastFilter
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material.icons.Icons
@@ -295,10 +297,6 @@ private fun ProviderSetting.apiModelCacheKey(): String {
             baseUrl,
             workflowJson.hashCode().toString(),
         )
-        is ProviderSetting.LiteRtLocal -> listOf(
-            "litert",
-            id.toString(),
-        )
     }.joinToString("|")
 }
 
@@ -312,7 +310,6 @@ private fun ProviderSetting.canFetchApiModels(): Boolean {
         }
         is ProviderSetting.Claude -> apiKey.isNotBlank()
         is ProviderSetting.ComfyUI -> workflowJson.isNotBlank()
-        is ProviderSetting.LiteRtLocal -> true
     }
 }
 
@@ -354,8 +351,7 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
     val provider = settings.providers.find { it.id == id } ?: return
-    val isLocalLiteRt = provider is ProviderSetting.LiteRtLocal
-    val pager = rememberPagerState { if (isLocalLiteRt) 1 else 2 }
+    val pager = rememberPagerState { 2 }
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val context = LocalContext.current
@@ -788,7 +784,7 @@ private fun ModelList(
     val scope = rememberCoroutineScope()
     var expanded by rememberSaveable { mutableStateOf(true) }
     val lazyListState = rememberLazyListState()
-    val modelItemIndexOffset = if (providerSetting is ProviderSetting.LiteRtLocal) 1 else 0
+    val modelItemIndexOffset = 0
     val reorderableLazyListState = rememberReorderableLazyListState(lazyListState) { from, to ->
         val fromModelIndex = from.index - modelItemIndexOffset
         val toModelIndex = to.index - modelItemIndexOffset
@@ -802,25 +798,8 @@ private fun ModelList(
     val density = LocalDensity.current
     val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
     val modelMetadataResolver = koinInject<ModelMetadataResolver>()
-    val localLlmVm = if (providerSetting is ProviderSetting.LiteRtLocal) {
-        koinViewModel<SettingLocalLlmViewModel>(
-            key = "models-${LocalRuntime.LiteRT.displayName}",
-            parameters = { parametersOf(LocalRuntime.LiteRT) },
-        )
-    } else {
-        null
-    }
-    val localDownloadProgress = localLlmVm?.downloadProgress?.collectAsStateWithLifecycle()?.value
-    val localErrorMessage = localLlmVm?.errorMessage?.collectAsStateWithLifecycle()?.value
-    val localAccelerator = localLlmVm?.accelerator?.collectAsStateWithLifecycle()?.value
-    val localForceCpu = localLlmVm?.forceCpu?.collectAsStateWithLifecycle()?.value ?: true
-    val localMaxNumTokensOverride = localLlmVm?.maxNumTokensOverride?.collectAsStateWithLifecycle()?.value
-    val localCrashRecoveryAccel = localLlmVm?.crashRecoveryAccelerator?.collectAsStateWithLifecycle()?.value
     val apiModelCacheKey = remember(providerSetting) { providerSetting.apiModelCacheKey() }
     var modelList by remember(apiModelCacheKey) { mutableStateOf(ApiModelListCache.get(apiModelCacheKey)) }
-    val localCatalogModels = remember {
-        LiteRtCatalog.ENTRIES.map(LiteRtModelMetadata::modelForCatalogEntry)
-    }
     var isReloadingModels by remember(apiModelCacheKey) { mutableStateOf(false) }
     var reloadModelsError by remember(apiModelCacheKey) { mutableStateOf<String?>(null) }
 
@@ -920,23 +899,7 @@ private fun ModelList(
             verticalArrangement = Arrangement.spacedBy(4.dp),
             state = lazyListState
         ) {
-            if (providerSetting is ProviderSetting.LiteRtLocal && localLlmVm != null) {
-                item(key = "local-litert-controls") {
-                    LocalLiteRtModelControls(
-                        downloadProgress = localDownloadProgress,
-                        errorMessage = localErrorMessage,
-                        accelerator = localAccelerator,
-                        forceCpu = localForceCpu,
-                        maxNumTokensOverride = localMaxNumTokensOverride,
-                        crashRecoveryAccel = localCrashRecoveryAccel,
-                        onDismissCrashRecovery = localLlmVm::dismissCrashRecovery,
-                        onClearError = localLlmVm::clearError,
-                        onReDetectAccelerator = localLlmVm::reDetectAccelerator,
-                        onForceCpuChange = localLlmVm::setForceCpu,
-                        onMaxNumTokensOverrideChange = localLlmVm::setMaxNumTokensOverride,
-                    )
-                }
-            }
+
 
             // 模型列表
             itemsIndexed(providerSetting.models, key = { _, item -> item.id }) { index, item ->
@@ -992,11 +955,7 @@ private fun ModelList(
                                 }
                             },
                             onDelete = {
-                                if (localLlmVm != null && providerSetting is ProviderSetting.LiteRtLocal) {
-                                    localLlmVm.deleteModel(item.modelId)
-                                } else {
-                                    onUpdateProvider(providerSetting.delModel(item))
-                                }
+                                onUpdateProvider(providerSetting.delModel(item))
                             },
                             onEdit = { editedModel ->
                                 onUpdateProvider(providerSetting.editModel(editedModel))
@@ -1089,20 +1048,16 @@ private fun ModelList(
         ) {
             // Model picker FAB (gray, like lorebook toggle button)
             ModelPickerFab(
-                models = if (providerSetting is ProviderSetting.LiteRtLocal) localCatalogModels else modelList,
+                models = modelList,
                 selectedModels = providerSetting.models,
-                isLoading = isReloadingModels || localDownloadProgress != null,
+                isLoading = isReloadingModels,
                 reloadError = reloadModelsError,
                 onReload = ::reloadApiModels,
                 onAddModel = {
                     onUpdateProvider(providerSetting.addModel(it))
                 },
                 onRemoveModel = {
-                    if (localLlmVm != null && providerSetting is ProviderSetting.LiteRtLocal) {
-                        localLlmVm.deleteModel(it.modelId)
-                    } else {
-                        onUpdateProvider(providerSetting.delModel(it))
-                    }
+                    onUpdateProvider(providerSetting.delModel(it))
                 },
                 onAddModels = { models ->
                     var updated = providerSetting
@@ -1112,39 +1067,22 @@ private fun ModelList(
                     onUpdateProvider(updated)
                 },
                 onRemoveModels = { models ->
-                    if (localLlmVm != null && providerSetting is ProviderSetting.LiteRtLocal) {
-                        models.forEach { model -> localLlmVm.deleteModel(model.modelId) }
-                    } else {
-                        var updated = providerSetting
-                        models.forEach { model ->
-                            updated = updated.delModel(model)
-                        }
-                        onUpdateProvider(updated)
+                    var updated = providerSetting
+                    models.forEach { model ->
+                        updated = updated.delModel(model)
                     }
+                    onUpdateProvider(updated)
                 },
                 parentProvider = providerSetting,
-                onInstallModel = localLlmVm?.let { vm ->
-                    { model ->
-                        LiteRtCatalog.findByModelFile(model.modelId)?.let { entry ->
-                            vm.startManualDownload(entry.resolveUrl())
-                        }
-                    }
-                },
+                onInstallModel = null,
             )
             
-            if (providerSetting is ProviderSetting.LiteRtLocal && localLlmVm != null) {
-                LocalHuggingFaceInstallFab(
-                    isDownloading = localDownloadProgress != null,
-                    onInstallUrl = localLlmVm::startManualDownload,
-                )
-            } else {
-                AddNewModelFab(
-                    onAddModel = {
-                        onUpdateProvider(providerSetting.addModel(it))
-                    },
-                    parentProvider = providerSetting
-                )
-            }
+            AddNewModelFab(
+                onAddModel = {
+                    onUpdateProvider(providerSetting.addModel(it))
+                },
+                parentProvider = providerSetting
+            )
         }
     }
 }
@@ -1696,13 +1634,12 @@ private fun ModelPickerFab(
     var showPicker by remember { mutableStateOf(false) }
     val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
     val modelMetadataResolver = koinInject<ModelMetadataResolver>()
-    val isLocalInstallPicker = parentProvider is ProviderSetting.LiteRtLocal && onInstallModel != null
     
     FloatingActionButton(
         onClick = { 
             showPicker = true
             haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Tick)
-            if (!isLocalInstallPicker && models.isEmpty() && !isLoading) {
+            if (models.isEmpty() && !isLoading) {
                 onReload()
             }
         },
@@ -1755,23 +1692,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (isLocalInstallPicker) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = stringResource(R.string.local_llm_catalog_title),
-                                style = MaterialTheme.typography.titleMedium,
-                            )
-                            Text(
-                                text = stringResource(R.string.local_llm_catalog_subtitle),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        if (isLoading) {
-                            LinearProgressIndicator(modifier = Modifier.weight(0.7f))
-                        }
-                    } else {
-                        TextButton(
+                    TextButton(
                             onClick = {
                                 haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
                                 if (allFilteredSelected) {
@@ -1811,10 +1732,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                             Spacer(Modifier.size(4.dp))
                             Text(stringResource(R.string.setting_provider_page_reload_models))
                         }
-                    }
                 }
-                if (!isLocalInstallPicker) {
-                    reloadError?.let { error ->
+                reloadError?.let { error ->
                         Text(
                             text = stringResource(R.string.setting_provider_page_reload_models_error, error),
                             style = MaterialTheme.typography.bodySmall,
@@ -1834,7 +1753,6 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 is ProviderSetting.Google -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.Claude -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.ComfyUI -> parentProvider.workflowJson.isNotBlank()
-                                is ProviderSetting.LiteRtLocal -> true
                             }
                             
                             Column(
@@ -1884,11 +1802,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                     if (isSelected) {
                                         onRemoveModel(selectedModel ?: model)
                                     } else {
-                                        if (onInstallModel != null && parentProvider is ProviderSetting.LiteRtLocal) {
-                                            onInstallModel(model)
-                                        } else {
-                                            onAddModel(model)
-                                        }
+                                        onAddModel(model)
                                     }
                                 },
                             shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
@@ -1936,35 +1850,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                         ModelAbilityTag(model = model)
                                     }
                                 }
-                                if (isLocalInstallPicker) {
-                                    if (isSelected) {
-                                        OutlinedButton(
-                                            onClick = {},
-                                            enabled = false,
-                                            modifier = Modifier.height(40.dp),
-                                        ) {
-                                            Text(stringResource(R.string.local_llm_catalog_installed))
-                                        }
-                                    } else {
-                                        Button(
-                                            onClick = {
-                                                haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
-                                                onInstallModel?.invoke(model)
-                                            },
-                                            enabled = !isLoading,
-                                            modifier = Modifier.height(40.dp),
-                                        ) {
-                                            Text(
-                                                stringResource(
-                                                    if (isLoading) R.string.local_llm_downloading_button
-                                                    else R.string.local_llm_catalog_install
-                                                )
-                                            )
-                                        }
-                                    }
-                                } else {
-                                    ModelSelectionCircle(selected = isSelected)
-                                }
+                                ModelSelectionCircle(selected = isSelected)
                             }
                         }
                     }
@@ -2227,7 +2113,6 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 is ProviderSetting.Google -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.Claude -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.ComfyUI -> parentProvider.workflowJson.isNotBlank()
-                                is ProviderSetting.LiteRtLocal -> true
                             }
                             
                             Column(
@@ -2394,7 +2279,6 @@ private suspend fun probeModelCapabilities(
         )
 
         is ProviderSetting.ComfyUI -> null
-        is ProviderSetting.LiteRtLocal -> null
     }
 }
 
@@ -2629,7 +2513,6 @@ private fun buildToolProbeCustomBodies(provider: ProviderSetting): List<CustomBo
         )
 
         is ProviderSetting.ComfyUI -> emptyList()
-        is ProviderSetting.LiteRtLocal -> emptyList()
     }
 }
 
@@ -2733,6 +2616,14 @@ private fun ModelTypeSelector(
                                 ModelType.IMAGE -> R.string.setting_provider_page_image_model
                                 ModelType.STT -> R.string.setting_provider_page_stt_model
                             }
+                        ),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Clip,
+                        autoSize = TextAutoSize.StepBased(
+                            minFontSize = 8.sp,
+                            maxFontSize = 14.sp,
+                            stepSize = 1.sp
                         )
                     )
                 },
@@ -3049,19 +2940,6 @@ private fun ModelCard(
 
     if (dialogState.isEditing) {
         dialogState.currentState?.let { editingModel ->
-            if (parentProvider is ProviderSetting.LiteRtLocal) {
-                LocalLiteRtModelIdentitySheet(
-                    model = editingModel,
-                    onModelChange = { dialogState.currentState = it },
-                    onDismiss = { dialogState.dismiss() },
-                    onConfirm = {
-                        if (editingModel.displayName.isNotBlank()) {
-                            dialogState.confirm()
-                        }
-                    },
-                    parentProvider = parentProvider,
-                )
-            } else {
             val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             ModalBottomSheet(
 containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
@@ -3138,7 +3016,6 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         }
                     }
                 }
-            }
             }
         }
     }

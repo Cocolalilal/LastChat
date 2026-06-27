@@ -748,7 +748,7 @@ private fun ProviderListView(
                 ) { isDragging ->
                     PhysicsSwipeToDelete(
                         position = position,
-                        deleteEnabled = provider !is ProviderSetting.LiteRtLocal,
+                        deleteEnabled = true,
                         neighborOffset = neighborOffset,
                         onDragProgress = { offset, unlocked ->
                             draggingIndex = index

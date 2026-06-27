@@ -174,9 +174,11 @@ fun AssistantPromptSubPage(
                                 color = MaterialTheme.colorScheme.outline
                             )
                         }
+                        val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
                         Spacer(Modifier.weight(1f))
                         IconButton(
                             onClick = {
+                                focusManager.clearFocus()
                                 isFullScreen = !isFullScreen
                             },
                             modifier = Modifier.size(24.dp)
@@ -436,14 +438,17 @@ private fun FullScreenSystemPromptEditor(
     // Track if we've made any changes
     var hasUnsavedChanges by remember { mutableStateOf(false) }
     
+    val currentSystemPrompt by androidx.compose.runtime.rememberUpdatedState(systemPrompt)
+    val currentOnUpdate by androidx.compose.runtime.rememberUpdatedState(onUpdate)
+
     // Debounced auto-save while typing (500ms debounce)
     LaunchedEffect(Unit) {
         snapshotFlow { textFieldState.text.toString() }
             .drop(1) // Skip initial emission
             .debounce(500L)
             .collect { newText ->
-                if (newText != systemPrompt) {
-                    onUpdate(newText)
+                if (newText != currentSystemPrompt) {
+                    currentOnUpdate(newText)
                     hasUnsavedChanges = false
                 }
             }
@@ -454,7 +459,7 @@ private fun FullScreenSystemPromptEditor(
         snapshotFlow { textFieldState.text.toString() }
             .drop(1)
             .collect {
-                hasUnsavedChanges = it != systemPrompt
+                hasUnsavedChanges = it != currentSystemPrompt
             }
     }
 

@@ -60,7 +60,6 @@ class ProviderManager(
             is ProviderSetting.Google -> getProvider("google")
             is ProviderSetting.Claude -> getProvider("claude")
             is ProviderSetting.ComfyUI -> getProvider("comfyui")
-            is ProviderSetting.LiteRtLocal -> error("Local LiteRT provider is disabled")
         } as Provider<T>
     }
 }

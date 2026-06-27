@@ -24,7 +24,7 @@ internal object BackupArchiveFormat {
         "chat_files",
         "lorebook_covers",
         "lorebook_attachments",
-        "python_sandbox",
+        "workspaces",
         "model_catalog",
     )
 

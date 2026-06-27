@@ -510,7 +510,7 @@ class WebdavSyncBackupRoundTripTest {
         fun pythonOutputFile(env: TestEnvironment): File {
             return File(
                 env.context.filesDir,
-                "python_sandbox/${pythonConversationId}/report.txt",
+                "workspaces/${pythonConversationId}/report.txt",
             )
         }
     }

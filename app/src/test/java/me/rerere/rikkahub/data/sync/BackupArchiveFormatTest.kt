@@ -62,18 +62,18 @@ class BackupArchiveFormatTest {
     fun enumerateDirectoryEntriesIncludesNestedFilesAndEmptyDirectories() {
         val tempDir = createTempDir(prefix = "backup-entries-")
         try {
-            val root = File(tempDir, "python_sandbox").apply { mkdirs() }
+            val root = File(tempDir, "workspaces").apply { mkdirs() }
             File(root, "conversation-1").mkdirs()
             File(root, "conversation-1/output.txt").writeText("hello")
             File(root, "conversation-2/empty").mkdirs()
 
-            val entries = enumerateDirectoryEntries(root, "python_sandbox").map { it.entryName }
+            val entries = enumerateDirectoryEntries(root, "workspaces").map { it.entryName }
 
-            assertTrue(entries.contains("python_sandbox/"))
-            assertTrue(entries.contains("python_sandbox/conversation-1/"))
-            assertTrue(entries.contains("python_sandbox/conversation-1/output.txt"))
-            assertTrue(entries.contains("python_sandbox/conversation-2/"))
-            assertTrue(entries.contains("python_sandbox/conversation-2/empty/"))
+            assertTrue(entries.contains("workspaces/"))
+            assertTrue(entries.contains("workspaces/conversation-1/"))
+            assertTrue(entries.contains("workspaces/conversation-1/output.txt"))
+            assertTrue(entries.contains("workspaces/conversation-2/"))
+            assertTrue(entries.contains("workspaces/conversation-2/empty/"))
         } finally {
             tempDir.deleteRecursively()
         }

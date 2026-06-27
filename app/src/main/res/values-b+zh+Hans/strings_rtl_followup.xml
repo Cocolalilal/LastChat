@@ -114,7 +114,7 @@
     <string name="setting_chat_storage_category_assistant_media">助手媒体</string>
     <string name="setting_chat_storage_category_lorebook_media">设定集媒体</string>
     <string name="setting_chat_storage_category_generated_media">生成媒体</string>
-    <string name="setting_chat_storage_category_python_sandbox">Python 沙盒</string>
+    <string name="setting_chat_storage_category_workspaces">工作区</string>
     <string name="setting_chat_storage_category_icons_and_fonts">图标和字体</string>
     <string name="setting_chat_storage_category_settings_database">设置和数据库</string>
     <string name="setting_chat_storage_category_icon_cache">图标磁盘缓存</string>

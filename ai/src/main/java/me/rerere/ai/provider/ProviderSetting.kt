@@ -254,44 +254,6 @@ sealed class ProviderSetting {
             )
         }
     }
-
-    @Serializable
-    @SerialName("local_litert")
-    data class LiteRtLocal(
-        override var id: Uuid = LITERT_PROVIDER_ID,
-        override var enabled: Boolean = true,
-        override var name: String = "Local · LiteRT",
-        override var models: List<Model> = emptyList(),
-        override var proxy: ProviderProxy = ProviderProxy.None,
-        override val balanceOption: BalanceOption = BalanceOption(),
-        override var tags: List<Uuid> = emptyList(),
-        override val customIconUri: String? = null,
-        @Transient override val builtIn: Boolean = true,
-    ) : ProviderSetting() {
-        override fun addModel(model: Model): ProviderSetting = copy(models = models + model)
-        override fun editModel(model: Model): ProviderSetting =
-            copy(models = models.map { if (it.id == model.id) model else it })
-        override fun delModel(model: Model): ProviderSetting =
-            copy(models = models.filter { it.id != model.id })
-        override fun moveMove(from: Int, to: Int): ProviderSetting =
-            copy(models = models.toMutableList().apply { add(to, removeAt(from)) })
-        override fun copyProvider(
-            id: Uuid,
-            enabled: Boolean,
-            name: String,
-            models: List<Model>,
-            proxy: ProviderProxy,
-            balanceOption: BalanceOption,
-            tags: List<Uuid>,
-            customIconUri: String?,
-            builtIn: Boolean,
-        ): ProviderSetting = copy(
-            id = id, enabled = enabled, name = name, models = models,
-            builtIn = builtIn, proxy = proxy, balanceOption = balanceOption,
-            tags = tags, customIconUri = customIconUri
-        )
-    }
-
     companion object {
         val Types by lazy {
             listOf(
@@ -368,8 +330,6 @@ sealed class ProviderSetting {
         }
     }
 }
-
-val LITERT_PROVIDER_ID: Uuid = Uuid.parse("11111111-aaaa-bbbb-cccc-000000000002")
 
 private val MODEL_FILENAME_EXTENSIONS = setOf("safetensors", "ckpt", "pt", "pth", "bin")
 

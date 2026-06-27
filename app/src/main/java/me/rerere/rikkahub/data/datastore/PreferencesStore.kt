@@ -288,7 +288,6 @@ class SettingsStore(
         .map {
             var providers = it.providers
                 .ifEmpty { DEFAULT_PROVIDERS }
-                .filterNot { provider -> provider is ProviderSetting.LiteRtLocal }
                 .toMutableList()
             providers = providers.map { provider ->
                 val defaultProvider = DEFAULT_PROVIDERS.find { it.id == provider.id }
@@ -324,7 +323,6 @@ class SettingsStore(
             val validMcpServerIds = settings.mcpServers.map { it.id }.toSet()
             settings.copy(
                 providers = settings.providers
-                    .filterNot { provider -> provider is ProviderSetting.LiteRtLocal }
                     .distinctBy { it.id }
                     .map { provider ->
                     when (provider) {
@@ -343,9 +341,6 @@ class SettingsStore(
                         is ProviderSetting.ComfyUI -> provider.copy(
                             models = provider.models.distinctBy { model -> model.id }
                                 .map { model -> model.withComfyDefaults() }
-                        )
-                        is ProviderSetting.LiteRtLocal -> provider.copy(
-                            models = provider.models.distinctBy { model -> model.id }
                         )
                     }
                 },

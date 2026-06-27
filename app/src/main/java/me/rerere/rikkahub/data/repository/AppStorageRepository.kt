@@ -43,7 +43,7 @@ private const val CATEGORY_CHAT = "chat_attachments"
 private const val CATEGORY_ASSISTANT_MEDIA = "assistant_media"
 private const val CATEGORY_LOREBOOK_MEDIA = "lorebook_media"
 private const val CATEGORY_GENERATED_MEDIA = "generated_media"
-private const val CATEGORY_PYTHON_SANDBOX = "python_sandbox"
+private const val CATEGORY_WORKSPACES = "workspaces"
 private const val CATEGORY_ICONS_AND_FONTS = "icons_and_fonts"
 private const val CATEGORY_DATABASES = "databases"
 private const val CATEGORY_ICON_CACHE = "icon_cache"
@@ -434,7 +434,7 @@ class AppStorageRepository(
             safeDirectoryBytes(context.getOwnedDirectory(OwnedFileDirectory.LOREBOOK_ATTACHMENT))
         val generatedMediaBytes = safeDirectoryBytes(context.filesDir.resolve("images")) +
             safeDirectoryBytes(context.filesDir.resolve("chat_files"))
-        val pythonSandboxBytes = safeDirectoryBytes(context.filesDir.resolve("python_sandbox"))
+        val workspacesBytes = safeDirectoryBytes(context.filesDir.resolve("workspaces"))
         val iconsAndFontsBytes = safeDirectoryBytes(context.filesDir.resolve("auto_icons")) +
             safeDirectoryBytes(context.filesDir.resolve("custom_icons")) +
             safeDirectoryBytes(context.filesDir.resolve("custom_fonts"))
@@ -460,7 +460,7 @@ class AppStorageRepository(
             StorageCategoryUsage(CATEGORY_ASSISTANT_MEDIA, "Assistant media", assistantMediaBytes),
             StorageCategoryUsage(CATEGORY_LOREBOOK_MEDIA, "Lorebook media", lorebookMediaBytes),
             StorageCategoryUsage(CATEGORY_GENERATED_MEDIA, "Generated media", generatedMediaBytes),
-            StorageCategoryUsage(CATEGORY_PYTHON_SANDBOX, "Python sandbox", pythonSandboxBytes),
+            StorageCategoryUsage(CATEGORY_WORKSPACES, "Workspaces", workspacesBytes),
             StorageCategoryUsage(CATEGORY_ICONS_AND_FONTS, "Icons and fonts", iconsAndFontsBytes),
             StorageCategoryUsage(CATEGORY_DATABASES, "Settings and database", databaseBytes),
             StorageCategoryUsage(CATEGORY_ICON_CACHE, "Icon disk cache", iconCacheBytes, clearable = true),

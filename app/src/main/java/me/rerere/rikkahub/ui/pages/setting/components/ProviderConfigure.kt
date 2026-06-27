@@ -7,20 +7,16 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import me.rerere.locallm.litert.LiteRtCatalog
 import me.rerere.ai.provider.Model
 import androidx.compose.ui.draw.clip
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SuggestionChip
 import org.koin.core.parameter.parametersOf
-import me.rerere.locallm.litert.LiteRtCatalogEntry
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.AlertDialog
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.material3.LocalContentColor
-import me.rerere.rikkahub.ui.pages.setting.locallm.SettingLocalLlmViewModel
 import androidx.compose.material3.OutlinedButton
-import me.rerere.locallm.LocalRuntime
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -165,7 +161,6 @@ fun ProviderConfigure(
                             is ProviderSetting.Google -> provider.copy(enabled = enabled)
                             is ProviderSetting.Claude -> provider.copy(enabled = enabled)
                             is ProviderSetting.ComfyUI -> provider.copy(enabled = enabled)
-                            is ProviderSetting.LiteRtLocal -> provider.copy(enabled = enabled)
                         }
                         onEdit(updated)
                     }
@@ -191,34 +186,22 @@ fun ProviderConfigure(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            if (provider is ProviderSetting.LiteRtLocal) {
-                Box(
-                    modifier = Modifier.size(56.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    ProviderIcon(
-                        provider = provider,
-                        modifier = Modifier.size(48.dp),
-                    )
-                }
-            } else {
-                CustomIconSelector(
-                    customIconUri = provider.customIconUri,
-                    onPickFile = {
-                        iconPickerLauncher.launch(arrayOf("image/*", "image/svg+xml"))
-                    },
-                    onPickLobeHubIcon = { slug ->
-                        onEdit(provider.copyProvider(customIconUri = lobeHubIconUri(slug)))
-                    },
-                    onReset = {
-                        onEdit(provider.copyProvider(customIconUri = null))
-                    },
-                ) { iconModifier ->
-                    ProviderIcon(
-                        provider = provider,
-                        modifier = iconModifier,
-                    )
-                }
+            CustomIconSelector(
+                customIconUri = provider.customIconUri,
+                onPickFile = {
+                    iconPickerLauncher.launch(arrayOf("image/*", "image/svg+xml"))
+                },
+                onPickLobeHubIcon = { slug ->
+                    onEdit(provider.copyProvider(customIconUri = lobeHubIconUri(slug)))
+                },
+                onReset = {
+                    onEdit(provider.copyProvider(customIconUri = null))
+                },
+            ) { iconModifier ->
+                ProviderIcon(
+                    provider = provider,
+                    modifier = iconModifier,
+                )
             }
             DebouncedTextField(
                 value = provider.name,
@@ -228,11 +211,10 @@ fun ProviderConfigure(
                         is ProviderSetting.Google -> provider.copy(name = newName)
                         is ProviderSetting.Claude -> provider.copy(name = newName)
                         is ProviderSetting.ComfyUI -> provider.copy(name = newName)
-                        is ProviderSetting.LiteRtLocal -> provider.copy(name = newName)
                     }
                     onEdit(updated)
                 },
-                enabled = provider !is ProviderSetting.LiteRtLocal,
+                enabled = true,
                 stateKey = "provider_name_${provider.id}",
                 label = stringResource(id = R.string.setting_provider_page_name),
                 modifier = Modifier.weight(1f),
@@ -255,9 +237,6 @@ fun ProviderConfigure(
 
             is ProviderSetting.ComfyUI -> {
                 ProviderConfigureComfyUI(provider, onEdit)
-            }
-            is ProviderSetting.LiteRtLocal -> {
-                ProviderConfigureLiteRT(provider, onEdit)
             }
         }
     }
@@ -371,7 +350,6 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
         is ProviderSetting.Google -> this.apiKey
         is ProviderSetting.Claude -> this.apiKey
         is ProviderSetting.ComfyUI -> ""
-        is ProviderSetting.LiteRtLocal -> ""
     }
 
     val sourceBaseUrl = when (this) {
@@ -379,7 +357,6 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
         is ProviderSetting.Google -> this.baseUrl
         is ProviderSetting.Claude -> this.baseUrl
         is ProviderSetting.ComfyUI -> this.baseUrl
-        is ProviderSetting.LiteRtLocal -> ""
         else -> ""
     }
     val targetDefaultBaseUrl = when (type) {
@@ -387,7 +364,6 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
         ProviderSetting.Google::class -> ProviderSetting.Google().baseUrl
         ProviderSetting.Claude::class -> ProviderSetting.Claude().baseUrl
         ProviderSetting.ComfyUI::class -> ProviderSetting.ComfyUI().baseUrl
-        ProviderSetting.LiteRtLocal::class -> ""
         else -> return this
     }
     val convertedBaseUrl = sourceBaseUrl.convertToTargetBaseUrl(targetDefaultBaseUrl)
@@ -465,8 +441,6 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
             modelInputName = if (this is ProviderSetting.ComfyUI) this.modelInputName else "ckpt_name",
         )
 
-        ProviderSetting.LiteRtLocal::class -> this
-
         else -> this
     }
 }
@@ -487,7 +461,6 @@ private fun KClass<out ProviderSetting>.defaultProviderName(): String {
         ProviderSetting.Google::class -> ProviderSetting.Google().name
         ProviderSetting.Claude::class -> ProviderSetting.Claude().name
         ProviderSetting.ComfyUI::class -> ProviderSetting.ComfyUI().name
-        ProviderSetting.LiteRtLocal::class -> ProviderSetting.LiteRtLocal().name
         else -> simpleName.orEmpty()
     }
 }
@@ -965,653 +938,3 @@ private fun ColumnScope.ProviderConfigureGoogle(
 
 
 @Composable
-private fun ColumnScope.ProviderConfigureLiteRT(
-    provider: ProviderSetting.LiteRtLocal,
-    onEdit: (ProviderSetting.LiteRtLocal) -> Unit,
-) {
-    val vm = koinViewModel<SettingLocalLlmViewModel>(
-        key = "configure-${LocalRuntime.LiteRT.displayName}",
-        parameters = { parametersOf(LocalRuntime.LiteRT) },
-    )
-    val downloadProgress by vm.downloadProgress.collectAsStateWithLifecycle()
-    val errorMessage by vm.errorMessage.collectAsStateWithLifecycle()
-    val accelerator by vm.accelerator.collectAsStateWithLifecycle()
-    val forceCpu by vm.forceCpu.collectAsStateWithLifecycle()
-    val maxNumTokensOverride by vm.maxNumTokensOverride.collectAsStateWithLifecycle()
-    val crashRecoveryAccel by vm.crashRecoveryAccelerator.collectAsStateWithLifecycle()
-    val installedModelFiles by vm.installedModelFiles.collectAsStateWithLifecycle()
-    val visionUnavailableSet by vm.visionUnavailableSet.collectAsStateWithLifecycle()
-    val perfTelemetry by vm.perfTelemetry.collectAsStateWithLifecycle()
-    val haptics = rememberPremiumHaptics()
-
-    var manualUrl by remember { mutableStateOf("") }
-    var maxTokensInput by remember(maxNumTokensOverride) {
-        mutableStateOf(maxNumTokensOverride?.toString() ?: "")
-    }
-
-    Card(
-        shape = AppShapes.CardLarge,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-        ),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.padding(16.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.local_llm_surface_title),
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Text(
-                text = stringResource(R.string.local_llm_surface_desc),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.78f),
-            )
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                LocalLlmPill(stringResource(R.string.local_llm_model_count_short, provider.models.size))
-                LocalLlmPill(stringResource(R.string.local_llm_accelerator_label, accelerator ?: "auto"))
-            }
-        }
-    }
-
-    crashRecoveryAccel?.let { accel ->
-        Card(
-            shape = AppShapes.CardLarge,
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable {
-                    haptics.perform(HapticPattern.Pop)
-                    vm.dismissCrashRecovery()
-                },
-        ) {
-            Text(
-                text = stringResource(R.string.local_llm_crash_recovery_format, accel),
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(16.dp),
-            )
-        }
-    }
-
-    errorMessage?.let { msg ->
-        Card(
-            shape = AppShapes.CardLarge,
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.errorContainer,
-                contentColor = MaterialTheme.colorScheme.onErrorContainer,
-            ),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.padding(16.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.local_llm_error_title),
-                    style = MaterialTheme.typography.titleSmall,
-                )
-                Text(
-                    text = stringResource(R.string.local_llm_status_error_format, msg),
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                if (provider.models.isNotEmpty()) {
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        provider.models.forEach { model ->
-                            OutlinedButton(
-                                onClick = {
-                                    haptics.perform(HapticPattern.Thud)
-                                    vm.deleteModel(model.modelId)
-                                },
-                                shape = AppShapes.ButtonPill,
-                            ) {
-                                Text(stringResource(R.string.local_llm_delete_model))
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    downloadProgress?.let { progress ->
-        Card(
-            shape = AppShapes.CardLarge,
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            ),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.padding(16.dp),
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(R.string.local_llm_download_active_title),
-                            style = MaterialTheme.typography.titleSmall,
-                        )
-                        Text(
-                            text = stringResource(R.string.local_llm_download_active_desc),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.76f),
-                        )
-                    }
-                    Text(
-                        text = stringResource(R.string.local_llm_download_progress, progress.percent),
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                }
-                if (progress.totalBytes != null && progress.totalBytes > 0) {
-                    LinearProgressIndicator(
-                        progress = { progress.percent / 100f },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                } else {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                }
-            }
-        }
-    }
-
-    LocalLlmSectionHeader(
-        title = stringResource(R.string.local_llm_catalog_title),
-        subtitle = stringResource(R.string.local_llm_catalog_subtitle),
-    )
-    LiteRtCatalog.ENTRIES.forEach { entry ->
-        LiteRtCatalogEntryCard(
-            entry = entry,
-            installed = entry.modelFile in installedModelFiles,
-            downloadInProgress = downloadProgress != null,
-            onInstall = {
-                haptics.perform(HapticPattern.Pop)
-                vm.startManualDownload(entry.resolveUrl())
-            },
-        )
-    }
-
-    LocalLlmSectionHeader(
-        title = stringResource(R.string.local_llm_manage_files_title),
-        subtitle = if (provider.models.isEmpty()) {
-            stringResource(R.string.local_llm_no_models_desc)
-        } else {
-            stringResource(R.string.local_llm_installed_models_count, provider.models.size)
-        },
-    )
-    if (provider.models.isEmpty()) {
-        Card(
-            shape = AppShapes.CardLarge,
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.padding(16.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.local_llm_no_models_title),
-                    style = MaterialTheme.typography.titleSmall,
-                )
-                Text(
-                    text = stringResource(R.string.local_llm_no_models_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    } else {
-        provider.models.forEach { model ->
-            Card(
-                shape = AppShapes.CardLarge,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Box(modifier = Modifier.padding(14.dp)) {
-                    InstalledModelRow(
-                        model = model,
-                        visionUnavailable = model.modelId in visionUnavailableSet,
-                        allowVisionRetry = crashRecoveryAccel == null,
-                        perfSample = perfTelemetry[model.modelId],
-                        onRename = { newName -> vm.renameModel(model.modelId, newName) },
-                        onDelete = { vm.deleteModel(model.modelId) },
-                        onRetryVision = { vm.retryVisionEncoder(model.modelId) },
-                    )
-                }
-            }
-        }
-    }
-
-    LocalLlmSectionHeader(
-        title = stringResource(R.string.local_llm_section_runtime),
-        subtitle = stringResource(R.string.local_llm_section_runtime_desc),
-    )
-    Card(
-        shape = AppShapes.CardLarge,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            modifier = Modifier.padding(16.dp),
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    stringResource(R.string.local_llm_accelerator_label, accelerator ?: "auto"),
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                OutlinedButton(
-                    onClick = {
-                        haptics.perform(HapticPattern.Pop)
-                        vm.reDetectAccelerator()
-                    },
-                    shape = AppShapes.ButtonPill,
-                ) {
-                    Text(stringResource(R.string.local_llm_re_detect))
-                }
-            }
-            HorizontalDivider()
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        stringResource(R.string.local_llm_try_gpu_label),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Text(
-                        stringResource(R.string.local_llm_try_gpu_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                HapticSwitch(
-                    checked = !forceCpu,
-                    onCheckedChange = { wantGpu -> vm.setForceCpu(!wantGpu) },
-                )
-            }
-            HorizontalDivider()
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    stringResource(R.string.local_llm_max_tokens_label),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Text(
-                    stringResource(R.string.local_llm_max_tokens_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    OutlinedTextField(
-                        value = maxTokensInput,
-                        onValueChange = { newValue ->
-                            if (newValue.isEmpty() || newValue.all { it.isDigit() }) {
-                                maxTokensInput = newValue
-                                val parsed = newValue.toIntOrNull()?.takeIf { it in 1..131072 }
-                                vm.setMaxNumTokensOverride(parsed)
-                            }
-                        },
-                        placeholder = { Text(stringResource(R.string.local_llm_max_tokens_placeholder)) },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
-                    )
-                    OutlinedButton(
-                        onClick = {
-                            haptics.perform(HapticPattern.Pop)
-                            maxTokensInput = ""
-                            vm.setMaxNumTokensOverride(null)
-                        },
-                        enabled = maxNumTokensOverride != null,
-                        shape = AppShapes.ButtonPill,
-                    ) {
-                        Text(stringResource(R.string.local_llm_max_tokens_reset))
-                    }
-                }
-            }
-        }
-    }
-
-    LocalLlmSectionHeader(
-        title = stringResource(R.string.local_llm_section_custom),
-        subtitle = stringResource(R.string.local_llm_section_custom_desc),
-    )
-    Card(
-        shape = AppShapes.CardLarge,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.padding(16.dp),
-        ) {
-            OutlinedTextField(
-                value = manualUrl,
-                onValueChange = { manualUrl = it },
-                label = { Text(stringResource(R.string.local_llm_install_url_label)) },
-                supportingText = { Text(stringResource(R.string.local_llm_install_url_hint)) },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Button(
-                    onClick = {
-                        haptics.perform(HapticPattern.Pop)
-                        vm.startManualDownload(manualUrl)
-                        manualUrl = ""
-                    },
-                    enabled = manualUrl.isNotBlank() && downloadProgress == null,
-                    shape = AppShapes.ButtonPill,
-                ) {
-                    Text(stringResource(R.string.local_llm_install_url_action))
-                }
-                OutlinedButton(
-                    onClick = {
-                        haptics.perform(HapticPattern.Pop)
-                        vm.startDefaultDownload()
-                    },
-                    enabled = downloadProgress == null,
-                    shape = AppShapes.ButtonPill,
-                ) {
-                    Text(stringResource(R.string.local_llm_download_default))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun LocalLlmSectionHeader(
-    title: String,
-    subtitle: String,
-) {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(3.dp),
-        modifier = Modifier.padding(top = 12.dp),
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleSmall,
-        )
-        Text(
-            text = subtitle,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
-private fun LocalLlmPill(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSecondary,
-        modifier = Modifier
-            .clip(AppShapes.CardMedium)
-            .background(MaterialTheme.colorScheme.secondary)
-            .padding(horizontal = 10.dp, vertical = 5.dp),
-    )
-}
-
-
-@Composable
-private fun LiteRtCatalogEntryCard(
-    entry: LiteRtCatalogEntry,
-    installed: Boolean,
-    downloadInProgress: Boolean,
-    onInstall: () -> Unit,
-) {
-    Card(
-        shape = AppShapes.CardLarge,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-        ),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.padding(12.dp),
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    entry.displayName,
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.weight(1f),
-                )
-                if (entry.recommended) {
-                    Text(
-                        text = stringResource(R.string.local_llm_catalog_recommended),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        modifier = Modifier
-                            .clip(AppShapes.CardMedium)
-                            .background(MaterialTheme.colorScheme.secondaryContainer)
-                            .padding(horizontal = 8.dp, vertical = 2.dp),
-                    )
-                }
-            }
-
-            Text(
-                entry.description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-            )
-
-            if (entry.tags.isNotEmpty()) {
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    entry.tags.forEach { tag ->
-                        val labelRes = when (tag) {
-                            "multimodal" -> R.string.local_llm_catalog_tag_multimodal
-                            "thinking" -> R.string.local_llm_catalog_tag_thinking
-                            "speculative-decoding" -> R.string.local_llm_catalog_tag_speculative
-                            else -> null
-                        }
-                        val label = labelRes?.let { stringResource(it) } ?: tag
-                        SuggestionChip(
-                            onClick = {},
-                            enabled = false,
-                            label = {
-                                Text(
-                                    label,
-                                    style = MaterialTheme.typography.labelSmall,
-                                )
-                            },
-                            colors = SuggestionChipDefaults.suggestionChipColors(
-                                disabledContainerColor = MaterialTheme.colorScheme.surface,
-                                disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            ),
-                        )
-                    }
-                }
-            }
-
-            Text(
-                text = String.format(
-                    java.util.Locale.US,
-                    stringResource(R.string.local_llm_catalog_size_format),
-                    entry.sizeBytes / 1_000_000_000.0,
-                    entry.minDeviceMemoryGb,
-                ),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (installed) {
-                    Text(
-                        text = stringResource(R.string.local_llm_catalog_installed),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                } else {
-                    Button(
-                        onClick = onInstall,
-                        enabled = !downloadInProgress,
-                        shape = AppShapes.ButtonPill,
-                    ) {
-                        Text(stringResource(R.string.local_llm_catalog_install))
-                    }
-                }
-            }
-        }
-    }
-}
-
-
-@Composable
-private fun InstalledModelRow(
-    model: Model,
-    visionUnavailable: Boolean,
-    allowVisionRetry: Boolean,
-    perfSample: me.rerere.locallm.LocalRuntimePreferences.PerfSample?,
-    onRename: (String) -> Unit,
-    onDelete: () -> Unit,
-    onRetryVision: () -> Unit,
-) {
-    var renaming by remember { mutableStateOf(false) }
-    var renameText by remember(model.id) { mutableStateOf(model.displayName) }
-    var confirmDelete by remember { mutableStateOf(false) }
-
-    if (renaming) {
-        OutlinedTextField(
-            value = renameText,
-            onValueChange = { renameText = it },
-            label = { Text(stringResource(R.string.local_llm_rename_label)) },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-        )
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            TextButton(onClick = { renaming = false }) {
-                Text(stringResource(R.string.cancel))
-            }
-            Spacer(Modifier.weight(1f))
-            Button(
-                onClick = {
-                    onRename(renameText)
-                    renaming = false
-                },
-                enabled = renameText.isNotBlank() && renameText != model.displayName,
-            ) {
-                Text(stringResource(R.string.local_llm_rename_save))
-            }
-        }
-    } else {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(model.displayName, style = MaterialTheme.typography.bodyMedium)
-                Text(
-                    model.modelId,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = LocalContentColor.current.copy(alpha = 0.6f),
-                )
-                if (visionUnavailable) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.local_llm_vision_unavailable_caption),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                        if (allowVisionRetry) {
-                            TextButton(
-                                onClick = onRetryVision,
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                            ) {
-                                Text(
-                                    stringResource(R.string.local_llm_vision_retry),
-                                    style = MaterialTheme.typography.labelSmall,
-                                )
-                            }
-                        }
-                    }
-                }
-                perfSample?.let { sample ->
-                    Text(
-                        text = stringResource(
-                            R.string.local_llm_perf_telemetry_format,
-                            sample.prefillTps,
-                            sample.decodeTps,
-                        ) + if (sample.specDecodingEngaged) " · " +
-                            stringResource(R.string.local_llm_spec_decoding_engaged_short)
-                        else "",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = LocalContentColor.current.copy(alpha = 0.7f),
-                    )
-                }
-            }
-            IconButton(onClick = { renaming = true }) {
-                Icon(Icons.Outlined.Edit, stringResource(R.string.local_llm_rename))
-            }
-            IconButton(onClick = { confirmDelete = true }) {
-                Icon(Icons.Outlined.Delete, stringResource(R.string.local_llm_delete))
-            }
-        }
-    }
-
-    if (confirmDelete) {
-        AlertDialog(
-            onDismissRequest = { confirmDelete = false },
-            title = { Text(stringResource(R.string.local_llm_delete_confirm_title)) },
-            text = { Text(stringResource(R.string.local_llm_delete_confirm_message, model.displayName)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmDelete = false
-                    onDelete()
-                }) {
-                    Text(stringResource(R.string.local_llm_delete))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmDelete = false }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            },
-        )
-    }
-}

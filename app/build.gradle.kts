@@ -390,7 +390,6 @@ dependencies {
     implementation(project(":tts"))
     implementation(project(":speech"))
     implementation(project(":common"))
-    implementation(project(":local-llm"))
     implementation(project(":workspace"))
     implementation(libs.jsoup)
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))

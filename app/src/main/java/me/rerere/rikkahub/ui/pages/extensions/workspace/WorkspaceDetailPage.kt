@@ -71,6 +71,12 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.drop
+import me.rerere.rikkahub.ui.components.ui.AutoSaveIndicator
 
 
 
@@ -417,6 +423,7 @@ private fun WorkspaceTabButton(
     }
 }
 
+@OptIn(FlowPreview::class)
 @Composable
 private fun WorkspaceBasicPage(
     workspace: WorkspaceEntity?,
@@ -428,6 +435,18 @@ private fun WorkspaceBasicPage(
 ) {
     var nameDraft by rememberSaveable(workspace?.id, workspace?.name) { mutableStateOf(workspace?.name.orEmpty()) }
     val canRename = workspace != null && nameDraft.isNotBlank() && nameDraft.trim() != workspace.name
+
+    LaunchedEffect(workspace?.id) {
+        snapshotFlow { nameDraft }
+            .drop(1)
+            .debounce(500L)
+            .collect { newName ->
+                if (workspace != null && newName.isNotBlank() && newName.trim() != workspace.name) {
+                    onRename(newName.trim())
+                }
+            }
+    }
+
     val shellStatus = workspace?.shellStatus
     val installing = installProgress != null || shellStatus == WorkspaceShellStatus.INSTALLING.name
     val rootfsReady = shellStatus == WorkspaceShellStatus.READY.name
@@ -467,12 +486,10 @@ private fun WorkspaceBasicPage(
                         label = { Text(stringResource(R.string.workspace_detail_name)) },
                         shape = AppShapes.InputField,
                         trailingIcon = {
-                            TextButton(
-                                enabled = canRename,
-                                onClick = { onRename(nameDraft.trim()) },
-                            ) {
-                                Text(stringResource(R.string.common_save))
-                            }
+                            AutoSaveIndicator(
+                                visible = canRename,
+                                modifier = Modifier.padding(end = 16.dp)
+                            )
                         },
                     )
                     WorkspaceInfoRow(stringResource(R.string.workspace_detail_shell_status), workspace?.shellStatus?.toShellStatusLabel() ?: "-")

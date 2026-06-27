@@ -106,7 +106,6 @@ class OnboardingVM(
             is ProviderSetting.Google -> provider.copy(apiKey = apiKey)
             is ProviderSetting.Claude -> provider.copy(apiKey = apiKey)
             is ProviderSetting.ComfyUI -> provider
-            is ProviderSetting.LiteRtLocal -> provider
         }
     }
 

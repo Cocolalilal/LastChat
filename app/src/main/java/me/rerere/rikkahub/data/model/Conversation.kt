@@ -185,6 +185,16 @@ data class MessageNode(
     }
 
     val role get() = messages.firstOrNull()?.role ?: MessageRole.USER
+    
+    @kotlinx.serialization.Transient
+    val cachedVersionSelectionIndices: List<Int> by lazy {
+        if (messages.isEmpty()) return@lazy emptyList()
+        val latestIndexByTag = linkedMapOf<String?, Int>()
+        messages.forEachIndexed { index, message ->
+            latestIndexByTag[message.versionTag] = index
+        }
+        latestIndexByTag.values.toList()
+    }
 
     companion object {
         fun of(
@@ -212,13 +222,7 @@ fun UIMessage.toMessageNode(): MessageNode {
  * The selector should treat those as one version and point at the latest snapshot for that tag.
  */
 fun MessageNode.versionSelectionIndices(): List<Int> {
-    if (messages.isEmpty()) return emptyList()
-
-    val latestIndexByTag = linkedMapOf<String?, Int>()
-    messages.forEachIndexed { index, message ->
-        latestIndexByTag[message.versionTag] = index
-    }
-    return latestIndexByTag.values.toList()
+    return this.cachedVersionSelectionIndices
 }
 
 fun MessageNode.versionSelectionPosition(selectedIndex: Int = selectIndex): Int {

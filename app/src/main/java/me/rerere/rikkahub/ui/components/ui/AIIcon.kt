@@ -74,21 +74,7 @@ fun ProviderIcon(
         contentColor.copy(alpha = 0.38f)
     }
 
-    if (provider is ProviderSetting.LiteRtLocal) {
-        Box(
-            modifier = modifier.padding(padding),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.PhoneAndroid,
-                contentDescription = provider.name,
-                tint = effectiveContentColor,
-                modifier = Modifier.fillMaxSize()
-            )
-        }
-        return
-    }
-    
+
     AutoAIIconWithUrl(
         name = provider.name,
         customIconUri = provider.customIconUri,

@@ -114,7 +114,7 @@
     <string name="setting_chat_storage_category_assistant_media">وسائط المساعد</string>
     <string name="setting_chat_storage_category_lorebook_media">وسائط كتب المعرفة</string>
     <string name="setting_chat_storage_category_generated_media">وسائط مولدة</string>
-    <string name="setting_chat_storage_category_python_sandbox">بيئة Python المعزولة</string>
+    <string name="setting_chat_storage_category_workspaces">مساحات العمل</string>
     <string name="setting_chat_storage_category_icons_and_fonts">الأيقونات والخطوط</string>
     <string name="setting_chat_storage_category_settings_database">الإعدادات وقاعدة البيانات</string>
     <string name="setting_chat_storage_category_icon_cache">ذاكرة الأيقونات المؤقتة على القرص</string>

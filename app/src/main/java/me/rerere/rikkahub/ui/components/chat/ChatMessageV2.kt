@@ -121,10 +121,10 @@ data class MessageTurnGroup(
     val lastNode get() = nodes.last()
     
     /** Node with the most distinct message versions - used for version switching controls */
-    val nodeWithMostVersions get() = nodes.maxByOrNull { it.versionSelectionIndices().size } ?: lastNode
+    val nodeWithMostVersions by lazy { nodes.maxByOrNull { it.versionSelectionIndices().size } ?: lastNode }
     
     /** The active versionTag from the first node's current message */
-    val activeVersionTag: String? get() = firstNode.currentMessage.versionTag
+    val activeVersionTag: String? by lazy { firstNode.currentMessage.versionTag }
     
     /** 
      * Nodes filtered to only include those with a message matching the active versionTag.
@@ -134,7 +134,7 @@ data class MessageTurnGroup(
      * IMPORTANT: This returns nodes with their selectIndex adjusted to point to the 
      * message matching the active versionTag, not the original currentMessage.
      */
-    val filteredNodes: List<MessageNode> get() {
+    val filteredNodes: List<MessageNode> by lazy {
         val tag = activeVersionTag
         val selectedNodes = nodes.mapNotNull { node ->
             val currentIndexMatchesTag = node.messages
@@ -183,13 +183,13 @@ data class MessageTurnGroup(
     }
     
     /** All message parts from filtered nodes in the group */
-    val allParts: List<UIMessagePart> get() = filteredNodes.flatMap { it.currentMessage.parts }
+    val allParts: List<UIMessagePart> by lazy { filteredNodes.flatMap { it.currentMessage.parts } }
 
     /** All annotations from filtered nodes in the group */
-    val allAnnotations: List<UIMessageAnnotation> get() = filteredNodes.flatMap { it.currentMessage.annotations }
+    val allAnnotations: List<UIMessageAnnotation> by lazy { filteredNodes.flatMap { it.currentMessage.annotations } }
     
     /** Combined token usage for filtered messages in the group */
-    val combinedUsage: TokenUsage? get() {
+    val combinedUsage: TokenUsage? by lazy {
         val usages = filteredNodes.mapNotNull { it.currentMessage.usage }
         if (usages.isEmpty()) return null
         return TokenUsage(
@@ -200,8 +200,8 @@ data class MessageTurnGroup(
         )
     }
     
-    /** Combined generation duration for filtered messages */
-    val combinedGenerationDurationMs: Long? get() {
+    /** Combined generation duration for filtered assistant messages in the group */
+    val combinedGenerationDurationMs: Long? by lazy {
         val durations = filteredNodes.mapNotNull { it.currentMessage.generationDurationMs }
         return if (durations.isNotEmpty()) durations.sum() else null
     }

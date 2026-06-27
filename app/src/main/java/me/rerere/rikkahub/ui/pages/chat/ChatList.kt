@@ -450,8 +450,10 @@ private fun SharedTransitionScope.ChatListNormal(
         }
 
         // Group consecutive messages by role into turns
-        // Computed fresh on each recomposition to ensure up-to-date data
-        val turnGroups = conversation.messageNodes.groupIntoTurns()
+        // Memoized to prevent O(N) grouping on every recomposition (e.g. during scroll or UI state changes)
+        val turnGroups = remember(conversation.messageNodes) {
+            conversation.messageNodes.groupIntoTurns()
+        }
 
         // Check if we need a phantom loading turn (loading but no assistant response yet)
         val needsPhantomLoadingTurn = loading && (
