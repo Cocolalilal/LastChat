@@ -75,7 +75,9 @@ internal fun enumerateDirectoryEntries(directory: File, archiveRoot: String): Li
         return emptyList()
     }
     val normalizedRoot = archiveRoot.trim('/').replace('\\', '/')
-    return directory.walkTopDown().map { file ->
+    return directory.walkTopDown()
+        .filter { it.exists() }
+        .map { file ->
         val relative = file.relativeTo(directory).invariantSeparatorsPath
         val entryName = when {
             relative.isEmpty() && file.isDirectory -> "$normalizedRoot/"

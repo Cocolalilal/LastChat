@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.chat
 
+import me.rerere.rikkahub.ui.context.LocalChatAnimationsEnabled
 import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -1198,14 +1199,21 @@ private fun AssistantMessageTurn(
     // Consistent spacing between all elements
     val elementSpacing = 4.dp
     
+    val chatAnimationsEnabled = LocalChatAnimationsEnabled.current
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .animateContentSize(
-                animationSpec = tween(
-                    durationMillis = 220,
-                    easing = LinearOutSlowInEasing
-                )
+            .then(
+                if (chatAnimationsEnabled || loading) {
+                    Modifier.animateContentSize(
+                        animationSpec = tween(
+                            durationMillis = 220,
+                            easing = LinearOutSlowInEasing
+                        )
+                    )
+                } else {
+                    Modifier
+                }
             ),
         verticalArrangement = Arrangement.spacedBy(
             if (showAssistantBubbles) elementSpacing else 3.dp
@@ -1260,7 +1268,8 @@ private fun AssistantMessageTurn(
                         onTimelineDismiss = {
                             haptics.perform(HapticPattern.Pop)
                             onTimelineDismiss()
-                        }
+                        },
+                        key = group.firstNode.id
                     )
                 }
             } else {
@@ -1380,7 +1389,8 @@ private fun AssistantMessageTurn(
                     onTimelineDismiss = {
                         haptics.perform(HapticPattern.Pop)
                         onTimelineDismiss()
-                    }
+                    },
+                    key = group.firstNode.id
                 )
             }
 

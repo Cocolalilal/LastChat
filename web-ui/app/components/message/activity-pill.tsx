@@ -1,5 +1,6 @@
 import * as React from "react";
 import { AnimatePresence, motion } from "motion/react";
+import type { Transition } from "motion/react";
 import {
   Build,
   Category,
@@ -22,6 +23,9 @@ import {
 } from "~/lib/chat-motion";
 import { categorizeToolName, type ActivityState, type ActivityType } from "~/lib/message-turns";
 import { cn, serverNow } from "~/lib/utils";
+
+const getActivityLayoutTransition = (reducedMotion: boolean): Transition =>
+  reducedMotion ? { duration: 0.01 } : { type: "tween", duration: 0.22, ease: [0.4, 0, 0.2, 1] };
 
 function formatDuration(durationMs: number): string {
   const seconds = Math.max(0, Math.floor(durationMs / 1000));
@@ -272,7 +276,7 @@ function ActivitySegmentButton({
           ? { duration: 0.01 }
           : {
               opacity: { duration: CHAT_MOTION_DURATION.fast, delay, ease: "easeOut" },
-              x: { ...getChatLayoutTransition(false), delay },
+              x: { ...getActivityLayoutTransition(false), delay },
               scale: { ...getChatTactileTransition(false), delay },
             },
       }}
@@ -283,7 +287,7 @@ function ActivitySegmentButton({
       }
       whileHover={reducedMotion ? undefined : { y: -1, scale: 1.01 }}
       whileTap={reducedMotion ? undefined : { scale: 0.975 }}
-      transition={getChatLayoutTransition(reducedMotion)}
+      transition={getActivityLayoutTransition(reducedMotion)}
       onClick={onClick}
       className={cn(
         "border text-card-foreground shadow-sm transition-colors hover:bg-card active:shadow-none",
@@ -327,6 +331,7 @@ export function ActivityPill({
       <motion.div
         key={getStateKey(state)}
         layout
+        transition={getActivityLayoutTransition(reducedMotion)}
         initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 4, scale: 0.98 }}
         animate={{
           opacity: 1,
@@ -336,7 +341,7 @@ export function ActivityPill({
             ? { duration: 0.01 }
             : {
                 opacity: getChatFadeTransition(false),
-                y: getChatLayoutTransition(false),
+                y: getActivityLayoutTransition(false),
                 scale: getChatTactileTransition(false),
               },
         }}
@@ -347,7 +352,11 @@ export function ActivityPill({
         }
         className={cn("inline-flex max-w-full", className)}
       >
-        <motion.div layout className="inline-flex max-w-full items-center gap-[2px]">
+        <motion.div
+          layout
+          transition={getActivityLayoutTransition(reducedMotion)}
+          className="inline-flex max-w-full items-center gap-[2px]"
+        >
           <AnimatePresence initial={false}>
             {segments.map((segment, index) => (
               <ActivitySegmentButton

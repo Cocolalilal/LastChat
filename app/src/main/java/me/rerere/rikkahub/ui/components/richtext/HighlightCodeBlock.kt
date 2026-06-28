@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.richtext
 
+import me.rerere.rikkahub.ui.context.LocalChatAnimationsEnabled
 import android.content.ClipData
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -315,14 +316,21 @@ fun HighlightCodeBlock(
         contentColor = colorScheme.onSurface,
         border = BorderStroke(1.dp, outlineColor),
     ) {
+        val chatAnimationsEnabled = LocalChatAnimationsEnabled.current
         Column(
             modifier = Modifier
                 .clipToBounds()
-                .animateContentSize(
-                    animationSpec = tween(
-                        durationMillis = 180,
-                        easing = LinearOutSlowInEasing
-                    )
+                .then(
+                    if (chatAnimationsEnabled) {
+                        Modifier.animateContentSize(
+                            animationSpec = tween(
+                                durationMillis = 180,
+                                easing = LinearOutSlowInEasing
+                            )
+                        )
+                    } else {
+                        Modifier
+                    }
                 ),
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {

@@ -146,6 +146,7 @@
   <string name="backup_page_backup_items">عناصر النسخ الاحتياطي</string>
   <string name="backup_page_backup_now">النسخ الاحتياطي الآن</string>
   <string name="backup_page_backup_success">نجاح النسخ الاحتياطي</string>
+  <string name="backup_page_backup_failed">فشل النسخ الاحتياطي: %s</string>
   <string name="backup_page_chat_records">سجلات الدردشة</string>
   <string name="backup_page_connection_failed">فشل الاتصال: %s</string>
   <string name="backup_page_connection_success">نجاح الاتصال</string>

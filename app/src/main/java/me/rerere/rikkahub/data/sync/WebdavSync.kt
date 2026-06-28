@@ -385,10 +385,14 @@ class WebdavSync(
         BackupArchiveFormat.MANAGED_FILE_DIRS.forEach { dirName ->
             val directory = File(context.filesDir, dirName)
             enumerateDirectoryEntries(directory, dirName).forEach { entry ->
-                if (entry.isDirectory) {
-                    addDirectoryToZip(zipOut, entry.entryName)
-                } else {
-                    addFileToZip(zipOut, entry.source, entry.entryName)
+                try {
+                    if (entry.isDirectory) {
+                        addDirectoryToZip(zipOut, entry.entryName)
+                    } else {
+                        addFileToZip(zipOut, entry.source, entry.entryName)
+                    }
+                } catch (e: Exception) {
+                    LogUtil.w(TAG, "addManagedFileEntries: Failed to zip entry ${entry.entryName} from source ${entry.source.absolutePath}", e)
                 }
             }
         }

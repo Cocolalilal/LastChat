@@ -344,6 +344,7 @@ internal fun ActivityPillRow(
     assistantId: String? = null,
     timelineScrollHandoffMode: TimelineScrollHandoffMode = TimelineScrollHandoffMode.EdgeGatedToParent,
     onTimelineDismiss: () -> Unit = { onClick(null) },
+    key: Any? = null,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -358,35 +359,69 @@ internal fun ActivityPillRow(
     val activityItems = remember(state) {
         if (state is ActivityState.CompletedMultiple) buildActivityItemsFromMultiple(state) else emptyList()
     }
+
+    val wasCompletedInitially = remember(key) { state is ActivityState.CompletedMultiple || state is ActivityState.CompletedSingle }
     
     // Animated visibility for the entire pill row
-    AnimatedVisibility(
-        visible = state !is ActivityState.Hidden,
-        enter = fadeIn(animationSpec = tween(200)) + scaleIn(initialScale = 0.9f),
-        exit = fadeOut(animationSpec = tween(150)) + scaleOut(targetScale = 0.9f)
-    ) {
-        Row(
-            modifier = modifier
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                },
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-            verticalAlignment = Alignment.CenterVertically
+    if (wasCompletedInitially) {
+        if (state !is ActivityState.Hidden) {
+            Row(
+                modifier = modifier
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                    },
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AnimatedSinglePill(
+                    state = state,
+                    onClick = onClick,
+                    connectsToBubbleBelow = connectsToBubbleBelow,
+                    reasoningPreviewEnabled = reasoningPreviewEnabled,
+                    maxBubbleWidth = maxBubbleWidth,
+                    timelineOpen = timelineOpen,
+                    timelineEntries = timelineEntries,
+                    initialTimelineOpenRequest = initialTimelineOpenRequest,
+                    assistantId = assistantId,
+                    timelineScrollHandoffMode = timelineScrollHandoffMode,
+                    onTimelineDismiss = onTimelineDismiss,
+                    wasCompletedInitially = wasCompletedInitially,
+                    key = key
+                )
+            }
+        }
+    } else {
+        AnimatedVisibility(
+            visible = state !is ActivityState.Hidden,
+            enter = fadeIn(animationSpec = tween(200)) + scaleIn(initialScale = 0.9f),
+            exit = fadeOut(animationSpec = tween(150)) + scaleOut(targetScale = 0.9f)
         ) {
-            AnimatedSinglePill(
-                state = state,
-                onClick = onClick,
-                connectsToBubbleBelow = connectsToBubbleBelow,
-                reasoningPreviewEnabled = reasoningPreviewEnabled,
-                maxBubbleWidth = maxBubbleWidth,
-                timelineOpen = timelineOpen,
-                timelineEntries = timelineEntries,
-                initialTimelineOpenRequest = initialTimelineOpenRequest,
-                assistantId = assistantId,
-                timelineScrollHandoffMode = timelineScrollHandoffMode,
-                onTimelineDismiss = onTimelineDismiss
-            )
+            Row(
+                modifier = modifier
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                    },
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AnimatedSinglePill(
+                    state = state,
+                    onClick = onClick,
+                    connectsToBubbleBelow = connectsToBubbleBelow,
+                    reasoningPreviewEnabled = reasoningPreviewEnabled,
+                    maxBubbleWidth = maxBubbleWidth,
+                    timelineOpen = timelineOpen,
+                    timelineEntries = timelineEntries,
+                    initialTimelineOpenRequest = initialTimelineOpenRequest,
+                    assistantId = assistantId,
+                    timelineScrollHandoffMode = timelineScrollHandoffMode,
+                    onTimelineDismiss = onTimelineDismiss,
+                    wasCompletedInitially = wasCompletedInitially,
+                    key = key
+                )
+            }
         }
     }
 }
@@ -407,7 +442,9 @@ private fun AnimatedSinglePill(
     initialTimelineOpenRequest: TimelineOpenRequest?,
     assistantId: String?,
     timelineScrollHandoffMode: TimelineScrollHandoffMode,
-    onTimelineDismiss: () -> Unit
+    onTimelineDismiss: () -> Unit,
+    wasCompletedInitially: Boolean,
+    key: Any? = null
 ) {
     val isExpandedReasoning = reasoningPreviewEnabled && state is ActivityState.Reasoning && !timelineOpen
     val requestedContentState = if (timelineOpen && timelineEntries.isNotEmpty()) {
@@ -475,11 +512,17 @@ private fun AnimatedSinglePill(
         else -> null
     }?.toTestTag()
 
+    val chatAnimationsEnabled = me.rerere.rikkahub.ui.context.LocalChatAnimationsEnabled.current
+
     Surface(
         modifier = Modifier
-            .animateContentSize(
-                animationSpec = PILL_MORPH_SPEC,
-                alignment = Alignment.TopStart
+            .then(
+                if (chatAnimationsEnabled && !wasCompletedInitially) {
+                    Modifier.animateContentSize(
+                        animationSpec = PILL_MORPH_SPEC,
+                        alignment = Alignment.TopStart
+                    )
+                } else Modifier
             )
             .then(
                 if (surfaceExpanded) {
@@ -506,8 +549,12 @@ private fun AnimatedSinglePill(
         AnimatedContent(
             targetState = requestedContentState,
             transitionSpec = {
-                (fadeIn(animationSpec = tween(150)) togetherWith fadeOut(animationSpec = tween(90))) using SizeTransform(clip = false) { _, _ ->
-                    PILL_MORPH_SPEC
+                if (wasCompletedInitially && targetState !is SinglePillContentState.ExpandedTimeline && initialState !is SinglePillContentState.ExpandedTimeline) {
+                    EnterTransition.None togetherWith ExitTransition.None
+                } else {
+                    (fadeIn(animationSpec = tween(150)) togetherWith fadeOut(animationSpec = tween(90))) using SizeTransform(clip = false) { _, _ ->
+                        PILL_MORPH_SPEC
+                    }
                 }
             },
             contentAlignment = Alignment.TopStart,
@@ -539,23 +586,27 @@ private fun AnimatedSinglePill(
                 }
                 is SinglePillContentState.Compact -> {
                     val compactState = if (!surfaceExpanded && !isExpandedReasoning) state else targetContentState.state
-                    // AnimatedContent for smooth crossfade between different compact activity types.
+                    
                     AnimatedContent(
                         targetState = compactState,
                         transitionSpec = {
-                            (fadeIn(animationSpec = tween(200)) +
-                                scaleIn(initialScale = 0.92f, animationSpec = tween(200)))
-                                .togetherWith(
-                                    fadeOut(animationSpec = tween(150)) +
-                                        scaleOut(targetScale = 0.92f, animationSpec = tween(150))
-                                )
+                            if (wasCompletedInitially) {
+                                EnterTransition.None togetherWith ExitTransition.None
+                            } else {
+                                (fadeIn(animationSpec = tween(200)) +
+                                    scaleIn(initialScale = 0.92f, animationSpec = tween(200)))
+                                    .togetherWith(
+                                        fadeOut(animationSpec = tween(150)) +
+                                            scaleOut(targetScale = 0.92f, animationSpec = tween(150))
+                                    )
+                            }
                         },
                         label = "pill_content",
                         contentKey = { stateToKey(it) }
                     ) { targetState ->
                         if (targetState is ActivityState.CompletedMultiple) {
                             val items = buildActivityItemsFromMultiple(targetState)
-                            var othersCanAppear by remember { mutableStateOf(false) }
+                            var othersCanAppear by remember(key) { mutableStateOf(wasCompletedInitially) }
                             
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -571,7 +622,9 @@ private fun AnimatedSinglePill(
                                     
                                     if (index == 0) {
                                         LaunchedEffect(Unit) {
-                                            delay(100L)
+                                            if (!wasCompletedInitially) {
+                                                delay(100L)
+                                            }
                                             othersCanAppear = true
                                         }
                                         if (items.size == 1) {
@@ -590,28 +643,37 @@ private fun AnimatedSinglePill(
                                             )
                                         }
                                     } else {
-                                        var visible by remember { mutableStateOf(false) }
-                                        LaunchedEffect(othersCanAppear) {
-                                            if (othersCanAppear) {
-                                                delay(index * 50L)
-                                                visible = true
-                                            }
-                                        }
-                                        
-                                        AnimatedVisibility(
-                                            visible = visible,
-                                            enter = fadeIn(tween(150)) + slideInHorizontally(
-                                                initialOffsetX = { -it / 2 },
-                                                animationSpec = spring(dampingRatio = 0.75f, stiffness = 350f)
-                                            ),
-                                            exit = fadeOut(tween(100)) + slideOutHorizontally(targetOffsetX = { -it / 2 })
-                                        ) {
+                                        if (wasCompletedInitially) {
                                             CompactActivityPill(
                                                 item = item,
                                                 onClick = { onClick(item.type) },
                                                 position = position,
                                                 connectsToBubbleBelow = connectsToBubbleBelow
                                             )
+                                        } else {
+                                            var visible by remember(key) { mutableStateOf(false) }
+                                            LaunchedEffect(othersCanAppear) {
+                                                if (othersCanAppear && !visible) {
+                                                    delay(index * 50L)
+                                                    visible = true
+                                                }
+                                            }
+                                            
+                                            AnimatedVisibility(
+                                                visible = visible,
+                                                enter = fadeIn(tween(150)) + slideInHorizontally(
+                                                    initialOffsetX = { -it / 2 },
+                                                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing)
+                                                ),
+                                                exit = fadeOut(tween(100)) + slideOutHorizontally(targetOffsetX = { -it / 2 })
+                                            ) {
+                                                CompactActivityPill(
+                                                    item = item,
+                                                    onClick = { onClick(item.type) },
+                                                    position = position,
+                                                    connectsToBubbleBelow = connectsToBubbleBelow
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -1016,11 +1078,17 @@ private fun SinglePill(
     val pillColor = MaterialTheme.colorScheme.surfaceContainerHigh
     val pillShape = getCornerRadii(position, connectsToBubbleBelow)
 
+    val chatAnimationsEnabled = me.rerere.rikkahub.ui.context.LocalChatAnimationsEnabled.current
+
     Surface(
         modifier = modifier
             .height(PILL_HEIGHT)
             .then(if (testTag != null) Modifier.testTag(testTag) else Modifier)
-            .animateContentSize(spring(dampingRatio = 0.7f, stiffness = 300f)),
+            .then(
+                if (chatAnimationsEnabled) {
+                    Modifier.animateContentSize(animationSpec = PILL_MORPH_SPEC)
+                } else Modifier
+            ),
         shape = pillShape,
         color = pillColor,
         contentColor = MaterialTheme.colorScheme.onSurface,

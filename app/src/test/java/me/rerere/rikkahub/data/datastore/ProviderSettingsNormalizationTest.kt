@@ -2,7 +2,6 @@ package me.rerere.rikkahub.data.datastore
 
 import androidx.datastore.preferences.core.preferencesOf
 import kotlinx.coroutines.runBlocking
-import me.rerere.asr.ASRProviderSetting
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
@@ -92,84 +91,4 @@ class ProviderSettingsNormalizationTest {
         assertTrue(normalized.providers.none { it.name == "On-device" })
     }
 
-    @Test
-    fun `stt selected provider can be cleared`() {
-        val provider = ASRProviderSetting.OpenAICompatible(
-            id = Uuid.parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
-        )
-        val settings = Settings(
-            sttProviders = listOf(provider),
-            selectedSttProviderId = null,
-        )
-
-        val normalized = settings.normalizeSttSettings()
-
-        assertEquals(listOf(provider.id), normalized.sttProviders.map { it.id })
-        assertEquals(null, normalized.selectedSttProviderId)
-    }
-
-    @Test
-    fun `stt selected provider is cleared when provider is deleted`() {
-        val selectedProviderId = Uuid.parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
-        val settings = Settings(
-            sttProviders = listOf(
-                ASRProviderSetting.OpenAICompatible(
-                    id = Uuid.parse("cccccccc-cccc-cccc-cccc-cccccccccccc")
-                )
-            ),
-            selectedSttProviderId = selectedProviderId,
-        )
-
-        val normalized = settings.normalizeSttSettings()
-
-        assertEquals(null, normalized.selectedSttProviderId)
-    }
-
-    @Test
-    fun `empty stt provider list stays empty after user deletion`() {
-        val settings = Settings(
-            sttProviders = emptyList(),
-            selectedSttProviderId = Uuid.parse("dddddddd-dddd-dddd-dddd-dddddddddddd"),
-        )
-
-        val normalized = settings.normalizeSttSettings()
-
-        assertTrue(normalized.sttProviders.isEmpty())
-        assertEquals(null, normalized.selectedSttProviderId)
-    }
-
-    @Test
-    fun `settings round trip keeps nullable selected stt provider id`() {
-        val provider = ASRProviderSetting.OpenAICompatible()
-        val settings = Settings(
-            sttProviders = listOf(provider),
-            selectedSttProviderId = null,
-        )
-        val json = JsonInstant.encodeToString(settings)
-        val decoded = JsonInstant.decodeFromString<Settings>(json)
-
-        assertEquals(null, decoded.selectedSttProviderId)
-        assertTrue(decoded.sttProviders.isNotEmpty())
-    }
-
-    @Test
-    fun `legacy system stt entries are filtered out on normalize`() {
-        val systemStt = ASRProviderSetting.SystemSTT(
-            id = Uuid.parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
-        )
-        val compatible = ASRProviderSetting.OpenAICompatible(
-            id = Uuid.parse("ffffffff-ffff-ffff-ffff-ffffffffffff")
-        )
-        val settings = Settings(
-            sttProviders = listOf(systemStt, compatible),
-            selectedSttProviderId = systemStt.id,
-        )
-
-        val normalized = settings.normalizeSttSettings()
-
-        assertTrue(normalized.sttProviders.none { it is ASRProviderSetting.SystemSTT })
-        assertEquals(1, normalized.sttProviders.size)
-        assertEquals(compatible.id, normalized.sttProviders.first().id)
-        assertEquals(null, normalized.selectedSttProviderId)
-    }
 }

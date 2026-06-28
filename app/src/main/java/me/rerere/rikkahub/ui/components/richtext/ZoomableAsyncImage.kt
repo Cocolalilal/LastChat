@@ -41,7 +41,7 @@ fun ZoomableAsyncImage(
         .crossfade(false)
         .allowHardware(!export)
         .build()
-    var loading by remember { mutableStateOf(false) }
+    var loading by remember(model) { mutableStateOf(!model.isNullOrBlank()) }
     AsyncImage(
         model = coilModel,
         contentDescription = contentDescription,

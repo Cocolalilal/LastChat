@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.webkit.JavascriptInterface
 import androidx.activity.compose.LocalActivity
+import me.rerere.rikkahub.ui.context.LocalChatAnimationsEnabled
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -220,14 +221,21 @@ fun Mermaid(
         contentColor = colorScheme.onSurface,
         border = BorderStroke(1.dp, outlineColor),
     ) {
+        val chatAnimationsEnabled = LocalChatAnimationsEnabled.current
         Column(
             modifier = Modifier
                 .clipToBounds()
-                .animateContentSize(
-                    animationSpec = tween(
-                        durationMillis = 180,
-                        easing = LinearOutSlowInEasing
-                    )
+                .then(
+                    if (chatAnimationsEnabled) {
+                        Modifier.animateContentSize(
+                            animationSpec = tween(
+                                durationMillis = 180,
+                                easing = LinearOutSlowInEasing
+                            )
+                        )
+                    } else {
+                        Modifier
+                    }
                 ),
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
