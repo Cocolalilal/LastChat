@@ -144,9 +144,6 @@ import me.rerere.ai.registry.ModelIdNormalizer
 import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
-import me.rerere.locallm.LocalRuntime
-import me.rerere.locallm.litert.LiteRtCatalog
-import me.rerere.locallm.litert.LiteRtModelMetadata
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.models.ModelMetadataResolver
 import me.rerere.rikkahub.data.ai.models.ModelResolutionOptions
@@ -175,7 +172,6 @@ import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.ui.components.ui.lobeHubIconUri
 import me.rerere.rikkahub.ui.pages.assistant.detail.CustomBodies
 import me.rerere.rikkahub.ui.pages.assistant.detail.CustomHeaders
-import me.rerere.rikkahub.ui.pages.setting.locallm.SettingLocalLlmViewModel
 import me.rerere.rikkahub.ui.pages.setting.components.CustomIconSelector
 import me.rerere.rikkahub.ui.pages.setting.components.ProviderConfigure
 import me.rerere.rikkahub.ui.pages.setting.components.SettingProviderBalanceOption
@@ -400,34 +396,31 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                     }
                 },
                 actions = {
-                    if (!isLocalLiteRt) {
-                        val shareSheetState = rememberShareSheetState()
-                        ShareSheet(shareSheetState)
+                    val shareSheetState = rememberShareSheetState()
+                    ShareSheet(shareSheetState)
 
-                        ConnectionTesterButton(
-                            provider = provider,
-                            scope = scope
-                        )
+                    ConnectionTesterButton(
+                        provider = provider,
+                        scope = scope
+                    )
 
-                        IconButton(
-                            onClick = {
-                                shareSheetState.show(provider)
-                            }
-                        ) {
-                            Icon(Icons.Rounded.Share, null)
+                    IconButton(
+                        onClick = {
+                            shareSheetState.show(provider)
                         }
+                    ) {
+                        Icon(Icons.Rounded.Share, null)
                     }
                 }
             )
         },
         bottomBar = {
-            if (!isLocalLiteRt) {
-                val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(horizontal = 16.dp, vertical = 16.dp)
+            val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 16.dp)
                 ) {
                     Surface(
                         modifier = Modifier.align(Alignment.Center),
@@ -490,25 +483,16 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                         }
                     }
                 }
-            }
         }
     ) { contentPadding ->
         Box(modifier = Modifier.fillMaxSize()) {
             HorizontalPager(
                 state = pager,
-                userScrollEnabled = !isLocalLiteRt,
                 modifier = Modifier
                     .fillMaxSize()
                     .consumeWindowInsets(contentPadding)
             ) { page ->
                 when {
-                    isLocalLiteRt -> {
-                        SettingProviderModelPage(
-                            provider = provider,
-                            onEdit = onEdit,
-                            contentPadding = contentPadding,
-                        )
-                    }
                     page == 0 -> {
                         SettingProviderConfigPage(
                             provider = provider,
@@ -1087,174 +1071,7 @@ private fun ModelList(
     }
 }
 
-@Composable
-private fun LocalLiteRtModelControls(
-    downloadProgress: SettingLocalLlmViewModel.Progress?,
-    errorMessage: String?,
-    accelerator: String?,
-    forceCpu: Boolean,
-    maxNumTokensOverride: Int?,
-    crashRecoveryAccel: String?,
-    onDismissCrashRecovery: () -> Unit,
-    onClearError: () -> Unit,
-    onReDetectAccelerator: () -> Unit,
-    onForceCpuChange: (Boolean) -> Unit,
-    onMaxNumTokensOverrideChange: (Int?) -> Unit,
-) {
-    var maxTokensInput by remember(maxNumTokensOverride) {
-        mutableStateOf(maxNumTokensOverride?.toString() ?: "")
-    }
-    Card(
-        shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
-        colors = CardDefaults.cardColors(
-            containerColor = if (LocalDarkMode.current) {
-                MaterialTheme.colorScheme.surfaceContainerLow
-            } else {
-                MaterialTheme.colorScheme.surfaceContainerHighest
-            },
-        ),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = stringResource(R.string.local_llm_section_runtime),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                Text(
-                    text = stringResource(R.string.local_llm_section_runtime_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
 
-            crashRecoveryAccel?.let { accel ->
-                Text(
-                    text = stringResource(R.string.local_llm_crash_recovery_format, accel),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer,
-                    modifier = Modifier
-                        .clip(me.rerere.rikkahub.ui.theme.AppShapes.CardMedium)
-                        .background(MaterialTheme.colorScheme.tertiaryContainer)
-                        .clickable { onDismissCrashRecovery() }
-                        .padding(12.dp),
-                )
-            }
-
-            downloadProgress?.let { progress ->
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (progress.totalBytes != null && progress.totalBytes > 0) {
-                        LinearProgressIndicator(
-                            progress = { progress.percent / 100f },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    } else {
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                    }
-                    Text(
-                        text = stringResource(R.string.local_llm_download_progress, progress.percent),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
-            errorMessage?.let { message ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(me.rerere.rikkahub.ui.theme.AppShapes.CardMedium)
-                        .background(MaterialTheme.colorScheme.errorContainer)
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        text = stringResource(R.string.local_llm_status_error_format, message),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(onClick = onClearError) {
-                        Text(stringResource(R.string.clear_search))
-                    }
-                }
-            }
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.local_llm_accelerator_label, accelerator ?: "auto"),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Text(
-                        text = stringResource(R.string.local_llm_try_gpu_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                OutlinedButton(onClick = onReDetectAccelerator) {
-                    Text(stringResource(R.string.local_llm_re_detect))
-                }
-            }
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.local_llm_try_gpu_label),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-                HapticSwitch(
-                    checked = !forceCpu,
-                    onCheckedChange = { wantGpu -> onForceCpuChange(!wantGpu) },
-                )
-            }
-
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    text = stringResource(R.string.local_llm_max_tokens_label),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    OutlinedTextField(
-                        value = maxTokensInput,
-                        onValueChange = { newValue ->
-                            if (newValue.isEmpty() || newValue.all { it.isDigit() }) {
-                                maxTokensInput = newValue
-                                onMaxNumTokensOverrideChange(newValue.toIntOrNull()?.takeIf { it in 1..131072 })
-                            }
-                        },
-                        placeholder = { Text(stringResource(R.string.local_llm_max_tokens_placeholder)) },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
-                    )
-                    OutlinedButton(
-                        onClick = {
-                            maxTokensInput = ""
-                            onMaxNumTokensOverrideChange(null)
-                        },
-                        enabled = maxNumTokensOverride != null,
-                    ) {
-                        Text(stringResource(R.string.local_llm_max_tokens_reset))
-                    }
-                }
-            }
-        }
-    }
-}
 
 @Composable
 private fun LocalHuggingFaceInstallFab(
@@ -1740,8 +1557,6 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                             color = MaterialTheme.colorScheme.error,
                         )
                     }
-                }
-
                 LazyColumn(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -1778,7 +1593,6 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     items(filteredModels) { model ->
                         val selectedModel = selectedModels.firstOrNull { selected -> modelsReferToSameApiModel(selected, model) }
                         val isSelected = selectedModel != null
-                        val localSizeLabel = if (isLocalInstallPicker) liteRtModelSizeLabel(model.modelId) else null
                         val interactionSource = remember { MutableInteractionSource() }
                         val isPressed by interactionSource.collectIsPressedAsState()
                         val scale by animateFloatAsState(
@@ -1796,7 +1610,6 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 .clickable(
                                     interactionSource = interactionSource,
                                     indication = null,
-                                    enabled = !isLocalInstallPicker,
                                 ) {
                                     haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
                                     if (isSelected) {
@@ -1827,11 +1640,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                     modifier = Modifier.weight(1f),
                                 ) {
                                     Text(
-                                        text = if (localSizeLabel != null) {
-                                            "${model.displayName} \u00B7 $localSizeLabel"
-                                        } else {
-                                            model.displayName
-                                        },
+                                        text = model.displayName,
                                         style = MaterialTheme.typography.titleSmall,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
@@ -1868,15 +1677,6 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
         }
     }
 }
-
-private fun liteRtModelSizeLabel(modelId: String): String? =
-    LiteRtCatalog.findByModelFile(modelId)?.sizeBytes?.let { bytes ->
-        if (bytes >= 1_000_000_000L) {
-            String.format(Locale.US, "%.1f GB", bytes / 1_000_000_000.0)
-        } else {
-            String.format(Locale.US, "%.0f MB", bytes / 1_000_000.0)
-        }
-    }
 
 @Composable
 private fun AddNewModelFab(

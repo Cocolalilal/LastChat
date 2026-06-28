@@ -159,26 +159,27 @@ data class MessageTurnGroup(
             .map { it.toolCallId }
             .toSet()
         if (activeToolCallIds.isEmpty()) {
-            return selectedNodes
-        }
+            selectedNodes
+        } else {
+            val selectedNodeIds = selectedNodes.map { it.id }.toSet()
+            val matchingToolResultNodes = nodes.mapNotNull { node ->
+                if (node.id in selectedNodeIds || node.role != MessageRole.TOOL) {
+                    null
+                } else {
+                    val matchingIndex = node.messages.indexOfLast { message ->
+                        message.getToolResults().any { result -> result.toolCallId in activeToolCallIds }
+                    }
+                    if (matchingIndex >= 0) {
+                        node.copy(selectIndex = matchingIndex)
+                    } else {
+                        null
+                    }
+                }
+            }
 
-        val selectedNodeIds = selectedNodes.map { it.id }.toSet()
-        val matchingToolResultNodes = nodes.mapNotNull { node ->
-            if (node.id in selectedNodeIds || node.role != MessageRole.TOOL) {
-                return@mapNotNull null
+            (selectedNodes + matchingToolResultNodes).sortedBy { node ->
+                nodes.indexOfFirst { it.id == node.id }.takeIf { it >= 0 } ?: Int.MAX_VALUE
             }
-            val matchingIndex = node.messages.indexOfLast { message ->
-                message.getToolResults().any { result -> result.toolCallId in activeToolCallIds }
-            }
-            if (matchingIndex >= 0) {
-                node.copy(selectIndex = matchingIndex)
-            } else {
-                null
-            }
-        }
-
-        return (selectedNodes + matchingToolResultNodes).sortedBy { node ->
-            nodes.indexOfFirst { it.id == node.id }.takeIf { it >= 0 } ?: Int.MAX_VALUE
         }
     }
     
@@ -191,19 +192,22 @@ data class MessageTurnGroup(
     /** Combined token usage for filtered messages in the group */
     val combinedUsage: TokenUsage? by lazy {
         val usages = filteredNodes.mapNotNull { it.currentMessage.usage }
-        if (usages.isEmpty()) return null
-        return TokenUsage(
-            promptTokens = usages.sumOf { it.promptTokens },
-            completionTokens = usages.sumOf { it.completionTokens },
-            totalTokens = usages.sumOf { it.totalTokens },
-            cachedTokens = usages.sumOf { it.cachedTokens }
-        )
+        if (usages.isEmpty()) {
+            null
+        } else {
+            TokenUsage(
+                promptTokens = usages.sumOf { it.promptTokens },
+                completionTokens = usages.sumOf { it.completionTokens },
+                totalTokens = usages.sumOf { it.totalTokens },
+                cachedTokens = usages.sumOf { it.cachedTokens }
+            )
+        }
     }
     
     /** Combined generation duration for filtered assistant messages in the group */
     val combinedGenerationDurationMs: Long? by lazy {
         val durations = filteredNodes.mapNotNull { it.currentMessage.generationDurationMs }
-        return if (durations.isNotEmpty()) durations.sum() else null
+        if (durations.isNotEmpty()) durations.sum() else null
     }
 }
 

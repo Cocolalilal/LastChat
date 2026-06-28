@@ -489,7 +489,6 @@ class SettingsStore(
         }
         
         val normalizedSettings = settingsToSave
-            .copy(providers = settingsToSave.providers.filterNot { provider -> provider is ProviderSetting.LiteRtLocal })
             .normalizeWebServerSettings()
             .migrateLegacyModesToSkills()
             .normalizeFontSettings()

@@ -8,7 +8,7 @@ import me.rerere.rikkahub.ui.pages.chat.ChatVM
 import me.rerere.rikkahub.ui.pages.developer.DeveloperVM
 import me.rerere.rikkahub.ui.pages.imggen.ImgGenVM
 import me.rerere.rikkahub.ui.pages.setting.SettingVM
-import me.rerere.rikkahub.ui.pages.setting.locallm.SettingLocalLlmViewModel
+
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerVM
 import me.rerere.rikkahub.ui.pages.menu.MenuVM
 import me.rerere.rikkahub.ui.pages.onboarding.OnboardingVM
@@ -42,16 +42,7 @@ val viewModelModule = module {
             memoryRepository = get(),
         )
     }
-    viewModel<SettingLocalLlmViewModel> { params ->
-        SettingLocalLlmViewModel(
-            runtime = params.get(),
-            context = get(),
-            prefs = get(),
-            httpClient = get(),
-            settingsStore = get(),
-            workManager = get(),
-        )
-    }
+
     viewModelOf(::AssistantVM)
     viewModel<AssistantDetailVM> {
         AssistantDetailVM(
