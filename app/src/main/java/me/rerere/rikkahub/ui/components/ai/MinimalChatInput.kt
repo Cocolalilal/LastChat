@@ -14,6 +14,8 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
@@ -978,6 +980,7 @@ fun MinimalChatInput(
                                         "stt_recording" -> MaterialTheme.colorScheme.primary
                                         else -> Color.Transparent
                                     },
+                                    animationSpec = tween(250),
                                     label = "ActionContainerColor"
                                 )
 
@@ -1009,7 +1012,40 @@ fun MinimalChatInput(
                                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                                         AnimatedContent(
                                             targetState = currentAction,
-                                            transitionSpec = { fadeIn() togetherWith fadeOut() },
+                                            transitionSpec = {
+                                                val outFadeSpec = tween<Float>(150)
+                                                val inFadeSpec = tween<Float>(150, delayMillis = 100)
+                                                val depthScale = 0.6f
+                                                
+                                                if (targetState == "questionnaire_next") {
+                                                    (slideInHorizontally(tween(250)) { -it / 2 } + fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith
+                                                    (slideOutHorizontally(tween(250)) { it / 2 } + fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
+                                                } else if (initialState == "questionnaire_next") {
+                                                    (slideInHorizontally(tween(250)) { it / 2 } + fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith
+                                                    (slideOutHorizontally(tween(250)) { -it / 2 } + fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
+                                                } else {
+                                                    fun getRank(state: String): Int = when (state) {
+                                                        "picker", "stt", "stt_recording", "stt_finalizing" -> 0
+                                                        "send", "questionnaire_submit" -> 1
+                                                        "loading", "tool_approval_deny" -> 2
+                                                        else -> 1
+                                                    }
+                                                    val initialRank = getRank(initialState)
+                                                    val targetRank = getRank(targetState)
+                                                    
+                                                    if (targetRank > initialRank) {
+                                                        (slideInVertically(tween(250)) { it / 2 } + fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith
+                                                        (slideOutVertically(tween(250)) { -it / 2 } + fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
+                                                    } else if (targetRank < initialRank) {
+                                                        (slideInVertically(tween(250)) { -it / 2 } + fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith
+                                                        (slideOutVertically(tween(250)) { it / 2 } + fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
+                                                    } else {
+                                                        (fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith 
+                                                        (fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
+                                                    }
+                                                }
+                                            },
+                                            contentAlignment = Alignment.Center,
                                             label = "ActionContent"
                                         ) { action ->
                                             when (action) {
@@ -1224,6 +1260,7 @@ fun MinimalChatInput(
                                         "send" -> MaterialTheme.colorScheme.primary
                                         else -> MaterialTheme.colorScheme.surfaceVariant
                                     },
+                                    animationSpec = tween(250),
                                     label = "ActionContainerColorExpanded"
                                 )
                                 
@@ -1246,7 +1283,40 @@ fun MinimalChatInput(
                                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                                         AnimatedContent(
                                             targetState = currentAction,
-                                            transitionSpec = { fadeIn() togetherWith fadeOut() },
+                                            transitionSpec = {
+                                                val outFadeSpec = tween<Float>(150)
+                                                val inFadeSpec = tween<Float>(150, delayMillis = 100)
+                                                val depthScale = 0.6f
+                                                
+                                                if (targetState == "questionnaire_next") {
+                                                    (slideInHorizontally(tween(250)) { -it / 2 } + fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith
+                                                    (slideOutHorizontally(tween(250)) { it / 2 } + fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
+                                                } else if (initialState == "questionnaire_next") {
+                                                    (slideInHorizontally(tween(250)) { it / 2 } + fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith
+                                                    (slideOutHorizontally(tween(250)) { -it / 2 } + fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
+                                                } else {
+                                                    fun getRank(state: String): Int = when (state) {
+                                                        "picker", "stt", "stt_recording", "stt_finalizing" -> 0
+                                                        "send", "questionnaire_submit" -> 1
+                                                        "loading", "tool_approval_deny" -> 2
+                                                        else -> 1
+                                                    }
+                                                    val initialRank = getRank(initialState)
+                                                    val targetRank = getRank(targetState)
+                                                    
+                                                    if (targetRank > initialRank) {
+                                                        (slideInVertically(tween(250)) { it / 2 } + fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith
+                                                        (slideOutVertically(tween(250)) { -it / 2 } + fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
+                                                    } else if (targetRank < initialRank) {
+                                                        (slideInVertically(tween(250)) { -it / 2 } + fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith
+                                                        (slideOutVertically(tween(250)) { it / 2 } + fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
+                                                    } else {
+                                                        (fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith 
+                                                        (fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
+                                                    }
+                                                }
+                                            },
+                                            contentAlignment = Alignment.Center,
                                             label = "ActionContentExpanded"
                                         ) { action ->
                                             when (action) {
