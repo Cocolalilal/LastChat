@@ -382,25 +382,46 @@ fun MarkdownBlock(
     var streamingFrameMillis by remember { mutableStateOf(0L) }
     
     var (data, setData) = remember {
-        val preprocessed = preProcess(displayContent)
-        val astTree = parser.buildMarkdownTreeFromString(preprocessed)
-        mutableStateOf(
-            value = preprocessed to astTree,
-            policy = referentialEqualityPolicy(),
-        )
+        // For small content, parse synchronously to avoid UI flash.
+        // For large content (like heavy tool outputs or base64 images), initialize with empty
+        // AST and let the LaunchedEffect below parse it on a background thread to avoid UI stutter.
+        if (displayContent.length < 4000) {
+            val preprocessed = preProcess(displayContent)
+            val astTree = parser.buildMarkdownTreeFromString(preprocessed)
+            mutableStateOf(
+                value = preprocessed to astTree,
+                policy = referentialEqualityPolicy(),
+            )
+        } else {
+            val astTree = parser.buildMarkdownTreeFromString("")
+            mutableStateOf(
+                value = "" to astTree,
+                policy = referentialEqualityPolicy(),
+            )
+        }
     }
 
     // 监听内容变化，重新解析AST树
     // 这里在后台线程解析AST树, 防止频繁更新的时候掉帧
     val updatedDisplayContent by rememberUpdatedState(displayContent)
     LaunchedEffect(Unit) {
+        // The synchronous parse above already produced the AST for the initial content.
+        // The first snapshotFlow emission mirrors that same content; without this guard
+        // it would call setData with a new Pair instance and, due to referentialEqualityPolicy,
+        // trigger a full redundant recomposition + re-measure of the whole markdown tree
+        // right after the item first appears on screen (a visible stutter, amplified by the
+        // multiple text bubbles present in tool-usage turns).
+        var lastPreprocessed = data.first
         snapshotFlow { updatedDisplayContent }.distinctUntilChanged().mapLatest {
             val preprocessed = preProcess(it)
             val astTree = parser.buildMarkdownTreeFromString(preprocessed)
             preprocessed to astTree
         }.catch { exception -> exception.printStackTrace() }.flowOn(Dispatchers.Default) // 在后台线程解析AST树
-            .collect {
-                setData(it)
+            .collect { parsed ->
+                if (parsed.first != lastPreprocessed) {
+                    lastPreprocessed = parsed.first
+                    setData(parsed)
+                }
             }
     }
 

@@ -18,6 +18,14 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -419,12 +427,63 @@ private fun AttachmentRow(
         }
     }
 
-    FlowRow(
+    val listState = rememberLazyListState()
+    val canScrollLeft by remember {
+        derivedStateOf {
+            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
+        }
+    }
+    val canScrollRight by remember {
+        derivedStateOf {
+            val layoutInfo = listState.layoutInfo
+            val lastVisibleItem = layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
+            lastVisibleItem.index < layoutInfo.totalItemsCount - 1 ||
+                lastVisibleItem.offset + lastVisibleItem.size > layoutInfo.viewportEndOffset
+        }
+    }
+    val leftFadeAlpha by animateFloatAsState(
+        targetValue = if (canScrollLeft) 1f else 0f,
+        animationSpec = tween(180),
+        label = "attachment_left_fade"
+    )
+    val rightFadeAlpha by animateFloatAsState(
+        targetValue = if (canScrollRight) 1f else 0f,
+        animationSpec = tween(180),
+        label = "attachment_right_fade"
+    )
+
+    LazyRow(
+        state = listState,
         horizontalArrangement = Arrangement.spacedBy(8.dp, horizontalAlignment),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = modifier.fillMaxWidth()
+        modifier = modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                compositingStrategy = CompositingStrategy.Offscreen
+            }
+            .drawWithContent {
+                drawContent()
+                if ((leftFadeAlpha > 0f || rightFadeAlpha > 0f) && size.width > 0f) {
+                    val fadeWidthPx = 32.dp.toPx()
+                    val leftEnd = (fadeWidthPx / size.width).coerceAtMost(0.35f)
+                    val rightStart = (1f - fadeWidthPx / size.width).coerceAtLeast(0.65f)
+                    drawRect(
+                        brush = Brush.horizontalGradient(
+                            colorStops = arrayOf(
+                                0f to Color.Black.copy(alpha = 1f - leftFadeAlpha),
+                                leftEnd to Color.Black,
+                                rightStart to Color.Black,
+                                1f to Color.Black.copy(alpha = 1f - rightFadeAlpha),
+                            )
+                        ),
+                        blendMode = BlendMode.DstIn
+                    )
+                }
+            }
     ) {
-        attachments.fastForEach { attachment ->
+        items(
+            items = attachments,
+            key = { attachment -> attachment.hashCode() }
+        ) { attachment ->
             when (attachment) {
                 is RenderableAttachment.Image -> {
                     val archivedModifier = if (attachment.archived) {
@@ -444,9 +503,10 @@ private fun AttachmentRow(
                     ZoomableAsyncImage(
                         model = attachment.url,
                         contentDescription = null,
+                        contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .clip(MaterialTheme.shapes.medium)
-                            .height(72.dp)
+                            .size(72.dp)
                             .then(archivedModifier)
                     )
                 }
@@ -459,7 +519,9 @@ private fun AttachmentRow(
                             attachment.fileName
                         },
                         mimeType = attachment.mimeType,
-                        modifier = Modifier.graphicsLayer(alpha = if (attachment.archived) 0.72f else 1f),
+                        modifier = Modifier
+                            .size(72.dp)
+                            .graphicsLayer(alpha = if (attachment.archived) 0.72f else 1f),
                         onClick = {
                             if (attachment.url.isNotBlank()) {
                                 haptics.perform(HapticPattern.Pop)
@@ -476,7 +538,9 @@ private fun AttachmentRow(
                     DocumentChip(
                         fileName = attachment.fileName,
                         mimeType = attachment.mimeType,
-                        modifier = Modifier.graphicsLayer(alpha = 0.72f),
+                        modifier = Modifier
+                            .size(72.dp)
+                            .graphicsLayer(alpha = 0.72f),
                     )
                 }
             }
@@ -823,20 +887,37 @@ fun ChatMessageTurn(
     var showUserToolbar by remember { mutableStateOf(false) }  // User message toolbar visibility
     
     // Activity state from ALL nodes in the group
-    // For multi-node turns (with tools), the current generation is on the last node
-    val activityState = deriveActivityState(
-        parts = group.allParts,
-        annotations = group.allAnnotations,
-        loading = loading && isLastTurn,
-    )
+    // For multi-node turns (with tools), the current generation is on the last node.
     val isTimelineLive = loading && isLastTurn
-    
-    // Timeline entries from all parts - computed fresh to avoid stale data
-    val timelineEntries = buildTimelineEntries(
-        parts = group.allParts,
-        annotations = group.allAnnotations,
-        loading = loading && isLastTurn,
-    )
+    // We use activeVersionTag + firstNode.id + allParts.size as keys.
+    // Using group.allParts directly causes massive UI stutters during scrolling because LazyColumn
+    // recycles the node, and Compose evaluates old_parts.equals(new_parts), which performs a
+    // DEEP EQUALS on massive JsonElements (like scraped web pages or SVGs) if toolCallId is empty.
+    val activityState = remember(group.activeVersionTag, group.firstNode.id, group.allParts.size, isTimelineLive) {
+        deriveActivityState(
+            parts = group.allParts,
+            annotations = group.allAnnotations,
+            loading = isTimelineLive,
+        )
+    }
+
+    // Timeline entries — deferred until the timeline is actually opened.
+    // The compact activity pill uses `activityState` (always computed above), not
+    // `timelineEntries`, so returning emptyList() while closed is invisible.
+    // This avoids expensive per-tool-call work (result.content.toString(), JSON
+    // recovery parsing, TimelineEntry allocation) on the first-composition frame
+    // when a tool turn scrolls into view, which was the scroll-up stutter source.
+    val timelineEntries = remember(group.activeVersionTag, group.firstNode.id, group.allParts.size, isTimelineLive, timelineOpen) {
+        if (timelineOpen) {
+            buildTimelineEntries(
+                parts = group.allParts,
+                annotations = group.allAnnotations,
+                loading = isTimelineLive,
+            )
+        } else {
+            emptyList()
+        }
+    }
 
     // Actions should target the visible assistant content node instead of blindly using lastNode,
     // because the last node in a turn can be a tool node.
@@ -887,7 +968,7 @@ fun ChatMessageTurn(
                     initialTimelineOpenRequest = timelineOpenRequest,
                     onCitationClick = onCitationClick,
                     onActivityPillClick = { type ->
-                        if (timelineEntries.isEmpty()) return@AssistantMessageTurn
+                        if (activityState is ActivityState.Hidden) return@AssistantMessageTurn
                         if (timelineOpen && timelineOpenRequest?.focusType == type) {
                             timelineOpen = false
                         } else {

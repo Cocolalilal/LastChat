@@ -527,6 +527,17 @@ private fun SharedTransitionScope.ChatListNormal(
                             isPendingAssistantTurn = needsPhantomLoadingTurn && index == displayGroups.lastIndex,
                         )
                     },
+                    contentType = { _, group ->
+                        // Distinguish tool-bearing assistant turns (heavy composition subtrees)
+                        // from text-only turns so Compose reuses the most appropriate slot.
+                        if (group.role == me.rerere.ai.core.MessageRole.USER) {
+                            "user"
+                        } else if (group.nodes.any { it.role == me.rerere.ai.core.MessageRole.TOOL }) {
+                            "assistant_tools"
+                        } else {
+                            "assistant_text"
+                        }
+                    },
                 ) { index, group ->
                     Column {
                         // Check if any node in group is selected

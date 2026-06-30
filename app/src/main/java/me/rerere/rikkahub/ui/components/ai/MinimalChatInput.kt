@@ -2935,7 +2935,7 @@ private fun MediaFileInputRow(
             me.rerere.rikkahub.ui.components.ui.DocumentChip(
                 fileName = document.fileName,
                 mimeType = document.mime,
-                modifier = Modifier,
+                modifier = Modifier.size(60.dp),
                 onRemove = {
                     removePart(attachment.id)?.let(onDelete)
                 }
